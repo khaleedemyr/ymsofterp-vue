@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\RetailNonFood;
+use App\Services\BudgetCalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -506,10 +507,24 @@ class OpexReportController extends Controller
                     )
                     ->get();
 
-                // Calculate budget per outlet using same logic as getBudgetInfo()
+                // Use BudgetCalculationService for consistent calculation
+                $budgetService = new BudgetCalculationService();
                 $outletMap = [];
+                
                 foreach ($outletBudgets as $outletBudget) {
                     $outletId = $outletBudget->outlet_id;
+                    
+                    // Get budget info using service
+                    $budgetInfo = $budgetService->getBudgetInfo(
+                        categoryId: $category->id,
+                        outletId: $outletId,
+                        dateFrom: $dateFrom,
+                        dateTo: $dateTo
+                    );
+                    
+                    if (!$budgetInfo['success']) {
+                        continue; // Skip if error
+                    }
                     
                     // Get PR IDs for this outlet (same logic as getBudgetInfo)
                     $prIds = DB::table('purchase_requisitions as pr')
@@ -533,20 +548,127 @@ class OpexReportController extends Controller
                         ->toArray();
                     
                     // Get PO IDs linked to PRs in this outlet
+                    // IMPORTANT: Untuk PR Ops, filter PO items berdasarkan outlet_id di purchase_requisition_items
+                    // IMPORTANT: Filter by PR created_at month (BUDGET IS MONTHLY)
                     $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
+                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                        ->leftJoin('purchase_requisition_items as pri', function($join) {
+                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                                 ->where(function($q) {
+                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                       ->orWhere(function($q2) {
+                                           $q2->whereNull('poi.pr_ops_item_id')
+                                              ->whereColumn('poi.item_name', 'pri.item_name');
+                                       });
+                                 });
+                        })
                         ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->whereIn('poi.source_id', $prIds)
+                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
+                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
+                        ->where('pr.is_held', false)
+                        ->where(function($q) use ($category, $outletId) {
+                            // Old structure: category and outlet at PR level
+                            $q->where(function($q2) use ($category, $outletId) {
+                                $q2->where('pr.category_id', $category->id)
+                                   ->where('pr.outlet_id', $outletId);
+                            })
+                            // New structure: category and outlet at items level (PENTING: filter by pri.outlet_id)
+                            ->orWhere(function($q2) use ($category, $outletId) {
+                                $q2->where('pri.category_id', $category->id)
+                                   ->where('pri.outlet_id', $outletId);
+                            });
+                        })
                         ->distinct()
                         ->pluck('poi.purchase_order_ops_id')
                         ->toArray();
                     
                     // Get paid amount from non_food_payments for this outlet (same logic as getBudgetInfo)
-                    $paidAmountFromPo = DB::table('non_food_payments as nfp')
-                        ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                        ->where('nfp.status', 'paid')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->sum('nfp.amount');
+                    // 
+                    // SKENARIO KOMPLEKS:
+                    // 1. 1 PR bisa jadi beberapa PO → Loop semua PO yang terkait dengan PR untuk outlet/category ini ✅
+                    // 2. 1 PO bisa gabungan dari beberapa PR dan outlet → Hitung proporsi PO items untuk outlet/category ini ✅
+                    // 3. 1 NFP biasanya membayar 1 PO (via purchase_order_ops_id) → Loop per PO, hitung proporsi per payment ✅
+                    //
+                    // LOGIKA PROPORSIONAL:
+                    // - Untuk setiap PO yang terkait dengan outlet/category ini:
+                    //   1. Hitung total PO items untuk outlet/category ini
+                    //   2. Hitung total semua PO items di PO tersebut
+                    //   3. Hitung proporsi: (outlet items) / (total items)
+                    //   4. Alokasikan payment: payment_amount * proportion
+                    // - Ini memastikan jika 1 PO gabungan dari beberapa outlet, hanya proporsi yang sesuai yang dihitung
+                    //
+                    $paidAmountFromPo = 0;
+                    if (!empty($poIdsInCategory)) {
+                        // Loop semua PO yang terkait dengan outlet/category ini
+                        foreach ($poIdsInCategory as $poId) {
+                            // STEP 1: Get PO items yang berasal dari PR items di outlet/category ini
+                            // Ini menghitung berapa banyak PO items yang benar-benar untuk outlet/category ini
+                            // (untuk handle skenario: 1 PO gabungan dari beberapa PR dan outlet)
+                            $outletPoItemIds = DB::table('purchase_order_ops_items as poi')
+                                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                                ->leftJoin('purchase_requisition_items as pri', function($join) {
+                                    $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                                         ->where(function($q) {
+                                             $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                               ->orWhere(function($q2) {
+                                                   $q2->whereNull('poi.pr_ops_item_id')
+                                                      ->whereColumn('poi.item_name', 'pri.item_name');
+                                               });
+                                         });
+                                })
+                                ->where('poi.purchase_order_ops_id', $poId)
+                                ->where('poi.source_type', 'purchase_requisition_ops')
+                                ->where(function($q) use ($category, $outletId) {
+                                    // Old structure: category and outlet at PR level
+                                    $q->where(function($q2) use ($category, $outletId) {
+                                        $q2->where('pr.category_id', $category->id)
+                                           ->where('pr.outlet_id', $outletId);
+                                    })
+                                    // New structure: category and outlet at items level
+                                    ->orWhere(function($q2) use ($category, $outletId) {
+                                        $q2->where('pri.category_id', $category->id)
+                                           ->where('pri.outlet_id', $outletId);
+                                    });
+                                })
+                                ->pluck('poi.total')
+                                ->toArray();
+                            
+                            // STEP 2: Get payment untuk PO ini
+                            // Catatan: 1 NFP biasanya membayar 1 PO (via purchase_order_ops_id)
+                            // Jika ada skenario 1 NFP membayar beberapa PO, perlu struktur tambahan
+                            $poPayment = DB::table('non_food_payments')
+                                ->where('purchase_order_ops_id', $poId)
+                                ->where('status', 'paid') // Only 'paid' status, not 'approved'
+                                ->where('status', '!=', 'cancelled')
+                                ->whereBetween('payment_date', [$dateFrom, $dateTo])
+                                ->first();
+                            
+                            if ($poPayment) {
+                                // STEP 3: Verify PO is still approved (not deleted)
+                                $poStatus = DB::table('purchase_order_ops')
+                                    ->where('id', $poId)
+                                    ->value('status');
+                                
+                                if ($poStatus === 'approved') {
+                                    // STEP 4: Hitung proporsi untuk alokasi payment
+                                    // Proporsi = (PO items untuk outlet/category ini) / (total semua PO items)
+                                    // Ini memastikan jika 1 PO gabungan dari beberapa outlet, hanya proporsi yang sesuai yang dihitung
+                                    $poTotalItems = DB::table('purchase_order_ops_items')
+                                        ->where('purchase_order_ops_id', $poId)
+                                        ->sum('total');
+                                    
+                                    if ($poTotalItems > 0) {
+                                        $outletPoItemsTotal = array_sum($outletPoItemIds);
+                                        $proportion = $outletPoItemsTotal / $poTotalItems;
+                                        
+                                        // STEP 5: Alokasikan payment berdasarkan proporsi
+                                        // allocated_amount = payment_amount * proportion
+                                        $paidAmountFromPo += $poPayment->amount * $proportion;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     
                     // Get Retail Non Food for this outlet
                     $outletRetailNonFoodApproved = DB::table('retail_non_food')

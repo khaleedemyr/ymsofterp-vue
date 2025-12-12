@@ -8,6 +8,7 @@ use App\Models\Outlet;
 use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionOutletBudget;
 use App\Models\PurchaseRequisition;
+use App\Services\BudgetCalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -142,21 +143,71 @@ class RetailNonFoodController extends Controller
                 return (float)($item['qty'] ?? 0) * (float)($item['price'] ?? 0);
             });
 
-            // Validasi budget sebelum simpan (category_budget_id sudah required di validation)
+            // Validasi budget sebelum simpan menggunakan BudgetCalculationService
             if ($request->category_budget_id) {
                 $category = PurchaseRequisitionCategory::find($request->category_budget_id);
                 if (!$category) {
+                    DB::rollBack();
                     return response()->json([
                         'message' => 'Category budget tidak valid'
                     ], 422);
                 }
 
-                // Hitung budget yang sudah digunakan (bulan berjalan) - same logic as Opex Report
+                // Hitung budget yang sudah digunakan (bulan berjalan)
                 $currentMonth = date('n'); // 1-12
                 $currentYear = date('Y');
                 $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
                 $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
                 
+                // Use BudgetCalculationService for consistent validation
+                $budgetService = new BudgetCalculationService();
+                $validation = $budgetService->validateBudget(
+                    categoryId: $request->category_budget_id,
+                    outletId: $request->outlet_id, // For PER_OUTLET budget
+                    currentAmount: $totalAmount,
+                    dateFrom: $dateFrom,
+                    dateTo: $dateTo
+                );
+                
+                if (!$validation['valid']) {
+                    DB::rollBack();
+                    
+                    // Get category and outlet info for better error message
+                    $categoryName = $category->name ?? 'Unknown';
+                    $outletName = 'All Outlets';
+                    if ($request->outlet_id && $category->isPerOutletBudget()) {
+                        $outlet = Outlet::find($request->outlet_id);
+                        $outletName = $outlet ? $outlet->nama_outlet : 'Unknown';
+                    }
+                    
+                    // Format error message with details
+                    $budgetInfo = $validation['budget_info'] ?? [];
+                    $budgetLimit = $budgetInfo['budget_type'] === 'PER_OUTLET' 
+                        ? ($budgetInfo['outlet_budget'] ?? 0)
+                        : ($budgetInfo['category_budget'] ?? 0);
+                    $usedAmount = $budgetInfo['budget_type'] === 'PER_OUTLET'
+                        ? ($budgetInfo['outlet_used_amount'] ?? 0)
+                        : ($budgetInfo['category_used_amount'] ?? 0);
+                    
+                    $errorMessage = "Transaksi ditolak! Budget untuk kategori '{$categoryName}'";
+                    if ($category->isPerOutletBudget()) {
+                        $errorMessage .= " di outlet '{$outletName}'";
+                    }
+                    $errorMessage .= " telah terlampaui.\n\n";
+                    $errorMessage .= "📊 Detail Budget:\n";
+                    $errorMessage .= "• Budget yang ditetapkan: Rp " . number_format($budgetLimit, 0, ',', '.') . "\n";
+                    $errorMessage .= "• Sudah Digunakan: Rp " . number_format($usedAmount, 0, ',', '.') . "\n";
+                    $errorMessage .= "• Transaksi Baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n";
+                    $errorMessage .= "• Total Setelah Transaksi Baru: Rp " . number_format($budgetInfo['total_with_current'] ?? ($usedAmount + $totalAmount), 0, ',', '.') . "\n";
+                    $errorMessage .= "• Kelebihan: Rp " . number_format(($budgetInfo['total_with_current'] ?? ($usedAmount + $totalAmount)) - $budgetLimit, 0, ',', '.');
+                    
+                    return response()->json([
+                        'message' => $errorMessage
+                    ], 422);
+                }
+                
+                // OLD CODE - DEPRECATED (keeping for reference, can be removed later)
+                /*
                 if ($category->isGlobalBudget()) {
                     // GLOBAL BUDGET: Calculate across all outlets
                     // Get PR IDs in this category for the month
@@ -415,6 +466,8 @@ class RetailNonFoodController extends Controller
                         ], 422);
                     }
                 }
+                */
+                // END OF OLD CODE - DEPRECATED
             }
 
             // Cek total transaksi hari ini

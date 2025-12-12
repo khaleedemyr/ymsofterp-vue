@@ -497,7 +497,7 @@
                             <span v-else>exceeded</span>
                           </div>
                           <div class="text-xs text-gray-500">
-                            {{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% used
+                            {{ getPercentage(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% used
                           </div>
                         </div>
                       </div>
@@ -513,8 +513,8 @@
                         <!-- Used Budget -->
                         <div class="bg-green-50 rounded-lg p-3">
                           <div class="text-xs text-gray-500 mb-1">Used Budget</div>
-                          <div class="text-lg font-bold text-green-600">{{ formatCurrency((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0)) }}</div>
-                          <div class="text-xs text-gray-500">{{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% of allocated</div>
+                          <div class="text-lg font-bold text-green-600">{{ formatCurrency(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0)) }}</div>
+                          <div class="text-xs text-gray-500">{{ getPercentage(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}% of allocated</div>
                         </div>
                         
                         <!-- Remaining Budget -->
@@ -569,13 +569,13 @@
                       <div class="mt-3">
                         <div class="flex justify-between text-xs text-gray-600 mb-1">
                           <span>Budget Usage</span>
-                          <span>{{ getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}%</span>
+                          <span>{{ getPercentage(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit) }}%</span>
                         </div>
                         <div class="w-full bg-gray-200 rounded-full h-2">
                           <div 
                             class="h-2 rounded-full transition-all duration-300"
-                            :class="getProgressBarColor((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit)"
-                            :style="{ width: `${Math.min(getPercentage((outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit), 100)}%` }"
+                            :class="getProgressBarColor(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit)"
+                            :style="{ width: `${Math.min(getPercentage(outlet.used_amount || (outlet.paid_amount || 0) + (outlet.unpaid_amount || 0), outlet.budget_limit), 100)}%` }"
                           ></div>
                         </div>
                       </div>
