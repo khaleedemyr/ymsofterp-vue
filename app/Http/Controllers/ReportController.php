@@ -3875,6 +3875,26 @@ class ReportController extends Controller
         $perPage = $request->get('per_page', 25);
         $logs = $query->orderByDesc('al.created_at')->paginate($perPage)->withQueryString();
 
+        // For API requests, return JSON
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'logs' => $logs,
+                'users' => $users,
+                'activityTypes' => $activityTypes,
+                'modules' => $modules,
+                'filters' => [
+                    'user_id' => $request->user_id,
+                    'activity_type' => $request->activity_type,
+                    'module' => $request->module,
+                    'date_from' => $request->date_from,
+                    'date_to' => $request->date_to,
+                    'search' => $request->search,
+                    'per_page' => $perPage,
+                ]
+            ]);
+        }
+
         return Inertia::render('Report/ActivityLog', [
             'logs' => $logs,
             'users' => $users,

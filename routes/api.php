@@ -420,6 +420,9 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/roles', [\App\Http\Controllers\RoleController::class, 'store'])->name('api.approval-app.roles.store');
         Route::put('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'update'])->name('api.approval-app.roles.update');
         Route::delete('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'destroy'])->name('api.approval-app.roles.destroy');
+        
+        // Activity Log Report routes
+        Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');
     });
 });
 
