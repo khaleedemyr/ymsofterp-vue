@@ -1,108 +1,105 @@
-# Setup Firebase Cloud Messaging HTTP v1 API
+# Setup FCM HTTP v1 API untuk Push Notification
 
-## ⚠️ Legacy API Sudah Deprecated!
+## Masalah
+Legacy FCM API (`https://fcm.googleapis.com/fcm/send`) sudah deprecated dan mengembalikan error 404.
+Error yang muncul:
+```
+FCM 404 Error - Legacy FCM API might be disabled for this project
+```
 
-Cloud Messaging API (Legacy) sudah **tidak bisa digunakan lagi** (disabled dan deprecated). Kita **WAJIB** migrasi ke **HTTP v1 API** yang menggunakan **Service Account JSON**.
+## Solusi
+Gunakan **FCM HTTP v1 API** dengan Service Account JSON.
 
-## Step 1: Download Service Account JSON
+## Langkah Setup
 
-1. **Buka Firebase Console**
-   - https://console.firebase.google.com/
-   - Login dan pilih project Firebase Anda
+### 1. Download Service Account JSON dari Firebase Console
 
-2. **Buka Project Settings**
-   - Klik Settings (gear icon) di kiri atas
-   - Pilih "Project settings"
-   - Klik tab **"Service accounts"**
+1. Buka [Firebase Console](https://console.firebase.google.com/)
+2. Pilih project: **justusgroup-46e18**
+3. Klik **Settings (⚙️)** > **Project settings**
+4. Tab **Service accounts**
+5. Klik **Generate new private key**
+6. Download file JSON (contoh: `justusgroup-46e18-firebase-adminsdk-xxxxx.json`)
 
-3. **Generate New Private Key**
-   - Di bagian "Firebase Admin SDK", klik **"Generate new private key"**
-   - Akan muncul dialog warning, klik **"Generate key"**
-   - File JSON akan ter-download (contoh: `your-project-firebase-adminsdk-xxxxx.json`)
+### 2. Simpan Service Account JSON
 
-4. **Simpan File JSON**
-   - Simpan file JSON di folder `storage/app/` 
-   - Contoh nama: `storage/app/firebase-service-account.json`
-   - **⚠️ PENTING: JANGAN commit file ini ke Git!**
-   - Tambahkan ke `.gitignore`:
-     ```
-     /storage/app/firebase-service-account.json
-     /storage/app/*-firebase-adminsdk-*.json
-     ```
+Simpan file JSON ke folder `storage/app/` di backend:
+```
+storage/app/firebase-service-account.json
+```
 
-5. **Ambil Project ID**
-   - Buka file JSON yang di-download
-   - Cari field `project_id` (contoh: `"project_id": "my-project-12345"`)
-   - Copy project_id tersebut
+Atau folder lain yang aman (jangan commit ke git!).
 
-## Step 2: Update .env
+### 3. Update .env File
 
 Tambahkan konfigurasi berikut di `.env`:
 
 ```env
-# Firebase HTTP v1 API (REQUIRED - Legacy API sudah deprecated)
+# FCM HTTP v1 API Configuration (Recommended)
 FCM_SERVICE_ACCOUNT_PATH=firebase-service-account.json
-FCM_PROJECT_ID=your-project-id-here
+FCM_PROJECT_ID=justusgroup-46e18
 FCM_USE_V1_API=true
+
+# Legacy FCM API (Deprecated - tidak digunakan lagi)
+# FCM_SERVER_KEY=... (tidak perlu jika sudah pakai V1 API)
 ```
 
-**Contoh:**
-```env
-FCM_SERVICE_ACCOUNT_PATH=firebase-service-account.json
-FCM_PROJECT_ID=ym-member-app-12345
-FCM_USE_V1_API=true
-```
+### 4. Verifikasi Konfigurasi
 
-**Catatan:**
-- `FCM_SERVICE_ACCOUNT_PATH` adalah path relatif dari `storage/app/`
-- Jika file ada di `storage/app/firebase-service-account.json`, maka path-nya: `firebase-service-account.json`
-- `FCM_PROJECT_ID` bisa dilihat di file JSON (field `project_id`) atau di Firebase Console
-
-## Step 3: Clear Config & Test
-
-Setelah update `.env`:
-
+Test dengan command:
 ```bash
-php artisan config:clear
-php artisan cache:clear
+php artisan test:notification-push 26
 ```
 
-Test dengan:
+Cek log untuk memastikan menggunakan V1 API:
 ```bash
-php artisan fcm:test --member_id=1
+tail -f storage/logs/laravel.log | grep "FCM V1"
 ```
 
-## Cara Kerja HTTP v1 API:
+## Catatan Penting
 
-1. **Generate OAuth 2.0 Access Token**
-   - Baca Service Account JSON
-   - Generate JWT dengan private key
-   - Exchange JWT untuk access token via Google OAuth2 API
+1. **Legacy API sudah deprecated**: 
+   - Endpoint `https://fcm.googleapis.com/fcm/send` tidak bisa digunakan lagi
+   - Server Key tidak valid untuk project baru
+   - Harus menggunakan HTTP v1 API
 
-2. **Send Notification**
-   - Gunakan access token untuk authenticate
-   - Endpoint: `https://fcm.googleapis.com/v1/projects/{project_id}/messages:send`
-   - Format payload berbeda dengan Legacy API
+2. **Service Account JSON**:
+   - File ini berisi credentials untuk authenticate ke Firebase
+   - Jangan commit ke git (tambahkan ke `.gitignore`)
+   - Simpan di folder yang aman
 
-3. **Auto Fallback**
-   - Jika HTTP v1 API gagal, akan fallback ke Legacy API (jika masih ada server key)
-   - Tapi karena Legacy sudah deprecated, sebaiknya pastikan HTTP v1 API bekerja
+3. **Project ID**:
+   - Dari `google-services.json`: `justusgroup-46e18`
+   - Harus sama dengan project di Firebase Console
 
 ## Troubleshooting
 
 ### Error: Service Account file not found
-- Pastikan file JSON sudah di-copy ke `storage/app/`
-- Pastikan path di `.env` benar (relatif dari `storage/app/`)
+- Pastikan path di `.env` benar
+- Pastikan file ada di `storage/app/`
+- Cek permission file (harus bisa dibaca)
 
-### Error: Invalid private key
-- Pastikan file JSON lengkap dan tidak corrupt
-- Pastikan private key di JSON masih valid
+### Error: Invalid Service Account JSON
+- Pastikan file JSON valid
+- Pastikan file dari Firebase Console (bukan file lain)
+- Cek format JSON
 
-### Error: Project ID not found
-- Pastikan `FCM_PROJECT_ID` di `.env` sesuai dengan `project_id` di JSON
-- Bisa cek di Firebase Console > Project Settings > General
+### Error: Project ID mismatch
+- Pastikan `FCM_PROJECT_ID` sama dengan project di Firebase Console
+- Dari `google-services.json`: `justusgroup-46e18`
 
-### Error: Access token failed
-- Pastikan Service Account masih aktif
-- Cek permission Service Account di Google Cloud Console
+### Push notification masih gagal
+- Cek log untuk error detail
+- Pastikan Service Account memiliki permission "Firebase Cloud Messaging API Admin"
+- Pastikan device token valid (dari mobile app)
 
+## Alternatif (Jika Service Account Tidak Tersedia)
+
+Jika tidak bisa setup Service Account, bisa:
+1. Gunakan Firebase Admin SDK (lebih kompleks)
+2. Atau tunggu sampai Firebase mengaktifkan kembali Legacy API (tidak disarankan)
+
+Tapi **disarankan** untuk setup Service Account karena:
+- Legacy API sudah deprecated
+- V1 API lebih reliable
+- V1 API mendukung fitur lebih banyak

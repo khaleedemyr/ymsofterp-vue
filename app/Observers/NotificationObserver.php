@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\Notification;
 use App\Services\FCMService;
+use App\Services\FCMV1Service;
 use App\Models\WebDeviceToken;
 use App\Models\EmployeeDeviceToken;
 use App\Models\MemberAppsMember;
@@ -13,10 +14,46 @@ use Illuminate\Support\Facades\Log;
 class NotificationObserver
 {
     protected $fcmService;
+    protected $fcmV1Service;
 
     public function __construct(FCMService $fcmService)
     {
         $this->fcmService = $fcmService;
+        // Try to initialize V1 service for employee devices
+        try {
+            $this->fcmV1Service = new FCMV1Service();
+        } catch (\Exception $e) {
+            Log::debug('FCM V1 Service not available, will use Legacy API', [
+                'error' => $e->getMessage(),
+            ]);
+            $this->fcmV1Service = null;
+        }
+    }
+    
+    /**
+     * Send to employee devices using V1 API if available, otherwise Legacy API
+     */
+    protected function sendToEmployeeDevices($deviceTokens, $title, $message, $data, $imageUrl)
+    {
+        // Try V1 API first (recommended - doesn't require Server Key)
+        if ($this->fcmV1Service) {
+            try {
+                // Extract tokens from array format
+                $tokens = array_map(function($token) {
+                    return is_array($token) ? $token['token'] : $token;
+                }, $deviceTokens);
+                
+                return $this->fcmV1Service->sendToMultipleDevices($tokens, $title, $message, $data, $imageUrl);
+            } catch (\Exception $e) {
+                Log::warning('FCM V1 API failed for employee devices, falling back to Legacy API', [
+                    'error' => $e->getMessage(),
+                ]);
+                // Fall through to Legacy API
+            }
+        }
+        
+        // Fallback to Legacy API (may fail with 404 if deprecated)
+        return $this->fcmService->sendToMultipleDevices($deviceTokens, $title, $message, $data, $imageUrl);
     }
 
     /**
@@ -118,14 +155,9 @@ class NotificationObserver
             }
 
             // Send to employee devices (approval app)
+            // Use V1 API (Legacy API is deprecated and returns 404)
             if (!empty($employeeDeviceTokens)) {
-                $employeeResult = $this->fcmService->sendToMultipleDevices(
-                    $employeeDeviceTokens,
-                    $title,
-                    $message,
-                    $data,
-                    null // imageUrl
-                );
+                $employeeResult = $this->sendToEmployeeDevices($employeeDeviceTokens, $title, $message, $data, null);
                 $totalSuccess += $employeeResult['success_count'] ?? 0;
                 $totalFailed += $employeeResult['failed_count'] ?? 0;
             }
