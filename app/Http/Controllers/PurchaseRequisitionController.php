@@ -1489,9 +1489,23 @@ class PurchaseRequisitionController extends Controller
     /**
      * Reject purchase requisition
      */
-    public function reject(Request $request, PurchaseRequisition $purchaseRequisition)
+    public function reject(Request $request, $purchaseRequisition)
     {
+        // Handle both route model binding (web) and ID parameter (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            // If it's a string ID from route model binding that failed
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        }
+        
         if ($purchaseRequisition->status !== 'SUBMITTED') {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only submitted purchase requisitions can be rejected.'
+                ], 400);
+            }
             return back()->withErrors(['error' => 'Only submitted purchase requisitions can be rejected.']);
         }
 
@@ -1513,6 +1527,12 @@ class PurchaseRequisitionController extends Controller
                     ->get();
                 
                 if ($pendingFlows->isEmpty()) {
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No pending approvals found.'
+                        ], 400);
+                    }
                     return back()->withErrors(['error' => 'No pending approvals found.']);
                 }
                 
@@ -1532,6 +1552,12 @@ class PurchaseRequisitionController extends Controller
                     ->first();
                 
                 if (!$currentApprovalFlow) {
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'You are not authorized to reject this purchase requisition.'
+                        ], 403);
+                    }
                     return back()->withErrors(['error' => 'You are not authorized to reject this purchase requisition.']);
                 }
                 
@@ -1550,9 +1576,22 @@ class PurchaseRequisitionController extends Controller
             // Send notification to creator that PR was rejected
             $this->sendNotificationToCreator($purchaseRequisition, 'rejected');
             
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Purchase Requisition rejected successfully.'
+                ]);
+            }
+            
             return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
                            ->with('success', 'Purchase Requisition rejected.');
         } catch (\Exception $e) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to reject purchase requisition: ' . $e->getMessage()
+                ], 500);
+            }
             return back()->withErrors(['error' => 'Failed to reject purchase requisition: ' . $e->getMessage()]);
         }
     }
