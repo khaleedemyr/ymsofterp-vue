@@ -3482,21 +3482,17 @@ const submitForm = async () => {
   
   // For kasbon mode, prepare kasbon data
   if (form.mode === 'kasbon') {
-    // Create a single item from kasbon_amount and kasbon_reason
-    formData.items = [{
-      item_name: `Kasbon - ${form.kasbon_reason.substring(0, 50)}${form.kasbon_reason.length > 50 ? '...' : ''}`,
-      qty: 1,
-      unit: 'pcs',
-      unit_price: form.kasbon_amount,
-      subtotal: form.kasbon_amount
-    }]
+    // Backend expects kasbon_amount and kasbon_reason directly
+    // Keep kasbon_amount and kasbon_reason in formData for backend processing
+    formData.kasbon_amount = form.kasbon_amount || 0
+    formData.kasbon_reason = form.kasbon_reason || ''
     
-    // Store kasbon_reason in description
+    // Store kasbon_reason in description as well
     formData.description = form.kasbon_reason
     
-    // Clear kasbon specific fields from formData
-    delete formData.kasbon_amount
-    delete formData.kasbon_reason
+    // Backend will create the item from kasbon_amount and kasbon_reason
+    // So we don't need to create items array here
+    formData.items = []
   } else if (form.mode === 'travel_application') {
     // Flatten travel items and generate item_name from type + name/notes
     formData.items = form.travel_items.map(item => {
