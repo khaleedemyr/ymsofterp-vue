@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use App\Services\NotificationService;
 
 class ActionPlanController extends Controller
 {
@@ -122,15 +123,13 @@ class ActionPlanController extends Controller
                 // Skip jika user adalah pembuat action plan
                 if ($userId == $user->id) continue;
 
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $request->task_id,
                     'type' => 'action_plan_created',
                     'message' => 'Action plan baru telah dibuat untuk task #' . $request->task_id,
                     'url' => '/maintenance-order/' . $request->task_id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

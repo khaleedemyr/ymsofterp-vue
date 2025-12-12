@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MaintenanceTask;
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -67,15 +68,13 @@ class MaintenanceTaskController extends Controller
 
         // Kirim notifikasi ke semua member dan commenter (termasuk user yang memindahkan task)
         foreach ($notifyUsers as $userId) {
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'task_id' => $task->id,
                 'type' => 'task_status_changed',
                 'message' => "Task {$task->task_number} - {$task->title} di outlet {$outlet->nama_outlet} telah dipindahkan dari {$statusMessages[$oldStatus]} ke {$statusMessages[$request->status]} oleh {$user->nama_lengkap}",
                 'url' => config('app.url') . '/maintenance-order/' . $task->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
 
@@ -102,15 +101,13 @@ class MaintenanceTaskController extends Controller
                 $message .= "2. Lakukan proses bidding jika belum ada supplier tetap\n\n";
                 $message .= "Diajukan oleh: {$user->nama_lengkap}";
 
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $task->id,
                     'type' => 'pr_approved_for_po',
                     'message' => $message,
                     'url' => config('app.url') . '/maintenance-order/' . $task->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
         }
@@ -247,15 +244,13 @@ class MaintenanceTaskController extends Controller
             // Skip jika user adalah yang membuat PR
             if ($userId == auth()->id()) continue;
 
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'task_id' => $taskId,
                 'type' => 'pr_created',
                 'message' => "PR {$request->pr_number} telah dibuat untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet}",
                 'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
 
@@ -266,15 +261,13 @@ class MaintenanceTaskController extends Controller
             ->pluck('id');
 
         foreach ($chiefEngineerings as $userId) {
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'task_id' => $taskId,
                 'type' => 'pr_approval_request',
                 'message' => "PR {$request->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} membutuhkan persetujuan Anda",
                 'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
 
@@ -360,15 +353,13 @@ class MaintenanceTaskController extends Controller
             // Skip jika user adalah yang menghapus PR
             if ($userId == auth()->id()) continue;
 
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'task_id' => $taskId,
                 'type' => 'pr_deleted',
                 'message' => "PR {$pr->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} telah dihapus",
                 'url' => config('app.url') . '/maintenance-order/' . $taskId,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
 
@@ -578,15 +569,13 @@ class MaintenanceTaskController extends Controller
             $supplierList = implode(', ', $supplierNames);
             foreach ($notifyUsers as $userId) {
                 if ($userId == auth()->id()) continue;
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $task_id,
                     'type' => 'bidding_completed',
                     'message' => "Bidding untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} telah selesai. Pemenang bidding: {$supplierList}. Silakan review dan approve PO yang telah dibuat.",
                     'url' => config('app.url') . '/maintenance-order/' . $task_id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 
@@ -717,15 +706,13 @@ class MaintenanceTaskController extends Controller
             $notifyUsers = $taskMembers->merge($commentUsers)->unique();
             $user = auth()->user();
             foreach ($notifyUsers as $userId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $id,
                     'type' => 'task_deleted',
                     'message' => "Task {$task->task_number} - {$task->title} telah dihapus oleh {$user->nama_lengkap}",
                     'url' => config('app.url') . '/maintenance-order',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

@@ -15,6 +15,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\RetailNonFood;
 use App\Services\BudgetCalculationService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -1707,15 +1708,13 @@ class PurchaseRequisitionController extends Controller
             
             // Send notifications
             foreach ($notifyUserIds as $userId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $purchaseRequisition->id,
                     'type' => 'purchase_requisition_comment',
                     'message' => $message,
                     'url' => config('app.url') . '/purchase-requisitions/' . $purchaseRequisition->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
             
@@ -1980,15 +1979,13 @@ class PurchaseRequisitionController extends Controller
             $message .= "Silakan segera lakukan review dan approval.";
 
             // Insert notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approver->id,
                 'task_id' => $purchaseRequisition->id,
                 'type' => 'purchase_requisition_approval',
                 'message' => $message,
                 'url' => config('app.url') . '/purchase-requisitions/' . $purchaseRequisition->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
 
@@ -2044,15 +2041,13 @@ class PurchaseRequisitionController extends Controller
             }
 
             // Insert notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $creator->id,
                 'task_id' => $purchaseRequisition->id,
                 'type' => $type,
                 'message' => $message,
                 'url' => config('app.url') . '/purchase-requisitions/' . $purchaseRequisition->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
 

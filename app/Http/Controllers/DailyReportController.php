@@ -17,6 +17,7 @@ use App\Models\Ticket;
 use App\Models\TicketCategory;
 use App\Models\TicketPriority;
 use App\Models\TicketStatus;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -1007,15 +1008,13 @@ class DailyReportController extends Controller
             $divisi = \App\Models\Divisi::find($ticket->divisi_id);
 
             foreach ($users as $user) {
-                \DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $user->id,
                     'task_id' => $ticket->id,
                     'type' => 'ticket_created',
                     'message' => "Ticket baru telah dibuat dari Daily Report:\n\nNo: {$ticket->ticket_number}\nJudul: {$ticket->title}\nDivisi: {$divisi->nama_divisi}\nOutlet: {$outlet->nama_outlet}\nDibuat oleh: {$creator->nama_lengkap}",
                     'url' => config('app.url') . '/tickets/' . $ticket->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
             \Log::info('Ticket created notifications sent from daily report', ['ticket_id' => $ticket->id, 'ticket_number' => $ticket->ticket_number, 'divisi_id' => $ticket->divisi_id, 'notified_users_count' => $users->count()]);

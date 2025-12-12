@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\TestResult;
 use App\Models\TestAnswer;
 use App\Models\SoalPertanyaan;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -809,14 +810,12 @@ class EnrollTestController extends Controller
                 $message .= "\nSilakan login ke sistem untuk mengikuti test.";
 
                 // Insert notifikasi ke database
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $enrollTest->user_id,
                     'type' => 'enroll_test',
                     'message' => $message,
                     'url' => config('app.url') . '/my-tests',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

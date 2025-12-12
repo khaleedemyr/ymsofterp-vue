@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Services\NotificationService;
 
 class LiveSupportController extends Controller
 {
@@ -727,15 +728,13 @@ class LiveSupportController extends Controller
 
             // Send notification to each support user
             foreach ($supportUsers as $supportUserId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $supportUserId,
                     'task_id' => $conversationId, // Using task_id field to store conversation_id
                     'type' => 'live_support_conversation',
                     'message' => $message,
                     'url' => config('app.url') . '/support/admin',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 
@@ -813,15 +812,13 @@ class LiveSupportController extends Controller
 
             // Send notification to each support user
             foreach ($supportUsers as $supportUserId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $supportUserId,
                     'task_id' => $conversationId, // Using task_id field to store conversation_id
                     'type' => 'live_support_chat',
                     'message' => $notificationMessage,
                     'url' => config('app.url') . '/support/admin',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

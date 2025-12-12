@@ -9,6 +9,7 @@ use App\Models\PurchaseRequisitionFoodItem;
 use App\Models\Supplier;
 use App\Models\Item;
 use App\Models\Unit;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -951,7 +952,6 @@ class PurchaseOrderFoodsController extends Controller
 
     // Helper untuk insert notifikasi
     private function sendNotification($userIds, $type, $title, $message, $url) {
-        $now = now();
         $data = [];
         foreach ($userIds as $uid) {
             $data[] = [
@@ -961,11 +961,9 @@ class PurchaseOrderFoodsController extends Controller
                 'message' => $message,
                 'url' => $url,
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        \DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     public function show($id)

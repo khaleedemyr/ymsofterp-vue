@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
+use App\Services\NotificationService;
 
 class MaintenanceCommentController extends Controller
 {
@@ -96,15 +97,13 @@ class MaintenanceCommentController extends Controller
             $notifUserIds = array_unique(array_merge($commenterIds, $memberIds));
             foreach ($notifUserIds as $uid) {
                 if ($uid == Auth::id()) continue; // Tidak perlu notif ke diri sendiri
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $uid,
                     'task_id' => $request->task_id,
                     'type' => 'comment',
                     'message' => 'Komentar baru oleh ' . (Auth::user()->nama_lengkap ?? Auth::user()->name) . ' pada task: ' . $task->title . ' | No: ' . $task->task_number . ' | Outlet: ' . ($outlet->nama_outlet ?? '-'),
                     'url' => config('app.url') . '/maintenance-order/' . $request->task_id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
 

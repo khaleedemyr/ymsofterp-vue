@@ -9,6 +9,7 @@ use App\Models\Outlet;
 use App\Models\User;
 use App\Models\TrainingReview;
 use App\Models\LmsCourse;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -1478,14 +1479,12 @@ class TrainingScheduleController extends Controller
             \Log::info('Notification message created', ['message_length' => strlen($message)]);
 
             // Insert notification
-            $notificationId = DB::table('notifications')->insertGetId([
+            $notificationId = NotificationService::insertGetId([
                 'user_id' => $participant->id,
                 'type' => 'training_invitation',
                 'message' => $message,
                 'url' => config('app.url') . '/lms/schedules/' . $schedule->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             \Log::info('Participant invitation notification sent successfully', [
@@ -1559,14 +1558,12 @@ class TrainingScheduleController extends Controller
             \Log::info('Notification message created', ['message_length' => strlen($message)]);
 
             // Insert notification
-            $notificationId = DB::table('notifications')->insertGetId([
+            $notificationId = NotificationService::insertGetId([
                 'user_id' => $trainer->id,
                 'type' => 'trainer_invitation',
                 'message' => $message,
                 'url' => config('app.url') . '/lms/schedules/' . $schedule->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             \Log::info('Trainer invitation notification sent successfully', [

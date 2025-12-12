@@ -13,6 +13,7 @@ use App\Models\OutletFoodInventoryCard;
 use App\Models\Outlet;
 use App\Models\Item;
 use App\Models\User;
+use App\Services\NotificationService;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
@@ -410,6 +411,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $typeLabel = $adjustment->type === 'in' ? 'Stock In' : 'Stock Out';
             
             // Create notification message
+            $title = "Outlet Stock Adjustment Approval";
             $message = "Outlet Stock Adjustment baru memerlukan persetujuan Anda:\n\n";
             $message .= "No: {$adjustment->number}\n";
             $message .= "Tanggal: " . date('d/m/Y', strtotime($adjustment->date)) . "\n";
@@ -420,16 +422,15 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $message .= "Diajukan oleh: {$creatorName}\n\n";
             $message .= "Silakan segera lakukan review dan approval.";
             
-            // Insert notification (using same format as Purchase Requisition)
-            DB::table('notifications')->insert([
+            // Create notification using NotificationService (this will trigger NotificationObserver for push notification)
+            NotificationService::create([
                 'user_id' => $nextApprovalFlow->approver_id,
                 'task_id' => $adjustmentId,
                 'type' => 'outlet_stock_adjustment_approval',
+                'title' => $title,
                 'message' => $message,
                 'url' => config('app.url') . '/outlet-food-inventory-adjustment/' . $adjustmentId,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         } catch (\Exception $e) {
             \Log::error('Failed to send notification to next approver', [

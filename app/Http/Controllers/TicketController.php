@@ -11,6 +11,7 @@ use App\Models\Departemen;
 use App\Models\Divisi;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -672,15 +673,13 @@ class TicketController extends Controller
             $divisi = \App\Models\Divisi::find($ticket->divisi_id);
 
             foreach ($users as $user) {
-                \DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $user->id,
                     'task_id' => $ticket->id,
                     'type' => 'ticket_created',
                     'message' => "Ticket baru telah dibuat:\n\nNo: {$ticket->ticket_number}\nJudul: {$ticket->title}\nDivisi: {$divisi->nama_divisi}\nOutlet: {$outlet->nama_outlet}\nDibuat oleh: {$creator->nama_lengkap}",
                     'url' => config('app.url') . '/tickets/' . $ticket->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
 
@@ -740,15 +739,13 @@ class TicketController extends Controller
             $message .= "Dari: {$commenter->nama_lengkap}";
 
             foreach ($notifyUserIds as $userId) {
-                \DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $ticket->id,
                     'type' => 'ticket_comment',
                     'message' => $message,
                     'url' => config('app.url') . '/tickets/' . $ticket->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
 

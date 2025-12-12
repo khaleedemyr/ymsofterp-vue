@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DailyReport;
 use App\Models\DailyReportComment;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -227,14 +228,12 @@ class DailyReportCommentController extends Controller
 
             // Send notifications
             foreach ($notifyUsers as $userId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'type' => 'daily_report_comment',
                     'message' => $message,
                     'url' => config('app.url') . '/daily-report/' . $report->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

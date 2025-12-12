@@ -12,6 +12,7 @@ use App\Models\FoodInventoryItem;
 use App\Models\FoodInventoryCard;
 use App\Models\Warehouse;
 use App\Models\Item;
+use App\Services\NotificationService;
 
 class FoodInventoryAdjustmentController extends Controller
 {
@@ -92,14 +93,12 @@ class FoodInventoryAdjustmentController extends Controller
                 ->where('status', 'A')
                 ->pluck('id');
             foreach ($notifUsers as $uid) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $uid,
                     'type' => 'stock_adjustment_approval',
                     'message' => "Stock Adjustment #$number menunggu approval",
                     'url' => '/food-inventory-adjustment/' . $headerId,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
             DB::commit();

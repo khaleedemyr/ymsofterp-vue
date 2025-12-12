@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Services\NotificationService;
 
 class MaintenancePurchaseOrderInvoiceController extends Controller
 {
@@ -61,15 +62,13 @@ class MaintenancePurchaseOrderInvoiceController extends Controller
         $notifyUsers = $memberIds->merge($commenterIds)->unique();
         $notifMsg = "Invoice telah diupload oleh {$user->nama_lengkap} untuk task {$task->task_number} - {$task->title} (PO: {$po->po_number}, Outlet: {$outlet->nama_outlet})";
         foreach ($notifyUsers as $uid) {
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $uid,
                 'task_id' => $po->task_id,
                 'type' => 'upload_invoice',
                 'message' => $notifMsg,
                 'url' => '/maintenance-order/' . $po->task_id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
         }
         return response()->json($invoice, 201);

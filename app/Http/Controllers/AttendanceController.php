@@ -7,6 +7,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\LeaveType;
+use App\Services\NotificationService;
 
 class AttendanceController extends Controller
 {
@@ -875,15 +876,13 @@ class AttendanceController extends Controller
 
             // Send notification to first approver only (sequential flow)
             $firstApprover = $validApprovers->first();
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $firstApprover->id,
                 'type' => 'leave_approval_request',
                 'message' => "Permohonan izin/cuti baru dari {$user->nama_lengkap} ({$leaveType->name}) untuk periode {$request->date_from} - {$request->date_to} membutuhkan persetujuan Anda (Level 1/" . count($approvers) . ").",
                 'url' => config('app.url') . '/home',
                 'is_read' => 0,
                 'approval_id' => $approvalRequestId,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
             
             return response()->json([
@@ -1107,29 +1106,25 @@ class AttendanceController extends Controller
                     
                 // Notify supervisor approver
                 if ($approvalRequest && $approvalRequest->approver_id) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $approvalRequest->approver_id,
                         'type' => 'leave_cancelled',
                         'message' => "Permohonan izin/cuti dari {$user->nama_lengkap} untuk periode {$leaveRequest->date_from} - {$leaveRequest->date_to} telah dibatalkan.",
                         'url' => config('app.url') . '/home',
                         'is_read' => 0,
                         'approval_id' => $leaveRequest->approval_request_id,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
                 
                 // Notify HRD approver if HRD approved
                 if ($leaveRequest->status === 'approved' && $approvalRequest && $approvalRequest->hrd_approver_id) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $approvalRequest->hrd_approver_id,
                         'type' => 'leave_cancelled',
                         'message' => "Permohonan izin/cuti dari {$user->nama_lengkap} untuk periode {$leaveRequest->date_from} - {$leaveRequest->date_to} telah dibatalkan.",
                         'url' => config('app.url') . '/home',
                         'is_read' => 0,
                         'approval_id' => $leaveRequest->approval_request_id,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
             }

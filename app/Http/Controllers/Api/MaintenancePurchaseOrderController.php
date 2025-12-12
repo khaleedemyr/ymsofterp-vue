@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MaintenanceTask;
 use App\Models\MaintenancePurchaseOrder;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -287,7 +288,6 @@ class MaintenancePurchaseOrderController extends Controller
 
         // Helper untuk insert notifikasi
         $insertNotif = function($userIds, $type, $message) use ($task, $notifUrl) {
-            $now = now();
             $rows = [];
             foreach ($userIds as $uid) {
                 $rows[] = [
@@ -297,11 +297,9 @@ class MaintenancePurchaseOrderController extends Controller
                     'message' => $message,
                     'url' => $notifUrl,
                     'is_read' => 0,
-                    'created_at' => $now,
-                    'updated_at' => $now,
                 ];
             }
-            if ($rows) DB::table('notifications')->insert($rows);
+            if ($rows) NotificationService::createMany($rows);
         };
 
         // Notifikasi sesuai flow
@@ -354,15 +352,13 @@ class MaintenancePurchaseOrderController extends Controller
             $financeManagerIds = DB::table('users')->where('id_jabatan', 160)->where('status', 'A')->pluck('id')->toArray();
             $notifMsg = "PO $poNumber untuk task $taskNumber - $taskTitle di outlet $outlet telah di-approve dan siap untuk payment.";
             foreach ($financeManagerIds as $fmId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $fmId,
                     'task_id' => $po->task_id,
                     'type' => 'po_approved_for_payment',
                     'message' => $notifMsg,
                     'url' => config('app.url') . '/maintenance-order/' . $po->task_id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
         }

@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use App\Services\ExtraOffService;
 use App\Services\LeaveManagementService;
 use App\Services\HolidayAttendanceService;
+use App\Services\NotificationService;
 
 class ApprovalController extends Controller
 {
@@ -381,14 +382,12 @@ class ApprovalController extends Controller
                 }
                     
                 foreach ($hrdUsers as $hrdUser) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $hrdUser->id,
                         'type' => 'leave_hrd_approval_request',
                         'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan dan membutuhkan persetujuan HRD Anda.",
                         'url' => config('app.url') . '/home',
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
                 
@@ -431,15 +430,13 @@ class ApprovalController extends Controller
                     ->first();
                 
                 if ($nextApproverUser) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $nextApprover->approver_id,
                         'type' => 'leave_approval_request',
                         'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} membutuhkan persetujuan Anda (Level {$nextApprover->approval_level}/{$totalLevels}).",
                         'url' => config('app.url') . '/home',
                         'is_read' => 0,
                         'approval_id' => $id,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
                 
@@ -455,14 +452,12 @@ class ApprovalController extends Controller
                     ]);
                 
                 // Send notification to user
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $approvalRequest->user_id,
                     'type' => 'leave_approved',
                     'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh {$approver->nama_lengkap} (Level {$currentLevel}/{$totalLevels}). Menunggu persetujuan approver berikutnya.",
                     'url' => config('app.url') . '/attendance',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
                 
             } else {
@@ -503,26 +498,22 @@ class ApprovalController extends Controller
                 
                 // Send notification to all HRD users
                 foreach ($hrdUsers as $hrdUser) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $hrdUser->id,
                         'type' => 'leave_hrd_approval_request',
                         'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh semua atasan dan membutuhkan persetujuan HRD Anda.",
                         'url' => config('app.url') . '/home',
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
                 
                 // Send notification to user
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $approvalRequest->user_id,
                     'type' => 'leave_approved',
                     'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh semua atasan. Menunggu persetujuan HRD.",
                     'url' => config('app.url') . '/attendance',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 
@@ -664,14 +655,12 @@ class ApprovalController extends Controller
             
             // Kirim notifikasi ke user yang mengajukan
             $approver = auth()->user();
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approvalRequest->user_id,
                 'type' => 'leave_rejected',
                 'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah ditolak oleh atasan ({$approver->nama_lengkap}).",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             DB::commit();
@@ -906,14 +895,12 @@ class ApprovalController extends Controller
             
             // Kirim notifikasi ke user yang mengajukan
             $hrdApprover = auth()->user();
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approvalRequest->user_id,
                 'type' => 'leave_approved',
                 'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh HRD ({$hrdApprover->nama_lengkap}).",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             DB::commit();
@@ -1082,14 +1069,12 @@ class ApprovalController extends Controller
             
             // Kirim notifikasi ke user yang mengajukan
             $hrdApprover = auth()->user();
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approvalRequest->user_id,
                 'type' => 'leave_rejected',
                 'message' => "Permohonan izin/cuti Anda untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah ditolak oleh HRD ({$hrdApprover->nama_lengkap}).",
                 'url' => config('app.url') . '/attendance',
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             DB::commit();

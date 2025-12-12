@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use App\Services\NotificationService;
 
 class MaintenancePurchaseRequisitionController extends Controller
 {
@@ -93,15 +94,13 @@ class MaintenancePurchaseRequisitionController extends Controller
 
         // Send notification to all task members and comment users
         foreach ($notifyUsers as $userId) {
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'task_id' => $pr->task_id,
                 'type' => 'pr_approval',
                 'message' => $message,
                 'url' => config('app.url') . '/maintenance-order/' . $pr->task_id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
 
@@ -123,15 +122,13 @@ class MaintenancePurchaseRequisitionController extends Controller
                     $notifyUsers = $coos->merge($secretaries);
 
                     foreach ($notifyUsers as $userId) {
-                        DB::table('notifications')->insert([
+                        NotificationService::insert([
                             'user_id' => $userId,
                             'task_id' => $pr->task_id,
                             'type' => 'pr_approval',
                             'message' => "PR {$pr->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} menunggu persetujuan Anda",
                             'url' => '/maintenance-order/' . $pr->task_id,
                             'is_read' => 0,
-                            'created_at' => now(),
-                            'updated_at' => now()
                         ]);
                     }
                     break;
@@ -152,15 +149,13 @@ class MaintenancePurchaseRequisitionController extends Controller
                         $notifyUsers = $ceos->merge($secretaries);
 
                         foreach ($notifyUsers as $userId) {
-                            DB::table('notifications')->insert([
+                            NotificationService::insert([
                                 'user_id' => $userId,
                                 'task_id' => $pr->task_id,
                                 'type' => 'pr_approval',
                                 'message' => "PR {$pr->pr_number} untuk task {$task->task_number} - {$task->title} di outlet {$task->nama_outlet} menunggu persetujuan Anda",
                                 'url' => '/maintenance-order/' . $pr->task_id,
                                 'is_read' => 0,
-                                'created_at' => now(),
-                                'updated_at' => now()
                             ]);
                         }
                     }

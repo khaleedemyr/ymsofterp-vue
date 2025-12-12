@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
+use App\Services\NotificationService;
 
 class OutletInternalUseWasteController extends Controller
 {
@@ -2448,20 +2449,14 @@ class OutletInternalUseWasteController extends Controller
                 return;
             }
 
-            // Create notification (assuming you have a notifications table or system)
-            // This is a placeholder - adjust based on your notification system
-            if (DB::getSchemaBuilder()->hasTable('notifications')) {
-                DB::table('notifications')->insert([
-                    'user_id' => $nextApprover->id,
-                    'type' => 'outlet_internal_use_waste_approval',
-                    'title' => 'Approval Category Cost Outlet',
-                    'message' => "Category Cost Outlet dengan tipe {$header->type} dari outlet {$header->nama_outlet} oleh {$header->creator_name} menunggu approval Anda.",
-                    'data' => json_encode(['header_id' => $headerId]),
-                    'read_at' => null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
+            // Create notification
+            NotificationService::insert([
+                'user_id' => $nextApprover->id,
+                'type' => 'outlet_internal_use_waste_approval',
+                'title' => 'Approval Category Cost Outlet',
+                'message' => "Category Cost Outlet dengan tipe {$header->type} dari outlet {$header->nama_outlet} oleh {$header->creator_name} menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
         } catch (\Exception $e) {
             \Log::error('Error sending notification to next approver: ' . $e->getMessage());
         }

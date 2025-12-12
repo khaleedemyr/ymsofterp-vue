@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Holiday;
 use App\Models\Reminder;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 
 class CalendarController extends Controller
@@ -101,14 +102,12 @@ class CalendarController extends Controller
                 $message .= "\nDibuat oleh: {$creator->nama_lengkap}";
 
                 // Insert notifikasi
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'type' => 'reminder_created',
                     'message' => $message,
                     'url' => config('app.url') . '/home', // Redirect ke home page
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

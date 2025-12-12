@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\OutletTransfer;
 use App\Models\OutletTransferItem;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
 
 class OutletTransferController extends Controller
@@ -310,7 +311,6 @@ class OutletTransferController extends Controller
         }
 
         // Kirim notifikasi
-        $now = now();
         $data = [];
         foreach ($users as $userId) {
             $data[] = [
@@ -320,11 +320,9 @@ class OutletTransferController extends Controller
                 'message' => "Outlet Transfer {$transferNumber} ke warehouse {$warehouseName} menunggu approval Anda.",
                 'url' => route('outlet-transfer.show', $transferId),
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     // Method untuk memproses stock transfer setelah approval

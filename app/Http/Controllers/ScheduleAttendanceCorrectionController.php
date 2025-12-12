@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Shift;
+use App\Services\NotificationService;
 use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -240,14 +241,12 @@ class ScheduleAttendanceCorrectionController extends Controller
             
             // Send notification to all HRD users
             foreach ($hrdUsers as $hrdUserId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $hrdUserId,
                     'type' => 'schedule_correction_approval',
                     'message' => "Permohonan koreksi schedule untuk {$schedule->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($schedule->tanggal)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
                     'url' => '/schedule-attendance-correction',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
             
@@ -403,14 +402,12 @@ class ScheduleAttendanceCorrectionController extends Controller
             
             // Send notification to all HRD users
             foreach ($hrdUsers as $hrdUserId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $hrdUserId,
                     'type' => 'manual_attendance_approval',
                     'message' => "Permohonan input absen manual untuk {$user->nama_lengkap} pada tanggal " . date('d/m/Y H:i', strtotime($request->scan_date)) . " membutuhkan persetujuan Anda.",
                     'url' => '/schedule-attendance-correction',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
             
@@ -520,14 +517,12 @@ class ScheduleAttendanceCorrectionController extends Controller
             
             // Send notification to all HRD users
             foreach ($hrdUsers as $hrdUserId) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $hrdUserId,
                     'type' => 'attendance_correction_approval',
                     'message' => "Permohonan koreksi attendance untuk {$oldRecord->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($oldRecord->scan_date)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
                     'url' => '/schedule-attendance-correction',
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
             }
             
@@ -1064,14 +1059,12 @@ class ScheduleAttendanceCorrectionController extends Controller
             }
             
             // Send notification to requester
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approval->requested_by,
                 'type' => 'correction_approved',
                 'message' => "Permohonan koreksi {$approval->type} Anda telah disetujui oleh HRD",
                 'url' => '/schedule-attendance-correction',
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
             
             DB::commit();
@@ -1156,14 +1149,12 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ]);
             
             // Send notification to requester
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approval->requested_by,
                 'type' => 'correction_rejected',
                 'message' => "Permohonan koreksi {$approval->type} Anda ditolak oleh HRD. Alasan: " . $rejectionReason,
                 'url' => '/schedule-attendance-correction',
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
             
             DB::commit();

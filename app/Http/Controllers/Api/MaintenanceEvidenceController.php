@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MaintenanceEvidence;
 use App\Models\MaintenanceEvidencePhoto;
 use App\Models\MaintenanceEvidenceVideo;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -93,15 +94,13 @@ class MaintenanceEvidenceController extends Controller
             // Kirim notifikasi ke semua (kecuali pembuat evidence)
             foreach ($notifyUsers as $userId) {
                 if ($userId == $user->id) continue;
-                \DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $userId,
                     'task_id' => $task->id,
                     'type' => 'add_evidence',
                     'message' => "{$user->nama_lengkap} menambahkan evidence pada task {$task->task_number} - {$task->title} (Outlet: {$outlet->nama_outlet})",
                     'url' => '/maintenance-order/' . $task->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

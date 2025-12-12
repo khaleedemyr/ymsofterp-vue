@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Coaching;
 use App\Models\CoachingApprover;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -185,29 +186,25 @@ class CoachingController extends Controller
                 $creator = auth()->user();
                 
                 foreach ($request->approvers as $index => $approver) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $approver['id'],
                         'task_id' => $coaching->id,
                         'type' => 'coaching_approval_required',
                         'message' => "Coaching baru memerlukan persetujuan Anda:\n\nKaryawan: {$employee->nama_lengkap}\nTanggal Pelanggaran: " . Carbon::parse($request->violation_date)->format('d/m/Y') . "\nDetail: {$request->violation_details}\nLevel Approval: " . ($index + 1) . "\nDibuat oleh: {$creator->nama_lengkap}",
                         'url' => config('app.url') . '/coaching/' . $coaching->id,
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
             }
 
             // Send notification to employee being coached
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $request->employee_id,
                 'task_id' => $coaching->id,
                 'type' => 'coaching_created',
                 'message' => "Anda telah menerima coaching:\n\nTanggal Pelanggaran: " . Carbon::parse($request->violation_date)->format('d/m/Y') . "\nDetail: {$request->violation_details}\nDibuat oleh: {$creator->nama_lengkap}",
                 'url' => config('app.url') . '/coaching/' . $coaching->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             DB::commit();
@@ -522,15 +519,13 @@ class CoachingController extends Controller
             $employee = $coaching->employee;
             $approverUser = User::find($approver->approver_id);
             
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $coaching->employee_id,
                 'task_id' => $coaching->id,
                 'type' => 'coaching_approved',
                 'message' => "Coaching Anda telah disetujui:\n\nLevel Approval: {$approver->approval_level}\nDisetujui oleh: {$approverUser->nama_lengkap}\nKomentar: " . ($request->comments ?: 'Tidak ada komentar'),
                 'url' => config('app.url') . '/coaching/' . $coaching->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             // Check if all approvers have approved
@@ -542,15 +537,13 @@ class CoachingController extends Controller
                 $coaching->update(['status' => 'completed']);
                 
                 // Send notification to employee that coaching is completed
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $coaching->employee_id,
                     'task_id' => $coaching->id,
                     'type' => 'coaching_completed',
                     'message' => "Coaching Anda telah selesai dan disetujui oleh semua pihak:\n\nKaryawan: {$employee->nama_lengkap}\nTanggal Pelanggaran: " . Carbon::parse($coaching->violation_date)->format('d/m/Y') . "\nDetail: {$coaching->violation_details}",
                     'url' => config('app.url') . '/coaching/' . $coaching->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             } else {
                 // Send notification to next approver if exists
@@ -560,15 +553,13 @@ class CoachingController extends Controller
                     ->first();
 
                 if ($nextApprover) {
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $nextApprover->approver_id,
                         'task_id' => $coaching->id,
                         'type' => 'coaching_approval_required',
                         'message' => "Coaching memerlukan persetujuan Anda (Level {$nextApprover->approval_level}):\n\nKaryawan: {$employee->nama_lengkap}\nTanggal Pelanggaran: " . Carbon::parse($coaching->violation_date)->format('d/m/Y') . "\nDetail: {$coaching->violation_details}\nDisetujui sebelumnya oleh: {$approverUser->nama_lengkap}",
                         'url' => config('app.url') . '/coaching/' . $coaching->id,
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
             }
@@ -621,27 +612,23 @@ class CoachingController extends Controller
             $employee = $coaching->employee;
             $approverUser = User::find($approver->approver_id);
             
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $coaching->employee_id,
                 'task_id' => $coaching->id,
                 'type' => 'coaching_rejected',
                 'message' => "Coaching Anda telah ditolak:\n\nLevel Approval: {$approver->approval_level}\nDitolak oleh: {$approverUser->nama_lengkap}\nAlasan: {$request->comments}",
                 'url' => config('app.url') . '/coaching/' . $coaching->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             // Send notification to creator
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $coaching->created_by,
                 'task_id' => $coaching->id,
                 'type' => 'coaching_rejected',
                 'message' => "Coaching yang Anda buat telah ditolak:\n\nKaryawan: {$employee->nama_lengkap}\nLevel Approval: {$approver->approval_level}\nDitolak oleh: {$approverUser->nama_lengkap}\nAlasan: {$request->comments}",
                 'url' => config('app.url') . '/coaching/' . $coaching->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
             return response()->json([

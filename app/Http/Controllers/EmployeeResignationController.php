@@ -6,6 +6,7 @@ use App\Models\EmployeeResignation;
 use App\Models\EmployeeResignationApprovalFlow;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -381,15 +382,13 @@ class EmployeeResignationController extends Controller
             $message .= "Silakan segera lakukan review dan approval.";
 
             // Insert notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approver->id,
                 'task_id' => $resignation->id,
                 'type' => 'employee_resignation_approval',
                 'message' => $message,
                 'url' => config('app.url') . '/employee-resignations/' . $resignation->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
         } catch (\Exception $e) {
@@ -728,15 +727,13 @@ class EmployeeResignationController extends Controller
             }
 
             if ($message) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $creator->id,
                     'task_id' => $resignation->id,
                     'type' => $type,
                     'message' => $message,
                     'url' => config('app.url') . '/employee-resignations/' . $resignation->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
 

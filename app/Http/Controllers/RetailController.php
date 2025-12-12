@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Retail;
 use App\Models\RetailItem;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -139,15 +140,13 @@ class RetailController extends Controller
                     // Skip if user is the creator
                     if ($userId == auth()->id()) continue;
 
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $userId,
                         'task_id' => $request->task_id,
                         'type' => 'retail_created',
                         'message' => $notificationMessage,
                         'url' => '/maintenance-order/' . $request->task_id,
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FoodFloorOrder;
 use App\Models\FoodFloorOrderItem;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -372,7 +373,6 @@ class FoodFloorOrderController extends Controller
 
     // Tambahkan method sendNotification
     private function sendNotification($userIds, $type, $title, $message, $url) {
-        $now = now();
         $data = [];
         foreach ($userIds as $uid) {
             $data[] = [
@@ -382,11 +382,9 @@ class FoodFloorOrderController extends Controller
                 'message' => $message,
                 'url' => $url,
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        \DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     public function approve(Request $request, $id)
@@ -540,7 +538,6 @@ class FoodFloorOrderController extends Controller
         }
 
         // Kirim notifikasi
-        $now = now();
         $data = [];
         foreach ($users as $userId) {
             $data[] = [
@@ -550,11 +547,9 @@ class FoodFloorOrderController extends Controller
                 'message' => "RO Khusus {$orderNumber} dari warehouse {$warehouseName} menunggu approval Anda.",
                 'url' => route('floor-order.show', $orderId),
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        \DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     public function index(Request $request)

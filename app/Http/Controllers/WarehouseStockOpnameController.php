@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\WarehouseStockOpname;
 use App\Models\WarehouseStockOpnameItem;
 use App\Models\WarehouseStockOpnameApprovalFlow;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -811,14 +812,12 @@ class WarehouseStockOpnameController extends Controller
 
         if ($nextFlow) {
             // Create notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $nextFlow->approver_id,
                 'type' => 'warehouse_stock_opname_approval_request',
                 'message' => 'Warehouse Stock Opname ' . $stockOpname->opname_number . ' membutuhkan approval Anda.',
                 'url' => route('warehouse-stock-opnames.show', $stockOpname->id),
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
         }
     }

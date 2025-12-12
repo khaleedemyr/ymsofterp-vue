@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FoodPayment;
 use App\Models\FoodPaymentContraBon;
 use App\Models\ContraBon;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -403,7 +404,6 @@ class FoodPaymentController extends Controller
 
     // Helper method untuk send notification
     private function sendNotification($userIds, $type, $title, $message, $url) {
-        $now = now();
         $data = [];
         foreach ($userIds as $uid) {
             $data[] = [
@@ -413,11 +413,9 @@ class FoodPaymentController extends Controller
                 'message' => $message,
                 'url' => $url,
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     // API: Get pending Food Payment approvals

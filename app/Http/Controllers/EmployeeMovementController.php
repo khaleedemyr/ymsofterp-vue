@@ -6,6 +6,7 @@ use App\Models\EmployeeMovement;
 use App\Models\EmployeeMovementApprovalFlow;
 use App\Models\User;
 use App\Models\ActivityLog;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -1144,15 +1145,13 @@ class EmployeeMovementController extends Controller
                 if ($nextApprover) {
                     $approvalLevel = $this->getApprovalLevel($movement, $nextApprover['id']);
                     
-                    DB::table('notifications')->insert([
+                    NotificationService::insert([
                         'user_id' => $nextApprover['id'],
                         'task_id' => $movement->id,
                         'type' => 'employee_movement_approval',
                         'message' => "Personal Movement untuk {$movement->employee_name} membutuhkan persetujuan {$approvalLevel} Anda.\n\nJenis: " . ucwords(str_replace('_', ' ', $movement->employment_type)) . "\nDibuat oleh: {$creator->nama_lengkap}",
                         'url' => config('app.url') . '/employee-movements/' . $movement->id,
                         'is_read' => 0,
-                        'created_at' => now(),
-                        'updated_at' => now()
                     ]);
                 }
             }
@@ -1463,27 +1462,23 @@ class EmployeeMovementController extends Controller
         $nextApprover = $this->getNextApprover($movement);
         
         if ($nextApprover) {
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $nextApprover['id'],
                 'type' => 'employee_movement_approval',
                 'message' => "Personal Movement untuk {$movement->employee_name} telah disetujui dan membutuhkan persetujuan {$nextApprover['level']} Anda.\n\nJenis: " . ucwords(str_replace('_', ' ', $movement->employment_type)),
                 'url' => config('app.url') . '/employee-movements/' . $movement->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         } else {
             // Semua approval selesai, kirim notifikasi ke creator
             $creator = User::find($movement->employee_id);
             if ($creator) {
-                DB::table('notifications')->insert([
+                NotificationService::insert([
                     'user_id' => $creator->id,
                     'type' => 'employee_movement_completed',
                     'message' => "Personal Movement untuk {$movement->employee_name} telah disetujui oleh semua pihak.",
                     'url' => config('app.url') . '/employee-movements/' . $movement->id,
                     'is_read' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now()
                 ]);
             }
         }
@@ -1501,14 +1496,12 @@ class EmployeeMovementController extends Controller
                 $message .= "\n\nAlasan: {$notes}";
             }
             
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $creator->id,
                 'type' => 'employee_movement_rejected',
                 'message' => $message,
                 'url' => config('app.url') . '/employee-movements/' . $movement->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
     }
@@ -1761,14 +1754,12 @@ class EmployeeMovementController extends Controller
             
             $changesText = !empty($changes) ? implode(', ', $changes) : 'No changes';
             
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $creator->id,
                 'type' => 'employee_movement_executed',
                 'message' => "Personal Movement untuk {$movement->employee_name} telah dieksekusi. Perubahan yang diterapkan: {$changesText}",
                 'url' => config('app.url') . '/employee-movements/' . $movement->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         }
     }
@@ -1808,15 +1799,13 @@ class EmployeeMovementController extends Controller
             $message .= "Silakan segera lakukan review dan approval.";
 
             // Insert notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $approver->id,
                 'task_id' => $movement->id,
                 'type' => 'employee_movement_approval',
                 'message' => $message,
                 'url' => config('app.url') . '/employee-movements/' . $movement->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
         } catch (\Exception $e) {
@@ -1865,15 +1854,13 @@ class EmployeeMovementController extends Controller
             }
 
             // Insert notification
-            DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $creator->id,
                 'task_id' => $movement->id,
                 'type' => $type,
                 'message' => $message,
                 'url' => config('app.url') . '/employee-movements/' . $movement->id,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
 
         } catch (\Exception $e) {

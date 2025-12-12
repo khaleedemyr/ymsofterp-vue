@@ -7,6 +7,7 @@ use Inertia\Inertia;
 use App\Models\User;
 use DB;
 use App\Models\Announcement;
+use App\Services\NotificationService;
 
 class AnnouncementController extends Controller
 {
@@ -464,14 +465,12 @@ class AnnouncementController extends Controller
             : "Pengumuman baru telah dipublish:\n\nJudul: {$announcement->title}\n\nDibuat oleh: {$creator->nama_lengkap}\n\nSilakan cek halaman pengumuman untuk informasi lebih lanjut.";
 
         foreach ($userIds as $userId) {
-            \DB::table('notifications')->insert([
+            NotificationService::insert([
                 'user_id' => $userId,
                 'title' => $title,
                 'message' => $message,
                 'url' => config('app.url') . '/announcement/' . $announcementId,
                 'is_read' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
             ]);
         }
     }

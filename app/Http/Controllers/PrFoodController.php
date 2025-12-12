@@ -7,6 +7,7 @@ use App\Models\PrFoodItem;
 use App\Models\Warehouse;
 use App\Models\Item;
 use App\Models\ActivityLog;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -516,7 +517,6 @@ class PrFoodController extends Controller
 
     // Helper untuk insert notifikasi
     private function sendNotification($userIds, $type, $title, $message, $url) {
-        $now = now();
         $data = [];
         foreach ($userIds as $uid) {
             $data[] = [
@@ -526,11 +526,9 @@ class PrFoodController extends Controller
                 'message' => $message,
                 'url' => $url,
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     // API: Get pending PR Foods approvals

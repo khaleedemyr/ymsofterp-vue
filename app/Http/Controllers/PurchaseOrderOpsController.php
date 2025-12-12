@@ -12,6 +12,7 @@ use App\Models\PurchaseOrderOpsItem;
 use App\Models\PurchaseOrderOpsApprovalFlow;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -1189,7 +1190,6 @@ class PurchaseOrderOpsController extends Controller
 
     // Helper untuk insert notifikasi
     private function sendNotification($userIds, $type, $title, $message, $url) {
-        $now = now();
         $data = [];
         foreach ($userIds as $uid) {
             $data[] = [
@@ -1199,11 +1199,9 @@ class PurchaseOrderOpsController extends Controller
                 'message' => $message,
                 'url' => $url,
                 'is_read' => 0,
-                'created_at' => $now,
-                'updated_at' => $now,
             ];
         }
-        DB::table('notifications')->insert($data);
+        NotificationService::createMany($data);
     }
 
     private function generatePONumber()
