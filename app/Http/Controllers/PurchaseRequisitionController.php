@@ -651,8 +651,7 @@ class PurchaseRequisitionController extends Controller
             
             DB::commit();
             
-            // Send notification to the lowest level approver
-            $this->sendNotificationToNextApprover($purchaseRequisition);
+            // Note: Notification will be sent when user submits for approval, not when saving draft
             
             // Return JSON response for AJAX requests (for file upload)
             if (request()->expectsJson()) {
@@ -1282,18 +1281,51 @@ class PurchaseRequisitionController extends Controller
     /**
      * Submit purchase requisition for approval
      */
-    public function submit(PurchaseRequisition $purchaseRequisition)
+    public function submit(Request $request, $purchaseRequisition)
     {
+        // Handle both route model binding (web) and ID parameter (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            // If it's a string ID from route model binding that failed
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        }
+        
         if ($purchaseRequisition->status !== 'DRAFT') {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only draft purchase requisitions can be submitted.'
+                ], 400);
+            }
             return back()->withErrors(['error' => 'Only draft purchase requisitions can be submitted.']);
         }
 
         try {
             $purchaseRequisition->update(['status' => 'SUBMITTED']);
             
+            // Reload model with approval flows to ensure we have the latest data
+            $purchaseRequisition->load('approvalFlows.approver');
+            
+            // Send notification to the lowest level approver when submitting for approval
+            $this->sendNotificationToNextApprover($purchaseRequisition);
+            
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Purchase Requisition submitted for approval!'
+                ]);
+            }
+            
             return redirect()->route('purchase-requisitions.show', $purchaseRequisition)
                            ->with('success', 'Purchase Requisition submitted for approval!');
         } catch (\Exception $e) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to submit purchase requisition: ' . $e->getMessage()
+                ], 500);
+            }
             return back()->withErrors(['error' => 'Failed to submit purchase requisition: ' . $e->getMessage()]);
         }
     }
@@ -1592,8 +1624,16 @@ class PurchaseRequisitionController extends Controller
     /**
      * Add comment to purchase requisition
      */
-    public function addComment(Request $request, PurchaseRequisition $purchaseRequisition)
+    public function addComment(Request $request, $purchaseRequisition)
     {
+        // Handle both route model binding (web) and ID (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            // If it's a string ID from route model binding that failed
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        }
+        
         $validated = $request->validate([
             'comment' => 'required|string|max:1000',
             'is_internal' => 'boolean',
@@ -1602,6 +1642,7 @@ class PurchaseRequisitionController extends Controller
 
         try {
             $commentData = [
+                'purchase_requisition_id' => $purchaseRequisition->id,
                 'user_id' => auth()->id(),
                 'comment' => $validated['comment'],
                 'is_internal' => $validated['is_internal'] ?? false,
@@ -1622,7 +1663,8 @@ class PurchaseRequisitionController extends Controller
                 $commentData['attachment_mime_type'] = $mimeType;
             }
 
-            $comment = $purchaseRequisition->comments()->create($commentData);
+            // Create comment directly to ensure purchase_requisition_id is set
+            $comment = \App\Models\PurchaseRequisitionComment::create($commentData);
             $comment->load('user');
             
             // Send notifications to creator and approvers (excluding comment author)
