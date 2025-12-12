@@ -8,6 +8,7 @@ use App\Models\StockOpnameApprovalFlow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Inertia\Inertia;
 
 class StockOpnameController extends Controller
@@ -190,12 +191,17 @@ class StockOpnameController extends Controller
      */
     public function store(Request $request)
     {
+        // For autosave, allow empty items array
+        $itemsRule = $request->has('autosave') && $request->autosave 
+            ? 'nullable|array' 
+            : 'required|array|min:1';
+            
         $validated = $request->validate([
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'opname_date' => 'required|date',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => $itemsRule,
             'items.*.inventory_item_id' => 'required|integer',
             'items.*.qty_physical_small' => 'nullable|numeric|min:0',
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
@@ -227,8 +233,9 @@ class StockOpnameController extends Controller
                 'created_by' => $user->id,
             ]);
 
-            // Create items
-            foreach ($validated['items'] as $itemData) {
+            // Create items (skip if items array is empty for autosave)
+            $items = $validated['items'] ?? [];
+            foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $itemData['inventory_item_id'])
@@ -245,10 +252,36 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
 
-                // If physical qty not provided, use system qty (tombol "=")
-                $qtyPhysicalSmall = $itemData['qty_physical_small'] ?? $qtySystemSmall;
-                $qtyPhysicalMedium = $itemData['qty_physical_medium'] ?? $qtySystemMedium;
-                $qtyPhysicalLarge = $itemData['qty_physical_large'] ?? $qtySystemLarge;
+                // Get physical qty from request
+                // Check if value is explicitly provided (not null and not empty string)
+                // If null or empty string, use system qty (tombol "=")
+                // If 0 or any numeric value is provided, use that value
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
+                    ? (float)$itemData['qty_physical_small'] 
+                    : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
+                    ? (float)$itemData['qty_physical_medium'] 
+                    : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
+                    ? (float)$itemData['qty_physical_large'] 
+                    : $qtySystemLarge;
+                
+                // Log for debugging
+                \Log::info('Stock Opname Item Processing', [
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
+                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
+                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
+                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
+                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
+                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
+                    'qty_physical_small_final' => $qtyPhysicalSmall,
+                    'qty_physical_medium_final' => $qtyPhysicalMedium,
+                    'qty_physical_large_final' => $qtyPhysicalLarge,
+                ]);
 
                 // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
@@ -279,10 +312,28 @@ class StockOpnameController extends Controller
 
             DB::commit();
 
+            // If autosave request, return JSON
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => true,
+                    'id' => $stockOpname->id,
+                    'message' => 'Draft tersimpan'
+                ]);
+            }
+
             return redirect()->route('stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock Opname berhasil dibuat!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // If autosave request, return JSON error
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan draft: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal membuat stock opname: ' . $e->getMessage()]);
         }
     }
@@ -480,12 +531,17 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika status adalah DRAFT.']);
         }
 
+        // For autosave, allow empty items array
+        $itemsRule = $request->has('autosave') && $request->autosave 
+            ? 'nullable|array' 
+            : 'required|array|min:1';
+            
         $validated = $request->validate([
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'opname_date' => 'required|date',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => $itemsRule,
             'items.*.inventory_item_id' => 'required|integer',
             'items.*.qty_physical_small' => 'nullable|numeric|min:0',
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
@@ -513,8 +569,9 @@ class StockOpnameController extends Controller
             // Delete existing items
             $stockOpname->items()->delete();
 
-            // Create new items
-            foreach ($validated['items'] as $itemData) {
+            // Create new items (skip if items array is empty for autosave)
+            $items = $validated['items'] ?? [];
+            foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $itemData['inventory_item_id'])
@@ -531,10 +588,36 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
 
-                // If physical qty not provided, use system qty (tombol "=")
-                $qtyPhysicalSmall = $itemData['qty_physical_small'] ?? $qtySystemSmall;
-                $qtyPhysicalMedium = $itemData['qty_physical_medium'] ?? $qtySystemMedium;
-                $qtyPhysicalLarge = $itemData['qty_physical_large'] ?? $qtySystemLarge;
+                // Get physical qty from request
+                // Check if value is explicitly provided (not null and not empty string)
+                // If null or empty string, use system qty (tombol "=")
+                // If 0 or any numeric value is provided, use that value
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
+                    ? (float)$itemData['qty_physical_small'] 
+                    : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
+                    ? (float)$itemData['qty_physical_medium'] 
+                    : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
+                    ? (float)$itemData['qty_physical_large'] 
+                    : $qtySystemLarge;
+                
+                // Log for debugging
+                \Log::info('Stock Opname Item Update Processing', [
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
+                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
+                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
+                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
+                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
+                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
+                    'qty_physical_small_final' => $qtyPhysicalSmall,
+                    'qty_physical_medium_final' => $qtyPhysicalMedium,
+                    'qty_physical_large_final' => $qtyPhysicalLarge,
+                ]);
 
                 // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
@@ -565,10 +648,28 @@ class StockOpnameController extends Controller
 
             DB::commit();
 
+            // If autosave request, return JSON
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => true,
+                    'id' => $stockOpname->id,
+                    'message' => 'Draft tersimpan'
+                ]);
+            }
+
             return redirect()->route('stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock Opname berhasil di-update!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // If autosave request, return JSON error
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan draft: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal update stock opname: ' . $e->getMessage()]);
         }
     }
@@ -576,22 +677,45 @@ class StockOpnameController extends Controller
     /**
      * Remove the specified stock opname from storage
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $stockOpname = StockOpname::findOrFail($id);
-        $user = auth()->user();
-
-        // Validate access
-        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
-            return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk stock opname ini.']);
-        }
-
-        // Only allow deletion if status is DRAFT
-        if ($stockOpname->status !== 'DRAFT') {
-            return back()->withErrors(['error' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.']);
-        }
-
         try {
+            $stockOpname = StockOpname::find($id);
+            
+            if (!$stockOpname) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Stock opname tidak ditemukan.'
+                    ], 404);
+                }
+                return back()->withErrors(['error' => 'Stock opname tidak ditemukan.']);
+            }
+            
+            $user = auth()->user();
+
+            // Validate access
+            if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda tidak memiliki akses untuk stock opname ini.'
+                    ], 403);
+                }
+                return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk stock opname ini.']);
+            }
+
+            // Only allow deletion if status is DRAFT
+            if ($stockOpname->status !== 'DRAFT') {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.'
+                    ], 422);
+                }
+                return back()->withErrors(['error' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.']);
+            }
+
             DB::beginTransaction();
 
             // Delete items (cascade will handle this, but we do it explicitly)
@@ -605,10 +729,27 @@ class StockOpnameController extends Controller
 
             DB::commit();
 
+            // Return JSON if AJAX request, otherwise redirect
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Stock Opname berhasil dihapus!'
+                ]);
+            }
+
             return redirect()->route('stock-opnames.index')
                            ->with('success', 'Stock Opname berhasil dihapus!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Return JSON if AJAX request, otherwise redirect with error
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus stock opname: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal menghapus stock opname: ' . $e->getMessage()]);
         }
     }

@@ -262,6 +262,11 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
         Route::get('/allowed-menus', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'getAllowedMenus']);
         
+        // Device Token routes for Approval App
+        Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');
+        Route::post('/device-token/unregister', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'unregister'])->name('api.approval-app.device-token.unregister');
+        Route::get('/device-token', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'index'])->name('api.approval-app.device-token.index');
+        
         // User PIN routes for Approval App
         Route::get('/user/pins', [\App\Http\Controllers\UserPinController::class, 'indexForApprovalApp']);
         Route::post('/user/pins', [\App\Http\Controllers\UserPinController::class, 'storeForApprovalApp']);

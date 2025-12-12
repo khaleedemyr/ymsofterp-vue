@@ -26,27 +26,139 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
-        // Cek apakah sudah pernah di-stock cut dengan status success (tidak peduli type_filter)
-        // Jika sudah ada stock cut di tanggal yang sama, tidak boleh stock cut lagi
-        $existingLog = StockCutLog::where('outlet_id', $id_outlet)
+        // Validasi stock cut berdasarkan mode:
+        // 1. Mode "Semua" (null atau 'all') → lock semua (tidak bisa stock cut lagi)
+        // 2. Mode "Food" → masih bisa stock cut "Beverages", tapi tidak bisa "Semua"
+        // 3. Mode "Beverages" → masih bisa stock cut "Food", tapi tidak bisa "Semua"
+        // 4. Jika sudah ada "Food" dan "Beverages" → tidak bisa stock cut lagi
+        
+        // Normalize type_filter: null atau 'all' berarti "Semua"
+        $normalizedTypeFilter = $type_filter && $type_filter !== 'all' ? $type_filter : null;
+        
+        // Cek semua stock cut yang sudah ada di tanggal tersebut
+        $existingLogs = StockCutLog::where('outlet_id', $id_outlet)
             ->where('tanggal', $tanggal)
             ->where('status', 'success')
-            ->first();
+            ->get();
         
-        if ($existingLog) {
-            $typeInfo = $existingLog->type_filter ? " (Type: " . ($existingLog->type_filter === 'food' ? 'Food' : ($existingLog->type_filter === 'beverages' ? 'Beverages' : 'Semua Type')) . ")" : " (Semua Type)";
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Stock cut untuk outlet ini pada tanggal ' . $tanggal . ' sudah pernah dilakukan' . $typeInfo . '. Tidak dapat melakukan stock cut lagi di tanggal yang sama.',
-                'already_cut' => true,
-                'log' => [
-                    'id' => $existingLog->id,
-                    'total_items_cut' => $existingLog->total_items_cut,
-                    'total_modifiers_cut' => $existingLog->total_modifiers_cut,
-                    'type_filter' => $existingLog->type_filter,
-                    'created_at' => $existingLog->created_at
-                ]
-            ], 409);
+        if ($existingLogs->isNotEmpty()) {
+            // Cek apakah sudah ada stock cut "Semua" (type_filter null)
+            $hasAllMode = $existingLogs->contains(function ($log) {
+                return $log->type_filter === null || $log->type_filter === 'all';
+            });
+            
+            // Cek apakah sudah ada stock cut "Food"
+            $hasFoodMode = $existingLogs->contains(function ($log) {
+                return $log->type_filter === 'food';
+            });
+            
+            // Cek apakah sudah ada stock cut "Beverages"
+            $hasBeveragesMode = $existingLogs->contains(function ($log) {
+                return $log->type_filter === 'beverages';
+            });
+            
+            // Validasi berdasarkan mode yang dipilih
+            if ($normalizedTypeFilter === null) {
+                // User mau stock cut "Semua"
+                // Tidak boleh jika sudah ada stock cut apapun
+                $existingLog = $existingLogs->first();
+                $typeInfo = $existingLog->type_filter ? " (Type: " . ($existingLog->type_filter === 'food' ? 'Food' : ($existingLog->type_filter === 'beverages' ? 'Beverages' : 'Semua Type')) . ")" : " (Semua Type)";
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Stock cut untuk outlet ini pada tanggal ' . $tanggal . ' sudah pernah dilakukan' . $typeInfo . '. Tidak dapat melakukan stock cut "Semua" jika sudah ada stock cut sebelumnya.',
+                    'already_cut' => true,
+                    'log' => [
+                        'id' => $existingLog->id,
+                        'total_items_cut' => $existingLog->total_items_cut,
+                        'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                        'type_filter' => $existingLog->type_filter,
+                        'created_at' => $existingLog->created_at
+                    ]
+                ], 409);
+            } elseif ($normalizedTypeFilter === 'food') {
+                // User mau stock cut "Food"
+                // Tidak boleh jika sudah ada stock cut "Semua" atau "Food"
+                if ($hasAllMode) {
+                    $existingLog = $existingLogs->firstWhere('type_filter', null);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock cut "Semua" sudah pernah dilakukan untuk tanggal ' . $tanggal . '. Tidak dapat melakukan stock cut "Food" lagi.',
+                        'already_cut' => true,
+                        'log' => [
+                            'id' => $existingLog->id,
+                            'total_items_cut' => $existingLog->total_items_cut,
+                            'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                            'type_filter' => $existingLog->type_filter,
+                            'created_at' => $existingLog->created_at
+                        ]
+                    ], 409);
+                }
+                if ($hasFoodMode) {
+                    $existingLog = $existingLogs->firstWhere('type_filter', 'food');
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock cut "Food" sudah pernah dilakukan untuk tanggal ' . $tanggal . '. Tidak dapat melakukan stock cut "Food" lagi.',
+                        'already_cut' => true,
+                        'log' => [
+                            'id' => $existingLog->id,
+                            'total_items_cut' => $existingLog->total_items_cut,
+                            'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                            'type_filter' => $existingLog->type_filter,
+                            'created_at' => $existingLog->created_at
+                        ]
+                    ], 409);
+                }
+            } elseif ($normalizedTypeFilter === 'beverages') {
+                // User mau stock cut "Beverages"
+                // Tidak boleh jika sudah ada stock cut "Semua" atau "Beverages"
+                if ($hasAllMode) {
+                    $existingLog = $existingLogs->firstWhere('type_filter', null);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock cut "Semua" sudah pernah dilakukan untuk tanggal ' . $tanggal . '. Tidak dapat melakukan stock cut "Beverages" lagi.',
+                        'already_cut' => true,
+                        'log' => [
+                            'id' => $existingLog->id,
+                            'total_items_cut' => $existingLog->total_items_cut,
+                            'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                            'type_filter' => $existingLog->type_filter,
+                            'created_at' => $existingLog->created_at
+                        ]
+                    ], 409);
+                }
+                if ($hasBeveragesMode) {
+                    $existingLog = $existingLogs->firstWhere('type_filter', 'beverages');
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock cut "Beverages" sudah pernah dilakukan untuk tanggal ' . $tanggal . '. Tidak dapat melakukan stock cut "Beverages" lagi.',
+                        'already_cut' => true,
+                        'log' => [
+                            'id' => $existingLog->id,
+                            'total_items_cut' => $existingLog->total_items_cut,
+                            'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                            'type_filter' => $existingLog->type_filter,
+                            'created_at' => $existingLog->created_at
+                        ]
+                    ], 409);
+                }
+            }
+            
+            // Jika sudah ada "Food" dan "Beverages", tidak bisa stock cut lagi
+            if ($hasFoodMode && $hasBeveragesMode) {
+                $existingLog = $existingLogs->first();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Stock cut "Food" dan "Beverages" sudah pernah dilakukan untuk tanggal ' . $tanggal . '. Tidak dapat melakukan stock cut lagi.',
+                    'already_cut' => true,
+                    'log' => [
+                        'id' => $existingLog->id,
+                        'total_items_cut' => $existingLog->total_items_cut,
+                        'total_modifiers_cut' => $existingLog->total_modifiers_cut,
+                        'type_filter' => $existingLog->type_filter,
+                        'created_at' => $existingLog->created_at
+                    ]
+                ], 409);
+            }
         }
 
         // Ambil qr_code dari tbl_data_outlet
@@ -210,11 +322,14 @@ class StockCutController extends Controller
         }
         if (count($kurang) > 0) {
             // Catat log error stock cut
+            // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
+            $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
+            
             StockCutLog::updateOrCreate(
                 [
                     'outlet_id' => $id_outlet,
                     'tanggal' => $tanggal,
-                    'type_filter' => $type_filter
+                    'type_filter' => $normalizedTypeFilterForSave
                 ],
                 [
                     'total_items_cut' => 0,
@@ -413,11 +528,14 @@ class StockCutController extends Controller
         }
 
         // Insert atau update log stock cut
+        // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
+        $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
+        
         StockCutLog::updateOrCreate(
             [
                 'outlet_id' => $id_outlet,
                 'tanggal' => $tanggal,
-                'type_filter' => $type_filter
+                'type_filter' => $normalizedTypeFilterForSave
             ],
             [
                 'total_items_cut' => $totalItemsCut,
@@ -1125,31 +1243,71 @@ class StockCutController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
-        // Cek apakah sudah ada stock cut di tanggal yang sama (tidak peduli type_filter)
-        $log = StockCutLog::where('outlet_id', $id_outlet)
+        // Normalize type_filter: null atau 'all' berarti "Semua"
+        $normalizedTypeFilter = $type_filter && $type_filter !== 'all' ? $type_filter : null;
+        
+        // Cek semua stock cut yang sudah ada di tanggal tersebut
+        $existingLogs = StockCutLog::where('outlet_id', $id_outlet)
             ->where('tanggal', $tanggal)
-            ->first();
-
-        if ($log) {
+            ->where('status', 'success')
+            ->get();
+        
+        if ($existingLogs->isEmpty()) {
             return response()->json([
                 'status' => 'success',
-                'has_stock_cut' => true,
-                'log' => [
+                'has_stock_cut' => false,
+                'can_cut' => true,
+                'logs' => []
+            ]);
+        }
+        
+        // Cek apakah sudah ada stock cut "Semua" (type_filter null)
+        $hasAllMode = $existingLogs->contains(function ($log) {
+            return $log->type_filter === null || $log->type_filter === 'all';
+        });
+        
+        // Cek apakah sudah ada stock cut "Food"
+        $hasFoodMode = $existingLogs->contains(function ($log) {
+            return $log->type_filter === 'food';
+        });
+        
+        // Cek apakah sudah ada stock cut "Beverages"
+        $hasBeveragesMode = $existingLogs->contains(function ($log) {
+            return $log->type_filter === 'beverages';
+        });
+        
+        // Tentukan apakah masih bisa stock cut berdasarkan mode yang dipilih
+        $canCut = false;
+        if ($normalizedTypeFilter === null) {
+            // Mode "Semua" - tidak bisa jika sudah ada stock cut apapun
+            $canCut = false;
+        } elseif ($normalizedTypeFilter === 'food') {
+            // Mode "Food" - bisa jika belum ada "Semua" dan belum ada "Food"
+            $canCut = !$hasAllMode && !$hasFoodMode;
+        } elseif ($normalizedTypeFilter === 'beverages') {
+            // Mode "Beverages" - bisa jika belum ada "Semua" dan belum ada "Beverages"
+            $canCut = !$hasAllMode && !$hasBeveragesMode;
+        }
+        
+        return response()->json([
+            'status' => 'success',
+            'has_stock_cut' => $existingLogs->isNotEmpty(),
+            'can_cut' => $canCut,
+            'has_all_mode' => $hasAllMode,
+            'has_food_mode' => $hasFoodMode,
+            'has_beverages_mode' => $hasBeveragesMode,
+            'logs' => $existingLogs->map(function ($log) {
+                return [
                     'id' => $log->id,
                     'status' => $log->status,
+                    'type_filter' => $log->type_filter,
                     'total_items_cut' => $log->total_items_cut,
                     'total_modifiers_cut' => $log->total_modifiers_cut,
                     'error_message' => $log->error_message,
                     'created_at' => $log->created_at,
                     'created_by' => $log->created_by
-                ]
-            ]);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'has_stock_cut' => false,
-            'log' => null
+                ];
+            })
         ]);
     }
 

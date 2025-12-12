@@ -14,6 +14,25 @@
       </div>
 
       <form @submit.prevent="submitForm" class="bg-white rounded-xl shadow-lg p-6">
+        <!-- Autosave Status -->
+        <div class="mb-4 flex items-center justify-end gap-2 text-sm">
+          <span v-if="autosaveStatus === 'saving'" class="text-blue-600 flex items-center gap-1">
+            <i class="fas fa-spinner fa-spin"></i>
+            Menyimpan...
+          </span>
+          <span v-else-if="autosaveStatus === 'saved'" class="text-green-600 flex items-center gap-1">
+            <i class="fas fa-check-circle"></i>
+            Tersimpan
+            <span v-if="lastSavedAt" class="text-xs text-gray-500">
+              ({{ new Date(lastSavedAt).toLocaleTimeString('id-ID') }})
+            </span>
+          </span>
+          <span v-else-if="autosaveStatus === 'error'" class="text-red-600 flex items-center gap-1">
+            <i class="fas fa-exclamation-circle"></i>
+            Gagal menyimpan
+          </span>
+        </div>
+
         <!-- Basic Information -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
@@ -406,6 +425,109 @@ const expandedCategories = ref(new Set());
 const approverSearch = ref('');
 const approverResults = ref([]);
 const showApproverDropdown = ref(false);
+const approverSearchTimeout = ref(null);
+
+// Autosave
+const draftId = ref(null);
+const autosaveStatus = ref('idle'); // idle, saving, saved, error
+const autosaveTimeout = ref(null);
+const lastSavedAt = ref(null);
+
+// Autosave function
+async function autosave() {
+  // Skip autosave if form is not valid enough (at least outlet and warehouse outlet must be selected)
+  if (!form.outlet_id || !form.warehouse_outlet_id) {
+    return;
+  }
+
+  // Skip if already submitting
+  if (submitting.value) {
+    return;
+  }
+
+  autosaveStatus.value = 'saving';
+
+  try {
+    // Only autosave items that have been explicitly filled (not null/undefined)
+    // This prevents overwriting user input with system qty
+    const itemsToSave = form.items.map(item => {
+      const itemData = {
+        inventory_item_id: item.inventory_item_id,
+        reason: item.reason || '',
+      };
+      
+      // Only include qty_physical if it's been explicitly set (not null/undefined)
+      // This way, backend won't overwrite with system qty
+      if (item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '') {
+        itemData.qty_physical_small = parseFloat(item.qty_physical_small);
+      }
+      if (item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '') {
+        itemData.qty_physical_medium = parseFloat(item.qty_physical_medium);
+      }
+      if (item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '') {
+        itemData.qty_physical_large = parseFloat(item.qty_physical_large);
+      }
+      
+      return itemData;
+    });
+
+    const formData = {
+      outlet_id: form.outlet_id,
+      warehouse_outlet_id: form.warehouse_outlet_id,
+      opname_date: form.opname_date,
+      notes: form.notes,
+      items: itemsToSave,
+      autosave: true,
+    };
+
+    let response;
+    if (draftId.value) {
+      // Update existing draft
+      response = await axios.put(route('stock-opnames.update', draftId.value), formData);
+    } else {
+      // Create new draft
+      response = await axios.post(route('stock-opnames.store'), formData);
+    }
+
+    if (response.data.success) {
+      if (response.data.id && !draftId.value) {
+        draftId.value = response.data.id;
+      }
+      autosaveStatus.value = 'saved';
+      lastSavedAt.value = new Date();
+      
+      // Clear saved status after 3 seconds
+      setTimeout(() => {
+        if (autosaveStatus.value === 'saved') {
+          autosaveStatus.value = 'idle';
+        }
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Autosave error:', error);
+    autosaveStatus.value = 'error';
+    
+    // Clear error status after 5 seconds
+    setTimeout(() => {
+      if (autosaveStatus.value === 'error') {
+        autosaveStatus.value = 'idle';
+      }
+    }, 5000);
+  }
+}
+
+// Debounced autosave
+function triggerAutosave() {
+  // Clear existing timeout
+  if (autosaveTimeout.value) {
+    clearTimeout(autosaveTimeout.value);
+  }
+
+  // Set new timeout (2 seconds after last change)
+  autosaveTimeout.value = setTimeout(() => {
+    autosave();
+  }, 2000);
+}
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
 
@@ -458,14 +580,28 @@ watch(() => form.items, (newItems) => {
 }, { immediate: true });
 
 const filteredWarehouseOutlets = computed(() => {
-  let warehouseOutlets = props.warehouseOutlets;
-  
-  if (!outletSelectable.value && props.user_outlet_id) {
-    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(props.user_outlet_id));
+  if (!props.warehouseOutlets || props.warehouseOutlets.length === 0) {
+    return [];
   }
   
+  let warehouseOutlets = [...props.warehouseOutlets];
+  
+  // If user is not superadmin (outlet_id != 1), filter by user's outlet first
+  if (!outletSelectable.value && props.user_outlet_id) {
+    const userOutletId = String(props.user_outlet_id);
+    warehouseOutlets = warehouseOutlets.filter(wo => {
+      const woOutletId = wo.outlet_id ? String(wo.outlet_id) : '';
+      return woOutletId === userOutletId;
+    });
+  }
+  
+  // Filter by selected outlet (this should be the main filter)
   if (form.outlet_id) {
-    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(form.outlet_id));
+    const selectedOutletId = String(form.outlet_id);
+    warehouseOutlets = warehouseOutlets.filter(wo => {
+      const woOutletId = wo.outlet_id ? String(wo.outlet_id) : '';
+      return woOutletId === selectedOutletId;
+    });
   }
   
   return warehouseOutlets;
@@ -702,23 +838,36 @@ async function loadApprovers(search = '') {
       }
     });
     
-    if (response.data.success) {
-      approverResults.value = response.data.users;
-      showApproverDropdown.value = true;
+    console.log('Approvers response:', response.data);
+    
+    if (response.data && response.data.success) {
+      approverResults.value = response.data.users || [];
+      showApproverDropdown.value = approverResults.value.length > 0;
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
     }
   } catch (error) {
     console.error('Failed to load approvers:', error);
     approverResults.value = [];
+    showApproverDropdown.value = false;
   }
 }
 
 function onApproverSearch() {
-  if (approverSearch.value.length >= 2) {
-    loadApprovers(approverSearch.value);
-  } else {
-    approverResults.value = [];
-    showApproverDropdown.value = false;
+  // Debounce search to avoid too many API calls
+  if (approverSearchTimeout.value) {
+    clearTimeout(approverSearchTimeout.value);
   }
+  
+  approverSearchTimeout.value = setTimeout(() => {
+    if (approverSearch.value.length >= 2) {
+      loadApprovers(approverSearch.value);
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
+    }
+  }, 300);
 }
 
 function addApprover(user) {
@@ -745,19 +894,80 @@ function reorderApprover(fromIndex, toIndex) {
 
 function submitForm() {
   if (form.items.length === 0) {
-    alert('Minimal harus ada 1 item.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Minimal harus ada 1 item.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 
+  // Ensure all items have correct data structure
+  const itemsToSubmit = form.items.map(item => {
+    const processedItem = {
+      inventory_item_id: item.inventory_item_id,
+      qty_physical_small: item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '' 
+        ? parseFloat(item.qty_physical_small) 
+        : null,
+      qty_physical_medium: item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '' 
+        ? parseFloat(item.qty_physical_medium) 
+        : null,
+      qty_physical_large: item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '' 
+        ? parseFloat(item.qty_physical_large) 
+        : null,
+      reason: item.reason || '',
+    };
+    
+    // Log for debugging
+    console.log('Item before processing:', {
+      inventory_item_id: item.inventory_item_id,
+      qty_physical_small_raw: item.qty_physical_small,
+      qty_physical_medium_raw: item.qty_physical_medium,
+      qty_physical_large_raw: item.qty_physical_large,
+      qty_system_small: item.qty_system_small,
+      qty_system_medium: item.qty_system_medium,
+      qty_system_large: item.qty_system_large,
+    });
+    console.log('Item after processing:', processedItem);
+    
+    return processedItem;
+  });
+
+  // Log for debugging
+  console.log('All items to submit:', itemsToSubmit);
+
   submitting.value = true;
-  form.post(route('stock-opnames.store'), {
+  
+  // If draft exists, use update route, otherwise use store
+  const routeName = draftId.value ? 'stock-opnames.update' : 'stock-opnames.store';
+  const routeParams = draftId.value ? { id: draftId.value } : {};
+  
+  // Create a new form with the processed items
+  const submitForm = useForm({
+    outlet_id: form.outlet_id,
+    warehouse_outlet_id: form.warehouse_outlet_id,
+    opname_date: form.opname_date,
+    notes: form.notes,
+    items: itemsToSubmit,
+  });
+  
+  submitForm.post(route(routeName, routeParams), {
     preserveScroll: true,
     onSuccess: () => {
       submitting.value = false;
+      // Clear draft ID after successful submit
+      draftId.value = null;
     },
     onError: (errors) => {
       submitting.value = false;
       console.error('Error:', errors);
+      Swal.fire({
+        title: 'Error',
+        text: 'Gagal menyimpan stock opname. Silakan coba lagi.',
+        icon: 'error',
+        confirmButtonColor: '#3085d6'
+      });
     },
   });
 }
@@ -768,6 +978,22 @@ watch(() => form.warehouse_outlet_id, () => {
     loadItems();
   }
 });
+
+// Watch form changes for autosave (but not items to avoid overwriting user input)
+watch([
+  () => form.outlet_id,
+  () => form.warehouse_outlet_id,
+  () => form.opname_date,
+  () => form.notes,
+], () => {
+  triggerAutosave();
+});
+
+// Watch items changes separately with debounce to avoid overwriting while user is typing
+watch(() => form.items, () => {
+  // Only autosave items if user has finished editing (debounced)
+  triggerAutosave();
+}, { deep: true });
 
 // Auto load items if already selected
 if (form.outlet_id && form.warehouse_outlet_id && form.items.length === 0) {
