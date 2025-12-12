@@ -149,6 +149,15 @@ $schedule->command('leave:burn-previous-year')
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/expiring-vouchers-notifications.log'))
             ->description('Send notification to members who have vouchers expiring in 7 days');
+
+        // Cleanup old and excess device tokens - run daily at 2:00 AM
+        // This prevents notification spam by limiting device tokens per user
+        $schedule->command('device-tokens:cleanup --days=30 --limit=5')
+            ->dailyAt('02:00')
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/device-tokens-cleanup.log'))
+            ->description('Cleanup old and excess device tokens to prevent notification spam');
     }
 
     /**

@@ -123,8 +123,12 @@ class NotificationObserver
 
             // Get all active web device tokens for this user
             // Remove duplicates to avoid sending multiple notifications to same device
+            // Limit to 5 most recent tokens to prevent spam
             $webDeviceTokens = WebDeviceToken::where('user_id', $user->id)
                 ->where('is_active', true)
+                ->orderBy('last_used_at', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
                 ->pluck('device_token')
                 ->unique()
                 ->values()
@@ -132,8 +136,12 @@ class NotificationObserver
 
             // Get all active employee device tokens for this user (for approval app)
             // Remove duplicates to avoid sending multiple notifications to same device
+            // Limit to 5 most recent tokens to prevent spam
             $employeeDeviceTokens = EmployeeDeviceToken::where('user_id', $user->id)
                 ->where('is_active', true)
+                ->orderBy('last_used_at', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
                 ->get()
                 ->unique('device_token') // Remove duplicate device tokens
                 ->map(function ($token) {

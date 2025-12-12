@@ -82,6 +82,32 @@ class WebDeviceTokenController extends Controller
                     ]
                 ]);
             } else {
+                // Limit: Keep only the 5 most recent active tokens per user
+                // Deactivate older tokens to prevent too many notifications
+                $activeTokenCount = WebDeviceToken::where('user_id', $user->id)
+                    ->where('is_active', true)
+                    ->count();
+                
+                if ($activeTokenCount >= 5) {
+                    // Deactivate oldest tokens, keep only 4 most recent
+                    $oldTokens = WebDeviceToken::where('user_id', $user->id)
+                        ->where('is_active', true)
+                        ->orderBy('last_used_at', 'asc')
+                        ->orderBy('created_at', 'asc')
+                        ->limit($activeTokenCount - 4)
+                        ->get();
+                    
+                    foreach ($oldTokens as $oldToken) {
+                        $oldToken->is_active = false;
+                        $oldToken->save();
+                    }
+                    
+                    Log::info('Deactivated old web device tokens', [
+                        'user_id' => $user->id,
+                        'deactivated_count' => $oldTokens->count(),
+                    ]);
+                }
+                
                 // Create new token
                 $newToken = WebDeviceToken::create([
                     'user_id' => $user->id,
@@ -95,6 +121,7 @@ class WebDeviceTokenController extends Controller
                 Log::info('Web device token registered', [
                     'user_id' => $user->id,
                     'device_token' => substr($deviceToken, 0, 20) . '...',
+                    'active_token_count' => $activeTokenCount + 1,
                 ]);
 
                 return response()->json([
