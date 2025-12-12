@@ -17,6 +17,7 @@ class UserRoleController extends Controller
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
         $roleId = $request->input('role_id');
+        $search = $request->input('search', '');
         
         // Dropdown data
         $outlets = DB::table('tbl_data_outlet')
@@ -55,6 +56,14 @@ class UserRoleController extends Controller
             $query->where('ur.role_id', $roleId);
         }
         
+        // Search filter - search by name or email
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('u.nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('u.email', 'like', "%{$search}%");
+            });
+        }
+        
         $users = $query->select(
             'u.id', 
             'u.nama_lengkap', 
@@ -80,7 +89,8 @@ class UserRoleController extends Controller
                 'filters' => [
                     'outlet_id' => $outletId,
                     'division_id' => $divisionId,
-                    'role_id' => $roleId
+                    'role_id' => $roleId,
+                    'search' => $search
                 ]
             ]);
         }
