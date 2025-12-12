@@ -423,6 +423,12 @@ Route::prefix('approval-app')->group(function () {
         
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');
+        
+        // Notification routes
+        Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.approval-app.notifications.index');
+        Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('api.approval-app.notifications.mark-read');
+        Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('api.approval-app.notifications.mark-all-read');
+        Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.approval-app.notifications.unread-count');
     });
 });
 
