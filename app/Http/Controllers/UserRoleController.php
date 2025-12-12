@@ -67,6 +67,24 @@ class UserRoleController extends Controller
         
         $roles = Role::all();
         
+        // Return JSON for API requests (mobile app)
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'users' => $users,
+                    'roles' => $roles,
+                    'outlets' => $outlets,
+                    'divisions' => $divisions,
+                ],
+                'filters' => [
+                    'outlet_id' => $outletId,
+                    'division_id' => $divisionId,
+                    'role_id' => $roleId
+                ]
+            ]);
+        }
+        
         return Inertia::render('UserRole/Index', [
             'users' => $users,
             'roles' => $roles,
@@ -115,6 +133,19 @@ class UserRoleController extends Controller
             'old_data' => $oldData ? ['role_id' => $oldData->role_id, 'role_name' => $oldRole->name] : null,
             'new_data' => ['role_id' => $request->role_id, 'role_name' => $newRole->name]
         ]);
+
+        // Return JSON for API requests (mobile app)
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Role berhasil diupdate',
+                'data' => [
+                    'user_id' => $id,
+                    'role_id' => $request->role_id,
+                    'role_name' => $newRole->name
+                ]
+            ]);
+        }
 
         return redirect()->back();
     }
@@ -168,10 +199,31 @@ class UserRoleController extends Controller
             
             DB::commit();
             
+            // Return JSON for API requests (mobile app)
+            if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Role berhasil diassign ke {$updatedCount} user!",
+                    'data' => [
+                        'updated_count' => $updatedCount,
+                        'role_id' => $roleId
+                    ]
+                ]);
+            }
+            
             return redirect()->back()->with('success', "Role berhasil diassign ke {$updatedCount} user!");
             
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Return JSON for API requests (mobile app)
+            if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal assign role: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return redirect()->back()->with('error', 'Gagal assign role: ' . $e->getMessage());
         }
     }

@@ -409,6 +409,11 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.approval-app.support.admin.get-conversations');
         Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.approval-app.support.admin.reply');
         Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.approval-app.support.admin.update-status');
+        
+        // User Role Settings routes
+        Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index'])->name('api.approval-app.user-roles.index');
+        Route::put('/user-roles/{id}', [\App\Http\Controllers\UserRoleController::class, 'update'])->name('api.approval-app.user-roles.update');
+        Route::post('/user-roles/bulk-assign', [\App\Http\Controllers\UserRoleController::class, 'bulkAssign'])->name('api.approval-app.user-roles.bulk-assign');
     });
 });
 
