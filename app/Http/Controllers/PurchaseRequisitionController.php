@@ -538,47 +538,53 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
-        // Validate kasbon period - DISABLED: Bebas input kapan saja
-        // Validasi periode tanggal 20 bulan berjalan - 10 bulan selanjutnya telah dinonaktifkan
-        // if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
-        //     $user = auth()->user();
-        //     if ($user && $user->id_outlet != 1) {
-        //         // Calculate kasbon period: tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
-        //         $now = now();
-        //         $currentYear = $now->year;
-        //         $currentMonth = $now->month;
-        //         
-        //         // Start date: tanggal 20 bulan berjalan
-        //         $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-        //         
-        //         // End date: tanggal 10 bulan selanjutnya
-        //         $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
-        //         
-        //         // If current date is before tanggal 20, use previous month's period
-        //         if ($now->day < 20) {
-        //             $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
-        //             $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
-        //         }
-        //         
-        //         // Check if there's already a kasbon PR for this outlet in the period
-        //         $existingKasbon = PurchaseRequisition::where('mode', 'kasbon')
-        //             ->where('outlet_id', $validated['outlet_id'])
-        //             ->whereDate('created_at', '>=', $startDate->toDateString())
-        //             ->whereDate('created_at', '<=', $endDate->toDateString())
-        //             ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-        //             ->first();
-        //         
-        //         if ($existingKasbon) {
-        //             $creator = $existingKasbon->creator;
-        //             $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
-        //             $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
-        //             
-        //             return back()->withErrors([
-        //                 'kasbon_exists' => "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet."
-        //             ]);
-        //         }
-        //     }
-        // }
+        // Validate kasbon period
+        // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
+        // Tanggal 11-19 tidak bisa input (di luar periode)
+        if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
+            $user = auth()->user();
+            $now = now();
+            $currentYear = $now->year;
+            $currentMonth = $now->month;
+            
+            // Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
+            // Tidak ada pengecualian untuk tanggal < 20, periode selalu 20 bulan ini - 10 bulan selanjutnya
+            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
+            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            
+            // Check if current date is within input period (20 bulan ini - 10 bulan selanjutnya)
+            if ($now->lt($startDate) || $now->gt($endDate)) {
+                $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                return back()->withErrors([
+                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode input kasbon: {$periodText}"
+                ]);
+            }
+            
+            // Validasi duplikasi kasbon berdasarkan id_outlet
+            // - User id_outlet = 1: bisa multi user dalam periode yang sama (skip validasi)
+            // - User id_outlet != 1: hanya 1 user per outlet per periode (cek user lain)
+            if ($user && $user->id_outlet != 1) {
+                // Check if there's already a kasbon PR from OTHER user for this outlet in the period
+                $existingKasbon = PurchaseRequisition::where('mode', 'kasbon')
+                    ->where('outlet_id', $validated['outlet_id'])
+                    ->where('created_by', '!=', $user->id) // Exclude current user
+                    ->whereDate('created_at', '>=', $startDate->toDateString())
+                    ->whereDate('created_at', '<=', $endDate->toDateString())
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->first();
+                
+                if ($existingKasbon) {
+                    $creator = $existingKasbon->creator;
+                    $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
+                    $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                    
+                    return back()->withErrors([
+                        'kasbon_exists' => "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet."
+                    ]);
+                }
+            }
+            // User id_outlet = 1: skip validasi duplikasi, bisa multi user
+        }
 
         // Generate PR number
         $validated['pr_number'] = $this->generateRequisitionNumber();
@@ -1084,43 +1090,54 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
-        // Validate kasbon period - DISABLED: Bebas input kapan saja
-        // Validasi periode tanggal 20 bulan berjalan - 10 bulan selanjutnya telah dinonaktifkan
-        // if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
-        //     $user = auth()->user();
-        //     if ($user && $user->id_outlet != 1) {
-        //         $now = now();
-        //         $currentYear = $now->year;
-        //         $currentMonth = $now->month;
-        //         
-        //         $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-        //         $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
-        //         
-        //         if ($now->day < 20) {
-        //             $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
-        //             $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
-        //         }
-        //         
-        //         // Check if there's already a kasbon PR for this outlet in the period (exclude current PR)
-        //         $existingKasbon = PurchaseRequisition::where('mode', 'kasbon')
-        //             ->where('outlet_id', $validated['outlet_id'])
-        //             ->where('id', '!=', $purchaseRequisition->id)
-        //             ->whereDate('created_at', '>=', $startDate->toDateString())
-        //             ->whereDate('created_at', '<=', $endDate->toDateString())
-        //             ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-        //             ->first();
-        //         
-        //         if ($existingKasbon) {
-        //             $creator = $existingKasbon->creator;
-        //             $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
-        //             $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
-        //             
-        //             return back()->withErrors([
-        //                 'kasbon_exists' => "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet."
-        //             ]);
-        //         }
-        //     }
-        // }
+        // Validate kasbon period
+        // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
+        // Tanggal 11-19 tidak bisa input (di luar periode)
+        if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
+            $user = auth()->user();
+            $now = now();
+            $currentYear = $now->year;
+            $currentMonth = $now->month;
+            
+            // Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
+            // Tidak ada pengecualian untuk tanggal < 20, periode selalu 20 bulan ini - 10 bulan selanjutnya
+            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
+            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            
+            // Check if current date is within input period (20 bulan ini - 10 bulan selanjutnya)
+            if ($now->lt($startDate) || $now->gt($endDate)) {
+                $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                return back()->withErrors([
+                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode input kasbon: {$periodText}"
+                ]);
+            }
+            
+            // Validasi duplikasi kasbon berdasarkan id_outlet
+            // - User id_outlet = 1: bisa multi user dalam periode yang sama (skip validasi)
+            // - User id_outlet != 1: hanya 1 user per outlet per periode (cek user lain)
+            if ($user && $user->id_outlet != 1) {
+                // Check if there's already a kasbon PR from OTHER user for this outlet in the period (exclude current PR)
+                $existingKasbon = PurchaseRequisition::where('mode', 'kasbon')
+                    ->where('outlet_id', $validated['outlet_id'])
+                    ->where('id', '!=', $purchaseRequisition->id) // Exclude current PR
+                    ->where('created_by', '!=', $user->id) // Exclude current user
+                    ->whereDate('created_at', '>=', $startDate->toDateString())
+                    ->whereDate('created_at', '<=', $endDate->toDateString())
+                    ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                    ->first();
+                
+                if ($existingKasbon) {
+                    $creator = $existingKasbon->creator;
+                    $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
+                    $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                    
+                    return back()->withErrors([
+                        'kasbon_exists' => "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet."
+                    ]);
+                }
+            }
+            // User id_outlet = 1: skip validasi duplikasi, bisa multi user
+        }
 
         $validated['updated_by'] = auth()->id();
         $validated['mode'] = $validated['mode'] ?? $purchaseRequisition->mode ?? 'pr_ops';
@@ -5444,63 +5461,73 @@ class PurchaseRequisitionController extends Controller
 
     /**
      * Check if kasbon exists for outlet in given period
-     * DISABLED: Validasi duplikasi kasbon untuk outlet yang sama telah dinonaktifkan
+     * Validasi berdasarkan id_outlet:
+     * - User id_outlet = 1: bisa multi user (skip validasi)
+     * - User id_outlet != 1: hanya 1 user per outlet per periode (cek user lain)
      */
     public function checkKasbonPeriod(Request $request)
     {
-        // Always return false - validasi duplikasi kasbon telah dinonaktifkan, bebas input kapan saja
+        $outletId = $request->get('outlet_id');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $excludeId = $request->get('exclude_id'); // For edit mode, exclude current PR
+        
+        if (!$outletId || !$startDate || !$endDate) {
+            return response()->json([
+                'exists' => false,
+                'message' => 'Missing required parameters'
+            ]);
+        }
+        
+        $user = auth()->user();
+        
+        // User id_outlet = 1: bisa multi user, skip validasi
+        if ($user && $user->id_outlet == 1) {
+            return response()->json([
+                'exists' => false,
+                'message' => 'No existing kasbon found for this outlet in the period (multi user allowed for id_outlet=1)'
+            ]);
+        }
+        
+        // User id_outlet != 1: cek apakah ada kasbon dari user lain
+        $query = PurchaseRequisition::where('mode', 'kasbon')
+            ->where('outlet_id', $outletId)
+            ->whereDate('created_at', '>=', $startDate)
+            ->whereDate('created_at', '<=', $endDate)
+            ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED']);
+        
+        // Exclude current PR if editing
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+        
+        // Exclude current user (untuk user id_outlet != 1, hanya cek user lain)
+        if ($user) {
+            $query->where('created_by', '!=', $user->id);
+        }
+        
+        $existingKasbon = $query->first();
+        
+        if ($existingKasbon) {
+            $creator = $existingKasbon->creator;
+            $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
+            
+            return response()->json([
+                'exists' => true,
+                'message' => "Sudah ada pengajuan kasbon untuk outlet ini di periode yang sama. Dibuat oleh: {$creatorName}",
+                'existing_pr' => [
+                    'id' => $existingKasbon->id,
+                    'pr_number' => $existingKasbon->pr_number,
+                    'created_by_name' => $creatorName,
+                    'created_at' => $existingKasbon->created_at->format('d/m/Y H:i')
+                ]
+            ]);
+        }
+        
         return response()->json([
             'exists' => false,
             'message' => 'No existing kasbon found for this outlet in the period'
         ]);
-        
-        // Original validation code (disabled):
-        // $outletId = $request->get('outlet_id');
-        // $startDate = $request->get('start_date');
-        // $endDate = $request->get('end_date');
-        // $excludeId = $request->get('exclude_id'); // For edit mode, exclude current PR
-        //
-        // if (!$outletId || !$startDate || !$endDate) {
-        //     return response()->json([
-        //         'exists' => false,
-        //         'message' => 'Missing required parameters'
-        //     ]);
-        // }
-        //
-        // // Check if there's already a kasbon PR for this outlet in the period
-        // $query = PurchaseRequisition::where('mode', 'kasbon')
-        //     ->where('outlet_id', $outletId)
-        //     ->whereDate('created_at', '>=', $startDate)
-        //     ->whereDate('created_at', '<=', $endDate)
-        //     ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED']);
-        //
-        // // Exclude current PR if editing
-        // if ($excludeId) {
-        //     $query->where('id', '!=', $excludeId);
-        // }
-        //
-        // $existingKasbon = $query->first();
-        //
-        // if ($existingKasbon) {
-        //     $creator = $existingKasbon->creator;
-        //     $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
-        //     
-        //     return response()->json([
-        //         'exists' => true,
-        //         'message' => "Sudah ada pengajuan kasbon untuk outlet ini di periode yang sama. Dibuat oleh: {$creatorName}",
-        //         'existing_pr' => [
-        //             'id' => $existingKasbon->id,
-        //             'pr_number' => $existingKasbon->pr_number,
-        //             'created_by_name' => $creatorName,
-        //             'created_at' => $existingKasbon->created_at->format('d/m/Y H:i')
-        //         ]
-        //     ]);
-        // }
-        //
-        // return response()->json([
-        //     'exists' => false,
-        //     'message' => 'No existing kasbon found for this outlet in the period'
-        // ]);
     }
 
     /**
