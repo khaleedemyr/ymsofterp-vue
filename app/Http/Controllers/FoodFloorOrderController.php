@@ -970,6 +970,8 @@ class FoodFloorOrderController extends Controller
                 if (!$item->item && $item->item_id) {
                     $item->item = \App\Models\Item::find($item->item_id);
                 }
+                // Unit is already in the item as 'unit' column (varchar)
+                // No need to transform, just ensure it's accessible
                 return $item;
             });
             
