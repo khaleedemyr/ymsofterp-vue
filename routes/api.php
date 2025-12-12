@@ -397,6 +397,18 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/sales-outlet-dashboard/outlet-weekend-weekday-detail', [\App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletWeekendWeekdayDetail']);
         Route::get('/sales-outlet-dashboard/holidays', [\App\Http\Controllers\SalesOutletDashboardController::class, 'getHolidays']);
         Route::get('/sales-outlet-dashboard/outlet-orders', [\App\Http\Controllers\SalesOutletDashboardController::class, 'getOutletOrders']);
+        
+        // Live Support Routes for Approval App
+        Route::post('/support/conversations', [\App\Http\Controllers\LiveSupportController::class, 'createConversation'])->name('api.approval-app.support.create-conversation');
+        Route::get('/support/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getUserConversations'])->name('api.approval-app.support.get-conversations');
+        Route::get('/support/conversations/{id}/messages', [\App\Http\Controllers\LiveSupportController::class, 'getConversationMessages'])->name('api.approval-app.support.get-messages');
+        Route::post('/support/conversations/{id}/messages', [\App\Http\Controllers\LiveSupportController::class, 'sendMessage'])->name('api.approval-app.support.send-message');
+        Route::get('/support/conversations/{conversationId}/messages/{messageId}/files/{fileIndex}', [\App\Http\Controllers\LiveSupportController::class, 'serveAttachment'])->name('api.approval-app.support.serve-attachment');
+        
+        // Admin routes for Support
+        Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.approval-app.support.admin.get-conversations');
+        Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.approval-app.support.admin.reply');
+        Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.approval-app.support.admin.update-status');
     });
 });
 
