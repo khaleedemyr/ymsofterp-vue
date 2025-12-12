@@ -615,9 +615,25 @@ class OutletFoodInventoryAdjustmentController extends Controller
             ], 404);
         }
         
+        // Get items with quantity before (from stock system) and after (from adjustment qty)
         $items = DB::table('outlet_food_inventory_adjustment_items as i')
             ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
-            ->select('i.*', 'it.name as item_name')
+            ->leftJoin('outlet_food_inventory_items as fi', function($join) use ($adjustment) {
+                $join->on('it.id', '=', 'fi.item_id')
+                     ->where('fi.outlet_id', '=', $adjustment->id_outlet ?? null);
+            })
+            ->leftJoin('outlet_food_inventory_stocks as s', function($join) use ($adjustment) {
+                $join->on('fi.id', '=', 's.inventory_item_id')
+                     ->where('s.id_outlet', '=', $adjustment->id_outlet ?? null)
+                     ->where('s.warehouse_outlet_id', '=', $adjustment->warehouse_outlet_id ?? null);
+            })
+            ->select(
+                'i.*',
+                'it.name as item_name',
+                DB::raw('COALESCE(s.qty_small, 0) as quantity_before'),
+                DB::raw('i.qty as quantity_after'),
+                DB::raw('(i.qty - COALESCE(s.qty_small, 0)) as difference')
+            )
             ->where('i.adjustment_id', $id)
             ->get();
         
