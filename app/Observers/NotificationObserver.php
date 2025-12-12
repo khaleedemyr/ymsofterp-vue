@@ -15,6 +15,7 @@ class NotificationObserver
 {
     protected $fcmService;
     protected $fcmV1Service;
+    protected static $processedNotifications = []; // Track processed notifications to prevent duplicates
 
     public function __construct(FCMService $fcmService)
     {
@@ -75,6 +76,17 @@ class NotificationObserver
     public function created(Notification $notification)
     {
         try {
+            // Prevent duplicate processing (if observer is called multiple times)
+            $notificationKey = $notification->id . '_' . ($notification->user_id ?? 'no_user');
+            if (isset(self::$processedNotifications[$notificationKey])) {
+                Log::debug('NotificationObserver: Already processed, skipping duplicate', [
+                    'notification_id' => $notification->id,
+                    'user_id' => $notification->user_id,
+                ]);
+                return;
+            }
+            self::$processedNotifications[$notificationKey] = true;
+            
             // Skip if notification doesn't have user_id
             if (!$notification->user_id) {
                 Log::debug('NotificationObserver: Skipping - no user_id', [
@@ -110,21 +122,27 @@ class NotificationObserver
             });
 
             // Get all active web device tokens for this user
+            // Remove duplicates to avoid sending multiple notifications to same device
             $webDeviceTokens = WebDeviceToken::where('user_id', $user->id)
                 ->where('is_active', true)
                 ->pluck('device_token')
+                ->unique()
+                ->values()
                 ->toArray();
 
             // Get all active employee device tokens for this user (for approval app)
+            // Remove duplicates to avoid sending multiple notifications to same device
             $employeeDeviceTokens = EmployeeDeviceToken::where('user_id', $user->id)
                 ->where('is_active', true)
                 ->get()
+                ->unique('device_token') // Remove duplicate device tokens
                 ->map(function ($token) {
                     return [
                         'token' => $token->device_token,
                         'type' => $token->device_type ?? 'android', // Default to android if null
                     ];
                 })
+                ->values()
                 ->toArray();
 
             $totalDeviceCount = count($webDeviceTokens) + count($employeeDeviceTokens);
@@ -141,6 +159,9 @@ class NotificationObserver
                 'notification_id' => $notification->id,
                 'user_id' => $user->id,
                 'web_device_count' => count($webDeviceTokens),
+                'web_device_tokens_preview' => array_map(function($token) {
+                    return substr($token, 0, 20) . '...';
+                }, array_slice($webDeviceTokens, 0, 3)), // Show first 3 tokens for debugging
                 'employee_device_count' => count($employeeDeviceTokens),
                 'total_device_count' => $totalDeviceCount,
                 'title' => $title,
