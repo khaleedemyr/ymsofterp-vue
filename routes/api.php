@@ -414,6 +414,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index'])->name('api.approval-app.user-roles.index');
         Route::put('/user-roles/{id}', [\App\Http\Controllers\UserRoleController::class, 'update'])->name('api.approval-app.user-roles.update');
         Route::post('/user-roles/bulk-assign', [\App\Http\Controllers\UserRoleController::class, 'bulkAssign'])->name('api.approval-app.user-roles.bulk-assign');
+        
+        // Role Management routes
+        Route::get('/roles', [\App\Http\Controllers\RoleController::class, 'index'])->name('api.approval-app.roles.index');
+        Route::post('/roles', [\App\Http\Controllers\RoleController::class, 'store'])->name('api.approval-app.roles.store');
+        Route::put('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'update'])->name('api.approval-app.roles.update');
+        Route::delete('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'destroy'])->name('api.approval-app.roles.destroy');
     });
 });
 

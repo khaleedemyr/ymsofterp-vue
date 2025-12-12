@@ -12,11 +12,22 @@ use Illuminate\Support\Facades\Auth;
 
 class RoleController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $roles = Role::with('permissions.menu')->get();
+        $menus = Menu::all();
+        
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'roles' => $roles,
+                'menus' => $menus
+            ]);
+        }
+        
         return Inertia::render('Role/Index', [
-            'roles' => Role::with('permissions.menu')->get(),
-            'menus' => Menu::all()
+            'roles' => $roles,
+            'menus' => $menus
         ]);
     }
 
@@ -51,6 +62,14 @@ class RoleController extends Controller
             'old_data' => null,
             'new_data' => $role->toArray()
         ]);
+
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Role berhasil dibuat',
+                'role' => $role->load('permissions.menu')
+            ]);
+        }
 
         return redirect()->back();
     }
@@ -87,6 +106,14 @@ class RoleController extends Controller
             'new_data' => $role->fresh()->toArray()
         ]);
 
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Role berhasil diupdate',
+                'role' => $role->fresh()->load('permissions.menu')
+            ]);
+        }
+
         return redirect()->back();
     }
 
@@ -105,9 +132,10 @@ class RoleController extends Controller
         return $ids;
     }
 
-    public function destroy(Role $role)
+    public function destroy(Request $request, Role $role)
     {
         $oldData = $role->toArray();
+        $roleName = $role->name;
         
         $role->permissions()->detach();
         $role->delete();
@@ -117,12 +145,19 @@ class RoleController extends Controller
             'user_id' => Auth::id(),
             'activity_type' => 'delete',
             'module' => 'roles',
-            'description' => 'Menghapus role: ' . $role->name,
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
+            'description' => 'Menghapus role: ' . $roleName,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
             'old_data' => $oldData,
             'new_data' => null
         ]);
+
+        if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Role berhasil dihapus'
+            ]);
+        }
 
         return redirect()->back();
     }
