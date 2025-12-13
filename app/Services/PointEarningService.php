@@ -28,8 +28,6 @@ class PointEarningService
                 return 1.5; // 1.5 point per Rp10,000
             case 'elite':
                 return 2.0; // 2 point per Rp10,000
-            case 'prestige':
-                return 2.0; // Prestige uses same rate as Elite
             default:
                 return 1.0; // Default to Silver rate
         }

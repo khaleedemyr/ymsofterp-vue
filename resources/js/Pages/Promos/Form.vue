@@ -242,7 +242,7 @@ const byType = ref(props.promo?.categories && props.promo.categories.length > 0 
 const outletType = ref(props.promo?.regions && props.promo.regions.length > 0 ? 'region' : 'outlet');
 const loading = ref(false);
 
-const availableTiers = ['Silver', 'Loyal', 'Elite', 'Prestige'];
+const availableTiers = ['Silver', 'Loyal', 'Elite'];
 
 // Parse tiers dari database (bisa JSON string atau array)
 function parseTiers(tiers) {

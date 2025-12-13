@@ -7,6 +7,7 @@ use App\Models\MemberAppsMember;
 use App\Models\MemberAppsOccupation;
 use App\Services\MemberTierService;
 use App\Services\FCMService;
+use App\Mail\MemberEmailVerification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 
 class AuthController extends Controller
 {
@@ -24,10 +26,59 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
+        // Normalize email (lowercase) and mobile phone (remove spaces, dashes, etc)
+        $normalizedEmail = strtolower(trim($request->email));
+        $normalizedMobile = preg_replace('/[^0-9+]/', '', trim($request->mobile_phone)); // Keep only numbers and +
+        
+        // Check if email already exists (case-insensitive)
+        $existingEmail = MemberAppsMember::whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($normalizedEmail))])->first();
+        if ($existingEmail) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email already registered',
+                'errors' => [
+                    'email' => ['Email sudah terdaftar. Silakan gunakan email lain atau login dengan email tersebut.']
+                ]
+            ], 422);
+        }
+        
+        // Check if mobile phone already exists (normalized)
+        // Check exact match first
+        $existingMobileExact = MemberAppsMember::where('mobile_phone', $normalizedMobile)->first();
+        if ($existingMobileExact) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mobile phone already registered',
+                'errors' => [
+                    'mobile_phone' => ['Nomor HP sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
+                ]
+            ], 422);
+        }
+        
+        // Check normalized match (remove common formatting characters)
+        // Get all members and check normalized mobile phones
+        $allMembers = MemberAppsMember::select('id', 'mobile_phone')
+            ->whereNotNull('mobile_phone')
+            ->where('mobile_phone', '!=', '')
+            ->get();
+        
+        foreach ($allMembers as $existingMember) {
+            $existingMobileNormalized = preg_replace('/[^0-9+]/', '', trim($existingMember->mobile_phone ?? ''));
+            if ($existingMobileNormalized === $normalizedMobile && $normalizedMobile !== '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Mobile phone already registered',
+                    'errors' => [
+                        'mobile_phone' => ['Nomor HP sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
+                    ]
+                ], 422);
+            }
+        }
+        
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|unique:member_apps_members,email',
+            'email' => 'required|email|max:255',
             'nama_lengkap' => 'required|string|max:255',
-            'mobile_phone' => 'required|string|max:20|unique:member_apps_members,mobile_phone',
+            'mobile_phone' => 'required|string|max:20',
             'tanggal_lahir' => 'required|date',
             'jenis_kelamin' => 'required|in:L,P',
             'pekerjaan_id' => 'nullable|exists:member_apps_occupations,id',
@@ -50,15 +101,15 @@ class AuthController extends Controller
 
             $member = MemberAppsMember::create([
                 'member_id' => $memberId,
-                'email' => $request->email,
+                'email' => $normalizedEmail, // Store normalized (lowercase) email
                 'nama_lengkap' => $request->nama_lengkap,
-                'mobile_phone' => $request->mobile_phone,
+                'mobile_phone' => $normalizedMobile, // Store normalized mobile phone
                 'tanggal_lahir' => $request->tanggal_lahir,
                 'jenis_kelamin' => $request->jenis_kelamin,
                 'pekerjaan_id' => $request->pekerjaan_id,
                 'password' => Hash::make($request->password),
                 'pin' => $request->pin ? Hash::make($request->pin) : null,
-                'member_level' => 'Silver', // Default level untuk member baru (Silver, Loyal, Elite, Prestige)
+                'member_level' => 'Silver', // Default level untuk member baru (Silver, Loyal, Elite)
                 'is_active' => true,
                 'just_points' => 0, // Start dengan 0 points
                 'total_spending' => 0, // Start dengan 0 spending
@@ -126,6 +177,38 @@ class AuthController extends Controller
 
             // Refresh member to get updated points
             $member->refresh();
+
+            // Send email verification
+            try {
+                $verificationToken = Str::random(64);
+                $expiresAt = now()->addHours(24);
+                
+                // Store verification token in password_reset_tokens table (reuse existing table)
+                DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+                DB::table('password_reset_tokens')->insert([
+                    'email' => $member->email,
+                    'token' => Hash::make($verificationToken),
+                    'created_at' => now(),
+                ]);
+                
+                // Generate verification URL
+                $verificationUrl = url("/member/verify-email/{$member->id}/{$verificationToken}");
+                
+                // Send verification email
+                Mail::to($member->email)->send(new MemberEmailVerification($member, $verificationUrl));
+                
+                Log::info('Email verification sent to new member', [
+                    'member_id' => $member->id,
+                    'email' => $member->email,
+                ]);
+            } catch (\Exception $e) {
+                // Log error but don't fail registration
+                Log::error('Failed to send email verification', [
+                    'member_id' => $member->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
 
             // Send welcome notification
             try {
@@ -280,7 +363,55 @@ class AuthController extends Controller
             
             // If member not found by member_id, try mobile_phone
             if (!$member && $mobilePhone) {
-                $member = MemberAppsMember::where('mobile_phone', trim($mobilePhone))->first();
+                // Normalize mobile phone (remove spaces, dashes, etc)
+                $normalizedPhone = preg_replace('/[^0-9+]/', '', trim($mobilePhone));
+                
+                // Try exact match first
+                $member = MemberAppsMember::where('mobile_phone', $normalizedPhone)->first();
+                
+                // If not found, try normalized match (remove all non-numeric except +)
+                if (!$member) {
+                    $allMembers = MemberAppsMember::select('id', 'mobile_phone')
+                        ->whereNotNull('mobile_phone')
+                        ->where('mobile_phone', '!=', '')
+                        ->get();
+                    
+                    foreach ($allMembers as $existingMember) {
+                        $existingPhoneNormalized = preg_replace('/[^0-9+]/', '', trim($existingMember->mobile_phone ?? ''));
+                        if ($existingPhoneNormalized === $normalizedPhone && $normalizedPhone !== '') {
+                            $member = MemberAppsMember::find($existingMember->id);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Auto-detect: if member_id looks like a phone number (only digits, 10-15 chars), try as phone
+            if (!$member && $memberId) {
+                $cleanMemberId = trim($memberId);
+                // Check if it looks like a phone number (only digits, length 10-15)
+                if (preg_match('/^[0-9]{10,15}$/', $cleanMemberId)) {
+                    $normalizedPhone = preg_replace('/[^0-9+]/', '', $cleanMemberId);
+                    
+                    // Try exact match first
+                    $member = MemberAppsMember::where('mobile_phone', $normalizedPhone)->first();
+                    
+                    // If not found, try normalized match
+                    if (!$member) {
+                        $allMembers = MemberAppsMember::select('id', 'mobile_phone')
+                            ->whereNotNull('mobile_phone')
+                            ->where('mobile_phone', '!=', '')
+                            ->get();
+                        
+                        foreach ($allMembers as $existingMember) {
+                            $existingPhoneNormalized = preg_replace('/[^0-9+]/', '', trim($existingMember->mobile_phone ?? ''));
+                            if ($existingPhoneNormalized === $normalizedPhone && $normalizedPhone !== '') {
+                                $member = MemberAppsMember::find($existingMember->id);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             if (!$member) {
@@ -1013,18 +1144,212 @@ class AuthController extends Controller
     }
 
     /**
+     * Verify email address
+     */
+    public function verifyEmail(Request $request, $id, $token)
+    {
+        try {
+            $member = MemberAppsMember::find($id);
+            
+            if (!$member) {
+                return Inertia::render('Auth/MemberVerifyEmail', [
+                    'success' => false,
+                    'message' => 'Member not found'
+                ]);
+            }
+            
+            // Check if already verified
+            if ($member->email_verified_at) {
+                return Inertia::render('Auth/MemberVerifyEmail', [
+                    'success' => true,
+                    'message' => 'Email has already been verified',
+                    'alreadyVerified' => true,
+                    'member' => [
+                        'id' => $member->id,
+                        'member_id' => $member->member_id,
+                        'nama_lengkap' => $member->nama_lengkap,
+                        'email' => $member->email,
+                    ]
+                ]);
+            }
+            
+            // Get verification token from database
+            $verificationRecord = DB::table('password_reset_tokens')
+                ->where('email', $member->email)
+                ->first();
+            
+            if (!$verificationRecord) {
+                return Inertia::render('Auth/MemberVerifyEmail', [
+                    'success' => false,
+                    'message' => 'Verification token not found. Please request a new verification email.',
+                    'member' => [
+                        'id' => $member->id,
+                        'member_id' => $member->member_id,
+                        'nama_lengkap' => $member->nama_lengkap,
+                        'email' => $member->email,
+                    ]
+                ]);
+            }
+            
+            // Check if token is expired (24 hours)
+            if (now()->diffInHours($verificationRecord->created_at) > 24) {
+                DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+                return Inertia::render('Auth/MemberVerifyEmail', [
+                    'success' => false,
+                    'message' => 'Verification token has expired. Please request a new verification email.',
+                    'member' => [
+                        'id' => $member->id,
+                        'member_id' => $member->member_id,
+                        'nama_lengkap' => $member->nama_lengkap,
+                        'email' => $member->email,
+                    ]
+                ]);
+            }
+            
+            // Verify token
+            if (!Hash::check($token, $verificationRecord->token)) {
+                return Inertia::render('Auth/MemberVerifyEmail', [
+                    'success' => false,
+                    'message' => 'Invalid verification token',
+                    'member' => [
+                        'id' => $member->id,
+                        'member_id' => $member->member_id,
+                        'nama_lengkap' => $member->nama_lengkap,
+                        'email' => $member->email,
+                    ]
+                ]);
+            }
+            
+            // Mark email as verified
+            $member->update([
+                'email_verified_at' => now()
+            ]);
+            
+            // Delete used token
+            DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+            
+            Log::info('Email verified successfully', [
+                'member_id' => $member->id,
+                'email' => $member->email
+            ]);
+            
+            return Inertia::render('Auth/MemberVerifyEmail', [
+                'success' => true,
+                'message' => 'Email verified successfully! You can now use all features of the app.',
+                'member' => [
+                    'id' => $member->id,
+                    'member_id' => $member->member_id,
+                    'nama_lengkap' => $member->nama_lengkap,
+                    'email' => $member->email,
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Email verification error', [
+                'member_id' => $id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return Inertia::render('Auth/MemberVerifyEmail', [
+                'success' => false,
+                'message' => 'An error occurred during email verification. Please try again later.'
+            ]);
+        }
+    }
+
+    /**
+     * Resend email verification
+     */
+    public function resendVerificationEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:member_apps_members,email',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $member = MemberAppsMember::where('email', $request->email)->first();
+            
+            if (!$member) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Member not found'
+                ], 404);
+            }
+            
+            // Check if already verified
+            if ($member->email_verified_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email has already been verified'
+                ], 400);
+            }
+            
+            // Generate new verification token
+            $verificationToken = Str::random(64);
+            
+            // Store verification token
+            DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+            DB::table('password_reset_tokens')->insert([
+                'email' => $member->email,
+                'token' => Hash::make($verificationToken),
+                'created_at' => now(),
+            ]);
+            
+            // Generate verification URL
+            $verificationUrl = url("/member/verify-email/{$member->id}/{$verificationToken}");
+            
+            // Send verification email
+            Mail::to($member->email)->send(new MemberEmailVerification($member, $verificationUrl));
+            
+            Log::info('Email verification resent', [
+                'member_id' => $member->id,
+                'email' => $member->email,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification email has been sent. Please check your inbox.'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to resend email verification', [
+                'email' => $request->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send verification email. Please try again later.'
+            ], 500);
+        }
+    }
+
+    /**
      * Generate unique member ID
-     * Format: JTS{2 angka tahun}{2 angka bulan}{4 kombinasi acak angka dan huruf}
-     * Example: JTS251201A2B3
+     * Format: JT + 2 angka tahun + 2 angka bulan + 4 karakter random
+     * Total: 10 karakter
+     * Example: JT251201A2, JT250105XY, JT2512123B
+     * Kombinasi per bulan: 36^4 = 1,679,616 (lebih dari 1.6 juta per bulan)
      */
     private function generateMemberId()
     {
         $maxAttempts = 1000; // Prevent infinite loop
         $attempts = 0;
+        $memberId = null;
         
         do {
-            // Prefix: JTS
-            $prefix = 'JTS';
+            // Prefix: JT (2 karakter)
+            $prefix = 'JT';
             
             // 2 angka tahun (2 digit terakhir tahun)
             $year = date('y'); // e.g., 25 for 2025
@@ -1032,25 +1357,65 @@ class AuthController extends Controller
             // 2 angka bulan (2 digit bulan dengan leading zero)
             $month = date('m'); // e.g., 01, 02, ..., 12
             
-            // 4 kombinasi acak angka dan huruf (uppercase)
+            // 4 karakter random kombinasi angka dan huruf (uppercase)
             $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
             $random = '';
             for ($i = 0; $i < 4; $i++) {
                 $random .= $characters[rand(0, strlen($characters) - 1)];
             }
             
-            // Combine: JTS + tahun + bulan + random
+            // Combine: JT + tahun + bulan + random = 10 karakter total
             $memberId = $prefix . $year . $month . $random;
             
             $attempts++;
             
             // Safety check to prevent infinite loop
             if ($attempts >= $maxAttempts) {
-                \Log::error('Failed to generate unique member_id after ' . $maxAttempts . ' attempts');
+                \Log::error('Failed to generate unique member_id after ' . $maxAttempts . ' attempts', [
+                    'last_attempted_id' => $memberId
+                ]);
                 throw new \Exception('Failed to generate unique member_id. Please try again.');
             }
             
-        } while (MemberAppsMember::where('member_id', $memberId)->exists());
+            // Check for duplicate (case-insensitive and trimmed)
+            // Check exact match and case-insensitive match
+            $exists = MemberAppsMember::where('member_id', $memberId)
+                ->orWhereRaw('UPPER(TRIM(member_id)) = ?', [strtoupper(trim($memberId))])
+                ->exists();
+            
+            // If duplicate found, log and continue loop
+            if ($exists) {
+                \Log::warning('Duplicate member_id detected during generation, retrying', [
+                    'member_id' => $memberId,
+                    'attempt' => $attempts
+                ]);
+            }
+            
+        } while ($exists);
+
+        // Final verification before returning (extra safety check)
+        $finalCheck = MemberAppsMember::where('member_id', $memberId)
+            ->orWhereRaw('UPPER(TRIM(member_id)) = ?', [strtoupper(trim($memberId))])
+            ->first();
+        
+        if ($finalCheck) {
+            \Log::error('CRITICAL: Duplicate member_id detected after generation - this should not happen', [
+                'member_id' => $memberId,
+                'existing_member_id' => $finalCheck->id,
+                'existing_member_member_id' => $finalCheck->member_id,
+                'attempts' => $attempts
+            ]);
+            // This is a critical error - throw exception
+            throw new \Exception('Critical error: Duplicate member_id detected. Please contact administrator.');
+        }
+
+        // Log successful generation
+        \Log::info('Generated unique member_id', [
+            'member_id' => $memberId,
+            'year' => $year,
+            'month' => $month,
+            'attempts' => $attempts
+        ]);
 
         return $memberId;
     }

@@ -576,6 +576,7 @@ Route::prefix('mobile/member')->group(function () {
     Route::post('/auth/login', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'login'])->name('api.mobile.member.auth.login');
     Route::post('/auth/forgot-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'forgotPassword'])->name('api.mobile.member.auth.forgot-password');
     Route::post('/auth/reset-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'resetPassword'])->name('api.mobile.member.auth.reset-password');
+    Route::post('/auth/resend-verification', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'resendVerificationEmail'])->name('api.mobile.member.auth.resend-verification');
     Route::get('/auth/occupations', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getOccupations'])->name('api.mobile.member.auth.occupations');
     
     // Debug route - test token validation (NO AUTH - untuk debugging)

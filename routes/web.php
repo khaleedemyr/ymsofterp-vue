@@ -2384,4 +2384,7 @@ Route::get('/reset-password', function () {
     return view('reset-password');
 })->name('reset-password');
 
+// Email verification landing page (public route)
+Route::get('/member/verify-email/{id}/{token}', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'verifyEmail'])->name('member.verify-email');
+
 require __DIR__.'/auth.php';

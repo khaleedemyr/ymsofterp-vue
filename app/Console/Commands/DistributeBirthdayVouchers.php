@@ -6,7 +6,9 @@ use Illuminate\Console\Command;
 use App\Models\MemberAppsVoucher;
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsMemberVoucher;
+use App\Models\MemberAppsPointTransaction;
 use App\Services\FCMService;
+use App\Services\PointEarningService;
 use App\Events\VoucherReceived;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -65,7 +67,10 @@ class DistributeBirthdayVouchers extends Command
             $this->info('No active birthday vouchers found. Skipping voucher distribution.');
             Log::info('No active birthday vouchers found');
             
-            // Still send birthday notifications even if no vouchers
+            // Still award birthday points and send notifications even if no vouchers
+            $this->info("\n=== Awarding Birthday Bonus Points ===");
+            $this->awardBirthdayPoints($membersWithBirthday);
+            
             $this->info("\n=== Sending Birthday Notifications ===");
             $this->sendBirthdayNotifications($membersWithBirthday);
             
@@ -164,6 +169,10 @@ class DistributeBirthdayVouchers extends Command
 
             DB::commit();
             
+            // Award birthday bonus points (100 points) to all members with birthday today
+            $this->info("\n=== Awarding Birthday Bonus Points ===");
+            $this->awardBirthdayPoints($membersWithBirthday);
+            
             // Send birthday notifications to all members with birthday today
             $this->info("\n=== Sending Birthday Notifications ===");
             $this->sendBirthdayNotifications($membersWithBirthday);
@@ -227,6 +236,85 @@ class DistributeBirthdayVouchers extends Command
         }
 
         throw new \Exception("Failed to generate unique serial code for voucher {$voucherId} and member {$memberId} after {$maxAttempts} attempts");
+    }
+
+    /**
+     * Award birthday bonus points (100 points) to members
+     */
+    private function awardBirthdayPoints($members)
+    {
+        if ($members->isEmpty()) {
+            return;
+        }
+
+        $pointService = app(PointEarningService::class);
+        $today = now();
+        $yearStart = $today->copy()->startOfYear();
+        $yearEnd = $today->copy()->endOfYear();
+        
+        $totalAwarded = 0;
+        $totalSkipped = 0;
+
+        foreach ($members as $member) {
+            try {
+                // Check if birthday bonus already given this year
+                $existingBonus = MemberAppsPointTransaction::where('member_id', $member->id)
+                    ->where('transaction_type', 'bonus')
+                    ->where('channel', 'birthday')
+                    ->whereBetween('transaction_date', [$yearStart->format('Y-m-d'), $yearEnd->format('Y-m-d')])
+                    ->first();
+
+                if ($existingBonus) {
+                    $this->warn("  Member {$member->member_id} ({$member->nama_lengkap}) already received birthday points this year. Skipping.");
+                    $totalSkipped++;
+                    Log::info('Birthday bonus already given this year', [
+                        'member_id' => $member->id,
+                        'member_name' => $member->nama_lengkap,
+                        'year' => $today->year
+                    ]);
+                    continue;
+                }
+
+                // Award birthday bonus points (100 points)
+                $result = $pointService->earnBonusPoints($member->id, 'birthday');
+
+                if ($result) {
+                    $totalAwarded++;
+                    $this->info("  ✓ Awarded 100 birthday points to member {$member->member_id} ({$member->nama_lengkap})");
+                    Log::info('Birthday bonus points awarded', [
+                        'member_id' => $member->id,
+                        'member_name' => $member->nama_lengkap,
+                        'points' => 100,
+                        'year' => $today->year,
+                    ]);
+                } else {
+                    $totalSkipped++;
+                    $this->warn("  ✗ Failed to award birthday points to member {$member->member_id} ({$member->nama_lengkap})");
+                    Log::warning('Failed to award birthday bonus points', [
+                        'member_id' => $member->id,
+                        'member_name' => $member->nama_lengkap,
+                    ]);
+                }
+
+            } catch (\Exception $e) {
+                $totalSkipped++;
+                $this->error("  ✗ Error awarding birthday points to member {$member->member_id} ({$member->nama_lengkap}): {$e->getMessage()}");
+                Log::error('Error awarding birthday bonus points', [
+                    'member_id' => $member->id ?? null,
+                    'member_name' => $member->nama_lengkap ?? null,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+        }
+
+        $this->info("Birthday points: {$totalAwarded} awarded, {$totalSkipped} skipped");
+        
+        Log::info('Birthday points summary', [
+            'total_members' => $members->count(),
+            'total_awarded' => $totalAwarded,
+            'total_skipped' => $totalSkipped,
+        ]);
     }
 
     /**

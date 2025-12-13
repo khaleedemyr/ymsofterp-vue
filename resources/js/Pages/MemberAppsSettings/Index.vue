@@ -260,7 +260,7 @@
                   </div>
                   <div v-if="brand.pdf_new_dining_experience" class="text-xs">
                     <a :href="getImageUrl(brand.pdf_new_dining_experience)" target="_blank" class="text-blue-600 hover:text-blue-800">
-                      <i class="fa-solid fa-file-pdf mr-1"></i>PDF New Dining Experience
+                      <i class="fa-solid fa-file-pdf mr-1"></i>PDF Monthly Promotion
                     </a>
                   </div>
                   <div v-if="brand.galleries && brand.galleries.length > 0" class="mt-2">
@@ -1403,7 +1403,6 @@
                     <option value="Silver">Silver</option>
                     <option value="Loyal">Loyal</option>
                     <option value="Elite">Elite</option>
-                    <option value="Prestige">Prestige</option>
                   </select>
                 </div>
               </div>
@@ -2581,11 +2580,11 @@
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">PDF New Dining Experience</label>
+              <label class="block text-sm font-medium text-gray-700 mb-2">PDF Monthly Promotion</label>
               <input @change="handleBrandPdfNewDiningChange" type="file" accept=".pdf" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <div v-if="editingBrand && editingBrand.pdf_new_dining_experience" class="mt-2">
                 <a :href="getImageUrl(editingBrand.pdf_new_dining_experience)" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">
-                  <i class="fa-solid fa-file-pdf mr-1"></i>Current PDF New Dining Experience
+                  <i class="fa-solid fa-file-pdf mr-1"></i>Current PDF Monthly Promotion
                 </a>
               </div>
             </div>
