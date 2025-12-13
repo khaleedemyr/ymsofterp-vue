@@ -466,7 +466,9 @@ class PosOrderController extends Controller
                     })
                     ->get();
 
-                $totalPointsToRollback = 0;
+                $totalPointsToAddBack = 0; // Points to add back to member (from redemptions)
+                $totalPointsToDeduct = 0; // Points to deduct from member (from earnings)
+                
                 foreach ($pointTransactions as $transaction) {
                     // Rollback point redemption from earnings if this is a redemption transaction
                     if ($transaction->transaction_type === 'redeem') {
@@ -481,9 +483,15 @@ class PosOrderController extends Controller
                                     'order_id' => $orderId,
                                 ]);
                             } else {
+                                // PENTING: Kembalikan point ke just_points member karena point sudah dikembalikan ke remaining_points
+                                // point_amount untuk redeem adalah negatif (misal -500), jadi kita ambil nilai absolutnya
+                                $pointsToReturn = abs($transaction->point_amount);
+                                $totalPointsToAddBack += $pointsToReturn;
+                                
                                 Log::info('Point earnings rolled back for void order', [
                                     'point_transaction_id' => $transaction->id,
-                                    'points_returned' => $rollbackResult['points_returned'] ?? 0,
+                                    'points_returned_to_earnings' => $rollbackResult['points_returned'] ?? 0,
+                                    'points_to_return_to_member' => $pointsToReturn,
                                     'details_count' => $rollbackResult['details_count'] ?? 0,
                                 ]);
                             }
@@ -494,7 +502,9 @@ class PosOrderController extends Controller
                                 'order_id' => $orderId,
                                 'error' => $e->getMessage(),
                             ]);
-                            // Continue with rollback anyway
+                            // Continue with rollback anyway, but still try to return points
+                            $pointsToReturn = abs($transaction->point_amount);
+                            $totalPointsToAddBack += $pointsToReturn;
                         }
                     } elseif ($transaction->transaction_type === 'earn') {
                         // For point earning, delete the point earning record
@@ -518,23 +528,49 @@ class PosOrderController extends Controller
                             ]);
                             // Continue with rollback anyway
                         }
+                        
+                        // Untuk earn, point harus dikurangi dari member karena point earning sudah dihapus
+                        if ($transaction->point_amount > 0) {
+                            $totalPointsToDeduct += $transaction->point_amount;
+                        }
                     }
                     
-                    if ($transaction->point_amount > 0) {
-                        $totalPointsToRollback += $transaction->point_amount;
-                    }
                     // Delete the transaction
                     $transaction->delete();
                 }
 
-                // Rollback points from member
-                if ($totalPointsToRollback > 0 && $member->just_points >= $totalPointsToRollback) {
-                    $member->just_points = $member->just_points - $totalPointsToRollback;
-                    $member->save();
-                    Log::info('Rollback points', [
+                // Update member points: add back redemption points, deduct earned points
+                $pointsChanged = false;
+                
+                // Kembalikan point dari redemption ke member
+                if ($totalPointsToAddBack > 0) {
+                    $member->just_points = ($member->just_points ?? 0) + $totalPointsToAddBack;
+                    $pointsChanged = true;
+                    Log::info('Returning redemption points to member', [
                         'member_id' => $memberId,
-                        'points_rolled_back' => $totalPointsToRollback,
+                        'points_returned' => $totalPointsToAddBack,
                         'new_points' => $member->just_points
+                    ]);
+                }
+                
+                // Kurangi point dari earning yang sudah dihapus
+                if ($totalPointsToDeduct > 0 && ($member->just_points ?? 0) >= $totalPointsToDeduct) {
+                    $member->just_points = ($member->just_points ?? 0) - $totalPointsToDeduct;
+                    $pointsChanged = true;
+                    Log::info('Deducting earned points from member', [
+                        'member_id' => $memberId,
+                        'points_deducted' => $totalPointsToDeduct,
+                        'new_points' => $member->just_points
+                    ]);
+                }
+                
+                if ($pointsChanged) {
+                    $member->save();
+                    Log::info('Member points updated after rollback', [
+                        'member_id' => $memberId,
+                        'points_added_back' => $totalPointsToAddBack,
+                        'points_deducted' => $totalPointsToDeduct,
+                        'final_points' => $member->just_points
                     ]);
                 }
 
