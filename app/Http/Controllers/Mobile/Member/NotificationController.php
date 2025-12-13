@@ -131,28 +131,77 @@ class NotificationController extends Controller
                 ], 401);
             }
 
+            Log::info('Mark as read request', [
+                'member_id' => $member->id,
+                'notification_id' => $id,
+                'request_id_type' => gettype($id),
+            ]);
+
+            // Convert id to integer if it's a string
+            $notificationId = is_numeric($id) ? (int)$id : $id;
+
             $notification = MemberAppsNotification::where('member_id', $member->id)
-                ->where('id', $id)
+                ->where('id', $notificationId)
                 ->first();
 
             if (!$notification) {
+                Log::warning('Notification not found for mark as read', [
+                    'member_id' => $member->id,
+                    'notification_id' => $notificationId,
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Notification not found'
                 ], 404);
             }
 
-            $notification->markAsRead();
+            Log::info('Notification found, marking as read', [
+                'member_id' => $member->id,
+                'notification_id' => $notification->id,
+                'current_is_read' => $notification->is_read,
+                'current_read_at' => $notification->read_at,
+            ]);
+
+            // Update using model method
+            $saved = $notification->markAsRead();
+
+            if (!$saved) {
+                Log::error('Failed to save notification as read', [
+                    'member_id' => $member->id,
+                    'notification_id' => $notification->id,
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to save notification'
+                ], 500);
+            }
+
+            // Refresh to verify
+            $notification->refresh();
+
+            Log::info('Notification marked as read successfully', [
+                'member_id' => $member->id,
+                'notification_id' => $notification->id,
+                'new_is_read' => $notification->is_read,
+                'new_read_at' => $notification->read_at,
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Notification marked as read'
+                'message' => 'Notification marked as read',
+                'data' => [
+                    'id' => $notification->id,
+                    'is_read' => $notification->is_read,
+                    'read_at' => $notification->read_at ? $notification->read_at->format('Y-m-d H:i:s') : null,
+                ]
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error marking notification as read', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'member_id' => $member->id ?? null,
+                'notification_id' => $id ?? null,
             ]);
 
             return response()->json([
@@ -176,22 +225,38 @@ class NotificationController extends Controller
                 ], 401);
             }
 
-            MemberAppsNotification::where('member_id', $member->id)
-                ->where('is_read', false)
+            Log::info('Mark all as read request', [
+                'member_id' => $member->id,
+            ]);
+
+            $updated = MemberAppsNotification::where('member_id', $member->id)
+                ->where(function($query) {
+                    $query->where('is_read', false)
+                          ->orWhere('is_read', 0);
+                })
                 ->update([
-                    'is_read' => true,
+                    'is_read' => 1, // Use 1 instead of true
                     'read_at' => now(),
                 ]);
 
+            Log::info('All notifications marked as read', [
+                'member_id' => $member->id,
+                'updated_count' => $updated,
+            ]);
+
             return response()->json([
                 'success' => true,
-                'message' => 'All notifications marked as read'
+                'message' => 'All notifications marked as read',
+                'data' => [
+                    'updated_count' => $updated,
+                ]
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error marking all notifications as read', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'member_id' => $member->id ?? null,
             ]);
 
             return response()->json([
