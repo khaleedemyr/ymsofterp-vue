@@ -32,14 +32,43 @@ class SendTierUpgradedNotification
             ]);
             
             // Create unique key to prevent duplicate processing
-            // Use member_id + old_tier + new_tier as key
+            // Use member_id + old_tier + new_tier + timestamp (hour) as key to allow same tier change in different hours
             $oldTierNormalized = strtolower(trim($oldTier ?? 'silver'));
             $newTierNormalized = strtolower(trim($newTier ?? 'silver'));
-            $notificationKey = "tier_upgraded_notif_sent:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}";
+            $hourKey = now()->format('Y-m-d-H'); // Same hour = same notification
+            $notificationKey = "tier_upgraded_notif_sent:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}:{$hourKey}";
             
-            // Check cache first (faster) - prevent duplicate notification
+            // Check database first - if notification already exists for this tier change in the last hour, skip
+            $existingNotification = MemberAppsNotification::where('member_id', $memberId)
+                ->where(function($query) {
+                    $query->where('type', 'tier_upgraded')
+                          ->orWhere('type', 'tier_downgraded');
+                })
+                ->where('created_at', '>=', now()->subHour())
+                ->where(function($query) use ($oldTier, $newTier) {
+                    $query->where(function($q) use ($oldTier, $newTier) {
+                        $q->where('data->old_tier', $oldTier)
+                          ->where('data->new_tier', $newTier);
+                    })->orWhere(function($q) use ($oldTier, $newTier) {
+                        $q->where('data->old_tier', strtolower($oldTier))
+                          ->where('data->new_tier', strtolower($newTier));
+                    });
+                })
+                ->first();
+            
+            if ($existingNotification) {
+                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (already exists in database)', [
+                    'member_id' => $memberId,
+                    'old_tier' => $oldTier,
+                    'new_tier' => $newTier,
+                    'existing_notification_id' => $existingNotification->id,
+                ]);
+                return;
+            }
+            
+            // Check cache as secondary check (faster) - prevent duplicate notification
             if (Cache::has($notificationKey)) {
-                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (already processed)', [
+                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (already processed in cache)', [
                     'member_id' => $memberId,
                     'old_tier' => $oldTier,
                     'new_tier' => $newTier,
@@ -49,7 +78,7 @@ class SendTierUpgradedNotification
             }
             
             // Create unique lock key to prevent concurrent processing
-            $lockKey = "tier_upgraded_notification_lock:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}";
+            $lockKey = "tier_upgraded_notification_lock:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}:{$hourKey}";
             
             // Try to acquire lock (expires in 30 seconds to prevent deadlock)
             $lock = Cache::lock($lockKey, 30);
@@ -75,7 +104,7 @@ class SendTierUpgradedNotification
                 return;
             }
             
-            // Mark as processing immediately
+            // Mark as processing immediately (cache for 1 hour, but key includes hour so same tier change in different hours is allowed)
             Cache::put($notificationKey, true, 3600); // Cache for 1 hour
 
             // Refresh member to get latest data
