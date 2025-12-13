@@ -749,13 +749,18 @@ class PosOrderController extends Controller
 
                 DB::commit();
 
+                // Calculate total points rolled back (net change)
+                $totalPointsRolledBack = $totalPointsToAddBack - $totalPointsToDeduct;
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Member transaction rolled back successfully',
                     'data' => [
                         'order_id' => $orderId,
                         'member_id' => $memberId,
-                        'points_rolled_back' => $totalPointsToRollback,
+                        'points_added_back' => $totalPointsToAddBack,
+                        'points_deducted' => $totalPointsToDeduct,
+                        'points_rolled_back' => $totalPointsRolledBack,
                         'spending_rolled_back' => $grandTotal
                     ]
                 ]);
