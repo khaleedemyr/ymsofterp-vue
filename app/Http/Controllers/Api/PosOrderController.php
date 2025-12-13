@@ -13,6 +13,7 @@ use App\Models\MemberAppsPointEarning;
 use App\Models\MemberAppsMonthlySpending;
 use App\Services\MemberTierService;
 use App\Events\PointEarned;
+use App\Events\PointReturned;
 use Carbon\Carbon;
 
 class PosOrderController extends Controller
@@ -648,6 +649,39 @@ class PosOrderController extends Controller
                         'points_deducted' => $totalPointsToDeduct,
                         'final_points' => $member->just_points
                     ]);
+                    
+                    // Send push notification to member about point return
+                    try {
+                        Log::info('Dispatching PointReturned event from rollback', [
+                            'member_id' => $member->id,
+                            'points_returned' => $totalPointsToAddBack,
+                            'points_deducted' => $totalPointsToDeduct,
+                            'order_id' => $orderId,
+                            'order_nomor' => $orderNomor,
+                        ]);
+                        
+                        event(new PointReturned(
+                            $member,
+                            $totalPointsToAddBack,
+                            $totalPointsToDeduct,
+                            'void_transaction',
+                            [
+                                'order_id' => $orderId,
+                                'order_nomor' => $orderNomor,
+                            ]
+                        ));
+                        
+                        Log::info('PointReturned event dispatched successfully from rollback', [
+                            'member_id' => $member->id,
+                        ]);
+                    } catch (\Exception $e) {
+                        // Log error but don't fail the rollback
+                        Log::error('Error dispatching PointReturned event from rollback', [
+                            'member_id' => $member->id,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString(),
+                        ]);
+                    }
                 }
 
                 // 3. Rollback monthly spending

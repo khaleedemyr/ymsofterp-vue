@@ -15,6 +15,9 @@ class EventServiceProvider extends ServiceProvider
         \App\Events\PointEarned::class => [
             \App\Listeners\SendPointEarnedNotification::class,
         ],
+        \App\Events\PointReturned::class => [
+            \App\Listeners\SendPointReturnedNotification::class,
+        ],
         \App\Events\ChallengeCompleted::class => [
             \App\Listeners\SendChallengeCompletedNotification::class,
         ],
