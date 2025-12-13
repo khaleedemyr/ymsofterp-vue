@@ -31,18 +31,77 @@ class SendPointReturnedNotification
             $source = $event->source;
             $sourceDetails = $event->sourceDetails;
             
+            $memberId = $member->id ?? null;
+            $orderId = $sourceDetails['order_id'] ?? null;
+            $orderNomor = $sourceDetails['order_nomor'] ?? null;
+            
+            // Create unique key to prevent duplicate processing
+            // Use order_id or order_nomor as key, fallback to member_id + timestamp if not available
+            $notificationKey = null;
+            if ($orderId) {
+                $notificationKey = "point_returned_notif_sent:{$memberId}:{$orderId}";
+            } elseif ($orderNomor) {
+                $notificationKey = "point_returned_notif_sent:{$memberId}:{$orderNomor}";
+            } else {
+                // Fallback: use member_id + current hour to prevent too many duplicates
+                $notificationKey = "point_returned_notif_sent:{$memberId}:" . now()->format('Y-m-d-H');
+            }
+            
+            // Check cache first (faster) - prevent duplicate notification
+            if (Cache::has($notificationKey)) {
+                Log::info('SendPointReturnedNotification: Duplicate notification prevented (already processed)', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                    'notification_key' => $notificationKey,
+                ]);
+                return;
+            }
+            
+            // Create unique lock key to prevent concurrent processing
+            $lockKey = "point_returned_notification_lock:{$memberId}:" . ($orderId ?? $orderNomor ?? 'unknown');
+            
+            // Try to acquire lock (expires in 30 seconds to prevent deadlock)
+            $lock = Cache::lock($lockKey, 30);
+            $lockAcquired = $lock->get();
+            
+            if (!$lockAcquired) {
+                Log::info('SendPointReturnedNotification: Duplicate notification prevented (lock already exists)', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                ]);
+                return;
+            }
+            
+            // Double-check after acquiring lock (race condition protection)
+            if (Cache::has($notificationKey)) {
+                $lock->release();
+                Log::info('SendPointReturnedNotification: Duplicate notification prevented (already processed after lock)', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                ]);
+                return;
+            }
+            
+            // Mark as processing immediately
+            Cache::put($notificationKey, true, 3600); // Cache for 1 hour
+            
             // Skip if no points were returned or deducted
             if ($pointsReturned == 0 && $pointsDeducted == 0) {
+                $lock->release();
                 Log::info('SendPointReturnedNotification: No points to notify (both returned and deducted are 0)', [
-                    'member_id' => $member->id,
+                    'member_id' => $memberId,
                 ]);
                 return;
             }
             
             // Skip if member has disabled notifications
             if (!$member->allow_notification) {
+                $lock->release();
                 Log::info('Skipping notification - member has disabled notifications', [
-                    'member_id' => $member->id,
+                    'member_id' => $memberId,
                     'allow_notification' => $member->allow_notification,
                 ]);
                 return;
@@ -130,6 +189,11 @@ class SendPointReturnedNotification
                 'failed_count' => $result['failed_count'],
                 'total_devices' => $result['success_count'] + $result['failed_count'],
             ]);
+            
+            // Release lock after successful processing
+            if (isset($lock)) {
+                $lock->release();
+            }
 
         } catch (\Exception $e) {
             Log::error('Error sending point returned notification', [
@@ -137,6 +201,18 @@ class SendPointReturnedNotification
                 'trace' => $e->getTraceAsString(),
                 'member_id' => $event->member->id ?? null,
             ]);
+            
+            // Release lock on error
+            if (isset($lock)) {
+                try {
+                    $lock->release();
+                } catch (\Exception $lockError) {
+                    Log::warning('Error releasing lock', [
+                        'lock_key' => $lockKey ?? 'unknown',
+                        'error' => $lockError->getMessage(),
+                    ]);
+                }
+            }
         }
     }
 }
