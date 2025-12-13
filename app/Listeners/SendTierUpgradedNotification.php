@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\MemberTierUpgraded;
 use App\Services\FCMService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class SendTierUpgradedNotification
 {
@@ -18,23 +19,72 @@ class SendTierUpgradedNotification
     public function handle(MemberTierUpgraded $event): void
     {
         try {
-            Log::info('SendTierUpgradedNotification listener triggered', [
-                'member_id' => $event->member->id ?? null,
-                'old_tier' => $event->oldTier ?? null,
-                'new_tier' => $event->newTier ?? null,
-            ]);
-
             $member = $event->member;
             $oldTier = $event->oldTier;
             $newTier = $event->newTier;
+            $memberId = $member->id ?? null;
+            
+            Log::info('SendTierUpgradedNotification listener triggered', [
+                'member_id' => $memberId,
+                'old_tier' => $oldTier,
+                'new_tier' => $newTier,
+            ]);
+            
+            // Create unique key to prevent duplicate processing
+            // Use member_id + old_tier + new_tier as key
+            $oldTierNormalized = strtolower(trim($oldTier ?? 'silver'));
+            $newTierNormalized = strtolower(trim($newTier ?? 'silver'));
+            $notificationKey = "tier_upgraded_notif_sent:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}";
+            
+            // Check cache first (faster) - prevent duplicate notification
+            if (Cache::has($notificationKey)) {
+                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (already processed)', [
+                    'member_id' => $memberId,
+                    'old_tier' => $oldTier,
+                    'new_tier' => $newTier,
+                    'notification_key' => $notificationKey,
+                ]);
+                return;
+            }
+            
+            // Create unique lock key to prevent concurrent processing
+            $lockKey = "tier_upgraded_notification_lock:{$memberId}:{$oldTierNormalized}:{$newTierNormalized}";
+            
+            // Try to acquire lock (expires in 30 seconds to prevent deadlock)
+            $lock = Cache::lock($lockKey, 30);
+            $lockAcquired = $lock->get();
+            
+            if (!$lockAcquired) {
+                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (lock already exists)', [
+                    'member_id' => $memberId,
+                    'old_tier' => $oldTier,
+                    'new_tier' => $newTier,
+                ]);
+                return;
+            }
+            
+            // Double-check after acquiring lock (race condition protection)
+            if (Cache::has($notificationKey)) {
+                $lock->release();
+                Log::info('SendTierUpgradedNotification: Duplicate notification prevented (already processed after lock)', [
+                    'member_id' => $memberId,
+                    'old_tier' => $oldTier,
+                    'new_tier' => $newTier,
+                ]);
+                return;
+            }
+            
+            // Mark as processing immediately
+            Cache::put($notificationKey, true, 3600); // Cache for 1 hour
 
             // Refresh member to get latest data
             $member->refresh();
 
             // Skip if member has disabled notifications
             if (!$member->allow_notification) {
+                $lock->release();
                 Log::info('Skipping tier upgrade notification - member has disabled notifications', [
-                    'member_id' => $member->id,
+                    'member_id' => $memberId,
                 ]);
                 return;
             }
@@ -124,6 +174,11 @@ class SendTierUpgradedNotification
                 'success_count' => $result['success_count'],
                 'failed_count' => $result['failed_count'],
             ]);
+            
+            // Release lock after successful processing
+            if (isset($lock)) {
+                $lock->release();
+            }
 
         } catch (\Exception $e) {
             Log::error('Error sending tier notification', [
@@ -133,6 +188,18 @@ class SendTierUpgradedNotification
                 'old_tier' => $event->oldTier ?? null,
                 'new_tier' => $event->newTier ?? null,
             ]);
+            
+            // Release lock on error
+            if (isset($lock)) {
+                try {
+                    $lock->release();
+                } catch (\Exception $lockError) {
+                    Log::warning('Error releasing lock', [
+                        'lock_key' => $lockKey ?? 'unknown',
+                        'error' => $lockError->getMessage(),
+                    ]);
+                }
+            }
         }
     }
 
