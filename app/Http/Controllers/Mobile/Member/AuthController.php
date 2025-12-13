@@ -243,7 +243,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Registration successful',
+                'message' => 'Registration successful. Please verify your email before logging in.',
                 'data' => [
                     'member' => [
                         'id' => $member->id,
@@ -253,8 +253,11 @@ class AuthController extends Controller
                         'mobile_phone' => $member->mobile_phone,
                         'member_level' => $member->member_level,
                         'just_points' => $member->just_points,
+                        'email_verified_at' => $member->email_verified_at,
                     ],
                     'token' => $token,
+                    'requires_email_verification' => true,
+                    'email_verification_sent' => true,
                 ]
             ], 201);
 
@@ -492,6 +495,16 @@ class AuthController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Account is inactive. Please contact support.'
+                ], 403);
+            }
+
+            // Check if email is verified
+            if (!$member->email_verified_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please verify your email before logging in. Check your inbox for the verification link.',
+                    'requires_email_verification' => true,
+                    'email' => $member->email,
                 ], 403);
             }
 
