@@ -458,12 +458,66 @@ class PosOrderController extends Controller
                     ]);
                 }
 
-                // 2. Rollback point transactions (delete or mark as voided)
+                // 2. Ambil order data dari void_bill_detail_logs untuk mendapatkan order_data yang lebih akurat
+                // Karena order mungkin sudah dihapus, kita ambil dari log void
+                $voidLogData = DB::table('void_bill_detail_logs')
+                    ->where('order_id', $orderId)
+                    ->orWhere('order_nomor', $orderNomor)
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+                
+                $orderCreatedAt = null;
+                if ($voidLogData && $voidLogData->order_data) {
+                    $orderDataJson = json_decode($voidLogData->order_data, true);
+                    if ($orderDataJson && isset($orderDataJson['created_at'])) {
+                        $orderCreatedAt = $orderDataJson['created_at'];
+                        Log::info('Order found in void_bill_detail_logs', [
+                            'order_id' => $orderId,
+                            'order_nomor' => $orderNomor,
+                            'order_created_at' => $orderCreatedAt,
+                        ]);
+                    }
+                }
+                
+                // Jika tidak ditemukan di void log, coba ambil dari orders table
+                if (!$orderCreatedAt) {
+                    $orderDataFromDb = DB::table('orders')
+                        ->where('id', $orderId)
+                        ->orWhere('nomor', $orderNomor)
+                        ->first();
+                    
+                    if ($orderDataFromDb) {
+                        $orderCreatedAt = $orderDataFromDb->created_at;
+                        Log::info('Order found in orders table', [
+                            'order_id' => $orderId,
+                            'order_nomor' => $orderNomor,
+                            'order_created_at' => $orderCreatedAt,
+                        ]);
+                    }
+                }
+                
+                // Jika masih tidak ditemukan, gunakan transaction_date dari request
+                if (!$orderCreatedAt) {
+                    $orderCreatedAt = $transactionDate ? Carbon::parse($transactionDate)->format('Y-m-d H:i:s') : now();
+                    Log::warning('Order not found, using transaction_date from request', [
+                        'order_id' => $orderId,
+                        'order_nomor' => $orderNomor,
+                        'transaction_date' => $transactionDate,
+                        'order_created_at' => $orderCreatedAt,
+                    ]);
+                }
+                
+                // 3. Rollback point transactions (delete or mark as voided)
                 // PENTING: reference_id bisa dalam format:
                 // - "order_id" atau "order_nomor" untuk transaction type 'earn'
                 // - "serial_code" atau "serial_code|order_id" untuk transaction type 'redeem'
-                // Jadi kita perlu mencari dengan lebih fleksibel
+                // PENTING: Tambahkan filter waktu yang lebih ketat (30 menit sebelum dan sesudah) untuk memastikan hanya transaksi yang terkait dengan order ini
+                $orderCreatedAtCarbon = Carbon::parse($orderCreatedAt);
+                $timeRangeStart = $orderCreatedAtCarbon->copy()->subMinutes(30); // 30 menit sebelum order
+                $timeRangeEnd = $orderCreatedAtCarbon->copy()->addMinutes(30); // 30 menit setelah order
+                
                 $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
+                    ->whereBetween('created_at', [$timeRangeStart, $timeRangeEnd])
                     ->where(function($query) use ($orderId, $orderNomor) {
                         // Exact match untuk earn transactions
                         $query->where('reference_id', $orderId)
@@ -483,6 +537,9 @@ class PosOrderController extends Controller
                     'order_id_type' => gettype($orderId),
                     'order_nomor' => $orderNomor,
                     'order_nomor_type' => gettype($orderNomor),
+                    'order_created_at' => $orderCreatedAt,
+                    'time_range_start' => $timeRangeStart->format('Y-m-d H:i:s'),
+                    'time_range_end' => $timeRangeEnd->format('Y-m-d H:i:s'),
                     'transactions_count' => $pointTransactions->count(),
                     'transactions' => $pointTransactions->map(function($t) {
                         return [
@@ -491,6 +548,7 @@ class PosOrderController extends Controller
                             'point_amount' => $t->point_amount,
                             'reference_id' => $t->reference_id,
                             'reference_id_type' => gettype($t->reference_id),
+                            'created_at' => $t->created_at ? $t->created_at->format('Y-m-d H:i:s') : null,
                         ];
                     })->toArray()
                 ]);
