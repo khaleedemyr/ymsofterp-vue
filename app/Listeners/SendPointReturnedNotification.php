@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\PointReturned;
 use App\Services\FCMService;
+use App\Models\MemberAppsNotification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -175,7 +176,7 @@ class SendPointReturnedNotification
                 'message' => $message,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 $title,
@@ -189,6 +190,29 @@ class SendPointReturnedNotification
                 'failed_count' => $result['failed_count'],
                 'total_devices' => $result['success_count'] + $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => 'point_returned',
+                    'title' => $title,
+                    'message' => $message,
+                    'url' => $orderId ? ('/orders/' . $orderId) : null,
+                    'data' => $data,
+                    'is_read' => false,
+                ]);
+                
+                Log::info('Point returned notification saved to database', [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error('Error saving point returned notification to database', [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
             
             // Release lock after successful processing
             if (isset($lock)) {

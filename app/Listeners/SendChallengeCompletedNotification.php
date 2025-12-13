@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\ChallengeCompleted;
 use App\Services\FCMService;
+use App\Models\MemberAppsNotification;
 use Illuminate\Support\Facades\Log;
 
 class SendChallengeCompletedNotification
@@ -99,7 +100,7 @@ class SendChallengeCompletedNotification
                 'message' => $message,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 $title,
@@ -115,6 +116,29 @@ class SendChallengeCompletedNotification
                 'failed_count' => $result['failed_count'],
                 'total_devices' => $result['success_count'] + $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => 'challenge_completed',
+                    'title' => $title,
+                    'message' => $message,
+                    'url' => '/challenges',
+                    'data' => $data,
+                    'is_read' => false,
+                ]);
+                
+                Log::info('Challenge completed notification saved to database', [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error('Error saving challenge completed notification to database', [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
 
         } catch (\Exception $e) {
             Log::error('Error sending challenge completed notification', [

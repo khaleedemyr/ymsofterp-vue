@@ -700,6 +700,12 @@ Route::prefix('mobile/member')->group(function () {
         Route::post('/device-token/unregister', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'unregister'])->name('api.mobile.member.device-token.unregister');
         Route::get('/device-token', [\App\Http\Controllers\Mobile\Member\DeviceTokenController::class, 'index'])->name('api.mobile.member.device-token.index');
         
+        // Notifications
+        Route::get('/notifications', [\App\Http\Controllers\Mobile\Member\NotificationController::class, 'index'])->name('api.mobile.member.notifications.index');
+        Route::get('/notifications/unread-count', [\App\Http\Controllers\Mobile\Member\NotificationController::class, 'unreadCount'])->name('api.mobile.member.notifications.unread-count');
+        Route::post('/notifications/{id}/read', [\App\Http\Controllers\Mobile\Member\NotificationController::class, 'markAsRead'])->name('api.mobile.member.notifications.mark-as-read');
+        Route::post('/notifications/read-all', [\App\Http\Controllers\Mobile\Member\NotificationController::class, 'markAllAsRead'])->name('api.mobile.member.notifications.mark-all-as-read');
+        
         // Member Spending
         Route::get('/spending/rolling-12-month', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getRolling12MonthSpending'])->name('api.mobile.member.spending.rolling-12-month');
         Route::get('/spending/monthly-history', [\App\Http\Controllers\Mobile\Member\MemberSpendingController::class, 'getMonthlyHistory'])->name('api.mobile.member.spending.monthly-history');

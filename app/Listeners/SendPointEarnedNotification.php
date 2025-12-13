@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\PointEarned;
 use App\Services\FCMService;
 use App\Models\MemberAppsReward;
+use App\Models\MemberAppsNotification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -155,7 +156,7 @@ class SendPointEarnedNotification
                 'message' => $message,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 $title,
@@ -169,6 +170,29 @@ class SendPointEarnedNotification
                 'failed_count' => $result['failed_count'],
                 'total_devices' => $result['success_count'] + $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => 'point_earned',
+                    'title' => $title,
+                    'message' => $message,
+                    'url' => $data['order_id'] ? ('/orders/' . $data['order_id']) : null,
+                    'data' => $data,
+                    'is_read' => false,
+                ]);
+                
+                Log::info('Point earned notification saved to database', [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error('Error saving point earned notification to database', [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
 
             // Check if there are rewards that can now be redeemed (point sudah cukup)
             // Only check for transaction source (not challenge, to avoid duplicate)
@@ -256,7 +280,7 @@ class SendPointEarnedNotification
                 'current_points' => $currentPoints,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 'New Reward Unlocked! 🎁',
@@ -277,6 +301,36 @@ class SendPointEarnedNotification
                 'success_count' => $result['success_count'],
                 'failed_count' => $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => 'reward_unlocked',
+                    'title' => 'New Reward Unlocked! 🎁',
+                    'message' => 'Congrats! You\'ve unlocked a new reward. Redeem it on your next visit.',
+                    'url' => '/rewards',
+                    'data' => [
+                        'type' => 'reward_unlocked',
+                        'reward_id' => $newlyRedeemableReward->id,
+                        'item_id' => $newlyRedeemableReward->item_id,
+                        'item_name' => $itemName,
+                        'points_required' => $pointsRequired,
+                        'current_points' => $currentPoints,
+                    ],
+                    'is_read' => false,
+                ]);
+                
+                Log::info('Reward unlocked notification saved to database', [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error('Error saving reward unlocked notification to database', [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
 
         } catch (\Exception $e) {
             Log::error('Error checking and notifying new redeemable rewards', [

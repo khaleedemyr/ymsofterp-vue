@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\MemberTierUpgraded;
 use App\Services\FCMService;
+use App\Models\MemberAppsNotification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -159,7 +160,7 @@ class SendTierUpgradedNotification
                 'message' => $message,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 $title,
@@ -174,6 +175,29 @@ class SendTierUpgradedNotification
                 'success_count' => $result['success_count'],
                 'failed_count' => $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => $isUpgrade ? 'tier_upgraded' : 'tier_downgraded',
+                    'title' => $title,
+                    'message' => $message,
+                    'url' => '/tier-benefits', // URL to view tier benefits
+                    'data' => $data,
+                    'is_read' => false,
+                ]);
+                
+                Log::info("Tier {$notificationType} notification saved to database", [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error("Error saving tier {$notificationType} notification to database", [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
             
             // Release lock after successful processing
             if (isset($lock)) {

@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\VoucherReceived;
 use App\Services\FCMService;
+use App\Models\MemberAppsNotification;
 use Illuminate\Support\Facades\Log;
 
 class SendVoucherReceivedNotification
@@ -63,7 +64,7 @@ class SendVoucherReceivedNotification
                 'message' => $message,
             ]);
 
-            // Send notification
+            // Send push notification
             $result = $this->fcmService->sendToMember(
                 $member,
                 $title,
@@ -77,6 +78,29 @@ class SendVoucherReceivedNotification
                 'success_count' => $result['success_count'],
                 'failed_count' => $result['failed_count'],
             ]);
+
+            // Save notification to database
+            try {
+                MemberAppsNotification::create([
+                    'member_id' => $member->id,
+                    'type' => 'voucher_received',
+                    'title' => $title,
+                    'message' => $message,
+                    'url' => '/vouchers',
+                    'data' => $data,
+                    'is_read' => false,
+                ]);
+                
+                Log::info('Voucher received notification saved to database', [
+                    'member_id' => $member->id,
+                ]);
+            } catch (\Exception $dbError) {
+                Log::error('Error saving voucher received notification to database', [
+                    'member_id' => $member->id,
+                    'error' => $dbError->getMessage(),
+                ]);
+                // Continue even if database save fails
+            }
 
         } catch (\Exception $e) {
             Log::error('Error sending voucher received notification', [
