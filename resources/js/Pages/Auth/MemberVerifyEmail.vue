@@ -169,16 +169,6 @@ const resendVerification = async () => {
                 <div v-if="!success && !member" class="text-center text-gray-600 text-sm">
                     <p>Please contact support if you continue to experience issues.</p>
                 </div>
-
-                <!-- Back Link -->
-                <div class="text-center mt-6">
-                    <a 
-                        href="https://ymsofterp.com" 
-                        class="text-gray-600 hover:text-gray-900 text-sm transition-colors"
-                    >
-                        Back to Home
-                    </a>
-                </div>
             </div>
         </div>
     </GuestLayout>
