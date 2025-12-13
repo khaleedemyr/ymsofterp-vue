@@ -35,10 +35,12 @@ class AuthController extends Controller
         if ($existingEmail) {
             return response()->json([
                 'success' => false,
-                'message' => 'Email already registered',
+                'message' => 'Email ini sudah terdaftar. Silakan gunakan email lain atau login dengan email tersebut.',
+                'error_type' => 'email_already_registered',
                 'errors' => [
-                    'email' => ['Email sudah terdaftar. Silakan gunakan email lain atau login dengan email tersebut.']
-                ]
+                    'email' => ['Email ini sudah terdaftar. Silakan gunakan email lain atau login dengan email tersebut.']
+                ],
+                'suggestion' => 'Jika Anda sudah memiliki akun, silakan login menggunakan email dan password yang sudah terdaftar. Jika lupa password, gunakan fitur "Lupa Password".'
             ], 422);
         }
         
@@ -48,10 +50,12 @@ class AuthController extends Controller
         if ($existingMobileExact) {
             return response()->json([
                 'success' => false,
-                'message' => 'Mobile phone already registered',
+                'message' => 'Nomor HP ini sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.',
+                'error_type' => 'mobile_phone_already_registered',
                 'errors' => [
-                    'mobile_phone' => ['Nomor HP sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
-                ]
+                    'mobile_phone' => ['Nomor HP ini sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
+                ],
+                'suggestion' => 'Jika Anda sudah memiliki akun, silakan login menggunakan nomor HP dan password yang sudah terdaftar. Jika lupa password, gunakan fitur "Lupa Password".'
             ], 422);
         }
         
@@ -67,10 +71,12 @@ class AuthController extends Controller
             if ($existingMobileNormalized === $normalizedMobile && $normalizedMobile !== '') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Mobile phone already registered',
+                    'message' => 'Nomor HP ini sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.',
+                    'error_type' => 'mobile_phone_already_registered',
                     'errors' => [
-                        'mobile_phone' => ['Nomor HP sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
-                    ]
+                        'mobile_phone' => ['Nomor HP ini sudah terdaftar. Silakan gunakan nomor HP lain atau login dengan nomor HP tersebut.']
+                    ],
+                    'suggestion' => 'Jika Anda sudah memiliki akun, silakan login menggunakan nomor HP dan password yang sudah terdaftar. Jika lupa password, gunakan fitur "Lupa Password".'
                 ], 422);
             }
         }
