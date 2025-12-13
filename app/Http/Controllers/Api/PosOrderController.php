@@ -459,20 +459,67 @@ class PosOrderController extends Controller
                 }
 
                 // 2. Rollback point transactions (delete or mark as voided)
+                // PENTING: reference_id bisa dalam format:
+                // - "order_id" atau "order_nomor" untuk transaction type 'earn'
+                // - "serial_code" atau "serial_code|order_id" untuk transaction type 'redeem'
+                // Jadi kita perlu mencari dengan lebih fleksibel
                 $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
                     ->where(function($query) use ($orderId, $orderNomor) {
+                        // Exact match untuk earn transactions
                         $query->where('reference_id', $orderId)
-                              ->orWhere('reference_id', $orderNomor);
+                              ->orWhere('reference_id', $orderNomor)
+                              // Untuk redeem transactions, reference_id bisa dalam format "serial_code|order_id"
+                              ->orWhere('reference_id', 'LIKE', '%|' . $orderId)
+                              ->orWhere('reference_id', 'LIKE', '%|' . $orderNomor)
+                              // Juga cek dengan format string (untuk memastikan)
+                              ->orWhere('reference_id', 'LIKE', '%|' . (string)$orderId)
+                              ->orWhere('reference_id', 'LIKE', '%|' . (string)$orderNomor);
                     })
                     ->get();
+                
+                Log::info('Found point transactions for rollback', [
+                    'member_id' => $member->id,
+                    'order_id' => $orderId,
+                    'order_id_type' => gettype($orderId),
+                    'order_nomor' => $orderNomor,
+                    'order_nomor_type' => gettype($orderNomor),
+                    'transactions_count' => $pointTransactions->count(),
+                    'transactions' => $pointTransactions->map(function($t) {
+                        return [
+                            'id' => $t->id,
+                            'transaction_type' => $t->transaction_type,
+                            'point_amount' => $t->point_amount,
+                            'reference_id' => $t->reference_id,
+                            'reference_id_type' => gettype($t->reference_id),
+                        ];
+                    })->toArray()
+                ]);
 
                 $totalPointsToAddBack = 0; // Points to add back to member (from redemptions)
                 $totalPointsToDeduct = 0; // Points to deduct from member (from earnings)
                 
                 foreach ($pointTransactions as $transaction) {
+                    Log::info('Processing point transaction for rollback', [
+                        'transaction_id' => $transaction->id,
+                        'transaction_type' => $transaction->transaction_type,
+                        'point_amount' => $transaction->point_amount,
+                        'reference_id' => $transaction->reference_id,
+                    ]);
+                    
                     // Rollback point redemption from earnings if this is a redemption transaction
                     if ($transaction->transaction_type === 'redeem') {
                         try {
+                            // PENTING: point_amount untuk redeem adalah negatif (misal -500)
+                            // Kita perlu mengembalikan nilai absolutnya ke just_points member
+                            $pointsToReturn = abs($transaction->point_amount);
+                            
+                            Log::info('Processing redeem transaction rollback', [
+                                'point_transaction_id' => $transaction->id,
+                                'point_amount' => $transaction->point_amount,
+                                'points_to_return' => $pointsToReturn,
+                                'member_current_points' => $member->just_points ?? 0,
+                            ]);
+                            
                             $pointEarningService = new \App\Services\PointEarningService();
                             $rollbackResult = $pointEarningService->rollbackPointRedemptionFromEarnings($transaction->id);
                             
@@ -482,10 +529,10 @@ class PosOrderController extends Controller
                                     'member_id' => $member->id,
                                     'order_id' => $orderId,
                                 ]);
+                                // Tetap kembalikan point ke member meskipun rollback earnings gagal
+                                $totalPointsToAddBack += $pointsToReturn;
                             } else {
                                 // PENTING: Kembalikan point ke just_points member karena point sudah dikembalikan ke remaining_points
-                                // point_amount untuk redeem adalah negatif (misal -500), jadi kita ambil nilai absolutnya
-                                $pointsToReturn = abs($transaction->point_amount);
                                 $totalPointsToAddBack += $pointsToReturn;
                                 
                                 Log::info('Point earnings rolled back for void order', [
@@ -501,10 +548,15 @@ class PosOrderController extends Controller
                                 'member_id' => $member->id,
                                 'order_id' => $orderId,
                                 'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
                             ]);
                             // Continue with rollback anyway, but still try to return points
                             $pointsToReturn = abs($transaction->point_amount);
                             $totalPointsToAddBack += $pointsToReturn;
+                            Log::info('Added points to rollback despite error', [
+                                'points_to_return' => $pointsToReturn,
+                                'total_points_to_add_back' => $totalPointsToAddBack,
+                            ]);
                         }
                     } elseif ($transaction->transaction_type === 'earn') {
                         // For point earning, delete the point earning record
