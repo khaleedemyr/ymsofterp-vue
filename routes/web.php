@@ -7,27 +7,46 @@ use Inertia\Inertia;
 
 // Route untuk update files YMSoft POS (harus di atas route lain)
 Route::get('/storage/updates/ymsoftpos/{file}', function ($file) {
-    $path = storage_path('app/public/updates/ymsoftpos/' . $file);
-    
-    if (!file_exists($path)) {
-        abort(404);
+    try {
+        // Sanitize filename untuk security
+        $file = basename($file);
+        $path = storage_path('app/public/updates/ymsoftpos/' . $file);
+        
+        if (!file_exists($path) || !is_file($path)) {
+            abort(404, 'File not found');
+        }
+        
+        // Set MIME type
+        $mimeTypes = [
+            'yml' => 'text/plain',
+            'yaml' => 'text/plain',
+            'exe' => 'application/octet-stream',
+        ];
+        
+        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+        
+        // Read file content
+        $content = file_get_contents($path);
+        
+        if ($content === false) {
+            abort(500, 'Failed to read file');
+        }
+        
+        return response($content, 200)
+            ->header('Content-Type', $mimeType)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type')
+            ->header('Content-Length', strlen($content));
+    } catch (\Exception $e) {
+        \Log::error('Error serving update file: ' . $e->getMessage(), [
+            'file' => $file,
+            'path' => $path ?? 'N/A',
+            'trace' => $e->getTraceAsString()
+        ]);
+        abort(500, 'Internal server error: ' . $e->getMessage());
     }
-    
-    // Set MIME type
-    $mimeTypes = [
-        'yml' => 'text/plain',
-        'exe' => 'application/octet-stream',
-    ];
-    
-    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-    $mimeType = $mimeTypes[$extension] ?? mime_content_type($path);
-    
-    return response()->file($path, [
-        'Content-Type' => $mimeType,
-        'Access-Control-Allow-Origin' => '*',
-        'Access-Control-Allow-Methods' => 'GET, OPTIONS',
-        'Access-Control-Allow-Headers' => 'Content-Type',
-    ]);
 })->where('file', '.*');
 use App\Http\Controllers\MaintenanceOrderController;
 use App\Http\Controllers\ActionPlanController;
