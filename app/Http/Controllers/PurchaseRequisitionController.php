@@ -2003,17 +2003,20 @@ class PurchaseRequisitionController extends Controller
     {
         $search = $request->get('search', '');
         
-        $users = User::where('users.status', 'A')
+        $query = User::where('users.status', 'A')
             ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
-            ->where(function($query) use ($search) {
-                $query->where('users.nama_lengkap', 'like', "%{$search}%")
-                      ->orWhere('users.email', 'like', "%{$search}%")
-                      ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
-            })
-            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
-            ->orderBy('users.nama_lengkap')
-            ->limit(20)
-            ->get();
+            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
+        
+        // Apply search filter if provided
+        if (!empty($search)) {
+            $query->where(function($q) use ($search) {
+                $q->where('users.nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('users.email', 'like', "%{$search}%")
+                  ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            });
+        }
+        
+        $users = $query->orderBy('users.nama_lengkap')->get();
         
         return response()->json(['success' => true, 'users' => $users]);
     }
