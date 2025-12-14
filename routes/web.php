@@ -4,6 +4,31 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+// Route untuk update files YMSoft POS (harus di atas route lain)
+Route::get('/storage/updates/ymsoftpos/{file}', function ($file) {
+    $path = storage_path('app/public/updates/ymsoftpos/' . $file);
+    
+    if (!file_exists($path)) {
+        abort(404);
+    }
+    
+    // Set MIME type
+    $mimeTypes = [
+        'yml' => 'text/plain',
+        'exe' => 'application/octet-stream',
+    ];
+    
+    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    $mimeType = $mimeTypes[$extension] ?? mime_content_type($path);
+    
+    return response()->file($path, [
+        'Content-Type' => $mimeType,
+        'Access-Control-Allow-Origin' => '*',
+        'Access-Control-Allow-Methods' => 'GET, OPTIONS',
+        'Access-Control-Allow-Headers' => 'Content-Type',
+    ]);
+})->where('file', '.*');
 use App\Http\Controllers\MaintenanceOrderController;
 use App\Http\Controllers\ActionPlanController;
 use App\Http\Controllers\MaintenanceTaskController;
