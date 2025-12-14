@@ -5,49 +5,6 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// Route untuk update files YMSoft POS (harus di atas route lain)
-Route::get('/storage/updates/ymsoftpos/{file}', function ($file) {
-    try {
-        // Sanitize filename untuk security
-        $file = basename($file);
-        $path = storage_path('app/public/updates/ymsoftpos/' . $file);
-        
-        if (!file_exists($path) || !is_file($path)) {
-            abort(404, 'File not found');
-        }
-        
-        // Set MIME type
-        $mimeTypes = [
-            'yml' => 'text/plain',
-            'yaml' => 'text/plain',
-            'exe' => 'application/octet-stream',
-        ];
-        
-        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
-        
-        // Read file content
-        $content = file_get_contents($path);
-        
-        if ($content === false) {
-            abort(500, 'Failed to read file');
-        }
-        
-        return response($content, 200)
-            ->header('Content-Type', $mimeType)
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-            ->header('Access-Control-Allow-Headers', 'Content-Type')
-            ->header('Content-Length', strlen($content));
-    } catch (\Exception $e) {
-        \Log::error('Error serving update file: ' . $e->getMessage(), [
-            'file' => $file,
-            'path' => $path ?? 'N/A',
-            'trace' => $e->getTraceAsString()
-        ]);
-        abort(500, 'Internal server error: ' . $e->getMessage());
-    }
-})->where('file', '.*');
 use App\Http\Controllers\MaintenanceOrderController;
 use App\Http\Controllers\ActionPlanController;
 use App\Http\Controllers\MaintenanceTaskController;
