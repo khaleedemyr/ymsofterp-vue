@@ -273,6 +273,7 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/user/pins/{id}', [\App\Http\Controllers\UserPinController::class, 'updateForApprovalApp']);
         Route::delete('/user/pins/{id}', [\App\Http\Controllers\UserPinController::class, 'destroyForApprovalApp']);
         Route::get('/outlets', [\App\Http\Controllers\UserPinController::class, 'getOutletsForApprovalApp']);
+        Route::get('/divisions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getDivisions']);
         
         // Purchase Requisition routes - using existing controller methods
         // IMPORTANT: Specific routes (without {id}) must be defined BEFORE routes with {id} parameter
@@ -281,6 +282,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories']);
         Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers']);
         Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo']);
+        Route::get('/purchase-requisitions/check-kasbon-period', [\App\Http\Controllers\PurchaseRequisitionController::class, 'checkKasbonPeriod']);
         Route::get('/purchase-requisitions/attachments/{attachmentId}/view', [\App\Http\Controllers\PurchaseRequisitionController::class, 'viewAttachmentApi']);
         // Routes with {id} parameter must come after specific routes
         Route::get('/purchase-requisitions/{id}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show']);
