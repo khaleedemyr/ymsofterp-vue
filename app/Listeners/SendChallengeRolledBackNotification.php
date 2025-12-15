@@ -66,11 +66,20 @@ class SendChallengeRolledBackNotification
                 $message = "Your transaction for order {$orderId} was voided. Progress for {$challengeCount} challenges has been updated.";
             }
 
-            $data = [
+            // Prepare data for FCM (all values must be strings, so serialize arrays)
+            $fcmData = [
+                'type' => 'challenge_rolled_back',
+                'order_id' => (string)$orderId,
+                'challenges_affected' => (string)$challengeCount,
+                'rewards_rolled_back' => json_encode($rewardsRolledBack), // Serialize array to JSON string for FCM
+            ];
+
+            // Prepare data for database (keep as array for JSON storage)
+            $dbData = [
                 'type' => 'challenge_rolled_back',
                 'order_id' => $orderId,
                 'challenges_affected' => $challengeCount,
-                'rewards_rolled_back' => $rewardsRolledBack,
+                'rewards_rolled_back' => $rewardsRolledBack, // Keep as array for database
             ];
 
             Log::info('Sending challenge rolled back notification', [
@@ -85,7 +94,7 @@ class SendChallengeRolledBackNotification
                 $member,
                 $title,
                 $message,
-                $data
+                $fcmData
             );
 
             Log::info('Challenge rolled back notification result', [
@@ -104,7 +113,7 @@ class SendChallengeRolledBackNotification
                     'title' => $title,
                     'message' => $message,
                     'url' => '/challenges',
-                    'data' => $data,
+                    'data' => $dbData, // Use dbData (with arrays) for database storage
                     'is_read' => false,
                 ]);
                 

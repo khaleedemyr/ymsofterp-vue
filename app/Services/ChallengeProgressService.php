@@ -575,45 +575,23 @@ class ChallengeProgressService
                 ]);
 
                 // Rollback progress data
-                if ($challengeType === 'spending' && isset($progressData['spending'])) {
-                    $oldSpending = (float) $progressData['spending'];
-                    $newSpending = max(0, $oldSpending - $grandTotal);
-                    $progressData['spending'] = $newSpending;
+                // For both spending and product challenges, we need to recalculate from database
+                // because the voided order should be excluded from the calculation
+                if ($challengeType === 'spending') {
+                    // For spending challenge, mark for recalculation from database
+                    // This ensures we get the correct spending amount excluding the voided order
+                    $progressData['needs_recalculation'] = true;
                     
-                    Log::info('Rolling back spending progress', [
+                    Log::info('Spending challenge marked for recalculation', [
                         'progress_id' => $progress->id,
-                        'old_spending' => $oldSpending,
-                        'new_spending' => $newSpending,
+                        'challenge_id' => $challenge->id,
+                        'old_spending' => $progressData['spending'] ?? 0,
                         'grand_total' => $grandTotal
                     ]);
                     
-                    // Check if challenge should be uncompleted
-                    $minAmount = $rules['min_amount'] ?? 0;
-                    if ($progress->is_completed && $newSpending < $minAmount) {
-                        Log::info('Challenge will be uncompleted after rollback', [
-                            'progress_id' => $progress->id,
-                            'new_spending' => $newSpending,
-                            'min_amount' => $minAmount
-                        ]);
-                        
-                        // Challenge is no longer completed
-                        $progress->is_completed = false;
-                        $progress->completed_at = null;
-                        $progress->reward_expires_at = null;
-                        
-                        // Rollback reward if already claimed
-                        if ($progress->reward_claimed) {
-                            Log::info('Rolling back reward for uncompleted challenge', [
-                                'progress_id' => $progress->id,
-                                'challenge_id' => $challenge->id
-                            ]);
-                            $this->rollbackChallengeReward($progress, $challenge, $rules, $member);
-                            $rewardsRolledBack[] = [
-                                'challenge_id' => $challenge->id,
-                                'challenge_title' => $challenge->title,
-                                'reward_type' => $rules['reward_type'] ?? 'none'
-                            ];
-                        }
+                    // Mark for reward rollback check if challenge was completed and reward was claimed
+                    if ($progress->is_completed && $progress->reward_claimed) {
+                        $progressData['check_reward_rollback'] = true;
                     }
                 } elseif ($challengeType === 'product') {
                     // For product challenge, we need to recalculate from orders
@@ -660,34 +638,68 @@ class ChallengeProgressService
                 'order_id' => $orderId
             ]);
             
-            // Recalculate will use actual orders, so voided order won't be counted
-            $this->updateProgressFromTransaction($memberId);
-            
-            Log::info('Challenge progress recalculation completed', [
-                'member_id' => $memberId,
-                'order_id' => $orderId
-            ]);
-
-            // After recalculation, check if any product challenges need reward rollback
+            // Recalculate all affected challenges (including completed ones that were rolled back)
+            // We need to recalculate even completed challenges because their progress might have changed
             foreach ($challengeProgresses as $progress) {
                 $challenge = $progress->challenge;
-                if (!$challenge || $challenge->challenge_type_id !== 'product') {
+                if (!$challenge) {
                     continue;
                 }
-
+                
+                // Recalculate progress from database directly (bypass updateProgressFromTransaction filter)
+                $rules = $challenge->rules;
+                if (is_string($rules)) {
+                    $rules = json_decode($rules, true) ?? [];
+                }
+                
+                if (empty($rules)) {
+                    continue;
+                }
+                
+                $challengeType = $challenge->challenge_type_id;
+                $currentProgress = $progress->progress_data ?? [];
+                
+                // Recalculate progress based on challenge type
+                if ($challengeType === 'spending') {
+                    $this->updateSpendingProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId);
+                } elseif ($challengeType === 'product') {
+                    $this->updateProductProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId);
+                }
+                
+                // Refresh progress to get updated data
+                $progress->refresh();
+                
+                // Check if challenge should be uncompleted after recalculation
                 $progress->refresh();
                 $rules = $challenge->rules;
                 if (is_string($rules)) {
                     $rules = json_decode($rules, true) ?? [];
                 }
-
+                
                 $progressData = $progress->progress_data ?? [];
+                $challengeType = $challenge->challenge_type_id;
+                $shouldBeUncompleted = false;
                 
-                // Check if challenge is no longer completed
-                $quantityRequired = $rules['quantity_required'] ?? 1;
-                $totalQuantity = $progressData['total_quantity'] ?? 0;
+                if ($challengeType === 'spending') {
+                    $minAmount = $rules['min_amount'] ?? 0;
+                    $currentSpending = $progressData['spending'] ?? 0;
+                    $shouldBeUncompleted = $progress->is_completed && $currentSpending < $minAmount;
+                } elseif ($challengeType === 'product') {
+                    $quantityRequired = $rules['quantity_required'] ?? 1;
+                    $totalQuantity = $progressData['total_quantity'] ?? 0;
+                    $shouldBeUncompleted = $progress->is_completed && $totalQuantity < $quantityRequired;
+                }
                 
-                if ($progress->is_completed && $totalQuantity < $quantityRequired) {
+                if ($shouldBeUncompleted) {
+                    Log::info('Challenge is no longer completed after rollback recalculation', [
+                        'progress_id' => $progress->id,
+                        'challenge_id' => $challenge->id,
+                        'challenge_type' => $challengeType,
+                        'current_progress' => $challengeType === 'spending' 
+                            ? ($progressData['spending'] ?? 0) 
+                            : ($progressData['total_quantity'] ?? 0)
+                    ]);
+                    
                     // Challenge is no longer completed
                     $progress->is_completed = false;
                     $progress->completed_at = null;
@@ -695,6 +707,10 @@ class ChallengeProgressService
                     
                     // Rollback reward if already claimed
                     if ($progress->reward_claimed) {
+                        Log::info('Rolling back reward for uncompleted challenge after recalculation', [
+                            'progress_id' => $progress->id,
+                            'challenge_id' => $challenge->id
+                        ]);
                         $this->rollbackChallengeReward($progress, $challenge, $rules, $member);
                         $rewardsRolledBack[] = [
                             'challenge_id' => $challenge->id,
@@ -706,6 +722,11 @@ class ChallengeProgressService
                     $progress->save();
                 }
             }
+            
+            Log::info('Challenge progress recalculation completed', [
+                'member_id' => $memberId,
+                'order_id' => $orderId
+            ]);
 
             // Dispatch rollback notification if any challenge was uncompleted or reward rolled back
             if (!empty($rewardsRolledBack) || !empty(array_filter($wasCompleted))) {
