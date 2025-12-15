@@ -287,8 +287,8 @@ class PayrollReportController extends Controller
                 $hariKerja = $employeeRows->count();
 
                 // Hitung total alpha menggunakan method yang sama dengan Employee Summary
-                // Gunakan null untuk outlet_id seperti di Employee Summary
-                $totalAlpha = $this->calculateAlpaDays($userId, null, $start, $end);
+                // Gunakan outlet_id yang sama dengan filter data lainnya untuk konsistensi
+                $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $start, $end);
                 
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
                 $leaveData = $this->calculateLeaveData($userId, $start, $end);
@@ -2150,14 +2150,30 @@ class PayrollReportController extends Controller
             if ($masterData->sc == 1 && $serviceCharge > 0) {
                 $serviceChargeAmount = $serviceCharge;
             }
+            
+            // Hitung alpha dan leave data
+            $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $startDate, $endDate);
+            $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
+            
+            // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+            $potonganAlpha = 0;
+            if ($totalAlpha > 0) {
+                $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+            }
+            
+            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+            $potonganUnpaidLeave = 0;
+            $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
+            if ($unpaidLeaveDays > 0) {
+                $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
+            }
 
             // Calculate total salary
-            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
         }
-
-        // Hitung periode payroll untuk perhitungan alpha dan leave (harus didefinisikan sebelum digunakan)
-        $startDate = Carbon::create($year, $month, 26)->subMonth();
-        $endDate = Carbon::create($year, $month, 25);
 
         // Get position, division data (diluar if/else karena digunakan di kedua kondisi)
         $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
