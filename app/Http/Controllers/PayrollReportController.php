@@ -1048,13 +1048,17 @@ class PayrollReportController extends Controller
             $attendanceInfo = $attendanceDataWithFirstInLastOut[$data['tanggal']] ?? null;
             
             // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
-            // Use data from AttendanceController if available, otherwise calculate
-            $extraOffOvertime = $attendanceInfo['extra_off_overtime'] ?? $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
+            // Always calculate directly to ensure we get the correct value
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
             
             // Use lembur and telat from AttendanceController if available (more accurate)
             if ($attendanceInfo) {
                 $lembur = $attendanceInfo['lembur'] ?? $lembur;
                 $telat = $attendanceInfo['telat'] ?? $telat;
+                // Also use extra_off_overtime from AttendanceController if available (for consistency)
+                if (isset($attendanceInfo['extra_off_overtime']) && $attendanceInfo['extra_off_overtime'] > 0) {
+                    $extraOffOvertime = $attendanceInfo['extra_off_overtime'];
+                }
             }
             
             // Round down total lembur (bulatkan ke bawah)
@@ -1087,10 +1091,75 @@ class PayrollReportController extends Controller
                     'shift_time_end' => $shiftData ? $shiftData->time_end : null,
                     'is_off' => $is_off,
                     'telat' => $telat,
-                    'lembur' => $lembur
+                    'lembur' => $lembur,
+                    'extra_off_overtime' => $extraOffOvertime,
+                    'total_lembur' => $totalLembur,
+                    'attendance_info_extra_off' => $attendanceInfo['extra_off_overtime'] ?? 'not set'
                 ]);
             }
         }
+        
+        // Also check for dates with Extra Off overtime but no attendance data
+        $processedDates = collect($finalData)->pluck('tanggal')->toArray();
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        foreach ($period as $tanggal) {
+            // Skip if already processed
+            if (in_array($tanggal, $processedDates)) {
+                continue;
+            }
+            
+            // Check for Extra Off overtime on this date
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+            if ($extraOffOvertime > 0) {
+                // Get shift data to determine if off day
+                $shiftData = DB::table('user_shifts as us')
+                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                    ->where('us.user_id', $userId)
+                    ->where('us.outlet_id', $outletId)
+                    ->where('us.tanggal', $tanggal)
+                    ->select('s.shift_name', 's.time_start', 's.time_end', 'us.shift_id')
+                    ->first();
+                
+                $shiftName = $shiftData ? $shiftData->shift_name : null;
+                $is_off = false;
+                
+                if ($shiftData) {
+                    if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
+                        $is_off = true;
+                    }
+                } else {
+                    $is_off = true;
+                }
+                
+                // Add entry for this date with only Extra Off overtime
+                $attendanceDetail[] = [
+                    'tanggal' => $tanggal,
+                    'jam_masuk' => null,
+                    'jam_keluar' => null,
+                    'total_masuk' => 0,
+                    'total_keluar' => 0,
+                    'telat' => 0,
+                    'lembur' => 0,
+                    'extra_off_overtime' => $extraOffOvertime,
+                    'total_lembur' => $extraOffOvertime,
+                    'shift_name' => $shiftName,
+                    'is_cross_day' => false,
+                    'is_off' => $is_off
+                ];
+            }
+        }
+        
+        // Sort by tanggal
+        usort($attendanceDetail, function($a, $b) {
+            return strcmp($a['tanggal'], $b['tanggal']);
+        });
 
         // Debug logging for final result
         \Log::info('Attendance Detail Result', [
