@@ -293,7 +293,7 @@ class PayrollReportController extends Controller
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
                 $leaveData = $this->calculateLeaveData($userId, $start, $end);
                 
-                // Extract breakdown dari leaveData - sama seperti Employee Summary
+                // Extract breakdown dari leaveData - SAMA PERSIS dengan Employee Summary
                 // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
                 $izinCutiBreakdown = [];
                 $totalIzinCuti = 0;
@@ -303,6 +303,14 @@ class PayrollReportController extends Controller
                         $totalIzinCuti += $value;
                     }
                 }
+                
+                // Debug: Log leave data
+                \Log::info('Payroll - Leave data extracted', [
+                    'user_id' => $userId,
+                    'leave_data' => $leaveData,
+                    'izin_cuti_breakdown' => $izinCutiBreakdown,
+                    'extra_off_days' => $leaveData['extra_off_days'] ?? 0
+                ]);
 
                 // Ambil point dari level melalui jabatan
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
@@ -538,6 +546,7 @@ class PayrollReportController extends Controller
                     'total_alpha' => $totalAlpha,
                     'total_izin_cuti' => $totalIzinCuti,
                     'izin_cuti_breakdown' => $izinCutiBreakdown,
+                    'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // SAMA PERSIS dengan Employee Summary
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
                 ];
@@ -2476,7 +2485,7 @@ class PayrollReportController extends Controller
 
     /**
      * Calculate leave data (breakdown per leave type)
-     * Same logic as AttendanceReportController::calculateLeaveData
+     * COPY PASTE LANGSUNG DARI AttendanceReportController - TIDAK ADA MODIFIKASI
      */
     private function calculateLeaveData($userId, $startDate, $endDate)
     {
@@ -2507,44 +2516,72 @@ class PayrollReportController extends Controller
             ])
             ->get();
         
+        // Debug: Log query results
+        \Log::info('calculateLeaveData - Query Results', [
+            'user_id' => $userId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'approved_absents_count' => $approvedAbsents->count(),
+            'approved_absents' => $approvedAbsents->toArray(),
+            'leave_types' => $leaveTypes->toArray()
+        ]);
+        
         // Initialize result with all leave types
         $result = [];
         foreach ($leaveTypes as $leaveType) {
-            $result[strtolower(str_replace(' ', '_', $leaveType->name)) . '_days'] = 0;
+            $key = strtolower(str_replace(' ', '_', $leaveType->name)) . '_days';
+            $result[$key] = 0;
         }
         
-        // Group by leave type and calculate days - SAMA PERSIS dengan AttendanceReportController
+        // Group by leave type and calculate days
         $leaveDataByType = [];
         foreach ($approvedAbsents as $absent) {
             $leaveTypeId = $absent->leave_type_id;
             $leaveTypeName = $absent->leave_type_name;
             
-            // Calculate days between date_from and date_to, but only count days within the period
-            $fromDate = new \DateTime(max($absent->date_from, $startDate));
-            $toDate = new \DateTime(min($absent->date_to, $endDate));
+            // Calculate days between date_from and date_to
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            $daysCount = $fromDate->diff($toDate)->days + 1;
             
-            // Only count if the date range overlaps with the period
-            if ($fromDate <= $toDate) {
-                $daysCount = $fromDate->diff($toDate)->days + 1;
-                
-                if (!isset($leaveDataByType[$leaveTypeId])) {
-                    $leaveDataByType[$leaveTypeId] = [
-                        'name' => $leaveTypeName,
-                        'days' => 0
-                    ];
-                }
-                $leaveDataByType[$leaveTypeId]['days'] += $daysCount;
+            \Log::info('calculateLeaveData - Processing absent', [
+                'user_id' => $userId,
+                'leave_type_id' => $leaveTypeId,
+                'leave_type_name' => $leaveTypeName,
+                'date_from' => $absent->date_from,
+                'date_to' => $absent->date_to,
+                'days_count' => $daysCount
+            ]);
+            
+            if (!isset($leaveDataByType[$leaveTypeId])) {
+                $leaveDataByType[$leaveTypeId] = [
+                    'name' => $leaveTypeName,
+                    'days' => 0
+                ];
             }
+            $leaveDataByType[$leaveTypeId]['days'] += $daysCount;
         }
         
         // Map to result format
         foreach ($leaveDataByType as $leaveTypeId => $data) {
             $key = strtolower(str_replace(' ', '_', $data['name'])) . '_days';
             $result[$key] = $data['days'];
+            
+            \Log::info('calculateLeaveData - Mapped leave data', [
+                'leave_type_id' => $leaveTypeId,
+                'leave_type_name' => $data['name'],
+                'key' => $key,
+                'days' => $data['days']
+            ]);
         }
         
         // Keep legacy fields for backward compatibility
         $result['extra_off_days'] = $result['extra_off_days'] ?? 0;
+        
+        \Log::info('calculateLeaveData - Final result', [
+            'user_id' => $userId,
+            'result' => $result
+        ]);
         
         return $result;
     }
