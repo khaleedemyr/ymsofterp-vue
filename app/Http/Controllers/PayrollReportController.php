@@ -368,6 +368,59 @@ class PayrollReportController extends Controller
 
     private function getAttendanceData($userId, $outletId, $startDate, $endDate)
     {
+        // Use AttendanceController method to get attendance data (same logic as my attendance)
+        $attendanceController = new AttendanceController();
+        $attendanceDataWithFirstInLastOut = $attendanceController->getAttendanceDataWithFirstInLastOut($userId, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+        
+        // Convert to format expected by PayrollReportController
+        $rows = collect();
+        $period = [];
+        $dt = new \DateTime($startDate->format('Y-m-d'));
+        $dtEnd = new \DateTime($endDate->format('Y-m-d'));
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        foreach ($period as $tanggal) {
+            $attendanceInfo = $attendanceDataWithFirstInLastOut[$tanggal] ?? null;
+            
+            // Get shift data to determine if off day
+            $shift = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->where('us.user_id', $userId)
+                ->where('us.tanggal', $tanggal)
+                ->where('us.outlet_id', $outletId)
+                ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->first();
+            
+            $is_off = false;
+            if ($shift) {
+                if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) {
+                    $is_off = true;
+                }
+            } else {
+                // Jika tidak ada shift, anggap sebagai off day
+                $is_off = true;
+            }
+            
+            $has_scan = $attendanceInfo && $attendanceInfo['first_in'] ? true : false;
+            
+            $rows->push([
+                'tanggal' => $tanggal,
+                'telat' => $attendanceInfo['telat'] ?? 0,
+                'lembur' => $attendanceInfo['lembur'] ?? 0,
+                'extra_off_overtime' => $attendanceInfo['extra_off_overtime'] ?? 0,
+                'total_lembur' => $attendanceInfo['total_lembur'] ?? 0,
+                'is_off' => $is_off,
+                'has_scan' => $has_scan,
+            ]);
+        }
+        
+        return $rows;
+        
+        // OLD CODE - Keep for reference but use AttendanceController method above
+        /*
         // Ambil data scan attendance
         $scans = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
@@ -986,15 +1039,20 @@ class PayrollReportController extends Controller
             return response()->json(['error' => 'Missing required parameters'], 400);
         }
 
-        // Log all parameters for debugging
-        \Log::info('getAttendanceDetail called with:', [
-            'user_id' => $userId,
-            'outlet_id' => $outletId,
-            'start_date' => $startDate,
-            'end_date' => $endDate
-        ]);
-
-        // Get raw scan data
+        // Use AttendanceController method to get attendance data (same logic as my attendance)
+        $attendanceController = new AttendanceController();
+        $attendanceDataWithFirstInLastOut = $attendanceController->getAttendanceDataWithFirstInLastOut($userId, $startDate, $endDate);
+        
+        // Get all dates in period
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        // Get raw scan data for detail (jam masuk, jam keluar, total masuk, total keluar) - filtered by outlet
         $scans = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
@@ -1162,8 +1220,19 @@ class PayrollReportController extends Controller
                 $lembur = 0;
             }
             
+            // Get attendance data from AttendanceController (includes Extra Off overtime)
+            $attendanceInfo = $attendanceDataWithFirstInLastOut[$data['tanggal']] ?? null;
+            
             // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
-            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
+            // Use data from AttendanceController if available, otherwise calculate
+            $extraOffOvertime = $attendanceInfo['extra_off_overtime'] ?? $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
+            
+            // Use lembur and telat from AttendanceController if available (more accurate)
+            if ($attendanceInfo) {
+                $lembur = $attendanceInfo['lembur'] ?? $lembur;
+                $telat = $attendanceInfo['telat'] ?? $telat;
+            }
+            
             // Round down total lembur (bulatkan ke bawah)
             $totalLembur = floor($lembur + $extraOffOvertime);
 

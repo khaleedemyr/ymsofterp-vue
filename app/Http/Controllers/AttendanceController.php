@@ -466,7 +466,7 @@ class AttendanceController extends Controller
         return response()->json($formattedData);
     }
 
-    private function getAttendanceDataWithFirstInLastOut($userId, $startDate, $endDate)
+    public function getAttendanceDataWithFirstInLastOut($userId, $startDate, $endDate)
     {
         // Following AttendanceReportController logic for first in and last out
         $rawData = DB::table('att_log as a')
@@ -584,6 +584,36 @@ class AttendanceController extends Controller
                 'total_lembur' => $totalLembur,
                 'has_no_checkout' => $has_no_checkout
             ];
+        }
+        
+        // Also check for dates with Extra Off overtime but no attendance data
+        $start = new \DateTime($startDate);
+        $end = new \DateTime($endDate);
+        $end->modify('+1 day'); // Include end date
+        
+        $currentDate = clone $start;
+        while ($currentDate < $end) {
+            $dateStr = $currentDate->format('Y-m-d');
+            
+            // If date not in attendanceData, check for Extra Off overtime
+            if (!isset($attendanceData[$dateStr])) {
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $dateStr);
+                if ($extraOffOvertime > 0) {
+                    // Add entry for this date with only Extra Off overtime
+                    $attendanceData[$dateStr] = [
+                        'first_in' => null,
+                        'last_out' => null,
+                        'is_cross_day' => false,
+                        'telat' => 0,
+                        'lembur' => 0,
+                        'extra_off_overtime' => $extraOffOvertime,
+                        'total_lembur' => $extraOffOvertime,
+                        'has_no_checkout' => false
+                    ];
+                }
+            }
+            
+            $currentDate->modify('+1 day');
         }
         
         return $attendanceData;
