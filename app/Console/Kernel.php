@@ -124,13 +124,13 @@ $schedule->command('leave:burn-previous-year')
             ->description('Send notification to members who haven\'t made a transaction in the last 3 months (90 days)');
 
         // Send expiring points notification - run daily at 9:00 AM
-        // This checks for members who have points or challenge rewards expiring in 7 days
+        // This checks for members who have points or challenge rewards expiring in 14 days (2 weeks) or 7 days (1 week)
         $schedule->command('member:notify-expiring-points')
             ->dailyAt('09:00')
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/expiring-points-notifications.log'))
-            ->description('Send notification to members who have points or challenge rewards expiring in 7 days');
+            ->description('Send notification to members who have points or challenge rewards expiring in 14 days (2 weeks) or 7 days (1 week)');
 
         // Send monthly inactive member notification - run daily at 10:30 AM
         // This checks for members who haven't made a transaction in the last 1 month (30 days)
