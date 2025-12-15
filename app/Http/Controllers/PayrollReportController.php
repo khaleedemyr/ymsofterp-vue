@@ -117,6 +117,10 @@ class PayrollReportController extends Controller
                 // Hitung total telat dan lembur
                 $totalTelat = $attendanceData->sum('telat');
                 $totalLembur = $attendanceData->sum('lembur');
+                
+                // Tambahkan Extra Off overtime untuk periode ini
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($user->id, $startDate, $endDate);
+                $totalLembur += $extraOffOvertime;
 
                 // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
                 // Hari kerja = jumlah hari yang ada scan attendance-nya dan bukan off day
@@ -571,6 +575,59 @@ class PayrollReportController extends Controller
         return $rows;
     }
 
+    /**
+     * Get overtime hours from Extra Off system for a specific user in a date range
+     * 
+     * @param int $userId
+     * @param Carbon $startDate
+     * @param Carbon $endDate
+     * @return float Total overtime hours for the period (rounded down)
+     */
+    private function getExtraOffOvertimeHoursForPeriod($userId, $startDate, $endDate)
+    {
+        try {
+            // Get all overtime transactions from Extra Off system for the date range
+            $overtimeTransactions = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->where('status', 'approved') // Only count approved transactions
+                ->whereBetween('source_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->get();
+
+            $totalOvertimeHours = 0;
+
+            foreach ($overtimeTransactions as $transaction) {
+                // Extract work hours from description
+                // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (jam 08:00 - 18:00, 10.45 jam)"
+                // or: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+                $workHours = 0;
+                if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // New format with time range
+                    $workHours = (float) $matches[1];
+                } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // Old format without time range
+                    $workHours = (float) $matches[1];
+                }
+
+                $totalOvertimeHours += $workHours;
+            }
+
+            // Round down (bulatkan ke bawah)
+            return floor($totalOvertimeHours);
+
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off overtime hours for period', [
+                'user_id' => $userId,
+                'start_date' => $startDate->format('Y-m-d'),
+                'end_date' => $endDate->format('Y-m-d'),
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0; // Return 0 if there's an error
+        }
+    }
+
     private function getHariKerja($userId, $outletId, $startDate, $endDate)
     {
         // Ambil data shift karyawan untuk periode yang dipilih
@@ -671,6 +728,10 @@ class PayrollReportController extends Controller
             $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
             $totalTelat = $attendanceData->sum('telat');
             $totalLembur = $attendanceData->sum('lembur');
+            
+            // Tambahkan Extra Off overtime untuk periode ini
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($user->id, $startDate, $endDate);
+            $totalLembur += $extraOffOvertime;
 
             // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
             $hariKerja = $attendanceData->filter(function($item) {
@@ -1428,6 +1489,10 @@ class PayrollReportController extends Controller
         $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
         $totalTelat = $attendanceData->sum('telat');
         $totalLembur = $attendanceData->sum('lembur');
+        
+        // Tambahkan Extra Off overtime untuk periode ini
+        $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($userId, $startDate, $endDate);
+        $totalLembur += $extraOffOvertime;
 
         // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
         // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)

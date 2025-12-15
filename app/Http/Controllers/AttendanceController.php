@@ -35,9 +35,20 @@ class AttendanceController extends Controller
         
         // Format calendar data similar to UserShiftController
         $calendar = [];
+        $processedDates = [];
+        
         foreach ($workSchedules as $schedule) {
             $attendanceInfo = $attendanceData[$schedule->schedule_date] ?? null;
             
+            // Get Extra Off overtime for this date (even if no attendance data)
+            $extraOffOvertime = $attendanceInfo['extra_off_overtime'] ?? 0;
+            if ($extraOffOvertime == 0) {
+                // If not in attendance data, check directly
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($user->id, $schedule->schedule_date);
+            }
+            
+            $lembur = $attendanceInfo['lembur'] ?? 0;
+            $totalLembur = $attendanceInfo['total_lembur'] ?? floor($lembur + $extraOffOvertime);
             
             $calendar[$schedule->schedule_date][$user->id] = [
                 'user_id' => $user->id,
@@ -50,10 +61,50 @@ class AttendanceController extends Controller
                 'first_in' => $attendanceInfo['first_in'] ?? null,
                 'last_out' => $attendanceInfo['last_out'] ?? null,
                 'telat' => $attendanceInfo['telat'] ?? 0,
-                'lembur' => $attendanceInfo['lembur'] ?? 0,
+                'lembur' => $lembur,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $totalLembur,
                 'has_attendance' => $attendanceInfo ? true : false,
                 'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
             ];
+            
+            $processedDates[] = $schedule->schedule_date;
+        }
+        
+        // Add dates with Extra Off overtime that don't have schedules
+        $extraOffDates = DB::table('extra_off_transactions')
+            ->where('user_id', $user->id)
+            ->where('source_type', 'overtime_work')
+            ->where('transaction_type', 'earned')
+            ->where('status', 'approved')
+            ->whereBetween('source_date', [$startDate, $endDate])
+            ->whereNotIn('source_date', $processedDates)
+            ->select('source_date')
+            ->distinct()
+            ->get();
+        
+        foreach ($extraOffDates as $extraOffDate) {
+            $date = $extraOffDate->source_date;
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($user->id, $date);
+            
+            if ($extraOffOvertime > 0) {
+                $calendar[$date][$user->id] = [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'shift_id' => null,
+                    'shift_name' => null,
+                    'time_start' => null,
+                    'time_end' => null,
+                    'first_in' => null,
+                    'last_out' => null,
+                    'telat' => 0,
+                    'lembur' => 0,
+                    'extra_off_overtime' => $extraOffOvertime,
+                    'total_lembur' => $extraOffOvertime,
+                    'has_attendance' => false,
+                    'has_no_checkout' => false,
+                ];
+            }
         }
         
         // Get holidays for the date range
@@ -279,13 +330,38 @@ class AttendanceController extends Controller
         // Calculate total lembur and telat from ALL attendance data (including cross-day)
         foreach ($attendanceData as $date => $attendanceInfo) {
             if ($attendanceInfo && $attendanceInfo['first_in']) {
-                // Add lembur hours to total (from all attendance data)
-                $totalLemburHours += $attendanceInfo['lembur'] ?? 0;
+                // Add total lembur (including extra off overtime) to total
+                $totalLemburHours += $attendanceInfo['total_lembur'] ?? $attendanceInfo['lembur'] ?? 0;
                 
                 // Add telat minutes to total (from all attendance data)
                 $totalLateMinutes += $attendanceInfo['telat'] ?? 0;
             }
         }
+        
+        // Add Extra Off overtime for ALL dates in the period (including dates without attendance)
+        // Get all dates in the period
+        $start = new \DateTime($startDate);
+        $end = new \DateTime($endDate);
+        $end->modify('+1 day'); // Include end date
+        
+        $currentDate = clone $start;
+        while ($currentDate < $end) {
+            $dateStr = $currentDate->format('Y-m-d');
+            
+            // Skip if already counted in attendanceData
+            if (!isset($attendanceData[$dateStr]) || !$attendanceData[$dateStr]['first_in']) {
+                // Check for Extra Off overtime on this date
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $dateStr);
+                if ($extraOffOvertime > 0) {
+                    $totalLemburHours += $extraOffOvertime;
+                }
+            }
+            
+            $currentDate->modify('+1 day');
+        }
+        
+        // Round down total lembur hours (bulatkan ke bawah)
+        $totalLemburHours = floor($totalLemburHours);
         
         // Calculate present/absent days based on shift dates
         $today = date('Y-m-d');
@@ -474,6 +550,8 @@ class AttendanceController extends Controller
                     // Calculate lembur (overtime) - using improved logic from AttendanceReportController
                     if ($lastOut && $shift->time_end) {
                         $lembur = $this->calculateSimpleOvertime($lastOut, $shift->time_end);
+                        // Round down (bulatkan ke bawah)
+                        $lembur = floor($lembur);
                     }
                 } else {
                     $firstIn = null;
@@ -482,6 +560,11 @@ class AttendanceController extends Controller
                     $lembur = 0;
                 }
             }
+            
+            // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
+            // Round down total lembur (bulatkan ke bawah)
+            $totalLembur = floor($lembur + $extraOffOvertime);
             
             // Deteksi attendance tanpa checkout
             $has_no_checkout = false;
@@ -497,6 +580,8 @@ class AttendanceController extends Controller
                 'is_cross_day' => $isCrossDay,
                 'telat' => $telat,
                 'lembur' => $lembur,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $totalLembur,
                 'has_no_checkout' => $has_no_checkout
             ];
         }
@@ -504,6 +589,55 @@ class AttendanceController extends Controller
         return $attendanceData;
     }
     
+    /**
+     * Get overtime hours from Extra Off system for a specific user on a specific date
+     * 
+     * @param int $userId
+     * @param string $date
+     * @return float Overtime hours for that date (rounded down)
+     */
+    private function getExtraOffOvertimeHoursForDate($userId, $date)
+    {
+        try {
+            // Get overtime transaction from Extra Off system for specific date
+            $overtimeTransaction = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->where('status', 'approved') // Only count approved transactions
+                ->where('source_date', $date)
+                ->first();
+
+            if (!$overtimeTransaction) {
+                return 0;
+            }
+
+            // Extract work hours from description
+            // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (jam 08:00 - 18:00, 10.45 jam)"
+            // or: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+            $workHours = 0;
+            if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', $overtimeTransaction->description, $matches)) {
+                // New format with time range
+                $workHours = (float) $matches[1];
+            } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', $overtimeTransaction->description, $matches)) {
+                // Old format without time range
+                $workHours = (float) $matches[1];
+            }
+
+            // Round down (bulatkan ke bawah)
+            return floor($workHours);
+
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off overtime hours for date', [
+                'user_id' => $userId,
+                'date' => $date,
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0; // Return 0 if there's an error
+        }
+    }
+
     /**
      * Perhitungan lembur yang MENANGANI CROSS-DAY dengan benar - FIXED
      * Same logic as AttendanceReportController
@@ -1624,6 +1758,16 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
         foreach ($workSchedules as $schedule) {
             $attendanceInfo = $attendanceData[$schedule->schedule_date] ?? null;
             
+            // Get Extra Off overtime for this date (even if no attendance data)
+            $extraOffOvertime = $attendanceInfo['extra_off_overtime'] ?? 0;
+            if ($extraOffOvertime == 0) {
+                // If not in attendance data, check directly
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($user->id, $schedule->schedule_date);
+            }
+            
+            $lembur = $attendanceInfo['lembur'] ?? 0;
+            $totalLembur = $attendanceInfo['total_lembur'] ?? floor($lembur + $extraOffOvertime);
+            
             if (!isset($calendar[$schedule->schedule_date])) {
                 $calendar[$schedule->schedule_date] = [];
             }
@@ -1638,7 +1782,9 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
                 'first_in' => $attendanceInfo['first_in'] ?? null,
                 'last_out' => $attendanceInfo['last_out'] ?? null,
                 'telat' => $attendanceInfo['telat'] ?? 0,
-                'lembur' => $attendanceInfo['lembur'] ?? 0,
+                'lembur' => $lembur,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $totalLembur,
                 'has_attendance' => $attendanceInfo ? true : false,
                 'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
             ];

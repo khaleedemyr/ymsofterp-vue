@@ -271,7 +271,10 @@ const getRowTooltip = (row) => {
                 <span v-if="!row.is_holiday && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
                 <span v-if="row.has_no_checkout" class="ml-1 text-xs font-semibold text-red-600">(TIDAK CHECKOUT)</span>
               </td>
-              <td class="px-4 py-2 whitespace-nowrap">{{ row.nama_lengkap }}</td>
+              <td class="px-4 py-2 whitespace-nowrap">
+                <div class="text-gray-900 font-semibold">{{ row.nama_lengkap }}</div>
+                <div class="text-gray-500 text-xs mt-1">{{ row.jabatan || '-' }}</div>
+              </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>
                 <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
@@ -301,14 +304,28 @@ const getRowTooltip = (row) => {
                 <span v-else>{{ row.telat }}</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
-                <span v-if="row.is_off">OFF</span>
-                <span v-else>
-                  {{ row.lembur }}
+                <template v-if="row.is_off">
+                  <div v-if="row.extra_off_overtime && row.extra_off_overtime > 0" class="flex flex-col">
+                    <span class="text-gray-500">OFF</span>
+                    <span class="text-xs text-purple-600 font-semibold" title="Extra Off Overtime: {{ row.extra_off_overtime }} jam">
+                      {{ row.extra_off_overtime }} EO
+                    </span>
+                  </div>
+                  <span v-else class="text-gray-500">OFF</span>
+                </template>
+                <template v-else>
+                  <div v-if="row.extra_off_overtime && row.extra_off_overtime > 0" class="flex flex-col">
+                    <span>{{ Math.floor(row.total_lembur || row.lembur || 0) }}</span>
+                    <span class="text-xs text-purple-600" title="Extra Off Overtime: {{ row.extra_off_overtime }} jam">
+                      (+{{ row.extra_off_overtime }} EO)
+                    </span>
+                  </div>
+                  <span v-else>{{ Math.floor(row.total_lembur || row.lembur || 0) }}</span>
                   <span v-if="row.is_cross_day" 
                         class="text-xs text-orange-600 font-semibold ml-1" title="Cross-day overtime">
                     🌙
                   </span>
-                </span>
+                </template>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">
                 <button v-if="!row.is_off" @click="openDetail(row)" class="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold">
@@ -340,7 +357,7 @@ const getRowTooltip = (row) => {
           <i class="fa fa-clock"></i> Total Telat: <span class="ml-2">{{ props.summary.total_telat }} menit</span>
         </div>
         <div class="bg-green-100 text-green-800 rounded-xl px-6 py-4 font-bold text-lg shadow flex items-center gap-2">
-          <i class="fa fa-business-time"></i> Total Lembur: <span class="ml-2">{{ props.summary.total_lembur }} jam</span>
+          <i class="fa fa-business-time"></i> Total Lembur: <span class="ml-2">{{ Math.floor(props.summary.total_lembur || 0) }} jam</span>
         </div>
       </div>
       <div v-if="showDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">

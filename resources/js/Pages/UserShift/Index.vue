@@ -468,7 +468,10 @@ if (userOutletId && userOutletId != 1) {
             </thead>
             <tbody>
               <tr v-for="user in users" :key="user.id" class="hover:bg-blue-50 transition">
-                <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ user.nama_lengkap }}</td>
+                <td class="px-4 py-2 whitespace-nowrap">
+                  <div class="font-semibold text-gray-900">{{ user.nama_lengkap }}</div>
+                  <div class="text-gray-500 text-xs mt-1">{{ user.jabatan || '-' }}</div>
+                </td>
                 <td v-for="tgl in dates" :key="tgl"
                   :class="[
                     'px-4 py-2 text-center',

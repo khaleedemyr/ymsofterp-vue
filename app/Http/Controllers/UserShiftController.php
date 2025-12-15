@@ -36,12 +36,25 @@ class UserShiftController extends Controller
         $userShifts = collect();
         $dates = [];
         if ($outletId && $divisionId && $startDate) {
-            // Ambil karyawan sesuai outlet & divisi
-            $users = User::where('id_outlet', $outletId)
-                ->where('division_id', $divisionId)
-                ->where('status', 'A')
-                ->orderBy('nama_lengkap')
-                ->get();
+            // Ambil karyawan sesuai outlet & divisi dengan jabatan
+            $users = DB::table('users as u')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->where('u.id_outlet', $outletId)
+                ->where('u.division_id', $divisionId)
+                ->where('u.status', 'A')
+                ->select('u.*', 'j.nama_jabatan as jabatan')
+                ->orderBy('u.nama_lengkap')
+                ->get()
+                ->map(function($user) {
+                    return (object) [
+                        'id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'jabatan' => $user->jabatan ?? '-',
+                        'id_outlet' => $user->id_outlet,
+                        'division_id' => $user->division_id,
+                        'status' => $user->status,
+                    ];
+                });
             // Ambil shift sesuai divisi
             $shifts = Shift::where('division_id', $divisionId)->orderBy('shift_name')->get();
             // Generate tanggal mulai (apapun hari yang dipilih user)

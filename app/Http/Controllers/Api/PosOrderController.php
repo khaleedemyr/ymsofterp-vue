@@ -741,7 +741,7 @@ class PosOrderController extends Controller
                             'order_id' => $orderId,
                             'challenges_affected' => $rollbackResult['challenges_affected'] ?? 0,
                             'rewards_rolled_back' => $rollbackResult['rewards_rolled_back'] ?? []
-                        ]);
+                            ]);
                     } else {
                         Log::info('No challenge progress rolled back', [
                             'member_id' => $memberId,
@@ -755,7 +755,7 @@ class PosOrderController extends Controller
                         'order_id' => $orderId,
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
-                    ]);
+                        ]);
                     // Continue with rollback even if challenge rollback fails
                 }
 

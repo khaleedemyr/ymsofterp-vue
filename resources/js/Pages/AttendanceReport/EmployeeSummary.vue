@@ -186,11 +186,11 @@ function getLeaveDays(row, leaveTypeName) {
       <div v-if="summary" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="bg-blue-50 p-4 rounded-lg border">
           <div class="text-sm font-medium text-blue-600">Total Lembur</div>
-          <div class="text-2xl font-bold text-blue-800">{{ summary.total_lembur || 0 }} jam</div>
+          <div class="text-2xl font-bold text-blue-800">{{ Math.floor(summary.total_lembur || 0) }} jam</div>
         </div>
         <div class="bg-green-50 p-4 rounded-lg border">
           <div class="text-sm font-medium text-green-600">Rata-rata Lembur/Orang</div>
-          <div class="text-2xl font-bold text-green-800">{{ summary.avg_lembur_per_employee || 0 }} jam</div>
+          <div class="text-2xl font-bold text-green-800">{{ Math.floor(summary.avg_lembur_per_employee || 0) }} jam</div>
         </div>
         <div class="bg-orange-50 p-4 rounded-lg border">
           <div class="text-sm font-medium text-orange-600">Total Telat</div>
@@ -262,7 +262,6 @@ function getLeaveDays(row, leaveTypeName) {
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">No</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-                <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Off</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">PH (Bonus)</th>
@@ -284,8 +283,10 @@ function getLeaveDays(row, leaveTypeName) {
                 <tr :class="index % 2 === 0 ? 'bg-white' : 'bg-blue-50'">
                   <td class="px-4 py-3 text-sm text-gray-900 font-medium">{{ index + 1 }}</td>
                   <td class="px-4 py-3 text-sm text-gray-600 font-mono">{{ row.nik || '-' }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-900 font-semibold">{{ row.nama_lengkap }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-600">{{ row.jabatan || '-' }}</td>
+                  <td class="px-4 py-3 text-sm">
+                    <div class="text-gray-900 font-semibold">{{ row.nama_lengkap }}</div>
+                    <div class="text-gray-500 text-xs mt-1">{{ row.jabatan || '-' }}</div>
+                  </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-blue-600 font-semibold">
                     {{ formatNumber(row.hari_kerja || 0) }}
                   </td>
@@ -330,7 +331,7 @@ function getLeaveDays(row, leaveTypeName) {
                 
                 <!-- Expanded Row - Detail Absensi Harian -->
                 <tr v-if="isRowExpanded(row.user_id)" class="bg-gray-50">
-                  <td :colspan="13 + (props.leaveTypes ? props.leaveTypes.length : 0)" class="px-4 py-4">
+                  <td :colspan="12 + (props.leaveTypes ? props.leaveTypes.length : 0)" class="px-4 py-4">
                     <div class="bg-white rounded-lg shadow-sm border">
                       <div class="px-4 py-3 border-b border-gray-200">
                         <h4 class="text-lg font-semibold text-gray-800">Detail Absensi Harian - {{ row.nama_lengkap }}</h4>
@@ -363,7 +364,15 @@ function getLeaveDays(row, leaveTypeName) {
                                 </span>
                               </td>
                               <td class="px-3 py-2 text-sm text-center font-mono">
-                                <span :class="attendance.lembur > 0 ? 'text-green-600 font-bold' : 'text-gray-500'">
+                                <div v-if="attendance.extra_off_overtime && attendance.extra_off_overtime > 0" class="flex flex-col">
+                                  <span :class="attendance.total_lembur > 0 ? 'text-green-600 font-bold' : 'text-gray-500'">
+                                    {{ attendance.total_lembur || attendance.lembur || 0 }}
+                                  </span>
+                                  <span class="text-xs text-purple-600" title="Extra Off Overtime: {{ attendance.extra_off_overtime }} jam">
+                                    (+{{ attendance.extra_off_overtime }} EO)
+                                  </span>
+                                </div>
+                                <span v-else :class="attendance.lembur > 0 ? 'text-green-600 font-bold' : 'text-gray-500'">
                                   {{ attendance.lembur || 0 }}
                                 </span>
                               </td>
@@ -403,7 +412,7 @@ function getLeaveDays(row, leaveTypeName) {
               </template>
               
               <tr v-if="!props.rows || props.rows.length === 0">
-                <td colspan="15" class="text-center py-8 text-gray-400">
+                <td :colspan="14 + (props.leaveTypes ? props.leaveTypes.length : 0)" class="text-center py-8 text-gray-400">
                   <div class="flex flex-col items-center gap-2">
                     <i class="fa fa-search text-4xl text-gray-300"></i>
                     <div class="text-lg font-medium">Tidak ada data karyawan</div>

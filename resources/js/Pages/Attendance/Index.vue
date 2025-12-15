@@ -124,7 +124,7 @@
                 <div class="ml-2 sm:ml-4">
                   <p class="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Lembur</p>
                   <p class="text-lg sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">
-                    {{ attendanceSummary.total_lembur_hours || 0 }} Jam
+                    {{ Math.floor(attendanceSummary.total_lembur_hours || 0) }} Jam
                   </p>
                 </div>
               </div>
@@ -238,14 +238,19 @@
                             </div>
                             
                             <!-- Telat and Lembur -->
-                            <div v-if="schedule.telat > 0 || schedule.lembur > 0" class="mt-1 space-y-0.5">
+                            <div v-if="schedule.telat > 0 || (schedule.total_lembur || schedule.lembur) > 0" class="mt-1 space-y-0.5">
                               <div v-if="schedule.telat > 0" class="flex items-center gap-1">
                                 <i class="fa-solid fa-clock text-yellow-400"></i>
                                 <span class="text-yellow-400">Telat {{ schedule.telat }} Menit</span>
                               </div>
-                              <div v-if="schedule.lembur > 0" class="flex items-center gap-1">
-                                <i class="fa-solid fa-hourglass-half text-orange-400"></i>
-                                <span class="text-orange-400">Lembur {{ schedule.lembur }} Jam</span>
+                              <div v-if="(schedule.total_lembur || schedule.lembur) > 0" class="flex flex-col gap-0.5">
+                                <div class="flex items-center gap-1">
+                                  <i class="fa-solid fa-hourglass-half text-orange-400"></i>
+                                  <span class="text-orange-400">Lembur {{ Math.floor(schedule.total_lembur || schedule.lembur || 0) }} Jam</span>
+                                </div>
+                                <div v-if="schedule.extra_off_overtime && schedule.extra_off_overtime > 0" class="flex items-center gap-1 ml-5">
+                                  <span class="text-xs text-purple-400">(+{{ Math.floor(schedule.extra_off_overtime) }} EO)</span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -257,6 +262,18 @@
                             <i class="fa-solid fa-info-circle sm:mr-1"></i>
                             <span class="hidden sm:inline">Detail</span>
                           </button>
+                        </div>
+                      </div>
+                      
+                      <!-- Extra Off Overtime (show even if no attendance data) -->
+                      <div v-if="(!schedule.has_attendance || !schedule.first_in) && schedule.extra_off_overtime && schedule.extra_off_overtime > 0" class="mt-1 pt-1 border-t border-white/20">
+                        <div class="text-xs opacity-90">
+                          <div class="flex flex-col gap-0.5">
+                            <div class="flex items-center gap-1">
+                              <i class="fa-solid fa-hourglass-half text-purple-400"></i>
+                              <span class="text-purple-400">Lembur {{ Math.floor(schedule.extra_off_overtime) }} Jam (EO)</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
