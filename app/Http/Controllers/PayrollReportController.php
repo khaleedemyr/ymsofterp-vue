@@ -551,9 +551,12 @@ class PayrollReportController extends Controller
                     'master_data' => $masterData,
                 ];
                 
-                // Add dynamic leave data directly to payrollData item (same as Employee Summary)
-                foreach ($izinCutiBreakdown as $key => $value) {
-                    $payrollDataItem[$key] = $value;
+                // Add dynamic leave data directly to payrollData item - SAMA PERSIS dengan Employee Summary
+                // Di Employee Summary (line 2101-2105), semua key dari $leaveData yang berakhiran '_days' kecuali 'extra_off_days' ditambahkan langsung
+                foreach ($leaveData as $key => $value) {
+                    if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                        $payrollDataItem[$key] = $value;
+                    }
                 }
                 
                 $payrollData->push($payrollDataItem);
