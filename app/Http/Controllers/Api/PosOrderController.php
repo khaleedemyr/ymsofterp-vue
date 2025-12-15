@@ -711,40 +711,32 @@ class PosOrderController extends Controller
                 MemberTierService::updateMemberTier($member->id, $transactionDateObj);
 
                 // 5. Rollback challenge progress (if any)
-                // Find challenge progress that was updated by this order
-                // Note: progress_data is JSON, so we need to check if it contains the order info
-                $challengeProgress = DB::table('member_apps_challenge_progress')
-                    ->where('member_id', $member->id)
-                    ->where(function($query) use ($orderId, $orderNomor) {
-                        $query->where('progress_data', 'like', '%"order_id":"' . $orderId . '"%')
-                              ->orWhere('progress_data', 'like', '%"order_nomor":"' . $orderNomor . '"%')
-                              ->orWhere('progress_data', 'like', '%order_id":"' . $orderId . '"%')
-                              ->orWhere('progress_data', 'like', '%order_nomor":"' . $orderNomor . '"%');
-                    })
-                    ->get();
-
-                foreach ($challengeProgress as $progress) {
-                    $progressData = json_decode($progress->progress_data, true);
-                    if (isset($progressData['spending'])) {
-                        $oldSpending = (float) $progressData['spending'];
-                        $newSpending = max(0, $oldSpending - $grandTotal);
-                        $progressData['spending'] = $newSpending;
-                        
-                        // Update progress
-                        DB::table('member_apps_challenge_progress')
-                            ->where('id', $progress->id)
-                            ->update([
-                                'progress_data' => json_encode($progressData),
-                                'updated_at' => now()
-                            ]);
-                        
-                        Log::info('Rollback challenge progress', [
+                // Use ChallengeProgressService to properly rollback and recalculate
+                try {
+                    $challengeProgressService = new \App\Services\ChallengeProgressService();
+                    $rollbackResult = $challengeProgressService->rollbackProgressFromOrder(
+                        $member->id,
+                        $orderId,
+                        $orderNomor,
+                        $grandTotal
+                    );
+                    
+                    if ($rollbackResult['rolled_back']) {
+                        Log::info('Challenge progress rolled back', [
                             'member_id' => $memberId,
-                            'challenge_progress_id' => $progress->id,
-                            'old_spending' => $oldSpending,
-                            'new_spending' => $newSpending
+                            'order_id' => $orderId,
+                            'challenges_affected' => $rollbackResult['challenges_affected'] ?? 0,
+                            'rewards_rolled_back' => $rollbackResult['rewards_rolled_back'] ?? []
                         ]);
                     }
+                } catch (\Exception $e) {
+                    Log::error('Error rolling back challenge progress', [
+                        'member_id' => $memberId,
+                        'order_id' => $orderId,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // Continue with rollback even if challenge rollback fails
                 }
 
                 DB::commit();
