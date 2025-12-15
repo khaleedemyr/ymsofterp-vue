@@ -442,65 +442,104 @@ class ChallengeProgressService
     public function rollbackProgressFromOrder($memberId, $orderId, $orderNomor, $grandTotal)
     {
         try {
+            Log::info('Starting challenge progress rollback', [
+                'member_id' => $memberId,
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+                'grand_total' => $grandTotal
+            ]);
+
             $member = MemberAppsMember::find($memberId);
             if (!$member) {
+                Log::warning('Member not found for challenge rollback', ['member_id' => $memberId]);
                 return ['rolled_back' => false, 'error' => 'Member not found'];
             }
 
-            // Find challenge progress that was updated by this order
-            // Check both last_order_id in progress_data and recalculate from orders
             $memberIdentifier = $member->member_id ?? $member->id;
             
-            // Get all active progress for this member
-            $challengeProgresses = MemberAppsChallengeProgress::where('member_id', $memberId)
-                ->whereNotNull('started_at')
-                ->where(function($query) use ($orderId, $orderNomor) {
-                    // Check if order is in progress_data
-                    $query->whereRaw("JSON_EXTRACT(progress_data, '$.last_order_id') = ?", [$orderId])
-                          ->orWhereRaw("JSON_EXTRACT(progress_data, '$.last_order_id') = ?", [$orderNomor])
-                          ->orWhereRaw("JSON_EXTRACT(progress_data, '$.last_order_id') = ?", [(string)$orderId])
-                          ->orWhereRaw("JSON_EXTRACT(progress_data, '$.last_order_id') = ?", [(string)$orderNomor]);
-                })
-                ->with('challenge')
-                ->get();
-
-            // Also check if order exists in orders table for this member (to catch progress that might not have last_order_id)
-            $orderExists = DB::table('orders')
+            // Get order date to find all progress that might be affected
+            $orderDate = DB::table('orders')
                 ->where('member_id', $memberIdentifier)
                 ->where(function($q) use ($orderId, $orderNomor) {
                     $q->where('id', $orderId)
                       ->orWhere('nomor', $orderNomor);
                 })
-                ->where('status', 'paid')
-                ->exists();
+                ->value('created_at');
 
-            // If order exists but no progress found, get all progress (including completed) and recalculate
-            // We need to check completed challenges too because they might have been completed by this order
-            if ($orderExists && $challengeProgresses->isEmpty()) {
-                // Get progress that might have been affected (check by date range)
-                $orderDate = DB::table('orders')
-                    ->where('member_id', $memberIdentifier)
-                    ->where(function($q) use ($orderId, $orderNomor) {
-                        $q->where('id', $orderId)
-                          ->orWhere('nomor', $orderNomor);
-                    })
-                    ->value('created_at');
+            Log::info('Order date for rollback', [
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+                'order_date' => $orderDate,
+                'member_identifier' => $memberIdentifier
+            ]);
+
+            if (!$orderDate) {
+                Log::warning('Order not found for challenge rollback', [
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                    'member_identifier' => $memberIdentifier
+                ]);
+                return ['rolled_back' => false, 'error' => 'Order not found'];
+            }
+
+            // Get all progress that was active when order was created
+            // Strategy: Get all progress that started before order date
+            // We'll recalculate all of them to ensure accuracy
+            $challengeProgresses = MemberAppsChallengeProgress::where('member_id', $memberId)
+                ->whereNotNull('started_at')
+                ->where('started_at', '<=', $orderDate)
+                ->where(function($q) use ($orderDate) {
+                    // Include if:
+                    // 1. Still active (not completed)
+                    // 2. Completed on or after order date (might have been completed by this order)
+                    // 3. Completed within 7 days after order (to catch all potentially affected)
+                    $orderDateStart = Carbon::parse($orderDate)->startOfDay();
+                    $orderDateEnd = Carbon::parse($orderDate)->addDays(7)->endOfDay();
+                    
+                    $q->whereNull('completed_at')
+                      ->orWhere('completed_at', '>=', $orderDateStart)
+                      ->orWhereBetween('completed_at', [$orderDateStart, $orderDateEnd]);
+                })
+                ->with('challenge')
+                ->get();
+
+            Log::info('Found challenge progresses for rollback', [
+                'member_id' => $memberId,
+                'order_date' => $orderDate,
+                'progress_count' => $challengeProgresses->count(),
+                'progress_ids' => $challengeProgresses->pluck('id')->toArray()
+            ]);
+
+            // If no progress found with date-based query, try to get all active progress
+            // This is a fallback to ensure we don't miss any progress
+            if ($challengeProgresses->isEmpty()) {
+                Log::info('No challenge progress found with date query, trying fallback', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId
+                ]);
                 
-                if ($orderDate) {
-                    $challengeProgresses = MemberAppsChallengeProgress::where('member_id', $memberId)
-                        ->whereNotNull('started_at')
-                        ->where('started_at', '<=', $orderDate)
-                        ->where(function($q) use ($orderDate) {
-                            // Include if completed after order date or still active
-                            $q->whereNull('completed_at')
-                              ->orWhere('completed_at', '>=', $orderDate);
-                        })
-                        ->with('challenge')
-                        ->get();
-                }
+                // Fallback: Get all progress that started and might be affected
+                $challengeProgresses = MemberAppsChallengeProgress::where('member_id', $memberId)
+                    ->whereNotNull('started_at')
+                    ->where(function($q) {
+                        // Get both active and recently completed challenges
+                        $q->where('is_completed', false)
+                          ->orWhere('completed_at', '>=', now()->subDays(30));
+                    })
+                    ->with('challenge')
+                    ->get();
+                
+                Log::info('Fallback query result', [
+                    'member_id' => $memberId,
+                    'progress_count' => $challengeProgresses->count()
+                ]);
             }
 
             if ($challengeProgresses->isEmpty()) {
+                Log::info('No challenge progress found to rollback', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId
+                ]);
                 return ['rolled_back' => false, 'challenges_affected' => 0];
             }
 
@@ -527,15 +566,36 @@ class ChallengeProgressService
                 $progressData = $progress->progress_data ?? [];
                 $challengeType = $challenge->challenge_type_id;
 
+                Log::info('Processing challenge progress for rollback', [
+                    'progress_id' => $progress->id,
+                    'challenge_id' => $challenge->id,
+                    'challenge_type' => $challengeType,
+                    'is_completed' => $progress->is_completed,
+                    'reward_claimed' => $progress->reward_claimed
+                ]);
+
                 // Rollback progress data
                 if ($challengeType === 'spending' && isset($progressData['spending'])) {
                     $oldSpending = (float) $progressData['spending'];
                     $newSpending = max(0, $oldSpending - $grandTotal);
                     $progressData['spending'] = $newSpending;
                     
+                    Log::info('Rolling back spending progress', [
+                        'progress_id' => $progress->id,
+                        'old_spending' => $oldSpending,
+                        'new_spending' => $newSpending,
+                        'grand_total' => $grandTotal
+                    ]);
+                    
                     // Check if challenge should be uncompleted
                     $minAmount = $rules['min_amount'] ?? 0;
                     if ($progress->is_completed && $newSpending < $minAmount) {
+                        Log::info('Challenge will be uncompleted after rollback', [
+                            'progress_id' => $progress->id,
+                            'new_spending' => $newSpending,
+                            'min_amount' => $minAmount
+                        ]);
+                        
                         // Challenge is no longer completed
                         $progress->is_completed = false;
                         $progress->completed_at = null;
@@ -543,6 +603,10 @@ class ChallengeProgressService
                         
                         // Rollback reward if already claimed
                         if ($progress->reward_claimed) {
+                            Log::info('Rolling back reward for uncompleted challenge', [
+                                'progress_id' => $progress->id,
+                                'challenge_id' => $challenge->id
+                            ]);
                             $this->rollbackChallengeReward($progress, $challenge, $rules, $member);
                             $rewardsRolledBack[] = [
                                 'challenge_id' => $challenge->id,
@@ -555,6 +619,11 @@ class ChallengeProgressService
                     // For product challenge, we need to recalculate from orders
                     // Mark for recalculation - will be done after this loop
                     $progressData['needs_recalculation'] = true;
+                    
+                    Log::info('Product challenge marked for recalculation', [
+                        'progress_id' => $progress->id,
+                        'challenge_id' => $challenge->id
+                    ]);
                     
                     // Check if challenge should be uncompleted (will be checked after recalculation)
                     // But we can check if it was completed and might need rollback
@@ -584,7 +653,20 @@ class ChallengeProgressService
             }
 
             // Recalculate progress for all affected challenges
+            // This will recalculate from actual orders in database (excluding voided order)
+            Log::info('Recalculating challenge progress after rollback', [
+                'member_id' => $memberId,
+                'challenges_count' => $challengesAffected,
+                'order_id' => $orderId
+            ]);
+            
+            // Recalculate will use actual orders, so voided order won't be counted
             $this->updateProgressFromTransaction($memberId);
+            
+            Log::info('Challenge progress recalculation completed', [
+                'member_id' => $memberId,
+                'order_id' => $orderId
+            ]);
 
             // After recalculation, check if any product challenges need reward rollback
             foreach ($challengeProgresses as $progress) {
@@ -647,11 +729,19 @@ class ChallengeProgressService
                 }
             }
 
-            return [
+            $result = [
                 'rolled_back' => true,
                 'challenges_affected' => $challengesAffected,
                 'rewards_rolled_back' => $rewardsRolledBack
             ];
+            
+            Log::info('Challenge progress rollback completed', [
+                'member_id' => $memberId,
+                'order_id' => $orderId,
+                'result' => $result
+            ]);
+            
+            return $result;
 
         } catch (\Exception $e) {
             Log::error('Error rolling back challenge progress from order', [

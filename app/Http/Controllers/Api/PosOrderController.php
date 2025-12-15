@@ -712,6 +712,14 @@ class PosOrderController extends Controller
 
                 // 5. Rollback challenge progress (if any)
                 // Use ChallengeProgressService to properly rollback and recalculate
+                Log::info('Starting challenge progress rollback from PosOrderController', [
+                    'member_id' => $memberId,
+                    'member_db_id' => $member->id,
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                    'grand_total' => $grandTotal
+                ]);
+                
                 try {
                     $challengeProgressService = new \App\Services\ChallengeProgressService();
                     $rollbackResult = $challengeProgressService->rollbackProgressFromOrder(
@@ -721,12 +729,24 @@ class PosOrderController extends Controller
                         $grandTotal
                     );
                     
-                    if ($rollbackResult['rolled_back']) {
-                        Log::info('Challenge progress rolled back', [
+                    Log::info('Challenge progress rollback result', [
+                        'member_id' => $memberId,
+                        'order_id' => $orderId,
+                        'rollback_result' => $rollbackResult
+                    ]);
+                    
+                    if ($rollbackResult['rolled_back'] ?? false) {
+                        Log::info('Challenge progress rolled back successfully', [
                             'member_id' => $memberId,
                             'order_id' => $orderId,
                             'challenges_affected' => $rollbackResult['challenges_affected'] ?? 0,
                             'rewards_rolled_back' => $rollbackResult['rewards_rolled_back'] ?? []
+                        ]);
+                    } else {
+                        Log::info('No challenge progress rolled back', [
+                            'member_id' => $memberId,
+                            'order_id' => $orderId,
+                            'reason' => $rollbackResult['error'] ?? 'No progress found'
                         ]);
                     }
                 } catch (\Exception $e) {
