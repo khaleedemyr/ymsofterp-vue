@@ -11,6 +11,83 @@ use Illuminate\Support\Facades\Log;
 
 class InternalWarehouseTransferController extends Controller
 {
+    /**
+     * Generate unique transfer number dengan retry mechanism untuk menghindari duplicate
+     * Menggunakan lockForUpdate untuk mencegah race condition
+     * Catatan: Fungsi ini dipanggil di dalam transaction, jadi tidak perlu nested transaction
+     */
+    private function generateTransferNumber($transferDate, $maxRetries = 10)
+    {
+        $dateStr = date('Ymd', strtotime($transferDate));
+        
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            try {
+                // Ambil nomor terakhir dengan lock untuk update (mencegah race condition)
+                // lockForUpdate akan lock row sampai transaction commit/rollback
+                $lastTransfer = InternalWarehouseTransfer::whereDate('transfer_date', $transferDate)
+                    ->lockForUpdate()
+                    ->orderBy('transfer_number', 'desc')
+                    ->first();
+                
+                if ($lastTransfer) {
+                    // Extract nomor urut dari transfer number terakhir
+                    // Format: IWT-YYYYMMDD-XXXX
+                    $lastNumber = (int) substr($lastTransfer->transfer_number, -4);
+                    $nextNumber = $lastNumber + 1;
+                } else {
+                    $nextNumber = 1;
+                }
+                
+                $transferNumber = 'IWT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                
+                // Double check: pastikan nomor belum ada (untuk safety)
+                $exists = InternalWarehouseTransfer::where('transfer_number', $transferNumber)
+                    ->lockForUpdate()
+                    ->exists();
+                
+                if ($exists) {
+                    // Jika nomor sudah ada, increment dan coba lagi
+                    $nextNumber++;
+                    $transferNumber = 'IWT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                }
+                
+                return $transferNumber;
+                
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Jika error karena duplicate, retry dengan nomor berikutnya
+                if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
+                    if ($attempt >= $maxRetries) {
+                        Log::error('Gagal generate transfer number setelah ' . $maxRetries . ' percobaan (duplicate)', [
+                            'error' => $e->getMessage(),
+                            'transfer_date' => $transferDate,
+                        ]);
+                        throw new \Exception('Gagal generate nomor transfer karena duplicate. Silakan coba lagi.');
+                    }
+                    
+                    // Tunggu sebentar sebelum retry (exponential backoff)
+                    usleep(100000 * $attempt); // 100ms, 200ms, 300ms, etc.
+                    continue;
+                }
+                
+                // Jika error lain, throw langsung
+                throw $e;
+            } catch (\Exception $e) {
+                if ($attempt >= $maxRetries) {
+                    Log::error('Gagal generate transfer number setelah ' . $maxRetries . ' percobaan', [
+                        'error' => $e->getMessage(),
+                        'transfer_date' => $transferDate,
+                    ]);
+                    throw new \Exception('Gagal generate nomor transfer. Silakan coba lagi.');
+                }
+                
+                // Tunggu sebentar sebelum retry
+                usleep(100000 * $attempt);
+            }
+        }
+        
+        throw new \Exception('Gagal generate nomor transfer setelah ' . $maxRetries . ' percobaan.');
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -28,10 +105,8 @@ class InternalWarehouseTransferController extends Controller
 
         DB::beginTransaction();
         try {
-            // Generate transfer number
-            $dateStr = date('Ymd', strtotime($validated['transfer_date']));
-            $countToday = InternalWarehouseTransfer::whereDate('transfer_date', $validated['transfer_date'])->count() + 1;
-            $transferNumber = 'IWT-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
+            // Generate transfer number dengan retry mechanism untuk menghindari duplicate
+            $transferNumber = $this->generateTransferNumber($validated['transfer_date']);
 
             // Validasi warehouse outlet belongs to selected outlet
             $warehouseFrom = DB::table('warehouse_outlets')->where('id', $validated['warehouse_outlet_from_id'])->first();
@@ -50,16 +125,43 @@ class InternalWarehouseTransferController extends Controller
                 throw new \Exception('Warehouse outlet tujuan tidak sesuai dengan outlet yang dipilih');
             }
 
-            // Simpan header transfer
-            $transfer = InternalWarehouseTransfer::create([
-                'transfer_number' => $transferNumber,
-                'transfer_date' => $validated['transfer_date'],
-                'outlet_id' => $validated['outlet_id'],
-                'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
-                'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
-                'notes' => $validated['notes'] ?? null,
-                'created_by' => Auth::id(),
-            ]);
+            // Simpan header transfer dengan retry jika terjadi duplicate
+            $maxRetries = 3;
+            $transfer = null;
+            
+            for ($retry = 1; $retry <= $maxRetries; $retry++) {
+                try {
+                    $transfer = InternalWarehouseTransfer::create([
+                        'transfer_number' => $transferNumber,
+                        'transfer_date' => $validated['transfer_date'],
+                        'outlet_id' => $validated['outlet_id'],
+                        'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
+                        'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
+                        'notes' => $validated['notes'] ?? null,
+                        'created_by' => Auth::id(),
+                    ]);
+                    break; // Berhasil, keluar dari loop
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Jika error karena duplicate entry, generate nomor baru
+                    if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
+                        if ($retry >= $maxRetries) {
+                            throw new \Exception('Gagal menyimpan data karena nomor transfer duplicate. Silakan coba lagi.');
+                        }
+                        
+                        // Generate nomor baru
+                        $transferNumber = $this->generateTransferNumber($validated['transfer_date']);
+                        usleep(100000 * $retry); // Tunggu sebentar sebelum retry
+                        continue;
+                    }
+                    
+                    // Jika error lain, throw langsung
+                    throw $e;
+                }
+            }
+            
+            if (!$transfer) {
+                throw new \Exception('Gagal menyimpan header transfer setelah beberapa percobaan.');
+            }
 
             foreach ($validated['items'] as $item) {
                 // Cari inventory_item_id dari outlet_food_inventory_items
@@ -297,6 +399,33 @@ class InternalWarehouseTransferController extends Controller
             ]);
             
             return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Internal Warehouse Transfer berhasil disimpan!');
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            
+            // Handle duplicate entry error secara khusus
+            if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
+                Log::error('Duplicate entry error saat menyimpan Internal Warehouse Transfer', [
+                    'error' => $e->getMessage(),
+                    'user_id' => Auth::id(),
+                    'request_data' => $request->except(['_token']),
+                ]);
+                
+                return redirect()->back()
+                    ->withInput()
+                    ->with('error', 'Nomor transfer sudah digunakan. Silakan refresh halaman dan coba lagi.');
+            }
+            
+            // Log error untuk debugging
+            Log::error('Database error saat menyimpan Internal Warehouse Transfer', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id(),
+                'request_data' => $request->except(['_token']),
+            ]);
+            
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         } catch (\Exception $e) {
             DB::rollBack();
             
@@ -308,7 +437,9 @@ class InternalWarehouseTransferController extends Controller
                 'request_data' => $request->except(['_token']),
             ]);
             
-            return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }
 
