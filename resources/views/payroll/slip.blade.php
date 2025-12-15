@@ -214,10 +214,23 @@
                     @endif
                 </td>
             </tr>
-            @if($custom_earnings > 0 || $custom_items->where('item_type', 'earn')->count() > 0)
+            @if(isset($service_charge))
+            <tr>
+                <td>Service Charge</td>
+                <td>-</td>
+                <td class="earnings">
+                    @if($master_data->sc == 1)
+                        Rp {{ number_format($service_charge ?? 0, 0, ',', '.') }}
+                    @else
+                        Rp 0 (SC Disabled)
+                    @endif
+                </td>
+            </tr>
+            @endif
+            @if(isset($custom_earnings) && $custom_earnings > 0)
             <tr>
                 <td>Pendapatan Tambahan</td>
-                <td>{{ $custom_items->where('item_type', 'earn')->count() }} item</td>
+                <td>{{ $custom_items && $custom_items->where('item_type', 'earn')->count() > 0 ? $custom_items->where('item_type', 'earn')->count() : 0 }} item</td>
                 <td class="earnings">Rp {{ number_format($custom_earnings, 0, ',', '.') }}</td>
             </tr>
             @endif
@@ -258,10 +271,10 @@
                     @endif
                 </td>
             </tr>
-            @if($custom_deductions > 0 || $custom_items->where('item_type', 'deduction')->count() > 0)
+            @if(isset($custom_deductions) && $custom_deductions > 0)
             <tr>
                 <td>Potongan Tambahan</td>
-                <td>{{ $custom_items->where('item_type', 'deduction')->count() }} item</td>
+                <td>{{ $custom_items && $custom_items->where('item_type', 'deduction')->count() > 0 ? $custom_items->where('item_type', 'deduction')->count() : 0 }} item</td>
                 <td class="deductions">Rp {{ number_format($custom_deductions, 0, ',', '.') }}</td>
             </tr>
             @endif
