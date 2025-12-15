@@ -267,7 +267,7 @@ class InternalWarehouseTransferController extends Controller
                 ]);
             }
 
-            DB::commit();
+            // Insert activity log sebelum commit
             DB::table('activity_logs')->insert([
                 'user_id' => Auth::id(),
                 'activity_type' => 'create',
@@ -279,9 +279,35 @@ class InternalWarehouseTransferController extends Controller
                 'new_data' => json_encode($transfer->toArray()),
                 'created_at' => now(),
             ]);
+
+            DB::commit();
+            
+            // Verifikasi data benar-benar tersimpan
+            $savedTransfer = InternalWarehouseTransfer::find($transfer->id);
+            if (!$savedTransfer) {
+                throw new \Exception('Data transfer tidak ditemukan setelah commit. Kemungkinan ada masalah dengan database transaction.');
+            }
+            
+            // Log untuk debugging
+            Log::info('Internal Warehouse Transfer berhasil disimpan', [
+                'transfer_id' => $transfer->id,
+                'transfer_number' => $transfer->transfer_number,
+                'user_id' => Auth::id(),
+                'verified' => true,
+            ]);
+            
             return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Internal Warehouse Transfer berhasil disimpan!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Log error untuk debugging
+            Log::error('Gagal menyimpan Internal Warehouse Transfer', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id(),
+                'request_data' => $request->except(['_token']),
+            ]);
+            
             return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }
@@ -780,11 +806,13 @@ class InternalWarehouseTransferController extends Controller
                     'created_at' => now(),
                 ]);
             }
+            
+            // Insert activity log sebelum commit
             DB::table('activity_logs')->insert([
                 'user_id' => Auth::id(),
                 'activity_type' => 'update',
-                'module' => 'outlet_transfer',
-                'description' => 'Update transfer outlet: ' . $transfer->transfer_number,
+                'module' => 'internal_warehouse_transfer',
+                'description' => 'Update internal warehouse transfer: ' . $transfer->transfer_number,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'old_data' => json_encode($transfer->toArray()),
@@ -793,9 +821,37 @@ class InternalWarehouseTransferController extends Controller
             ]);
             
             DB::commit();
-            return redirect()->route('outlet-transfer.index')->with('success', 'Data berhasil diupdate!');
+            
+            // Refresh model untuk memastikan data terbaru
+            $transfer->refresh();
+            
+            // Verifikasi data benar-benar tersimpan
+            $savedTransfer = InternalWarehouseTransfer::find($transfer->id);
+            if (!$savedTransfer) {
+                throw new \Exception('Data transfer tidak ditemukan setelah commit. Kemungkinan ada masalah dengan database transaction.');
+            }
+            
+            // Log untuk debugging
+            Log::info('Internal Warehouse Transfer berhasil diupdate', [
+                'transfer_id' => $transfer->id,
+                'transfer_number' => $transfer->transfer_number,
+                'user_id' => Auth::id(),
+                'verified' => true,
+            ]);
+            
+            return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Data berhasil diupdate!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Log error untuk debugging
+            Log::error('Gagal mengupdate Internal Warehouse Transfer', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => Auth::id(),
+                'transfer_id' => $id,
+                'request_data' => $request->except(['_token']),
+            ]);
+            
             return redirect()->back()->with('error', 'Gagal mengupdate data: ' . $e->getMessage());
         }
     }
