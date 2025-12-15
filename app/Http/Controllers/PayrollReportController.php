@@ -115,12 +115,11 @@ class PayrollReportController extends Controller
                 $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
 
                 // Hitung total telat dan lembur
+                // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
                 $totalTelat = $attendanceData->sum('telat');
-                $totalLembur = $attendanceData->sum('lembur');
-                
-                // Tambahkan Extra Off overtime untuk periode ini
-                $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($user->id, $startDate, $endDate);
-                $totalLembur += $extraOffOvertime;
+                $totalLembur = $attendanceData->sum(function($item) {
+                    return $item['total_lembur'] ?? $item['lembur'] ?? 0;
+                });
 
                 // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
                 // Hari kerja = jumlah hari yang ada scan attendance-nya dan bukan off day
@@ -455,37 +454,7 @@ class PayrollReportController extends Controller
 
         $dataRows = collect($finalData);
 
-        // Ambil data shift untuk perhitungan lembur
-        $shiftData = DB::table('shifts')->first();
-
-        // Hitung lembur untuk setiap baris
-        foreach ($dataRows as $row) {
-            if ($row['jam_masuk'] && $row['jam_keluar'] && $shiftData) {
-                $shiftStart = $shiftData->time_start ?? '08:00:00';
-                $shiftEnd = $shiftData->time_end ?? '17:00:00';
-                
-                $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'])) . ' ' . $shiftEnd;
-                $scanOutDateTime = $row['jam_keluar'];
-                
-                if ($row['is_cross_day']) {
-                    $shiftEndDateTime = date('Y-m-d', strtotime($row['jam_masuk'] . ' +1 day')) . ' ' . $shiftEnd;
-                }
-                
-                $shiftEndTime = strtotime($shiftEndDateTime);
-                $scanOutTime = strtotime($scanOutDateTime);
-                
-                if ($scanOutTime > $shiftEndTime) {
-                    $lemburHours = round(($scanOutTime - $shiftEndTime) / 3600, 2);
-                    $row['lembur'] = $lemburHours;
-                } else {
-                    $row['lembur'] = 0;
-                }
-            } else {
-                $row['lembur'] = 0;
-            }
-        }
-
-        // Hitung telat dan lembur untuk setiap tanggal
+        // Hitung telat dan lembur untuk setiap tanggal (menggunakan shift per tanggal)
         $rows = collect();
         $period = [];
         $dt = new \DateTime($startDate->format('Y-m-d'));
@@ -509,7 +478,8 @@ class PayrollReportController extends Controller
                 // Ambil data dari scan attendance yang ada
                 $row = $dayData->first();
                 $jam_masuk = $row['jam_masuk'] ? date('H:i:s', strtotime($row['jam_masuk'])) : null;
-                $jam_keluar = $row['jam_keluar'] ? date('H:i:s', strtotime($row['jam_keluar'])) : null;
+                // Keep full datetime for jam_keluar (needed for calculateSimpleOvertime with cross-day)
+                $jam_keluar = $row['jam_keluar'] ?? null;
                 $has_scan = true; // Ada scan attendance untuk hari ini
             }
             
@@ -540,21 +510,11 @@ class PayrollReportController extends Controller
                     $telat = $diff > 0 ? round($diff/60) : 0;
                 }
                 if ($shift && $shift->time_end && $jam_keluar) {
-                    // Create full datetime for shift end
-                    $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                    
-                    // Get scan out from dayData
-                    if ($dayData->count() > 0) {
-                        $row = $dayData->first();
-                        $scanOutDateTime = $row['jam_keluar'] ?? null;
-                        if ($scanOutDateTime) {
-                            // Calculate time difference
-                            $end = strtotime($shiftEndDateTime);
-                            $keluar = strtotime($scanOutDateTime);
-                            $diff = $keluar - $end;
-                            $lembur = $diff > 0 ? floor($diff/3600) : 0;
-                        }
-                    }
+                    // Use calculateSimpleOvertime (same logic as AttendanceReportController)
+                    // Pass full datetime for jam_keluar (already in full datetime format from finalData)
+                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                    // Round down (bulatkan ke bawah)
+                    $lembur = floor($lembur);
                 }
             } else if ($is_off) {
                 $jam_masuk = null;
@@ -563,16 +523,128 @@ class PayrollReportController extends Controller
                 $lembur = 0;
             }
             
+            // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+            // Round down total lembur (bulatkan ke bawah)
+            $totalLembur = floor($lembur + $extraOffOvertime);
+            
             $rows->push([
                 'tanggal' => $tanggal,
                 'telat' => $telat,
                 'lembur' => $lembur,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $totalLembur,
                 'is_off' => $is_off,
                 'has_scan' => $has_scan, // Flag untuk menandai apakah hari ini ada scan attendance
             ]);
         }
 
         return $rows;
+    }
+
+    /**
+     * Perhitungan lembur yang MENANGANI CROSS-DAY dengan benar
+     * Same logic as AttendanceReportController
+     */
+    private function calculateSimpleOvertime($jamKeluar, $shiftEnd) {
+        if (!$jamKeluar || !$shiftEnd) {
+            return 0;
+        }
+        
+        // Ambil jam saja (abaikan tanggal)
+        $jamKeluarTime = date('H:i:s', strtotime($jamKeluar));
+        
+        // Konversi ke timestamp untuk perhitungan
+        $keluarTimestamp = strtotime($jamKeluarTime);
+        $shiftEndTimestamp = strtotime($shiftEnd);
+        
+        // Hitung selisih dalam detik
+        $diffSeconds = $keluarTimestamp - $shiftEndTimestamp;
+        
+        
+        // Jika selisih negatif, kemungkinan cross-day ATAU checkout lebih awal
+        if ($diffSeconds < 0) {
+            // Cek apakah ini benar-benar cross-day atau checkout lebih awal
+            $checkoutHour = (int)date('H', strtotime($jamKeluarTime));
+            $shiftEndHour = (int)date('H', strtotime($shiftEnd));
+            
+            // Jika checkout di pagi sangat awal (00:00-06:00) dan shift end di sore/malam, ini cross-day
+            if ($checkoutHour >= 0 && $checkoutHour <= 6 && $shiftEndHour >= 17) {
+                // Untuk cross-day, hitung dari shift end sampai jam keluar di hari berikutnya
+                // Misal: shift end 17:00, keluar 06:00 = 13 jam overtime
+                $crossDaySeconds = (24 * 3600) + $diffSeconds; // 24 jam + selisih negatif
+                $overtimeHours = floor($crossDaySeconds / 3600);
+                
+            } else {
+                // Ini bukan cross-day, tapi checkout lebih awal dari shift end
+                // Tidak ada lembur
+                $overtimeHours = 0;
+                
+            }
+        } else {
+            // Normal overtime
+            $overtimeHours = floor($diffSeconds / 3600);
+            
+        }
+        
+        // Batasi maksimal 12 jam untuk mencegah error
+        $overtimeHours = min($overtimeHours, 12);
+        
+        // FIXED: Jangan hitung lembur jika checkout lebih awal dari shift end
+        if ($overtimeHours < 0) {
+            $overtimeHours = 0;
+        }
+        
+        return $overtimeHours;
+    }
+
+    /**
+     * Get overtime hours from Extra Off system for a specific user on a specific date
+     * 
+     * @param int $userId
+     * @param string $date
+     * @return float Overtime hours for that date (rounded down)
+     */
+    private function getExtraOffOvertimeHoursForDate($userId, $date)
+    {
+        try {
+            // Get overtime transaction from Extra Off system for specific date
+            $overtimeTransaction = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->where('status', 'approved') // Only count approved transactions
+                ->where('source_date', $date)
+                ->first();
+
+            if (!$overtimeTransaction) {
+                return 0;
+            }
+
+            // Extract work hours from description
+            // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (jam 08:00 - 18:00, 10.45 jam)"
+            // or: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+            $workHours = 0;
+            if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', $overtimeTransaction->description, $matches)) {
+                // New format with time range
+                $workHours = (float) $matches[1];
+            } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', $overtimeTransaction->description, $matches)) {
+                // Old format without time range
+                $workHours = (float) $matches[1];
+            }
+
+            // Round down (bulatkan ke bawah)
+            return floor($workHours);
+
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off overtime hours for date', [
+                'user_id' => $userId,
+                'date' => $date,
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0; // Return 0 if there's an error
+        }
     }
 
     /**
@@ -727,11 +799,10 @@ class PayrollReportController extends Controller
 
             $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
             $totalTelat = $attendanceData->sum('telat');
-            $totalLembur = $attendanceData->sum('lembur');
-            
-            // Tambahkan Extra Off overtime untuk periode ini
-            $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($user->id, $startDate, $endDate);
-            $totalLembur += $extraOffOvertime;
+            // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
+            $totalLembur = $attendanceData->sum(function($item) {
+                return $item['total_lembur'] ?? $item['lembur'] ?? 0;
+            });
 
             // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
             $hariKerja = $attendanceData->filter(function($item) {
@@ -1075,19 +1146,11 @@ class PayrollReportController extends Controller
                     $telat = $diff > 0 ? round($diff/60) : 0;
                 }
 
-                // Calculate lembur (same logic as AttendanceReportController)
+                // Calculate lembur using calculateSimpleOvertime (same logic as AttendanceReportController)
                 if ($shiftData->time_end && $data['jam_keluar']) {
-                    // Create full datetime for shift end
-                    $shiftEndDateTime = date('Y-m-d', strtotime($data['tanggal'])) . ' ' . $shiftData->time_end;
-                    
-                    // Use scan out that's already in full datetime format
-                    $scanOutDateTime = $data['jam_keluar'];
-                    
-                    // Calculate time difference
-                    $end = strtotime($shiftEndDateTime);
-                    $keluar = strtotime($scanOutDateTime);
-                    $diff = $keluar - $end;
-                    $lembur = $diff > 0 ? floor($diff/3600) : 0;
+                    $lembur = $this->calculateSimpleOvertime($data['jam_keluar'], $shiftData->time_end);
+                    // Round down (bulatkan ke bawah)
+                    $lembur = floor($lembur);
                 }
             } else if ($is_off) {
                 // Set to null if it's off day
@@ -1096,6 +1159,11 @@ class PayrollReportController extends Controller
                 $telat = 0;
                 $lembur = 0;
             }
+            
+            // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
+            // Round down total lembur (bulatkan ke bawah)
+            $totalLembur = floor($lembur + $extraOffOvertime);
 
             // Always add to attendance detail, even if incomplete
             $attendanceDetail[] = [
@@ -1106,6 +1174,8 @@ class PayrollReportController extends Controller
                 'total_keluar' => $data['total_keluar'],
                 'telat' => $telat,
                 'lembur' => $lembur,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $totalLembur,
                 'shift_name' => $shiftName,
                 'is_cross_day' => $data['is_cross_day'],
                 'is_off' => $is_off
@@ -1488,11 +1558,10 @@ class PayrollReportController extends Controller
         // Ambil data attendance
         $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
         $totalTelat = $attendanceData->sum('telat');
-        $totalLembur = $attendanceData->sum('lembur');
-        
-        // Tambahkan Extra Off overtime untuk periode ini
-        $extraOffOvertime = $this->getExtraOffOvertimeHoursForPeriod($userId, $startDate, $endDate);
-        $totalLembur += $extraOffOvertime;
+        // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
+        $totalLembur = $attendanceData->sum(function($item) {
+            return $item['total_lembur'] ?? $item['lembur'] ?? 0;
+        });
 
         // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
         // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
