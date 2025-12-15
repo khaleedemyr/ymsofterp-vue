@@ -18,6 +18,7 @@ const year = ref(props.filter?.year || new Date().getFullYear());
 const serviceCharge = ref(props.filter?.service_charge || '');
 const loading = ref(false);
 const exporting = ref(false);
+const searchQuery = ref('');
 
 // Expandable rows state
 const expandedRows = ref(new Set());
@@ -84,9 +85,34 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat('id-ID').format(amount);
 };
 
+// Filtered payroll data based on search query
+const filteredPayrollData = computed(() => {
+  if (!props.payrollData || props.payrollData.length === 0) {
+    return [];
+  }
+  
+  if (!searchQuery.value || searchQuery.value.trim() === '') {
+    return props.payrollData;
+  }
+  
+  const query = searchQuery.value.toLowerCase().trim();
+  return props.payrollData.filter(item => {
+    const nik = (item.nik || '').toLowerCase();
+    const nama = (item.nama_lengkap || '').toLowerCase();
+    const divisi = (item.divisi || '').toLowerCase();
+    const jabatan = (item.jabatan || '').toLowerCase();
+    
+    return nik.includes(query) || 
+           nama.includes(query) || 
+           divisi.includes(query) || 
+           jabatan.includes(query);
+  });
+});
+
 // Calculate summary
 const summary = computed(() => {
-  if (!props.payrollData || props.payrollData.length === 0) {
+  const data = filteredPayrollData.value;
+  if (!data || data.length === 0) {
     return {
       totalGajiPokok: 0,
       totalTunjangan: 0,
@@ -103,17 +129,17 @@ const summary = computed(() => {
   }
 
   return {
-    totalGajiPokok: props.payrollData.reduce((sum, item) => sum + Number(item.gaji_pokok), 0),
-    totalTunjangan: props.payrollData.reduce((sum, item) => sum + Number(item.tunjangan), 0),
-    totalGajiLembur: props.payrollData.reduce((sum, item) => sum + Number(item.gaji_lembur), 0),
-    totalUangMakan: props.payrollData.reduce((sum, item) => sum + Number(item.uang_makan), 0),
-    totalServiceChargeByPoint: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge_by_point || 0), 0),
-    totalServiceChargeProRate: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge_pro_rate || 0), 0),
-    totalServiceCharge: props.payrollData.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
-    totalBPJSJKN: props.payrollData.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
-    totalBPJSTK: props.payrollData.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
-    totalPotonganTelat: props.payrollData.reduce((sum, item) => sum + Number(item.potongan_telat), 0),
-    totalGaji: props.payrollData.reduce((sum, item) => sum + Number(item.total_gaji), 0),
+    totalGajiPokok: data.reduce((sum, item) => sum + Number(item.gaji_pokok), 0),
+    totalTunjangan: data.reduce((sum, item) => sum + Number(item.tunjangan), 0),
+    totalGajiLembur: data.reduce((sum, item) => sum + Number(item.gaji_lembur), 0),
+    totalUangMakan: data.reduce((sum, item) => sum + Number(item.uang_makan), 0),
+    totalServiceChargeByPoint: data.reduce((sum, item) => sum + Number(item.service_charge_by_point || 0), 0),
+    totalServiceChargeProRate: data.reduce((sum, item) => sum + Number(item.service_charge_pro_rate || 0), 0),
+    totalServiceCharge: data.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
+    totalBPJSJKN: data.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
+    totalBPJSTK: data.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
+    totalPotonganTelat: data.reduce((sum, item) => sum + Number(item.potongan_telat), 0),
+    totalGaji: data.reduce((sum, item) => sum + Number(item.total_gaji), 0),
   };
 });
 
@@ -347,6 +373,16 @@ async function showPayroll(employee) {
             class="form-input rounded-xl shadow-lg w-48"
           />
           
+          <div class="relative flex-1 min-w-[300px]">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Cari NIK, Nama, Divisi, atau Jabatan..."
+              class="form-input rounded-xl shadow-lg w-full pl-10 pr-4"
+            />
+            <i class="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+          </div>
+          
           <button
             @click="lihatData"
             class="bg-gradient-to-br from-green-400 to-blue-500 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
@@ -367,7 +403,7 @@ async function showPayroll(employee) {
 
       <!-- Data Section -->
       <div class="flex-1 w-full">
-        <div v-if="props.payrollData && props.payrollData.length > 0" class="w-full">
+        <div v-if="filteredPayrollData && filteredPayrollData.length > 0" class="w-full">
           <!-- Summary Cards -->
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-11 gap-4 mb-6">
             <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
@@ -418,10 +454,14 @@ async function showPayroll(employee) {
           </div>
 
           <!-- Period Info -->
-          <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+          <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex justify-between items-center">
             <div class="text-blue-800 font-semibold">
               <i class="fa-solid fa-calendar-days mr-2"></i>
               Periode: {{ props.payrollData[0]?.periode }}
+            </div>
+            <div v-if="searchQuery" class="text-blue-600 text-sm">
+              <i class="fa-solid fa-filter mr-2"></i>
+              Menampilkan {{ filteredPayrollData.length }} dari {{ props.payrollData?.length || 0 }} karyawan
             </div>
           </div>
 
@@ -456,7 +496,7 @@ async function showPayroll(employee) {
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
-                <template v-for="(item, index) in props.payrollData" :key="item.user_id">
+                <template v-for="(item, index) in filteredPayrollData" :key="item.user_id">
                   <!-- Main Row -->
                   <tr :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'" class="hover:bg-blue-50 transition-colors">
                     <td class="px-4 py-3 text-center">
@@ -758,8 +798,12 @@ async function showPayroll(employee) {
         <!-- Empty State -->
         <div v-else-if="outletId && month && year" class="flex flex-col items-center justify-center h-full text-gray-500">
           <i class="fa-solid fa-file-invoice-dollar text-6xl mb-4 text-gray-300"></i>
-          <h3 class="text-xl font-semibold mb-2">Tidak ada data payroll</h3>
-          <p class="text-gray-400">Data payroll untuk outlet, bulan, dan tahun yang dipilih tidak ditemukan.</p>
+          <h3 class="text-xl font-semibold mb-2">
+            {{ searchQuery ? 'Tidak ada data payroll yang sesuai dengan pencarian' : 'Tidak ada data payroll' }}
+          </h3>
+          <p class="text-gray-400">
+            {{ searchQuery ? `Tidak ada data yang cocok dengan pencarian "${searchQuery}"` : 'Data payroll untuk outlet, bulan, dan tahun yang dipilih tidak ditemukan.' }}
+          </p>
         </div>
         
         <!-- Initial State -->
