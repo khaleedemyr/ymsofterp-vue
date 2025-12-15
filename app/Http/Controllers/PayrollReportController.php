@@ -1677,4 +1677,317 @@ class PayrollReportController extends Controller
         
         return $pdf->download($filename);
     }
+
+    // Generate Payroll - Simpan payroll ke database
+    public function generatePayroll(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer',
+            'month' => 'required|integer|between:1,12',
+            'year' => 'required|integer|min:2020',
+            'service_charge' => 'nullable|numeric|min:0',
+            'payroll_data' => 'required|array',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $outletId = $request->outlet_id;
+            $month = $request->month;
+            $year = $request->year;
+            $serviceCharge = $request->service_charge ?? 0;
+            $payrollData = $request->payroll_data;
+
+            // Cek apakah payroll untuk periode ini sudah ada
+            $existingPayroll = DB::table('payroll_generated')
+                ->where('outlet_id', $outletId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if ($existingPayroll) {
+                // Update jika sudah ada
+                DB::table('payroll_generated')
+                    ->where('id', $existingPayroll->id)
+                    ->update([
+                        'service_charge' => $serviceCharge,
+                        'status' => 'generated',
+                        'updated_at' => now(),
+                        'updated_by' => auth()->id(),
+                    ]);
+
+                $payrollId = $existingPayroll->id;
+                
+                // Hapus detail lama
+                DB::table('payroll_generated_details')
+                    ->where('payroll_generated_id', $payrollId)
+                    ->delete();
+            } else {
+                // Insert baru
+                $payrollId = DB::table('payroll_generated')->insertGetId([
+                    'outlet_id' => $outletId,
+                    'month' => $month,
+                    'year' => $year,
+                    'service_charge' => $serviceCharge,
+                    'status' => 'generated',
+                    'created_at' => now(),
+                    'created_by' => auth()->id(),
+                    'updated_at' => now(),
+                    'updated_by' => auth()->id(),
+                ]);
+            }
+
+            // Simpan detail payroll per karyawan
+            foreach ($payrollData as $item) {
+                DB::table('payroll_generated_details')->insert([
+                    'payroll_generated_id' => $payrollId,
+                    'user_id' => $item['user_id'],
+                    'nik' => $item['nik'] ?? null,
+                    'nama_lengkap' => $item['nama_lengkap'] ?? null,
+                    'jabatan' => $item['jabatan'] ?? null,
+                    'divisi' => $item['divisi'] ?? null,
+                    'point' => $item['point'] ?? 0,
+                    'gaji_pokok' => $item['gaji_pokok'] ?? 0,
+                    'tunjangan' => $item['tunjangan'] ?? 0,
+                    'total_telat' => $item['total_telat'] ?? 0,
+                    'total_lembur' => $item['total_lembur'] ?? 0,
+                    'nominal_lembur_per_jam' => $item['nominal_lembur_per_jam'] ?? 0,
+                    'gaji_lembur' => $item['gaji_lembur'] ?? 0,
+                    'nominal_uang_makan' => $item['nominal_uang_makan'] ?? 0,
+                    'uang_makan' => $item['uang_makan'] ?? 0,
+                    'service_charge_by_point' => $item['service_charge_by_point'] ?? 0,
+                    'service_charge_pro_rate' => $item['service_charge_pro_rate'] ?? 0,
+                    'service_charge' => $item['service_charge'] ?? 0,
+                    'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
+                    'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'custom_earnings' => $item['custom_earnings'] ?? 0,
+                    'custom_deductions' => $item['custom_deductions'] ?? 0,
+                    'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
+                    'potongan_telat' => $item['potongan_telat'] ?? 0,
+                    'total_gaji' => $item['total_gaji'] ?? 0,
+                    'hari_kerja' => $item['hari_kerja'] ?? 0,
+                    'periode' => $item['periode'] ?? null,
+                    'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payroll berhasil di-generate dan disimpan',
+                'payroll_id' => $payrollId
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error generating payroll: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal generate payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Edit Payroll - Update payroll yang sudah di-generate
+    public function editPayroll(Request $request)
+    {
+        $request->validate([
+            'payroll_id' => 'required|integer',
+            'service_charge' => 'nullable|numeric|min:0',
+            'payroll_data' => 'required|array',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $payrollId = $request->payroll_id;
+            $serviceCharge = $request->service_charge ?? 0;
+            $payrollData = $request->payroll_data;
+
+            // Cek apakah payroll ada
+            $payroll = DB::table('payroll_generated')
+                ->where('id', $payrollId)
+                ->first();
+
+            if (!$payroll) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payroll tidak ditemukan'
+                ], 404);
+            }
+
+            // Cek status, jika locked tidak bisa di-edit
+            if ($payroll->status === 'locked') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payroll sudah di-lock dan tidak bisa di-edit'
+                ], 403);
+            }
+
+            // Update payroll header
+            DB::table('payroll_generated')
+                ->where('id', $payrollId)
+                ->update([
+                    'service_charge' => $serviceCharge,
+                    'status' => 'generated',
+                    'updated_at' => now(),
+                    'updated_by' => auth()->id(),
+                ]);
+
+            // Hapus detail lama
+            DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollId)
+                ->delete();
+
+            // Simpan detail payroll per karyawan
+            foreach ($payrollData as $item) {
+                DB::table('payroll_generated_details')->insert([
+                    'payroll_generated_id' => $payrollId,
+                    'user_id' => $item['user_id'],
+                    'nik' => $item['nik'] ?? null,
+                    'nama_lengkap' => $item['nama_lengkap'] ?? null,
+                    'jabatan' => $item['jabatan'] ?? null,
+                    'divisi' => $item['divisi'] ?? null,
+                    'point' => $item['point'] ?? 0,
+                    'gaji_pokok' => $item['gaji_pokok'] ?? 0,
+                    'tunjangan' => $item['tunjangan'] ?? 0,
+                    'total_telat' => $item['total_telat'] ?? 0,
+                    'total_lembur' => $item['total_lembur'] ?? 0,
+                    'nominal_lembur_per_jam' => $item['nominal_lembur_per_jam'] ?? 0,
+                    'gaji_lembur' => $item['gaji_lembur'] ?? 0,
+                    'nominal_uang_makan' => $item['nominal_uang_makan'] ?? 0,
+                    'uang_makan' => $item['uang_makan'] ?? 0,
+                    'service_charge_by_point' => $item['service_charge_by_point'] ?? 0,
+                    'service_charge_pro_rate' => $item['service_charge_pro_rate'] ?? 0,
+                    'service_charge' => $item['service_charge'] ?? 0,
+                    'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
+                    'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'custom_earnings' => $item['custom_earnings'] ?? 0,
+                    'custom_deductions' => $item['custom_deductions'] ?? 0,
+                    'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
+                    'potongan_telat' => $item['potongan_telat'] ?? 0,
+                    'total_gaji' => $item['total_gaji'] ?? 0,
+                    'hari_kerja' => $item['hari_kerja'] ?? 0,
+                    'periode' => $item['periode'] ?? null,
+                    'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payroll berhasil di-update'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error editing payroll: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Rollback Payroll - Hapus payroll yang sudah di-generate
+    public function rollbackPayroll(Request $request)
+    {
+        $request->validate([
+            'payroll_id' => 'required|integer',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $payrollId = $request->payroll_id;
+
+            // Cek apakah payroll ada
+            $payroll = DB::table('payroll_generated')
+                ->where('id', $payrollId)
+                ->first();
+
+            if (!$payroll) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payroll tidak ditemukan'
+                ], 404);
+            }
+
+            // Cek status, jika locked tidak bisa di-rollback
+            if ($payroll->status === 'locked') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payroll sudah di-lock dan tidak bisa di-rollback'
+                ], 403);
+            }
+
+            // Hapus detail terlebih dahulu (karena foreign key constraint)
+            DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollId)
+                ->delete();
+
+            // Hapus payroll header
+            DB::table('payroll_generated')
+                ->where('id', $payrollId)
+                ->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payroll berhasil di-rollback (dihapus)'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error rolling back payroll: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal rollback payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Get Payroll Status - Cek status payroll untuk periode tertentu
+    public function getPayrollStatus(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer',
+            'month' => 'required|integer|between:1,12',
+            'year' => 'required|integer|min:2020',
+        ]);
+
+        try {
+            $payroll = DB::table('payroll_generated')
+                ->where('outlet_id', $request->outlet_id)
+                ->where('month', $request->month)
+                ->where('year', $request->year)
+                ->first();
+
+            if ($payroll) {
+                return response()->json([
+                    'success' => true,
+                    'exists' => true,
+                    'payroll_id' => $payroll->id,
+                    'status' => $payroll->status,
+                    'created_at' => $payroll->created_at,
+                    'updated_at' => $payroll->updated_at,
+                ]);
+            } else {
+                return response()->json([
+                    'success' => true,
+                    'exists' => false,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error getting payroll status: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mendapatkan status payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

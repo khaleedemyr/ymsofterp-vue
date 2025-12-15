@@ -3,6 +3,7 @@ import { ref, watch, onMounted, nextTick, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 const props = defineProps({
   outlets: Array,
@@ -18,7 +19,10 @@ const year = ref(props.filter?.year || new Date().getFullYear());
 const serviceCharge = ref(props.filter?.service_charge || '');
 const loading = ref(false);
 const exporting = ref(false);
+const generating = ref(false);
 const searchQuery = ref('');
+const payrollStatus = ref(null);
+const payrollId = ref(null);
 
 // Expandable rows state
 const expandedRows = ref(new Set());
@@ -333,6 +337,191 @@ async function showPayroll(employee) {
     Swal.fire('Error', 'Terjadi kesalahan saat menampilkan payroll', 'error');
   }
 }
+
+// Check payroll status
+async function checkPayrollStatus() {
+  if (!outletId.value || !month.value || !year.value) {
+    payrollStatus.value = null;
+    payrollId.value = null;
+    return;
+  }
+
+  try {
+    const response = await axios.get('/payroll/report/status', {
+      params: {
+        outlet_id: outletId.value,
+        month: formatMonth(month.value),
+        year: year.value,
+      }
+    });
+
+    if (response.data.success && response.data.exists) {
+      payrollStatus.value = response.data.status;
+      payrollId.value = response.data.payroll_id;
+    } else {
+      payrollStatus.value = null;
+      payrollId.value = null;
+    }
+  } catch (error) {
+    console.error('Error checking payroll status:', error);
+    payrollStatus.value = null;
+    payrollId.value = null;
+  }
+}
+
+// Generate Payroll
+async function generatePayroll() {
+  if (!outletId.value || !month.value || !year.value) {
+    Swal.fire('Peringatan', 'Pilih outlet, bulan, dan tahun terlebih dahulu', 'warning');
+    return;
+  }
+
+  if (!props.payrollData || props.payrollData.length === 0) {
+    Swal.fire('Peringatan', 'Tidak ada data payroll untuk di-generate', 'warning');
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'Generate Payroll?',
+    text: 'Apakah Anda yakin ingin menyimpan payroll ini ke database?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Ya, Generate!',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) return;
+
+  generating.value = true;
+  try {
+    const response = await axios.post('/payroll/report/generate', {
+      outlet_id: outletId.value,
+      month: formatMonth(month.value),
+      year: year.value,
+      service_charge: serviceCharge.value || 0,
+      payroll_data: props.payrollData
+    });
+
+    if (response.data.success) {
+      Swal.fire('Sukses', response.data.message, 'success');
+      payrollId.value = response.data.payroll_id;
+      payrollStatus.value = 'generated';
+      await checkPayrollStatus();
+    } else {
+      Swal.fire('Error', response.data.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error generating payroll:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat generate payroll', 'error');
+  } finally {
+    generating.value = false;
+  }
+}
+
+// Edit Payroll
+async function editPayroll() {
+  if (!payrollId.value) {
+    Swal.fire('Peringatan', 'Payroll belum di-generate', 'warning');
+    return;
+  }
+
+  if (!props.payrollData || props.payrollData.length === 0) {
+    Swal.fire('Peringatan', 'Tidak ada data payroll untuk di-update', 'warning');
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'Edit Payroll?',
+    text: 'Apakah Anda yakin ingin mengupdate payroll ini?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Ya, Update!',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) return;
+
+  generating.value = true;
+  try {
+    const response = await axios.post('/payroll/report/edit', {
+      payroll_id: payrollId.value,
+      service_charge: serviceCharge.value || 0,
+      payroll_data: props.payrollData
+    });
+
+    if (response.data.success) {
+      Swal.fire('Sukses', response.data.message, 'success');
+      await checkPayrollStatus();
+    } else {
+      Swal.fire('Error', response.data.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error editing payroll:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat edit payroll', 'error');
+  } finally {
+    generating.value = false;
+  }
+}
+
+// Rollback Payroll
+async function rollbackPayroll() {
+  if (!payrollId.value) {
+    Swal.fire('Peringatan', 'Payroll belum di-generate', 'warning');
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'Rollback Payroll?',
+    text: 'Apakah Anda yakin ingin menghapus payroll yang sudah di-generate? Tindakan ini tidak dapat dibatalkan!',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus!',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) return;
+
+  generating.value = true;
+  try {
+    const response = await axios.post('/payroll/report/rollback', {
+      payroll_id: payrollId.value
+    });
+
+    if (response.data.success) {
+      Swal.fire('Sukses', response.data.message, 'success');
+      payrollId.value = null;
+      payrollStatus.value = null;
+      await checkPayrollStatus();
+    } else {
+      Swal.fire('Error', response.data.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error rolling back payroll:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat rollback payroll', 'error');
+  } finally {
+    generating.value = false;
+  }
+}
+
+// Watch for changes in outlet, month, year to check payroll status
+watch([outletId, month, year], () => {
+  if (outletId.value && month.value && year.value) {
+    checkPayrollStatus();
+  }
+});
+
+// Check payroll status on mount
+onMounted(() => {
+  if (outletId.value && month.value && year.value) {
+    checkPayrollStatus();
+  }
+});
 </script>
 
 <template>
@@ -398,6 +587,49 @@ async function showPayroll(employee) {
           >
             <i class="fa-solid fa-file-export"></i> {{ exporting ? 'Exporting...' : 'Export Excel' }}
           </button>
+          
+          <button
+            v-if="!payrollStatus || payrollStatus === 'draft'"
+            @click="generatePayroll"
+            class="bg-gradient-to-br from-green-400 to-green-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!outletId || !month || !year || generating || !payrollData || payrollData.length === 0"
+          >
+            <i class="fa-solid fa-save"></i> {{ generating ? 'Generating...' : 'Generate Payroll' }}
+          </button>
+          
+          <button
+            v-if="payrollStatus === 'generated'"
+            @click="editPayroll"
+            class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!outletId || !month || !year || generating || !payrollData || payrollData.length === 0"
+          >
+            <i class="fa-solid fa-edit"></i> {{ generating ? 'Updating...' : 'Edit Payroll' }}
+          </button>
+          
+          <button
+            v-if="payrollStatus === 'generated'"
+            @click="rollbackPayroll"
+            class="bg-gradient-to-br from-red-400 to-red-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!payrollId || generating || payrollStatus === 'locked'"
+          >
+            <i class="fa-solid fa-undo"></i> {{ generating ? 'Rolling back...' : 'Rollback Payroll' }}
+          </button>
+        </div>
+        
+        <!-- Payroll Status Badge -->
+        <div v-if="payrollStatus" class="mt-4 flex items-center gap-2">
+          <span class="px-4 py-2 rounded-lg font-semibold text-sm"
+                :class="{
+                  'bg-yellow-100 text-yellow-800': payrollStatus === 'draft',
+                  'bg-green-100 text-green-800': payrollStatus === 'generated',
+                  'bg-red-100 text-red-800': payrollStatus === 'locked'
+                }">
+            <i class="fa-solid fa-info-circle mr-2"></i>
+            Status: {{ payrollStatus === 'draft' ? 'Draft' : payrollStatus === 'generated' ? 'Generated' : 'Locked' }}
+          </span>
+          <span v-if="payrollStatus === 'locked'" class="text-sm text-gray-600">
+            <i class="fa-solid fa-lock mr-1"></i> Payroll sudah di-lock dan tidak bisa di-edit atau di-rollback
+          </span>
         </div>
       </div>
 
