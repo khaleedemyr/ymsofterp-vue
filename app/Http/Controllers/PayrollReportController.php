@@ -129,6 +129,11 @@ class PayrollReportController extends Controller
                     return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
                 })->count();
 
+                // Hitung total alpha (hari dengan shift bukan OFF tapi tidak ada scan)
+                $totalAlpha = $attendanceData->filter(function($item) {
+                    return isset($item['is_alpha']) && $item['is_alpha'] === true;
+                })->count();
+
                 // Ambil point dari level melalui jabatan
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
                 $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
@@ -141,6 +146,7 @@ class PayrollReportController extends Controller
                     'totalTelat' => $totalTelat,
                     'totalLembur' => $totalLembur,
                     'hariKerja' => $hariKerja,
+                    'totalAlpha' => $totalAlpha,
                     'userPoint' => $userPoint,
                 ];
             }
@@ -357,6 +363,7 @@ class PayrollReportController extends Controller
                     'potongan_telat' => round($potonganTelat),
                     'total_gaji' => round($totalGaji),
                     'hari_kerja' => $hariKerja,
+                    'total_alpha' => $totalAlpha,
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
                 ]);
@@ -417,6 +424,12 @@ class PayrollReportController extends Controller
             
             $has_scan = $attendanceInfo && $attendanceInfo['first_in'] ? true : false;
             
+            // Deteksi alpha: ada shift (bukan OFF), tapi tidak ada scan
+            $is_alpha = false;
+            if (!$is_off && $shift && !$has_scan) {
+                $is_alpha = true;
+            }
+            
             $rows->push([
                 'tanggal' => $tanggal,
                 'telat' => $attendanceInfo['telat'] ?? 0,
@@ -425,6 +438,7 @@ class PayrollReportController extends Controller
                 'total_lembur' => $attendanceInfo['total_lembur'] ?? 0,
                 'is_off' => $is_off,
                 'has_scan' => $has_scan,
+                'is_alpha' => $is_alpha,
             ]);
         }
         
@@ -1082,6 +1096,12 @@ class PayrollReportController extends Controller
             // Round down total lembur (bulatkan ke bawah)
             $totalLembur = floor($lembur + $extraOffOvertime);
 
+            // Deteksi alpha: ada shift (bukan OFF), tapi tidak ada scan
+            $is_alpha = false;
+            if (!$is_off && $shiftData && !$data['jam_masuk'] && !$data['jam_keluar']) {
+                $is_alpha = true;
+            }
+
             // Always add to attendance detail, even if incomplete
             $attendanceDetail[] = [
                 'tanggal' => $data['tanggal'],
@@ -1095,7 +1115,8 @@ class PayrollReportController extends Controller
                 'total_lembur' => $totalLembur,
                 'shift_name' => $shiftName,
                 'is_cross_day' => $data['is_cross_day'],
-                'is_off' => $is_off
+                'is_off' => $is_off,
+                'is_alpha' => $is_alpha
             ];
 
             // Debug logging for first few records
@@ -1133,45 +1154,51 @@ class PayrollReportController extends Controller
                 continue;
             }
             
-            // Check for Extra Off overtime on this date
-            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
-            if ($extraOffOvertime > 0) {
-                // Get shift data to determine if off day
-                $shiftData = DB::table('user_shifts as us')
-                    ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                    ->where('us.user_id', $userId)
-                    ->where('us.outlet_id', $outletId)
-                    ->where('us.tanggal', $tanggal)
-                    ->select('s.shift_name', 's.time_start', 's.time_end', 'us.shift_id')
-                    ->first();
-                
-                $shiftName = $shiftData ? $shiftData->shift_name : null;
-                $is_off = false;
-                
-                if ($shiftData) {
-                    if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
-                        $is_off = true;
-                    }
-                } else {
+            // Get shift data to determine if off day or alpha
+            $shiftData = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->where('us.user_id', $userId)
+                ->where('us.outlet_id', $outletId)
+                ->where('us.tanggal', $tanggal)
+                ->select('s.shift_name', 's.time_start', 's.time_end', 'us.shift_id')
+                ->first();
+            
+            $shiftName = $shiftData ? $shiftData->shift_name : null;
+            $is_off = false;
+            
+            if ($shiftData) {
+                if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
                     $is_off = true;
                 }
-                
-                // Add entry for this date with only Extra Off overtime
-                $attendanceDetail[] = [
-                    'tanggal' => $tanggal,
-                    'jam_masuk' => null,
-                    'jam_keluar' => null,
-                    'total_masuk' => 0,
-                    'total_keluar' => 0,
-                    'telat' => 0,
-                    'lembur' => 0,
-                    'extra_off_overtime' => $extraOffOvertime,
-                    'total_lembur' => $extraOffOvertime,
-                    'shift_name' => $shiftName,
-                    'is_cross_day' => false,
-                    'is_off' => $is_off
-                ];
+            } else {
+                $is_off = true;
             }
+            
+            // Check for Extra Off overtime on this date
+            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+            
+            // Deteksi alpha: ada shift (bukan OFF), tapi tidak ada scan dan tidak ada Extra Off overtime
+            $is_alpha = false;
+            if (!$is_off && $shiftData && $extraOffOvertime == 0) {
+                $is_alpha = true;
+            }
+            
+            // Add entry for this date (either with Extra Off overtime or as alpha)
+            $attendanceDetail[] = [
+                'tanggal' => $tanggal,
+                'jam_masuk' => null,
+                'jam_keluar' => null,
+                'total_masuk' => 0,
+                'total_keluar' => 0,
+                'telat' => 0,
+                'lembur' => 0,
+                'extra_off_overtime' => $extraOffOvertime,
+                'total_lembur' => $extraOffOvertime,
+                'shift_name' => $shiftName,
+                'is_cross_day' => false,
+                'is_off' => $is_off,
+                'is_alpha' => $is_alpha
+            ];
         }
         
         // Sort by tanggal

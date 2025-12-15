@@ -715,6 +715,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Lembur</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Uang Makan</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Alpha</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC By Point</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC Pro Rate</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
@@ -794,6 +795,9 @@ onMounted(() => {
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-blue-600">
                       {{ item.hari_kerja || 0 }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
+                      {{ item.total_alpha || 0 }}
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.sc == 1" class="text-green-600">
@@ -996,10 +1000,14 @@ onMounted(() => {
                                   <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else>{{ detail.shift_name || '-' }}</span>
                                 </td>
-                                <td class="px-3 py-2 text-center">
+                                <td class="px-3 py-2 text-center" :class="detail.is_alpha ? 'bg-red-200' : ''">
                                   <span v-if="detail.is_off" 
                                         class="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
                                     📅 OFF
+                                  </span>
+                                  <span v-else-if="detail.is_alpha" 
+                                        class="px-2 py-1 text-xs bg-red-500 text-white rounded-full font-bold">
+                                    ⚠ ALPHA
                                   </span>
                                   <span v-else-if="detail.is_cross_day" 
                                         class="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded-full">
