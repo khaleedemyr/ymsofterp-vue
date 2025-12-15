@@ -1323,140 +1323,6 @@ class PayrollReportController extends Controller
                 ];
             }
         }
-
-            $telat = 0;
-            $lembur = 0;
-            $shiftName = $shiftData ? $shiftData->shift_name : null;
-            $is_off = false;
-
-            // Check if it's off day
-            if ($shiftData) {
-                if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
-                    $is_off = true;
-                }
-            }
-            
-            // Check if user has approved absent for this date
-            $approvedAbsent = null;
-            $is_approved_absent = false;
-            $approved_absent_name = null;
-            if (isset($approvedAbsents[$data['tanggal']])) {
-                $approvedAbsent = $approvedAbsents[$data['tanggal']];
-                $is_approved_absent = true;
-                $approved_absent_name = $approvedAbsent['leave_type_name'];
-            }
-
-            // Calculate telat and lembur only if not off day and have both jam_masuk and jam_keluar
-            if (!$is_off && $data['jam_masuk'] && $data['jam_keluar'] && $shiftData) {
-                // Calculate telat (same logic as AttendanceReportController)
-                if ($shiftData->time_start && $data['jam_masuk']) {
-                    $jam_masuk_time = date('H:i:s', strtotime($data['jam_masuk']));
-                    $start = strtotime($shiftData->time_start);
-                    $masuk = strtotime($jam_masuk_time);
-                    $diff = $masuk - $start;
-                    $telat = $diff > 0 ? round($diff/60) : 0;
-                }
-
-                // Calculate lembur using calculateSimpleOvertime (same logic as AttendanceReportController)
-                if ($shiftData->time_end && $data['jam_keluar']) {
-                    // Use $data['jam_keluar'] directly (full datetime format) for cross-day calculation
-                    $lembur = $this->calculateSimpleOvertime($data['jam_keluar'], $shiftData->time_end);
-                    // Round down (bulatkan ke bawah)
-                    $lembur = floor($lembur);
-                }
-            } else if ($is_off) {
-                // Set to null if it's off day
-                $data['jam_masuk'] = null;
-                $data['jam_keluar'] = null;
-                $telat = 0;
-                $lembur = 0;
-            }
-            
-            // Get attendance data from AttendanceController (includes Extra Off overtime)
-            $attendanceInfo = $attendanceDataWithFirstInLastOut[$data['tanggal']] ?? null;
-            
-            // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
-            // Always calculate directly to ensure we get the correct value
-            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
-            
-            // Use lembur and telat from AttendanceController if available (more accurate)
-            if ($attendanceInfo) {
-                $lembur = $attendanceInfo['lembur'] ?? $lembur;
-                $telat = $attendanceInfo['telat'] ?? $telat;
-                // Also use extra_off_overtime from AttendanceController if available (for consistency)
-                // But only if it's greater than what we calculated directly
-                if (isset($attendanceInfo['extra_off_overtime']) && $attendanceInfo['extra_off_overtime'] > 0) {
-                    $extraOffOvertime = $attendanceInfo['extra_off_overtime'];
-                }
-            }
-            
-            // Ensure extra_off_overtime is always calculated, even for off days
-            // Always recalculate for off days to ensure we don't miss any Extra Off overtime
-            if ($is_off) {
-                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
-            }
-            
-            // Round down total lembur (bulatkan ke bawah)
-            $totalLembur = floor($lembur + $extraOffOvertime);
-
-            // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, dan tanggal sudah terlewati
-            $is_alpha = false;
-            if (!$is_off && $shiftData && !$data['jam_masuk'] && !$data['jam_keluar'] && !$is_approved_absent) {
-                // Pastikan tanggal sudah terlewati (bukan hari ini atau hari yang akan datang)
-                $tanggal = $data['tanggal'];
-                if (is_string($tanggal) && strlen($tanggal) === 10 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
-                    // Perbandingan string untuk format Y-m-d sudah benar secara lexicographic
-                    if ($tanggal < $today) {
-                        $is_alpha = true;
-                    }
-                } else {
-                    // Jika format tidak sesuai, coba parse
-                    $tanggalTimestamp = strtotime($tanggal);
-                    $todayTimestamp = strtotime($today);
-                    if ($tanggalTimestamp !== false && $todayTimestamp !== false && $tanggalTimestamp < $todayTimestamp) {
-                        $is_alpha = true;
-                    }
-                }
-            }
-
-            // Always add to attendance detail, even if incomplete
-            $attendanceDetail[] = [
-                'tanggal' => $data['tanggal'],
-                'jam_masuk' => $data['jam_masuk'] ? date('H:i:s', strtotime($data['jam_masuk'])) : null,
-                'jam_keluar' => $data['jam_keluar'] ? date('H:i:s', strtotime($data['jam_keluar'])) : null,
-                'total_masuk' => $data['total_masuk'],
-                'total_keluar' => $data['total_keluar'],
-                'telat' => $telat,
-                'lembur' => $lembur,
-                'extra_off_overtime' => $extraOffOvertime,
-                'total_lembur' => $totalLembur,
-                'shift_name' => $shiftName,
-                'is_cross_day' => $data['is_cross_day'],
-                'is_off' => $is_off,
-                'is_alpha' => $is_alpha,
-                'approved_absent' => $approvedAbsent,
-                'is_approved_absent' => $is_approved_absent,
-                'approved_absent_name' => $approved_absent_name
-            ];
-
-            // Debug logging for first few records
-            if (count($attendanceDetail) <= 3) {
-                \Log::info('Attendance detail calculation', [
-                    'tanggal' => $data['tanggal'],
-                    'jam_masuk' => $data['jam_masuk'] ? date('H:i:s', strtotime($data['jam_masuk'])) : null,
-                    'jam_keluar' => $data['jam_keluar'] ? date('H:i:s', strtotime($data['jam_keluar'])) : null,
-                    'shift_name' => $shiftName,
-                    'shift_time_start' => $shiftData ? $shiftData->time_start : null,
-                    'shift_time_end' => $shiftData ? $shiftData->time_end : null,
-                    'is_off' => $is_off,
-                    'telat' => $telat,
-                    'lembur' => $lembur,
-                    'extra_off_overtime' => $extraOffOvertime,
-                    'total_lembur' => $totalLembur,
-                    'attendance_info_extra_off' => $attendanceInfo['extra_off_overtime'] ?? 'not set'
-                ]);
-            }
-        }
         
         // Sort by tanggal
         usort($attendanceDetail, function($a, $b) {
@@ -2856,5 +2722,80 @@ class PayrollReportController extends Controller
         $latenessMinutes = $diffSeconds > 0 ? round($diffSeconds / 60) : 0;
         
         return $latenessMinutes;
+    }
+
+    /**
+     * Perhitungan lembur yang SEDERHANA dan AMAN - SAMA PERSIS dengan AttendanceReportController
+     */
+    private function calculateSimpleOvertime($jamKeluar, $shiftEnd) {
+        if (!$jamKeluar || !$shiftEnd) {
+            return 0;
+        }
+        
+        // VALIDATION: Cek apakah data jam keluar valid
+        $jamKeluarTimestamp = strtotime($jamKeluar);
+        if ($jamKeluarTimestamp === false) {
+            \Log::error('Invalid jam keluar format', [
+                'jam_keluar' => $jamKeluar,
+                'shift_end' => $shiftEnd
+            ]);
+            return 0;
+        }
+        
+        // Ambil jam saja (abaikan tanggal)
+        $jamKeluarTime = date('H:i:s', $jamKeluarTimestamp);
+        
+        // Konversi ke timestamp untuk perhitungan
+        $keluarTimestamp = strtotime($jamKeluarTime);
+        $shiftEndTimestamp = strtotime($shiftEnd);
+        
+        // Hitung selisih dalam detik
+        $diffSeconds = $keluarTimestamp - $shiftEndTimestamp;
+        
+        
+        // Jika selisih negatif, kemungkinan cross-day ATAU checkout lebih awal
+        if ($diffSeconds < 0) {
+            // Cek apakah ini benar-benar cross-day atau checkout lebih awal
+            $checkoutHour = (int)date('H', strtotime($jamKeluarTime));
+            $shiftEndHour = (int)date('H', strtotime($shiftEnd));
+            
+            // Jika checkout di pagi sangat awal (00:00-06:00) dan shift end di sore/malam, ini cross-day
+            if ($checkoutHour >= 0 && $checkoutHour <= 6 && $shiftEndHour >= 17) {
+                // Untuk cross-day, hitung dari shift end sampai jam keluar di hari berikutnya
+                // Misal: shift end 17:00, keluar 06:00 = 13 jam overtime
+                $crossDaySeconds = (24 * 3600) + $diffSeconds; // 24 jam + selisih negatif
+                $overtimeHours = floor($crossDaySeconds / 3600);
+                
+            } else {
+                // Ini bukan cross-day, tapi checkout lebih awal dari shift end
+                // Tidak ada lembur
+                $overtimeHours = 0;
+                
+            }
+        } else {
+            // Normal overtime
+            $overtimeHours = floor($diffSeconds / 3600);
+            
+        }
+        
+        // Batasi maksimal 12 jam untuk mencegah error
+        $overtimeHours = min($overtimeHours, 12);
+        
+        // FIXED: Jangan hitung lembur jika checkout lebih awal dari shift end
+        if ($overtimeHours < 0) {
+            $overtimeHours = 0;
+        }
+        
+        // SAFETY CHECK: Jika nilai lembur terlalu besar, reset ke 0
+        if ($overtimeHours > 12) {
+            $overtimeHours = 0;
+        }
+        
+        // ADDITIONAL SAFETY: Jika nilai lembur negatif atau sangat besar, reset ke 0
+        if ($overtimeHours < 0 || $overtimeHours > 24) {
+            $overtimeHours = 0;
+        }
+        
+        return $overtimeHours;
     }
 }
