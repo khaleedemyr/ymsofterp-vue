@@ -1888,11 +1888,17 @@ class PayrollReportController extends Controller
         if ($payrollDetail && $payrollDetail->periode) {
             $periode = $payrollDetail->periode;
         } else {
-            // Hitung periode payroll (26 bulan sebelumnya sampai 25 bulan ini)
-            $startDate = Carbon::create($year, $month, 26)->subMonth();
-            $endDate = Carbon::create($year, $month, 25);
             $periode = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
         }
+        
+        // Get leave types untuk mapping nama leave type
+        $leaveTypes = DB::table('leave_types')->get()->keyBy('id');
+        
+        // Pastikan semua variabel yang diperlukan sudah terdefinisi
+        $totalAlpha = $totalAlpha ?? 0;
+        $potonganAlpha = $potonganAlpha ?? 0;
+        $potonganUnpaidLeave = $potonganUnpaidLeave ?? 0;
+        $leaveData = $leaveData ?? [];
 
         // Check if download PDF is requested
         if ($request->has('download') && $request->download === 'pdf') {
