@@ -672,6 +672,8 @@ async function showPayroll(employee) {
                                 <th class="px-3 py-2 text-center border-b">IN/OUT</th>
                                 <th class="px-3 py-2 text-center border-b">Telat (menit)</th>
                                 <th class="px-3 py-2 text-center border-b">Lembur (jam)</th>
+                                <th class="px-3 py-2 text-center border-b">OT dari EO</th>
+                                <th class="px-3 py-2 text-center border-b">Total Lembur</th>
                                 <th class="px-3 py-2 text-center border-b">Shift</th>
                                 <th class="px-3 py-2 text-center border-b">Status</th>
                               </tr>
@@ -705,7 +707,17 @@ async function showPayroll(employee) {
                                 </td>
                                 <td class="px-3 py-2 text-center">
                                   <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
-                                  <span v-else-if="detail.lembur > 0" class="text-green-600 font-semibold">{{ detail.lembur }}</span>
+                                  <span v-else-if="detail.lembur > 0" class="text-green-600 font-semibold">{{ Math.floor(detail.lembur || 0) }}</span>
+                                  <span v-else class="text-gray-500">0</span>
+                                </td>
+                                <td class="px-3 py-2 text-center">
+                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <span v-else-if="detail.extra_off_overtime > 0" class="text-purple-600 font-semibold">{{ Math.floor(detail.extra_off_overtime || 0) }}</span>
+                                  <span v-else class="text-gray-500">0</span>
+                                </td>
+                                <td class="px-3 py-2 text-center">
+                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <span v-else-if="(detail.total_lembur || detail.lembur) > 0" class="text-blue-600 font-bold">{{ Math.floor(detail.total_lembur || detail.lembur || 0) }}</span>
                                   <span v-else class="text-gray-500">0</span>
                                 </td>
                                 <td class="px-3 py-2 text-center text-xs">

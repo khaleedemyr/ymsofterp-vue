@@ -2801,6 +2801,7 @@ class AttendanceReportController extends Controller
                 ->where('user_id', $userId)
                 ->where('source_type', 'overtime_work')
                 ->where('transaction_type', 'earned')
+                ->where('status', 'approved') // Only count approved transactions
                 ->whereBetween('source_date', [$startDate, $endDate])
                 ->get();
 

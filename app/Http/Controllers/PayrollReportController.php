@@ -511,8 +511,9 @@ class PayrollReportController extends Controller
                 }
                 if ($shift && $shift->time_end && $jam_keluar) {
                     // Use calculateSimpleOvertime (same logic as AttendanceReportController)
-                    // Pass full datetime for jam_keluar (already in full datetime format from finalData)
-                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                    // Use $row['jam_keluar'] (full datetime) instead of $jam_keluar variable
+                    // This ensures cross-day calculation works correctly
+                    $lembur = $this->calculateSimpleOvertime($row['jam_keluar'], $shift->time_end);
                     // Round down (bulatkan ke bawah)
                     $lembur = floor($lembur);
                 }
@@ -1148,6 +1149,7 @@ class PayrollReportController extends Controller
 
                 // Calculate lembur using calculateSimpleOvertime (same logic as AttendanceReportController)
                 if ($shiftData->time_end && $data['jam_keluar']) {
+                    // Use $data['jam_keluar'] directly (full datetime format) for cross-day calculation
                     $lembur = $this->calculateSimpleOvertime($data['jam_keluar'], $shiftData->time_end);
                     // Round down (bulatkan ke bawah)
                     $lembur = floor($lembur);
