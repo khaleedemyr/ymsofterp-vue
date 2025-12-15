@@ -161,6 +161,8 @@ const summary = computed(() => {
       totalBPJSJKN: 0,
       totalBPJSTK: 0,
       totalPotonganTelat: 0,
+      totalPotonganAlpha: 0,
+      totalPotonganUnpaidLeave: 0,
       totalGaji: 0,
     };
   }
@@ -175,7 +177,9 @@ const summary = computed(() => {
     totalServiceCharge: data.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
     totalBPJSJKN: data.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
     totalBPJSTK: data.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
-    totalPotonganTelat: data.reduce((sum, item) => sum + Number(item.potongan_telat), 0),
+    totalPotonganTelat: data.reduce((sum, item) => sum + Number(item.potongan_telat || 0), 0),
+    totalPotonganAlpha: data.reduce((sum, item) => sum + Number(item.potongan_alpha || 0), 0),
+    totalPotonganUnpaidLeave: data.reduce((sum, item) => sum + Number(item.potongan_unpaid_leave || 0), 0),
     totalGaji: data.reduce((sum, item) => sum + Number(item.total_gaji), 0),
   };
 });
@@ -683,10 +687,18 @@ onMounted(() => {
               <div class="text-sm font-medium">Total Gaji Lembur</div>
               <div class="text-2xl font-bold">{{ formatCurrency(summary.totalGajiLembur) }}</div>
             </div>
-            <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
-              <div class="text-sm font-medium">Total Potongan Telat</div>
-              <div class="text-2xl font-bold">{{ formatCurrency(summary.totalPotonganTelat) }}</div>
-            </div>
+              <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total Potongan Telat</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalPotonganTelat) }}</div>
+              </div>
+              <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total Potongan Alpha</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalPotonganAlpha) }}</div>
+              </div>
+              <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total Potongan Unpaid Leave</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalPotonganUnpaidLeave) }}</div>
+              </div>
                           <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
                 <div class="text-sm font-medium">Total Uang Makan</div>
                 <div class="text-2xl font-bold">{{ formatCurrency(summary.totalUangMakan) }}</div>
@@ -902,7 +914,13 @@ onMounted(() => {
                       </button>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
-                      {{ formatCurrency(item.potongan_telat) }}
+                      {{ formatCurrency(item.potongan_telat || 0) }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
+                      {{ formatCurrency(item.potongan_alpha || 0) }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
+                      {{ formatCurrency(item.potongan_unpaid_leave || 0) }}
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600 bg-green-50 rounded-lg">
                       {{ formatCurrency(item.total_gaji) }}

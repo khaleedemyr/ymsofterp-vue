@@ -511,13 +511,54 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
+                // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+                $potonganAlpha = 0;
+                if ($totalAlpha > 0) {
+                    $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                    $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+                    
+                    // Debug logging untuk perhitungan potongan alpha
+                    \Log::info('Potongan alpha calculation', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'gaji_pokok' => $masterData->gaji,
+                        'tunjangan' => $masterData->tunjangan,
+                        'gaji_pokok_tunjangan' => $gajiPokokTunjangan,
+                        'total_alpha' => $totalAlpha,
+                        'potongan_alpha' => $potonganAlpha,
+                        'calculation_formula' => "({$gajiPokokTunjangan} × 20%) × {$totalAlpha} hari = {$potonganAlpha}"
+                    ]);
+                }
+
+                // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+                $potonganUnpaidLeave = 0;
+                $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
+                if ($unpaidLeaveDays > 0) {
+                    $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                    $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                    $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
+                    
+                    // Debug logging untuk perhitungan potongan unpaid leave
+                    \Log::info('Potongan unpaid leave calculation', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'gaji_pokok' => $masterData->gaji,
+                        'tunjangan' => $masterData->tunjangan,
+                        'gaji_pokok_tunjangan' => $gajiPokokTunjangan,
+                        'gaji_per_hari' => $gajiPerHari,
+                        'unpaid_leave_days' => $unpaidLeaveDays,
+                        'potongan_unpaid_leave' => $potonganUnpaidLeave,
+                        'calculation_formula' => "({$gajiPokokTunjangan} / 26) × {$unpaidLeaveDays} hari = {$potonganUnpaidLeave}"
+                    ]);
+                }
+
                 // Hitung custom earnings dan deductions
                 $userCustomItems = $customItems->get($user->id, collect());
                 $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
                 $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
 
-                // Hitung total gaji (service charge ditambahkan sebagai earning)
-                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+                // Hitung total gaji (service charge ditambahkan sebagai earning, potongan alpha dan unpaid leave sebagai deduction)
+                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
                 
                 $payrollDataItem = [
                     'user_id' => $user->id,
@@ -544,6 +585,8 @@ class PayrollReportController extends Controller
                     'custom_items' => $userCustomItems,
                     'gaji_per_menit' => round($gajiPerMenit, 2),
                     'potongan_telat' => round($potonganTelat),
+                    'potongan_alpha' => round($potonganAlpha),
+                    'potongan_unpaid_leave' => round($potonganUnpaidLeave),
                     'total_gaji' => round($totalGaji),
                     'hari_kerja' => $hariKerja,
                     'total_alpha' => $totalAlpha,
