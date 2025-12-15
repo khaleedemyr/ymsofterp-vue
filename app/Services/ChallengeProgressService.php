@@ -308,6 +308,10 @@ class ChallengeProgressService
             $isCompleted = $totalQuantity >= $quantityRequired;
         }
 
+        // Reload progress to ensure we have the latest data (prevent race condition)
+        $progress->refresh();
+        
+        // Double check is_completed after reload (prevent duplicate event dispatch)
         if ($isCompleted && !$progress->is_completed) {
             // Mark as completed
             $progress->is_completed = true;
@@ -330,6 +334,17 @@ class ChallengeProgressService
 
             // Dispatch event to send notification
             try {
+                // Double check progress is still completed (prevent race condition)
+                $progress->refresh();
+                if (!$progress->is_completed) {
+                    Log::warning('Challenge progress is not completed, skipping event dispatch', [
+                        'member_id' => $progress->member_id,
+                        'challenge_id' => $challenge->id,
+                        'progress_id' => $progress->id,
+                    ]);
+                    return;
+                }
+
                 // Get member
                 $member = MemberAppsMember::find($progress->member_id);
                 if ($member) {

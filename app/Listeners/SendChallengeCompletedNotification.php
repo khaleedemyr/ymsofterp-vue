@@ -49,6 +49,24 @@ class SendChallengeCompletedNotification
                 return;
             }
 
+            // Check for duplicate notification (prevent multiple notifications for same challenge)
+            // Check if notification was already sent in the last 5 minutes for this challenge
+            $recentNotification = MemberAppsNotification::where('member_id', $member->id)
+                ->where('type', 'challenge_completed')
+                ->whereRaw("JSON_EXTRACT(data, '$.challenge_id') = ?", [$challengeId])
+                ->where('created_at', '>=', now()->subMinutes(5))
+                ->first();
+
+            if ($recentNotification) {
+                Log::info('Duplicate challenge completed notification prevented', [
+                    'member_id' => $member->id,
+                    'challenge_id' => $challengeId,
+                    'existing_notification_id' => $recentNotification->id,
+                    'existing_notification_created_at' => $recentNotification->created_at,
+                ]);
+                return;
+            }
+
             // Build notification message based on reward type
             $title = '';
             $message = '';
