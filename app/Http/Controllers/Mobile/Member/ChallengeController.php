@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Mobile\Member;
 use App\Http\Controllers\Controller;
 use App\Models\MemberAppsChallenge;
 use App\Models\MemberAppsChallengeProgress;
+use App\Models\MemberAppsMember;
 use App\Models\Item;
 use App\Models\MemberAppsVoucher;
 use App\Services\ChallengeProgressService;
@@ -358,15 +359,22 @@ class ChallengeController extends Controller
             $memberId = $request->input('member_id');
             $orderId = $request->input('order_id');
 
+            \Log::info('Challenge progress update request received', [
+                'member_id_input' => $memberId,
+                'order_id' => $orderId
+            ]);
+
             // Find member by member_id (could be from member_apps_members table)
+            // Try member_id field first, then id field
             $member = MemberAppsMember::where('member_id', $memberId)
                 ->orWhere('id', $memberId)
                 ->first();
 
             if (!$member) {
                 \Log::warning('Member not found for challenge progress update', [
-                    'member_id' => $memberId,
-                    'order_id' => $orderId
+                    'member_id_input' => $memberId,
+                    'order_id' => $orderId,
+                    'searched_fields' => ['member_id', 'id']
                 ]);
                 return response()->json([
                     'success' => false,
@@ -374,13 +382,21 @@ class ChallengeController extends Controller
                 ], 404);
             }
 
+            \Log::info('Member found for challenge progress update', [
+                'member_id_input' => $memberId,
+                'member_db_id' => $member->id,
+                'member_member_id' => $member->member_id,
+                'order_id' => $orderId
+            ]);
+
             // Update challenge progress using service
             $progressService = new ChallengeProgressService();
             $progressService->updateProgressFromTransaction($member->id, $orderId);
 
-            \Log::info('Challenge progress updated from POS', [
+            \Log::info('Challenge progress update completed from POS', [
                 'member_id' => $member->id,
                 'member_id_input' => $memberId,
+                'member_identifier' => $member->member_id ?? $member->id,
                 'order_id' => $orderId
             ]);
 

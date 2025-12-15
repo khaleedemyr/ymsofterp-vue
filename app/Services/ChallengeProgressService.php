@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\MemberAppsChallenge;
 use App\Models\MemberAppsChallengeProgress;
 use App\Models\MemberAppsMember;
+use App\Events\ChallengeCompleted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -17,21 +18,37 @@ class ChallengeProgressService
     public function updateProgressFromTransaction($memberId, $orderId = null)
     {
         try {
-            // Get all active challenges for this member
+            // Get all active challenges for this member that have been started
             $activeProgresses = MemberAppsChallengeProgress::where('member_id', $memberId)
                 ->where('is_completed', false)
+                ->whereNotNull('started_at')
                 ->with(['challenge.outlets'])
                 ->get();
 
             if ($activeProgresses->isEmpty()) {
+                Log::info('No active challenge progresses found for member', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId
+                ]);
                 return;
             }
 
             // Get member data
             $member = MemberAppsMember::find($memberId);
             if (!$member) {
+                Log::warning('Member not found in updateProgressFromTransaction', [
+                    'member_id' => $memberId,
+                    'order_id' => $orderId
+                ]);
                 return;
             }
+
+            Log::info('Updating challenge progress from transaction', [
+                'member_id' => $memberId,
+                'member_identifier' => $member->member_id ?? $member->id,
+                'order_id' => $orderId,
+                'active_progresses_count' => $activeProgresses->count()
+            ]);
 
             foreach ($activeProgresses as $progress) {
                 $challenge = $progress->challenge;
@@ -105,6 +122,14 @@ class ChallengeProgressService
         // Use member_id from member_apps_members table (bisa id atau member_id tergantung struktur)
         $memberIdentifier = $member->member_id ?? $member->id;
         
+        Log::info('Updating spending progress', [
+            'member_id' => $member->id,
+            'member_identifier' => $memberIdentifier,
+            'challenge_id' => $challenge->id,
+            'started_at' => $startedAt,
+            'min_amount' => $minAmount
+        ]);
+        
         $query = DB::table('orders')
             ->where('member_id', $memberIdentifier)
             ->where('status', 'paid')
@@ -132,6 +157,15 @@ class ChallengeProgressService
         // If no outlets specified, challenge applies to all outlets (no filter needed)
 
         $totalSpending = $query->sum('grand_total') ?? 0;
+
+        Log::info('Spending progress calculated', [
+            'member_id' => $member->id,
+            'member_identifier' => $memberIdentifier,
+            'challenge_id' => $challenge->id,
+            'total_spending' => $totalSpending,
+            'min_amount' => $minAmount,
+            'started_at' => $startedAt
+        ]);
 
         // Update progress
         $currentProgress['spending'] = $totalSpending;
@@ -165,6 +199,15 @@ class ChallengeProgressService
         // Use member_id from member_apps_members table
         $memberIdentifier = $member->member_id ?? $member->id;
         
+        Log::info('Updating product progress', [
+            'member_id' => $member->id,
+            'member_identifier' => $memberIdentifier,
+            'challenge_id' => $challenge->id,
+            'started_at' => $startedAt,
+            'required_products' => $requiredProducts,
+            'quantity_required' => $quantityRequired
+        ]);
+        
         $query = DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('orders.member_id', $memberIdentifier)
@@ -194,6 +237,14 @@ class ChallengeProgressService
         // If no outlets specified, challenge applies to all outlets (no filter needed)
 
         $totalQuantity = $query->sum('order_items.qty') ?? 0;
+
+        Log::info('Product progress calculated', [
+            'member_id' => $member->id,
+            'member_identifier' => $memberIdentifier,
+            'challenge_id' => $challenge->id,
+            'total_quantity' => $totalQuantity,
+            'quantity_required' => $quantityRequired
+        ]);
 
         // Track quantity per product (with outlet filter)
         $productQuantities = [];
@@ -277,10 +328,95 @@ class ChallengeProgressService
                 'reward_expires_at' => $progress->reward_expires_at
             ]);
 
-            // TODO: Trigger reward distribution if immediate reward
-            // if (isset($rules['immediate']) && $rules['immediate'] == true) {
-            //     $this->distributeReward($progress, $challenge, $rules);
-            // }
+            // Dispatch event to send notification
+            try {
+                // Get member
+                $member = MemberAppsMember::find($progress->member_id);
+                if ($member) {
+                    // Determine reward type and data from rules
+                    $rewardType = $rules['reward_type'] ?? 'none';
+                    $rewardData = [];
+
+                    // Handle different reward types
+                    if ($rewardType === 'point' && isset($rules['reward_value'])) {
+                        $pointAmount = is_array($rules['reward_value']) 
+                            ? (int)($rules['reward_value'][0] ?? 0) 
+                            : (int)$rules['reward_value'];
+                        $rewardData['points'] = $pointAmount;
+                        $rewardData['points_earned'] = $pointAmount;
+                    } elseif ($rewardType === 'item' && isset($rules['reward_value'])) {
+                        $itemIds = is_array($rules['reward_value']) 
+                            ? $rules['reward_value'] 
+                            : [$rules['reward_value']];
+                        $rewardData['item_id'] = $itemIds[0];
+                        $rewardData['item_ids'] = $itemIds;
+                        
+                        // Get item name
+                        try {
+                            $itemData = DB::table('items')
+                                ->where('id', $itemIds[0])
+                                ->first();
+                            if ($itemData) {
+                                $rewardData['item_name'] = $itemData->name;
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Error getting item name for challenge notification', [
+                                'item_id' => $itemIds[0],
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    } elseif ($rewardType === 'voucher' && isset($rules['reward_value'])) {
+                        $voucherIds = is_array($rules['reward_value']) 
+                            ? $rules['reward_value'] 
+                            : [$rules['reward_value']];
+                        $rewardData['voucher_id'] = $voucherIds[0];
+                        $rewardData['voucher_ids'] = $voucherIds;
+                        
+                        // Get voucher name
+                        try {
+                            $voucherData = DB::table('member_apps_vouchers')
+                                ->where('id', $voucherIds[0])
+                                ->first();
+                            if ($voucherData) {
+                                $rewardData['voucher_name'] = $voucherData->name;
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Error getting voucher name for challenge notification', [
+                                'voucher_id' => $voucherIds[0],
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    } elseif ($challenge->points_reward && $challenge->points_reward > 0) {
+                        // Legacy points_reward field
+                        $rewardType = 'point';
+                        $rewardData['points'] = $challenge->points_reward;
+                        $rewardData['points_earned'] = $challenge->points_reward;
+                    }
+
+                    // Dispatch event
+                    event(new ChallengeCompleted(
+                        $member,
+                        $challenge->id,
+                        $challenge->title,
+                        $rewardType,
+                        $rewardData
+                    ));
+
+                    Log::info('Challenge completed event dispatched', [
+                        'member_id' => $member->id,
+                        'challenge_id' => $challenge->id,
+                        'reward_type' => $rewardType
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Error dispatching challenge completed event', [
+                    'member_id' => $progress->member_id,
+                    'challenge_id' => $challenge->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Don't fail the completion if notification fails
+            }
         }
     }
 
