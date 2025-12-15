@@ -278,6 +278,26 @@
                 <td class="deductions">Rp {{ number_format($custom_deductions, 0, ',', '.') }}</td>
             </tr>
             @endif
+            @if(isset($total_alpha) && $total_alpha > 0)
+            <tr>
+                <td>Alpha</td>
+                <td>{{ $total_alpha }} hari</td>
+                <td class="deductions">
+                    Rp {{ number_format($potongan_alpha ?? 0, 0, ',', '.') }}
+                    <div class="nominal-info">20% dari (Gaji Pokok + Tunjangan) × {{ $total_alpha }} hari</div>
+                </td>
+            </tr>
+            @endif
+            @if(isset($potongan_unpaid_leave) && $potongan_unpaid_leave > 0)
+            <tr>
+                <td>Potongan Unpaid Leave</td>
+                <td>{{ isset($leave_data['unpaid_leave_days']) ? $leave_data['unpaid_leave_days'] : 0 }} hari</td>
+                <td class="deductions">
+                    Rp {{ number_format($potongan_unpaid_leave, 0, ',', '.') }}
+                    <div class="nominal-info">(Gaji Pokok + Tunjangan) / 26 × {{ isset($leave_data['unpaid_leave_days']) ? $leave_data['unpaid_leave_days'] : 0 }} hari</div>
+                </td>
+            </tr>
+            @endif
 
             <!-- TOTAL -->
             <tr class="total-row">
@@ -301,6 +321,33 @@
                     <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description }}</span>
                 @endif
             </div>
+        @endforeach
+    </div>
+    @endif
+
+    @if(isset($leave_data) && is_array($leave_data) && count($leave_data) > 0)
+    <div class="custom-items" style="margin-top: 10px;">
+        <strong>Detail Izin/Cuti:</strong><br>
+        @foreach($leave_data as $key => $value)
+            @if(strpos($key, '_days') !== false && $value > 0)
+                @php
+                    // Extract leave type name from key (e.g., 'sick_leave_days' -> 'Sick Leave')
+                    $leaveTypeName = str_replace('_days', '', $key);
+                    $leaveTypeName = str_replace('_', ' ', $leaveTypeName);
+                    $leaveTypeName = ucwords($leaveTypeName);
+                    
+                    // Try to get from leave_types table if available
+                    if(isset($leave_types)) {
+                        $foundType = $leave_types->firstWhere('name', $leaveTypeName);
+                        if($foundType) {
+                            $leaveTypeName = $foundType->name;
+                        }
+                    }
+                @endphp
+                <div class="custom-item">
+                    • {{ $leaveTypeName }}: <span class="earnings">{{ $value }} hari</span>
+                </div>
+            @endif
         @endforeach
     </div>
     @endif

@@ -1730,6 +1730,9 @@ class PayrollReportController extends Controller
             $totalGaji = $payrollDetail->total_gaji ?? 0;
             $hariKerja = $payrollDetail->hari_kerja ?? 0;
             $totalLembur = $payrollDetail->total_lembur ?? 0;
+            $totalAlpha = $payrollDetail->total_alpha ?? 0;
+            $potonganAlpha = $payrollDetail->potongan_alpha ?? 0;
+            $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? 0;
             
             // Get custom items dari JSON
             $customItems = collect([]);
@@ -1738,11 +1741,17 @@ class PayrollReportController extends Controller
                 $decodedItems = json_decode($payrollDetail->custom_items, false) ?? [];
                 $customItems = collect($decodedItems);
             }
+            
+            // Hitung leave data dari JSON atau hitung ulang jika tidak ada
+            $leaveData = [];
+            if ($payrollDetail->leave_data) {
+                $leaveData = json_decode($payrollDetail->leave_data, true) ?? [];
+            } else {
+                // Hitung ulang jika tidak ada di database
+                $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
+            }
         } else {
             // Jika belum di-generate, hitung ulang seperti biasa menggunakan logic dari printPayroll
-            // Hitung periode payroll
-            $startDate = Carbon::create($year, $month, 26)->subMonth();
-            $endDate = Carbon::create($year, $month, 25);
 
             // Ambil data attendance
             $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
