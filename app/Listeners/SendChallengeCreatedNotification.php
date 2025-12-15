@@ -47,6 +47,23 @@ class SendChallengeCreatedNotification
                 return;
             }
 
+            // Check if notifications for this challenge were already sent recently (prevent duplicate listener trigger)
+            // Check if any notification was created for this challenge in the last 2 minutes
+            $recentChallengeNotification = MemberAppsNotification::where('type', 'challenge_created')
+                ->whereRaw("JSON_EXTRACT(data, '$.challenge_id') = ?", [$challenge->id])
+                ->where('created_at', '>=', now()->subMinutes(2))
+                ->first();
+
+            if ($recentChallengeNotification) {
+                Log::info('Duplicate challenge created notification prevented - already sent recently', [
+                    'challenge_id' => $challenge->id,
+                    'existing_notification_id' => $recentChallengeNotification->id,
+                    'existing_notification_created_at' => $recentChallengeNotification->created_at,
+                    'member_id' => $recentChallengeNotification->member_id,
+                ]);
+                return; // Exit early, don't send to any member
+            }
+
             // Build notification message
             $title = 'New Challenge Available! 🎯';
             $message = "A new challenge '{$challenge->title}' is now available! Start now and earn amazing rewards.";
@@ -89,6 +106,24 @@ class SendChallengeCreatedNotification
             // Send notification to each active member
             foreach ($activeMembers as $member) {
                 try {
+                    // Check for duplicate notification (prevent multiple notifications for same challenge)
+                    // Check if notification was already sent in the last 5 minutes for this challenge
+                    $recentNotification = MemberAppsNotification::where('member_id', $member->id)
+                        ->where('type', 'challenge_created')
+                        ->whereRaw("JSON_EXTRACT(data, '$.challenge_id') = ?", [$challenge->id])
+                        ->where('created_at', '>=', now()->subMinutes(5))
+                        ->first();
+
+                    if ($recentNotification) {
+                        Log::info('Duplicate challenge created notification prevented', [
+                            'member_id' => $member->id,
+                            'challenge_id' => $challenge->id,
+                            'existing_notification_id' => $recentNotification->id,
+                            'existing_notification_created_at' => $recentNotification->created_at,
+                        ]);
+                        continue; // Skip this member, continue to next
+                    }
+
                     Log::info('Sending challenge created notification to member', [
                         'member_id' => $member->id,
                         'challenge_id' => $challenge->id,

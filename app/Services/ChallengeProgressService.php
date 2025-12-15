@@ -110,7 +110,7 @@ class ChallengeProgressService
     /**
      * Update spending-based challenge progress
      */
-    private function updateSpendingProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId = null)
+    private function updateSpendingProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId = null, $orderNomor = null)
     {
         $minAmount = $rules['min_amount'] ?? 0;
         if ($minAmount <= 0) {
@@ -135,6 +135,31 @@ class ChallengeProgressService
             ->where('member_id', $memberIdentifier)
             ->where('status', 'paid')
             ->where('created_at', '>=', $startedAt);
+        
+        // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
+        if ($orderId || $orderNomor) {
+            // Exclude the specific order that was voided
+            // Match by order_nomor (most common) and also by id if orderId is numeric
+            $query->where(function($q) use ($orderId, $orderNomor) {
+                // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                $nomorToExclude = $orderNomor ?? $orderId;
+                if ($nomorToExclude) {
+                    $q->where('order_nomor', '!=', $nomorToExclude)
+                      ->where('order_nomor', '!=', (string)$nomorToExclude);
+                }
+                
+                // Also exclude by id if orderId is numeric
+                if ($orderId && is_numeric($orderId)) {
+                    $q->where('id', '!=', (int)$orderId);
+                }
+            });
+            
+            Log::info('Excluding voided order from spending calculation', [
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+                'order_id_type' => gettype($orderId),
+            ]);
+        }
 
         // Filter by challenge outlet scope (from member_apps_challenge_outlets table)
         // Load challenge outlets if not already loaded
@@ -185,7 +210,7 @@ class ChallengeProgressService
     /**
      * Update product-based challenge progress
      */
-    private function updateProductProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId = null)
+    private function updateProductProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId = null, $orderNomor = null)
     {
         $requiredProducts = $rules['products'] ?? [];
         $quantityRequired = $rules['quantity_required'] ?? 1;
@@ -215,6 +240,28 @@ class ChallengeProgressService
             ->where('orders.status', 'paid')
             ->where('orders.created_at', '>=', $startedAt)
             ->whereIn('order_items.item_id', $requiredProducts);
+        
+        // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
+        if ($orderId || $orderNomor) {
+            $query->where(function($q) use ($orderId, $orderNomor) {
+                // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                $nomorToExclude = $orderNomor ?? $orderId;
+                if ($nomorToExclude) {
+                    $q->where('orders.order_nomor', '!=', $nomorToExclude)
+                      ->where('orders.order_nomor', '!=', (string)$nomorToExclude);
+                }
+                
+                // Also exclude by id if orderId is numeric
+                if ($orderId && is_numeric($orderId)) {
+                    $q->where('orders.id', '!=', (int)$orderId);
+                }
+            });
+            
+            Log::info('Excluding voided order from product calculation', [
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+            ]);
+        }
 
         // Filter by challenge outlet scope (from member_apps_challenge_outlets table)
         // Load challenge outlets if not already loaded
@@ -256,6 +303,23 @@ class ChallengeProgressService
                 ->where('orders.status', 'paid')
                 ->where('orders.created_at', '>=', $startedAt)
                 ->where('order_items.item_id', $productId);
+            
+            // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
+            if ($orderId || $orderNomor) {
+                $productQuery->where(function($q) use ($orderId, $orderNomor) {
+                    // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                    $nomorToExclude = $orderNomor ?? $orderId;
+                    if ($nomorToExclude) {
+                        $q->where('orders.order_nomor', '!=', $nomorToExclude)
+                          ->where('orders.order_nomor', '!=', (string)$nomorToExclude);
+                    }
+                    
+                    // Also exclude by id if orderId is numeric
+                    if ($orderId && is_numeric($orderId)) {
+                        $q->where('orders.id', '!=', (int)$orderId);
+                    }
+                });
+            }
             
             // Apply same outlet filter as main query
             if ($challenge->outlets && $challenge->outlets->isNotEmpty()) {
@@ -640,6 +704,8 @@ class ChallengeProgressService
             
             // Recalculate all affected challenges (including completed ones that were rolled back)
             // We need to recalculate even completed challenges because their progress might have changed
+            // Store orderNomor for passing to update methods
+            $orderNomorForRecalc = $orderNomor ?? $orderId;
             foreach ($challengeProgresses as $progress) {
                 $challenge = $progress->challenge;
                 if (!$challenge) {
@@ -660,10 +726,11 @@ class ChallengeProgressService
                 $currentProgress = $progress->progress_data ?? [];
                 
                 // Recalculate progress based on challenge type
+                // Pass both orderId and orderNomor to ensure we exclude the voided order correctly
                 if ($challengeType === 'spending') {
-                    $this->updateSpendingProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId);
+                    $this->updateSpendingProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId, $orderNomorForRecalc);
                 } elseif ($challengeType === 'product') {
-                    $this->updateProductProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId);
+                    $this->updateProductProgress($progress, $challenge, $member, $rules, $currentProgress, $orderId, $orderNomorForRecalc);
                 }
                 
                 // Refresh progress to get updated data
