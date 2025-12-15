@@ -712,12 +712,12 @@ async function showPayroll(employee) {
                                 </td>
                                 <td class="px-3 py-2 text-center">
                                   <span v-if="detail.extra_off_overtime > 0" class="text-purple-600 font-semibold">{{ Math.floor(detail.extra_off_overtime || 0) }}</span>
-                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <span v-else-if="detail.is_off && !detail.extra_off_overtime" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else class="text-gray-500">0</span>
                                 </td>
                                 <td class="px-3 py-2 text-center">
-                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
-                                  <span v-else-if="(detail.total_lembur || detail.lembur) > 0" class="text-blue-600 font-bold">{{ Math.floor(detail.total_lembur || detail.lembur || 0) }}</span>
+                                  <span v-if="(detail.total_lembur || detail.lembur || detail.extra_off_overtime) > 0" class="text-blue-600 font-bold">{{ Math.floor(detail.total_lembur || detail.lembur || detail.extra_off_overtime || 0) }}</span>
+                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else class="text-gray-500">0</span>
                                 </td>
                                 <td class="px-3 py-2 text-center text-xs">

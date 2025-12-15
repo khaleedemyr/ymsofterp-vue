@@ -1056,9 +1056,16 @@ class PayrollReportController extends Controller
                 $lembur = $attendanceInfo['lembur'] ?? $lembur;
                 $telat = $attendanceInfo['telat'] ?? $telat;
                 // Also use extra_off_overtime from AttendanceController if available (for consistency)
+                // But only if it's greater than what we calculated directly
                 if (isset($attendanceInfo['extra_off_overtime']) && $attendanceInfo['extra_off_overtime'] > 0) {
                     $extraOffOvertime = $attendanceInfo['extra_off_overtime'];
                 }
+            }
+            
+            // Ensure extra_off_overtime is always calculated, even for off days
+            // Always recalculate for off days to ensure we don't miss any Extra Off overtime
+            if ($is_off) {
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
             }
             
             // Round down total lembur (bulatkan ke bawah)
