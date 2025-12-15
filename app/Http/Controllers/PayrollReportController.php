@@ -103,6 +103,20 @@ class PayrollReportController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']);
 
+            // Gunakan AttendanceReportController untuk mendapatkan data yang sama dengan Employee Summary
+            $attendanceController = new AttendanceReportController();
+            
+            // Buat request untuk Employee Summary dengan parameter yang sama
+            $employeeSummaryRequest = new Request([
+                'outlet_id' => $outletId,
+                'bulan' => $month,
+                'tahun' => $year,
+            ]);
+            
+            // Panggil method employeeSummary untuk mendapatkan data yang sudah diproses
+            // Tapi kita tidak bisa langsung memanggil karena return Inertia, jadi kita perlu menggunakan method private
+            // Atau kita bisa menggunakan logika yang sama dengan Employee Summary
+            
             // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
             $userData = [];
             foreach ($users as $user) {
@@ -119,7 +133,11 @@ class PayrollReportController extends Controller
                     'lb' => 0,
                 ]);
 
-                // Ambil data attendance untuk periode tersebut
+                // Gunakan method yang sama dengan Employee Summary untuk mendapatkan data attendance
+                // Employee Summary menggunakan query yang sama dengan report attendance dan processSmartCrossDayAttendance
+                // Untuk sementara, kita gunakan method yang sudah ada tapi pastikan menggunakan calculateAlpaDays dan calculateLeaveData yang sama
+                
+                // Ambil data attendance untuk periode tersebut (untuk perhitungan telat dan lembur)
                 $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
 
                 // Hitung total telat dan lembur
@@ -138,11 +156,11 @@ class PayrollReportController extends Controller
                 })->count();
 
                 // Hitung total alpha menggunakan method yang sama dengan Employee Summary
-                // Gunakan null untuk outlet_id seperti di Employee Summary (akan filter berdasarkan user's outlet)
-                $totalAlpha = $this->calculateAlpaDays($user->id, $outletId, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                // Gunakan null untuk outlet_id seperti di Employee Summary
+                $totalAlpha = $attendanceController->calculateAlpaDays($user->id, null, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
                 
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
-                $leaveData = $this->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                $leaveData = $attendanceController->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
                 
                 // Extract breakdown dari leaveData - sama seperti Employee Summary
                 // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
@@ -154,15 +172,6 @@ class PayrollReportController extends Controller
                         $totalIzinCuti += $value;
                     }
                 }
-                
-                // Debug logging untuk melihat leave data
-                \Log::info('Leave data for user', [
-                    'user_id' => $user->id,
-                    'nama_lengkap' => $user->nama_lengkap,
-                    'leave_data' => $leaveData,
-                    'izin_cuti_breakdown' => $izinCutiBreakdown,
-                    'total_izin_cuti' => $totalIzinCuti
-                ]);
 
                 // Ambil point dari level melalui jabatan
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
@@ -1077,8 +1086,9 @@ class PayrollReportController extends Controller
             $dt->modify('+1 day');
         }
         
-        // Get raw scan data for detail (jam masuk, jam keluar, total masuk, total keluar) - filtered by outlet
-        $scans = DB::table('att_log as a')
+        // Gunakan query yang sama dengan Employee Summary (SAMA PERSIS)
+        $rawData = collect();
+        $sub = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
@@ -1089,56 +1099,27 @@ class PayrollReportController extends Controller
                 'a.inoutmode',
                 'u.id as user_id',
                 'u.nama_lengkap',
-                'o.id_outlet',
-                'o.nama_outlet'
+                'u.division_id'
             )
             ->where('u.id', $userId)
-            ->where('o.id_outlet', $outletId)
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
             ->orderBy('a.scan_date')
             ->get();
+        
+        $rawData = $rawData->merge($sub);
 
-        // If no scans found, try alternative query
-        if ($scans->count() == 0) {
-            \Log::info('No scans found with outlet_id, trying with user_pins only');
-            
-            $scans = DB::table('att_log as a')
-                ->join('user_pins as up', 'a.pin', '=', 'up.pin')
-                ->join('users as u', 'up.user_id', '=', 'u.id')
-                ->join('tbl_data_outlet as o', 'up.outlet_id', '=', 'o.id_outlet')
-                ->select(
-                    'a.scan_date',
-                    'a.inoutmode',
-                    'u.id as user_id',
-                    'u.nama_lengkap',
-                    'o.id_outlet',
-                    'o.nama_outlet'
-                )
-                ->where('u.id', $userId)
-                ->where('up.outlet_id', $outletId)
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-                ->orderBy('a.scan_date')
-                ->get();
-
-            \Log::info('Alternative query result', [
-                'scans_count' => $scans->count(),
-                'scans_sample' => $scans->take(3)->toArray()
-            ]);
-        }
-
-        // Process data like in AttendanceReportController
+        // Proses data manual untuk menangani cross-day - SAMA PERSIS dengan Employee Summary
         $processedData = [];
-        foreach ($scans as $scan) {
+        foreach ($rawData as $scan) {
             $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $scan->id_outlet . '_' . $date;
+            $key = $scan->user_id . '_' . $date;
             
             if (!isset($processedData[$key])) {
                 $processedData[$key] = [
                     'tanggal' => $date,
                     'user_id' => $scan->user_id,
                     'nama_lengkap' => $scan->nama_lengkap,
-                    'id_outlet' => $scan->id_outlet,
-                    'nama_outlet' => $scan->nama_outlet,
+                    'division_id' => $scan->division_id,
                     'scans' => []
                 ];
             }
@@ -1149,63 +1130,199 @@ class PayrollReportController extends Controller
             ];
         }
 
-        // Process each group to determine jam masuk/keluar
+        // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
         $finalData = [];
         foreach ($processedData as $key => $data) {
-            $scans = collect($data['scans'])->sortBy('scan_date');
-            $inScans = $scans->where('inoutmode', 1);
-            $outScans = $scans->where('inoutmode', 2);
+            // Gunakan smart cross-day processing yang sama dengan Employee Summary
+            $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            $finalData[] = $result;
+        }
+        
+        // Convert to object seperti Employee Summary
+        $dataRows = collect($finalData)->map(function($item) {
+            return (object) $item;
+        });
+
+        // Get shift data and calculate telat/lembur - SAMA PERSIS dengan Employee Summary
+        // Batch query untuk shift data untuk mencegah N+1 query problem
+        $allShiftData = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+            ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+            ->get()
+            ->groupBy(function($item) {
+                return $item->user_id . '_' . $item->tanggal;
+            });
+        
+        // Hitung lembur untuk setiap baris - SAMA PERSIS dengan Employee Summary
+        foreach ($dataRows as $row) {
+            $shiftKey = $row->user_id . '_' . $row->tanggal;
+            $shiftData = $allShiftData->get($shiftKey, collect())->first();
             
-            $jamMasuk = $inScans->first()['scan_date'] ?? null;
-            $jamKeluar = null;
-            $isCrossDay = false;
+            if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
+                // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
+                $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftData->time_end);
+                // Round down (bulatkan ke bawah)
+                $row->lembur = floor($row->lembur);
+            } else {
+                $row->lembur = 0;
+            }
+        }
+        
+        // Ambil semua tanggal libur dalam periode
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$startDate, $endDate])
+            ->pluck('keterangan', 'tgl_libur');
+        
+        // Build rows for each tanggal in period - SAMA PERSIS dengan Employee Summary
+        $attendanceDetail = [];
+        foreach ($period as $tanggal) {
+            $dayData = $dataRows->where('tanggal', $tanggal);
             
-            if ($jamMasuk) {
-                $sameDayOut = $outScans->where('scan_date', '>', $jamMasuk)->first();
-                if ($sameDayOut) {
-                    $jamKeluar = $sameDayOut['scan_date'];
-                    $isCrossDay = false;
-                } else {
-                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $data['user_id'] . '_' . $data['id_outlet'] . '_' . $nextDay;
+            if ($dayData->count() > 0) {
+                foreach ($dayData as $row) {
+                    $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
+                    $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
+                    $telat = 0;
+                    $lembur = $row->lembur ?? 0;
+                    $is_off = false;
+                    $shift_name = null;
                     
-                    if (isset($processedData[$nextDayKey])) {
-                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOut = $nextDayScans->where('inoutmode', 2)->first();
-                        
-                        if ($nextDayOut) {
-                            $jamKeluar = $nextDayOut['scan_date'];
-                            $isCrossDay = true;
+                    // Get shift data
+                    $shiftKey = $row->user_id . '_' . $row->tanggal;
+                    $shiftData = $allShiftData->get($shiftKey, collect())->first();
+                    
+                    if ($shiftData) {
+                        $shift_name = $shiftData->shift_name;
+                        if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
+                            $is_off = true;
                         }
                     }
+                    
+                    if (!$is_off) {
+                        // Calculate telat - SAMA PERSIS dengan Employee Summary
+                        if ($shiftData && $shiftData->time_start && $jam_masuk) {
+                            $telat = $this->calculateLateness($jam_masuk, $shiftData->time_start, $row->is_cross_day ?? false);
+                        }
+                        
+                        // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
+                        if (!($row->is_cross_day ?? false)) {
+                            if ($shiftData && $shiftData->time_end && $jam_keluar) {
+                                $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shiftData->time_end, $row->is_cross_day ?? false);
+                                $telat += $earlyCheckoutTelat;
+                            }
+                        }
+                    } else {
+                        $jam_masuk = null;
+                        $jam_keluar = null;
+                        $telat = 0;
+                        $lembur = 0;
+                    }
+                    
+                    // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
+                    $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($row->user_id, $row->tanggal);
+                    // Round down total lembur (bulatkan ke bawah)
+                    $totalLembur = floor($lembur + $extraOffOvertime);
+                    
+                    // Check if user has approved absent for this date
+                    $approvedAbsent = null;
+                    $is_approved_absent = false;
+                    $approved_absent_name = null;
+                    if (isset($approvedAbsents[$row->tanggal])) {
+                        $approvedAbsent = $approvedAbsents[$row->tanggal];
+                        $is_approved_absent = true;
+                        $approved_absent_name = $approvedAbsent['leave_type_name'];
+                    }
+                    
+                    // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, dan tanggal sudah terlewati
+                    $is_alpha = false;
+                    if (!$is_off && $shiftData && !$row->jam_masuk && !$row->jam_keluar && !$is_approved_absent) {
+                        if ($row->tanggal < $today) {
+                            $is_alpha = true;
+                        }
+                    }
+                    
+                    $attendanceDetail[] = [
+                        'tanggal' => $row->tanggal,
+                        'jam_masuk' => $jam_masuk,
+                        'jam_keluar' => $jam_keluar,
+                        'total_masuk' => $row->total_masuk ?? 0,
+                        'total_keluar' => $row->total_keluar ?? 0,
+                        'telat' => $telat,
+                        'lembur' => $lembur,
+                        'extra_off_overtime' => $extraOffOvertime,
+                        'total_lembur' => $totalLembur,
+                        'shift_name' => $shift_name,
+                        'is_cross_day' => $row->is_cross_day ?? false,
+                        'is_off' => $is_off,
+                        'is_holiday' => $holidays->has($row->tanggal),
+                        'holiday_name' => $holidays->get($row->tanggal),
+                        'is_alpha' => $is_alpha,
+                        'approved_absent' => $approvedAbsent,
+                        'is_approved_absent' => $is_approved_absent,
+                        'approved_absent_name' => $approved_absent_name
+                    ];
                 }
+            } else {
+                // No attendance data for this date - check for shift, off, alpha, Extra Off overtime
+                $shiftKey = $userId . '_' . $tanggal;
+                $shiftData = $allShiftData->get($shiftKey, collect())->first();
+                
+                $shift_name = $shiftData ? $shiftData->shift_name : null;
+                $is_off = false;
+                
+                if ($shiftData) {
+                    if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
+                        $is_off = true;
+                    }
+                } else {
+                    $is_off = true;
+                }
+                
+                // Check if user has approved absent for this date
+                $approvedAbsent = null;
+                $is_approved_absent = false;
+                $approved_absent_name = null;
+                if (isset($approvedAbsents[$tanggal])) {
+                    $approvedAbsent = $approvedAbsents[$tanggal];
+                    $is_approved_absent = true;
+                    $approved_absent_name = $approvedAbsent['leave_type_name'];
+                }
+                
+                // Check for Extra Off overtime on this date
+                $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+                
+                // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, tidak ada Extra Off overtime, dan tanggal sudah terlewati
+                $is_alpha = false;
+                if (!$is_off && $shiftData && $extraOffOvertime == 0 && !$is_approved_absent) {
+                    if ($tanggal < $today) {
+                        $is_alpha = true;
+                    }
+                }
+                
+                $attendanceDetail[] = [
+                    'tanggal' => $tanggal,
+                    'jam_masuk' => null,
+                    'jam_keluar' => null,
+                    'total_masuk' => 0,
+                    'total_keluar' => 0,
+                    'telat' => 0,
+                    'lembur' => 0,
+                    'extra_off_overtime' => $extraOffOvertime,
+                    'total_lembur' => $extraOffOvertime,
+                    'shift_name' => $shift_name,
+                    'is_cross_day' => false,
+                    'is_off' => $is_off,
+                    'is_holiday' => $holidays->has($tanggal),
+                    'holiday_name' => $holidays->get($tanggal),
+                    'is_alpha' => $is_alpha,
+                    'approved_absent' => $approvedAbsent,
+                    'is_approved_absent' => $is_approved_absent,
+                    'approved_absent_name' => $approved_absent_name
+                ];
             }
-            
-            $finalData[] = [
-                'tanggal' => $data['tanggal'],
-                'user_id' => $data['user_id'],
-                'nama_lengkap' => $data['nama_lengkap'],
-                'id_outlet' => $data['id_outlet'],
-                'nama_outlet' => $data['nama_outlet'],
-                'jam_masuk' => $jamMasuk,
-                'jam_keluar' => $jamKeluar,
-                'total_masuk' => $inScans->count(),
-                'total_keluar' => $outScans->count(),
-                'is_cross_day' => $isCrossDay
-            ];
         }
-
-        // Get shift data and calculate telat/lembur
-        $attendanceDetail = [];
-        foreach ($finalData as $data) {
-            // Get shift data for this date
-            $shiftData = DB::table('user_shifts as us')
-                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                ->where('us.user_id', $data['user_id'])
-                ->where('us.outlet_id', $data['id_outlet'])
-                ->where('us.tanggal', $data['tanggal'])
-                ->select('s.shift_name', 's.time_start', 's.time_end', 'us.shift_id')
-                ->first();
 
             $telat = 0;
             $lembur = 0;
@@ -1339,95 +1456,6 @@ class PayrollReportController extends Controller
                     'attendance_info_extra_off' => $attendanceInfo['extra_off_overtime'] ?? 'not set'
                 ]);
             }
-        }
-        
-        // Also check for dates with Extra Off overtime but no attendance data
-        $processedDates = collect($finalData)->pluck('tanggal')->toArray();
-        $period = [];
-        $dt = new \DateTime($startDate);
-        $dtEnd = new \DateTime($endDate);
-        while ($dt <= $dtEnd) {
-            $period[] = $dt->format('Y-m-d');
-            $dt->modify('+1 day');
-        }
-        
-        foreach ($period as $tanggal) {
-            // Skip if already processed
-            if (in_array($tanggal, $processedDates)) {
-                continue;
-            }
-            
-            // Get shift data to determine if off day or alpha
-            $shiftData = DB::table('user_shifts as us')
-                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                ->where('us.user_id', $userId)
-                ->where('us.outlet_id', $outletId)
-                ->where('us.tanggal', $tanggal)
-                ->select('s.shift_name', 's.time_start', 's.time_end', 'us.shift_id')
-                ->first();
-            
-            $shiftName = $shiftData ? $shiftData->shift_name : null;
-            $is_off = false;
-            
-            if ($shiftData) {
-                if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
-                    $is_off = true;
-                }
-            } else {
-                $is_off = true;
-            }
-            
-            // Check if user has approved absent for this date
-            $approvedAbsent = null;
-            $is_approved_absent = false;
-            $approved_absent_name = null;
-            if (isset($approvedAbsents[$tanggal])) {
-                $approvedAbsent = $approvedAbsents[$tanggal];
-                $is_approved_absent = true;
-                $approved_absent_name = $approvedAbsent['leave_type_name'];
-            }
-            
-            // Check for Extra Off overtime on this date
-            $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
-            
-            // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, tidak ada Extra Off overtime, dan tanggal sudah terlewati
-            $is_alpha = false;
-            if (!$is_off && $shiftData && $extraOffOvertime == 0 && !$is_approved_absent) {
-                // Pastikan tanggal sudah terlewati (bukan hari ini atau hari yang akan datang)
-                if (is_string($tanggal) && strlen($tanggal) === 10 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
-                    // Perbandingan string untuk format Y-m-d sudah benar secara lexicographic
-                    if ($tanggal < $today) {
-                        $is_alpha = true;
-                    }
-                } else {
-                    // Jika format tidak sesuai, coba parse
-                    $tanggalTimestamp = strtotime($tanggal);
-                    $todayTimestamp = strtotime($today);
-                    if ($tanggalTimestamp !== false && $todayTimestamp !== false && $tanggalTimestamp < $todayTimestamp) {
-                        $is_alpha = true;
-                    }
-                }
-            }
-            
-            // Add entry for this date (either with Extra Off overtime or as alpha)
-            $attendanceDetail[] = [
-                'tanggal' => $tanggal,
-                'jam_masuk' => null,
-                'jam_keluar' => null,
-                'total_masuk' => 0,
-                'total_keluar' => 0,
-                'telat' => 0,
-                'lembur' => 0,
-                'extra_off_overtime' => $extraOffOvertime,
-                'total_lembur' => $extraOffOvertime,
-                'shift_name' => $shiftName,
-                'is_cross_day' => false,
-                'is_off' => $is_off,
-                'is_alpha' => $is_alpha,
-                'approved_absent' => $approvedAbsent,
-                'is_approved_absent' => $is_approved_absent,
-                'approved_absent_name' => $approved_absent_name
-            ];
         }
         
         // Sort by tanggal
@@ -2522,13 +2550,11 @@ class PayrollReportController extends Controller
 
     /**
      * Calculate alpa days (days with shift but no attendance and no absent request)
-     * Simplified logic: ada data user_shifts tapi tidak ada data di att_log untuk tanggal tersebut
-     * Hanya hitung tanggal yang sudah lewat di periode tersebut
+     * SAMA PERSIS dengan AttendanceReportController::calculateAlpaDays
+     * Hanya hitung tanggal yang sudah lewat (< hari ini)
      */
     private function calculateAlpaDays($userId, $outletId, $startDate, $endDate)
     {
-        $today = date('Y-m-d');
-        
         // Get all days in the period
         $period = [];
         $dt = new \DateTime($startDate);
@@ -2538,58 +2564,100 @@ class PayrollReportController extends Controller
             $dt->modify('+1 day');
         }
         
-        // Get user's shifts for the period (bukan OFF)
-        $shiftsQuery = DB::table('user_shifts as us')
+        // Get user's shifts for the period
+        $shifts = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
             ->whereIn('us.tanggal', $period)
             ->whereNotNull('us.shift_id') // Must have a shift (not off)
-            ->where('s.shift_name', '!=', 'off'); // Exclude 'off' shifts
+            ->where('s.shift_name', '!=', 'off') // Exclude 'off' shifts
+            ->select('us.tanggal', 's.shift_name');
         
-        // Only filter by outlet_id if it's not null
+        // Only filter by outlet_id if it's not null (sama seperti Employee Summary)
         if ($outletId !== null) {
-            $shiftsQuery->where('us.outlet_id', $outletId);
+            $shifts->where('us.outlet_id', $outletId);
         }
         
-        $shifts = $shiftsQuery->select('us.tanggal', 's.shift_name')
-            ->get()
-            ->keyBy('tanggal');
+        $shifts = $shifts->get()->keyBy('tanggal');
         
-        // Get dates that have attendance data in att_log (sederhana: cek apakah ada data di att_log)
-        $attendanceDatesQuery = DB::table('att_log as a')
+        // Get user's attendance data using the same logic as AttendanceReportController
+        $rawData = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-            ->select(DB::raw('DISTINCT DATE(a.scan_date) as tanggal'));
+            ->select('a.scan_date', 'a.inoutmode')
+            ->orderBy('a.scan_date')
+            ->get();
         
-        if ($outletId !== null) {
-            $attendanceDatesQuery->where('o.id_outlet', $outletId);
-        }
-        
-        $attendanceDates = $attendanceDatesQuery->get()->pluck('tanggal')->map(function($date) {
-            return date('Y-m-d', strtotime($date));
-        })->toArray();
-        
-        // If no attendance found, try alternative query
-        if (empty($attendanceDates)) {
-            $attendanceDatesQuery = DB::table('att_log as a')
-                ->join('user_pins as up', 'a.pin', '=', 'up.pin')
-                ->join('users as u', 'up.user_id', '=', 'u.id')
-                ->join('tbl_data_outlet as o', 'up.outlet_id', '=', 'o.id_outlet')
-                ->where('u.id', $userId)
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-                ->select(DB::raw('DISTINCT DATE(a.scan_date) as tanggal'));
+        // Process attendance data like in AttendanceReportController
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $date;
             
-            if ($outletId !== null) {
-                $attendanceDatesQuery->where('up.outlet_id', $outletId);
+            if (!isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'scans' => []
+                ];
             }
             
-            $attendanceDates = $attendanceDatesQuery->get()->pluck('tanggal')->map(function($date) {
-                return date('Y-m-d', strtotime($date));
-            })->toArray();
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode
+            ];
+        }
+        
+        // Process each day to determine if there's valid attendance
+        $attendanceDates = [];
+        foreach ($processedData as $key => $data) {
+            $scans = collect($data['scans'])->sortBy('scan_date');
+            $inScans = $scans->where('inoutmode', 1);
+            $outScans = $scans->where('inoutmode', 2);
+            
+            // Check if there's valid attendance (first in and last out)
+            $jamMasuk = $inScans->first()['scan_date'] ?? null;
+            $jamKeluar = null;
+            $isCrossDay = false;
+            
+            if ($jamMasuk) {
+                // Cari scan keluar di hari yang sama
+                $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+                
+                if ($sameDayOuts->isNotEmpty()) {
+                    // Ada scan keluar di hari yang sama
+                    $jamKeluar = $sameDayOuts->last()['scan_date'];
+                    $isCrossDay = false;
+                } else {
+                    // Cari scan keluar di hari berikutnya (cross-day)
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $nextDayKey = $nextDay;
+                    
+                    if (isset($processedData[$nextDayKey])) {
+                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
+                        
+                        if ($nextDayOuts->isNotEmpty()) {
+                            $jamKeluar = $nextDayOuts->first()['scan_date'];
+                            $isCrossDay = true;
+                        }
+                    }
+                }
+            }
+            
+            // If there's both check-in and check-out, consider it as attended
+            if ($jamMasuk && $jamKeluar) {
+                $attendanceDates[] = $data['tanggal'];
+                
+                // For cross-day, also mark the next day as attended (since OUT happened there)
+                if ($isCrossDay) {
+                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+                    $attendanceDates[] = $nextDay;
+                }
+            }
         }
         
         // Get user's approved absent requests for the period
@@ -2612,54 +2680,181 @@ class PayrollReportController extends Controller
             $fromDate = new \DateTime($absent->date_from);
             $toDate = new \DateTime($absent->date_to);
             while ($fromDate <= $toDate) {
-                $dateStr = $fromDate->format('Y-m-d');
-                if ($dateStr >= $startDate && $dateStr <= $endDate) {
-                    $absentDateArray[] = $dateStr;
-                }
+                $absentDateArray[] = $fromDate->format('Y-m-d');
                 $fromDate->modify('+1 day');
             }
         }
         
         $alpaDays = 0;
-        $debugAlphaDates = [];
+        $today = date('Y-m-d');
         
         // Check each day in the period
         foreach ($period as $date) {
-            // Only count alpa for dates that have already passed (not including today)
+            // Only count alpa for dates that have already passed (< hari ini, bukan <=)
             if ($date >= $today) {
                 continue; // Skip today and future dates
             }
             
-            // Alpha: ada shift, tidak ada attendance di att_log, tidak ada absent request
             $hasShift = $shifts->has($date);
             $hasAttendance = in_array($date, $attendanceDates);
             $hasAbsent = in_array($date, $absentDateArray);
             
+            // Alpa: has shift but no attendance and no absent request
             if ($hasShift && !$hasAttendance && !$hasAbsent) {
                 $alpaDays++;
-                $debugAlphaDates[] = [
-                    'date' => $date,
-                    'has_shift' => $hasShift,
-                    'has_attendance' => $hasAttendance,
-                    'has_absent' => $hasAbsent
-                ];
             }
         }
         
-        // Debug logging
-        \Log::info('calculateAlpaDays result (simplified)', [
-            'user_id' => $userId,
-            'outlet_id' => $outletId,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-            'today' => $today,
-            'total_shifts' => $shifts->count(),
-            'total_attendance_dates' => count($attendanceDates),
-            'total_absent_dates' => count($absentDateArray),
-            'alpa_days' => $alpaDays,
-            'alpha_dates' => $debugAlphaDates
-        ]);
-        
         return $alpaDays;
+    }
+
+    /**
+     * Process smart cross-day attendance - SAMA PERSIS dengan AttendanceReportController
+     * Digunakan untuk mendapatkan data attendance detail yang sama dengan Employee Summary
+     */
+    private function processSmartCrossDayAttendance($data, $allProcessedData) {
+        $scans = collect($data['scans'])->sortBy('scan_date');
+        $inScans = $scans->where('inoutmode', 1);
+        $outScans = $scans->where('inoutmode', 2);
+        
+        $totalMasuk = $inScans->count();
+        $totalKeluar = $outScans->count();
+        
+        // Ambil scan masuk pertama
+        $jamMasuk = $inScans->first()['scan_date'] ?? null;
+        $jamKeluar = null;
+        $isCrossDay = false;
+        
+        if ($jamMasuk) {
+            // SOLUSI TERBAIK: Logika sederhana dan konsisten dengan multi-outlet support
+            
+            // 1. Cari OUT scan di hari yang sama
+            $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
+            
+            // 2. Cari OUT scan di hari berikutnya (cross-day)
+            $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
+            $nextDayKey = $data['user_id'] . '_' . $nextDay;
+            $nextDayOuts = collect();
+            
+            if (isset($allProcessedData[$nextDayKey])) {
+                $nextDayScans = collect($allProcessedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                $nextDayOuts = $nextDayScans->where('inoutmode', 2);
+            }
+            
+            
+            // 3. Tentukan OUT scan yang paling masuk akal - FIXED for multi-outlet
+            if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
+                // Ada both same-day dan cross-day OUT scan
+                $lastSameDayOut = $sameDayOuts->last()['scan_date'];
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                
+                // Cek durasi same-day OUT
+                $sameDayDuration = strtotime($lastSameDayOut) - strtotime($jamMasuk);
+                $outHour = (int)date('H', strtotime($firstNextDayOut));
+                
+                // Untuk multi-outlet cross-day, prioritas cross-day jika:
+                // 1. Same-day OUT terlalu pendek (< 5 jam) ATAU
+                // 2. Cross-day OUT di pagi sangat awal (00:00-06:00)
+                if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
+                    $jamKeluar = $firstNextDayOut;
+                    $isCrossDay = true;
+                    $totalKeluar = 1;
+                    
+                    // Hapus scan keluar dari hari berikutnya
+                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                    
+                } else {
+                    $jamKeluar = $lastSameDayOut;
+                    $isCrossDay = false;
+                }
+            } elseif ($sameDayOuts->isNotEmpty()) {
+                // Hanya ada same-day OUT scan
+                $jamKeluar = $sameDayOuts->last()['scan_date'];
+                $isCrossDay = false;
+                
+                
+            } elseif ($nextDayOuts->isNotEmpty()) {
+                // Hanya ada cross-day OUT scan
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                $outHour = (int)date('H', strtotime($firstNextDayOut));
+                
+                // Untuk cross-day, hanya gunakan jika di pagi sangat awal (00:00-12:00)
+                if ($outHour >= 0 && $outHour <= 12) {
+                    $jamKeluar = $firstNextDayOut;
+                    $isCrossDay = true;
+                    $totalKeluar = 1;
+                    
+                    
+                    // Hapus scan keluar dari hari berikutnya
+                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
+                }
+            }
+            
+        }
+        
+        
+        return [
+            'tanggal' => $data['tanggal'],
+            'user_id' => $data['user_id'],
+            'nama_lengkap' => $data['nama_lengkap'],
+            'jam_masuk' => $jamMasuk,
+            'jam_keluar' => $jamKeluar,
+            'total_masuk' => $totalMasuk,
+            'total_keluar' => $totalKeluar,
+            'is_cross_day' => $isCrossDay
+        ];
+    }
+
+    /**
+     * Calculate lateness - SAMA PERSIS dengan AttendanceReportController
+     */
+    private function calculateLateness($jamMasuk, $shiftStart, $isCrossDay) {
+        if (!$jamMasuk || !$shiftStart) {
+            return 0;
+        }
+        
+        // Ambil jam saja dari jam masuk
+        $jamMasukTime = date('H:i:s', strtotime($jamMasuk));
+        
+        // Konversi ke timestamp untuk perhitungan
+        $masukTimestamp = strtotime($jamMasukTime);
+        $shiftStartTimestamp = strtotime($shiftStart);
+        
+        // Hitung selisih dalam detik
+        $diffSeconds = $masukTimestamp - $shiftStartTimestamp;
+        
+        // Konversi ke menit (hanya jika positif)
+        $latenessMinutes = $diffSeconds > 0 ? round($diffSeconds / 60) : 0;
+        
+        return $latenessMinutes;
+    }
+
+    /**
+     * Calculate early checkout lateness - SAMA PERSIS dengan AttendanceReportController
+     */
+    private function calculateEarlyCheckoutLateness($jamKeluar, $shiftEnd, $isCrossDay = false) {
+        if (!$jamKeluar || !$shiftEnd) {
+            return 0;
+        }
+        
+        // Untuk cross-day, tidak ada telat dari early checkout
+        if ($isCrossDay) {
+            return 0;
+        }
+        
+        // Ambil jam saja dari jam keluar
+        $jamKeluarTime = date('H:i:s', strtotime($jamKeluar));
+        
+        // Konversi ke timestamp untuk perhitungan
+        $keluarTimestamp = strtotime($jamKeluarTime);
+        $shiftEndTimestamp = strtotime($shiftEnd);
+        
+        // Hitung selisih dalam detik (negatif jika checkout lebih awal)
+        $diffSeconds = $shiftEndTimestamp - $keluarTimestamp;
+        
+        // Konversi ke menit (hanya jika positif, artinya checkout lebih awal)
+        $latenessMinutes = $diffSeconds > 0 ? round($diffSeconds / 60) : 0;
+        
+        return $latenessMinutes;
     }
 }
