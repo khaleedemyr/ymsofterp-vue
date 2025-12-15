@@ -21,6 +21,7 @@ use App\Models\MemberAppsVoucher;
 use App\Models\MemberAppsVoucherDistribution;
 use App\Models\MemberAppsMemberVoucher;
 use App\Events\VoucherReceived;
+use App\Events\ChallengeCreated;
 use App\Models\MemberAppsPushNotification;
 use App\Models\MemberAppsDeviceToken;
 use App\Models\MemberAppsPushNotificationRecipient;
@@ -451,8 +452,36 @@ class MemberAppsSettingsController extends Controller
             \Log::info('StoreChallenge - Successfully created', [
                 'id' => $challenge->id,
                 'title' => $challenge->title,
-                'outlet_ids' => $request->challenge_outlet_ids ?? []
+                'outlet_ids' => $request->challenge_outlet_ids ?? [],
+                'is_active' => $challenge->is_active,
             ]);
+
+            // Refresh challenge to ensure we have latest data including relationships
+            $challenge->refresh();
+            $challenge->load('outlets');
+
+            // Dispatch event to send notification to all active members
+            try {
+                \Log::info('Dispatching ChallengeCreated event', [
+                    'challenge_id' => $challenge->id,
+                    'challenge_title' => $challenge->title,
+                    'is_active' => $challenge->is_active,
+                ]);
+                
+                event(new ChallengeCreated($challenge));
+                
+                \Log::info('ChallengeCreated event dispatched successfully', [
+                    'challenge_id' => $challenge->id,
+                    'challenge_title' => $challenge->title,
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('Error dispatching ChallengeCreated event', [
+                    'challenge_id' => $challenge->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                // Continue even if event dispatch fails
+            }
 
         return redirect()->back()->with('success', 'Challenge berhasil ditambahkan');
         } catch (\Exception $e) {

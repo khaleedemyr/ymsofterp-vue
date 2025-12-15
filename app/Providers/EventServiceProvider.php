@@ -24,6 +24,9 @@ class EventServiceProvider extends ServiceProvider
         \App\Events\ChallengeRolledBack::class => [
             \App\Listeners\SendChallengeRolledBackNotification::class,
         ],
+        \App\Events\ChallengeCreated::class => [
+            \App\Listeners\SendChallengeCreatedNotification::class,
+        ],
         \App\Events\MemberTierUpgraded::class => [
             \App\Listeners\SendTierUpgradedNotification::class,
         ],
