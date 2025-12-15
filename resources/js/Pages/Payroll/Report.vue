@@ -773,6 +773,8 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Earnings</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Deductions</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Telat</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Alpha</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Unpaid Leave</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Gaji</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
                 </tr>
