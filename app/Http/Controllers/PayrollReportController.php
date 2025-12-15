@@ -559,6 +559,29 @@ class PayrollReportController extends Controller
                     }
                 }
                 
+                // Pastikan extra_off_days juga ditambahkan langsung ke payrollDataItem (setelah loop untuk memastikan tidak tertimpa)
+                // Ini penting karena frontend mencari item['extra_off_days'] langsung
+                if (isset($leaveData['extra_off_days'])) {
+                    $payrollDataItem['extra_off_days'] = $leaveData['extra_off_days'];
+                }
+                
+                // Debug: Log final payrollDataItem untuk memastikan extra_off_days ada
+                $allLeaveKeys = [];
+                foreach ($payrollDataItem as $key => $value) {
+                    if (strpos($key, '_days') !== false) {
+                        $allLeaveKeys[$key] = $value;
+                    }
+                }
+                \Log::info('Payroll - Final payrollDataItem', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'extra_off_days' => $payrollDataItem['extra_off_days'] ?? 'NOT SET',
+                    'sick_leave_days' => $payrollDataItem['sick_leave_days'] ?? 'NOT SET',
+                    'all_leave_keys' => $allLeaveKeys,
+                    'has_extra_off_days' => isset($payrollDataItem['extra_off_days']),
+                    'extra_off_days_value' => $payrollDataItem['extra_off_days'] ?? null
+                ]);
+                
                 $payrollData->push($payrollDataItem);
             }
         }
