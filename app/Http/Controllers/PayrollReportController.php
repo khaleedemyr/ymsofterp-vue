@@ -1586,12 +1586,23 @@ class PayrollReportController extends Controller
             return response()->json(['error' => 'Karyawan tidak ditemukan'], 404);
         }
 
-        // Ambil data jabatan dan divisi
-        $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
-        $divisi = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
+        // Cek apakah payroll sudah di-generate
+        $payrollGenerated = DB::table('payroll_generated')
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
 
-        // Ambil data master payroll
+        $payrollDetail = null;
+        if ($payrollGenerated) {
+            // Ambil data dari payroll_generated_details jika sudah di-generate
+            $payrollDetail = DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollGenerated->id)
+                ->where('user_id', $userId)
+                ->first();
+        }
+
+        // Get master data (untuk konfigurasi payroll, bukan data per periode)
         $masterData = DB::table('payroll_master')
             ->where('user_id', $userId)
             ->where('outlet_id', $outletId)
@@ -1611,99 +1622,118 @@ class PayrollReportController extends Controller
             ];
         }
 
-        // Ambil data attendance
-        $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
-        $totalTelat = $attendanceData->sum('telat');
-        // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
-        $totalLembur = $attendanceData->sum(function($item) {
-            return $item['total_lembur'] ?? $item['lembur'] ?? 0;
-        });
-
-        // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
-        // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
-        $hariKerja = $attendanceData->filter(function($item) {
-            return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
-        })->count();
-
-        // Ambil data nominal dari divisi
-        $nominalLembur = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_lembur') ?? 0;
-        $nominalUangMakan = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_uang_makan') ?? 0;
-
-        // Hitung gaji lembur
-        $gajiLembur = 0;
-        if ($totalLembur > 0 && $masterData->ot == 1) {
-            $gajiLembur = $totalLembur * $nominalLembur;
-        }
-
-        // Hitung uang makan
-        $uangMakan = 0;
-        if ($masterData->um == 1) {
-            $uangMakan = $hariKerja * $nominalUangMakan;
-        }
-
-        // Hitung BPJS
-        $bpjsJKN = 0;
-        $bpjsTK = 0;
-        if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
-            $userLevel = DB::table('tbl_data_jabatan')
-                ->where('id_jabatan', $user->id_jabatan)
-                ->value('id_level');
+        // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
+        if ($payrollDetail) {
+            // Gunakan data dari payroll_generated_details
+            $gajiLembur = $payrollDetail->gaji_lembur ?? 0;
+            $nominalLemburPerJam = $payrollDetail->nominal_lembur_per_jam ?? 0;
+            $uangMakan = $payrollDetail->uang_makan ?? 0;
+            $nominalUangMakan = $payrollDetail->nominal_uang_makan ?? 0;
+            $totalTelat = $payrollDetail->total_telat ?? 0;
+            $potonganTelat = $payrollDetail->potongan_telat ?? 0;
+            $gajiPerMenit = $payrollDetail->gaji_per_menit ?? 500;
+            $bpjsJKN = $payrollDetail->bpjs_jkn ?? 0;
+            $bpjsTK = $payrollDetail->bpjs_tk ?? 0;
+            $customEarnings = $payrollDetail->custom_earnings ?? 0;
+            $customDeductions = $payrollDetail->custom_deductions ?? 0;
+            $serviceChargeAmount = $payrollDetail->service_charge ?? 0;
+            $totalGaji = $payrollDetail->total_gaji ?? 0;
+            $hariKerja = $payrollDetail->hari_kerja ?? 0;
+            $totalLembur = $payrollDetail->total_lembur ?? 0;
             
-            $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
-                ->where('id', $userLevel)
-                ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
-            
-            if ($masterData->bpjs_jkn == 1) {
-                $bpjsJKN = $nilaiDasarBPJS * 0.01;
+            // Get custom items dari JSON
+            $customItems = collect([]);
+            if ($payrollDetail->custom_items) {
+                // Decode sebagai objects (false) agar bisa diakses dengan -> seperti di view
+                $decodedItems = json_decode($payrollDetail->custom_items, false) ?? [];
+                $customItems = collect($decodedItems);
             }
-            
-            if ($masterData->bpjs_tk == 1) {
-                if ($user->id_outlet == 1) {
-                    $bpjsTK = $nilaiDasarBPJS * 0.03;
-                } else {
-                    $bpjsTK = $nilaiDasarBPJS * 0.02;
+        } else {
+            // Jika belum di-generate, hitung ulang seperti biasa
+            // Ambil data attendance
+            $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
+            $totalTelat = $attendanceData->sum('telat');
+            // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
+            $totalLembur = $attendanceData->sum(function($item) {
+                return $item['total_lembur'] ?? $item['lembur'] ?? 0;
+            });
+
+            // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
+            // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
+            $hariKerja = $attendanceData->filter(function($item) {
+                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+            })->count();
+
+            // Ambil data nominal dari divisi
+            $nominalLembur = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_lembur') ?? 0;
+            $nominalUangMakan = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_uang_makan') ?? 0;
+
+            // Hitung gaji lembur
+            $gajiLembur = 0;
+            if ($totalLembur > 0 && $masterData->ot == 1) {
+                $gajiLembur = $totalLembur * $nominalLembur;
+            }
+            $nominalLemburPerJam = $nominalLembur;
+
+            // Hitung uang makan
+            $uangMakan = 0;
+            if ($masterData->um == 1) {
+                $uangMakan = $hariKerja * $nominalUangMakan;
+            }
+            $nominalUangMakan = $nominalUangMakan;
+
+            // Hitung potongan telat
+            $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+            $potonganTelat = $totalTelat * $gajiPerMenit;
+
+            // Hitung BPJS
+            $bpjsJKN = 0;
+            $bpjsTK = 0;
+            if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
+                $userLevel = DB::table('tbl_data_jabatan')
+                    ->where('id_jabatan', $user->id_jabatan)
+                    ->value('id_level');
+                
+                $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
+                    ->where('id', $userLevel)
+                    ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
+                
+                if ($masterData->bpjs_jkn == 1) {
+                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
+                }
+                
+                if ($masterData->bpjs_tk == 1) {
+                    if ($user->id_outlet == 1) {
+                        $bpjsTK = $nilaiDasarBPJS * 0.03;
+                    } else {
+                        $bpjsTK = $nilaiDasarBPJS * 0.02;
+                    }
                 }
             }
+
+            // Get custom items
+            $customItems = CustomPayrollItem::forOutlet($outletId)
+                ->forPeriod($month, $year)
+                ->where('user_id', $userId)
+                ->get();
+            
+            $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
+            $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
+
+            // Hitung service charge jika enabled
+            $serviceChargeAmount = 0;
+            if ($masterData->sc == 1 && $serviceCharge > 0) {
+                $serviceChargeAmount = $serviceCharge;
+            }
+
+            // Calculate total salary
+            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
         }
 
-        // Hitung potongan telat (flat rate Rp 500 per menit)
-        $potonganTelat = 0;
-        $gajiPerMenit = 500; // Flat rate Rp 500 per menit
-        if ($totalTelat > 0) {
-            $potonganTelat = $totalTelat * $gajiPerMenit;
-        }
-
-        // Ambil custom items
-        $customItems = CustomPayrollItem::forUser($userId)
-            ->forOutlet($outletId)
-            ->forPeriod($month, $year)
-            ->get();
-        
-        $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
-        $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
-
-        // Hitung service charge jika enabled
-        $serviceChargeAmount = 0;
-        if ($masterData->sc == 1 && $serviceCharge > 0) {
-            $serviceChargeAmount = $serviceCharge;
-        }
-
-        // Debug logging untuk custom items
-        \Log::info('Payroll Print Debug - Custom Items', [
-            'user_id' => $userId,
-            'outlet_id' => $outletId,
-            'month' => $month,
-            'year' => $year,
-            'custom_items_count' => $customItems->count(),
-            'custom_earnings_count' => $customItems->where('item_type', 'earn')->count(),
-            'custom_deductions_count' => $customItems->where('item_type', 'deduction')->count(),
-            'custom_earnings_total' => $customEarnings,
-            'custom_deductions_total' => $customDeductions,
-            'custom_items_details' => $customItems->toArray()
-        ]);
-
-        // Hitung total gaji
-        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+        // Get position, division data (diluar if/else karena digunakan di kedua kondisi)
+        $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
+        $divisi = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
 
         // Prepare logo data with better error handling
         $imagePath = public_path('images/logojustusgroup.png');
@@ -1729,18 +1759,26 @@ class PayrollReportController extends Controller
             'base64_empty' => empty($logoBase64)
         ]);
 
+        // Format period - gunakan periode dari payroll_generated_details jika ada, atau hitung manual
+        if ($payrollDetail && $payrollDetail->periode) {
+            $periode = $payrollDetail->periode;
+        } else {
+            // Hitung periode payroll (26 bulan sebelumnya sampai 25 bulan ini)
+            $periode = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
+        }
+
         // Generate PDF
         $pdf = \PDF::loadView('payroll.slip', [
             'user' => $user,
             'jabatan' => $jabatan,
             'divisi' => $divisi,
             'outlet' => $outlet,
-            'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
+            'periode' => $periode,
             'gaji_pokok' => $masterData->gaji,
             'tunjangan' => $masterData->tunjangan,
             'total_telat' => $totalTelat,
             'total_lembur' => $totalLembur,
-            'nominal_lembur_per_jam' => $nominalLembur,
+            'nominal_lembur_per_jam' => isset($nominalLemburPerJam) ? $nominalLemburPerJam : (isset($nominalLembur) ? $nominalLembur : 0),
             'gaji_lembur' => round($gajiLembur),
             'nominal_uang_makan' => $nominalUangMakan,
             'uang_makan' => round($uangMakan),
