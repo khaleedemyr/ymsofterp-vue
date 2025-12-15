@@ -311,6 +311,9 @@ class EmployeeResignationController extends Controller
 
         return Inertia::render('EmployeeResignation/Show', [
             'resignation' => $employeeResignation,
+            'auth' => [
+                'user' => auth()->user()
+            ],
         ]);
     }
 
@@ -743,6 +746,163 @@ class EmployeeResignationController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+        }
+    }
+
+    /**
+     * Show the form for editing the specified employee resignation
+     */
+    public function edit(EmployeeResignation $employeeResignation)
+    {
+        $user = Auth::user();
+        
+        // Check if user can edit (only draft/rejected status and creator or superadmin)
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        $isCreator = $employeeResignation->created_by == $user->id;
+        
+        if (!($isSuperadmin || $isCreator) || !in_array($employeeResignation->status, ['draft', 'rejected'])) {
+            return redirect()->route('employee-resignations.index')
+                ->with('error', 'You are not authorized to edit this employee resignation.');
+        }
+
+        $employeeResignation->load([
+            'outlet',
+            'employee',
+            'approvalFlows.approver'
+        ]);
+
+        $userOutletId = $user->id_outlet ?? null;
+        
+        // If user outlet is not 1, only show their outlet
+        if ($userOutletId && $userOutletId != 1) {
+            $outlets = Outlet::where('id_outlet', $userOutletId)
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->get();
+        } else {
+            // User with outlet 1 can see all outlets
+            $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        }
+
+        // Get employees for the current outlet
+        $employees = [];
+        if ($employeeResignation->outlet_id) {
+            $employees = User::where('id_outlet', $employeeResignation->outlet_id)
+                ->where('status', 'A')
+                ->select('id', 'nik', 'nama_lengkap', 'email')
+                ->orderBy('nama_lengkap')
+                ->get();
+        }
+
+        return Inertia::render('EmployeeResignation/Edit', [
+            'resignation' => $employeeResignation,
+            'outlets' => $outlets,
+            'employees' => $employees,
+            'userOutletId' => $userOutletId,
+            'canSelectOutlet' => $userOutletId == 1,
+        ]);
+    }
+
+    /**
+     * Update the specified employee resignation
+     */
+    public function update(Request $request, EmployeeResignation $employeeResignation)
+    {
+        $user = Auth::user();
+        
+        // Check if user can edit (only draft/rejected status and creator or superadmin)
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        $isCreator = $employeeResignation->created_by == $user->id;
+        
+        if (!($isSuperadmin || $isCreator) || !in_array($employeeResignation->status, ['draft', 'rejected'])) {
+            return back()->withErrors(['error' => 'You are not authorized to edit this employee resignation.']);
+        }
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'employee_id' => 'required|exists:users,id',
+            'resignation_date' => 'required|date',
+            'resignation_type' => 'required|in:prosedural,non_prosedural',
+            'notes' => 'nullable|string|max:1000',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'required|exists:users,id',
+        ]);
+
+        try {
+            DB::beginTransaction();
+            
+            // Update employee resignation
+            $employeeResignation->update([
+                'outlet_id' => $validated['outlet_id'],
+                'employee_id' => $validated['employee_id'],
+                'resignation_date' => $validated['resignation_date'],
+                'resignation_type' => $validated['resignation_type'],
+                'notes' => $validated['notes'],
+                'status' => 'draft', // Reset to draft when editing
+            ]);
+
+            // Delete existing approval flows
+            $employeeResignation->approvalFlows()->delete();
+
+            // Create new approval flows if approvers provided
+            if (!empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    EmployeeResignationApprovalFlow::create([
+                        'employee_resignation_id' => $employeeResignation->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+                
+                // Update status to submitted if approvers exist
+                $employeeResignation->update(['status' => 'submitted']);
+                
+                // Send notification to the lowest level approver
+                $this->sendNotificationToNextApprover($employeeResignation);
+            }
+            
+            DB::commit();
+            
+            return redirect()->route('employee-resignations.show', $employeeResignation)
+                           ->with('success', 'Employee resignation updated successfully!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to update employee resignation: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Remove the specified employee resignation
+     */
+    public function destroy(EmployeeResignation $employeeResignation)
+    {
+        $user = Auth::user();
+        
+        // Check if user can delete (only draft/rejected status and creator or superadmin)
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        $isCreator = $employeeResignation->created_by == $user->id;
+        
+        if (!($isSuperadmin || $isCreator) || !in_array($employeeResignation->status, ['draft', 'rejected'])) {
+            return back()->withErrors(['error' => 'You are not authorized to delete this employee resignation.']);
+        }
+
+        try {
+            DB::beginTransaction();
+            
+            // Delete approval flows first
+            $employeeResignation->approvalFlows()->delete();
+            
+            // Delete the resignation
+            $employeeResignation->delete();
+            
+            DB::commit();
+            
+            return redirect()->route('employee-resignations.index')
+                           ->with('success', 'Employee resignation deleted successfully!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to delete employee resignation: ' . $e->getMessage()]);
         }
     }
 }

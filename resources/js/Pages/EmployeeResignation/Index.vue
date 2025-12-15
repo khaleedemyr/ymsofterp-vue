@@ -213,6 +213,22 @@
                     >
                       <i class="fas fa-eye"></i>
                     </Link>
+                    <Link
+                      v-if="canEdit(resignation)"
+                      :href="`/employee-resignations/${resignation.id}/edit`"
+                      class="text-green-600 hover:text-green-900"
+                      title="Edit"
+                    >
+                      <i class="fas fa-edit"></i>
+                    </Link>
+                    <button
+                      v-if="canDelete(resignation)"
+                      @click="confirmDelete(resignation)"
+                      class="text-red-600 hover:text-red-900"
+                      title="Delete"
+                    >
+                      <i class="fas fa-trash"></i>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -256,17 +272,24 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   data: Object,
   filters: Object,
   filterOptions: Object,
   statistics: Object,
+  auth: {
+    type: Object,
+    default: () => ({ user: null })
+  }
 });
+
+const user = computed(() => props.auth?.user || null);
 
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || 'all');
@@ -360,6 +383,51 @@ function getPendingApprover(resignation) {
   }
   
   return null;
+}
+
+function canEdit(resignation) {
+  if (!user.value) return false;
+  const isSuperadmin = user.value.id_role === '5af56935b011a';
+  const isCreator = resignation.created_by == user.value.id;
+  return (resignation.status === 'draft' || resignation.status === 'rejected') && (isCreator || isSuperadmin);
+}
+
+function canDelete(resignation) {
+  if (!user.value) return false;
+  const isSuperadmin = user.value.id_role === '5af56935b011a';
+  const isCreator = resignation.created_by == user.value.id;
+  return (resignation.status === 'draft' || resignation.status === 'rejected') && (isCreator || isSuperadmin);
+}
+
+function confirmDelete(resignation) {
+  Swal.fire({
+    title: 'Are you sure?',
+    text: "You won't be able to revert this!",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, delete it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(`/employee-resignations/${resignation.id}`, {
+        onSuccess: () => {
+          Swal.fire(
+            'Deleted!',
+            'Employee resignation has been deleted.',
+            'success'
+          );
+        },
+        onError: (errors) => {
+          Swal.fire(
+            'Error!',
+            errors.message || 'Failed to delete employee resignation.',
+            'error'
+          );
+        }
+      });
+    }
+  });
 }
 </script>
 
