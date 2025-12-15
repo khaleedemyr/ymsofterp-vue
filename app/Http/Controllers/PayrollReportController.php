@@ -369,6 +369,8 @@ class PayrollReportController extends Controller
                 $totalLembur = $data['totalLembur'];
                 $hariKerja = $data['hariKerja'];
                 $userPoint = $data['userPoint'];
+                $leaveData = $data['leaveData']; // Ambil leaveData dari userData
+                $izinCutiBreakdown = $data['izinCutiBreakdown']; // Ambil izinCutiBreakdown dari userData
                 
                 // Hitung gaji lembur menggunakan nominal_lembur dari divisi
                 $gajiLembur = 0;
@@ -553,6 +555,7 @@ class PayrollReportController extends Controller
                 
                 // Add dynamic leave data directly to payrollData item - SAMA PERSIS dengan Employee Summary
                 // Di Employee Summary (line 2101-2105), semua key dari $leaveData yang berakhiran '_days' kecuali 'extra_off_days' ditambahkan langsung
+                // Tapi extra_off_days sudah ditambahkan di line 549, jadi kita hanya tambahkan yang lain
                 foreach ($leaveData as $key => $value) {
                     if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
                         $payrollDataItem[$key] = $value;
@@ -561,9 +564,8 @@ class PayrollReportController extends Controller
                 
                 // Pastikan extra_off_days juga ditambahkan langsung ke payrollDataItem (setelah loop untuk memastikan tidak tertimpa)
                 // Ini penting karena frontend mencari item['extra_off_days'] langsung
-                if (isset($leaveData['extra_off_days'])) {
-                    $payrollDataItem['extra_off_days'] = $leaveData['extra_off_days'];
-                }
+                // extra_off_days sudah ditambahkan di line 549, tapi kita pastikan lagi di sini
+                $payrollDataItem['extra_off_days'] = $leaveData['extra_off_days'] ?? 0;
                 
                 // Debug: Log final payrollDataItem untuk memastikan extra_off_days ada
                 $allLeaveKeys = [];

@@ -53,17 +53,34 @@ const formatMonth = (month) => {
 };
 
 // Get leave days for a specific leave type
-// Try both direct access (like Employee Summary) and izin_cuti_breakdown
+// SAMA PERSIS dengan Employee Summary - cek langsung di item[key]
 function getLeaveDays(item, leaveTypeName) {
+  // Convert leave type name to key format (same as backend)
+  // Example: "Extra Off" -> "extra_off_days", "Sick Leave" -> "sick_leave_days"
   const key = leaveTypeName.toLowerCase().replace(/\s+/g, '_') + '_days';
-  // Try direct access first (like Employee Summary)
-  if (item[key] !== undefined) {
+  
+  // Debug logging
+  console.log('getLeaveDays', {
+    leaveTypeName,
+    key,
+    itemHasKey: item[key] !== undefined,
+    itemKeyValue: item[key],
+    izinCutiBreakdown: item.izin_cuti_breakdown,
+    izinCutiBreakdownHasKey: item.izin_cuti_breakdown && item.izin_cuti_breakdown[key] !== undefined,
+    izinCutiBreakdownValue: item.izin_cuti_breakdown && item.izin_cuti_breakdown[key],
+    allItemKeys: Object.keys(item).filter(k => k.includes('_days'))
+  });
+  
+  // Try direct access first (like Employee Summary) - ini yang utama
+  if (item[key] !== undefined && item[key] !== null) {
     return item[key] || 0;
   }
-  // Fallback to izin_cuti_breakdown
-  if (item.izin_cuti_breakdown && item.izin_cuti_breakdown[key] !== undefined) {
+  
+  // Fallback to izin_cuti_breakdown (untuk backward compatibility)
+  if (item.izin_cuti_breakdown && item.izin_cuti_breakdown[key] !== undefined && item.izin_cuti_breakdown[key] !== null) {
     return item.izin_cuti_breakdown[key] || 0;
   }
+  
   return 0;
 }
 
