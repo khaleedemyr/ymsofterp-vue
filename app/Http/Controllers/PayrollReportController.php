@@ -54,10 +54,12 @@ class PayrollReportController extends Controller
 
         if ($outletId && $month && $year) {
             // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
-            // Sama seperti report attendance
+            // SAMA PERSIS dengan Employee Summary
             // Contoh: bulan 12 tahun 2025 = 26 Nov 2025 - 25 Des 2025
-            $startDate = Carbon::create($year, $month, 26)->subMonth();
-            $endDate = Carbon::create($year, $month, 25);
+            $start = date('Y-m-d', strtotime("$year-$month-26 -1 month"));
+            $end = date('Y-m-d', strtotime("$year-$month-25"));
+            $startDate = Carbon::parse($start);
+            $endDate = Carbon::parse($end);
 
             // Ambil data karyawan di outlet tersebut
             $users = User::where('status', 'A')
@@ -103,9 +105,161 @@ class PayrollReportController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']);
 
-            // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
+            // ========== GUNAKAN QUERY DAN PROSES YANG SAMA PERSIS DENGAN EMPLOYEE SUMMARY ==========
+            // Query data absensi - SAMA PERSIS dengan Employee Summary
+            $chunkSize = 5000;
+            $rawData = collect();
+            
+            $sub = DB::table('att_log as a')
+                ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+                ->join('user_pins as up', function($q) {
+                    $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+                })
+                ->join('users as u', 'up.user_id', '=', 'u.id')
+                ->select(
+                    'a.scan_date',
+                    'a.inoutmode',
+                    'u.id as user_id',
+                    'u.nama_lengkap',
+                    'u.division_id'
+                )
+                ->where('u.id_outlet', $outletId)
+                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+
+            // Gunakan chunk untuk mencegah memory overflow
+            $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
+                $rawData = $rawData->merge($chunk);
+            });
+
+            // Proses data manual untuk menangani cross-day - SAMA PERSIS dengan Employee Summary
+            $processedData = [];
+            foreach ($rawData as $scan) {
+                $date = date('Y-m-d', strtotime($scan->scan_date));
+                $key = $scan->user_id . '_' . $date;
+                
+                if (!isset($processedData[$key])) {
+                    $processedData[$key] = [
+                        'tanggal' => $date,
+                        'user_id' => $scan->user_id,
+                        'nama_lengkap' => $scan->nama_lengkap,
+                        'division_id' => $scan->division_id,
+                        'scans' => []
+                    ];
+                }
+                
+                $processedData[$key]['scans'][] = [
+                    'scan_date' => $scan->scan_date,
+                    'inoutmode' => $scan->inoutmode
+                ];
+            }
+
+            // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
+            $finalData = [];
+            foreach ($processedData as $key => $data) {
+                // Gunakan smart cross-day processing yang sama dengan Employee Summary
+                $result = $this->processSmartCrossDayAttendance($data, $processedData);
+                $result['division_id'] = $data['division_id'];
+                $finalData[] = $result;
+            }
+
+            $dataRows = collect($finalData)->map(function($item) {
+                return (object) $item;
+            });
+
+            // Ambil data shift untuk perhitungan lembur - SAMA PERSIS dengan Employee Summary
+            $allShiftData = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+                ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->get()
+                ->groupBy(function($item) {
+                    return $item->user_id . '_' . $item->tanggal;
+                });
+
+            // Hitung lembur untuk setiap baris - SAMA PERSIS dengan Employee Summary
+            foreach ($dataRows as $row) {
+                $shiftKey = $row->user_id . '_' . $row->tanggal;
+                $shiftData = $allShiftData->get($shiftKey, collect())->first();
+                
+                if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
+                    // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
+                    $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftData->time_end);
+                } else {
+                    $row->lembur = 0;
+                }
+            }
+
+            // Ambil semua tanggal libur dalam periode
+            $holidays = DB::table('tbl_kalender_perusahaan')
+                ->whereBetween('tgl_libur', [$start, $end])
+                ->pluck('keterangan', 'tgl_libur');
+
+            // Build rows for each tanggal in period - SAMA PERSIS dengan Employee Summary
+            $rows = collect();
+            foreach ($dataRows as $row) {
+                $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
+                $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
+                $telat = 0;
+                $lembur = $row->lembur ?? 0;
+                
+                $shiftKey = $row->user_id . '_' . $row->tanggal;
+                $shift = $allShiftData->get($shiftKey, collect())->first();
+
+                if ($shift) {
+                    // Hitung telat dan lembur berdasarkan shift - SAMA PERSIS dengan Employee Summary
+                    if ($shift->time_start && $jam_masuk) {
+                        $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
+                    }
+                    
+                    // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
+                    if ($shift->time_end && $jam_keluar) {
+                        $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
+                        $telat += $earlyCheckoutTelat;
+                        
+                        // Gunakan perhitungan lembur yang konsisten
+                        $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                    }
+                }
+
+                $rows->push((object)[
+                    'tanggal' => $row->tanggal,
+                    'user_id' => $row->user_id,
+                    'nama_lengkap' => $row->nama_lengkap,
+                    'division_id' => $row->division_id,
+                    'jam_masuk' => $row->jam_masuk,
+                    'jam_keluar' => $row->jam_keluar,
+                    'total_masuk' => $row->total_masuk,
+                    'total_keluar' => $row->total_keluar,
+                    'telat' => $telat,
+                    'lembur' => $lembur,
+                    'is_cross_day' => $row->is_cross_day,
+                    'shift_start' => $shift->time_start ?? null,
+                    'shift_end' => $shift->time_end ?? null,
+                ]);
+            }
+
+            // Get all user data (NIK and jabatan) at once - SAMA PERSIS dengan Employee Summary
+            $userIds = $rows->pluck('user_id')->unique()->toArray();
+            $allUserData = DB::table('users as u')
+                ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+                ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
+                ->whereIn('u.id', $userIds)
+                ->get()
+                ->keyBy('id');
+
+            // Group by employee - SAMA PERSIS dengan Employee Summary
+            $employeeGroups = $rows->groupBy('user_id');
+
+            // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
             $userData = [];
-            foreach ($users as $user) {
+            foreach ($employeeGroups as $userId => $employeeRows) {
+                $firstRow = $employeeRows->first();
+                $user = $users->firstWhere('id', $userId);
+                
+                if (!$user) {
+                    continue; // Skip jika user tidak ada di list users
+                }
+
                 // Ambil data master payroll untuk user ini
                 $masterData = $payrollMaster->get($user->id, (object)[
                     'gaji' => 0,
@@ -119,34 +273,25 @@ class PayrollReportController extends Controller
                     'lb' => 0,
                 ]);
 
-                // Gunakan method yang sama dengan Employee Summary untuk mendapatkan data attendance
-                // Employee Summary menggunakan query yang sama dengan report attendance dan processSmartCrossDayAttendance
-                // Untuk sementara, kita gunakan method yang sudah ada tapi pastikan menggunakan calculateAlpaDays dan calculateLeaveData yang sama
+                // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
+                $totalTelat = $employeeRows->sum('telat');
                 
-                // Ambil data attendance untuk periode tersebut (untuk perhitungan telat dan lembur)
-                $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
+                // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
+                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
+                
+                // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
+                $totalLemburRegular = floor($employeeRows->sum('lembur'));
+                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
-                // Hitung total telat dan lembur
-                // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
-                $totalTelat = $attendanceData->sum('telat');
-                $totalLembur = $attendanceData->sum(function($item) {
-                    return $item['total_lembur'] ?? $item['lembur'] ?? 0;
-                });
-
-                // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
-                // Hari kerja = jumlah hari yang ada scan attendance-nya dan bukan off day
-                // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
-                $hariKerja = $attendanceData->filter(function($item) {
-                    // Hari kerja = ada scan attendance DAN bukan off day
-                    return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
-                })->count();
+                // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
+                $hariKerja = $employeeRows->count();
 
                 // Hitung total alpha menggunakan method yang sama dengan Employee Summary
                 // Gunakan null untuk outlet_id seperti di Employee Summary
-                $totalAlpha = $this->calculateAlpaDays($user->id, null, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                $totalAlpha = $this->calculateAlpaDays($userId, null, $start, $end);
                 
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
-                $leaveData = $this->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                $leaveData = $this->calculateLeaveData($userId, $start, $end);
                 
                 // Extract breakdown dari leaveData - sama seperti Employee Summary
                 // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
@@ -167,7 +312,7 @@ class PayrollReportController extends Controller
                 $userData[$user->id] = [
                     'user' => $user,
                     'masterData' => $masterData,
-                    'attendanceData' => $attendanceData,
+                    'employeeRows' => $employeeRows, // Simpan employeeRows untuk digunakan nanti
                     'totalTelat' => $totalTelat,
                     'totalLembur' => $totalLembur,
                     'hariKerja' => $hariKerja,
@@ -211,7 +356,7 @@ class PayrollReportController extends Controller
             foreach ($userData as $userId => $data) {
                 $user = $data['user'];
                 $masterData = $data['masterData'];
-                $attendanceData = $data['attendanceData'];
+                $employeeRows = $data['employeeRows']; // Gunakan employeeRows dari Employee Summary
                 $totalTelat = $data['totalTelat'];
                 $totalLembur = $data['totalLembur'];
                 $hariKerja = $data['hariKerja'];
@@ -2368,24 +2513,28 @@ class PayrollReportController extends Controller
             $result[strtolower(str_replace(' ', '_', $leaveType->name)) . '_days'] = 0;
         }
         
-        // Group by leave type and calculate days
+        // Group by leave type and calculate days - SAMA PERSIS dengan AttendanceReportController
         $leaveDataByType = [];
         foreach ($approvedAbsents as $absent) {
             $leaveTypeId = $absent->leave_type_id;
             $leaveTypeName = $absent->leave_type_name;
             
-            // Calculate days between date_from and date_to
-            $fromDate = new \DateTime($absent->date_from);
-            $toDate = new \DateTime($absent->date_to);
-            $daysCount = $fromDate->diff($toDate)->days + 1;
+            // Calculate days between date_from and date_to, but only count days within the period
+            $fromDate = new \DateTime(max($absent->date_from, $startDate));
+            $toDate = new \DateTime(min($absent->date_to, $endDate));
             
-            if (!isset($leaveDataByType[$leaveTypeId])) {
-                $leaveDataByType[$leaveTypeId] = [
-                    'name' => $leaveTypeName,
-                    'days' => 0
-                ];
+            // Only count if the date range overlaps with the period
+            if ($fromDate <= $toDate) {
+                $daysCount = $fromDate->diff($toDate)->days + 1;
+                
+                if (!isset($leaveDataByType[$leaveTypeId])) {
+                    $leaveDataByType[$leaveTypeId] = [
+                        'name' => $leaveTypeName,
+                        'days' => 0
+                    ];
+                }
+                $leaveDataByType[$leaveTypeId]['days'] += $daysCount;
             }
-            $leaveDataByType[$leaveTypeId]['days'] += $daysCount;
         }
         
         // Map to result format
@@ -2416,21 +2565,22 @@ class PayrollReportController extends Controller
             $dt->modify('+1 day');
         }
         
-        // Get user's shifts for the period
-        $shifts = DB::table('user_shifts as us')
+        // Get user's shifts for the period - SAMA PERSIS dengan AttendanceReportController
+        $shiftsQuery = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
             ->whereIn('us.tanggal', $period)
             ->whereNotNull('us.shift_id') // Must have a shift (not off)
-            ->where('s.shift_name', '!=', 'off') // Exclude 'off' shifts
-            ->select('us.tanggal', 's.shift_name');
+            ->where('s.shift_name', '!=', 'off'); // Exclude 'off' shifts
         
         // Only filter by outlet_id if it's not null (sama seperti Employee Summary)
         if ($outletId !== null) {
-            $shifts->where('us.outlet_id', $outletId);
+            $shiftsQuery->where('us.outlet_id', $outletId);
         }
         
-        $shifts = $shifts->get()->keyBy('tanggal');
+        $shifts = $shiftsQuery->select('us.tanggal', 's.shift_name')
+            ->get()
+            ->keyBy('tanggal');
         
         // Get user's attendance data using the same logic as AttendanceReportController
         $rawData = DB::table('att_log as a')
@@ -2708,5 +2858,59 @@ class PayrollReportController extends Controller
         $latenessMinutes = $diffSeconds > 0 ? round($diffSeconds / 60) : 0;
         
         return $latenessMinutes;
+    }
+
+    /**
+     * Get overtime hours from Extra Off system for a specific user and date range
+     * SAMA PERSIS dengan AttendanceReportController
+     * 
+     * @param int $userId
+     * @param string $startDate
+     * @param string $endDate
+     * @return float Total overtime hours
+     */
+    private function getExtraOffOvertimeHours($userId, $startDate, $endDate)
+    {
+        try {
+            // Get all overtime transactions from Extra Off system for the date range
+            $overtimeTransactions = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'overtime_work')
+                ->where('transaction_type', 'earned')
+                ->where('status', 'approved') // Only count approved transactions
+                ->whereBetween('source_date', [$startDate, $endDate])
+                ->get();
+
+            $totalHours = 0;
+
+            foreach ($overtimeTransactions as $transaction) {
+                // Extract work hours from description
+                // Format: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (jam 08:00 - 18:00, 10.45 jam)"
+                // or: "Lembur dari kerja tanpa shift di tanggal 2025-10-12 (10.45 jam)"
+                $workHours = 0;
+                if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // New format with time range
+                    $workHours = (float) $matches[1];
+                } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', $transaction->description, $matches)) {
+                    // Old format without time range
+                    $workHours = (float) $matches[1];
+                }
+
+                $totalHours += $workHours;
+            }
+
+            // Round down (bulatkan ke bawah)
+            return floor($totalHours);
+
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off overtime hours', [
+                'user_id' => $userId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'error' => $e->getMessage()
+            ]);
+            
+            return 0; // Return 0 if there's an error
+        }
     }
 }
