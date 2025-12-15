@@ -22,8 +22,8 @@
             margin-bottom: 5px;
         }
         .logo-container img {
-            max-height: 60px;
-            max-width: 200px;
+            max-height: 180px;
+            max-width: 600px;
             object-fit: contain;
         }
         .header h1 {
@@ -117,10 +117,10 @@
     <div class="header">
         <div class="logo-container">
             @if($logo_base64)
-                <img src="data:image/png;base64,{{ $logo_base64 }}" alt="Justus Group Logo" style="max-height: 120px; max-width: 400px;">
+                <img src="data:image/png;base64,{{ $logo_base64 }}" alt="Justus Group Logo" style="max-height: 180px; max-width: 600px;">
             @else
-                <div style="height: 120px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); display: flex; align-items: center; justify-content: center; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <span style="color: white; font-size: 32px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">JUSTUS GROUP</span>
+                <div style="height: 180px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); display: flex; align-items: center; justify-content: center; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <span style="color: white; font-size: 48px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">JUSTUS GROUP</span>
                 </div>
             @endif
         </div>
