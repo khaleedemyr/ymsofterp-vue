@@ -103,20 +103,6 @@ class PayrollReportController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']);
 
-            // Gunakan AttendanceReportController untuk mendapatkan data yang sama dengan Employee Summary
-            $attendanceController = new AttendanceReportController();
-            
-            // Buat request untuk Employee Summary dengan parameter yang sama
-            $employeeSummaryRequest = new Request([
-                'outlet_id' => $outletId,
-                'bulan' => $month,
-                'tahun' => $year,
-            ]);
-            
-            // Panggil method employeeSummary untuk mendapatkan data yang sudah diproses
-            // Tapi kita tidak bisa langsung memanggil karena return Inertia, jadi kita perlu menggunakan method private
-            // Atau kita bisa menggunakan logika yang sama dengan Employee Summary
-            
             // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
             $userData = [];
             foreach ($users as $user) {
@@ -157,10 +143,10 @@ class PayrollReportController extends Controller
 
                 // Hitung total alpha menggunakan method yang sama dengan Employee Summary
                 // Gunakan null untuk outlet_id seperti di Employee Summary
-                $totalAlpha = $attendanceController->calculateAlpaDays($user->id, null, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                $totalAlpha = $this->calculateAlpaDays($user->id, null, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
                 
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
-                $leaveData = $attendanceController->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
+                $leaveData = $this->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
                 
                 // Extract breakdown dari leaveData - sama seperti Employee Summary
                 // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
