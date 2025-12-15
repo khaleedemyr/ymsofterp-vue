@@ -139,13 +139,13 @@ class ChallengeProgressService
         // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
         if ($orderId || $orderNomor) {
             // Exclude the specific order that was voided
-            // Match by order_nomor (most common) and also by id if orderId is numeric
+            // Match by nomor (column name in orders table) and also by id if orderId is numeric
             $query->where(function($q) use ($orderId, $orderNomor) {
-                // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                // Exclude by nomor (use orderNomor if provided, otherwise use orderId)
                 $nomorToExclude = $orderNomor ?? $orderId;
                 if ($nomorToExclude) {
-                    $q->where('order_nomor', '!=', $nomorToExclude)
-                      ->where('order_nomor', '!=', (string)$nomorToExclude);
+                    $q->where('nomor', '!=', $nomorToExclude)
+                      ->where('nomor', '!=', (string)$nomorToExclude);
                 }
                 
                 // Also exclude by id if orderId is numeric
@@ -244,11 +244,11 @@ class ChallengeProgressService
         // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
         if ($orderId || $orderNomor) {
             $query->where(function($q) use ($orderId, $orderNomor) {
-                // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                // Exclude by nomor (column name in orders table, use orderNomor if provided, otherwise use orderId)
                 $nomorToExclude = $orderNomor ?? $orderId;
                 if ($nomorToExclude) {
-                    $q->where('orders.order_nomor', '!=', $nomorToExclude)
-                      ->where('orders.order_nomor', '!=', (string)$nomorToExclude);
+                    $q->where('orders.nomor', '!=', $nomorToExclude)
+                      ->where('orders.nomor', '!=', (string)$nomorToExclude);
                 }
                 
                 // Also exclude by id if orderId is numeric
@@ -307,11 +307,11 @@ class ChallengeProgressService
             // Exclude voided orders if orderId or orderNomor is provided (for rollback scenario)
             if ($orderId || $orderNomor) {
                 $productQuery->where(function($q) use ($orderId, $orderNomor) {
-                    // Exclude by order_nomor (use orderNomor if provided, otherwise use orderId)
+                    // Exclude by nomor (column name in orders table, use orderNomor if provided, otherwise use orderId)
                     $nomorToExclude = $orderNomor ?? $orderId;
                     if ($nomorToExclude) {
-                        $q->where('orders.order_nomor', '!=', $nomorToExclude)
-                          ->where('orders.order_nomor', '!=', (string)$nomorToExclude);
+                        $q->where('orders.nomor', '!=', $nomorToExclude)
+                          ->where('orders.nomor', '!=', (string)$nomorToExclude);
                     }
                     
                     // Also exclude by id if orderId is numeric
