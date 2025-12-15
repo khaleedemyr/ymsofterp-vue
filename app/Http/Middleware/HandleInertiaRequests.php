@@ -77,6 +77,7 @@ class HandleInertiaRequests extends Middleware
                     'pending_approvals_count' => $request->user()->pendingApprovals()->count(),
                     'pending_hrd_approvals_count' => $request->user()->division_id == 6 ? $request->user()->pendingHrdApprovals()->count() : 0,
                     'signature_path' => $request->user()->signature_path,
+                    'pin_payroll' => $request->user()->pin_payroll,
                     'region_id' => $request->user()->id_outlet
                         ? \DB::table('tbl_data_outlet')
                             ->where('id_outlet', $request->user()->id_outlet)

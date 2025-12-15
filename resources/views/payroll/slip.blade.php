@@ -290,17 +290,6 @@
             </div>
         @endforeach
     </div>
-    @else
-    <!-- Debug info jika tidak ada custom items -->
-    <div class="custom-items" style="font-size: 9px; color: #999; margin-top: 10px;">
-        <strong>Debug Info:</strong><br>
-        • Custom Items Count: {{ $custom_items->count() }}<br>
-        • Custom Earnings: {{ $custom_earnings }}<br>
-        • Custom Deductions: {{ $custom_deductions }}<br>
-        • User ID: {{ $user->id }}<br>
-        • Outlet ID: {{ $outlet->id_outlet ?? 'N/A' }}<br>
-        • Period: {{ $periode }}
-    </div>
     @endif
 
     <div class="footer">

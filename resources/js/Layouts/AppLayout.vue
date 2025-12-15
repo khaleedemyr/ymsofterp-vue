@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 import ESignatureModal from '@/Components/ESignatureModal.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
@@ -464,18 +465,24 @@ function toggleFullscreen() {
     }
 }
 
-const user = usePage().props.auth?.user || { nama_lengkap: '', avatar: null };
-const avatarUrl = user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png';
+const page = usePage();
+const user = computed(() => page.props.auth?.user || { nama_lengkap: '', avatar: null });
+const avatarUrl = computed(() => user.value.avatar ? `/storage/${user.value.avatar}` : '/images/avatar-default.png');
 
 // Computed properties for user information
-const userOutlet = computed(() => user.outlet?.nama_outlet || 'N/A');
-const userDivisi = computed(() => user.divisi?.nama_divisi || 'N/A');
-const userLevel = computed(() => user.jabatan?.level?.nama_level || 'N/A');
-const userJabatan = computed(() => user.jabatan?.nama_jabatan || 'N/A');
+const userOutlet = computed(() => user.value.outlet?.nama_outlet || 'N/A');
+const userDivisi = computed(() => user.value.divisi?.nama_divisi || 'N/A');
+const userLevel = computed(() => user.value.jabatan?.level?.nama_level || 'N/A');
+const userJabatan = computed(() => user.value.jabatan?.nama_jabatan || 'N/A');
 const showProfileDropdown = ref(false);
 const showESignatureModal = ref(false);
 const showProfileModal = ref(false);
 const showUserPinModal = ref(false);
+const showPayrollPinModal = ref(false);
+const showPayrollListModal = ref(false);
+const payrollPin = ref('');
+const payrollList = ref([]);
+const loadingPayrollList = ref(false);
 
 // Notification state
 const notifications = ref([]);
@@ -629,6 +636,100 @@ function removeToast(id) {
 onMounted(() => {
     // showToast({ title: 'Welcome', message: 'You have 2 new notifications!', type: 'success' });
 });
+
+// Payroll functions
+async function openPayroll() {
+    // Ambil user langsung dari usePage untuk memastikan data terbaru
+    const page = usePage();
+    const currentUser = page.props.auth?.user;
+    
+    // Cek apakah user punya pin_payroll
+    // Periksa dengan lebih teliti: null, undefined, empty string, atau string kosong setelah trim
+    const pinPayroll = currentUser?.pin_payroll;
+    
+    // Cek dengan lebih ketat: pastikan bukan null, undefined, empty string, atau whitespace only
+    // Juga cek jika nilainya adalah string 'null' atau 'undefined'
+    const pinPayrollStr = pinPayroll ? String(pinPayroll).trim() : '';
+    const hasPinPayroll = pinPayroll !== null && 
+                         pinPayroll !== undefined && 
+                         pinPayroll !== '' && 
+                         pinPayrollStr !== '' &&
+                         pinPayrollStr !== 'null' &&
+                         pinPayrollStr !== 'undefined';
+    
+    if (!hasPinPayroll) {
+        Swal.fire({
+            title: 'PIN Payroll Belum Diatur',
+            text: 'Silakan isi PIN Payroll terlebih dahulu di Profile Anda',
+            icon: 'warning',
+            confirmButtonText: 'Buka Profile',
+            showCancelButton: true,
+            cancelButtonText: 'Batal'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                showProfileModal.value = true;
+            }
+        });
+        return;
+    }
+    
+    // Tampilkan modal input PIN
+    showPayrollPinModal.value = true;
+    payrollPin.value = '';
+}
+
+async function verifyPayrollPin() {
+    if (!payrollPin.value || payrollPin.value.trim() === '') {
+        Swal.fire('Peringatan', 'Masukkan PIN Payroll', 'warning');
+        return;
+    }
+    
+    try {
+        const response = await axios.post('/payroll/verify-pin', {
+            pin: payrollPin.value
+        });
+        
+        if (response.data.success) {
+            showPayrollPinModal.value = false;
+            payrollPin.value = '';
+            await fetchPayrollList();
+            showPayrollListModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'PIN salah', 'error');
+        }
+    } catch (error) {
+        console.error('Error verifying PIN:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat verifikasi PIN', 'error');
+    }
+}
+
+async function fetchPayrollList() {
+    loadingPayrollList.value = true;
+    try {
+        const response = await axios.get('/payroll/user-list');
+        if (response.data.success) {
+            payrollList.value = response.data.data || [];
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal mengambil data payroll', 'error');
+        }
+    } catch (error) {
+        console.error('Error fetching payroll list:', error);
+        Swal.fire('Error', 'Terjadi kesalahan saat mengambil data payroll', 'error');
+    } finally {
+        loadingPayrollList.value = false;
+    }
+}
+
+function printPayrollSlip(payrollDetail) {
+    const url = `/payroll/report/print?user_id=${payrollDetail.user_id}&outlet_id=${payrollDetail.outlet_id || ''}&month=${payrollDetail.month}&year=${payrollDetail.year}`;
+    window.open(url, '_blank');
+}
+
+function viewPayrollDetail(payrollDetail) {
+    // Buka detail payroll di tab baru
+    const url = `/payroll/report/show?user_id=${payrollDetail.user_id}&outlet_id=${payrollDetail.outlet_id || ''}&month=${payrollDetail.month}&year=${payrollDetail.year}`;
+    window.open(url, '_blank');
+}
 </script>
 
 <template>
@@ -781,6 +882,9 @@ onMounted(() => {
                         <button @click="showUserPinModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
                             <i class="fa-solid fa-key"></i> Kelola PIN Outlet
                         </button>
+                        <button @click="openPayroll(); showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Payroll
+                        </button>
                         <Link
                             :href="route('logout')"
                             method="post"
@@ -844,6 +948,103 @@ onMounted(() => {
         :show="showUserPinModal"
         @close="showUserPinModal = false"
     />
+
+    <!-- Payroll PIN Modal -->
+    <div v-if="showPayrollPinModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showPayrollPinModal = false">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">Masukkan PIN Payroll</h3>
+                <button @click="showPayrollPinModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">PIN Payroll</label>
+                <input
+                    v-model="payrollPin"
+                    type="password"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Masukkan PIN Payroll"
+                    @keyup.enter="verifyPayrollPin"
+                    autofocus
+                />
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button @click="showPayrollPinModal = false" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                    Batal
+                </button>
+                <button @click="verifyPayrollPin" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Verifikasi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll List Modal -->
+    <div v-if="showPayrollListModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showPayrollListModal = false">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">Daftar Payroll Saya</h3>
+                <button @click="showPayrollListModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div v-if="loadingPayrollList" class="text-center py-8">
+                <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
+                <p class="mt-2 text-gray-600">Memuat data payroll...</p>
+            </div>
+            
+            <div v-else-if="payrollList.length === 0" class="text-center py-8 text-gray-500">
+                <i class="fa-solid fa-file-invoice-dollar text-4xl mb-2"></i>
+                <p>Tidak ada data payroll</p>
+            </div>
+            
+            <div v-else class="overflow-x-auto">
+                <table class="w-full border-collapse">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Periode</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Outlet</th>
+                            <th class="px-4 py-3 text-right text-xs font-bold uppercase border">Total Gaji</th>
+                            <th class="px-4 py-3 text-center text-xs font-bold uppercase border">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="item in payrollList" :key="item.id" class="hover:bg-gray-50">
+                            <td class="px-4 py-3 border">
+                                {{ item.month }}/{{ item.year }}
+                            </td>
+                            <td class="px-4 py-3 border">
+                                {{ item.outlet_name || '-' }}
+                            </td>
+                            <td class="px-4 py-3 border text-right font-semibold">
+                                {{ new Intl.NumberFormat('id-ID').format(item.total_gaji || 0) }}
+                            </td>
+                            <td class="px-4 py-3 border text-center">
+                                <div class="flex gap-2 justify-center">
+                                    <button 
+                                        @click="viewPayrollDetail(item)" 
+                                        class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                                        title="Lihat Detail"
+                                    >
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button 
+                                        @click="printPayrollSlip(item)" 
+                                        class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                                        title="Cetak PDF"
+                                    >
+                                        <i class="fas fa-file-pdf"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
     <!-- Live Support Widget - Floating di semua halaman -->
     <LiveSupportWidget />

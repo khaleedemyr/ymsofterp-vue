@@ -309,6 +309,17 @@ class PayrollReportController extends Controller
                     
                     // Total service charge per user
                     $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
+                } else {
+                    // Debug logging untuk service charge = 0
+                    \Log::info('Service charge = 0 for user', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'sc_enabled' => $masterData->sc,
+                        'service_charge_input' => $serviceCharge,
+                        'hari_kerja' => $hariKerja,
+                        'user_point' => $userPoint,
+                        'reason' => $masterData->sc != 1 ? 'sc not enabled' : 'service_charge input is 0'
+                    ]);
                 }
 
                 // Hitung custom earnings dan deductions
@@ -1293,98 +1304,165 @@ class PayrollReportController extends Controller
         }
 
         // Get outlet data
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
-        if (!$outlet) {
+        $outletData = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+        if (!$outletData) {
             return response()->json(['error' => 'Outlet not found'], 404);
         }
+        $outlet = $outletData->nama_outlet ?? 'Unknown Outlet';
 
-        // Get master data
-        $masterData = DB::table('payroll_master')
-            ->where('user_id', $userId)
+        // Cek apakah payroll sudah di-generate
+        $payrollGenerated = DB::table('payroll_generated')
             ->where('outlet_id', $outletId)
             ->where('month', $month)
             ->where('year', $year)
             ->first();
 
+        $payrollDetail = null;
+        if ($payrollGenerated) {
+            // Ambil data dari payroll_generated_details jika sudah di-generate
+            $payrollDetail = DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollGenerated->id)
+                ->where('user_id', $userId)
+                ->first();
+        }
+
+        // Get master data (untuk konfigurasi payroll, bukan data per periode)
+        $masterData = DB::table('payroll_master')
+            ->where('user_id', $userId)
+            ->where('outlet_id', $outletId)
+            ->first();
+
         if (!$masterData) {
-            return response()->json(['error' => 'Payroll data not found'], 404);
+            $masterData = (object)[
+                'gaji' => 0,
+                'tunjangan' => 0,
+                'ot' => 0,
+                'um' => 0,
+                'ph' => 0,
+                'sc' => 0,
+                'bpjs_jkn' => 0,
+                'bpjs_tk' => 0,
+                'lb' => 0,
+            ];
         }
 
         // Get position, division data
         $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
         $divisi = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
 
-        // Calculate overtime
-        $totalLembur = DB::table('attendance_logs')
-            ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->sum('overtime_hours');
+        // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
+        if ($payrollDetail) {
+            // Gunakan data dari payroll_generated_details
+            $gajiLembur = $payrollDetail->gaji_lembur ?? 0;
+            $nominalLemburPerJam = $payrollDetail->nominal_lembur_per_jam ?? 0;
+            $uangMakan = $payrollDetail->uang_makan ?? 0;
+            $nominalUangMakan = $payrollDetail->nominal_uang_makan ?? 0;
+            $totalTelat = $payrollDetail->total_telat ?? 0;
+            $potonganTelat = $payrollDetail->potongan_telat ?? 0;
+            $gajiPerMenit = $payrollDetail->gaji_per_menit ?? 500;
+            $bpjsJKN = $payrollDetail->bpjs_jkn ?? 0;
+            $bpjsTK = $payrollDetail->bpjs_tk ?? 0;
+            $customEarnings = $payrollDetail->custom_earnings ?? 0;
+            $customDeductions = $payrollDetail->custom_deductions ?? 0;
+            $serviceChargeAmount = $payrollDetail->service_charge ?? 0;
+            $totalGaji = $payrollDetail->total_gaji ?? 0;
+            $hariKerja = $payrollDetail->hari_kerja ?? 0;
+            $totalLembur = $payrollDetail->total_lembur ?? 0;
+            
+            // Get custom items dari JSON
+            $customItems = collect([]);
+            if ($payrollDetail->custom_items) {
+                // Decode sebagai objects (false) agar bisa diakses dengan -> seperti di view
+                $decodedItems = json_decode($payrollDetail->custom_items, false) ?? [];
+                $customItems = collect($decodedItems);
+            }
+        } else {
+            // Jika belum di-generate, hitung ulang seperti biasa menggunakan logic dari printPayroll
+            // Hitung periode payroll
+            $startDate = Carbon::create($year, $month, 26)->subMonth();
+            $endDate = Carbon::create($year, $month, 25);
 
-        $gajiLembur = $totalLembur * $masterData->ot_rate;
-        $nominalLemburPerJam = $masterData->ot_rate;
+            // Ambil data attendance
+            $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
+            $totalTelat = $attendanceData->sum('telat');
+            $totalLembur = $attendanceData->sum(function($item) {
+                return $item['total_lembur'] ?? $item['lembur'] ?? 0;
+            });
 
-        // Calculate meal allowance
-        $hariKerja = DB::table('attendance_logs')
-            ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->where('status', 'present')
-            ->count();
+            // Hitung hari kerja
+            $hariKerja = $attendanceData->filter(function($item) {
+                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+            })->count();
 
-        $uangMakan = $hariKerja * $masterData->um_rate;
-        $nominalUangMakan = $masterData->um_rate;
+            // Ambil data nominal dari divisi
+            $nominalLembur = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_lembur') ?? 0;
+            $nominalUangMakan = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_uang_makan') ?? 0;
 
-        // Calculate late deductions
-        $totalTelat = DB::table('attendance_logs')
-            ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->sum('late_minutes');
+            // Hitung gaji lembur
+            $gajiLembur = 0;
+            if ($totalLembur > 0 && $masterData->ot == 1) {
+                $gajiLembur = $totalLembur * $nominalLembur;
+            }
+            $nominalLemburPerJam = $nominalLembur;
 
-        $gajiPerMenit = 500; // Flat rate Rp 500 per menit
-        $potonganTelat = $totalTelat * $gajiPerMenit;
+            // Hitung uang makan
+            $uangMakan = 0;
+            if ($masterData->um == 1) {
+                $uangMakan = $hariKerja * $nominalUangMakan;
+            }
+            $nominalUangMakan = $nominalUangMakan;
 
-        // Calculate BPJS
-        $bpjsJKN = $masterData->bpjs_jkn_rate;
-        $bpjsTK = $masterData->bpjs_tk_rate;
+            // Hitung potongan telat
+            $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+            $potonganTelat = $totalTelat * $gajiPerMenit;
 
-        // Get custom items
-        $customItems = DB::table('payroll_custom_items')
-            ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
-            ->where('month', $month)
-            ->where('year', $year)
-            ->get();
+            // Hitung BPJS
+            $bpjsJKN = 0;
+            $bpjsTK = 0;
+            if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
+                $userLevel = DB::table('tbl_data_jabatan')
+                    ->where('id_jabatan', $user->id_jabatan)
+                    ->value('id_level');
+                
+                $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
+                    ->where('id', $userLevel)
+                    ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
+                
+                if ($masterData->bpjs_jkn == 1) {
+                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
+                }
+                
+                if ($masterData->bpjs_tk == 1) {
+                    if ($user->id_outlet == 1) {
+                        $bpjsTK = $nilaiDasarBPJS * 0.03;
+                    } else {
+                        $bpjsTK = $nilaiDasarBPJS * 0.02;
+                    }
+                }
+            }
 
-        $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
-        $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
+            // Get custom items
+            $customItems = CustomPayrollItem::forOutlet($outletId)
+                ->forPeriod($month, $year)
+                ->where('user_id', $userId)
+                ->get();
+            
+            $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
+            $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
 
-        // Hitung service charge jika enabled
-        $serviceChargeAmount = 0;
-        if ($masterData->sc == 1 && $serviceCharge > 0) {
-            $serviceChargeAmount = $serviceCharge;
+            // Hitung service charge jika enabled
+            $serviceChargeAmount = 0;
+            if ($masterData->sc == 1 && $serviceCharge > 0) {
+                $serviceChargeAmount = $serviceCharge;
+            }
+
+            // Calculate total salary
+            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
         }
 
-        // Debug logging untuk custom items
-        \Log::info('Payroll Show Debug - Custom Items', [
-            'user_id' => $userId,
-            'outlet_id' => $outletId,
-            'month' => $month,
-            'year' => $year,
-            'custom_items_count' => $customItems->count(),
-            'custom_earnings_count' => $customItems->where('item_type', 'earn')->count(),
-            'custom_deductions_count' => $customItems->where('item_type', 'deduction')->count(),
-            'custom_earnings_total' => $customEarnings,
-            'custom_deductions_total' => $customDeductions,
-            'custom_items_details' => $customItems->toArray()
-        ]);
-
-        // Calculate total salary
-        $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeAmount + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
+        // Get position, division data (diluar if/else karena digunakan di kedua kondisi)
+        $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
+        $divisi = DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
 
         // Prepare logo data with better error handling
         $imagePath = public_path('images/logojustusgroup.png');
@@ -1410,8 +1488,15 @@ class PayrollReportController extends Controller
             'base64_empty' => empty($logoBase64)
         ]);
 
-        // Format period
-        $periode = date('d/m/Y', strtotime("$year-$month-01")) . ' - ' . date('d/m/Y', strtotime("$year-$month-" . date('t', strtotime("$year-$month-01"))));
+        // Format period - gunakan periode dari payroll_generated_details jika ada, atau hitung manual
+        if ($payrollDetail && $payrollDetail->periode) {
+            $periode = $payrollDetail->periode;
+        } else {
+            // Hitung periode payroll (26 bulan sebelumnya sampai 25 bulan ini)
+            $startDate = Carbon::create($year, $month, 26)->subMonth();
+            $endDate = Carbon::create($year, $month, 25);
+            $periode = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
+        }
 
         // Check if download PDF is requested
         if ($request->has('download') && $request->download === 'pdf') {
@@ -1987,6 +2072,84 @@ class PayrollReportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mendapatkan status payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Verify Payroll PIN
+    public function verifyPayrollPin(Request $request)
+    {
+        $request->validate([
+            'pin' => 'required|string',
+        ]);
+
+        try {
+            $user = auth()->user();
+            
+            if (!$user->pin_payroll) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PIN Payroll belum diatur. Silakan isi di Profile Anda.'
+                ], 400);
+            }
+
+            if ($user->pin_payroll !== $request->pin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PIN salah'
+                ], 401);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'PIN benar'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error verifying payroll PIN: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat verifikasi PIN'
+            ], 500);
+        }
+    }
+
+    // Get User Payroll List
+    public function getUserPayrollList(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            
+            // Ambil data payroll yang sudah di-generate untuk user ini
+            $payrollList = DB::table('payroll_generated_details as pgd')
+                ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
+                ->leftJoin('tbl_data_outlet as o', 'pg.outlet_id', '=', 'o.id_outlet')
+                ->where('pgd.user_id', $userId)
+                ->select(
+                    'pgd.id',
+                    'pgd.user_id',
+                    'pg.outlet_id',
+                    'o.nama_outlet as outlet_name',
+                    'pg.month',
+                    'pg.year',
+                    'pgd.total_gaji',
+                    'pgd.periode',
+                    'pg.status',
+                    'pg.created_at'
+                )
+                ->orderBy('pg.year', 'desc')
+                ->orderBy('pg.month', 'desc')
+                ->orderBy('pg.created_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $payrollList
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting user payroll list: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil data payroll'
             ], 500);
         }
     }

@@ -1942,6 +1942,8 @@ Route::post('/payroll/report/generate', [App\Http\Controllers\PayrollReportContr
 Route::post('/payroll/report/edit', [App\Http\Controllers\PayrollReportController::class, 'editPayroll'])->name('payroll.report.edit');
 Route::post('/payroll/report/rollback', [App\Http\Controllers\PayrollReportController::class, 'rollbackPayroll'])->name('payroll.report.rollback');
 Route::get('/payroll/report/status', [App\Http\Controllers\PayrollReportController::class, 'getPayrollStatus'])->name('payroll.report.status');
+Route::post('/payroll/verify-pin', [App\Http\Controllers\PayrollReportController::class, 'verifyPayrollPin'])->name('payroll.verify-pin');
+Route::get('/payroll/user-list', [App\Http\Controllers\PayrollReportController::class, 'getUserPayrollList'])->name('payroll.user-list');
 
 
 // LMS Routes
