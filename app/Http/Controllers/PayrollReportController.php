@@ -54,6 +54,8 @@ class PayrollReportController extends Controller
 
         if ($outletId && $month && $year) {
             // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
+            // Sama seperti report attendance
+            // Contoh: bulan 12 tahun 2025 = 26 Nov 2025 - 25 Des 2025
             $startDate = Carbon::create($year, $month, 26)->subMonth();
             $endDate = Carbon::create($year, $month, 25);
 
@@ -142,15 +144,25 @@ class PayrollReportController extends Controller
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
                 $leaveData = $this->calculateLeaveData($user->id, $startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
                 
-                // Extract breakdown dari leaveData
+                // Extract breakdown dari leaveData - sama seperti Employee Summary
+                // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
                 $izinCutiBreakdown = [];
                 $totalIzinCuti = 0;
-                foreach ($leaveTypes as $leaveType) {
-                    $key = strtolower(str_replace(' ', '_', $leaveType->name)) . '_days';
-                    $value = $leaveData[$key] ?? 0;
-                    $izinCutiBreakdown[$key] = $value;
-                    $totalIzinCuti += $value;
+                foreach ($leaveData as $key => $value) {
+                    if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                        $izinCutiBreakdown[$key] = $value;
+                        $totalIzinCuti += $value;
+                    }
                 }
+                
+                // Debug logging untuk melihat leave data
+                \Log::info('Leave data for user', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'leave_data' => $leaveData,
+                    'izin_cuti_breakdown' => $izinCutiBreakdown,
+                    'total_izin_cuti' => $totalIzinCuti
+                ]);
 
                 // Ambil point dari level melalui jabatan
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
@@ -356,7 +368,7 @@ class PayrollReportController extends Controller
                 // Hitung total gaji (service charge ditambahkan sebagai earning)
                 $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions;
                 
-                $payrollData->push([
+                $payrollDataItem = [
                     'user_id' => $user->id,
                     'nik' => $user->nik,
                     'nama_lengkap' => $user->nama_lengkap,
@@ -388,7 +400,14 @@ class PayrollReportController extends Controller
                     'izin_cuti_breakdown' => $izinCutiBreakdown,
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
-                ]);
+                ];
+                
+                // Add dynamic leave data directly to payrollData item (same as Employee Summary)
+                foreach ($izinCutiBreakdown as $key => $value) {
+                    $payrollDataItem[$key] = $value;
+                }
+                
+                $payrollData->push($payrollDataItem);
             }
         }
 
@@ -807,7 +826,8 @@ class PayrollReportController extends Controller
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
         }
 
-        // Hitung periode payroll
+        // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
+        // Sama seperti report attendance
         $startDate = Carbon::create($year, $month, 26)->subMonth();
         $endDate = Carbon::create($year, $month, 25);
 
@@ -1808,7 +1828,8 @@ class PayrollReportController extends Controller
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
         }
 
-        // Hitung periode payroll
+        // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
+        // Sama seperti report attendance
         $startDate = Carbon::create($year, $month, 26)->subMonth();
         $endDate = Carbon::create($year, $month, 25);
 
@@ -2501,10 +2522,13 @@ class PayrollReportController extends Controller
 
     /**
      * Calculate alpa days (days with shift but no attendance and no absent request)
-     * Same logic as AttendanceReportController::calculateAlpaDays
+     * Simplified logic: ada data user_shifts tapi tidak ada data di att_log untuk tanggal tersebut
+     * Hanya hitung tanggal yang sudah lewat di periode tersebut
      */
     private function calculateAlpaDays($userId, $outletId, $startDate, $endDate)
     {
+        $today = date('Y-m-d');
+        
         // Get all days in the period
         $period = [];
         $dt = new \DateTime($startDate);
@@ -2514,8 +2538,7 @@ class PayrollReportController extends Controller
             $dt->modify('+1 day');
         }
         
-        // Get user's shifts for the period
-        // Handle null outlet_id (same as Employee Summary)
+        // Get user's shifts for the period (bukan OFF)
         $shiftsQuery = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
@@ -2523,7 +2546,7 @@ class PayrollReportController extends Controller
             ->whereNotNull('us.shift_id') // Must have a shift (not off)
             ->where('s.shift_name', '!=', 'off'); // Exclude 'off' shifts
         
-        // Only filter by outlet_id if it's not null (same as Employee Summary logic)
+        // Only filter by outlet_id if it's not null
         if ($outletId !== null) {
             $shiftsQuery->where('us.outlet_id', $outletId);
         }
@@ -2532,110 +2555,41 @@ class PayrollReportController extends Controller
             ->get()
             ->keyBy('tanggal');
         
-        // Get user's attendance data using the same logic as AttendanceReportController
-        // Try first query with outlet join
-        $rawData = DB::table('att_log as a')
+        // Get dates that have attendance data in att_log (sederhana: cek apakah ada data di att_log)
+        $attendanceDatesQuery = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->where('o.id_outlet', $outletId)
             ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-            ->select('a.scan_date', 'a.inoutmode')
-            ->orderBy('a.scan_date')
-            ->get();
+            ->select(DB::raw('DISTINCT DATE(a.scan_date) as tanggal'));
         
-        // If no scans found, try alternative query (same as getAttendanceDetail)
-        if ($rawData->count() == 0) {
-            $rawData = DB::table('att_log as a')
+        if ($outletId !== null) {
+            $attendanceDatesQuery->where('o.id_outlet', $outletId);
+        }
+        
+        $attendanceDates = $attendanceDatesQuery->get()->pluck('tanggal')->map(function($date) {
+            return date('Y-m-d', strtotime($date));
+        })->toArray();
+        
+        // If no attendance found, try alternative query
+        if (empty($attendanceDates)) {
+            $attendanceDatesQuery = DB::table('att_log as a')
                 ->join('user_pins as up', 'a.pin', '=', 'up.pin')
                 ->join('users as u', 'up.user_id', '=', 'u.id')
                 ->join('tbl_data_outlet as o', 'up.outlet_id', '=', 'o.id_outlet')
                 ->where('u.id', $userId)
-                ->where('up.outlet_id', $outletId)
                 ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
-                ->select('a.scan_date', 'a.inoutmode')
-                ->orderBy('a.scan_date')
-                ->get();
-        }
-        
-        // Debug: Log raw data count
-        \Log::info('calculateAlpaDays - Raw attendance data', [
-            'user_id' => $userId,
-            'outlet_id' => $outletId,
-            'raw_data_count' => $rawData->count(),
-            'sample_dates' => $rawData->take(5)->map(function($item) {
-                return date('Y-m-d', strtotime($item->scan_date));
-            })->toArray()
-        ]);
-        
-        // Process attendance data like in AttendanceReportController
-        $processedData = [];
-        foreach ($rawData as $scan) {
-            $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $date;
+                ->select(DB::raw('DISTINCT DATE(a.scan_date) as tanggal'));
             
-            if (!isset($processedData[$key])) {
-                $processedData[$key] = [
-                    'tanggal' => $date,
-                    'scans' => []
-                ];
+            if ($outletId !== null) {
+                $attendanceDatesQuery->where('up.outlet_id', $outletId);
             }
             
-            $processedData[$key]['scans'][] = [
-                'scan_date' => $scan->scan_date,
-                'inoutmode' => $scan->inoutmode
-            ];
-        }
-        
-        // Process each day to determine if there's valid attendance
-        $attendanceDates = [];
-        foreach ($processedData as $key => $data) {
-            $scans = collect($data['scans'])->sortBy('scan_date');
-            $inScans = $scans->where('inoutmode', 1);
-            $outScans = $scans->where('inoutmode', 2);
-            
-            // Check if there's valid attendance (first in and last out)
-            $jamMasuk = $inScans->first()['scan_date'] ?? null;
-            $jamKeluar = null;
-            $isCrossDay = false;
-            
-            if ($jamMasuk) {
-                // Cari scan keluar di hari yang sama
-                $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
-                
-                if ($sameDayOuts->isNotEmpty()) {
-                    // Ada scan keluar di hari yang sama
-                    $jamKeluar = $sameDayOuts->last()['scan_date'];
-                    $isCrossDay = false;
-                } else {
-                    // Cari scan keluar di hari berikutnya (cross-day)
-                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $nextDayKey = $nextDay;
-                    
-                    if (isset($processedData[$nextDayKey])) {
-                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-                        
-                        if ($nextDayOuts->isNotEmpty()) {
-                            $jamKeluar = $nextDayOuts->first()['scan_date'];
-                            $isCrossDay = true;
-                        }
-                    }
-                }
-            }
-            
-            // If there's both check-in and check-out, consider it as attended
-            if ($jamMasuk && $jamKeluar) {
-                $attendanceDates[] = $data['tanggal'];
-                
-                // For cross-day, also mark the next day as attended (since OUT happened there)
-                if ($isCrossDay) {
-                    $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-                    $attendanceDates[] = $nextDay;
-                }
-            }
+            $attendanceDates = $attendanceDatesQuery->get()->pluck('tanggal')->map(function($date) {
+                return date('Y-m-d', strtotime($date));
+            })->toArray();
         }
         
         // Get user's approved absent requests for the period
@@ -2658,15 +2612,15 @@ class PayrollReportController extends Controller
             $fromDate = new \DateTime($absent->date_from);
             $toDate = new \DateTime($absent->date_to);
             while ($fromDate <= $toDate) {
-                $absentDateArray[] = $fromDate->format('Y-m-d');
+                $dateStr = $fromDate->format('Y-m-d');
+                if ($dateStr >= $startDate && $dateStr <= $endDate) {
+                    $absentDateArray[] = $dateStr;
+                }
                 $fromDate->modify('+1 day');
             }
         }
         
         $alpaDays = 0;
-        $today = date('Y-m-d');
-        
-        // Debug: Log untuk tracking
         $debugAlphaDates = [];
         
         // Check each day in the period
@@ -2676,11 +2630,11 @@ class PayrollReportController extends Controller
                 continue; // Skip today and future dates
             }
             
+            // Alpha: ada shift, tidak ada attendance di att_log, tidak ada absent request
             $hasShift = $shifts->has($date);
             $hasAttendance = in_array($date, $attendanceDates);
             $hasAbsent = in_array($date, $absentDateArray);
             
-            // Alpa: has shift but no attendance and no absent request
             if ($hasShift && !$hasAttendance && !$hasAbsent) {
                 $alpaDays++;
                 $debugAlphaDates[] = [
@@ -2693,7 +2647,7 @@ class PayrollReportController extends Controller
         }
         
         // Debug logging
-        \Log::info('calculateAlpaDays result', [
+        \Log::info('calculateAlpaDays result (simplified)', [
             'user_id' => $userId,
             'outlet_id' => $outletId,
             'start_date' => $startDate,
@@ -2703,10 +2657,7 @@ class PayrollReportController extends Controller
             'total_attendance_dates' => count($attendanceDates),
             'total_absent_dates' => count($absentDateArray),
             'alpa_days' => $alpaDays,
-            'alpha_dates' => $debugAlphaDates,
-            'sample_shifts' => $shifts->take(5)->keys()->toArray(),
-            'sample_attendance' => array_slice($attendanceDates, 0, 5),
-            'sample_absent' => array_slice($absentDateArray, 0, 5)
+            'alpha_dates' => $debugAlphaDates
         ]);
         
         return $alpaDays;

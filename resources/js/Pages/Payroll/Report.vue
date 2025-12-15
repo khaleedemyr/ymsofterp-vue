@@ -53,10 +53,18 @@ const formatMonth = (month) => {
 };
 
 // Get leave days for a specific leave type
+// Try both direct access (like Employee Summary) and izin_cuti_breakdown
 function getLeaveDays(item, leaveTypeName) {
-  if (!item.izin_cuti_breakdown) return 0;
   const key = leaveTypeName.toLowerCase().replace(/\s+/g, '_') + '_days';
-  return item.izin_cuti_breakdown[key] || 0;
+  // Try direct access first (like Employee Summary)
+  if (item[key] !== undefined) {
+    return item[key] || 0;
+  }
+  // Fallback to izin_cuti_breakdown
+  if (item.izin_cuti_breakdown && item.izin_cuti_breakdown[key] !== undefined) {
+    return item.izin_cuti_breakdown[key] || 0;
+  }
+  return 0;
 }
 
 function lihatData() {
