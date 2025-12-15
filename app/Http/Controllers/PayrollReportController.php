@@ -327,6 +327,7 @@ class PayrollReportController extends Controller
                     'totalAlpha' => $totalAlpha,
                     'totalIzinCuti' => $totalIzinCuti,
                     'izinCutiBreakdown' => $izinCutiBreakdown,
+                    'leaveData' => $leaveData, // Simpan leaveData untuk digunakan di Step 4
                     'userPoint' => $userPoint,
                 ];
             }
@@ -369,8 +370,8 @@ class PayrollReportController extends Controller
                 $totalLembur = $data['totalLembur'];
                 $hariKerja = $data['hariKerja'];
                 $userPoint = $data['userPoint'];
-                $leaveData = $data['leaveData']; // Ambil leaveData dari userData
-                $izinCutiBreakdown = $data['izinCutiBreakdown']; // Ambil izinCutiBreakdown dari userData
+                $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData, default ke array kosong jika tidak ada
+                $izinCutiBreakdown = $data['izinCutiBreakdown'] ?? []; // Ambil izinCutiBreakdown dari userData, default ke array kosong jika tidak ada
                 
                 // Hitung gaji lembur menggunakan nominal_lembur dari divisi
                 $gajiLembur = 0;
@@ -548,7 +549,7 @@ class PayrollReportController extends Controller
                     'total_alpha' => $totalAlpha,
                     'total_izin_cuti' => $totalIzinCuti,
                     'izin_cuti_breakdown' => $izinCutiBreakdown,
-                    'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // SAMA PERSIS dengan Employee Summary
+                    'extra_off_days' => isset($leaveData['extra_off_days']) ? $leaveData['extra_off_days'] : 0, // SAMA PERSIS dengan Employee Summary
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
                 ];
@@ -565,7 +566,7 @@ class PayrollReportController extends Controller
                 // Pastikan extra_off_days juga ditambahkan langsung ke payrollDataItem (setelah loop untuk memastikan tidak tertimpa)
                 // Ini penting karena frontend mencari item['extra_off_days'] langsung
                 // extra_off_days sudah ditambahkan di line 549, tapi kita pastikan lagi di sini
-                $payrollDataItem['extra_off_days'] = $leaveData['extra_off_days'] ?? 0;
+                $payrollDataItem['extra_off_days'] = isset($leaveData['extra_off_days']) ? $leaveData['extra_off_days'] : 0;
                 
                 // Debug: Log final payrollDataItem untuk memastikan extra_off_days ada
                 $allLeaveKeys = [];
