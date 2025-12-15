@@ -10,6 +10,7 @@ const props = defineProps({
   months: Array,
   years: Array,
   payrollData: Array,
+  leaveTypes: Array,
   filter: Object,
 });
 
@@ -50,6 +51,13 @@ const customItemForm = ref({
 const formatMonth = (month) => {
   return month.toString().padStart(2, '0');
 };
+
+// Get leave days for a specific leave type
+function getLeaveDays(item, leaveTypeName) {
+  if (!item.izin_cuti_breakdown) return 0;
+  const key = leaveTypeName.toLowerCase().replace(/\s+/g, '_') + '_days';
+  return item.izin_cuti_breakdown[key] || 0;
+}
 
 function lihatData() {
   if (!outletId.value || !month.value || !year.value) return;
@@ -716,6 +724,10 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Uang Makan</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Alpha</th>
+                  <!-- Dynamic Leave Type Columns -->
+                  <th v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
+                    {{ leaveType.name }}
+                  </th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC By Point</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC Pro Rate</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
@@ -798,6 +810,10 @@ onMounted(() => {
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
                       {{ item.total_alpha || 0 }}
+                    </td>
+                    <!-- Dynamic Leave Type Data -->
+                    <td v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-sm text-center font-bold text-green-600">
+                      {{ getLeaveDays(item, leaveType.name) || 0 }}
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.sc == 1" class="text-green-600">
@@ -958,7 +974,9 @@ onMounted(() => {
                               <tr v-for="detail in attendanceDetails[item.user_id]" :key="detail.tanggal" 
                                   :class="[
                                     'border-b hover:bg-gray-50',
-                                    detail.is_off ? 'bg-gray-100' : ''
+                                    detail.is_off ? 'bg-gray-100' : '',
+                                    detail.is_alpha ? 'bg-red-100' : '',
+                                    detail.is_approved_absent ? 'bg-green-100' : ''
                                   ]">
                                 <td class="px-3 py-2 font-medium">{{ detail.tanggal }}</td>
                                 <td class="px-3 py-2 text-center font-mono">
@@ -1000,10 +1018,14 @@ onMounted(() => {
                                   <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else>{{ detail.shift_name || '-' }}</span>
                                 </td>
-                                <td class="px-3 py-2 text-center" :class="detail.is_alpha ? 'bg-red-200' : ''">
+                                <td class="px-3 py-2 text-center" :class="detail.is_alpha ? 'bg-red-200' : (detail.is_approved_absent ? 'bg-green-100' : '')">
                                   <span v-if="detail.is_off" 
                                         class="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
                                     📅 OFF
+                                  </span>
+                                  <span v-else-if="detail.is_approved_absent" 
+                                        class="px-2 py-1 text-xs bg-green-500 text-white rounded-full font-semibold">
+                                    ✓ {{ detail.approved_absent_name || 'Izin/Cuti' }}
                                   </span>
                                   <span v-else-if="detail.is_alpha" 
                                         class="px-2 py-1 text-xs bg-red-500 text-white rounded-full font-bold">
