@@ -709,7 +709,7 @@ class VoucherController extends Controller
             $memberVoucher->used_at = null;
             $memberVoucher->used_in_transaction_id = null;
             $memberVoucher->used_in_outlet_id = null;
-            $memberVoucher->used_in_outlet_name = null;
+            // Note: used_in_outlet_name column doesn't exist in member_apps_member_vouchers table
             
             $saved = $memberVoucher->save();
 
