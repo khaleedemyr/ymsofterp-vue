@@ -168,6 +168,7 @@
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty Physical</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
+                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Total MAC<br/>(Qty Physical × MAC)</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Value Adjustment</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Alasan</th>
               </tr>
@@ -200,6 +201,9 @@
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   {{ formatCurrency(item.mac_before) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
+                  <div class="font-semibold">{{ formatCurrency(getTotalMAC(item)) }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <span :class="item.value_adjustment >= 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
@@ -382,6 +386,13 @@ function getDifferenceClass(item) {
   if (item.qty_diff_small > 0) return 'text-green-600';
   if (item.qty_diff_small < 0) return 'text-red-600';
   return 'text-gray-600';
+}
+
+// Calculate total MAC for an item (qty_physical_small * mac_before)
+function getTotalMAC(item) {
+  const qtyPhysical = item.qty_physical_small ?? 0;
+  const mac = parseFloat(item.mac_before) || 0;
+  return qtyPhysical * mac;
 }
 
 async function submitForApproval() {

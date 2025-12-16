@@ -308,6 +308,20 @@ class StockOpnameController extends Controller
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
 
+                // Validate: if there's a difference, reason is required
+                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
+                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                
+                if ($hasDifference && !$hasReason) {
+                    // Skip autosave validation for reason
+                    if (!$request->has('autosave') || !$request->autosave) {
+                        DB::rollBack();
+                        return back()->withErrors([
+                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
+                        ]);
+                    }
+                }
+
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
 
@@ -664,6 +678,20 @@ class StockOpnameController extends Controller
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+
+                // Validate: if there's a difference, reason is required
+                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
+                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                
+                if ($hasDifference && !$hasReason) {
+                    // Skip autosave validation for reason
+                    if (!$request->has('autosave') || !$request->autosave) {
+                        DB::rollBack();
+                        return back()->withErrors([
+                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
+                        ]);
+                    }
+                }
 
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;

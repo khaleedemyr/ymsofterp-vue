@@ -2,9 +2,29 @@
   <AppLayout>
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-clipboard-check text-blue-500"></i> Edit Stock Opname
-        </h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-clipboard-check text-blue-500"></i> Edit Stock Opname
+          </h1>
+          <!-- Autosave Status Indicator -->
+          <div v-if="autosaveStatus !== 'idle'" class="flex items-center gap-2 text-sm">
+            <span v-if="autosaveStatus === 'saving'" class="text-yellow-600 flex items-center gap-1">
+              <i class="fa fa-spinner fa-spin"></i>
+              Menyimpan...
+            </span>
+            <span v-else-if="autosaveStatus === 'saved'" class="text-green-600 flex items-center gap-1">
+              <i class="fa fa-check-circle"></i>
+              Tersimpan
+              <span v-if="lastSavedAt" class="text-xs text-gray-500">
+                ({{ new Date(lastSavedAt).toLocaleTimeString('id-ID') }})
+              </span>
+            </span>
+            <span v-else-if="autosaveStatus === 'error'" class="text-red-600 flex items-center gap-1">
+              <i class="fa fa-exclamation-circle"></i>
+              Gagal menyimpan
+            </span>
+          </div>
+        </div>
         <Link
           :href="route('stock-opnames.show', stockOpname.id)"
           class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
@@ -51,6 +71,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Opname *</label>
             <input
               v-model="form.opname_date"
+              @change="triggerAutosave"
               type="date"
               required
               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -61,6 +82,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Catatan</label>
             <textarea
               v-model="form.notes"
+              @input="triggerAutosave"
               rows="2"
               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Catatan tambahan..."
@@ -184,6 +206,8 @@
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Large
                   </th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">MAC</th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Total MAC<br/>(Qty × MAC)</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-48">Selisih</th>
                   <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Alasan</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-20">Action</th>
@@ -196,7 +220,7 @@
                     class="bg-blue-50 hover:bg-blue-100 cursor-pointer transition"
                     @click="toggleCategory(categoryName)"
                   >
-                    <td class="px-4 py-3 font-bold text-gray-800" colspan="10">
+                    <td class="px-4 py-3 font-bold text-gray-800" colspan="12">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <i 
@@ -281,6 +305,12 @@
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
                       </div>
                     </td>
+                    <td class="px-3 py-3 text-sm text-right text-gray-700">
+                      <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
+                    </td>
+                    <td class="px-3 py-3 text-sm text-right text-gray-700">
+                      <div class="font-semibold">{{ formatCurrency(getTotalMAC(item)) }}</div>
+                    </td>
                     <td class="px-3 py-3 text-center text-sm">
                       <div v-if="hasDifference(item)" class="space-y-1">
                         <div
@@ -298,6 +328,7 @@
                       <input
                         v-if="hasDifference(item)"
                         v-model="item.reason"
+                        @input="triggerAutosave"
                         type="text"
                         placeholder="Alasan selisih..."
                         class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -372,18 +403,74 @@ const props = defineProps({
   user_outlet_id: [String, Number],
 });
 
+// Transform items from props (Laravel collection) to array format
+const transformItems = (items) => {
+  if (!items || items.length === 0) return [];
+  
+  return items.map(item => {
+    // Handle Laravel collection/object format
+    // Items from controller are already objects with properties set directly
+    const getValue = (key, defaultValue = null) => {
+      if (item && typeof item === 'object') {
+        const value = item[key];
+        if (value !== null && value !== undefined) {
+          return value;
+        }
+      }
+      return defaultValue;
+    };
+    
+    const qtyPhysicalSmall = getValue('qty_physical_small');
+    const qtyPhysicalMedium = getValue('qty_physical_medium');
+    const qtyPhysicalLarge = getValue('qty_physical_large');
+    
+    return {
+      inventory_item_id: getValue('inventory_item_id', 0),
+      item_name: getValue('item_name', ''),
+      category_name: getValue('category_name', 'Uncategorized'),
+      qty_system_small: parseFloat(getValue('qty_system_small', 0)) || 0,
+      qty_system_medium: parseFloat(getValue('qty_system_medium', 0)) || 0,
+      qty_system_large: parseFloat(getValue('qty_system_large', 0)) || 0,
+      qty_physical_small: qtyPhysicalSmall !== null && qtyPhysicalSmall !== undefined 
+        ? parseFloat(qtyPhysicalSmall) 
+        : null,
+      qty_physical_medium: qtyPhysicalMedium !== null && qtyPhysicalMedium !== undefined 
+        ? parseFloat(qtyPhysicalMedium) 
+        : null,
+      qty_physical_large: qtyPhysicalLarge !== null && qtyPhysicalLarge !== undefined 
+        ? parseFloat(qtyPhysicalLarge) 
+        : null,
+      reason: getValue('reason', '') || '',
+      small_unit_name: getValue('small_unit_name', ''),
+      medium_unit_name: getValue('medium_unit_name', ''),
+      large_unit_name: getValue('large_unit_name', ''),
+      small_conversion_qty: parseFloat(getValue('small_conversion_qty', 1)) || 1,
+      medium_conversion_qty: parseFloat(getValue('medium_conversion_qty', 1)) || 1,
+      mac: parseFloat(getValue('mac', 0)) || 0,
+    };
+  });
+};
+
 const form = useForm({
   outlet_id: props.stockOpname?.outlet_id || '',
   warehouse_outlet_id: props.stockOpname?.warehouse_outlet_id || '',
   opname_date: props.stockOpname?.opname_date || new Date().toISOString().split('T')[0],
   notes: props.stockOpname?.notes || '',
-  items: props.items || [],
+  items: transformItems(props.items),
   approvers: props.approvers || [],
 });
 
 const loadingItems = ref(false);
 const submitting = ref(false);
 const expandedCategories = ref(new Set());
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+
+// Autosave
+const autosaveStatus = ref('idle'); // idle, saving, saved, error
+const autosaveTimeout = ref(null);
+const lastSavedAt = ref(null);
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
 
@@ -453,24 +540,40 @@ async function loadItems() {
       },
     });
 
-    form.items = response.data.map(item => ({
-      inventory_item_id: item.inventory_item_id,
-      item_name: item.item_name,
-      category_name: item.category_name,
-      qty_system_small: parseFloat(item.qty_system_small) || 0,
-      qty_system_medium: parseFloat(item.qty_system_medium) || 0,
-      qty_system_large: parseFloat(item.qty_system_large) || 0,
-      qty_physical_small: null,
-      qty_physical_medium: null,
-      qty_physical_large: null,
-      reason: '',
-      small_unit_name: item.small_unit_name,
-      medium_unit_name: item.medium_unit_name,
-      large_unit_name: item.large_unit_name,
-      small_conversion_qty: parseFloat(item.small_conversion_qty) || 1,
-      medium_conversion_qty: parseFloat(item.medium_conversion_qty) || 1,
-      mac: parseFloat(item.mac) || 0,
-    }));
+    // Get existing items to preserve qty_physical and reason
+    const existingItemsMap = new Map();
+    form.items.forEach(item => {
+      if (item.inventory_item_id) {
+        existingItemsMap.set(item.inventory_item_id, {
+          qty_physical_small: item.qty_physical_small,
+          qty_physical_medium: item.qty_physical_medium,
+          qty_physical_large: item.qty_physical_large,
+          reason: item.reason,
+        });
+      }
+    });
+
+    form.items = response.data.map(item => {
+      const existing = existingItemsMap.get(item.inventory_item_id);
+      return {
+        inventory_item_id: item.inventory_item_id,
+        item_name: item.item_name,
+        category_name: item.category_name,
+        qty_system_small: parseFloat(item.qty_system_small) || 0,
+        qty_system_medium: parseFloat(item.qty_system_medium) || 0,
+        qty_system_large: parseFloat(item.qty_system_large) || 0,
+        qty_physical_small: existing?.qty_physical_small ?? null,
+        qty_physical_medium: existing?.qty_physical_medium ?? null,
+        qty_physical_large: existing?.qty_physical_large ?? null,
+        reason: existing?.reason || '',
+        small_unit_name: item.small_unit_name,
+        medium_unit_name: item.medium_unit_name,
+        large_unit_name: item.large_unit_name,
+        small_conversion_qty: parseFloat(item.small_conversion_qty) || 1,
+        medium_conversion_qty: parseFloat(item.medium_conversion_qty) || 1,
+        mac: parseFloat(item.mac) || 0,
+      };
+    });
   } catch (error) {
     console.error('Error loading items:', error);
     alert('Gagal memuat items. Silakan coba lagi.');
@@ -493,6 +596,90 @@ function autoFillAll() {
   });
 }
 
+// Autosave function
+async function autosave() {
+  // Skip autosave if form is not valid enough (at least outlet and warehouse outlet must be selected)
+  if (!form.outlet_id || !form.warehouse_outlet_id) {
+    return;
+  }
+
+  // Skip if already submitting
+  if (submitting.value) {
+    return;
+  }
+
+  autosaveStatus.value = 'saving';
+
+  try {
+    // Only autosave items that have been explicitly filled (not null/undefined)
+    const itemsToSave = form.items.map(item => {
+      const itemData = {
+        inventory_item_id: item.inventory_item_id,
+        reason: item.reason || '',
+      };
+      
+      // Only include qty_physical if it's been explicitly set (not null/undefined)
+      if (item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '') {
+        itemData.qty_physical_small = parseFloat(item.qty_physical_small);
+      }
+      if (item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '') {
+        itemData.qty_physical_medium = parseFloat(item.qty_physical_medium);
+      }
+      if (item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '') {
+        itemData.qty_physical_large = parseFloat(item.qty_physical_large);
+      }
+      
+      return itemData;
+    });
+
+    const formData = {
+      outlet_id: form.outlet_id,
+      warehouse_outlet_id: form.warehouse_outlet_id,
+      opname_date: form.opname_date,
+      notes: form.notes,
+      items: itemsToSave,
+      autosave: true,
+    };
+
+    const response = await axios.put(route('stock-opnames.update', props.stockOpname.id), formData);
+
+    if (response.data.success) {
+      autosaveStatus.value = 'saved';
+      lastSavedAt.value = new Date();
+      
+      // Clear saved status after 3 seconds
+      setTimeout(() => {
+        if (autosaveStatus.value === 'saved') {
+          autosaveStatus.value = 'idle';
+        }
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Autosave error:', error);
+    autosaveStatus.value = 'error';
+    
+    // Clear error status after 5 seconds
+    setTimeout(() => {
+      if (autosaveStatus.value === 'error') {
+        autosaveStatus.value = 'idle';
+      }
+    }, 5000);
+  }
+}
+
+// Debounced autosave
+function triggerAutosave() {
+  // Clear existing timeout
+  if (autosaveTimeout.value) {
+    clearTimeout(autosaveTimeout.value);
+  }
+
+  // Set new timeout (2 seconds after last change)
+  autosaveTimeout.value = setTimeout(() => {
+    autosave();
+  }, 2000);
+}
+
 function onQtyPhysicalChange(item, changedUnit) {
   const value = item[`qty_physical_${changedUnit}`];
   
@@ -502,6 +689,7 @@ function onQtyPhysicalChange(item, changedUnit) {
     item.qty_physical_medium = null;
     item.qty_physical_large = null;
     calculateDifference(item);
+    triggerAutosave();
     return;
   }
 
@@ -575,6 +763,7 @@ function onQtyPhysicalChange(item, changedUnit) {
   }
 
   calculateDifference(item);
+  triggerAutosave();
 }
 
 function calculateDifference(item) {
@@ -631,6 +820,18 @@ function getDifferenceClass(item) {
 function formatNumber(val) {
   if (val == null) return '0';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCurrency(val) {
+  if (val == null) return 'Rp 0';
+  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Calculate total MAC for an item (qty_physical_small * mac)
+function getTotalMAC(item) {
+  const qtyPhysical = item.qty_physical_small ?? item.qty_system_small ?? 0;
+  const mac = parseFloat(item.mac) || 0;
+  return qtyPhysical * mac;
 }
 
 async function loadApprovers(search = '') {
@@ -720,5 +921,14 @@ watch(() => form.warehouse_outlet_id, () => {
 if (form.outlet_id && form.warehouse_outlet_id && form.items.length === 0) {
   loadItems();
 }
+
+// Watch for changes to trigger autosave
+watch(() => form.notes, () => {
+  triggerAutosave();
+});
+
+watch(() => form.opname_date, () => {
+  triggerAutosave();
+});
 </script>
 
