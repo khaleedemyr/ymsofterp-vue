@@ -284,15 +284,13 @@
                       <div class="font-semibold">{{ formatCurrency(getTotalMAC(item)) }}</div>
                     </td>
                     <td class="px-3 py-3 text-center text-sm">
-                      <div v-if="hasDifference(item)" class="space-y-1">
-                        <div
-                          v-for="(diff, idx) in getDifferenceArray(item)"
-                          :key="idx"
+                      <div v-if="hasDifference(item)">
+                        <span
                           :class="getDifferenceClass(item)"
                           class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
                         >
-                          {{ diff }}
-                        </div>
+                          {{ getDifferenceSign(item) }}
+                        </span>
                       </div>
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
@@ -769,6 +767,13 @@ function getDifferenceClass(item) {
   if (diffSmall > 0) return 'bg-green-100 text-green-800';
   if (diffSmall < 0) return 'bg-red-100 text-red-800';
   return 'bg-gray-100 text-gray-800';
+}
+
+function getDifferenceSign(item) {
+  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
+  if (diffSmall > 0) return '+';
+  if (diffSmall < 0) return '-';
+  return '0';
 }
 
 function formatNumber(val) {

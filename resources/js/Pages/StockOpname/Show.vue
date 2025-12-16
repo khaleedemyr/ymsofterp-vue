@@ -186,11 +186,9 @@
                   <div>M: {{ formatNumber(item.qty_physical_medium) }}</div>
                   <div>L: {{ formatNumber(item.qty_physical_large) }}</div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
                   <span :class="getDifferenceClass(item)" class="px-2 py-1 rounded font-semibold">
-                    <div>S: {{ formatNumber(item.qty_diff_small) }}</div>
-                    <div>M: {{ formatNumber(item.qty_diff_medium) }}</div>
-                    <div>L: {{ formatNumber(item.qty_diff_large) }}</div>
+                    {{ getDifferenceSign(item) }}
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
@@ -380,6 +378,12 @@ function getDifferenceClass(item) {
   if (item.qty_diff_small > 0) return 'text-green-600';
   if (item.qty_diff_small < 0) return 'text-red-600';
   return 'text-gray-600';
+}
+
+function getDifferenceSign(item) {
+  if (item.qty_diff_small > 0) return '+';
+  if (item.qty_diff_small < 0) return '-';
+  return '0';
 }
 
 // Calculate total MAC for an item (qty_physical_small * mac_before)

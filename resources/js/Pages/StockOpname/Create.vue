@@ -281,15 +281,13 @@
                       <div class="font-semibold">{{ formatCurrency(getSubtotal(item)) }}</div>
                     </td>
                     <td class="px-3 py-3 text-center text-sm">
-                      <div v-if="hasDifference(item)" class="space-y-1">
-                        <div
-                          v-for="(diff, idx) in getDifferenceArray(item)"
-                          :key="idx"
+                      <div v-if="hasDifference(item)">
+                        <span
                           :class="getDifferenceClass(item)"
                           class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
                         >
-                          {{ diff }}
-                        </div>
+                          {{ getDifferenceSign(item) }}
+                        </span>
                       </div>
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
@@ -757,6 +755,13 @@ function getDifferenceArray(item) {
   }
   
   return diffs.length > 0 ? diffs : ['0'];
+}
+
+function getDifferenceSign(item) {
+  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
+  if (diffSmall > 0) return '+';
+  if (diffSmall < 0) return '-';
+  return '0';
 }
 
 function getDifferenceClass(item) {
