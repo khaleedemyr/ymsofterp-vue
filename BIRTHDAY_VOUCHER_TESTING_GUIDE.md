@@ -240,7 +240,7 @@ cp app/Console/Commands/DistributeBirthdayVouchers.php.backup app/Console/Comman
 - [ ] Command berhasil dijalankan tanpa error
 - [ ] Member menerima voucher (cek di `member_apps_member_vouchers`)
 - [ ] Voucher memiliki `serial_code` yang unik
-- [ ] Voucher memiliki `expires_at` = 1 minggu dari hari ini
+- [ ] Voucher memiliki `expires_at` = 5 hari dari hari ini
 - [ ] Voucher memiliki `status = 'active'`
 - [ ] Member menerima notification (cek di `member_apps_notifications`)
 - [ ] Member menerima push notification (jika FCM sudah setup)
@@ -363,7 +363,7 @@ tail -n 100 storage/logs/laravel.log | grep -i birthday
 ## 📝 Catatan Penting
 
 1. **Duplicate Prevention:** Member tidak akan menerima voucher yang sama dua kali dalam satu hari
-2. **Expiration:** Birthday voucher expire 1 minggu setelah diterima (bukan dari tanggal lahir)
+2. **Expiration:** Birthday voucher expire 5 hari setelah diterima (bukan dari tanggal lahir)
 3. **Points:** Jika voucher memiliki `points_cost > 0`, member harus punya cukup points
 4. **Notifications:** Member akan menerima notification dan push notification (jika FCM setup)
 5. **Birthday Points:** Member juga akan menerima birthday bonus points (jika ada)
