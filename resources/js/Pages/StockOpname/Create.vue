@@ -278,7 +278,7 @@
                       <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
                     </td>
                     <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-semibold">{{ formatCurrency(getSubtotal(item)) }}</div>
+                      <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
                     </td>
                     <td class="px-3 py-3 text-center text-sm">
                       <div v-if="hasDifference(item)">
@@ -310,7 +310,7 @@
                     GRAND TOTAL
                   </td>
                   <td class="px-3 py-4 text-right font-bold text-gray-900 text-lg">
-                    {{ formatCurrency(grandTotal) }}
+                    {{ formatNumber(grandTotal) }}
                   </td>
                   <td class="px-3 py-4" colspan="2"></td>
                 </tr>
@@ -513,7 +513,11 @@ const groupedItems = computed(() => {
 // Calculate subtotal for an item (qty_physical_small * mac)
 function getSubtotal(item) {
   if (!item) return 0;
-  const qtyPhysical = item.qty_physical_small ?? item.qty_system_small ?? 0;
+  // Return 0 if qty_physical_small is not filled (null/undefined/empty)
+  if (item.qty_physical_small === null || item.qty_physical_small === undefined || item.qty_physical_small === '') {
+    return 0;
+  }
+  const qtyPhysical = parseFloat(item.qty_physical_small) || 0;
   const mac = parseFloat(item.mac) || 0;
   return qtyPhysical * mac;
 }
