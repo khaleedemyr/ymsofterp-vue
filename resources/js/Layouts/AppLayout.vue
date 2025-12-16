@@ -293,6 +293,12 @@ const menuGroups = [
                 code: 'mac_report',
             },
             {
+                name: () => 'Outlet Stock Report',
+                icon: 'fa-solid fa-chart-line',
+                route: '/outlet-stock-report',
+                code: 'outlet_stock_report',
+            },
+            {
                 name: () => 'Report Penjualan per Category',
                 icon: 'fa-solid fa-table-list',
                 route: '/report-sales-per-category',

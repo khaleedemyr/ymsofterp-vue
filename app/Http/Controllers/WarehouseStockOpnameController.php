@@ -440,7 +440,7 @@ class WarehouseStockOpnameController extends Controller
         $itemsRule = $request->has('autosave') && $request->autosave 
             ? 'nullable|array' 
             : 'required|array|min:1';
-            
+
         $validated = $request->validate([
             'warehouse_id' => 'required|integer',
             'warehouse_division_id' => 'nullable|integer',

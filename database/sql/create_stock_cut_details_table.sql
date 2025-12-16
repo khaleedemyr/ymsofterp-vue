@@ -1,0 +1,30 @@
+-- Create table stock_cut_details untuk menyimpan detail hasil stock cut
+CREATE TABLE IF NOT EXISTS `stock_cut_details` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `stock_cut_log_id` bigint(20) unsigned NOT NULL COMMENT 'FK ke stock_cut_logs',
+  `inventory_item_id` int(11) NOT NULL COMMENT 'FK ke outlet_food_inventory_items',
+  `item_id` bigint(20) unsigned NOT NULL COMMENT 'FK ke items (material item)',
+  `warehouse_outlet_id` int(11) NOT NULL COMMENT 'FK ke warehouse_outlets',
+  `qty_small` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `qty_medium` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `qty_large` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `cost_per_small` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `cost_per_medium` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `cost_per_large` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `value_out` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `stock_before_small` decimal(15,4) NOT NULL DEFAULT 0.0000 COMMENT 'Stock sebelum dipotong',
+  `stock_before_medium` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `stock_before_large` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `stock_after_small` decimal(15,4) NOT NULL DEFAULT 0.0000 COMMENT 'Stock setelah dipotong',
+  `stock_after_medium` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `stock_after_large` decimal(15,4) NOT NULL DEFAULT 0.0000,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_stock_cut_log_id` (`stock_cut_log_id`),
+  KEY `idx_inventory_item_id` (`inventory_item_id`),
+  KEY `idx_item_id` (`item_id`),
+  KEY `idx_warehouse_outlet_id` (`warehouse_outlet_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detail hasil stock cut per material item dan warehouse';
+

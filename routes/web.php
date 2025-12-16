@@ -769,6 +769,9 @@ Route::get('/inventory/aging-report', [InventoryReportController::class, 'agingR
 // Laporan Stok dan Cost
 Route::get('/inventory/stock-cost-report', [\App\Http\Controllers\StockCostReportController::class, 'index'])->name('inventory.stock-cost-report');
 
+// Outlet Stock Report
+Route::get('/outlet-stock-report', [\App\Http\Controllers\OutletStockReportController::class, 'index'])->name('outlet-stock-report.index');
+
 // Contra Bon routes
 Route::middleware(['auth'])->group(function () {
     Route::get('/contra-bons', [ContraBonController::class, 'index'])->name('contra-bons.index');

@@ -350,6 +350,9 @@ class StockCutController extends Controller
         ]);
         
         // 4. Potong stock & catat kartu stok (mengikuti pola OutletInternalUseWasteController)
+        // Simpan detail stock cut untuk insert ke stock_cut_details
+        $stockCutDetails = [];
+        
         foreach ($kebutuhanBahan as $key => $data) {
             // Handle struktur data baru dengan unit
             if (is_array($data)) {
@@ -489,6 +492,28 @@ class StockCutController extends Controller
                 'description' => 'Stock Out - Potong stock otomatis dari order_items',
                 'created_at' => now(),
             ]);
+            
+            // Simpan detail untuk insert ke stock_cut_details
+            $stockCutDetails[] = [
+                'inventory_item_id' => $inventory_item_id,
+                'item_id' => $item_id,
+                'warehouse_outlet_id' => $warehouse_id,
+                'qty_small' => $qty_small,
+                'qty_medium' => $qty_medium,
+                'qty_large' => $qty_large,
+                'cost_per_small' => $stock->last_cost_small,
+                'cost_per_medium' => $stock->last_cost_medium,
+                'cost_per_large' => $stock->last_cost_large,
+                'value_out' => $qty_small * $stock->last_cost_small,
+                'stock_before_small' => $stock->qty_small,
+                'stock_before_medium' => $stock->qty_medium,
+                'stock_before_large' => $stock->qty_large,
+                'stock_after_small' => $new_qty_small,
+                'stock_after_medium' => $new_qty_medium,
+                'stock_after_large' => $new_qty_large,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
         }
 
         // 5. Update flag stock_cut di order_items
@@ -531,7 +556,7 @@ class StockCutController extends Controller
         // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
         $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
         
-        StockCutLog::updateOrCreate(
+        $stockCutLog = StockCutLog::updateOrCreate(
             [
                 'outlet_id' => $id_outlet,
                 'tanggal' => $tanggal,
@@ -545,6 +570,17 @@ class StockCutController extends Controller
                 'created_by' => auth()->id()
             ]
         );
+        
+        // Insert detail stock cut ke stock_cut_details
+        if (!empty($stockCutDetails) && $stockCutLog) {
+            // Tambahkan stock_cut_log_id ke setiap detail
+            foreach ($stockCutDetails as &$detail) {
+                $detail['stock_cut_log_id'] = $stockCutLog->id;
+            }
+            
+            // Insert batch untuk performa lebih baik
+            DB::table('stock_cut_details')->insert($stockCutDetails);
+        }
 
         return response()->json(['status' => 'success', 'message' => 'Potong stock berhasil']);
     }
