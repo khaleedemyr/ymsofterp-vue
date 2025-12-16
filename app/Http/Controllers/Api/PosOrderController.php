@@ -248,12 +248,30 @@ class PosOrderController extends Controller
                             }
                             
                             // Calculate points: (transaction_amount / 10000) * earning_rate
-                            $pointsEarned = floor(($grandTotal / 10000) * $earningRate);
+                            // Handle fractional points for rate 1.5 (Loyal tier)
+                            $calculatedPoints = ($grandTotal / 10000) * $earningRate;
+                            $pointsEarned = floor($calculatedPoints);
+                            $remainder = $calculatedPoints - $pointsEarned;
+                            
+                            // Get current remainder (if field exists, otherwise 0)
+                            $currentRemainder = $member->point_remainder ?? 0;
+                            
+                            // Add current remainder to new remainder
+                            $totalRemainder = $currentRemainder + $remainder;
+                            
+                            // If total remainder >= 1.0, convert to integer points
+                            if ($totalRemainder >= 1.0) {
+                                $extraPoints = floor($totalRemainder);
+                                $pointsEarned += $extraPoints;
+                                $totalRemainder -= $extraPoints;
+                            }
+                            
+                            // Always update point remainder (even if pointsEarned = 0)
+                            $member->point_remainder = $totalRemainder;
                             
                             if ($pointsEarned > 0) {
                                 // Add points to member
                                 $member->just_points = ($member->just_points ?? 0) + $pointsEarned;
-                                $member->save();
                                 
                                 // Calculate expires_at: 1 year from transaction date
                                 $expiresAt = $transactionDate->copy()->addYear();
@@ -286,6 +304,10 @@ class PosOrderController extends Controller
                                     'is_expired' => false,
                                     'is_fully_redeemed' => false,
                                 ]);
+                            }
+                            
+                            // Save member (to update point_remainder, and just_points if pointsEarned > 0)
+                            $member->save();
                                 
                                 Log::info('Points earned for member', [
                                     'member_id' => $member->id,
@@ -293,6 +315,9 @@ class PosOrderController extends Controller
                                     'tier' => $tier,
                                     'earning_rate' => $earningRate,
                                     'grand_total' => $grandTotal,
+                                    'calculated_points' => $calculatedPoints,
+                                    'remainder' => $remainder,
+                                    'point_remainder_after' => $totalRemainder,
                                     'transaction_id' => $pointTransaction->id,
                                     'expires_at' => $expiresAt->toDateString()
                                 ]);
@@ -611,6 +636,68 @@ class PosOrderController extends Controller
                         if ($transaction->point_amount > 0) {
                             $totalPointsToDeduct += $transaction->point_amount;
                         }
+                        
+                        // Rollback point_remainder yang ditambahkan dari transaksi ini
+                        // Hitung ulang remainder dari transaksi yang di-void
+                        try {
+                            $transactionAmount = $transaction->transaction_amount ?? 0;
+                            $earningRate = $transaction->earning_rate ?? 1.00;
+                            
+                            // Hitung ulang calculated points dan remainder
+                            $calculatedPoints = ($transactionAmount / 10000) * $earningRate;
+                            $pointsEarned = floor($calculatedPoints);
+                            $remainderFromTransaction = $calculatedPoints - $pointsEarned;
+                            
+                            // Refresh member untuk dapat point_remainder terbaru
+                            $member->refresh();
+                            $currentRemainder = $member->point_remainder ?? 0;
+                            
+                            // Kurangi remainder dari point_remainder
+                            $newRemainder = $currentRemainder - $remainderFromTransaction;
+                            
+                            // Jika newRemainder negatif, berarti ada konversi yang terjadi di transaksi berikutnya
+                            // Kita perlu kurangi just_points juga
+                            if ($newRemainder < 0) {
+                                // Ada konversi yang terjadi, kurangi just_points
+                                $pointsToDeductFromConversion = abs(floor($newRemainder));
+                                $totalPointsToDeduct += $pointsToDeductFromConversion;
+                                $newRemainder = $newRemainder + $pointsToDeductFromConversion; // Setelah floor, sisa decimal
+                                
+                                Log::info('Point remainder rollback resulted in negative, deducting from just_points', [
+                                    'member_id' => $member->id,
+                                    'transaction_id' => $transaction->id,
+                                    'remainder_from_transaction' => $remainderFromTransaction,
+                                    'current_remainder' => $currentRemainder,
+                                    'new_remainder_before_adjustment' => $currentRemainder - $remainderFromTransaction,
+                                    'points_to_deduct_from_conversion' => $pointsToDeductFromConversion,
+                                    'new_remainder_after_adjustment' => $newRemainder,
+                                ]);
+                            }
+                            
+                            // Update point_remainder (akan disimpan nanti)
+                            $member->point_remainder = max(0, $newRemainder); // Pastikan tidak negatif
+                            
+                            Log::info('Point remainder rolled back for void order', [
+                                'member_id' => $member->id,
+                                'transaction_id' => $transaction->id,
+                                'transaction_amount' => $transactionAmount,
+                                'earning_rate' => $earningRate,
+                                'calculated_points' => $calculatedPoints,
+                                'points_earned' => $pointsEarned,
+                                'remainder_from_transaction' => $remainderFromTransaction,
+                                'current_remainder' => $currentRemainder,
+                                'new_remainder' => $member->point_remainder,
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Error rolling back point remainder for void order', [
+                                'point_transaction_id' => $transaction->id,
+                                'member_id' => $member->id,
+                                'order_id' => $orderId,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                            ]);
+                            // Continue with rollback anyway
+                        }
                     }
                     
                     // Delete the transaction
@@ -618,6 +705,7 @@ class PosOrderController extends Controller
                 }
 
                 // Update member points: add back redemption points, deduct earned points
+                // Note: point_remainder sudah di-update di loop sebelumnya untuk setiap earn transaction
                 $pointsChanged = false;
                 
                 // Kembalikan point dari redemption ke member
@@ -642,13 +730,15 @@ class PosOrderController extends Controller
                     ]);
                 }
                 
-                if ($pointsChanged) {
+                // Save member (point_remainder sudah di-update di loop sebelumnya)
+                if ($pointsChanged || isset($member->point_remainder)) {
                     $member->save();
                     Log::info('Member points updated after rollback', [
                         'member_id' => $memberId,
                         'points_added_back' => $totalPointsToAddBack,
                         'points_deducted' => $totalPointsToDeduct,
-                        'final_points' => $member->just_points
+                        'final_points' => $member->just_points,
+                        'point_remainder' => $member->point_remainder ?? 0
                     ]);
                     
                     // Send push notification to member about point return

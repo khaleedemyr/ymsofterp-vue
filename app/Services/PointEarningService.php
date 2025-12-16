@@ -143,9 +143,30 @@ class PointEarningService
             // Get member level (default to 'silver' if not set)
             $memberLevel = $member->member_level ?? 'silver';
 
-            // Calculate points
-            $pointAmount = $this->calculatePoints($transactionAmount, $memberLevel);
+            // Get earning rate
             $earningRate = $this->getEarningRate($memberLevel);
+            
+            // Calculate points with fractional handling
+            // Handle fractional points for rate 1.5 (Loyal tier)
+            $calculatedPoints = ($transactionAmount / 10000) * $earningRate;
+            $pointAmount = floor($calculatedPoints);
+            $remainder = $calculatedPoints - $pointAmount;
+            
+            // Get current remainder (if field exists, otherwise 0)
+            $currentRemainder = $member->point_remainder ?? 0;
+            
+            // Add current remainder to new remainder
+            $totalRemainder = $currentRemainder + $remainder;
+            
+            // If total remainder >= 1.0, convert to integer points
+            if ($totalRemainder >= 1.0) {
+                $extraPoints = floor($totalRemainder);
+                $pointAmount += $extraPoints;
+                $totalRemainder -= $extraPoints;
+            }
+            
+            // Update member's point remainder
+            $member->point_remainder = $totalRemainder;
 
             // Log calculation details for debugging
             Log::info('Point calculation details', [
@@ -154,19 +175,37 @@ class PointEarningService
                 'transaction_amount' => $transactionAmount,
                 'member_level' => $memberLevel,
                 'earning_rate' => $earningRate,
-                'calculated_points' => ($transactionAmount / 10000) * $earningRate,
+                'calculated_points' => $calculatedPoints,
+                'remainder' => $remainder,
+                'point_remainder_after' => $totalRemainder,
                 'final_point_amount' => $pointAmount
             ]);
 
-            if ($pointAmount <= 0) {
-                Log::info('Point amount is 0 or negative, skipping point earning', [
+            // Always save remainder (even if pointAmount = 0)
+            // This ensures fractional points are accumulated correctly
+            
+            if ($pointAmount <= 0 && $totalRemainder <= 0) {
+                Log::info('Point amount is 0 or negative and no remainder, skipping point earning', [
                     'member_id' => $member->id,
                     'order_id' => $orderId,
                     'transaction_amount' => $transactionAmount,
                     'member_level' => $memberLevel,
-                    'calculated_points_before_floor' => ($transactionAmount / 10000) * $earningRate
+                    'calculated_points' => $calculatedPoints,
+                    'remainder' => $remainder
                 ]);
                 DB::rollBack();
+                return null;
+            }
+            
+            // If pointAmount = 0 but remainder > 0, just save remainder and return
+            if ($pointAmount <= 0 && $totalRemainder > 0) {
+                $member->save();
+                DB::commit();
+                Log::info('Remainder saved but no points earned this transaction', [
+                    'member_id' => $member->id,
+                    'order_id' => $orderId,
+                    'point_remainder' => $totalRemainder
+                ]);
                 return null;
             }
 
@@ -224,6 +263,9 @@ class PointEarningService
 
             // Update member's total points (just_points)
             $member->increment('just_points', $pointAmount);
+            
+            // Save member to persist point_remainder
+            $member->save();
 
             // Update monthly spending and tier (for rolling 12-month calculation)
             try {
@@ -936,6 +978,108 @@ class PointEarningService
                 'trace' => $e->getTraceAsString()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Deduct points from member balance, considering point_remainder
+     * This function will:
+     * 1. Check if just_points is sufficient
+     * 2. If not sufficient, convert point_remainder >= 1.0 to integer points
+     * 3. Deduct points from just_points
+     * 4. Return success or error
+     * 
+     * @param MemberAppsMember $member Member instance
+     * @param int $pointsToDeduct Points to deduct
+     * @return array ['success' => bool, 'message' => string, 'points_deducted' => int, 'points_after' => int]
+     */
+    public function deductPoints($member, $pointsToDeduct)
+    {
+        try {
+            // Refresh member to get latest data
+            $member->refresh();
+            
+            $currentPoints = $member->just_points ?? 0;
+            $currentRemainder = $member->point_remainder ?? 0;
+            
+            Log::info('Deducting points from member', [
+                'member_id' => $member->id,
+                'points_to_deduct' => $pointsToDeduct,
+                'current_points' => $currentPoints,
+                'current_remainder' => $currentRemainder,
+            ]);
+            
+            // If current points are not enough, try to convert remainder
+            if ($currentPoints < $pointsToDeduct && $currentRemainder >= 1.0) {
+                $pointsFromRemainder = floor($currentRemainder);
+                $currentPoints += $pointsFromRemainder;
+                $currentRemainder -= $pointsFromRemainder;
+                
+                Log::info('Converted remainder to points', [
+                    'member_id' => $member->id,
+                    'points_from_remainder' => $pointsFromRemainder,
+                    'points_after_conversion' => $currentPoints,
+                    'remainder_after_conversion' => $currentRemainder,
+                ]);
+            }
+            
+            // Check if points are sufficient after conversion
+            if ($currentPoints < $pointsToDeduct) {
+                $shortage = $pointsToDeduct - $currentPoints;
+                Log::warning('Insufficient points to deduct', [
+                    'member_id' => $member->id,
+                    'points_to_deduct' => $pointsToDeduct,
+                    'available_points' => $currentPoints,
+                    'shortage' => $shortage,
+                    'remainder' => $currentRemainder,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'message' => "Insufficient points. Required: {$pointsToDeduct}, Available: {$currentPoints}",
+                    'points_deducted' => 0,
+                    'points_after' => $currentPoints,
+                    'shortage' => $shortage,
+                ];
+            }
+            
+            // Deduct points
+            $pointsAfter = $currentPoints - $pointsToDeduct;
+            $member->just_points = $pointsAfter;
+            $member->point_remainder = $currentRemainder;
+            $member->save();
+            
+            Log::info('Points deducted successfully', [
+                'member_id' => $member->id,
+                'points_deducted' => $pointsToDeduct,
+                'points_before' => $currentPoints,
+                'points_after' => $pointsAfter,
+                'remainder_after' => $currentRemainder,
+            ]);
+            
+            return [
+                'success' => true,
+                'message' => 'Points deducted successfully',
+                'points_deducted' => $pointsToDeduct,
+                'points_after' => $pointsAfter,
+                'points_before' => $currentPoints,
+                'remainder_after' => $currentRemainder,
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Error deducting points', [
+                'member_id' => $member->id ?? null,
+                'points_to_deduct' => $pointsToDeduct,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return [
+                'success' => false,
+                'message' => 'Error deducting points: ' . $e->getMessage(),
+                'points_deducted' => 0,
+                'points_after' => $member->just_points ?? 0,
+            ];
         }
     }
 }

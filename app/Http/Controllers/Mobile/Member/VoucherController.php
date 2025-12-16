@@ -1176,9 +1176,13 @@ class VoucherController extends Controller
                 // No need to check for existing active voucher
             }
 
-            // Check member points
+            // Check member points (considering point_remainder)
+            // We'll check in deductPoints function, but do a quick check here first
             $memberPoints = $member->just_points ?? 0;
-            if ($memberPoints < $voucher->points_required) {
+            $memberRemainder = $member->point_remainder ?? 0;
+            $availablePoints = $memberPoints + floor($memberRemainder);
+            
+            if ($availablePoints < $voucher->points_required) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1226,9 +1230,17 @@ class VoucherController extends Controller
                 ]);
             }
 
-            // Deduct points from member balance
-            $member->just_points = $memberPoints - $voucher->points_required;
-            $member->save();
+            // Deduct points from member balance (considering point_remainder)
+            $pointEarningService = new \App\Services\PointEarningService();
+            $deductResult = $pointEarningService->deductPoints($member, $voucher->points_required);
+            
+            if (!$deductResult['success']) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => $deductResult['message'],
+                ], 400);
+            }
 
             // Create point transaction record
             $pointTransaction = MemberAppsPointTransaction::create([
@@ -1244,7 +1256,6 @@ class VoucherController extends Controller
 
             // Use PointEarningService to deduct points from earnings (FIFO)
             // This updates remaining_points and is_fully_redeemed in member_apps_point_earnings
-            $pointEarningService = new PointEarningService();
             $redemptionResult = $pointEarningService->redeemPointsFromEarnings(
                 $member->id,
                 $pointTransaction->id,

@@ -375,7 +375,7 @@ class RewardController extends Controller
             // 3. Format rewards dengan gambar
             // For reward screen: only show rewards that can be redeemed (point cukup)
             // For home screen: show all rewards
-            $formattedRewards = $rewards->map(function ($reward) use ($memberPoints, $isRewardScreen, $memberId) {
+            $formattedRewards = $rewards->map(function ($reward) use ($memberPoints, $isRewardScreen, $memberId, $member) {
                 // Ambil gambar pertama dari item_images
                 $firstImage = DB::table('item_images')
                     ->where('item_id', $reward->item_id)
@@ -388,8 +388,10 @@ class RewardController extends Controller
                     $categoryDisplay = $categoryDisplay . ' ' . $reward->sub_category_name;
                 }
 
-                // Check if member can redeem (has enough points)
-                $canRedeem = $memberPoints >= $reward->points_required;
+                // Check if member can redeem (has enough points, considering point_remainder)
+                $memberRemainder = $member->point_remainder ?? 0;
+                $availablePoints = $memberPoints + floor($memberRemainder);
+                $canRedeem = $availablePoints >= $reward->points_required;
 
                 // For reward screen: filter only rewards that can be redeemed
                 if ($isRewardScreen && !$canRedeem) {
@@ -1553,16 +1555,20 @@ class RewardController extends Controller
                 // NOTE: Reward point (JTS-...) can be redeemed multiple times as long as member has enough points
                 // No need to check if already redeemed - only check if member has enough points
                 
-                // Check if member has enough points
+                // Check if member has enough points (considering point_remainder)
                 $memberPoints = $member->just_points ?? 0;
-                if ($memberPoints < $reward->points_required) {
+                $memberRemainder = $member->point_remainder ?? 0;
+                $availablePoints = $memberPoints + floor($memberRemainder);
+                
+                if ($availablePoints < $reward->points_required) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Insufficient points',
                         'data' => [
                             'required_points' => $reward->points_required,
                             'current_points' => $memberPoints,
-                            'shortage' => $reward->points_required - $memberPoints
+                            'available_points' => $availablePoints,
+                            'shortage' => $reward->points_required - $availablePoints
                         ]
                     ], 400);
                 }
@@ -1633,9 +1639,16 @@ class RewardController extends Controller
                 // Round up to nearest 100
                 $discountAmount = ceil($discountAmount / 100) * 100;
                 
-                // Deduct points from member
-                $member->just_points = max(0, $memberPoints - $reward->points_required);
-                $member->save();
+                // Deduct points from member (considering point_remainder)
+                $pointEarningService = new \App\Services\PointEarningService();
+                $deductResult = $pointEarningService->deductPoints($member, $reward->points_required);
+                
+                if (!$deductResult['success']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $deductResult['message'],
+                    ], 400);
+                }
                 
                 // Build reference_id: include order_id if provided, format: "serial_code|order_id" or just "serial_code"
                 $orderId = $request->input('order_id');
@@ -1997,16 +2010,20 @@ class RewardController extends Controller
                     ], 400);
                 }
                 
-                // Check if member has enough points
+                // Check if member has enough points (considering point_remainder)
                 $memberPoints = $member->just_points ?? 0;
-                if ($memberPoints < $reward->points_required) {
+                $memberRemainder = $member->point_remainder ?? 0;
+                $availablePoints = $memberPoints + floor($memberRemainder);
+                
+                if ($availablePoints < $reward->points_required) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Insufficient points',
                         'data' => [
                             'required_points' => $reward->points_required,
                             'current_points' => $memberPoints,
-                            'shortage' => $reward->points_required - $memberPoints
+                            'available_points' => $availablePoints,
+                            'shortage' => $reward->points_required - $availablePoints
                         ]
                     ], 400);
                 }
@@ -2098,8 +2115,17 @@ class RewardController extends Controller
                         'is_expired' => false,
                     ]);
                     
-                    // Update member's total points
-                    $member->decrement('just_points', $reward->points_required);
+                    // Update member's total points (considering point_remainder)
+                    $pointEarningService = new \App\Services\PointEarningService();
+                    $deductResult = $pointEarningService->deductPoints($member, $reward->points_required);
+                    
+                    if (!$deductResult['success']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => $deductResult['message'],
+                        ], 400);
+                    }
                     
                     // Mark serial code as used (we can clear it or add a flag)
                     // For now, we'll just rely on the point transaction to track redemption
@@ -2333,9 +2359,11 @@ class RewardController extends Controller
                     )
                     ->distinct()
                     ->get()
-                    ->map(function ($reward) use ($memberPoints, $memberId) {
+                    ->map(function ($reward) use ($memberPoints, $memberId, $member) {
                         $pointRequired = $reward->points_required ?? 0;
-                        $canRedeem = $memberPoints >= $pointRequired;
+                        $memberRemainder = $member->point_remainder ?? 0;
+                        $availablePoints = $memberPoints + floor($memberRemainder);
+                        $canRedeem = $availablePoints >= $pointRequired;
                         
                         // Get item image
                         $itemImage = null;
