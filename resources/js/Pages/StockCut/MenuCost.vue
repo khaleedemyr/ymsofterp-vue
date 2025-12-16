@@ -46,84 +46,84 @@
       </div>
 
       <!-- Summary Cards -->
-      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
-        <div class="bg-blue-50 rounded-xl p-6 border border-blue-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-blue-100 text-blue-600">
-              <i class="fa-solid fa-utensils text-xl"></i>
+      <div v-if="summary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
+        <div class="bg-blue-50 rounded-xl p-4 md:p-6 border border-blue-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+              <i class="fa-solid fa-utensils text-lg md:text-xl"></i>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-blue-600">Total Menu</p>
-              <p class="text-2xl font-bold text-blue-900">{{ summary.total_menu }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="bg-purple-50 rounded-xl p-6 border border-purple-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-purple-100 text-purple-600">
-              <i class="fa-solid fa-sliders text-xl"></i>
-            </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-purple-600">Total Modifier</p>
-              <p class="text-2xl font-bold text-purple-900">{{ summary.total_modifier || 0 }}</p>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-blue-600 truncate">Total Menu</p>
+              <p class="text-lg md:text-2xl font-bold text-blue-900 break-words">{{ summary.total_menu }}</p>
             </div>
           </div>
         </div>
-        <div class="bg-green-50 rounded-xl p-6 border border-green-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-green-100 text-green-600">
-              <i class="fa-solid fa-coins text-xl"></i>
+        <div class="bg-purple-50 rounded-xl p-4 md:p-6 border border-purple-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-purple-100 text-purple-600 flex-shrink-0">
+              <i class="fa-solid fa-sliders text-lg md:text-xl"></i>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-green-600">Total Cost</p>
-              <p class="text-2xl font-bold text-green-900">Rp {{ formatNumber(summary.total_cost) }}</p>
-            </div>
-          </div>
-        </div>
-        <div class="bg-orange-50 rounded-xl p-6 border border-orange-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-orange-100 text-orange-600">
-              <i class="fa-solid fa-money-bill-wave text-xl"></i>
-            </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-orange-600">Total Revenue</p>
-              <p class="text-2xl font-bold text-orange-900">Rp {{ formatNumber(summary.total_revenue) }}</p>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-purple-600 truncate">Total Modifier</p>
+              <p class="text-lg md:text-2xl font-bold text-purple-900 break-words">{{ summary.total_modifier || 0 }}</p>
             </div>
           </div>
         </div>
-        <div class="bg-emerald-50 rounded-xl p-6 border border-emerald-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-emerald-100 text-emerald-600">
-              <i class="fa-solid fa-chart-line text-xl"></i>
+        <div class="bg-green-50 rounded-xl p-4 md:p-6 border border-green-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-green-100 text-green-600 flex-shrink-0">
+              <i class="fa-solid fa-coins text-lg md:text-xl"></i>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-emerald-600">Total Profit</p>
-              <p class="text-2xl font-bold text-emerald-900">Rp {{ formatNumber(summary.total_profit) }}</p>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-green-600 truncate">Total Cost</p>
+              <p class="text-sm md:text-xl lg:text-2xl font-bold text-green-900 break-words">Rp {{ formatNumber(summary.total_cost) }}</p>
             </div>
           </div>
         </div>
-        <div class="bg-indigo-50 rounded-xl p-6 border border-indigo-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-indigo-100 text-indigo-600">
-              <i class="fa-solid fa-percentage text-xl"></i>
+        <div class="bg-orange-50 rounded-xl p-4 md:p-6 border border-orange-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-orange-100 text-orange-600 flex-shrink-0">
+              <i class="fa-solid fa-money-bill-wave text-lg md:text-xl"></i>
             </div>
-            <div class="ml-4">
-              <p class="text-sm font-medium text-indigo-600">Profit Margin</p>
-              <p class="text-2xl font-bold text-indigo-900">{{ summary.total_profit_margin }}%</p>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-orange-600 truncate">Total Revenue</p>
+              <p class="text-sm md:text-xl lg:text-2xl font-bold text-orange-900 break-words">Rp {{ formatNumber(summary.total_revenue) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-emerald-50 rounded-xl p-4 md:p-6 border border-emerald-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+              <i class="fa-solid fa-chart-line text-lg md:text-xl"></i>
+            </div>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-emerald-600 truncate">Total Profit</p>
+              <p class="text-sm md:text-xl lg:text-2xl font-bold text-emerald-900 break-words">Rp {{ formatNumber(summary.total_profit) }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-indigo-50 rounded-xl p-4 md:p-6 border border-indigo-200 min-w-0">
+          <div class="flex items-center flex-wrap">
+            <div class="p-2 md:p-3 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">
+              <i class="fa-solid fa-percentage text-lg md:text-xl"></i>
+            </div>
+            <div class="ml-2 md:ml-4 min-w-0 flex-1">
+              <p class="text-xs md:text-sm font-medium text-indigo-600 truncate">Profit Margin</p>
+              <p class="text-lg md:text-2xl font-bold text-indigo-900 break-words">{{ summary.total_profit_margin }}%</p>
             </div>
           </div>
         </div>
       </div>
       
       <!-- Cost Breakdown -->
-      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div class="bg-green-50 rounded-xl p-4 border border-green-200">
-          <p class="text-sm font-medium text-green-700 mb-1">Menu Cost</p>
-          <p class="text-xl font-bold text-green-900">Rp {{ formatNumber(summary.total_menu_cost || 0) }}</p>
+      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
+        <div class="bg-green-50 rounded-xl p-4 md:p-6 border border-green-200 min-w-0">
+          <p class="text-sm md:text-base font-medium text-green-700 mb-1">Menu Cost</p>
+          <p class="text-lg md:text-xl lg:text-2xl font-bold text-green-900 break-words">Rp {{ formatNumber(summary.total_menu_cost || 0) }}</p>
         </div>
-        <div class="bg-purple-50 rounded-xl p-4 border border-purple-200">
-          <p class="text-sm font-medium text-purple-700 mb-1">Modifier Cost</p>
-          <p class="text-xl font-bold text-purple-900">Rp {{ formatNumber(summary.total_modifier_cost || 0) }}</p>
+        <div class="bg-purple-50 rounded-xl p-4 md:p-6 border border-purple-200 min-w-0">
+          <p class="text-sm md:text-base font-medium text-purple-700 mb-1">Modifier Cost</p>
+          <p class="text-lg md:text-xl lg:text-2xl font-bold text-purple-900 break-words">Rp {{ formatNumber(summary.total_modifier_cost || 0) }}</p>
         </div>
       </div>
 
