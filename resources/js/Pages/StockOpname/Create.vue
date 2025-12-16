@@ -370,8 +370,16 @@ const props = defineProps({
   user_outlet_id: [String, Number],
 });
 
+// Auto-set outlet_id if user is not superadmin
+const getInitialOutletId = () => {
+  if (props.user_outlet_id && String(props.user_outlet_id) !== '1') {
+    return String(props.user_outlet_id);
+  }
+  return props.selectedOutletId || '';
+};
+
 const form = useForm({
-  outlet_id: props.selectedOutletId || '',
+  outlet_id: getInitialOutletId(),
   warehouse_outlet_id: props.selectedWarehouseOutletId || '',
   opname_date: new Date().toISOString().split('T')[0],
   notes: '',
@@ -966,6 +974,11 @@ watch(() => form.items, () => {
   // Only autosave items if user has finished editing (debounced)
   triggerAutosave();
 }, { deep: true });
+
+// Auto-set outlet_id on mount if user is not superadmin
+if (props.user_outlet_id && String(props.user_outlet_id) !== '1') {
+  form.outlet_id = String(props.user_outlet_id);
+}
 
 // Auto load items if already selected
 if (form.outlet_id && form.warehouse_outlet_id && form.items.length === 0) {

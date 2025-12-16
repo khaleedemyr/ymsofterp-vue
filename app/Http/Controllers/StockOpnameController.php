@@ -52,6 +52,10 @@ class StockOpnameController extends Controller
         }
 
         if ($outletId) {
+            // Validate: if user is not superadmin, can only filter their own outlet
+            if ($user->id_outlet != 1 && $outletId != $user->id_outlet) {
+                $outletId = $user->id_outlet; // Force to user's outlet
+            }
             $query->where('outlet_id', $outletId);
         }
 
@@ -214,9 +218,13 @@ class StockOpnameController extends Controller
 
         $user = auth()->user();
 
-        // Validate outlet access
-        if ($user->id_outlet != 1 && $user->id_outlet != $validated['outlet_id']) {
-            return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk outlet ini.']);
+        // Validate outlet access - if user is not superadmin, force to their outlet
+        if ($user->id_outlet != 1) {
+            if ($user->id_outlet != $validated['outlet_id']) {
+                return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk outlet ini.']);
+            }
+            // Force outlet_id to user's outlet
+            $validated['outlet_id'] = $user->id_outlet;
         }
 
         try {
@@ -605,9 +613,13 @@ class StockOpnameController extends Controller
             'approvers.*' => 'integer|exists:users,id',
         ]);
 
-        // Validate outlet access
-        if ($user->id_outlet != 1 && $user->id_outlet != $validated['outlet_id']) {
-            return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk outlet ini.']);
+        // Validate outlet access - if user is not superadmin, force to their outlet
+        if ($user->id_outlet != 1) {
+            if ($user->id_outlet != $validated['outlet_id']) {
+                return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk outlet ini.']);
+            }
+            // Force outlet_id to user's outlet
+            $validated['outlet_id'] = $user->id_outlet;
         }
 
         try {
