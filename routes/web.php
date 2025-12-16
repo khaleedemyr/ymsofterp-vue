@@ -1051,6 +1051,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Laporan Stok Akhir Outlet
 Route::get('/outlet-inventory/stock-position', [\App\Http\Controllers\OutletInventoryReportController::class, 'stockPosition'])->name('outlet-inventory.stock-position');
+Route::get('/outlet-inventory/stock-position/export', [\App\Http\Controllers\OutletInventoryReportController::class, 'exportStockPosition'])->name('outlet-inventory.stock-position.export');
 
 // Saldo Awal Stok Outlet
 Route::get('/outlet-stock-balances', [\App\Http\Controllers\OutletStockBalanceController::class, 'index'])->name('outlet-stock-balances.index');

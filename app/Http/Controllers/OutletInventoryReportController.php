@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Exports\OutletStockPositionExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class OutletInventoryReportController extends Controller
 {
@@ -136,6 +138,27 @@ class OutletInventoryReportController extends Controller
             'user_outlet_id' => $user->id_outlet ?? null,
             'error' => null
         ]);
+    }
+
+    // Export Stock Position to Excel
+    public function exportStockPosition(Request $request)
+    {
+        $user = auth()->user();
+        $outletId = $request->input('outlet_id');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        
+        // Validasi akses outlet - user hanya bisa mengakses outlet mereka sendiri, kecuali superuser
+        if ($user->id_outlet != 1 && $outletId && $user->id_outlet != $outletId) {
+            return redirect()->back()->with('error', 'Anda tidak memiliki akses untuk outlet ini.');
+        }
+        
+        $timestamp = now()->format('Y-m-d_H-i-s');
+        $filename = "laporan_stok_akhir_outlet_{$timestamp}.xlsx";
+        
+        return Excel::download(
+            new OutletStockPositionExport($outletId, $warehouseOutletId), 
+            $filename
+        );
     }
 
     public function stockCard(Request $request)

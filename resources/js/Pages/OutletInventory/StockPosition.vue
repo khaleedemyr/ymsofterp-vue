@@ -30,6 +30,11 @@
           <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
           Load Data
         </button>
+        <button @click="exportToExcel" :disabled="exporting || !hasAnySelection || stocks.length === 0" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+          <span v-if="exporting" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+          <span v-else class="mr-2"><i class="fas fa-file-excel"></i></span>
+          {{ exporting ? 'Exporting...' : 'Export Excel' }}
+        </button>
       </div>
       <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
         {{ props.error }}
@@ -208,6 +213,7 @@ const page = ref(1);
 const selectedOutlet = ref('');
 const selectedWarehouseOutlet = ref('');
 const loadingReload = ref(false);
+const exporting = ref(false);
 
 // Check if user has made any selection
 const hasAnySelection = computed(() => {
@@ -500,5 +506,45 @@ function reloadData() {
       console.error('Error loading data:', errors)
     }
   })
+}
+
+function exportToExcel() {
+  // Validasi: harus ada minimal satu filter yang dipilih
+  if (!hasAnySelection.value) {
+    alert('Silakan pilih minimal satu filter terlebih dahulu!');
+    return;
+  }
+  
+  // Validasi: harus ada data untuk di-export
+  if (props.stocks.length === 0) {
+    alert('Tidak ada data untuk di-export. Silakan load data terlebih dahulu!');
+    return;
+  }
+  
+  exporting.value = true;
+  
+  // Prepare parameters
+  const params = new URLSearchParams({
+    outlet_id: selectedOutlet.value || '',
+    warehouse_outlet_id: selectedWarehouseOutlet.value || ''
+  });
+  
+  // Remove empty parameters
+  if (!selectedOutlet.value) params.delete('outlet_id');
+  if (!selectedWarehouseOutlet.value) params.delete('warehouse_outlet_id');
+  
+  // Create download link
+  const url = `/outlet-inventory/stock-position/export?${params.toString()}`;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = '';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Reset exporting state after a delay
+  setTimeout(() => {
+    exporting.value = false;
+  }, 2000);
 }
 </script> 
