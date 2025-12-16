@@ -21,7 +21,8 @@ class ApprovalController extends Controller
     {
         $user = auth()->user();
         $userId = auth()->id();
-        $limit = $request->get('limit', 10);
+        // Remove limit - show all pending approvals
+        $limit = $request->get('limit', null); // null = no limit
         
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
@@ -108,7 +109,12 @@ class ApprovalController extends Controller
             ->get();
         
         // Combine and format
-        $allApprovals = $filteredApprovals->merge($oldApprovals)->take($limit);
+        // Remove limit - show all pending approvals
+        if ($limit !== null) {
+            $allApprovals = $filteredApprovals->merge($oldApprovals)->take($limit);
+        } else {
+            $allApprovals = $filteredApprovals->merge($oldApprovals);
+        }
         
         $formattedApprovals = $allApprovals->map(function($approval) {
             // Get approver name - for new flow, get from approval flows; for old flow, get from approver_id
@@ -440,12 +446,13 @@ class ApprovalController extends Controller
                     ]);
                 }
                 
-                // Update absent request status to supervisor_approved (still in approval process)
+                // Update absent request status - tetap 'pending' jika masih ada supervisor yang pending
+                // Status 'supervisor_approved' hanya digunakan ketika SEMUA supervisor sudah approve
                 // Note: approved_by diisi dengan approver terakhir yang approve (current approver)
                 DB::table('absent_requests')
                     ->where('id', $absentRequest->id)
                     ->update([
-                        'status' => 'supervisor_approved',
+                        'status' => 'pending', // Tetap 'pending' sampai semua supervisor approve
                         'approved_by' => $userId, // Set approved_by to current approver
                         'approved_at' => now(), // Set approved_at timestamp
                         'updated_at' => now()
@@ -694,7 +701,8 @@ class ApprovalController extends Controller
         }
         
         $userId = $user->id;
-        $limit = $request->get('limit', 10);
+        // Remove limit - show all pending HRD approvals
+        $limit = $request->get('limit', null); // null = no limit
         
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user->id_role === '5af56935b011a';
@@ -737,9 +745,14 @@ class ApprovalController extends Controller
                 'leave_types.name as leave_type_name',
                 'leave_types.id as leave_type_id'
             ])
-            ->orderBy('approval_requests.created_at', 'desc')
-            ->limit($limit)
-            ->get();
+            ->orderBy('approval_requests.created_at', 'desc');
+        
+        // Remove limit - show all pending HRD approvals
+        if ($limit !== null) {
+            $approvals = $approvals->limit($limit);
+        }
+        
+        $approvals = $approvals->get();
             
         // Format the data to match the expected structure
         $formattedApprovals = $approvals->map(function($approval) {
