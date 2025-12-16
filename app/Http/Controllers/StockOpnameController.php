@@ -236,6 +236,25 @@ class StockOpnameController extends Controller
 
             // Create items (skip if items array is empty for autosave)
             $items = $validated['items'] ?? [];
+            
+            // For autosave, only save items that have been filled in
+            // Item is considered "filled in" if:
+            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
+            // 2. Has reason filled in
+            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
+            if ($request->has('autosave') && $request->autosave) {
+                $items = array_filter($items, function($itemData) {
+                    // Check if any physical qty field has been explicitly set (including 0)
+                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
+                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
+                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
+                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                    
+                    // Item is filled if any qty field is set OR reason is filled
+                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
+                });
+            }
+            
             foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('outlet_food_inventory_stocks')
@@ -349,7 +368,9 @@ class StockOpnameController extends Controller
             'warehouseOutlet',
             'creator',
             'items.inventoryItem.item',
-            'approvalFlows.approver'
+            'items.inventoryItem.item.category',
+            'approvalFlows.approver',
+            'approvalFlows.approver.jabatan'
         ])->findOrFail($id);
 
         $user = auth()->user();
@@ -377,9 +398,9 @@ class StockOpnameController extends Controller
 
         // Get users for approver selection
         $usersQuery = DB::table('users')
-            ->leftJoin('jabatan', 'users.id_jabatan', '=', 'jabatan.id')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
             ->where('users.status', 'active')
-            ->select('users.id', 'users.nama_lengkap', 'jabatan.nama_jabatan')
+            ->select('users.id', 'users.nama_lengkap', 'tbl_data_jabatan.nama_jabatan')
             ->orderBy('users.nama_lengkap');
 
         // Filter by outlet if user is not superadmin
@@ -397,7 +418,7 @@ class StockOpnameController extends Controller
 
         // Get approvers for display
         $approvers = $stockOpname->approvalFlows()
-            ->with('approver:id,nama_lengkap,email,id_jabatan')
+            ->with(['approver:id,nama_lengkap,email,id_jabatan', 'approver.jabatan:id_jabatan,nama_jabatan'])
             ->orderBy('approval_level')
             ->get()
             ->map(function($flow) {
@@ -405,7 +426,7 @@ class StockOpnameController extends Controller
                     'id' => $flow->approver_id,
                     'name' => $flow->approver->nama_lengkap ?? '',
                     'email' => $flow->approver->email ?? '',
-                    'jabatan' => $flow->approver->jabatan->nama_jabatan ?? '',
+                    'jabatan' => ($flow->approver && $flow->approver->jabatan) ? $flow->approver->jabatan->nama_jabatan : '',
                 ];
             });
 
@@ -572,6 +593,25 @@ class StockOpnameController extends Controller
 
             // Create new items (skip if items array is empty for autosave)
             $items = $validated['items'] ?? [];
+            
+            // For autosave, only save items that have been filled in
+            // Item is considered "filled in" if:
+            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
+            // 2. Has reason filled in
+            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
+            if ($request->has('autosave') && $request->autosave) {
+                $items = array_filter($items, function($itemData) {
+                    // Check if any physical qty field has been explicitly set (including 0)
+                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
+                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
+                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
+                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                    
+                    // Item is filled if any qty field is set OR reason is filled
+                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
+                });
+            }
+            
             foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('outlet_food_inventory_stocks')
@@ -928,81 +968,86 @@ class StockOpnameController extends Controller
                 $valueAdjustment = $item->value_adjustment;
                 $newValue = $stock->value + $valueAdjustment;
 
-                // Update stock
-                DB::table('outlet_food_inventory_stocks')
-                    ->where('id', $stock->id)
-                    ->update([
-                        'qty_small' => $newQtySmall,
-                        'qty_medium' => $newQtyMedium,
-                        'qty_large' => $newQtyLarge,
-                        'value' => $newValue,
-                        // MAC tidak berubah (sesuai rekomendasi)
-                        'updated_at' => now(),
-                    ]);
+                // ============================================
+                // DISABLED: Update inventory tables
+                // Commented out temporarily - no insert/update to inventory
+                // ============================================
+                
+                // // Update stock
+                // DB::table('outlet_food_inventory_stocks')
+                //     ->where('id', $stock->id)
+                //     ->update([
+                //         'qty_small' => $newQtySmall,
+                //         'qty_medium' => $newQtyMedium,
+                //         'qty_large' => $newQtyLarge,
+                //         'value' => $newValue,
+                //         // MAC tidak berubah (sesuai rekomendasi)
+                //         'updated_at' => now(),
+                //     ]);
 
-                // Get last card for saldo calculation
-                $lastCard = DB::table('outlet_food_inventory_cards')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->first();
+                // // Get last card for saldo calculation
+                // $lastCard = DB::table('outlet_food_inventory_cards')
+                //     ->where('inventory_item_id', $inventoryItemId)
+                //     ->where('id_outlet', $outletId)
+                //     ->where('warehouse_outlet_id', $warehouseOutletId)
+                //     ->orderByDesc('date')
+                //     ->orderByDesc('id')
+                //     ->first();
 
-                // Calculate new saldo
-                if ($lastCard) {
-                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
-                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
-                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
-                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
-                } else {
-                    $saldoQtySmall = $newQtySmall;
-                    $saldoQtyMedium = $newQtyMedium;
-                    $saldoQtyLarge = $newQtyLarge;
-                    $saldoValue = $newValue;
-                }
+                // // Calculate new saldo
+                // if ($lastCard) {
+                //     $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
+                //     $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
+                //     $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
+                //     $saldoValue = $lastCard->saldo_value + $valueAdjustment;
+                // } else {
+                //     $saldoQtySmall = $newQtySmall;
+                //     $saldoQtyMedium = $newQtyMedium;
+                //     $saldoQtyLarge = $newQtyLarge;
+                //     $saldoValue = $newValue;
+                // }
 
-                // Insert stock card
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'id_outlet' => $outletId,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date,
-                    'reference_type' => 'stock_opname',
-                    'reference_id' => $stockOpname->id,
-                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
-                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
-                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
-                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
-                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                    'cost_per_small' => $mac,
-                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                    'cost_per_large' => $stock->last_cost_large ?? 0,
-                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
-                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                    'saldo_qty_small' => $saldoQtySmall,
-                    'saldo_qty_medium' => $saldoQtyMedium,
-                    'saldo_qty_large' => $saldoQtyLarge,
-                    'saldo_value' => $saldoValue,
-                    'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                // // Insert stock card
+                // DB::table('outlet_food_inventory_cards')->insert([
+                //     'inventory_item_id' => $inventoryItemId,
+                //     'id_outlet' => $outletId,
+                //     'warehouse_outlet_id' => $warehouseOutletId,
+                //     'date' => $stockOpname->opname_date,
+                //     'reference_type' => 'stock_opname',
+                //     'reference_id' => $stockOpname->id,
+                //     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+                //     'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+                //     'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                //     'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+                //     'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+                //     'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                //     'cost_per_small' => $mac,
+                //     'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                //     'cost_per_large' => $stock->last_cost_large ?? 0,
+                //     'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+                //     'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                //     'saldo_qty_small' => $saldoQtySmall,
+                //     'saldo_qty_medium' => $saldoQtyMedium,
+                //     'saldo_qty_large' => $saldoQtyLarge,
+                //     'saldo_value' => $saldoValue,
+                //     'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
+                //     'created_at' => now(),
+                //     'updated_at' => now(),
+                // ]);
 
-                // Update cost history if MAC changed (though in our case MAC doesn't change)
-                // But we still record it for audit trail
-                DB::table('outlet_food_inventory_cost_histories')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'id_outlet' => $outletId,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date,
-                    'old_cost' => $mac,
-                    'new_cost' => $mac, // MAC tidak berubah
-                    'mac' => $mac,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                // // Update cost history if MAC changed (though in our case MAC doesn't change)
+                // // But we still record it for audit trail
+                // DB::table('outlet_food_inventory_cost_histories')->insert([
+                //     'inventory_item_id' => $inventoryItemId,
+                //     'id_outlet' => $outletId,
+                //     'warehouse_outlet_id' => $warehouseOutletId,
+                //     'date' => $stockOpname->opname_date,
+                //     'old_cost' => $mac,
+                //     'new_cost' => $mac, // MAC tidak berubah
+                //     'mac' => $mac,
+                //     'created_at' => now(),
+                //     'updated_at' => now(),
+                // ]);
             }
 
             // Update status to completed
@@ -1011,7 +1056,7 @@ class StockOpnameController extends Controller
             DB::commit();
 
             return redirect()->route('stock-opnames.show', $stockOpname->id)
-                           ->with('success', 'Stock opname berhasil di-process! Inventory telah di-update.');
+                           ->with('success', 'Stock opname berhasil di-process! (Inventory update disabled)');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Gagal process stock opname: ' . $e->getMessage()]);

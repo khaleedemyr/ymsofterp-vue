@@ -166,12 +166,17 @@ class WarehouseStockOpnameController extends Controller
      */
     public function store(Request $request)
     {
+        // For autosave, allow empty items array
+        $itemsRule = $request->has('autosave') && $request->autosave 
+            ? 'nullable|array' 
+            : 'required|array|min:1';
+            
         $validated = $request->validate([
             'warehouse_id' => 'required|integer',
             'warehouse_division_id' => 'nullable|integer',
             'opname_date' => 'required|date',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => $itemsRule,
             'items.*.inventory_item_id' => 'required|integer',
             'items.*.qty_physical_small' => 'nullable|numeric|min:0',
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
@@ -198,8 +203,9 @@ class WarehouseStockOpnameController extends Controller
                 'created_by' => $user->id,
             ]);
 
-            // Create items
-            foreach ($validated['items'] as $itemData) {
+            // Create items (skip if items array is empty for autosave)
+            $items = $validated['items'] ?? [];
+            foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('food_inventory_stocks')
                     ->where('inventory_item_id', $itemData['inventory_item_id'])
@@ -249,10 +255,28 @@ class WarehouseStockOpnameController extends Controller
 
             DB::commit();
 
+            // If autosave request, return JSON
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => true,
+                    'id' => $stockOpname->id,
+                    'message' => 'Draft tersimpan'
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Warehouse Stock Opname berhasil dibuat!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // If autosave request, return JSON error
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan draft: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal membuat stock opname: ' . $e->getMessage()]);
         }
     }
@@ -412,12 +436,17 @@ class WarehouseStockOpnameController extends Controller
             return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika status adalah DRAFT.']);
         }
 
+        // For autosave, allow empty items array
+        $itemsRule = $request->has('autosave') && $request->autosave 
+            ? 'nullable|array' 
+            : 'required|array|min:1';
+            
         $validated = $request->validate([
             'warehouse_id' => 'required|integer',
             'warehouse_division_id' => 'nullable|integer',
             'opname_date' => 'required|date',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => $itemsRule,
             'items.*.inventory_item_id' => 'required|integer',
             'items.*.qty_physical_small' => 'nullable|numeric|min:0',
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
@@ -439,8 +468,9 @@ class WarehouseStockOpnameController extends Controller
             // Delete existing items
             $stockOpname->items()->delete();
 
-            // Create new items
-            foreach ($validated['items'] as $itemData) {
+            // Create new items (skip if items array is empty for autosave)
+            $items = $validated['items'] ?? [];
+            foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('food_inventory_stocks')
                     ->where('inventory_item_id', $itemData['inventory_item_id'])
@@ -490,10 +520,28 @@ class WarehouseStockOpnameController extends Controller
 
             DB::commit();
 
+            // If autosave request, return JSON
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => true,
+                    'id' => $stockOpname->id,
+                    'message' => 'Draft tersimpan'
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Warehouse Stock Opname berhasil di-update!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // If autosave request, return JSON error
+            if ($request->has('autosave') && $request->autosave) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan draft: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal update stock opname: ' . $e->getMessage()]);
         }
     }
@@ -694,77 +742,82 @@ class WarehouseStockOpnameController extends Controller
                 $valueAdjustment = $item->value_adjustment;
                 $newValue = $stock->value + $valueAdjustment;
 
-                // Update stock
-                DB::table('food_inventory_stocks')
-                    ->where('id', $stock->id)
-                    ->update([
-                        'qty_small' => $newQtySmall,
-                        'qty_medium' => $newQtyMedium,
-                        'qty_large' => $newQtyLarge,
-                        'value' => $newValue,
-                        // MAC tidak berubah (sesuai rekomendasi)
-                        'updated_at' => now(),
-                    ]);
+                // ============================================
+                // DISABLED: Update inventory tables
+                // Commented out temporarily - no insert/update to inventory
+                // ============================================
+                
+                // // Update stock
+                // DB::table('food_inventory_stocks')
+                //     ->where('id', $stock->id)
+                //     ->update([
+                //         'qty_small' => $newQtySmall,
+                //         'qty_medium' => $newQtyMedium,
+                //         'qty_large' => $newQtyLarge,
+                //         'value' => $newValue,
+                //         // MAC tidak berubah (sesuai rekomendasi)
+                //         'updated_at' => now(),
+                //     ]);
 
-                // Get last card for saldo calculation
-                $lastCard = DB::table('food_inventory_cards')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('warehouse_id', $warehouseId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->first();
+                // // Get last card for saldo calculation
+                // $lastCard = DB::table('food_inventory_cards')
+                //     ->where('inventory_item_id', $inventoryItemId)
+                //     ->where('warehouse_id', $warehouseId)
+                //     ->orderByDesc('date')
+                //     ->orderByDesc('id')
+                //     ->first();
 
-                // Calculate new saldo
-                if ($lastCard) {
-                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
-                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
-                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
-                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
-                } else {
-                    $saldoQtySmall = $newQtySmall;
-                    $saldoQtyMedium = $newQtyMedium;
-                    $saldoQtyLarge = $newQtyLarge;
-                    $saldoValue = $newValue;
-                }
+                // // Calculate new saldo
+                // if ($lastCard) {
+                //     $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
+                //     $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
+                //     $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
+                //     $saldoValue = $lastCard->saldo_value + $valueAdjustment;
+                // } else {
+                //     $saldoQtySmall = $newQtySmall;
+                //     $saldoQtyMedium = $newQtyMedium;
+                //     $saldoQtyLarge = $newQtyLarge;
+                //     $saldoValue = $newValue;
+                // }
 
-                // Insert stock card
-                DB::table('food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
-                    'reference_type' => 'warehouse_stock_opname',
-                    'reference_id' => $stockOpname->id,
-                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
-                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
-                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
-                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
-                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                    'cost_per_small' => $mac,
-                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                    'cost_per_large' => $stock->last_cost_large ?? 0,
-                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
-                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                    'saldo_qty_small' => $saldoQtySmall,
-                    'saldo_qty_medium' => $saldoQtyMedium,
-                    'saldo_qty_large' => $saldoQtyLarge,
-                    'saldo_value' => $saldoValue,
-                    'description' => 'Warehouse Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                // // Insert stock card
+                // DB::table('food_inventory_cards')->insert([
+                //     'inventory_item_id' => $inventoryItemId,
+                //     'warehouse_id' => $warehouseId,
+                //     'date' => $stockOpname->opname_date,
+                //     'reference_type' => 'warehouse_stock_opname',
+                //     'reference_id' => $stockOpname->id,
+                //     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+                //     'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+                //     'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                //     'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+                //     'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+                //     'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                //     'cost_per_small' => $mac,
+                //     'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                //     'cost_per_large' => $stock->last_cost_large ?? 0,
+                //     'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+                //     'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                //     'saldo_qty_small' => $saldoQtySmall,
+                //     'saldo_qty_medium' => $saldoQtyMedium,
+                //     'saldo_qty_large' => $saldoQtyLarge,
+                //     'saldo_value' => $saldoValue,
+                //     'description' => 'Warehouse Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
+                //     'created_at' => now(),
+                //     'updated_at' => now(),
+                // ]);
 
-                // Update cost history
-                DB::table('food_inventory_cost_histories')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
-                    'old_cost' => $mac,
-                    'new_cost' => $mac, // MAC tidak berubah
-                    'mac' => $mac,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                // // Update cost history
+                // DB::table('food_inventory_cost_histories')->insert([
+                //     'inventory_item_id' => $inventoryItemId,
+                //     'warehouse_id' => $warehouseId,
+                //     'date' => $stockOpname->opname_date,
+                //     'old_cost' => $mac,
+                //     'new_cost' => $mac, // MAC tidak berubah
+                //     'mac' => $mac,
+                //     'created_at' => now(),
+                //     'updated_at' => now(),
+                // ]);
             }
 
             // Update status to completed
@@ -773,7 +826,7 @@ class WarehouseStockOpnameController extends Controller
             DB::commit();
 
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
-                           ->with('success', 'Stock opname berhasil di-process! Inventory telah di-update.');
+                           ->with('success', 'Stock opname berhasil di-process! (Inventory update disabled)');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Gagal process stock opname: ' . $e->getMessage()]);
