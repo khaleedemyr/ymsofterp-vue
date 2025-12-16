@@ -572,6 +572,9 @@ Route::prefix('mobile/member')->group(function () {
     Route::get('/benefits', [\App\Http\Controllers\Mobile\Member\BenefitsController::class, 'index'])->name('api.mobile.member.benefits.index');
     Route::get('/contact-us', [\App\Http\Controllers\Mobile\Member\ContactUsController::class, 'index'])->name('api.mobile.member.contact-us.index');
     
+    // App version check (no auth required)
+    Route::post('/app/check-version', [\App\Http\Controllers\Mobile\Member\AppVersionController::class, 'checkVersion'])->name('api.mobile.member.app.check-version');
+    
     // Auth routes (no auth required)
     Route::get('/auth/member-data', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getMemberData'])->name('api.mobile.member.auth.member-data');
     Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register');
