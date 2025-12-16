@@ -308,7 +308,8 @@ class PosOrderController extends Controller
                             
                             // Save member (to update point_remainder, and just_points if pointsEarned > 0)
                             $member->save();
-                                
+                            
+                            if ($pointsEarned > 0) {
                                 Log::info('Points earned for member', [
                                     'member_id' => $member->id,
                                     'points_earned' => $pointsEarned,
@@ -318,8 +319,8 @@ class PosOrderController extends Controller
                                     'calculated_points' => $calculatedPoints,
                                     'remainder' => $remainder,
                                     'point_remainder_after' => $totalRemainder,
-                                    'transaction_id' => $pointTransaction->id,
-                                    'expires_at' => $expiresAt->toDateString()
+                                    'transaction_id' => $pointTransaction->id ?? null,
+                                    'expires_at' => $expiresAt->toDateString() ?? null
                                 ]);
                                 
                                 // Dispatch event for push notification
