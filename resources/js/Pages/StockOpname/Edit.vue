@@ -268,7 +268,7 @@
                         <input
                           v-model.number="item.qty_physical_small"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'small')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -282,7 +282,7 @@
                         <input
                           v-model.number="item.qty_physical_medium"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'medium')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -296,7 +296,7 @@
                         <input
                           v-model.number="item.qty_physical_large"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'large')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
