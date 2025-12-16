@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Carbon\Carbon;
+use App\Exports\OutletStockReportExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class OutletStockReportController extends Controller
 {
@@ -982,6 +984,26 @@ class OutletStockReportController extends Controller
                 'page' => $page,
             ]
         ]);
+    }
+
+    public function export(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $bulan = $request->input('bulan', date('Y-m'));
+        $search = $request->input('search', '');
+
+        if (!$outletId || !$warehouseOutletId || !$bulan) {
+            return redirect()->back()->with('error', 'Outlet, warehouse outlet, dan bulan harus diisi untuk export.');
+        }
+
+        $timestamp = now()->format('Y-m-d_H-i-s');
+        $filename = "outlet_stock_report_{$timestamp}.xlsx";
+
+        return Excel::download(
+            new OutletStockReportExport($outletId, $warehouseOutletId, $bulan, $search),
+            $filename
+        );
     }
 }
 

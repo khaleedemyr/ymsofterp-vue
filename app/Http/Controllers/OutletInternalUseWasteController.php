@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Services\NotificationService;
+use Maatwebsite\Excel\Facades\Excel;
 
 class OutletInternalUseWasteController extends Controller
 {
@@ -1932,6 +1933,55 @@ class OutletInternalUseWasteController extends Controller
             'total_per_type' => $totalPerType,
             'user_outlet_id' => $user->id_outlet,
         ]);
+    }
+
+    /**
+     * Export Category Cost Outlet Report to Excel
+     */
+    public function exportReportUniversal(Request $request)
+    {
+        $user = auth()->user();
+        $type = $request->input('type');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $outletId = $request->input('outlet_id');
+        $from = $request->input('from');
+        $to = $request->input('to');
+        
+        // Validasi tanggal wajib
+        if (!$from || !$to) {
+            return redirect()->route('outlet-internal-use-waste.report-universal')
+                ->with('error', 'Filter tanggal (Dari dan Sampai) wajib diisi untuk export.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+        
+        // Validasi: Maksimal range 3 bulan
+        $fromDate = \Carbon\Carbon::parse($from);
+        $toDate = \Carbon\Carbon::parse($to);
+        $diffMonths = $fromDate->diffInMonths($toDate);
+        
+        if ($diffMonths > 3) {
+            return redirect()->route('outlet-internal-use-waste.report-universal')
+                ->with('error', 'Range tanggal maksimal 3 bulan. Silakan pilih range yang lebih kecil.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+        
+        // Validasi outlet: jika user bukan admin, gunakan outlet user
+        if ($user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+        }
+        
+        $export = new \App\Exports\CategoryCostOutletExport(
+            $type,
+            $warehouseOutletId,
+            $outletId,
+            $from,
+            $to,
+            $user->id_outlet
+        );
+        
+        $fileName = 'Category_Cost_Outlet_' . $from . '_' . $to . '.xlsx';
+        
+        return Excel::download($export, $fileName);
     }
 
     /**

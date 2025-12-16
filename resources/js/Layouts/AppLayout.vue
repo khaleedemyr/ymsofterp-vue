@@ -299,6 +299,12 @@ const menuGroups = [
                 code: 'outlet_stock_report',
             },
             {
+                name: () => 'Report RnD, BM, WM',
+                icon: 'fa-solid fa-chart-line',
+                route: '/internal-use-waste-report',
+                code: 'internal_use_waste_report',
+            },
+            {
                 name: () => 'Report Penjualan per Category',
                 icon: 'fa-solid fa-table-list',
                 route: '/report-sales-per-category',

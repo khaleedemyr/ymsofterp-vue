@@ -44,7 +44,16 @@
               class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div class="flex items-end">
+          <div class="flex items-end gap-2">
+            <button 
+              @click="exportToExcel" 
+              :disabled="loading || exporting || !canExport"
+              class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i v-if="exporting" class="fa-solid fa-spinner fa-spin mr-1"></i>
+              <i v-else class="fa-solid fa-file-excel mr-1"></i> 
+              {{ exporting ? 'Exporting...' : 'Export Excel' }}
+            </button>
             <button 
               @click="loadReport" 
               :disabled="loading"
@@ -478,11 +487,16 @@ const reportData = ref(props.reportData || []);
 const reportDataGrouped = ref(props.reportDataGrouped || {});
 const pagination = ref(props.pagination);
 const loading = ref(false);
+const exporting = ref(false);
 const expandedCategories = ref([]);
 const searchTimeout = ref(null);
 const grandTotalLastStockMac = ref(props.grandTotalLastStockMac || 0);
 const grandTotalStockOpnameMac = ref(props.grandTotalStockOpnameMac || 0);
 const grandTotalDifferenceMac = ref(props.grandTotalDifferenceMac || 0);
+
+const canExport = computed(() => {
+  return filters.value.outlet_id && filters.value.warehouse_outlet_id && filters.value.bulan;
+});
 
 // Watch for changes in props
 watch(() => props.warehouseOutlets, (newVal) => {
@@ -602,17 +616,35 @@ const toggleCategory = (categoryName) => {
 
 const getItemNumber = (categoryName, index) => {
   // Calculate item number based on category position and item index
-  let itemNumber = index + 1;
-  const categories = Object.keys(reportDataGrouped.value);
-  const categoryIndex = categories.indexOf(categoryName);
-  
-  for (let i = 0; i < categoryIndex; i++) {
-    if (expandedCategories.value.includes(categories[i])) {
-      itemNumber += reportDataGrouped.value[categories[i]].length;
+  try {
+    let itemNumber = index + 1;
+    const categories = Object.keys(reportDataGrouped.value || {});
+    const categoryIndex = categories.indexOf(categoryName);
+    
+    if (categoryIndex === -1) {
+      return index + 1;
     }
+    
+    for (let i = 0; i < categoryIndex; i++) {
+      const prevCategory = categories[i];
+      const prevCategoryData = reportDataGrouped.value[prevCategory];
+      
+      if (prevCategoryData) {
+        // Check if it's the new structure with 'items' key
+        if (prevCategoryData.items && Array.isArray(prevCategoryData.items)) {
+          itemNumber += prevCategoryData.items.length;
+        } 
+        // Check if it's the old structure (direct array)
+        else if (Array.isArray(prevCategoryData)) {
+          itemNumber += prevCategoryData.length;
+        }
+      }
+    }
+    
+    return itemNumber;
+  } catch (error) {
+    return index + 1;
   }
-  
-  return itemNumber;
 };
 
 const formatNumber = (value) => {
@@ -696,6 +728,27 @@ const getCategorySubtotalDifferenceMac = (categoryName) => {
 const filteredReportDataGrouped = computed(() => {
   return reportDataGrouped.value;
 });
+
+const exportToExcel = () => {
+  if (!canExport.value) {
+    return;
+  }
+  
+  exporting.value = true;
+  const params = new URLSearchParams({
+    outlet_id: filters.value.outlet_id,
+    warehouse_outlet_id: filters.value.warehouse_outlet_id,
+    bulan: filters.value.bulan,
+    search: filters.value.search || '',
+  });
+  
+  window.location.href = '/outlet-stock-report/export?' + params.toString();
+  
+  // Reset exporting after a delay (in case download doesn't trigger)
+  setTimeout(() => {
+    exporting.value = false;
+  }, 2000);
+};
 
 onMounted(() => {
   // Initialize filters from props

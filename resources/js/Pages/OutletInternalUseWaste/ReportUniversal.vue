@@ -63,7 +63,16 @@
             </select>
           </div>
         </div>
-        <div class="mt-4 flex justify-end">
+        <div class="mt-4 flex justify-end gap-2">
+          <button 
+            @click="exportToExcel"
+            :disabled="!from || !to || loadingData || exporting || !props.data || props.data.length === 0"
+            class="px-6 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <i v-if="exporting" class="fa fa-spinner fa-spin"></i>
+            <i v-else class="fa fa-file-excel"></i>
+            <span>{{ exporting ? 'Exporting...' : 'Export Excel' }}</span>
+          </button>
           <button 
             @click="applyFilters"
             :disabled="!from || !to || loadingData"
@@ -271,6 +280,7 @@ const expanded = ref({});
 const details = ref({});
 const loadingDetail = ref({});
 const loadingData = ref(false);
+const exporting = ref(false);
 
 // Watch for outlet changes to filter warehouse outlets
 watch(selectedOutlet, async (newOutletId, oldOutletId) => {
@@ -344,6 +354,49 @@ function typeLabel(type) {
 }
 function goBack() {
   router.visit(route('outlet-internal-use-waste.index'));
+}
+
+function exportToExcel() {
+  if (!from.value || !to.value) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Filter Wajib',
+      text: 'Filter tanggal (Dari dan Sampai) wajib diisi untuk export.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    });
+    return;
+  }
+  
+  if (!props.data || props.data.length === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Ada Data',
+      text: 'Tidak ada data untuk diekspor. Silakan load data terlebih dahulu.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    });
+    return;
+  }
+  
+  exporting.value = true;
+  
+  // Build query parameters
+  const params = new URLSearchParams({
+    type: selectedType.value || '',
+    warehouse_outlet_id: selectedWarehouse.value || '',
+    outlet_id: isSuperuser.value ? (selectedOutlet.value || '') : selectedOutlet.value,
+    from: from.value,
+    to: to.value
+  });
+  
+  // Trigger download
+  window.location.href = route('outlet-internal-use-waste.report-universal.export') + '?' + params.toString();
+  
+  // Reset exporting state after a delay
+  setTimeout(() => {
+    exporting.value = false;
+  }, 2000);
 }
 
 function toggleExpand(id) {
