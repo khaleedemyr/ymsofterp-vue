@@ -1860,16 +1860,28 @@ class StockCutController extends Controller
                 ->first();
             
             $categoryName = 'Tanpa Kategori';
-            if ($modifierOption && $modifierOption->modifier_id) {
-                $modifierGroup = DB::table('modifiers')
-                    ->where('id', $modifierOption->modifier_id)
-                    ->first();
-                
-                if ($modifierGroup && $modifierGroup->category_id) {
-                    $category = DB::table('categories')
-                        ->where('id', $modifierGroup->category_id)
+            if ($modifierOption && isset($modifierOption->modifier_id) && $modifierOption->modifier_id) {
+                try {
+                    $modifierGroup = DB::table('modifiers')
+                        ->where('id', $modifierOption->modifier_id)
                         ->first();
-                    $categoryName = $category ? $category->name : 'Tanpa Kategori';
+                    
+                    if ($modifierGroup) {
+                        // Cek apakah category_id ada di table modifiers dengan cara yang aman
+                        $modifierGroupArray = (array) $modifierGroup;
+                        if (isset($modifierGroupArray['category_id']) && $modifierGroupArray['category_id']) {
+                            $category = DB::table('categories')
+                                ->where('id', $modifierGroupArray['category_id'])
+                                ->first();
+                            $categoryName = $category ? $category->name : 'Tanpa Kategori';
+                        } elseif (isset($modifierGroupArray['name'])) {
+                            // Jika modifier group ada tapi tidak punya category_id, gunakan nama modifier group sebagai category
+                            $categoryName = $modifierGroupArray['name'];
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // Jika ada error, tetap gunakan 'Tanpa Kategori'
+                    $categoryName = 'Tanpa Kategori';
                 }
             }
             
