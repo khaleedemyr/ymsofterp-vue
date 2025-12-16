@@ -240,14 +240,15 @@ class PosOrderController extends Controller
                             // Silver: 1 point per Rp 10,000
                             // Loyal: 1.5 points per Rp 10,000
                             // Elite: 2 points per Rp 10,000
-                            $earningRate = 0.0001; // Default: 1 point per Rp 10,000
+                            $earningRate = 1.00; // Default: 1 point per Rp 10,000
                             if ($tier === 'loyal') {
-                                $earningRate = 0.00015; // 1.5 points per Rp 10,000
+                                $earningRate = 1.50; // 1.5 points per Rp 10,000
                             } elseif ($tier === 'elite') {
-                                $earningRate = 0.0002; // 2 points per Rp 10,000
+                                $earningRate = 2.00; // 2 points per Rp 10,000
                             }
                             
-                            $pointsEarned = floor($grandTotal * $earningRate);
+                            // Calculate points: (transaction_amount / 10000) * earning_rate
+                            $pointsEarned = floor(($grandTotal / 10000) * $earningRate);
                             
                             if ($pointsEarned > 0) {
                                 // Add points to member
