@@ -7,7 +7,9 @@ use App\Models\MemberAppsMemberVoucher;
 use App\Models\MemberAppsVoucher;
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsPointTransaction;
+use App\Models\MemberAppsNotification;
 use App\Services\PointEarningService;
+use App\Services\FCMService;
 use App\Events\VoucherReceived;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -642,6 +644,122 @@ class VoucherController extends Controller
                 'outlet_code' => $outletCode
             ]);
 
+            // Send notification to member about voucher redemption
+            try {
+                // Reload with relationships
+                $memberVoucher->load(['member', 'voucher']);
+                $member = $memberVoucher->member;
+                $voucher = $memberVoucher->voucher;
+                
+                if ($member && $voucher) {
+                    // Refresh member to get latest data
+                    $member->refresh();
+                    
+                    // Skip if member has disabled notifications
+                    if ($member->allow_notification) {
+                        // Get outlet name if available
+                        $outletName = 'Outlet';
+                        if ($outletId) {
+                            $outlet = DB::table('tbl_data_outlet')
+                                ->where('id_outlet', $outletId)
+                                ->first();
+                            if ($outlet) {
+                                $outletName = $outlet->nama_outlet ?? 'Outlet';
+                            }
+                        } elseif ($outletCode) {
+                            $outlet = DB::table('tbl_data_outlet')
+                                ->where('qr_code', $outletCode)
+                                ->first();
+                            if ($outlet) {
+                                $outletName = $outlet->nama_outlet ?? 'Outlet';
+                            }
+                        }
+                        
+                        // Build notification message
+                        $title = 'Voucher Redeemed! ✅';
+                        $voucherName = $voucher->name ?? 'Voucher';
+                        if ($transactionId) {
+                            $message = "Your voucher '{$voucherName}' has been successfully redeemed at {$outletName} (Order: {$transactionId}). Thank you for your purchase!";
+                        } else {
+                            $message = "Your voucher '{$voucherName}' has been successfully redeemed at {$outletName}. Thank you for your purchase!";
+                        }
+                        
+                        $data = [
+                            'type' => 'voucher_redeemed',
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'voucher_name' => $voucherName,
+                            'member_voucher_id' => $memberVoucher->id,
+                            'voucher_code' => $memberVoucher->voucher_code ?? null,
+                            'serial_code' => $memberVoucher->serial_code ?? null,
+                            'transaction_id' => $transactionId,
+                            'outlet_id' => $outletId,
+                            'outlet_name' => $outletName,
+                            'used_at' => $memberVoucher->used_at ? $memberVoucher->used_at->format('Y-m-d H:i:s') : null,
+                            'action' => 'view_vouchers',
+                        ];
+                        
+                        \Log::info('Sending voucher redeemed notification', [
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'voucher_name' => $voucherName,
+                            'title' => $title,
+                            'message' => $message,
+                        ]);
+                        
+                        // Send push notification
+                        $fcmService = app(FCMService::class);
+                        $result = $fcmService->sendToMember(
+                            $member,
+                            $title,
+                            $message,
+                            $data
+                        );
+                        
+                        \Log::info('Voucher redeemed notification result', [
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'success_count' => $result['success_count'] ?? 0,
+                            'failed_count' => $result['failed_count'] ?? 0,
+                        ]);
+                        
+                        // Save notification to database
+                        try {
+                            MemberAppsNotification::create([
+                                'member_id' => $member->id,
+                                'type' => 'voucher_redeemed',
+                                'title' => $title,
+                                'message' => $message,
+                                'url' => '/vouchers',
+                                'data' => $data,
+                                'is_read' => false,
+                            ]);
+                            
+                            \Log::info('Voucher redeemed notification saved to database', [
+                                'member_id' => $member->id,
+                            ]);
+                        } catch (\Exception $dbError) {
+                            \Log::error('Error saving voucher redeemed notification to database', [
+                                'member_id' => $member->id,
+                                'error' => $dbError->getMessage(),
+                            ]);
+                            // Continue even if database save fails
+                        }
+                    } else {
+                        \Log::info('Skipping voucher redeemed notification - member has disabled notifications', [
+                            'member_id' => $member->id,
+                        ]);
+                    }
+                }
+            } catch (\Exception $notifError) {
+                \Log::error('Error sending voucher redeemed notification', [
+                    'error' => $notifError->getMessage(),
+                    'trace' => $notifError->getTraceAsString(),
+                    'member_voucher_id' => $memberVoucherId,
+                ]);
+                // Continue even if notification fails
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Voucher berhasil ditandai sebagai used'
@@ -704,6 +822,10 @@ class VoucherController extends Controller
                 ], 400);
             }
 
+            // Save original data before rollback (for notification)
+            $originalTransactionId = $memberVoucher->used_in_transaction_id;
+            $originalOutletId = $memberVoucher->used_in_outlet_id;
+
             // Rollback: set status back to 'active' and clear used fields
             $memberVoucher->status = 'active';
             $memberVoucher->used_at = null;
@@ -721,6 +843,118 @@ class VoucherController extends Controller
                 'used_in_transaction_id' => $memberVoucher->used_in_transaction_id,
                 'used_in_outlet_id' => $memberVoucher->used_in_outlet_id
             ]);
+
+            // Send notification to member about voucher rollback
+            try {
+                // Reload with relationships
+                $memberVoucher->load(['member', 'voucher']);
+                $member = $memberVoucher->member;
+                $voucher = $memberVoucher->voucher;
+                
+                if ($member && $voucher) {
+                    // Refresh member to get latest data
+                    $member->refresh();
+                    
+                    // Skip if member has disabled notifications
+                    if ($member->allow_notification) {
+                        // Get outlet name from original data (before rollback)
+                        $outletName = 'Outlet';
+                        $outletId = $originalOutletId;
+                        if ($outletId) {
+                            $outlet = DB::table('tbl_data_outlet')
+                                ->where('id_outlet', $outletId)
+                                ->first();
+                            if ($outlet) {
+                                $outletName = $outlet->nama_outlet ?? 'Outlet';
+                            }
+                        }
+                        
+                        // Get transaction ID from original data (before rollback)
+                        $transactionId = $originalTransactionId;
+                        
+                        // Build notification message
+                        $title = 'Voucher Restored! 🔄';
+                        $voucherName = $voucher->name ?? 'Voucher';
+                        if ($transactionId) {
+                            $message = "Your voucher '{$voucherName}' has been restored and is now available again. The transaction (Order: {$transactionId}) has been voided.";
+                        } else {
+                            $message = "Your voucher '{$voucherName}' has been restored and is now available again.";
+                        }
+                        
+                        $data = [
+                            'type' => 'voucher_restored',
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'voucher_name' => $voucherName,
+                            'member_voucher_id' => $memberVoucher->id,
+                            'voucher_code' => $memberVoucher->voucher_code ?? null,
+                            'serial_code' => $memberVoucher->serial_code ?? null,
+                            'transaction_id' => $transactionId,
+                            'outlet_id' => $outletId,
+                            'outlet_name' => $outletName,
+                            'action' => 'view_vouchers',
+                        ];
+                        
+                        \Log::info('Sending voucher restored notification', [
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'voucher_name' => $voucherName,
+                            'title' => $title,
+                            'message' => $message,
+                        ]);
+                        
+                        // Send push notification
+                        $fcmService = app(FCMService::class);
+                        $result = $fcmService->sendToMember(
+                            $member,
+                            $title,
+                            $message,
+                            $data
+                        );
+                        
+                        \Log::info('Voucher restored notification result', [
+                            'member_id' => $member->id,
+                            'voucher_id' => $voucher->id ?? null,
+                            'success_count' => $result['success_count'] ?? 0,
+                            'failed_count' => $result['failed_count'] ?? 0,
+                        ]);
+                        
+                        // Save notification to database
+                        try {
+                            MemberAppsNotification::create([
+                                'member_id' => $member->id,
+                                'type' => 'voucher_restored',
+                                'title' => $title,
+                                'message' => $message,
+                                'url' => '/vouchers',
+                                'data' => $data,
+                                'is_read' => false,
+                            ]);
+                            
+                            \Log::info('Voucher restored notification saved to database', [
+                                'member_id' => $member->id,
+                            ]);
+                        } catch (\Exception $dbError) {
+                            \Log::error('Error saving voucher restored notification to database', [
+                                'member_id' => $member->id,
+                                'error' => $dbError->getMessage(),
+                            ]);
+                            // Continue even if database save fails
+                        }
+                    } else {
+                        \Log::info('Skipping voucher restored notification - member has disabled notifications', [
+                            'member_id' => $member->id,
+                        ]);
+                    }
+                }
+            } catch (\Exception $notifError) {
+                \Log::error('Error sending voucher restored notification', [
+                    'error' => $notifError->getMessage(),
+                    'trace' => $notifError->getTraceAsString(),
+                    'member_voucher_id' => $memberVoucherId,
+                ]);
+                // Continue even if notification fails
+            }
 
             return response()->json([
                 'success' => true,
@@ -958,6 +1192,11 @@ class VoucherController extends Controller
             // Generate unique serial code (same format as distribution)
             $serialCode = $this->generateVoucherSerialCode($voucher->id, $member->id);
 
+            // Calculate expiration date for purchased voucher
+            // Vouchers purchased from store expire 1 year from purchase date
+            $purchaseDate = Carbon::now();
+            $expiresAt = $purchaseDate->copy()->addYear();
+
             // Create member voucher
             $memberVoucher = MemberAppsMemberVoucher::create([
                 'voucher_id' => $voucher->id,
@@ -965,7 +1204,7 @@ class VoucherController extends Controller
                 'voucher_code' => $voucherCode,
                 'serial_code' => $serialCode, // Add serial_code for POS redemption
                 'status' => 'active',
-                'expires_at' => $voucher->valid_until,
+                'expires_at' => $expiresAt,
             ]);
 
             // Refresh member and voucher relationships

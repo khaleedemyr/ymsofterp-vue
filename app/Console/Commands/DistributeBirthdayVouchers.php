@@ -118,11 +118,18 @@ class DistributeBirthdayVouchers extends Command
                     $voucherCode = $this->generateVoucherCode($voucher->id, $member->id);
                     $serialCode = $this->generateVoucherSerialCode($voucher->id, $member->id);
 
-                    // Calculate expiration date (if voucher has valid_until, use it; otherwise set to 1 year from now)
+                    // Calculate expiration date for birthday voucher
+                    // Birthday vouchers expire 1 week after being received by member
+                    // For non-birthday vouchers, use voucher's valid_until or 1 year from now
                     $expiresAt = null;
-                    if ($voucher->valid_until) {
+                    if ($voucher->is_birthday_voucher) {
+                        // Birthday voucher: expire 1 week from today (when voucher is received)
+                        $expiresAt = $today->copy()->addWeek();
+                    } elseif ($voucher->valid_until) {
+                        // Non-birthday voucher: use voucher's valid_until date
                         $expiresAt = Carbon::parse($voucher->valid_until);
                     } else {
+                        // Non-birthday voucher: default to 1 year from now
                         $expiresAt = $today->copy()->addYear();
                     }
 
