@@ -139,165 +139,204 @@
       </div>
 
       <!-- Menu Cost Table -->
-      <div v-if="menuCosts.length > 0" class="bg-white rounded-xl shadow-xl p-6 mb-6">
+      <div v-if="filteredMenuCostsGrouped && Object.keys(filteredMenuCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold text-gray-800">Detail Cost Per Menu</h2>
-          <button @click="exportToExcel" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
-            <i class="fa-solid fa-file-excel mr-1"></i> Export Excel
-          </button>
+          <div class="flex gap-2">
+            <input
+              v-model="searchMenu"
+              type="text"
+              placeholder="Cari menu..."
+              class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button @click="exportToExcel" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+              <i class="fa-solid fa-file-excel mr-1"></i> Export Excel
+            </button>
+          </div>
         </div>
         
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Menu</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kategori</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Unit</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Menu</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margin</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <template v-for="menu in menuCosts" :key="menu.item_id">
-                <tr class="hover:bg-gray-50">
-                  <td class="px-4 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900">{{ menu.item_name }}</div>
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap">
-                    <div class="text-sm text-gray-900">{{ menu.category_name }}</div>
-                    <div class="text-xs text-gray-500">{{ menu.sub_category_name }}</div>
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {{ menu.qty_ordered }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    Rp {{ formatNumber(menu.cost_per_unit) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Rp {{ formatNumber(menu.total_cost) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    Rp {{ formatNumber(menu.menu_price) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    Rp {{ formatNumber(menu.total_revenue) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit >= 0 ? 'text-green-600' : 'text-red-600'">
-                    Rp {{ formatNumber(menu.profit) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit_margin >= 0 ? 'text-green-600' : 'text-red-600'">
-                    {{ menu.profit_margin }}%
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap">
-                    <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
-                      <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-                      {{ expandedMenus.includes(menu.item_id) ? 'Sembunyikan' : 'Tampilkan' }}
-                    </button>
-                  </td>
+          <template v-for="(menus, categoryName) in filteredMenuCostsGrouped" :key="categoryName">
+            <!-- Category Header -->
+            <div class="mb-4">
+              <div class="bg-blue-100 px-4 py-2 rounded-t-lg border-b-2 border-blue-300">
+                <h3 class="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                  <i class="fa-solid fa-folder text-blue-600"></i>
+                  {{ categoryName }}
+                  <span class="text-sm font-normal text-blue-700">({{ menus.length }} menu)</span>
+                </h3>
+              </div>
+            </div>
+            
+            <table class="min-w-full divide-y divide-gray-200 mb-6">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Menu</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sub Kategori</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Unit</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Menu</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margin</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
                 </tr>
-                <!-- BOM Details Row -->
-                <tr v-if="expandedMenus.includes(menu.item_id)" :key="`bom-${menu.item_id}`" class="bg-gray-50">
-                  <td colspan="10" class="px-4 py-4">
-                    <div class="bg-white rounded-lg p-4 border">
-                      <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
-                      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
-                        <div class="font-medium text-gray-700">Bahan Baku</div>
-                        <div class="font-medium text-gray-700">Qty</div>
-                        <div class="font-medium text-gray-700">Unit</div>
-                        <div class="font-medium text-gray-700">Cost/Unit</div>
-                        <div class="font-medium text-gray-700">Total</div>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <template v-for="menu in menus" :key="menu.item_id">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">{{ menu.item_name }}</div>
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap">
+                      <div class="text-sm text-gray-900">{{ menu.sub_category_name }}</div>
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {{ menu.qty_ordered }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rp {{ formatNumber(menu.cost_per_unit) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Rp {{ formatNumber(menu.total_cost) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rp {{ formatNumber(menu.menu_price) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rp {{ formatNumber(menu.total_revenue) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit >= 0 ? 'text-green-600' : 'text-red-600'">
+                      Rp {{ formatNumber(menu.profit) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit_margin >= 0 ? 'text-green-600' : 'text-red-600'">
+                      {{ menu.profit_margin }}%
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap">
+                      <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
+                        <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+                        {{ expandedMenus.includes(menu.item_id) ? 'Sembunyikan' : 'Tampilkan' }}
+                      </button>
+                    </td>
+                  </tr>
+                  <!-- BOM Details Row -->
+                  <tr v-if="expandedMenus.includes(menu.item_id)" :key="`bom-${menu.item_id}`" class="bg-gray-50">
+                    <td colspan="10" class="px-4 py-4">
+                      <div class="bg-white rounded-lg p-4 border">
+                        <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+                          <div class="font-medium text-gray-700">Bahan Baku</div>
+                          <div class="font-medium text-gray-700">Qty</div>
+                          <div class="font-medium text-gray-700">Unit</div>
+                          <div class="font-medium text-gray-700">Cost/Unit</div>
+                          <div class="font-medium text-gray-700">Total</div>
+                        </div>
+                        <div v-for="(bom, bomIndex) in (menu.bom_details || [])" :key="`${menu.item_id}-bom-${bomIndex}`" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
+                          <div class="text-gray-900">{{ bom.material_name }}</div>
+                          <div class="text-gray-900">{{ bom.qty_needed }}</div>
+                          <div class="text-gray-900">{{ bom.unit_name }}</div>
+                          <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
+                          <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
+                        </div>
                       </div>
-                      <div v-for="(bom, bomIndex) in (menu.bom_details || [])" :key="`${menu.item_id}-bom-${bomIndex}`" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
-                        <div class="text-gray-900">{{ bom.material_name }}</div>
-                        <div class="text-gray-900">{{ bom.qty_needed }}</div>
-                        <div class="text-gray-900">{{ bom.unit_name }}</div>
-                        <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
-                        <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
         </div>
       </div>
 
       <!-- Modifier Cost Table -->
-      <div v-if="modifierCosts.length > 0" class="bg-white rounded-xl shadow-xl p-6">
+      <div v-if="filteredModifierCostsGrouped && Object.keys(filteredModifierCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold text-gray-800">Detail Cost Per Modifier</h2>
+          <input
+            v-model="searchModifier"
+            type="text"
+            placeholder="Cari modifier..."
+            class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
         </div>
         
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modifier</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Unit</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <template v-for="modifier in modifierCosts" :key="modifier.modifier_name">
-                <tr class="hover:bg-gray-50">
-                  <td class="px-4 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900">{{ modifier.modifier_name }}</div>
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {{ modifier.total_qty }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                    Rp {{ formatNumber(modifier.cost_per_unit) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Rp {{ formatNumber(modifier.total_cost) }}
-                  </td>
-                  <td class="px-4 py-4 whitespace-nowrap">
-                    <button @click="toggleModifierBomDetails(modifier.modifier_name)" class="text-blue-600 hover:text-blue-800">
-                      <i :class="expandedModifiers.includes(modifier.modifier_name) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
-                      {{ expandedModifiers.includes(modifier.modifier_name) ? 'Sembunyikan' : 'Tampilkan' }}
-                    </button>
-                  </td>
+          <template v-for="(modifiers, categoryName) in filteredModifierCostsGrouped" :key="categoryName">
+            <!-- Category Header -->
+            <div class="mb-4">
+              <div class="bg-purple-100 px-4 py-2 rounded-t-lg border-b-2 border-purple-300">
+                <h3 class="text-lg font-semibold text-purple-900 flex items-center gap-2">
+                  <i class="fa-solid fa-folder text-purple-600"></i>
+                  {{ categoryName }}
+                  <span class="text-sm font-normal text-purple-700">({{ modifiers.length }} modifier)</span>
+                </h3>
+              </div>
+            </div>
+            
+            <table class="min-w-full divide-y divide-gray-200 mb-6">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modifier</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost/Unit</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
                 </tr>
-                <!-- Modifier BOM Details Row -->
-                <tr v-if="expandedModifiers.includes(modifier.modifier_name)" :key="`modifier-bom-${modifier.modifier_name}`" class="bg-gray-50">
-                  <td colspan="5" class="px-4 py-4">
-                    <div class="bg-white rounded-lg p-4 border">
-                      <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku Modifier:</h4>
-                      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
-                        <div class="font-medium text-gray-700">Bahan Baku</div>
-                        <div class="font-medium text-gray-700">Qty</div>
-                        <div class="font-medium text-gray-700">Unit</div>
-                        <div class="font-medium text-gray-700">Cost/Unit</div>
-                        <div class="font-medium text-gray-700">Total</div>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <template v-for="modifier in modifiers" :key="modifier.modifier_name">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-gray-900">{{ modifier.modifier_name }}</div>
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {{ modifier.total_qty }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                      Rp {{ formatNumber(modifier.cost_per_unit) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Rp {{ formatNumber(modifier.total_cost) }}
+                    </td>
+                    <td class="px-4 py-4 whitespace-nowrap">
+                      <button @click="toggleModifierBomDetails(modifier.modifier_name)" class="text-blue-600 hover:text-blue-800">
+                        <i :class="expandedModifiers.includes(modifier.modifier_name) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
+                        {{ expandedModifiers.includes(modifier.modifier_name) ? 'Sembunyikan' : 'Tampilkan' }}
+                      </button>
+                    </td>
+                  </tr>
+                  <!-- Modifier BOM Details Row -->
+                  <tr v-if="expandedModifiers.includes(modifier.modifier_name)" :key="`modifier-bom-${modifier.modifier_name}`" class="bg-gray-50">
+                    <td colspan="5" class="px-4 py-4">
+                      <div class="bg-white rounded-lg p-4 border">
+                        <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku Modifier:</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+                          <div class="font-medium text-gray-700">Bahan Baku</div>
+                          <div class="font-medium text-gray-700">Qty</div>
+                          <div class="font-medium text-gray-700">Unit</div>
+                          <div class="font-medium text-gray-700">Cost/Unit</div>
+                          <div class="font-medium text-gray-700">Total</div>
+                        </div>
+                        <div v-for="(bom, bomIndex) in (modifier.bom_details || [])" :key="`${modifier.modifier_name}-bom-${bomIndex}`" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
+                          <div class="text-gray-900">{{ bom.material_name }}</div>
+                          <div class="text-gray-900">{{ bom.qty_needed }}</div>
+                          <div class="text-gray-900">{{ bom.unit_name }}</div>
+                          <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
+                          <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
+                        </div>
                       </div>
-                      <div v-for="(bom, bomIndex) in (modifier.bom_details || [])" :key="`${modifier.modifier_name}-bom-${bomIndex}`" class="grid grid-cols-1 md:grid-cols-5 gap-4 py-2 border-b border-gray-100">
-                        <div class="text-gray-900">{{ bom.material_name }}</div>
-                        <div class="text-gray-900">{{ bom.qty_needed }}</div>
-                        <div class="text-gray-900">{{ bom.unit_name }}</div>
-                        <div class="text-gray-900">Rp {{ formatNumber(bom.cost_per_unit) }}</div>
-                        <div class="text-gray-900 font-medium">Rp {{ formatNumber(bom.total_cost) }}</div>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
         </div>
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="!loading && !hasSearched" class="bg-white rounded-xl shadow-xl p-6 text-center">
+      <div v-if="!loading && !hasSearched && (!filteredMenuCostsGrouped || Object.keys(filteredMenuCostsGrouped).length === 0) && (!filteredModifierCostsGrouped || Object.keys(filteredModifierCostsGrouped).length === 0)" class="bg-white rounded-xl shadow-xl p-6 text-center">
         <div class="text-gray-500">
           <i class="fa-solid fa-calculator text-4xl mb-4"></i>
           <p class="text-lg font-medium">Pilih filter dan klik tombol "Cari" untuk melihat report cost per menu</p>
@@ -306,7 +345,7 @@
       </div>
 
       <!-- No Data State -->
-      <div v-else-if="!loading && hasSearched && menuCosts.length === 0" class="bg-white rounded-xl shadow-xl p-6 text-center">
+      <div v-if="!loading && hasSearched && (!filteredMenuCostsGrouped || Object.keys(filteredMenuCostsGrouped).length === 0) && (!filteredModifierCostsGrouped || Object.keys(filteredModifierCostsGrouped).length === 0)" class="bg-white rounded-xl shadow-xl p-6 text-center">
         <div class="text-gray-500">
           <i class="fa-solid fa-calculator text-4xl mb-4"></i>
           <p class="text-lg font-medium">Tidak ada data cost menu</p>
@@ -327,7 +366,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 
@@ -339,12 +378,16 @@ const filters = ref({
 
 const outlets = ref([])
 const menuCosts = ref([])
+const menuCostsGrouped = ref({})
 const modifierCosts = ref([])
+const modifierCostsGrouped = ref({})
 const summary = ref(null)
 const loading = ref(false)
 const expandedMenus = ref([])
 const expandedModifiers = ref([])
 const hasSearched = ref(false)
+const searchMenu = ref('')
+const searchModifier = ref('')
 
 onMounted(async () => {
   await loadOutlets()
@@ -385,7 +428,9 @@ async function loadMenuCosts() {
     
     if (response.data.status === 'success') {
       menuCosts.value = response.data.menu_costs || []
+      menuCostsGrouped.value = response.data.menu_costs_grouped || {}
       modifierCosts.value = response.data.modifier_costs || []
+      modifierCostsGrouped.value = response.data.modifier_costs_grouped || {}
       summary.value = {
         total_menu: response.data.total_menu || 0,
         total_modifier: response.data.total_modifier || 0,
@@ -399,7 +444,9 @@ async function loadMenuCosts() {
       }
     } else {
       menuCosts.value = []
+      menuCostsGrouped.value = {}
       modifierCosts.value = []
+      modifierCostsGrouped.value = {}
       summary.value = null
       console.warn('API returned non-success status:', response.data)
     }
@@ -407,12 +454,63 @@ async function loadMenuCosts() {
     console.error('Error loading menu costs:', error)
     console.error('Error response:', error.response?.data)
     menuCosts.value = []
+    menuCostsGrouped.value = {}
     modifierCosts.value = []
+    modifierCostsGrouped.value = {}
     summary.value = null
   } finally {
     loading.value = false
   }
 }
+
+// Filtered menu costs grouped by category with search
+const filteredMenuCostsGrouped = computed(() => {
+  if (!menuCostsGrouped.value || Object.keys(menuCostsGrouped.value).length === 0) {
+    return {}
+  }
+  
+  const search = searchMenu.value.toLowerCase().trim()
+  if (!search) {
+    return menuCostsGrouped.value
+  }
+  
+  const filtered = {}
+  for (const [categoryName, menus] of Object.entries(menuCostsGrouped.value)) {
+    const filteredMenus = menus.filter(menu => 
+      menu.item_name.toLowerCase().includes(search) ||
+      menu.category_name.toLowerCase().includes(search) ||
+      (menu.sub_category_name && menu.sub_category_name.toLowerCase().includes(search))
+    )
+    if (filteredMenus.length > 0) {
+      filtered[categoryName] = filteredMenus
+    }
+  }
+  return filtered
+})
+
+// Filtered modifier costs grouped by category with search
+const filteredModifierCostsGrouped = computed(() => {
+  if (!modifierCostsGrouped.value || Object.keys(modifierCostsGrouped.value).length === 0) {
+    return {}
+  }
+  
+  const search = searchModifier.value.toLowerCase().trim()
+  if (!search) {
+    return modifierCostsGrouped.value
+  }
+  
+  const filtered = {}
+  for (const [categoryName, modifiers] of Object.entries(modifierCostsGrouped.value)) {
+    const filteredModifiers = modifiers.filter(modifier => 
+      modifier.modifier_name.toLowerCase().includes(search) ||
+      modifier.category_name.toLowerCase().includes(search)
+    )
+    if (filteredModifiers.length > 0) {
+      filtered[categoryName] = filteredModifiers
+    }
+  }
+  return filtered
+})
 
 function toggleBomDetails(itemId) {
   const index = expandedMenus.value.indexOf(itemId)

@@ -1616,16 +1616,139 @@ class StockCutController extends Controller
             ]);
         }
 
+        // Ambil order_items individual untuk menghitung modifier qty dengan benar
+        $orderItemsIndividual = DB::table('order_items')
+            ->join('items', 'order_items.item_id', '=', 'items.id')
+            ->whereDate('order_items.created_at', $tanggal)
+            ->where('order_items.kode_outlet', $qr_code)
+            ->where('order_items.stock_cut', 1)
+            ->select('order_items.item_id', 'order_items.qty', 'order_items.modifiers', 'items.type')
+            ->get();
+        
+        // Collect all modifiers separately dari order_items individual
+        $allModifiersData = [];
+        foreach ($orderItemsIndividual as $oiIndividual) {
+            if ($oiIndividual->modifiers) {
+                $modifiers = json_decode($oiIndividual->modifiers, true);
+                if (is_array($modifiers)) {
+                    foreach ($modifiers as $group) {
+                        if (is_array($group)) {
+                            foreach ($group as $modifierName => $modifierQty) {
+                                // Cari modifier option berdasarkan nama
+                                $modifierOption = DB::table('modifier_options')
+                                    ->where('name', $modifierName)
+                                    ->whereNotNull('modifier_bom_json')
+                                    ->where('modifier_bom_json', '!=', '')
+                                    ->where('modifier_bom_json', '!=', '[]')
+                                    ->first();
+                                
+                                // Skip modifier dengan modifier_id = 1
+                                if ($modifierOption && $modifierOption->modifier_id == 1) {
+                                    continue;
+                                }
+                                
+                                // Key untuk grouping modifier (global, tidak per menu)
+                                $modifierKey = $modifierName;
+                                if (!isset($allModifiersData[$modifierKey])) {
+                                    $allModifiersData[$modifierKey] = [
+                                        'modifier_name' => $modifierName,
+                                        'total_qty' => 0,
+                                        'bom_details' => []
+                                    ];
+                                }
+                                
+                                // Accumulate total qty modifier (qty modifier * qty order_item)
+                                $allModifiersData[$modifierKey]['total_qty'] += (float) $modifierQty * (float) $oiIndividual->qty;
+                                
+                                // Hitung cost modifier
+                                if ($modifierOption && $modifierOption->modifier_bom_json) {
+                                    $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
+                                    if (is_array($modifierBom)) {
+                                        foreach ($modifierBom as $bomItem) {
+                                            if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
+                                                // Ambil harga bahan baku modifier
+                                                $inventoryItem = DB::table('outlet_food_inventory_items')
+                                                    ->where('item_id', $bomItem['item_id'])
+                                                    ->first();
+                                                
+                                                if ($inventoryItem) {
+                                                    // Tentukan warehouse berdasarkan type item
+                                                    $warehouse = null;
+                                                    if (in_array($oiIndividual->type, ['Food Asian', 'Food Western', 'Food'])) {
+                                                        $warehouse = DB::table('warehouse_outlets')
+                                                            ->where('outlet_id', $id_outlet)
+                                                            ->where('name', 'Kitchen')
+                                                            ->where('status', 'active')
+                                                            ->first();
+                                                    } elseif ($oiIndividual->type == 'Beverages') {
+                                                        $warehouse = DB::table('warehouse_outlets')
+                                                            ->where('outlet_id', $id_outlet)
+                                                            ->where('name', 'Bar')
+                                                            ->where('status', 'active')
+                                                            ->first();
+                                                    }
+                                                    
+                                                    if ($warehouse) {
+                                                        $stock = DB::table('outlet_food_inventory_stocks')
+                                                            ->where('inventory_item_id', $inventoryItem->id)
+                                                            ->where('id_outlet', $id_outlet)
+                                                            ->where('warehouse_outlet_id', $warehouse->id)
+                                                            ->first();
+                                                        
+                                                        if ($stock) {
+                                                            $costPerUnit = $stock->last_cost_small ?? 0;
+                                                            $qtyNeeded = $bomItem['qty'] * (float) $modifierQty * (float) $oiIndividual->qty;
+                                                            $totalCostForModifier = $costPerUnit * $qtyNeeded;
+                                                            
+                                                            $materialName = DB::table('items')
+                                                                ->where('id', $bomItem['item_id'])
+                                                                ->value('name') ?? 'Unknown Material';
+                                                            
+                                                            $unitName = DB::table('units')
+                                                                ->where('id', $bomItem['unit_id'])
+                                                                ->value('name') ?? 'Unknown Unit';
+                                                            
+                                                            // Add to modifier bom details (accumulate by material)
+                                                            $foundBom = false;
+                                                            foreach ($allModifiersData[$modifierKey]['bom_details'] as &$detail) {
+                                                                if ($detail['material_name'] === $materialName && $detail['unit_name'] === $unitName) {
+                                                                    $detail['qty_needed'] += $qtyNeeded;
+                                                                    $detail['total_cost'] = number_format((floatval(str_replace(',', '', $detail['total_cost'])) + $totalCostForModifier), 2, '.', '');
+                                                                    $foundBom = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            unset($detail);
+                                                            
+                                                            if (!$foundBom) {
+                                                                $allModifiersData[$modifierKey]['bom_details'][] = [
+                                                                    'material_name' => $materialName,
+                                                                    'qty_needed' => $qtyNeeded,
+                                                                    'unit_name' => $unitName,
+                                                                    'cost_per_unit' => number_format($costPerUnit, 2, '.', ''),
+                                                                    'total_cost' => number_format($totalCostForModifier, 2, '.', '')
+                                                                ];
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 2. Hitung cost per menu (TANPA modifier)
         $menuCosts = [];
-        $modifierCosts = [];
         $totalMenuCost = 0;
         $totalModifierCost = 0;
         $totalRevenue = 0;
         $totalProfit = 0;
-        
-        // Collect all modifiers separately
-        $allModifiersData = [];
         
         foreach ($orderItems as $oi) {
             $menuCost = 0;
@@ -1697,126 +1820,6 @@ class StockCutController extends Controller
                 }
             }
             
-            // Collect modifiers separately (TIDAK ditambahkan ke menu cost)
-            if ($oi->all_modifiers) {
-                $allModifiersArray = explode('|||', $oi->all_modifiers);
-                
-                // Combine modifiers dari semua order_items dengan item yang sama
-                foreach ($allModifiersArray as $modifiersJson) {
-                    if (empty($modifiersJson) || $modifiersJson === 'null') continue;
-                    $modifiers = json_decode($modifiersJson, true);
-                    if (is_array($modifiers)) {
-                        foreach ($modifiers as $group) {
-                            if (is_array($group)) {
-                                foreach ($group as $modifierName => $modifierQty) {
-                                    // Cari modifier option berdasarkan nama
-                                    $modifierOption = DB::table('modifier_options')
-                                        ->where('name', $modifierName)
-                                        ->whereNotNull('modifier_bom_json')
-                                        ->where('modifier_bom_json', '!=', '')
-                                        ->where('modifier_bom_json', '!=', '[]')
-                                        ->first();
-                                    
-                                    // Skip modifier dengan modifier_id = 1
-                                    if ($modifierOption && $modifierOption->modifier_id == 1) {
-                                        continue;
-                                    }
-                                    
-                                    // Key untuk grouping modifier (global, tidak per menu)
-                                    $modifierKey = $modifierName;
-                                    if (!isset($allModifiersData[$modifierKey])) {
-                                        $allModifiersData[$modifierKey] = [
-                                            'modifier_name' => $modifierName,
-                                            'total_qty' => 0,
-                                            'bom_details' => []
-                                        ];
-                                    }
-                                    
-                                    // Accumulate total qty modifier
-                                    $allModifiersData[$modifierKey]['total_qty'] += (float) $modifierQty * $totalQty;
-                                    
-                                    // Hitung cost modifier
-                                    if ($modifierOption && $modifierOption->modifier_bom_json) {
-                                        $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
-                                        if (is_array($modifierBom)) {
-                                            foreach ($modifierBom as $bomItem) {
-                                                if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
-                                                    // Ambil harga bahan baku modifier
-                                                    $inventoryItem = DB::table('outlet_food_inventory_items')
-                                                        ->where('item_id', $bomItem['item_id'])
-                                                        ->first();
-                                                    
-                                                    if ($inventoryItem) {
-                                                        // Tentukan warehouse berdasarkan type item
-                                                        $warehouse = null;
-                                                        if (in_array($oi->type, ['Food Asian', 'Food Western', 'Food'])) {
-                                                            $warehouse = DB::table('warehouse_outlets')
-                                                                ->where('outlet_id', $id_outlet)
-                                                                ->where('name', 'Kitchen')
-                                                                ->where('status', 'active')
-                                                                ->first();
-                                                        } elseif ($oi->type == 'Beverages') {
-                                                            $warehouse = DB::table('warehouse_outlets')
-                                                                ->where('outlet_id', $id_outlet)
-                                                                ->where('name', 'Bar')
-                                                                ->where('status', 'active')
-                                                                ->first();
-                                                        }
-                                                        
-                                                        if ($warehouse) {
-                                                            $stock = DB::table('outlet_food_inventory_stocks')
-                                                                ->where('inventory_item_id', $inventoryItem->id)
-                                                                ->where('id_outlet', $id_outlet)
-                                                                ->where('warehouse_outlet_id', $warehouse->id)
-                                                                ->first();
-                                                            
-                                                            if ($stock) {
-                                                                $costPerUnit = $stock->last_cost_small ?? 0;
-                                                                $qtyNeeded = $bomItem['qty'] * (float) $modifierQty * $totalQty;
-                                                                $totalCostForModifier = $costPerUnit * $qtyNeeded;
-                                                                
-                                                                $materialName = DB::table('items')
-                                                                    ->where('id', $bomItem['item_id'])
-                                                                    ->value('name') ?? 'Unknown Material';
-                                                                
-                                                                $unitName = DB::table('units')
-                                                                    ->where('id', $bomItem['unit_id'])
-                                                                    ->value('name') ?? 'Unknown Unit';
-                                                                
-                                                                // Add to modifier bom details (accumulate by material)
-                                                                $foundBom = false;
-                                                                foreach ($allModifiersData[$modifierKey]['bom_details'] as &$detail) {
-                                                                    if ($detail['material_name'] === $materialName && $detail['unit_name'] === $unitName) {
-                                                                        $detail['qty_needed'] += $qtyNeeded;
-                                                                        $detail['total_cost'] = number_format((floatval(str_replace(',', '', $detail['total_cost'])) + $totalCostForModifier), 2, '.', '');
-                                                                        $foundBom = true;
-                                                                        break;
-                                                                    }
-                                                                }
-                                                                unset($detail);
-                                                                
-                                                                if (!$foundBom) {
-                                                                    $allModifiersData[$modifierKey]['bom_details'][] = [
-                                                                        'material_name' => $materialName,
-                                                                        'qty_needed' => $qtyNeeded,
-                                                                        'unit_name' => $unitName,
-                                                                        'cost_per_unit' => number_format($costPerUnit, 2, '.', ''),
-                                                                        'total_cost' => number_format($totalCostForModifier, 2, '.', '')
-                                                                    ];
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             
             $totalMenuCost += $menuCost;
             
@@ -1851,13 +1854,53 @@ class StockCutController extends Controller
             }
             $totalModifierCost += $modifierTotalCost;
             
+            // Ambil category dari modifier option
+            $modifierOption = DB::table('modifier_options')
+                ->where('name', $modifierData['modifier_name'])
+                ->first();
+            
+            $categoryName = 'Tanpa Kategori';
+            if ($modifierOption && $modifierOption->modifier_id) {
+                $modifierGroup = DB::table('modifiers')
+                    ->where('id', $modifierOption->modifier_id)
+                    ->first();
+                
+                if ($modifierGroup && $modifierGroup->category_id) {
+                    $category = DB::table('categories')
+                        ->where('id', $modifierGroup->category_id)
+                        ->first();
+                    $categoryName = $category ? $category->name : 'Tanpa Kategori';
+                }
+            }
+            
             $modifierCosts[] = [
                 'modifier_name' => $modifierData['modifier_name'],
+                'category_name' => $categoryName,
                 'total_qty' => $modifierData['total_qty'],
                 'total_cost' => number_format($modifierTotalCost, 2, '.', ''),
                 'cost_per_unit' => $modifierData['total_qty'] > 0 ? number_format($modifierTotalCost / $modifierData['total_qty'], 2, '.', '') : '0.00',
                 'bom_details' => $modifierData['bom_details']
             ];
+        }
+        
+        // Group menu costs by category
+        $menuCostsGrouped = [];
+        foreach ($menuCosts as $menu) {
+            $categoryName = $menu['category_name'] ?: 'Tanpa Kategori';
+            if (!isset($menuCostsGrouped[$categoryName])) {
+                $menuCostsGrouped[$categoryName] = [];
+            }
+            $menuCostsGrouped[$categoryName][] = $menu;
+        }
+        
+        // Group modifier costs by category
+        $modifierCostsGrouped = [];
+        foreach ($modifierCosts as $modifier) {
+            $categoryName = $modifier['category_name'] ?: 'Tanpa Kategori';
+            if (!isset($modifierCostsGrouped[$categoryName])) {
+                $modifierCostsGrouped[$categoryName] = [];
+            }
+            $modifierCostsGrouped[$categoryName][] = $modifier;
         }
         
         // Total cost = menu cost + modifier cost
@@ -1866,7 +1909,9 @@ class StockCutController extends Controller
         return response()->json([
             'status' => 'success',
             'menu_costs' => $menuCosts,
+            'menu_costs_grouped' => $menuCostsGrouped,
             'modifier_costs' => $modifierCosts,
+            'modifier_costs_grouped' => $modifierCostsGrouped,
             'total_menu' => count($menuCosts),
             'total_modifier' => count($modifierCosts),
             'total_menu_cost' => number_format($totalMenuCost, 2, '.', ''),
