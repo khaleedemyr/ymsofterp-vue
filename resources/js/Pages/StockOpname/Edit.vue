@@ -632,12 +632,18 @@ async function autosave() {
       return itemData;
     });
 
+    // Prepare approvers array (only IDs)
+    const approversIds = form.approvers
+      .filter(approver => approver && approver.id)
+      .map(approver => approver.id);
+
     const formData = {
       outlet_id: form.outlet_id,
       warehouse_outlet_id: form.warehouse_outlet_id,
       opname_date: form.opname_date,
       notes: form.notes,
       items: itemsToSave,
+      approvers: approversIds,
       autosave: true,
     };
 
@@ -877,6 +883,7 @@ function addApprover(user) {
   // Check if user already exists
   if (!form.approvers.find(approver => approver && approver.id === user.id)) {
     form.approvers.push(user);
+    triggerAutosave();
   }
   approverSearch.value = '';
   showApproverDropdown.value = false;
@@ -884,11 +891,13 @@ function addApprover(user) {
 
 function removeApprover(index) {
   form.approvers.splice(index, 1);
+  triggerAutosave();
 }
 
 function reorderApprover(fromIndex, toIndex) {
   const approver = form.approvers.splice(fromIndex, 1)[0];
   form.approvers.splice(toIndex, 0, approver);
+  triggerAutosave();
 }
 
 function submitForm() {
@@ -896,6 +905,14 @@ function submitForm() {
     alert('Minimal harus ada 1 item.');
     return;
   }
+
+  // Prepare approvers array (only IDs)
+  const approversIds = form.approvers
+    .filter(approver => approver && approver.id)
+    .map(approver => approver.id);
+
+  // Add approvers to form data
+  form.approvers = approversIds;
 
   submitting.value = true;
   form.put(route('stock-opnames.update', props.stockOpname.id), {

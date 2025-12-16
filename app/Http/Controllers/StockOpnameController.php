@@ -208,6 +208,8 @@ class StockOpnameController extends Controller
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
             'items.*.qty_physical_large' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         $user = auth()->user();
@@ -342,6 +344,22 @@ class StockOpnameController extends Controller
                     'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
                     'value_adjustment' => $valueAdjustment,
                 ]);
+            }
+
+            // Save approvers if provided (only if status is still DRAFT)
+            if ($stockOpname->status === 'DRAFT' && isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                // Delete existing approval flows if any
+                $stockOpname->approvalFlows()->delete();
+
+                // Create approval flows
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    StockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                        'status' => 'PENDING',
+                    ]);
+                }
             }
 
             DB::commit();
@@ -583,6 +601,8 @@ class StockOpnameController extends Controller
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
             'items.*.qty_physical_large' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         // Validate outlet access
@@ -713,6 +733,22 @@ class StockOpnameController extends Controller
                     'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
                     'value_adjustment' => $valueAdjustment,
                 ]);
+            }
+
+            // Save approvers if provided (only if status is still DRAFT)
+            if ($stockOpname->status === 'DRAFT' && isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                // Delete existing approval flows if any
+                $stockOpname->approvalFlows()->delete();
+
+                // Create approval flows
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    StockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                        'status' => 'PENDING',
+                    ]);
+                }
             }
 
             DB::commit();
