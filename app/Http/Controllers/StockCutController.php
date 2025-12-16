@@ -1590,6 +1590,7 @@ class StockCutController extends Controller
                 'categories.name as category_name',
                 'sub_categories.name as sub_category_name',
                 DB::raw('SUM(order_items.qty) as total_qty'),
+                DB::raw('SUM(order_items.price * order_items.qty) as total_revenue_item'),
                 DB::raw('AVG(order_items.price) as avg_price'),
                 DB::raw('GROUP_CONCAT(DISTINCT order_items.modifiers SEPARATOR "|||") as all_modifiers')
             )
@@ -1748,7 +1749,6 @@ class StockCutController extends Controller
         $totalMenuCost = 0;
         $totalModifierCost = 0;
         $totalRevenue = 0;
-        $totalProfit = 0;
         
         foreach ($orderItems as $oi) {
             $menuCost = 0;
@@ -1757,6 +1757,14 @@ class StockCutController extends Controller
             // Gunakan total_qty yang sudah di-sum dari query
             $totalQty = (float) $oi->total_qty;
             $avgPrice = (float) ($oi->avg_price ?? 0);
+            
+            // Hitung revenue dari SUM(price * qty) yang sudah dihitung di query (lebih akurat)
+            $itemRevenue = (float) ($oi->total_revenue_item ?? 0);
+            // Fallback ke avg_price * total_qty jika total_revenue_item tidak ada
+            if ($itemRevenue == 0 && $avgPrice > 0 && $totalQty > 0) {
+                $itemRevenue = $avgPrice * $totalQty;
+            }
+            $totalRevenue += $itemRevenue;
             
             // Ambil BOM untuk menu (TANPA modifier)
             $boms = DB::table('item_bom')
@@ -1822,12 +1830,9 @@ class StockCutController extends Controller
             
             
             $totalMenuCost += $menuCost;
-            
-            // Hitung revenue menggunakan avg_price dan total_qty
-            $itemRevenue = $avgPrice * $totalQty;
-            $totalRevenue += $itemRevenue;
-            $profit = $itemRevenue - $menuCost; // Profit hanya dari menu, tanpa modifier
-            $totalProfit += $profit;
+            // Profit per item dihitung hanya dari menu (untuk detail per item)
+            // Total profit akan dihitung setelah semua cost (menu + modifier) selesai
+            $profit = $itemRevenue - $menuCost;
             $profitMargin = $itemRevenue > 0 ? ($profit / $itemRevenue) * 100 : 0;
             
             $menuCosts[] = [
@@ -1917,6 +1922,9 @@ class StockCutController extends Controller
         
         // Total cost = menu cost + modifier cost
         $totalCost = $totalMenuCost + $totalModifierCost;
+        
+        // Total profit = Total Revenue - Total Cost (menu cost + modifier cost)
+        $totalProfit = $totalRevenue - $totalCost;
 
         return response()->json([
             'status' => 'success',
