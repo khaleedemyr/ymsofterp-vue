@@ -164,7 +164,6 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Item</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty System</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty Physical</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
@@ -181,11 +180,6 @@
               >
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {{ item.inventory_item?.item?.name || '-' }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
-                  <div>S: {{ formatNumber(item.qty_system_small) }}</div>
-                  <div>M: {{ formatNumber(item.qty_system_medium) }}</div>
-                  <div>L: {{ formatNumber(item.qty_system_large) }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   <div>S: {{ formatNumber(item.qty_physical_small) }}</div>

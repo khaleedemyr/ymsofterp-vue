@@ -178,15 +178,6 @@
         <div v-if="form.items.length > 0" class="mb-6">
           <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-semibold text-gray-800">Items ({{ form.items.length }})</h3>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                @click="autoFillAll"
-                class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
-              >
-                <i class="fa-solid fa-equals mr-2"></i> Auto Fill Semua (=)
-              </button>
-            </div>
           </div>
 
           <div class="overflow-x-auto">
@@ -194,9 +185,6 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Item</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Small</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Medium</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Large</th>
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Small
                   </th>
@@ -210,7 +198,6 @@
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Total MAC<br/>(Qty × MAC)</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-48">Selisih</th>
                   <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Alasan</th>
-                  <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-20">Action</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
@@ -220,7 +207,7 @@
                     class="bg-blue-50 hover:bg-blue-100 cursor-pointer transition"
                     @click="toggleCategory(categoryName)"
                   >
-                    <td class="px-4 py-3 font-bold text-gray-800" colspan="12">
+                    <td class="px-4 py-3 font-bold text-gray-800" colspan="8">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <i 
@@ -251,18 +238,6 @@
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">
                       <div class="font-semibold pl-6">{{ item.item_name }}</div>
                     </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_small) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.small_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_medium) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.medium_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_large) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.large_unit_name }}</div>
-                    </td>
                     <td class="px-3 py-3">
                       <div class="flex items-center gap-2">
                         <input
@@ -272,7 +247,6 @@
                           min="0"
                           @input="onQtyPhysicalChange(item, 'small')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_small)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.small_unit_name || '-' }}</span>
                       </div>
@@ -286,7 +260,6 @@
                           min="0"
                           @input="onQtyPhysicalChange(item, 'medium')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_medium)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.medium_unit_name || '-' }}</span>
                       </div>
@@ -300,7 +273,6 @@
                           min="0"
                           @input="onQtyPhysicalChange(item, 'large')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_large)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
                       </div>
@@ -334,16 +306,6 @@
                         class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                       <span v-else class="text-gray-400 text-xs">-</span>
-                    </td>
-                    <td class="px-3 py-3 text-center">
-                      <button
-                        type="button"
-                        @click="autoFillItem(item)"
-                        class="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors shadow-sm hover:shadow-md"
-                        title="Auto fill dengan qty system"
-                      >
-                        <i class="fa-solid fa-equals"></i>
-                      </button>
                     </td>
                   </tr>
                 </template>
@@ -580,20 +542,6 @@ async function loadItems() {
   } finally {
     loadingItems.value = false;
   }
-}
-
-function autoFillItem(item) {
-  item.qty_physical_small = item.qty_system_small;
-  item.qty_physical_medium = item.qty_system_medium;
-  item.qty_physical_large = item.qty_system_large;
-  item.reason = '';
-  calculateDifference(item);
-}
-
-function autoFillAll() {
-  form.items.forEach(item => {
-    autoFillItem(item);
-  });
 }
 
 // Autosave function
