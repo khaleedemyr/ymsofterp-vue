@@ -334,6 +334,12 @@ const menuGroups = [
                 route: '/retail-food/report-supplier',
                 code: 'retail_food_supplier_report',
             },
+            {
+                name: () => 'Stock Opname Adjustment Report',
+                icon: 'fa-solid fa-chart-bar',
+                route: '/stock-opname-adjustment-report',
+                code: 'stock_opname_adjustment_report',
+            },
         ],
     },
     {

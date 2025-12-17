@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\StockOpname;
 use App\Models\StockOpnameItem;
 use App\Models\StockOpnameApprovalFlow;
+use App\Models\StockOpnameAdjustment;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1044,86 +1045,99 @@ class StockOpnameController extends Controller
                 $valueAdjustment = $item->value_adjustment;
                 $newValue = $stock->value + $valueAdjustment;
 
-                // ============================================
-                // DISABLED: Update inventory tables
-                // Commented out temporarily - no insert/update to inventory
-                // ============================================
-                
-                // // Update stock
-                // DB::table('outlet_food_inventory_stocks')
-                //     ->where('id', $stock->id)
-                //     ->update([
-                //         'qty_small' => $newQtySmall,
-                //         'qty_medium' => $newQtyMedium,
-                //         'qty_large' => $newQtyLarge,
-                //         'value' => $newValue,
-                //         // MAC tidak berubah (sesuai rekomendasi)
-                //         'updated_at' => now(),
-                //     ]);
+                // Update stock
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $stock->id)
+                    ->update([
+                        'qty_small' => $newQtySmall,
+                        'qty_medium' => $newQtyMedium,
+                        'qty_large' => $newQtyLarge,
+                        'value' => $newValue,
+                        // MAC tidak berubah (sesuai rekomendasi)
+                        'updated_at' => now(),
+                    ]);
 
-                // // Get last card for saldo calculation
-                // $lastCard = DB::table('outlet_food_inventory_cards')
-                //     ->where('inventory_item_id', $inventoryItemId)
-                //     ->where('id_outlet', $outletId)
-                //     ->where('warehouse_outlet_id', $warehouseOutletId)
-                //     ->orderByDesc('date')
-                //     ->orderByDesc('id')
-                //     ->first();
+                // Get last card for saldo calculation
+                $lastCard = DB::table('outlet_food_inventory_cards')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
 
-                // // Calculate new saldo
-                // if ($lastCard) {
-                //     $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
-                //     $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
-                //     $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
-                //     $saldoValue = $lastCard->saldo_value + $valueAdjustment;
-                // } else {
-                //     $saldoQtySmall = $newQtySmall;
-                //     $saldoQtyMedium = $newQtyMedium;
-                //     $saldoQtyLarge = $newQtyLarge;
-                //     $saldoValue = $newValue;
-                // }
+                // Calculate new saldo
+                if ($lastCard) {
+                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
+                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
+                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
+                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
+                } else {
+                    $saldoQtySmall = $newQtySmall;
+                    $saldoQtyMedium = $newQtyMedium;
+                    $saldoQtyLarge = $newQtyLarge;
+                    $saldoValue = $newValue;
+                }
 
-                // // Insert stock card
-                // DB::table('outlet_food_inventory_cards')->insert([
-                //     'inventory_item_id' => $inventoryItemId,
-                //     'id_outlet' => $outletId,
-                //     'warehouse_outlet_id' => $warehouseOutletId,
-                //     'date' => $stockOpname->opname_date,
-                //     'reference_type' => 'stock_opname',
-                //     'reference_id' => $stockOpname->id,
-                //     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
-                //     'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
-                //     'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                //     'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
-                //     'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
-                //     'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                //     'cost_per_small' => $mac,
-                //     'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                //     'cost_per_large' => $stock->last_cost_large ?? 0,
-                //     'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
-                //     'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                //     'saldo_qty_small' => $saldoQtySmall,
-                //     'saldo_qty_medium' => $saldoQtyMedium,
-                //     'saldo_qty_large' => $saldoQtyLarge,
-                //     'saldo_value' => $saldoValue,
-                //     'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
-                //     'created_at' => now(),
-                //     'updated_at' => now(),
-                // ]);
+                // Insert stock card
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'id_outlet' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
+                    'date' => $stockOpname->opname_date,
+                    'reference_type' => 'stock_opname',
+                    'reference_id' => $stockOpname->id,
+                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                    'cost_per_small' => $mac,
+                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                    'cost_per_large' => $stock->last_cost_large ?? 0,
+                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                    'saldo_qty_small' => $saldoQtySmall,
+                    'saldo_qty_medium' => $saldoQtyMedium,
+                    'saldo_qty_large' => $saldoQtyLarge,
+                    'saldo_value' => $saldoValue,
+                    'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
 
-                // // Update cost history if MAC changed (though in our case MAC doesn't change)
-                // // But we still record it for audit trail
-                // DB::table('outlet_food_inventory_cost_histories')->insert([
-                //     'inventory_item_id' => $inventoryItemId,
-                //     'id_outlet' => $outletId,
-                //     'warehouse_outlet_id' => $warehouseOutletId,
-                //     'date' => $stockOpname->opname_date,
-                //     'old_cost' => $mac,
-                //     'new_cost' => $mac, // MAC tidak berubah
-                //     'mac' => $mac,
-                //     'created_at' => now(),
-                //     'updated_at' => now(),
-                // ]);
+                // Update cost history if MAC changed (though in our case MAC doesn't change)
+                // But we still record it for audit trail
+                DB::table('outlet_food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'id_outlet' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
+                    'date' => $stockOpname->opname_date,
+                    'old_cost' => $mac,
+                    'new_cost' => $mac, // MAC tidak berubah
+                    'mac' => $mac,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                // Insert adjustment record to new table
+                StockOpnameAdjustment::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'stock_opname_item_id' => $item->id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'outlet_id' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $item->reason,
+                    'mac_before' => $item->mac_before,
+                    'mac_after' => $item->mac_after,
+                    'value_adjustment' => $valueAdjustment,
+                    'processed_at' => now(),
+                    'processed_by' => $user->id,
+                ]);
             }
 
             // Update status to completed
@@ -1132,7 +1146,7 @@ class StockOpnameController extends Controller
             DB::commit();
 
             return redirect()->route('stock-opnames.show', $stockOpname->id)
-                           ->with('success', 'Stock opname berhasil di-process! (Inventory update disabled)');
+                           ->with('success', 'Stock opname berhasil di-process!');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Gagal process stock opname: ' . $e->getMessage()]);
@@ -1271,17 +1285,32 @@ class StockOpnameController extends Controller
             }
 
             // Filter to only show approvals where user is the next approver
+            // and all previous approval levels have been approved
             $filteredApprovals = $pendingApprovals->filter(function($opname) use ($user) {
-                $pendingFlows = $opname->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+                // Get all approval flows sorted by level
+                $allFlows = $opname->approvalFlows->sortBy('approval_level');
+                $pendingFlows = $allFlows->where('status', 'PENDING');
                 $nextApprover = $pendingFlows->first();
                 
                 if (!$nextApprover) {
                     return false;
                 }
 
+                // Check if all previous approval levels have been approved
+                $nextApprovalLevel = $nextApprover->approval_level;
+                $previousFlows = $allFlows->where('approval_level', '<', $nextApprovalLevel);
+                $allPreviousApproved = $previousFlows->every(function($flow) {
+                    return $flow->status === 'APPROVED';
+                });
+
+                // If previous levels are not all approved, don't show this approval
+                if (!$allPreviousApproved) {
+                    return false;
+                }
+
                 // Check if user is the next approver
                 if ($user->id_role === '5af56935b011a') {
-                    return true; // Superadmin can approve any
+                    return true; // Superadmin can approve any (but still need previous levels approved)
                 }
 
                 return $nextApprover->approver_id == $user->id;

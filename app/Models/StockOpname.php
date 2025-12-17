@@ -52,6 +52,11 @@ class StockOpname extends Model
         return $this->hasMany(StockOpnameApprovalFlow::class, 'stock_opname_id')->orderBy('approval_level');
     }
 
+    public function adjustments()
+    {
+        return $this->hasMany(StockOpnameAdjustment::class, 'stock_opname_id');
+    }
+
     // Scopes
     public function scopeDraft($query)
     {

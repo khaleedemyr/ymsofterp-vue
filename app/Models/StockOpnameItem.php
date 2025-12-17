@@ -55,6 +55,11 @@ class StockOpnameItem extends Model
         return $this->belongsTo(\App\Models\OutletFoodInventoryItem::class, 'inventory_item_id');
     }
 
+    public function adjustment()
+    {
+        return $this->hasOne(StockOpnameAdjustment::class, 'stock_opname_item_id');
+    }
+
     // Methods
     public function hasDifference()
     {
