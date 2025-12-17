@@ -171,14 +171,14 @@
               <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {{ adj.category_name }}
               </td>
-              <td class="px-4 py-4 whitespace-nowrap text-sm" :class="getDiffClass(adj.qty_diff_small)">
-                {{ formatNumber(adj.qty_diff_small) }} {{ adj.small_unit_name }}
+              <td class="px-4 py-4 whitespace-nowrap text-sm font-semibold" :class="getDiffClass(adj.qty_diff_small)">
+                {{ formatNumberWithSign(adj.qty_diff_small) }} {{ adj.small_unit_name }}
               </td>
-              <td class="px-4 py-4 whitespace-nowrap text-sm" :class="getDiffClass(adj.qty_diff_medium)">
-                {{ formatNumber(adj.qty_diff_medium) }} {{ adj.medium_unit_name }}
+              <td class="px-4 py-4 whitespace-nowrap text-sm font-semibold" :class="getDiffClass(adj.qty_diff_medium)">
+                {{ formatNumberWithSign(adj.qty_diff_medium) }} {{ adj.medium_unit_name }}
               </td>
-              <td class="px-4 py-4 whitespace-nowrap text-sm" :class="getDiffClass(adj.qty_diff_large)">
-                {{ formatNumber(adj.qty_diff_large) }} {{ adj.large_unit_name }}
+              <td class="px-4 py-4 whitespace-nowrap text-sm font-semibold" :class="getDiffClass(adj.qty_diff_large)">
+                {{ formatNumberWithSign(adj.qty_diff_large) }} {{ adj.large_unit_name }}
               </td>
               <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {{ formatCurrency(adj.mac_before) }}
@@ -187,7 +187,7 @@
                 {{ formatCurrency(adj.mac_after) }}
               </td>
               <td class="px-4 py-4 whitespace-nowrap text-sm font-semibold" :class="getValueClass(adj.value_adjustment)">
-                {{ formatCurrency(adj.value_adjustment) }}
+                {{ formatCurrencyWithSign(adj.value_adjustment) }}
               </td>
               <td class="px-4 py-4 text-sm text-gray-900 max-w-xs truncate" :title="adj.reason">
                 {{ adj.reason || '-' }}
@@ -367,15 +367,37 @@ function formatDateTime(value) {
   });
 }
 
+function formatNumberWithSign(value) {
+  if (value === null || value === undefined) return '0';
+  const num = parseFloat(value);
+  const formatted = num.toLocaleString('id-ID', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  if (num > 0) return '+' + formatted;
+  return formatted; // Negative already has minus sign
+}
+
+function formatCurrencyWithSign(value) {
+  if (value === null || value === undefined) return 'Rp 0';
+  const num = parseFloat(value);
+  const formatted = 'Rp ' + num.toLocaleString('id-ID', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  if (num > 0) return '+' + formatted;
+  return formatted; // Negative already has minus sign
+}
+
 function getDiffClass(value) {
-  if (value > 0) return 'text-green-600 font-semibold';
-  if (value < 0) return 'text-red-600 font-semibold';
+  if (value > 0) return 'text-green-600 bg-green-50';
+  if (value < 0) return 'text-red-600 bg-red-50';
   return 'text-gray-900';
 }
 
 function getValueClass(value) {
-  if (value > 0) return 'text-green-600';
-  if (value < 0) return 'text-red-600';
+  if (value > 0) return 'text-green-600 bg-green-50';
+  if (value < 0) return 'text-red-600 bg-red-50';
   return 'text-gray-900';
 }
 
