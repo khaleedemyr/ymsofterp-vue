@@ -11,6 +11,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class ContraBonController extends Controller
@@ -1578,10 +1579,26 @@ class ContraBonController extends Controller
     {
         try {
             // Ambil semua gr_item_id yang sudah ada di contra bon items
-            $usedGRItemIds = \DB::table('food_contra_bon_items')
-                ->whereNotNull('gr_item_id')
-                ->pluck('gr_item_id')
-                ->toArray();
+            // Hanya ambil dari contra bon yang masih ada (tidak dihapus)
+            // Join dengan contra_bons untuk memastikan hanya ambil dari contra bon yang masih ada
+            // Jika contra bon dihapus (hard delete), items juga dihapus, jadi join akan otomatis exclude
+            // Jika ada soft delete, tambahkan filter whereNull('cb.deleted_at')
+            $usedGRItemIdsQuery = \DB::table('food_contra_bon_items as cbi')
+                ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+                ->whereNotNull('cbi.gr_item_id');
+            
+            // Cek apakah ada soft delete
+            if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
+                $usedGRItemIdsQuery->whereNull('cb.deleted_at');
+            }
+            
+            $usedGRItemIds = $usedGRItemIdsQuery->pluck('cbi.gr_item_id')->toArray();
+            
+            // Log untuk debug (bisa dihapus setelah fix)
+            \Log::debug('getPOWithApprovedGR - usedGRItemIds count', [
+                'count' => count($usedGRItemIds),
+                'sample_ids' => array_slice($usedGRItemIds, 0, 10)
+            ]);
 
             // Get all PO with GR in one query
             // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
@@ -1710,6 +1727,13 @@ class ContraBonController extends Controller
                 
                 // Skip if no items available
                 if ($items->isEmpty()) {
+                    // Log untuk debug - PO di-skip karena tidak ada items yang available
+                    \Log::debug('getPOWithApprovedGR - PO skipped (no available items)', [
+                        'po_id' => $row->po_id,
+                        'po_number' => $row->po_number,
+                        'gr_id' => $row->gr_id,
+                        'gr_number' => $row->gr_number
+                    ]);
                     continue;
                 }
                 
@@ -2244,5 +2268,138 @@ class ContraBonController extends Controller
             return redirect()->route('contra-bons.index')
                 ->with('error', 'Gagal menghapus Contra Bon: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * API: Trace contra bon untuk debug
+     * Endpoint untuk membantu trace masalah delete contra bon
+     */
+    public function traceContraBon(Request $request)
+    {
+        $supplierId = $request->input('supplier_id');
+        $grDate = $request->input('gr_date');
+        
+        if (!$supplierId || !$grDate) {
+            return response()->json([
+                'error' => 'supplier_id dan gr_date wajib diisi'
+            ], 422);
+        }
+
+        $result = [
+            'supplier_id' => $supplierId,
+            'gr_date' => $grDate,
+            'trace' => []
+        ];
+
+        // 1. Cek GR untuk supplier dan tanggal tersebut
+        $goodReceives = \DB::table('food_good_receives as gr')
+            ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->where('po.supplier_id', $supplierId)
+            ->whereDate('gr.receive_date', $grDate)
+            ->select(
+                'gr.id as gr_id',
+                'gr.gr_number',
+                'gr.receive_date',
+                'gr.po_id',
+                'po.number as po_number',
+                'po.supplier_id'
+            )
+            ->get();
+
+        $result['trace']['good_receives'] = $goodReceives->toArray();
+        $result['trace']['gr_count'] = $goodReceives->count();
+
+        if ($goodReceives->isEmpty()) {
+            return response()->json($result);
+        }
+
+        $grIds = $goodReceives->pluck('gr_id')->toArray();
+
+        // 2. Cek GR items untuk GR tersebut
+        $grItems = \DB::table('food_good_receive_items')
+            ->whereIn('good_receive_id', $grIds)
+            ->select('id', 'good_receive_id', 'item_id', 'unit_id', 'qty_received')
+            ->get();
+
+        $result['trace']['gr_items'] = $grItems->toArray();
+        $result['trace']['gr_items_count'] = $grItems->count();
+
+        $grItemIds = $grItems->pluck('id')->toArray();
+
+        // 3. Cek contra bon items yang menggunakan GR items tersebut
+        $contraBonItems = \DB::table('food_contra_bon_items as cbi')
+            ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+            ->whereIn('cbi.gr_item_id', $grItemIds)
+            ->select(
+                'cbi.id as item_id',
+                'cbi.contra_bon_id',
+                'cbi.gr_item_id',
+                'cb.number as contra_bon_number',
+                'cb.date as contra_bon_date',
+                'cb.status',
+                'cb.deleted_at'
+            )
+            ->get();
+
+        $result['trace']['contra_bon_items'] = $contraBonItems->toArray();
+        $result['trace']['contra_bon_items_count'] = $contraBonItems->count();
+
+        // 4. Cek contra bon yang masih ada (tidak dihapus)
+        $contraBonIds = $contraBonItems->pluck('contra_bon_id')->unique()->toArray();
+        
+        if (!empty($contraBonIds)) {
+            $contraBons = \DB::table('food_contra_bons')
+                ->whereIn('id', $contraBonIds)
+                ->select('id', 'number', 'date', 'status', 'deleted_at')
+                ->get();
+            
+            $result['trace']['contra_bons'] = $contraBons->toArray();
+            $result['trace']['contra_bons_count'] = $contraBons->count();
+            $result['trace']['contra_bons_deleted_count'] = $contraBons->whereNotNull('deleted_at')->count();
+        }
+
+        // 5. Cek usedGRItemIds dari query getPOWithApprovedGR
+        $usedGRItemIdsQuery = \DB::table('food_contra_bon_items as cbi')
+            ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+            ->whereNotNull('cbi.gr_item_id');
+        
+        if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
+            $usedGRItemIdsQuery->whereNull('cb.deleted_at');
+        }
+        
+        $usedGRItemIds = $usedGRItemIdsQuery->pluck('cbi.gr_item_id')->toArray();
+        
+        $result['trace']['used_gr_item_ids'] = $usedGRItemIds;
+        $result['trace']['used_gr_item_ids_count'] = count($usedGRItemIds);
+        
+        // 6. Cek GR items yang seharusnya muncul (tidak di usedGRItemIds)
+        $availableGRItems = $grItems->whereNotIn('id', $usedGRItemIds);
+        $result['trace']['available_gr_items'] = $availableGRItems->values()->toArray();
+        $result['trace']['available_gr_items_count'] = $availableGRItems->count();
+
+        // 7. Cek apakah GR items dari supplier dan tanggal tersebut muncul di getPOWithApprovedGR
+        $poWithGR = \DB::table('purchase_order_foods as po')
+            ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
+            ->where('po.supplier_id', $supplierId)
+            ->whereDate('gr.receive_date', $grDate)
+            ->select('po.id as po_id', 'po.number as po_number', 'gr.id as gr_id', 'gr.gr_number')
+            ->get();
+
+        $result['trace']['po_with_gr'] = $poWithGR->toArray();
+        $result['trace']['po_with_gr_count'] = $poWithGR->count();
+
+        // 8. Summary
+        $result['summary'] = [
+            'total_gr' => $goodReceives->count(),
+            'total_gr_items' => $grItems->count(),
+            'contra_bon_items_using_gr_items' => $contraBonItems->count(),
+            'contra_bons_using_gr_items' => !empty($contraBonIds) ? count($contraBonIds) : 0,
+            'contra_bons_deleted' => !empty($contraBonIds) ? $contraBons->whereNotNull('deleted_at')->count() : 0,
+            'used_gr_item_ids_count' => count($usedGRItemIds),
+            'available_gr_items_count' => $availableGRItems->count(),
+            'should_appear_in_form' => $availableGRItems->count() > 0 ? 'YES' : 'NO'
+        ];
+
+        return response()->json($result);
     }
 } 

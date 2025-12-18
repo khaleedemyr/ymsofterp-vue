@@ -27,8 +27,8 @@
             </div>
 
             <div v-if="user.id_outlet === 1">
-              <label class="block text-sm font-medium text-gray-700">Outlet</label>
-              <select v-model="selectedOutlet" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm" required>
+              <label class="block text-sm font-medium text-gray-700">Outlet <span class="text-red-500">*</span></label>
+              <select v-model="selectedOutlet" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
                 <option value="">Pilih Outlet</option>
                 <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
               </select>
@@ -36,6 +36,7 @@
             <div v-else>
               <label class="block text-sm font-medium text-gray-700">Outlet</label>
               <input type="text" :value="userOutletName" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm bg-gray-100 cursor-not-allowed" readonly />
+              <input type="hidden" v-model="selectedOutlet" />
             </div>
 
             <div>
@@ -56,32 +57,60 @@
           </form>
 
           <!-- Stock Cut Status -->
-            <div v-if="stockCutStatus && stockCutStatus.has_stock_cut" class="mt-6">
-            <div v-if="stockCutStatus.log.status === 'success'" class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-              <strong class="font-bold">Stock Cut Sudah Dilakukan!</strong>
-              <div class="mt-2 text-sm">
-                <p>Outlet ini sudah melakukan potong stock pada tanggal {{ tanggal }}.</p>
-                <p v-if="stockCutStatus.log.type_filter">
-                  Type yang sudah dipotong: 
-                  <span class="font-semibold">
-                    {{ stockCutStatus.log.type_filter === 'food' ? 'Food' : (stockCutStatus.log.type_filter === 'beverages' ? 'Beverages' : 'Semua Type') }}
-                  </span>
-                </p>
-                <p v-else class="font-semibold">Type: Semua Type (Food + Beverages)</p>
-                <p>Total item dipotong: {{ stockCutStatus.log.total_items_cut }}</p>
-                <p>Total modifier dipotong: {{ stockCutStatus.log.total_modifiers_cut }}</p>
-                <p>Dilakukan pada: {{ new Date(stockCutStatus.log.created_at).toLocaleString('id-ID') }}</p>
-                <p class="mt-2 font-semibold text-red-600">⚠️ Stock cut tidak dapat dilakukan lagi untuk tanggal ini, terlepas dari type yang dipilih.</p>
+            <div v-if="stockCutStatus && stockCutStatus.has_stock_cut && stockCutStatus.logs && stockCutStatus.logs.length > 0" class="mt-6">
+            <!-- Tampilkan semua log yang berhasil -->
+            <div v-for="log in stockCutStatus.logs.filter(l => l.status === 'success')" :key="log.id" class="mb-4">
+              <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                <strong class="font-bold">Stock Cut Sudah Dilakukan!</strong>
+                <div class="mt-2 text-sm">
+                  <p>Outlet ini sudah melakukan potong stock pada tanggal {{ tanggal }}.</p>
+                  <p v-if="log.type_filter">
+                    Type yang sudah dipotong: 
+                    <span class="font-semibold">
+                      {{ log.type_filter === 'food' ? 'Food' : (log.type_filter === 'beverages' ? 'Beverages' : 'Semua Type') }}
+                    </span>
+                  </p>
+                  <p v-else class="font-semibold">Type: Semua Type (Food + Beverages)</p>
+                  <p>Total item dipotong: {{ log.total_items_cut }}</p>
+                  <p>Total modifier dipotong: {{ log.total_modifiers_cut }}</p>
+                  <p>Dilakukan pada: {{ new Date(log.created_at).toLocaleString('id-ID') }}</p>
+                </div>
               </div>
             </div>
-            <div v-else class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              <strong class="font-bold">Stock Cut Gagal!</strong>
-              <div class="mt-2 text-sm">
-                <p>Outlet ini pernah mencoba potong stock pada tanggal {{ tanggal }} tetapi gagal.</p>
-                <p>Error: {{ stockCutStatus.log.error_message }}</p>
-                <p>Dilakukan pada: {{ new Date(stockCutStatus.log.created_at).toLocaleString('id-ID') }}</p>
-                <p class="mt-2 font-semibold">Anda dapat mencoba stock cut lagi.</p>
+            
+            <!-- Tampilkan log yang gagal -->
+            <div v-for="log in stockCutStatus.logs.filter(l => l.status !== 'success')" :key="log.id" class="mb-4">
+              <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                <strong class="font-bold">Stock Cut Gagal!</strong>
+                <div class="mt-2 text-sm">
+                  <p>Outlet ini pernah mencoba potong stock pada tanggal {{ tanggal }} tetapi gagal.</p>
+                  <p v-if="log.error_message">Error: {{ log.error_message }}</p>
+                  <p>Dilakukan pada: {{ new Date(log.created_at).toLocaleString('id-ID') }}</p>
+                  <p class="mt-2 font-semibold">Anda dapat mencoba stock cut lagi.</p>
+                </div>
               </div>
+            </div>
+            
+            <!-- Warning jika tidak bisa potong lagi -->
+            <div v-if="stockCutStatus.can_cut === false" class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mt-4">
+              <strong class="font-bold">⚠️ Perhatian!</strong>
+              <p class="mt-2 text-sm">
+                <span v-if="stockCutStatus.has_all_mode">
+                  Stock cut "Semua Type" sudah pernah dilakukan. Tidak dapat melakukan stock cut lagi untuk tanggal ini.
+                </span>
+                <span v-else-if="stockCutStatus.has_food_mode && stockCutStatus.has_beverages_mode">
+                  Stock cut "Food" dan "Beverages" sudah pernah dilakukan. Tidak dapat melakukan stock cut lagi untuk tanggal ini.
+                </span>
+                <span v-else-if="stockCutStatus.has_food_mode">
+                  Stock cut "Food" sudah pernah dilakukan. Anda masih bisa melakukan stock cut "Beverages".
+                </span>
+                <span v-else-if="stockCutStatus.has_beverages_mode">
+                  Stock cut "Beverages" sudah pernah dilakukan. Anda masih bisa melakukan stock cut "Food".
+                </span>
+                <span v-else>
+                  Stock cut sudah pernah dilakukan untuk tanggal ini.
+                </span>
+              </p>
             </div>
           </div>
 
@@ -378,8 +407,9 @@
             </div>
 
             <!-- No Data Message -->
-            <div v-else class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
-              Tidak ada data laporan stock untuk ditampilkan.
+            <div v-else-if="!loading" class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
+              <strong class="font-bold">Tidak ada data laporan stock untuk ditampilkan.</strong>
+              <p class="mt-2 text-sm">Silakan klik tombol "Cek Kebutuhan Stock Engineering" untuk memuat data laporan stock.</p>
             </div>
 
             <!-- Summary Cards -->
@@ -482,10 +512,63 @@ const expandedItems = ref({}) // New ref for item expansion
 // Computed
 const userOutletName = computed(() => user.value.outlet_name)
 const isAlreadyCut = computed(() => {
-  return stockCutStatus.value && 
-         stockCutStatus.value.has_stock_cut && 
-         stockCutStatus.value.log && 
-         stockCutStatus.value.log.status === 'success'
+  if (!stockCutStatus.value || !stockCutStatus.value.has_stock_cut) {
+    return false
+  }
+  
+  // Normalize selected type: empty string atau null berarti "Semua Type"
+  const normalizedSelectedType = selectedType.value && selectedType.value !== '' ? selectedType.value : null
+  
+  // Cek apakah ada log dengan status success untuk type yang dipilih
+  if (stockCutStatus.value.logs && stockCutStatus.value.logs.length > 0) {
+    const successLogs = stockCutStatus.value.logs.filter(log => log.status === 'success')
+    
+    if (successLogs.length === 0) {
+      return false
+    }
+    
+    // Jika user pilih "Semua Type" (null), cek apakah sudah ada stock cut apapun
+    if (normalizedSelectedType === null) {
+      return successLogs.length > 0
+    }
+    
+    // Jika user pilih type tertentu, cek apakah type tersebut sudah dipotong
+    // Atau jika sudah ada stock cut "Semua Type" (type_filter = null)
+    return successLogs.some(log => {
+      const logType = log.type_filter || null
+      // Jika log adalah "Semua Type", maka semua type sudah dipotong
+      if (logType === null) {
+        return true
+      }
+      // Jika log type sama dengan selected type, maka sudah dipotong
+      return logType === normalizedSelectedType
+    })
+  }
+  
+  // Fallback untuk kompatibilitas dengan struktur lama
+  if (stockCutStatus.value.log) {
+    const log = stockCutStatus.value.log
+    if (log.status !== 'success') {
+      return false
+    }
+    
+    const logType = log.type_filter || null
+    
+    // Jika log adalah "Semua Type", maka semua type sudah dipotong
+    if (logType === null) {
+      return true
+    }
+    
+    // Jika user pilih "Semua Type", cek apakah sudah ada stock cut
+    if (normalizedSelectedType === null) {
+      return true
+    }
+    
+    // Jika log type sama dengan selected type, maka sudah dipotong
+    return logType === normalizedSelectedType
+  }
+  
+  return false
 })
 
 // Group laporan stock by warehouse, category, and sub-category
@@ -524,6 +607,11 @@ onMounted(async () => {
   // Get user data from props or auth
   if (props.user) {
     user.value = props.user
+  }
+  
+  // Jika id_outlet != 1, set selectedOutlet otomatis dan tidak bisa pilih outlet
+  if (user.value.id_outlet && user.value.id_outlet != 1) {
+    selectedOutlet.value = user.value.id_outlet
   }
   
   if (!outlets.value.length) {
@@ -615,6 +703,59 @@ async function cekEngineering() {
   try {
     await cekStockCutStatus()
 
+    // Validasi: Cek apakah type yang dipilih sudah pernah dipotong
+    // API sudah memberikan informasi can_cut, tapi kita juga perlu validasi manual untuk pesan error yang lebih jelas
+    const selectedTypeValue = selectedType.value || null
+    
+    if (stockCutStatus.value && stockCutStatus.value.has_stock_cut) {
+      // Cek apakah masih bisa potong berdasarkan response API
+      if (stockCutStatus.value.can_cut === false) {
+        // Ambil log terakhir untuk menampilkan informasi
+        const logs = stockCutStatus.value.logs || []
+        const lastLog = logs.length > 0 ? logs[0] : null
+        
+        let errorMessage = ''
+        const normalizedSelectedType = selectedTypeValue && selectedTypeValue !== '' ? selectedTypeValue : null
+        const selectedTypeName = normalizedSelectedType === null ? 'Semua Type' : (normalizedSelectedType === 'food' ? 'Food' : 'Beverages')
+        
+        if (stockCutStatus.value.has_all_mode) {
+          // Sudah potong "Semua Type"
+          errorMessage = 'Stock cut "Semua Type" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut lagi, terlepas dari type yang dipilih.'
+        } else if (normalizedSelectedType === null) {
+          // User mau potong "Semua Type", tapi sudah ada stock cut sebelumnya
+          if (stockCutStatus.value.has_food_mode && stockCutStatus.value.has_beverages_mode) {
+            errorMessage = 'Stock cut "Food" dan "Beverages" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Semua Type" lagi.'
+          } else if (stockCutStatus.value.has_food_mode) {
+            errorMessage = 'Stock cut "Food" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Semua Type" jika sudah ada stock cut sebelumnya.'
+          } else if (stockCutStatus.value.has_beverages_mode) {
+            errorMessage = 'Stock cut "Beverages" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Semua Type" jika sudah ada stock cut sebelumnya.'
+          } else {
+            errorMessage = 'Stock cut sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Semua Type" lagi.'
+          }
+        } else if (normalizedSelectedType === 'food' && stockCutStatus.value.has_food_mode) {
+          errorMessage = 'Stock cut "Food" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Food" lagi.'
+        } else if (normalizedSelectedType === 'beverages' && stockCutStatus.value.has_beverages_mode) {
+          errorMessage = 'Stock cut "Beverages" sudah pernah dilakukan untuk tanggal ini. Tidak dapat melakukan stock cut "Beverages" lagi.'
+        } else {
+          errorMessage = `Stock cut "${selectedTypeName}" tidak dapat dilakukan untuk tanggal ini karena sudah ada stock cut sebelumnya.`
+        }
+        
+        errorMsg.value = errorMessage
+        engineeringChecked.value = false
+        loading.value = false
+        return
+      }
+      
+      // Jika ada log dengan status success, tampilkan informasi
+      if (stockCutStatus.value.logs && stockCutStatus.value.logs.length > 0) {
+        const successLog = stockCutStatus.value.logs.find(log => log.status === 'success')
+        if (successLog && successLog.status === 'success') {
+          // Log sudah ditampilkan di bagian stock cut status di atas
+          // Tidak perlu validasi tambahan karena can_cut sudah dicek
+        }
+      }
+    }
+
     const engRes = await axios.post('/stock-cut/engineering', {
       tanggal: tanggal.value,
       id_outlet: selectedOutlet.value || user.value.id_outlet,
@@ -627,8 +768,54 @@ async function cekEngineering() {
     missingModifierBom.value = engRes.data.missing_modifier_bom
     engineeringChecked.value = true
 
+    // Jika tidak ada data engineering tapi ada stock cut untuk type lain, kemungkinan data salah
     if (Object.keys(engineering.value).length === 0 && modifiers.value.length === 0) {
-      successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+      const normalizedSelectedType = selectedTypeValue && selectedTypeValue !== '' ? selectedTypeValue : null
+      if (normalizedSelectedType && stockCutStatus.value && stockCutStatus.value.has_stock_cut) {
+        // Cek apakah type yang dipilih belum dipotong
+        const hasSelectedTypeCut = normalizedSelectedType === 'food' 
+          ? stockCutStatus.value.has_food_mode 
+          : (normalizedSelectedType === 'beverages' 
+            ? stockCutStatus.value.has_beverages_mode 
+            : false)
+        
+        // Jika type belum dipotong tapi tidak ada data, kemungkinan data stock_cut salah
+        if (!hasSelectedTypeCut) {
+          try {
+            const fixRes = await axios.post('/stock-cut/fix-data', {
+              tanggal: tanggal.value,
+              id_outlet: selectedOutlet.value || user.value.id_outlet
+            })
+            
+            if (fixRes.data.status === 'success' && fixRes.data.fixed_count > 0) {
+              // Reload engineering setelah fix
+              const engResAfterFix = await axios.post('/stock-cut/engineering', {
+                tanggal: tanggal.value,
+                id_outlet: selectedOutlet.value || user.value.id_outlet,
+                type: selectedType.value || null
+              })
+              
+              engineering.value = engResAfterFix.data.engineering
+              modifiers.value = engResAfterFix.data.modifiers
+              missingBom.value = engResAfterFix.data.missing_bom
+              missingModifierBom.value = engResAfterFix.data.missing_modifier_bom
+              
+              if (Object.keys(engineering.value).length === 0 && modifiers.value.length === 0) {
+                successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+              }
+            } else {
+              successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+            }
+          } catch (fixError) {
+            console.error('Error fixing data:', fixError)
+            successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+          }
+        } else {
+          successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+        }
+      } else {
+        successMsg.value = 'Tidak ada transaksi/menu terjual pada tanggal dan outlet yang dipilih.'
+      }
     }
 
   } catch (e) {
@@ -660,14 +847,40 @@ async function cekKebutuhan() {
 
     if (res.data.status === 'success') {
       laporanStock.value = res.data.laporan_stock || []
-      showLaporanStock.value = true
+      
+      // Hanya tampilkan laporan stock jika ada data
+      showLaporanStock.value = laporanStock.value.length > 0
 
       const adaYangKurang = res.data.total_kurang > 0
 
-      if (!adaYangKurang) {
+      if (laporanStock.value.length === 0) {
+        // Tidak ada laporan stock
+        bolehPotong.value = false
+        
+        // Cek apakah ada engineering data
+        const hasEngineeringData = engineeringChecked.value && (
+          Object.keys(engineering.value).length > 0 || 
+          modifiers.value.length > 0
+        )
+        
+        if (hasEngineeringData) {
+          // Ada engineering data tapi tidak ada laporan stock
+          // Kemungkinan semua order_items sudah dipotong (stock_cut = 1) atau tidak ada BOM
+          if (missingBom.value.length > 0 || missingModifierBom.value.length > 0) {
+            errorMsg.value = 'Tidak ada kebutuhan stock karena ada item/modifier yang belum punya BOM. Silakan lengkapi BOM terlebih dahulu sebelum melakukan stock cut.'
+          } else {
+            errorMsg.value = 'Tidak ada order_items yang perlu dipotong stock. Kemungkinan semua item untuk type yang dipilih sudah dipotong sebelumnya. Silakan cek log stock cut atau coba dengan type yang berbeda.'
+          }
+        } else {
+          // Tidak ada engineering data
+          errorMsg.value = res.data.message || 'Tidak ada kebutuhan stock untuk tanggal dan outlet yang dipilih. Silakan klik "Cek Engineering" terlebih dahulu untuk melihat data transaksi.'
+        }
+      } else if (!adaYangKurang) {
+        // Ada laporan stock dan stock cukup
         bolehPotong.value = true
         successMsg.value = 'Stock cukup, siap untuk potong stock!'
       } else {
+        // Ada laporan stock tapi stock kurang
         bolehPotong.value = false
         errorMsg.value = 'Stock kurang, tidak bisa potong stock!'
       }

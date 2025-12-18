@@ -517,11 +517,13 @@ class StockCutController extends Controller
         }
 
         // 5. Update flag stock_cut di order_items
-        DB::table('order_items')
-            ->whereDate('created_at', $tanggal)
-            ->where('kode_outlet', $qr_code)
-            ->where('stock_cut', 0)
-            ->update(['stock_cut' => 1]);
+        // Hanya update order_items yang sesuai dengan type yang dipotong
+        $orderItemIds = $orderItems->pluck('id')->toArray();
+        if (!empty($orderItemIds)) {
+            DB::table('order_items')
+                ->whereIn('id', $orderItemIds)
+                ->update(['stock_cut' => 1]);
+        }
 
         // 6. Catat log stock cut
         $totalItemsCut = count($orderItems);
@@ -1348,11 +1350,22 @@ class StockCutController extends Controller
     }
 
     /**
-     * API: List log potong stock
+     * API: List log potong stock dengan pagination dan filter outlet
      */
-    public function getLogs()
+    public function getLogs(Request $request)
     {
-        $logs = \DB::table('stock_cut_logs as scl')
+        $user = auth()->user();
+        
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        
+        $id_outlet = $user->id_outlet ?? null;
+        
+        $perPage = $request->input('per_page', 10);
+        $page = $request->input('page', 1);
+        
+        $query = \DB::table('stock_cut_logs as scl')
             ->join('tbl_data_outlet as o', 'scl.outlet_id', '=', 'o.id_outlet')
             ->join('users as u', 'scl.created_by', '=', 'u.id')
             ->select(
@@ -1360,11 +1373,32 @@ class StockCutController extends Controller
                 'scl.tanggal',
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as user_name',
+                'scl.type_filter',
                 'scl.created_at'
-            )
-            ->orderByDesc('scl.created_at')
+            );
+        
+        // Filter berdasarkan outlet: jika id_outlet != 1, hanya tampilkan outlet user
+        // Jika id_outlet == 1, bisa lihat semua outlet
+        if ($id_outlet && $id_outlet != 1) {
+            $query->where('scl.outlet_id', $id_outlet);
+        }
+        
+        // Get total count before pagination
+        $total = $query->count();
+        
+        // Apply pagination
+        $logs = $query->orderByDesc('scl.created_at')
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
             ->get();
-        return response()->json($logs);
+        
+        return response()->json([
+            'data' => $logs,
+            'current_page' => (int) $page,
+            'per_page' => (int) $perPage,
+            'total' => $total,
+            'last_page' => ceil($total / $perPage)
+        ]);
     }
 
     /**
@@ -1401,11 +1435,38 @@ class StockCutController extends Controller
         // Ambil qr_code dari tbl_data_outlet untuk rollback
         $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
         
-        // Reset flag stock_cut di order_items
-        \DB::table('order_items')
-            ->whereDate('created_at', $tanggal)
-            ->where('kode_outlet', $qr_code)
-            ->update(['stock_cut' => 0]);
+        // Reset flag stock_cut di order_items berdasarkan type_filter dari log
+        $typeFilter = $log->type_filter;
+        
+        if ($typeFilter === null || $typeFilter === 'all') {
+            // Jika type_filter null atau 'all', reset semua order_items
+            \DB::table('order_items')
+                ->whereDate('created_at', $tanggal)
+                ->where('kode_outlet', $qr_code)
+                ->where('stock_cut', 1)
+                ->update(['stock_cut' => 0]);
+        } else {
+            // Filter berdasarkan type menggunakan subquery
+            $itemIdsQuery = \DB::table('items')
+                ->select('id');
+            
+            if ($typeFilter === 'food') {
+                $itemIdsQuery->whereIn('type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($typeFilter === 'beverages') {
+                $itemIdsQuery->where('type', 'Beverages');
+            }
+            
+            $itemIds = $itemIdsQuery->pluck('id')->toArray();
+            
+            if (!empty($itemIds)) {
+                \DB::table('order_items')
+                    ->whereDate('created_at', $tanggal)
+                    ->where('kode_outlet', $qr_code)
+                    ->where('stock_cut', 1)
+                    ->whereIn('item_id', $itemIds)
+                    ->update(['stock_cut' => 0]);
+            }
+        }
         // Hapus log
         \DB::table('stock_cut_logs')->where('id', $id)->delete();
         return response()->json(['success' => true]);
@@ -1437,6 +1498,7 @@ class StockCutController extends Controller
             )
             ->whereDate('oi.created_at', $tanggal)
             ->where('oi.kode_outlet', $qr_code)
+            ->where('oi.stock_cut', 0) // Hanya ambil order_items yang belum dipotong stock
             ->groupBy('i.id', 'i.type', 'c.name', 'sc.name', 'i.name');
         
         // Filter berdasarkan type jika ada
@@ -1483,12 +1545,26 @@ class StockCutController extends Controller
             }
         }
         // MODIFIER ENGINEERING
-        $orderItems = \DB::table('order_items')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->select(['order_items.modifiers', 'order_items.qty'])
+        // Hanya ambil modifier dari order_items yang belum dipotong stock (stock_cut = 0)
+        // dan filter berdasarkan type item jika ada
+        $modifierQuery = \DB::table('order_items as oi')
+            ->join('orders', 'oi.order_id', '=', 'orders.id')
+            ->join('items as i', 'oi.item_id', '=', 'i.id')
+            ->select(['oi.modifiers', 'oi.qty', 'i.type'])
             ->whereDate('orders.created_at', $tanggal)
             ->where('orders.kode_outlet', $qr_code)
-            ->get();
+            ->where('oi.stock_cut', 0); // Hanya ambil yang belum dipotong
+        
+        // Filter berdasarkan type jika ada
+        if ($type_filter) {
+            if ($type_filter === 'food') {
+                $modifierQuery->whereIn('i.type', ['Food Asian', 'Food Western', 'Food']);
+            } elseif ($type_filter === 'beverages') {
+                $modifierQuery->where('i.type', 'Beverages');
+            }
+        }
+        
+        $orderItems = $modifierQuery->get();
             
         $modifierMap = [];
         foreach ($orderItems as $oi) {
@@ -1586,6 +1662,100 @@ class StockCutController extends Controller
             'missing_bom' => $missingBom,
             'modifiers' => $modifiers,
             'missing_modifier_bom' => $missingModifierBom
+        ]);
+    }
+
+    /**
+     * API: Fix data stock_cut yang salah (reset order_items beverages jika stock cut food sudah dilakukan)
+     * Endpoint ini untuk memperbaiki data yang terlanjur salah sebelum perbaikan bug
+     */
+    public function fixStockCutData(Request $request)
+    {
+        $tanggal = $request->input('tanggal');
+        $id_outlet = $request->input('id_outlet');
+        
+        if (!$tanggal || !$id_outlet) {
+            return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
+        }
+
+        // Ambil qr_code dari tbl_data_outlet
+        $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+        
+        if (!$qr_code) {
+            return response()->json(['status' => 'error', 'message' => 'QR Code outlet tidak ditemukan'], 422);
+        }
+
+        // Cek apakah ada stock cut log untuk Food tapi tidak untuk Beverages
+        $foodLog = \DB::table('stock_cut_logs')
+            ->where('outlet_id', $id_outlet)
+            ->where('tanggal', $tanggal)
+            ->where('status', 'success')
+            ->where(function($query) {
+                $query->where('type_filter', 'food')
+                      ->orWhereNull('type_filter');
+            })
+            ->first();
+        
+        $beveragesLog = \DB::table('stock_cut_logs')
+            ->where('outlet_id', $id_outlet)
+            ->where('tanggal', $tanggal)
+            ->where('status', 'success')
+            ->where('type_filter', 'beverages')
+            ->first();
+
+        // Jika ada stock cut Food tapi tidak ada Beverages, reset order_items Beverages
+        if ($foodLog && !$beveragesLog) {
+            // Ambil item_ids untuk Beverages
+            $beveragesItemIds = \DB::table('items')
+                ->where('type', 'Beverages')
+                ->pluck('id')
+                ->toArray();
+            
+            if (!empty($beveragesItemIds)) {
+                // Reset stock_cut untuk order_items Beverages
+                $updated = \DB::table('order_items')
+                    ->whereDate('created_at', $tanggal)
+                    ->where('kode_outlet', $qr_code)
+                    ->where('stock_cut', 1)
+                    ->whereIn('item_id', $beveragesItemIds)
+                    ->update(['stock_cut' => 0]);
+                
+                return response()->json([
+                    'status' => 'success',
+                    'message' => "Berhasil memperbaiki data. {$updated} order_items Beverages di-reset menjadi belum dipotong.",
+                    'fixed_count' => $updated
+                ]);
+            }
+        }
+
+        // Cek juga sebaliknya: jika ada Beverages tapi tidak ada Food
+        if ($beveragesLog && !$foodLog) {
+            // Ambil item_ids untuk Food
+            $foodItemIds = \DB::table('items')
+                ->whereIn('type', ['Food Asian', 'Food Western', 'Food'])
+                ->pluck('id')
+                ->toArray();
+            
+            if (!empty($foodItemIds)) {
+                // Reset stock_cut untuk order_items Food
+                $updated = \DB::table('order_items')
+                    ->whereDate('created_at', $tanggal)
+                    ->where('kode_outlet', $qr_code)
+                    ->where('stock_cut', 1)
+                    ->whereIn('item_id', $foodItemIds)
+                    ->update(['stock_cut' => 0]);
+                
+                return response()->json([
+                    'status' => 'success',
+                    'message' => "Berhasil memperbaiki data. {$updated} order_items Food di-reset menjadi belum dipotong.",
+                    'fixed_count' => $updated
+                ]);
+            }
+        }
+
+        return response()->json([
+            'status' => 'info',
+            'message' => 'Tidak ada data yang perlu diperbaiki. Data sudah benar atau kedua type sudah dipotong.'
         ]);
     }
 

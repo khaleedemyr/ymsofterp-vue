@@ -794,6 +794,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/contra-bon/warehouse-retail-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBon']);
     Route::get('/api/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
     Route::get('/api/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
+    Route::get('/api/contra-bon/trace', [\App\Http\Controllers\ContraBonController::class, 'traceContraBon']);
 });
 
 // Warehouse Transfer
@@ -1486,6 +1487,7 @@ Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController
 Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
 Route::post('/stock-cut/dispatch', [\App\Http\Controllers\StockCutController::class, 'dispatchStockCut']);
 Route::post('/stock-cut/status', [\App\Http\Controllers\StockCutController::class, 'status']);
+Route::post('/stock-cut/fix-data', [\App\Http\Controllers\StockCutController::class, 'fixStockCutData']);
 
 Route::get('/stock-cut', function () {
     return Inertia::render('StockCut');
@@ -1500,16 +1502,37 @@ Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::clas
 Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
 
 Route::get('/stock-cut/form', function () {
+    $user = auth()->user();
+    
     // Ambil data outlet untuk dropdown
-    $outlets = \App\Models\Outlet::select('id_outlet', 'nama_outlet')->get()
+    // Jika user id_outlet != 1, hanya ambil outlet user sendiri
+    $outletsQuery = \App\Models\Outlet::select('id_outlet', 'nama_outlet');
+    
+    if ($user && $user->id_outlet && $user->id_outlet != 1) {
+        $outletsQuery->where('id_outlet', $user->id_outlet);
+    }
+    
+    $outlets = $outletsQuery->get()
         ->map(function($o) {
             return [
                 'id' => $o->id_outlet,
                 'name' => $o->nama_outlet,
             ];
         });
+    
+    // Ambil outlet_name dari tabel outlet jika user punya id_outlet
+    $outletName = '';
+    if ($user && $user->id_outlet) {
+        $outlet = \App\Models\Outlet::where('id_outlet', $user->id_outlet)->first();
+        $outletName = $outlet ? $outlet->nama_outlet : '';
+    }
+    
     return Inertia::render('StockCut/Form', [
         'outlets' => $outlets,
+        'user' => [
+            'id_outlet' => $user->id_outlet ?? null,
+            'outlet_name' => $outletName
+        ]
     ]);
 })->middleware(['auth'])->name('stock-cut.form');
 
