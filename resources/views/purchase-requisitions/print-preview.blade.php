@@ -326,7 +326,7 @@
                     <div class="budget-section">
                         <div class="budget-title">
                             {{ $budgetInfo['budget_type'] === 'PER_OUTLET' ? 'Informasi Budget Outlet' : 'Informasi Budget Category' }} - 
-                            {{ \Carbon\Carbon::create()->month($budgetInfo['current_month'])->format('F') }} {{ $budgetInfo['current_year'] }}
+                            {{ \Carbon\Carbon::create((int)$budgetInfo['current_year'], (int)$budgetInfo['current_month'], 1)->format('F') }} {{ $budgetInfo['current_year'] }}
                             <span style="font-size: 12px; font-weight: normal; color: #666;">
                                 ({{ $budgetInfo['budget_type'] === 'PER_OUTLET' ? 'Per Outlet' : 'Global' }})
                             </span>
