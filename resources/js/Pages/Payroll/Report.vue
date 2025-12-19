@@ -18,6 +18,9 @@ const outletId = ref(props.filter?.outlet_id || '');
 const month = ref(props.filter?.month || new Date().getMonth() + 1);
 const year = ref(props.filter?.year || new Date().getFullYear());
 const serviceCharge = ref(props.filter?.service_charge || '');
+const lbAmount = ref(props.filter?.lb_amount || '');
+const deviasiAmount = ref(props.filter?.deviasi_amount || '');
+const cityLedgerAmount = ref(props.filter?.city_ledger_amount || '');
 const loading = ref(false);
 const exporting = ref(false);
 const generating = ref(false);
@@ -92,6 +95,9 @@ function lihatData() {
     month: formatMonth(month.value),
     year: year.value,
     service_charge: serviceCharge.value || null,
+    lb_amount: lbAmount.value || null,
+    deviasi_amount: deviasiAmount.value || null,
+    city_ledger_amount: cityLedgerAmount.value || null,
   }, {
     preserveState: true,
     replace: true,
@@ -107,7 +113,7 @@ async function exportData() {
 
   exporting.value = true;
   try {
-    const url = `/payroll/report/export?outlet_id=${outletId.value}&month=${formatMonth(month.value)}&year=${year.value}&service_charge=${serviceCharge.value || 0}`;
+    const url = `/payroll/report/export?outlet_id=${outletId.value}&month=${formatMonth(month.value)}&year=${year.value}&service_charge=${serviceCharge.value || 0}&lb_amount=${lbAmount.value || 0}&deviasi_amount=${deviasiAmount.value || 0}&city_ledger_amount=${cityLedgerAmount.value || 0}`;
     window.open(url, '_blank');
   } catch (error) {
     console.error('Error exporting:', error);
@@ -160,6 +166,7 @@ const summary = computed(() => {
       totalServiceCharge: 0,
       totalBPJSJKN: 0,
       totalBPJSTK: 0,
+      totalPHBonus: 0,
       totalPotonganTelat: 0,
       totalPotonganAlpha: 0,
       totalPotonganUnpaidLeave: 0,
@@ -177,6 +184,7 @@ const summary = computed(() => {
     totalServiceCharge: data.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
     totalBPJSJKN: data.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
     totalBPJSTK: data.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
+    totalPHBonus: data.reduce((sum, item) => sum + Number(item.ph_bonus || 0), 0),
     totalPotonganTelat: data.reduce((sum, item) => sum + Number(item.potongan_telat || 0), 0),
     totalPotonganAlpha: data.reduce((sum, item) => sum + Number(item.potongan_alpha || 0), 0),
     totalPotonganUnpaidLeave: data.reduce((sum, item) => sum + Number(item.potongan_unpaid_leave || 0), 0),
@@ -189,6 +197,9 @@ watch(() => props.filter, (newFilter) => {
   month.value = newFilter?.month || new Date().getMonth() + 1;
   year.value = newFilter?.year || new Date().getFullYear();
   serviceCharge.value = newFilter?.service_charge || '';
+  lbAmount.value = newFilter?.lb_amount || '';
+  deviasiAmount.value = newFilter?.deviasi_amount || '';
+  cityLedgerAmount.value = newFilter?.city_ledger_amount || '';
 }, { immediate: true });
 
 // Toggle expand row
@@ -356,8 +367,31 @@ function resetCustomItemForm() {
 // Print payroll for specific employee
 async function printPayroll(employee) {
   try {
-    const url = `/payroll/report/print?user_id=${employee.user_id}&outlet_id=${outletId.value}&month=${month.value}&year=${year.value}`;
-    window.open(url, '_blank');
+    // Tampilkan dialog untuk memilih jenis slip gaji
+    const { value: type } = await Swal.fire({
+      title: 'Pilih Jenis Slip Gaji',
+      text: 'Pilih slip gaji yang ingin dicetak',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Cetak',
+      cancelButtonText: 'Batal',
+      input: 'select',
+      inputOptions: {
+        'gajian1': 'Gajian 1 (Akhir Bulan)',
+        'gajian2': 'Gajian 2 (Tanggal 8)'
+      },
+      inputPlaceholder: 'Pilih jenis slip gaji',
+      inputValidator: (value) => {
+        if (!value) {
+          return 'Pilih jenis slip gaji terlebih dahulu';
+        }
+      }
+    });
+
+    if (type) {
+      const url = `/payroll/report/print?user_id=${employee.user_id}&outlet_id=${outletId.value}&month=${month.value}&year=${year.value}&type=${type}`;
+      window.open(url, '_blank');
+    }
   } catch (error) {
     console.error('Error printing payroll:', error);
     Swal.fire('Error', 'Terjadi kesalahan saat print payroll', 'error');
@@ -367,8 +401,31 @@ async function printPayroll(employee) {
 // Show payroll as HTML for specific employee
 async function showPayroll(employee) {
   try {
-    const url = `/payroll/report/show?user_id=${employee.user_id}&outlet_id=${outletId.value}&month=${month.value}&year=${year.value}`;
-    window.open(url, '_blank');
+    // Tampilkan dialog untuk memilih jenis slip gaji
+    const { value: type } = await Swal.fire({
+      title: 'Pilih Jenis Slip Gaji',
+      text: 'Pilih slip gaji yang ingin dilihat',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Lihat',
+      cancelButtonText: 'Batal',
+      input: 'select',
+      inputOptions: {
+        'gajian1': 'Gajian 1 (Akhir Bulan)',
+        'gajian2': 'Gajian 2 (Tanggal 8)'
+      },
+      inputPlaceholder: 'Pilih jenis slip gaji',
+      inputValidator: (value) => {
+        if (!value) {
+          return 'Pilih jenis slip gaji terlebih dahulu';
+        }
+      }
+    });
+
+    if (type) {
+      const url = `/payroll/report/show?user_id=${employee.user_id}&outlet_id=${outletId.value}&month=${month.value}&year=${year.value}&type=${type}`;
+      window.open(url, '_blank');
+    }
   } catch (error) {
     console.error('Error showing payroll:', error);
     Swal.fire('Error', 'Terjadi kesalahan saat menampilkan payroll', 'error');
@@ -438,6 +495,9 @@ async function generatePayroll() {
       month: formatMonth(month.value),
       year: year.value,
       service_charge: serviceCharge.value || 0,
+      lb_amount: lbAmount.value || 0,
+      deviasi_amount: deviasiAmount.value || 0,
+      city_ledger_amount: cityLedgerAmount.value || 0,
       payroll_data: props.payrollData
     });
 
@@ -487,6 +547,9 @@ async function editPayroll() {
     const response = await axios.post('/payroll/report/edit', {
       payroll_id: payrollId.value,
       service_charge: serviceCharge.value || 0,
+      lb_amount: lbAmount.value || 0,
+      deviasi_amount: deviasiAmount.value || 0,
+      city_ledger_amount: cityLedgerAmount.value || 0,
       payroll_data: props.payrollData
     });
 
@@ -596,6 +659,33 @@ onMounted(() => {
             step="0.01"
             min="0"
             placeholder="Service Charge"
+            class="form-input rounded-xl shadow-lg w-48"
+          />
+          
+          <input
+            v-model="lbAmount"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="L & B Amount"
+            class="form-input rounded-xl shadow-lg w-48"
+          />
+          
+          <input
+            v-model="deviasiAmount"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="Deviasi Amount"
+            class="form-input rounded-xl shadow-lg w-48"
+          />
+          
+          <input
+            v-model="cityLedgerAmount"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="City Ledger Amount"
             class="form-input rounded-xl shadow-lg w-48"
           />
           
@@ -723,6 +813,10 @@ onMounted(() => {
                 <div class="text-sm font-medium">Total BPJS TK</div>
                 <div class="text-2xl font-bold">{{ formatCurrency(summary.totalBPJSTK) }}</div>
               </div>
+              <div class="bg-gradient-to-br from-yellow-400 to-yellow-600 text-white p-4 rounded-xl shadow-lg">
+                <div class="text-sm font-medium">Total PH Bonus</div>
+                <div class="text-2xl font-bold">{{ formatCurrency(summary.totalPHBonus) }}</div>
+              </div>
               <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
                 <div class="text-sm font-medium">Total Gaji</div>
                 <div class="text-2xl font-bold">{{ formatCurrency(summary.totalGaji) }}</div>
@@ -770,6 +864,10 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">PH Bonus</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Earnings</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Deductions</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Telat</th>
@@ -899,6 +997,36 @@ onMounted(() => {
                         <span class="text-xs text-red-500 ml-1">(TK Disabled)</span>
                       </span>
                     </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.lb == 1" class="text-red-600 font-bold">
+                        {{ formatCurrency(item.lb_total || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(L & B Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.deviasi == 1" class="text-red-600 font-bold">
+                        {{ formatCurrency(item.deviasi_total || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(Deviasi Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.city_ledger == 1" class="text-red-600 font-bold">
+                        {{ formatCurrency(item.city_ledger_total || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(City Ledger Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-green-600">
+                      {{ formatCurrency(item.ph_bonus || 0) }}
+                    </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600">
                       {{ formatCurrency(item.custom_earnings) }}
                       <button v-if="item.custom_items && item.custom_items.length > 0" 
@@ -941,10 +1069,6 @@ onMounted(() => {
                                 class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold mr-1">
                           <i class="fa fa-eye mr-1"></i> View
                         </button>
-                        <button @click="printPayroll(item)" 
-                                class="bg-gradient-to-br from-green-400 to-green-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold">
-                          <i class="fa fa-print mr-1"></i> Print
-                        </button>
                       </div>
                     </td>
 
@@ -952,7 +1076,7 @@ onMounted(() => {
                   
                   <!-- Expanded Detail Row -->
                                   <tr v-if="expandedRows.has(item.user_id)" class="bg-blue-50 border-l-4 border-blue-400">
-                  <td colspan="17" class="px-4 py-4">
+                  <td colspan="21" class="px-4 py-4">
                       <div v-if="loadingDetails[item.user_id]" class="flex items-center justify-center py-8">
                         <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                         <span class="ml-2 text-blue-600">Loading detail attendance...</span>
@@ -994,6 +1118,30 @@ onMounted(() => {
                              <span v-else 
                                    class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
                                <i class="fa fa-times-circle mr-1"></i> TK Disabled
+                             </span>
+                             <span v-if="item.master_data && item.master_data.lb == 1" 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                               <i class="fa fa-check-circle mr-1"></i> L & B Enabled
+                             </span>
+                             <span v-else 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                               <i class="fa fa-times-circle mr-1"></i> L & B Disabled
+                             </span>
+                             <span v-if="item.master_data && item.master_data.deviasi == 1" 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                               <i class="fa fa-check-circle mr-1"></i> Deviasi Enabled
+                             </span>
+                             <span v-else 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                               <i class="fa fa-times-circle mr-1"></i> Deviasi Disabled
+                             </span>
+                             <span v-if="item.master_data && item.master_data.city_ledger == 1" 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                               <i class="fa fa-check-circle mr-1"></i> City Ledger Enabled
+                             </span>
+                             <span v-else 
+                                   class="ml-2 inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                               <i class="fa fa-times-circle mr-1"></i> City Ledger Disabled
                              </span>
                            </div>
                        </div>

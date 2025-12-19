@@ -751,9 +751,9 @@ class RewardController extends Controller
                         // Don't process if reward_value is missing
                         $rewardProcessed = false;
                     } else {
-                        $pointAmount = is_array($rules['reward_value']) 
-                            ? (int)($rules['reward_value'][0] ?? 0) 
-                            : (int)$rules['reward_value'];
+                    $pointAmount = is_array($rules['reward_value']) 
+                        ? (int)($rules['reward_value'][0] ?? 0) 
+                        : (int)$rules['reward_value'];
                     
                         if ($pointAmount <= 0) {
                             \Log::warning('Challenge point reward amount is invalid', [
@@ -768,8 +768,8 @@ class RewardController extends Controller
                                 'data' => ['points_added' => 0]
                             ], 400);
                         }
-                        
-                        if ($pointAmount > 0) {
+                    
+                    if ($pointAmount > 0) {
                         try {
                             \Log::info('Attempting to add challenge point reward', [
                                 'member_id' => $member->id,
@@ -866,10 +866,10 @@ class RewardController extends Controller
                             ]);
                             return response()->json([
                                 'success' => false,
-                                    'message' => 'Failed to add points: ' . $e->getMessage()
+                                'message' => 'Failed to add points: ' . $e->getMessage()
                             ], 500);
                         }
-                    }
+                        }
                     }
                     
                 } elseif ($rewardType === 'voucher' && isset($rules['reward_value'])) {
@@ -1190,17 +1190,17 @@ class RewardController extends Controller
             ]);
             
             if ($shouldMarkAsClaimed) {
-                $progress->reward_claimed = true;
-                $progress->reward_claimed_at = now();
-                if ($serialCode) {
-                    $progress->serial_code = $serialCode;
-                }
-                $progress->save();
-                
-                \Log::info('Challenge reward claimed', [
-                    'member_id' => $member->id,
-                    'challenge_id' => $challengeId,
-                    'serial_code' => $serialCode,
+            $progress->reward_claimed = true;
+            $progress->reward_claimed_at = now();
+            if ($serialCode) {
+                $progress->serial_code = $serialCode;
+            }
+            $progress->save();
+
+            \Log::info('Challenge reward claimed', [
+                'member_id' => $member->id,
+                'challenge_id' => $challengeId,
+                'serial_code' => $serialCode,
                     'reward_type' => $rewardType,
                     'reward_processed' => $rewardProcessed
                 ]);

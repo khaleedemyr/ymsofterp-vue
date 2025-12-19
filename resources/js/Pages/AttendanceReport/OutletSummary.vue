@@ -115,6 +115,7 @@ function openEmployeeSummary(outletId, outletName) {
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Total Telat (menit)</th>
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Total Lembur (jam)</th>
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Avg Lembur per Orang (jam)</th>
+              <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Total PH (hari)</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
             </tr>
           </thead>
@@ -124,6 +125,7 @@ function openEmployeeSummary(outletId, outletName) {
               <td class="px-4 py-2 text-right font-mono">{{ r.total_telat }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ r.total_lembur }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ r.average_lembur_per_person || 0 }}</td>
+              <td class="px-4 py-2 text-right font-mono">{{ r.total_ph_days || 0 }}</td>
               <td class="px-4 py-2 text-center">
                 <button 
                   @click="openEmployeeSummary(r.outlet_id, r.nama_outlet)"
@@ -136,7 +138,7 @@ function openEmployeeSummary(outletId, outletName) {
               </td>
             </tr>
             <tr v-if="!rows || rows.length === 0">
-              <td colspan="5" class="text-center py-8 text-gray-400">
+              <td colspan="6" class="text-center py-8 text-gray-400">
                 <div v-if="!period" class="text-lg">
                   <i class="fa fa-filter text-4xl mb-2 text-gray-300"></i>
                   <div>Pilih filter dan klik "Tampilkan" untuk melihat data</div>
@@ -151,6 +153,7 @@ function openEmployeeSummary(outletId, outletName) {
               <td class="px-4 py-2 text-right font-mono">{{ (rows||[]).reduce((s,r)=>s+(r.total_telat||0),0) }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ (rows||[]).reduce((s,r)=>s+(r.total_lembur||0),0) }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ (rows||[]).length > 0 ? ((rows||[]).reduce((s,r)=>s+(r.average_lembur_per_person||0),0) / (rows||[]).length).toFixed(2) : 0 }}</td>
+              <td class="px-4 py-2 text-right font-mono">{{ (rows||[]).reduce((s,r)=>s+(r.total_ph_days||0),0) }}</td>
               <td class="px-4 py-2"></td>
             </tr>
           </tfoot>

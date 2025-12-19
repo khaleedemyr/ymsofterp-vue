@@ -126,6 +126,15 @@
         </div>
         <h1>SLIP GAJI KARYAWAN</h1>
         <p>Periode: {{ $periode }}</p>
+        @if(isset($type))
+            <p style="font-weight: bold; color: #1976d2;">
+                @if($type === 'gajian1')
+                    GAJIAN 1 (AKHIR BULAN)
+                @else
+                    GAJIAN 2 (TANGGAL 8)
+                @endif
+            </p>
+        @endif
     </div>
 
     <div class="info-section">
@@ -176,127 +185,157 @@
             </tr>
         </thead>
         <tbody>
-            <!-- PENDAPATAN -->
-            <tr>
-                <td colspan="3" style="background: #e8f5e8; font-weight: bold; text-align: center;">PENDAPATAN</td>
-            </tr>
-            <tr>
-                <td>Gaji Pokok</td>
-                <td>-</td>
-                <td class="earnings">Rp {{ number_format($gaji_pokok, 0, ',', '.') }}</td>
-            </tr>
-            <tr>
-                <td>Tunjangan</td>
-                <td>-</td>
-                <td class="earnings">Rp {{ number_format($tunjangan, 0, ',', '.') }}</td>
-            </tr>
-            <tr>
-                <td>Jam Lembur</td>
-                <td>{{ $total_lembur }} jam</td>
-                <td class="earnings">
-                    @if($master_data->ot == 1)
-                        Rp {{ number_format($gaji_lembur, 0, ',', '.') }}
-                        <div class="nominal-info">@ Rp {{ number_format($nominal_lembur_per_jam, 0, ',', '.') }}/jam</div>
-                    @else
-                        Rp 0 (OT Disabled)
-                    @endif
-                </td>
-            </tr>
-            <tr>
-                <td>Uang Makan</td>
-                <td>{{ $hari_kerja }} hari</td>
-                <td class="earnings">
-                    @if($master_data->um == 1)
-                        Rp {{ number_format($uang_makan, 0, ',', '.') }}
-                        <div class="nominal-info">@ Rp {{ number_format($nominal_uang_makan, 0, ',', '.') }}/hari</div>
-                    @else
-                        Rp 0 (UM Disabled)
-                    @endif
-                </td>
-            </tr>
-            @if(isset($service_charge))
-            <tr>
-                <td>Service Charge</td>
-                <td>-</td>
-                <td class="earnings">
-                    @if($master_data->sc == 1)
-                        Rp {{ number_format($service_charge ?? 0, 0, ',', '.') }}
-                    @else
-                        Rp 0 (SC Disabled)
-                    @endif
-                </td>
-            </tr>
-            @endif
-            @if(isset($custom_earnings) && $custom_earnings > 0)
-            <tr>
-                <td>Pendapatan Tambahan</td>
-                <td>{{ $custom_items && $custom_items->where('item_type', 'earn')->count() > 0 ? $custom_items->where('item_type', 'earn')->count() : 0 }} item</td>
-                <td class="earnings">Rp {{ number_format($custom_earnings, 0, ',', '.') }}</td>
-            </tr>
-            @endif
+            @php
+                $type = $type ?? 'gajian1'; // Default to gajian1 if not set
+            @endphp
 
-            <!-- POTONGAN -->
-            <tr>
-                <td colspan="3" style="background: #ffebee; font-weight: bold; text-align: center;">POTONGAN</td>
-            </tr>
-            @if($total_telat > 0)
-            <tr>
-                <td>Menit Telat</td>
-                <td>{{ $total_telat }} menit</td>
-                <td class="deductions">
-                    Rp {{ number_format($potongan_telat, 0, ',', '.') }}
-                    <div class="nominal-info">@ Rp {{ number_format($gaji_per_menit, 2, ',', '.') }}/menit</div>
-                </td>
-            </tr>
-            @endif
-            <tr>
-                <td>BPJS JKN</td>
-                <td>-</td>
-                <td class="deductions">
-                    @if($master_data->bpjs_jkn == 1)
-                        Rp {{ number_format($bpjs_jkn, 0, ',', '.') }}
-                    @else
-                        Rp 0 (JKN Disabled)
-                    @endif
-                </td>
-            </tr>
-            <tr>
-                <td>BPJS TK</td>
-                <td>-</td>
-                <td class="deductions">
-                    @if($master_data->bpjs_tk == 1)
-                        Rp {{ number_format($bpjs_tk, 0, ',', '.') }}
-                    @else
-                        Rp 0 (TK Disabled)
-                    @endif
-                </td>
-            </tr>
-            @if(isset($custom_deductions) && $custom_deductions > 0)
-            <tr>
-                <td>Potongan Tambahan</td>
-                <td>{{ $custom_items && $custom_items->where('item_type', 'deduction')->count() > 0 ? $custom_items->where('item_type', 'deduction')->count() : 0 }} item</td>
-                <td class="deductions">Rp {{ number_format($custom_deductions, 0, ',', '.') }}</td>
-            </tr>
-            @endif
-            @if(isset($total_alpha) && $total_alpha > 0)
-            <tr>
-                <td>Alpha</td>
-                <td>{{ $total_alpha }} hari</td>
-                <td class="deductions">
-                    Rp {{ number_format($potongan_alpha ?? 0, 0, ',', '.') }}
-                    <div class="nominal-info">20% dari (Gaji Pokok + Tunjangan) × {{ $total_alpha }} hari</div>
-                </td>
-            </tr>
-            @endif
-            @if(isset($potongan_unpaid_leave) && $potongan_unpaid_leave > 0)
-            <tr>
-                <td>Potongan Unpaid Leave</td>
-                <td>{{ isset($leave_data['unpaid_leave_days']) ? $leave_data['unpaid_leave_days'] : 0 }} hari</td>
-                <td class="deductions">
-                    Rp {{ number_format($potongan_unpaid_leave, 0, ',', '.') }}
-                    <div class="nominal-info">(Gaji Pokok + Tunjangan) / 26 × {{ isset($leave_data['unpaid_leave_days']) ? $leave_data['unpaid_leave_days'] : 0 }} hari</div>
-                </td>
-            </tr>
+            @if($type === 'gajian1')
+                <!-- GAJIAN 1: AKHIR BULAN -->
+                <!-- PENDAPATAN -->
+                <tr>
+                    <td colspan="3" style="background: #e8f5e8; font-weight: bold; text-align: center;">PENDAPATAN</td>
+                </tr>
+                <tr>
+                    <td>1. Gaji Pokok</td>
+                    <td>-</td>
+                    <td class="earnings">Rp {{ number_format($gaji_pokok, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>2. Tunjangan</td>
+                    <td>-</td>
+                    <td class="earnings">Rp {{ number_format($tunjangan, 0, ',', '.') }}</td>
+                </tr>
+                @if(isset($custom_earnings) && $custom_earnings > 0)
+                <tr>
+                    <td>3. Custom Earning</td>
+                    <td>{{ $custom_items && $custom_items->where('item_type', 'earn')->count() > 0 ? $custom_items->where('item_type', 'earn')->count() : 0 }} item</td>
+                    <td class="earnings">Rp {{ number_format($custom_earnings, 0, ',', '.') }}</td>
+                </tr>
+                @else
+                <tr>
+                    <td>3. Custom Earning</td>
+                    <td>-</td>
+                    <td class="earnings">Rp 0</td>
+                </tr>
+                @endif
+
+                <!-- POTONGAN -->
+                <tr>
+                    <td colspan="3" style="background: #ffebee; font-weight: bold; text-align: center;">POTONGAN</td>
+                </tr>
+                @if(isset($custom_deductions) && $custom_deductions > 0)
+                <tr>
+                    <td>1. Custom Deduction</td>
+                    <td>{{ $custom_items && $custom_items->where('item_type', 'deduction')->count() > 0 ? $custom_items->where('item_type', 'deduction')->count() : 0 }} item</td>
+                    <td class="deductions">Rp {{ number_format($custom_deductions, 0, ',', '.') }}</td>
+                </tr>
+                @else
+                <tr>
+                    <td>1. Custom Deduction</td>
+                    <td>-</td>
+                    <td class="deductions">Rp 0</td>
+                </tr>
+                @endif
+                <tr>
+                    <td>2. Potongan Telat</td>
+                    <td>{{ $total_telat ?? 0 }} menit</td>
+                    <td class="deductions">
+                        Rp {{ number_format($potongan_telat ?? 0, 0, ',', '.') }}
+                        @if(isset($total_telat) && $total_telat > 0)
+                            <div class="nominal-info">@ Rp {{ number_format($gaji_per_menit ?? 500, 2, ',', '.') }}/menit</div>
+                        @endif
+                    </td>
+                </tr>
+                <tr>
+                    <td>3. Alpha & Unpaid Leave</td>
+                    <td>
+                        @if(isset($total_alpha) && $total_alpha > 0)
+                            Alpha: {{ $total_alpha }} hari
+                        @endif
+                        @if(isset($leave_data['unpaid_leave_days']) && $leave_data['unpaid_leave_days'] > 0)
+                            @if(isset($total_alpha) && $total_alpha > 0), @endif
+                            Unpaid: {{ $leave_data['unpaid_leave_days'] }} hari
+                        @endif
+                        @if((!isset($total_alpha) || $total_alpha == 0) && (!isset($leave_data['unpaid_leave_days']) || $leave_data['unpaid_leave_days'] == 0))
+                            -
+                        @endif
+                    </td>
+                    <td class="deductions">
+                        Rp {{ number_format(($potongan_alpha ?? 0) + ($potongan_unpaid_leave ?? 0), 0, ',', '.') }}
+                        @if(isset($total_alpha) && $total_alpha > 0)
+                            <div class="nominal-info">Alpha: Rp {{ number_format($potongan_alpha ?? 0, 0, ',', '.') }}</div>
+                        @endif
+                        @if(isset($potongan_unpaid_leave) && $potongan_unpaid_leave > 0)
+                            <div class="nominal-info">Unpaid Leave: Rp {{ number_format($potongan_unpaid_leave, 0, ',', '.') }}</div>
+                        @endif
+                    </td>
+                </tr>
+
+            @else
+                <!-- GAJIAN 2: TANGGAL 8 -->
+                <!-- PENDAPATAN -->
+                <tr>
+                    <td colspan="3" style="background: #e8f5e8; font-weight: bold; text-align: center;">PENDAPATAN</td>
+                </tr>
+                <tr>
+                    <td>1. Service Charge (By Point)</td>
+                    <td>-</td>
+                    <td class="earnings">Rp {{ number_format($service_charge_by_point ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>2. Service Charge (Pro Rate)</td>
+                    <td>-</td>
+                    <td class="earnings">Rp {{ number_format($service_charge_pro_rate ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>3. Uang Makan</td>
+                    <td>{{ $hari_kerja ?? 0 }} hari</td>
+                    <td class="earnings">
+                        @if($master_data->um == 1)
+                            Rp {{ number_format($uang_makan ?? 0, 0, ',', '.') }}
+                            <div class="nominal-info">@ Rp {{ number_format($nominal_uang_makan ?? 0, 0, ',', '.') }}/hari</div>
+                        @else
+                            Rp 0 (UM Disabled)
+                        @endif
+                    </td>
+                </tr>
+                <tr>
+                    <td>4. Lembur</td>
+                    <td>{{ $total_lembur ?? 0 }} jam</td>
+                    <td class="earnings">
+                        @if($master_data->ot == 1)
+                            Rp {{ number_format($gaji_lembur ?? 0, 0, ',', '.') }}
+                            <div class="nominal-info">@ Rp {{ number_format($nominal_lembur_per_jam ?? 0, 0, ',', '.') }}/jam</div>
+                        @else
+                            Rp 0 (OT Disabled)
+                        @endif
+                    </td>
+                </tr>
+
+                <!-- POTONGAN -->
+                <tr>
+                    <td colspan="3" style="background: #ffebee; font-weight: bold; text-align: center;">POTONGAN</td>
+                </tr>
+                <tr>
+                    <td>5. L & B</td>
+                    <td>-</td>
+                    <td class="deductions">Rp {{ number_format($lb_total ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>6. Deviasi</td>
+                    <td>-</td>
+                    <td class="deductions">Rp {{ number_format($deviasi_total ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>7. City Ledger</td>
+                    <td>-</td>
+                    <td class="deductions">Rp {{ number_format($city_ledger_total ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td>8. PH Bonus</td>
+                    <td>-</td>
+                    <td class="earnings">Rp {{ number_format($ph_bonus ?? 0, 0, ',', '.') }}</td>
+                </tr>
             @endif
 
             <!-- TOTAL -->
@@ -308,48 +347,55 @@
         </tbody>
     </table>
 
-    @if($custom_items->count() > 0)
-    <div class="custom-items">
-        <strong>Detail Item Tambahan:</strong><br>
-        @foreach($custom_items as $item)
-            <div class="custom-item">
-                • {{ $item->item_name }} ({{ ucfirst($item->item_type) }}): 
-                <span class="{{ $item->item_type == 'earn' ? 'earnings' : 'deductions' }}">
-                    {{ $item->item_type == 'earn' ? '+' : '-' }} Rp {{ number_format($item->item_amount, 0, ',', '.') }}
-                </span>
-                @if($item->item_description)
-                    <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description }}</span>
-                @endif
-            </div>
-        @endforeach
-    </div>
-    @endif
+    @php
+        $type = $type ?? 'gajian1'; // Default to gajian1 if not set
+    @endphp
 
-    @if(isset($leave_data) && is_array($leave_data) && count($leave_data) > 0)
-    <div class="custom-items" style="margin-top: 10px;">
-        <strong>Detail Izin/Cuti:</strong><br>
-        @foreach($leave_data as $key => $value)
-            @if(strpos($key, '_days') !== false && $value > 0)
-                @php
-                    // Extract leave type name from key (e.g., 'sick_leave_days' -> 'Sick Leave')
-                    $leaveTypeName = str_replace('_days', '', $key);
-                    $leaveTypeName = str_replace('_', ' ', $leaveTypeName);
-                    $leaveTypeName = ucwords($leaveTypeName);
-                    
-                    // Try to get from leave_types table if available
-                    if(isset($leave_types)) {
-                        $foundType = $leave_types->firstWhere('name', $leaveTypeName);
-                        if($foundType) {
-                            $leaveTypeName = $foundType->name;
-                        }
-                    }
-                @endphp
+    @if($type === 'gajian1')
+        <!-- GAJIAN 1: Tampilkan Custom Items dan Leave Type Breakdown -->
+        @if(isset($custom_items) && $custom_items->count() > 0)
+        <div class="custom-items">
+            <strong>Detail Custom Items:</strong><br>
+            @foreach($custom_items as $item)
                 <div class="custom-item">
-                    • {{ $leaveTypeName }}: <span class="earnings">{{ $value }} hari</span>
+                    • {{ $item->item_name }} ({{ ucfirst($item->item_type) }}): 
+                    <span class="{{ $item->item_type == 'earn' ? 'earnings' : 'deductions' }}">
+                        {{ $item->item_type == 'earn' ? '+' : '-' }} Rp {{ number_format($item->item_amount, 0, ',', '.') }}
+                    </span>
+                    @if($item->item_description)
+                        <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description }}</span>
+                    @endif
                 </div>
-            @endif
-        @endforeach
-    </div>
+            @endforeach
+        </div>
+        @endif
+
+        @if(isset($leave_data) && is_array($leave_data) && count($leave_data) > 0)
+        <div class="custom-items" style="margin-top: 10px;">
+            <strong>Leave Type Breakdown:</strong><br>
+            @foreach($leave_data as $key => $value)
+                @if(strpos($key, '_days') !== false && $value > 0)
+                    @php
+                        // Extract leave type name from key (e.g., 'sick_leave_days' -> 'Sick Leave')
+                        $leaveTypeName = str_replace('_days', '', $key);
+                        $leaveTypeName = str_replace('_', ' ', $leaveTypeName);
+                        $leaveTypeName = ucwords($leaveTypeName);
+                        
+                        // Try to get from leave_types table if available
+                        if(isset($leave_types)) {
+                            $foundType = $leave_types->firstWhere('name', $leaveTypeName);
+                            if($foundType) {
+                                $leaveTypeName = $foundType->name;
+                            }
+                        }
+                    @endphp
+                    <div class="custom-item">
+                        • {{ $leaveTypeName }}: <span class="earnings">{{ $value }} hari</span>
+                    </div>
+                @endif
+            @endforeach
+        </div>
+        @endif
     @endif
 
     <div class="footer">

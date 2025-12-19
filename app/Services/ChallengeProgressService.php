@@ -919,11 +919,11 @@ class ChallengeProgressService
                         $currentPoints = $member->just_points ?? 0;
                         $newPoints = max(0, $currentPoints - $totalPointsRolledBack);
                         $member->just_points = $newPoints;
-                        $member->save();
-                        
+                    $member->save();
+                    
                         Log::info('Challenge reward points rolled back successfully', [
-                            'member_id' => $member->id,
-                            'challenge_id' => $challenge->id,
+                        'member_id' => $member->id,
+                        'challenge_id' => $challenge->id,
                             'points_rolled_back' => $totalPointsRolledBack,
                             'old_points' => $currentPoints,
                             'new_points' => $newPoints,

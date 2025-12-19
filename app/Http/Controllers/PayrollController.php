@@ -83,12 +83,18 @@ class PayrollController extends Controller
     {
         $request->validate([
             'outlet_id' => 'required|integer',
-            'division_id' => 'required|integer',
+            'division_id' => 'nullable|integer',
             'payrollData' => 'required|array',
             'payrollData.*.user_id' => 'required|integer',
         ]);
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
+        
+        // Jika division_id tidak ada atau 0, gunakan 0 sebagai default
+        if (empty($divisionId) || $divisionId == 0) {
+            $divisionId = 0;
+        }
+        
         $rows = $request->input('payrollData');
         foreach ($rows as $row) {
             DB::table('payroll_master')->updateOrInsert(
@@ -107,6 +113,8 @@ class PayrollController extends Controller
                     'bpjs_jkn' => !empty($row['bpjs_jkn']) ? 1 : 0,
                     'bpjs_tk' => !empty($row['bpjs_tk']) ? 1 : 0,
                     'lb' => !empty($row['lb']) ? 1 : 0,
+                    'deviasi' => !empty($row['deviasi']) ? 1 : 0,
+                    'city_ledger' => !empty($row['city_ledger']) ? 1 : 0,
                     'updated_at' => now(),
                 ]
             );

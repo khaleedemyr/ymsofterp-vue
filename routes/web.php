@@ -1980,6 +1980,7 @@ Route::post('/payroll/report/rollback', [App\Http\Controllers\PayrollReportContr
 Route::get('/payroll/report/status', [App\Http\Controllers\PayrollReportController::class, 'getPayrollStatus'])->name('payroll.report.status');
 Route::post('/payroll/verify-pin', [App\Http\Controllers\PayrollReportController::class, 'verifyPayrollPin'])->name('payroll.verify-pin');
 Route::get('/payroll/user-list', [App\Http\Controllers\PayrollReportController::class, 'getUserPayrollList'])->name('payroll.user-list');
+Route::get('/payroll/user-slip-detail', [App\Http\Controllers\PayrollReportController::class, 'getUserPayrollSlipDetail'])->name('payroll.user-slip-detail');
 
 
 // LMS Routes

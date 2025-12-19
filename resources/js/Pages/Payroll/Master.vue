@@ -31,6 +31,8 @@ const fillAll = ref({
   bpjs_jkn: false,
   bpjs_tk: false,
   lb: false,
+  deviasi: false,
+  city_ledger: false,
 });
 
 const saving = ref(false);
@@ -129,6 +131,8 @@ function initPayrollData(val) {
       bpjs_jkn: p.bpjs_jkn == 1,
       bpjs_tk: p.bpjs_tk == 1,
       lb: p.lb == 1,
+      deviasi: p.deviasi == 1,
+      city_ledger: p.city_ledger == 1,
     };
   });
 }
@@ -185,6 +189,11 @@ function resetFillAll() {
 }
 
 async function simpanPayroll() {
+  if (!outletId.value && !divisionId.value) {
+    Swal.fire('Peringatan', 'Pilih Outlet atau Divisi terlebih dahulu', 'warning');
+    return;
+  }
+
   if (!users.value.length || !payrollData.value.length) {
     Swal.fire('Peringatan', 'Tidak ada data untuk disimpan', 'warning');
     return;
@@ -211,6 +220,12 @@ async function simpanPayroll() {
   });
   
   try {
+    const payload = {
+      outlet_id: outletId.value ? parseInt(outletId.value) : 0,
+      division_id: divisionId.value && divisionId.value !== '' ? parseInt(divisionId.value) : 0,
+      payrollData: payrollData.value,
+    };
+    
     const res = await fetch('/payroll/master', {
       method: 'POST',
       headers: {
@@ -218,11 +233,7 @@ async function simpanPayroll() {
         'X-Requested-With': 'XMLHttpRequest',
         'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content,
       },
-      body: JSON.stringify({
-        outlet_id: outletId.value,
-        division_id: divisionId.value,
-        payrollData: payrollData.value,
-      })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (data.success) {
@@ -337,6 +348,8 @@ async function importPayroll() {
                   <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN<br/>(DEDUCTION)</th>
                   <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK<br/>(DEDUCTION)</th>
                   <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B<br/>(DEDUCTION)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi<br/>(DEDUCTION)</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger<br/>(DEDUCTION)</th>
                 </tr>
                 <!-- Baris isi semua -->
                 <tr class="bg-gradient-to-r from-blue-100 to-green-100 text-blue-900 text-xs">
@@ -386,8 +399,14 @@ async function importPayroll() {
                   <td class="px-2 py-1 text-center">
                     <input type="checkbox" v-model="fillAll.bpjs_tk" @change="fillAllColumn('bpjs_tk', fillAll.bpjs_tk)" />
                   </td>
-                  <td class="px-2 py-1 text-center flex items-center justify-center gap-2">
+                  <td class="px-2 py-1 text-center">
                     <input type="checkbox" v-model="fillAll.lb" @change="fillAllColumn('lb', fillAll.lb)" />
+                  </td>
+                  <td class="px-2 py-1 text-center">
+                    <input type="checkbox" v-model="fillAll.deviasi" @change="fillAllColumn('deviasi', fillAll.deviasi)" />
+                  </td>
+                  <td class="px-2 py-1 text-center flex items-center justify-center gap-2">
+                    <input type="checkbox" v-model="fillAll.city_ledger" @change="fillAllColumn('city_ledger', fillAll.city_ledger)" />
                     <button @click="resetFillAll" class="ml-2 text-red-500 hover:text-red-700" title="Reset Isi Semua"><i class="fa fa-eraser"></i></button>
                   </td>
                 </tr>
@@ -442,9 +461,15 @@ async function importPayroll() {
                     <td class="px-2 py-2 text-center">
                       <input type="checkbox" v-model="getPayrollDataByUserId[user.id].lb" />
                     </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].deviasi" />
+                    </td>
+                    <td class="px-2 py-2 text-center">
+                      <input type="checkbox" v-model="getPayrollDataByUserId[user.id].city_ledger" />
+                    </td>
                   </template>
                   <template v-else>
-                    <td colspan="9" class="text-center text-gray-400">Data tidak tersedia</td>
+                    <td colspan="11" class="text-center text-gray-400">Data tidak tersedia</td>
                   </template>
                 </tr>
               </tbody>

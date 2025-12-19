@@ -1111,6 +1111,7 @@ class AttendanceReportController extends Controller
             // Tambahkan outlet info untuk outletSummary
             $result['outlet_id'] = $data['outlet_id'];
             $result['nama_outlet'] = $data['nama_outlet'];
+            $result['user_id'] = $data['user_id']; // ✅ Ensure user_id is included
             $finalData[] = $result;
         }
 
@@ -1197,6 +1198,7 @@ class AttendanceReportController extends Controller
                     
                     $rows->push((object) [
                         'tanggal' => $tanggal,
+                        'user_id' => $row->user_id, // ✅ ADD: Include user_id for PH calculation
                         'outlet_id' => $row->outlet_id, // ✅ FIX: Include user's outlet
                         'nama_outlet' => $row->nama_outlet, // ✅ FIX: Include user's outlet name
                         'telat' => $telat,
@@ -1210,15 +1212,23 @@ class AttendanceReportController extends Controller
         }
 
         // ✅ FIX: Group by user's outlet (not scan outlet)
-        $byOutlet = $rows->groupBy('outlet_id')->map(function($g) {
+        $byOutlet = $rows->groupBy('outlet_id')->map(function($g) use ($start, $end) {
             $first = $g->first();
             $nonOffDays = $g->where('is_off', false);
             $totalLembur = $nonOffDays->sum('lembur');
             $totalTelat = $nonOffDays->sum('telat');
             
             // Calculate unique employees (users) in this outlet
-            $uniqueEmployees = $nonOffDays->pluck('user_id')->unique()->count();
+            $uniqueUserIds = $nonOffDays->pluck('user_id')->unique();
+            $uniqueEmployees = $uniqueUserIds->count();
             $averageLemburPerPerson = $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0;
+            
+            // Calculate total PH days for all users in this outlet
+            $totalPHDays = 0;
+            foreach ($uniqueUserIds as $userId) {
+                $phDays = $this->calculatePHDays($userId, $start, $end);
+                $totalPHDays += $phDays;
+            }
             
             return [
                 'outlet_id' => $first->outlet_id ?? null,
@@ -1226,6 +1236,7 @@ class AttendanceReportController extends Controller
                 'total_telat' => $totalTelat,
                 'total_lembur' => $totalLembur,
                 'average_lembur_per_person' => $averageLemburPerPerson,
+                'total_ph_days' => $totalPHDays,
             ];
         })->values()->sortBy('nama_outlet')->values();
 

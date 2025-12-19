@@ -501,6 +501,9 @@ const showPayrollListModal = ref(false);
 const payrollPin = ref('');
 const payrollList = ref([]);
 const loadingPayrollList = ref(false);
+const showPayrollSlipModal = ref(false);
+const payrollSlipDetail = ref(null);
+const loadingPayrollSlip = ref(false);
 
 // Notification state
 const notifications = ref([]);
@@ -747,6 +750,39 @@ function viewPayrollDetail(payrollDetail) {
     // Buka detail payroll di tab baru
     const url = `/payroll/report/show?user_id=${payrollDetail.user_id}&outlet_id=${payrollDetail.outlet_id || ''}&month=${payrollDetail.month}&year=${payrollDetail.year}`;
     window.open(url, '_blank');
+}
+
+async function viewPayrollSlip(payrollItem) {
+    loadingPayrollSlip.value = true;
+    try {
+        const response = await axios.get('/payroll/user-slip-detail', {
+            params: {
+                payroll_detail_id: payrollItem.payroll_detail_id,
+                type: payrollItem.type
+            }
+        });
+        
+        if (response.data.success) {
+            payrollSlipDetail.value = response.data.data;
+            showPayrollSlipModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal mengambil detail slip gaji', 'error');
+        }
+    } catch (error) {
+        console.error('Error fetching payroll slip detail:', error);
+        Swal.fire('Error', 'Terjadi kesalahan saat mengambil detail slip gaji', 'error');
+    } finally {
+        loadingPayrollSlip.value = false;
+    }
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount || 0);
 }
 </script>
 
@@ -1023,8 +1059,9 @@ function viewPayrollDetail(payrollDetail) {
                     <thead class="bg-gray-100">
                         <tr>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Periode</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Jenis Slip Gaji</th>
+                            <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Tanggal Gajian</th>
                             <th class="px-4 py-3 text-left text-xs font-bold uppercase border">Outlet</th>
-                            <th class="px-4 py-3 text-right text-xs font-bold uppercase border">Total Gaji</th>
                             <th class="px-4 py-3 text-center text-xs font-bold uppercase border">Aksi</th>
                         </tr>
                     </thead>
@@ -1034,32 +1071,253 @@ function viewPayrollDetail(payrollDetail) {
                                 {{ item.month }}/{{ item.year }}
                             </td>
                             <td class="px-4 py-3 border">
-                                {{ item.outlet_name || '-' }}
+                                <span :class="[
+                                    'px-2 py-1 rounded text-xs font-semibold',
+                                    item.type === 'gajian1' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                                ]">
+                                    {{ item.type_label }}
+                                </span>
                             </td>
-                            <td class="px-4 py-3 border text-right font-semibold">
-                                {{ new Intl.NumberFormat('id-ID').format(item.total_gaji || 0) }}
+                            <td class="px-4 py-3 border">
+                                {{ item.gajian_date_formatted }}
+                            </td>
+                            <td class="px-4 py-3 border">
+                                {{ item.outlet_name || '-' }}
                             </td>
                             <td class="px-4 py-3 border text-center">
                                 <div class="flex gap-2 justify-center">
                                     <button 
-                                        @click="viewPayrollDetail(item)" 
+                                        @click="viewPayrollSlip(item)" 
                                         class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                                        title="Lihat Detail"
+                                        title="Lihat Slip Gaji"
                                     >
                                         <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button 
-                                        @click="printPayrollSlip(item)" 
-                                        class="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
-                                        title="Cetak PDF"
-                                    >
-                                        <i class="fas fa-file-pdf"></i>
                                     </button>
                                 </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payroll Slip Detail Modal -->
+    <div v-if="showPayrollSlipModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showPayrollSlipModal = false">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-gray-800">Slip Gaji - {{ payrollSlipDetail?.type_label || '' }}</h3>
+                <button @click="showPayrollSlipModal = false" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div v-if="loadingPayrollSlip" class="text-center py-8">
+                <i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i>
+                <p class="mt-2 text-gray-600">Memuat detail slip gaji...</p>
+            </div>
+            
+            <div v-else-if="payrollSlipDetail" class="space-y-4">
+                <!-- Header Info -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-sm text-gray-600">Nama</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.nama_lengkap }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">NIK</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.nik || '-' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Jabatan</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.jabatan || '-' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Divisi</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.divisi || '-' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Outlet</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.outlet_name || '-' }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Periode</p>
+                            <p class="font-semibold">{{ payrollSlipDetail.month }}/{{ payrollSlipDetail.year }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gajian 1 Content -->
+                <div v-if="payrollSlipDetail.type === 'gajian1' && payrollSlipDetail.gajian1" class="space-y-4">
+                    <h4 class="text-md font-bold text-gray-800 border-b pb-2">Gajian 1 (Akhir Bulan)</h4>
+                    
+                    <!-- 1. Gaji Pokok -->
+                    <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                        <span class="font-semibold">1. Gaji Pokok</span>
+                        <span class="font-bold text-blue-700">{{ formatCurrency(payrollSlipDetail.gajian1.gaji_pokok) }}</span>
+                    </div>
+                    
+                    <!-- 2. Tunjangan -->
+                    <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                        <span class="font-semibold">2. Tunjangan</span>
+                        <span class="font-bold text-blue-700">{{ formatCurrency(payrollSlipDetail.gajian1.tunjangan) }}</span>
+                    </div>
+                    
+                    <!-- 3. Custom Deduction -->
+                    <div v-if="payrollSlipDetail.gajian1.custom_deduction_items && payrollSlipDetail.gajian1.custom_deduction_items.length > 0" class="space-y-2">
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                            <span class="font-semibold">3. Custom Deduction</span>
+                            <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian1.custom_deductions) }}</span>
+                        </div>
+                        <div class="ml-4 space-y-1">
+                            <div v-for="(item, index) in payrollSlipDetail.gajian1.custom_deduction_items" :key="index" class="flex justify-between text-sm">
+                                <span>{{ item.name }}</span>
+                                <span class="text-red-600">- {{ formatCurrency(item.amount) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <span class="font-semibold">3. Custom Deduction</span>
+                        <span class="font-bold text-gray-600">- {{ formatCurrency(0) }}</span>
+                    </div>
+                    
+                    <!-- 4. Custom Earning -->
+                    <div v-if="payrollSlipDetail.gajian1.custom_earning_items && payrollSlipDetail.gajian1.custom_earning_items.length > 0" class="space-y-2">
+                        <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                            <span class="font-semibold">4. Custom Earning</span>
+                            <span class="font-bold text-green-700">{{ formatCurrency(payrollSlipDetail.gajian1.custom_earnings) }}</span>
+                        </div>
+                        <div class="ml-4 space-y-1">
+                            <div v-for="(item, index) in payrollSlipDetail.gajian1.custom_earning_items" :key="index" class="flex justify-between text-sm">
+                                <span>{{ item.name }}</span>
+                                <span class="text-green-600">{{ formatCurrency(item.amount) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                        <span class="font-semibold">4. Custom Earning</span>
+                        <span class="font-bold text-gray-600">{{ formatCurrency(0) }}</span>
+                    </div>
+                    
+                    <!-- 5. Telat -->
+                    <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                        <span class="font-semibold">5. Potongan Telat</span>
+                        <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian1.potongan_telat) }}</span>
+                    </div>
+                    
+                    <!-- 6. Alpha & Unpaid Leave -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                            <span class="font-semibold">6. Alpha & Unpaid Leave</span>
+                            <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian1.potongan_alpha + payrollSlipDetail.gajian1.potongan_unpaid_leave) }}</span>
+                        </div>
+                        <div class="ml-4 space-y-1 text-sm">
+                            <div class="flex justify-between">
+                                <span>Total Alpha: {{ payrollSlipDetail.gajian1.total_alpha }} hari</span>
+                                <span class="text-red-600">- {{ formatCurrency(payrollSlipDetail.gajian1.potongan_alpha) }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Potongan Unpaid Leave</span>
+                                <span class="text-red-600">- {{ formatCurrency(payrollSlipDetail.gajian1.potongan_unpaid_leave) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 7. Leave Type Breakdown -->
+                    <div v-if="payrollSlipDetail.gajian1.leave_data && Object.keys(payrollSlipDetail.gajian1.leave_data).length > 0" class="space-y-2">
+                        <div class="p-3 bg-blue-50 rounded">
+                            <span class="font-semibold">7. Leave Type Breakdown</span>
+                        </div>
+                        <div class="ml-4 space-y-1">
+                            <div v-for="(days, key) in payrollSlipDetail.gajian1.leave_data" :key="key" class="flex justify-between text-sm">
+                                <span>{{ key.replace('_days', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }}</span>
+                                <span class="text-blue-600">{{ days }} hari</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="p-3 bg-gray-50 rounded">
+                        <span class="font-semibold">7. Leave Type Breakdown</span>
+                        <p class="text-sm text-gray-500 mt-1">Tidak ada data cuti</p>
+                    </div>
+                    
+                    <!-- Total Gajian 1 -->
+                    <div class="flex justify-between items-center p-4 bg-blue-100 rounded-lg border-2 border-blue-300">
+                        <span class="text-lg font-bold">Total Gajian 1</span>
+                        <span class="text-xl font-bold text-blue-700">{{ formatCurrency(payrollSlipDetail.gajian1.total_gaji_gajian1) }}</span>
+                    </div>
+                </div>
+
+                <!-- Gajian 2 Content -->
+                <div v-if="payrollSlipDetail.type === 'gajian2' && payrollSlipDetail.gajian2" class="space-y-4">
+                    <h4 class="text-md font-bold text-gray-800 border-b pb-2">Gajian 2 (Tanggal 8)</h4>
+                    
+                    <!-- 1. Service Charge Point -->
+                    <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                        <span class="font-semibold">1. Service Charge (By Point)</span>
+                        <span class="font-bold text-green-700">{{ formatCurrency(payrollSlipDetail.gajian2.service_charge_by_point) }}</span>
+                    </div>
+                    
+                    <!-- 2. Service Charge Prorate -->
+                    <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                        <span class="font-semibold">2. Service Charge (Pro Rate)</span>
+                        <span class="font-bold text-green-700">{{ formatCurrency(payrollSlipDetail.gajian2.service_charge_pro_rate) }}</span>
+                    </div>
+                    
+                    <!-- Total Service Charge -->
+                    <div class="flex justify-between items-center p-3 bg-green-100 rounded border border-green-300">
+                        <span class="font-semibold">Total Service Charge</span>
+                        <span class="font-bold text-green-700">{{ formatCurrency(payrollSlipDetail.gajian2.service_charge) }}</span>
+                    </div>
+                    
+                    <!-- 3. Uang Makan -->
+                    <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                        <span class="font-semibold">3. Uang Makan</span>
+                        <span class="font-bold text-blue-700">{{ formatCurrency(payrollSlipDetail.gajian2.uang_makan) }}</span>
+                    </div>
+                    
+                    <!-- 4. Lembur -->
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                            <span class="font-semibold">4. Lembur</span>
+                            <span class="font-bold text-blue-700">{{ formatCurrency(payrollSlipDetail.gajian2.gaji_lembur) }}</span>
+                        </div>
+                        <div class="ml-4 space-y-1 text-sm text-gray-600">
+                            <div>Total Lembur: {{ payrollSlipDetail.gajian2.total_lembur }} jam</div>
+                            <div>Nominal per Jam: {{ formatCurrency(payrollSlipDetail.gajian2.nominal_lembur_per_jam) }}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 5. L & B -->
+                    <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                        <span class="font-semibold">5. L & B</span>
+                        <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian2.lb_total) }}</span>
+                    </div>
+                    
+                    <!-- 6. Deviasi -->
+                    <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                        <span class="font-semibold">6. Deviasi</span>
+                        <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian2.deviasi_total) }}</span>
+                    </div>
+                    
+                    <!-- 7. City Ledger -->
+                    <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                        <span class="font-semibold">7. City Ledger</span>
+                        <span class="font-bold text-red-700">- {{ formatCurrency(payrollSlipDetail.gajian2.city_ledger_total) }}</span>
+                    </div>
+                    
+                    <!-- 8. PH Bonus -->
+                    <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                        <span class="font-semibold">8. PH Bonus</span>
+                        <span class="font-bold text-green-700">+ {{ formatCurrency(payrollSlipDetail.gajian2.ph_bonus || 0) }}</span>
+                    </div>
+                    
+                    <!-- Total Gajian 2 -->
+                    <div class="flex justify-between items-center p-4 bg-green-100 rounded-lg border-2 border-green-300">
+                        <span class="text-lg font-bold">Total Gajian 2</span>
+                        <span class="text-xl font-bold text-green-700">{{ formatCurrency(payrollSlipDetail.gajian2.total_gaji_gajian2) }}</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

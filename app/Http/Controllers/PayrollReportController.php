@@ -18,6 +18,9 @@ class PayrollReportController extends Controller
         $month = $request->input('month', date('m'));
         $year = $request->input('year', date('Y'));
         $serviceCharge = $request->input('service_charge', 0); // Nilai service charge per karyawan
+        $lbAmount = $request->input('lb_amount', 0); // Nilai L & B total
+        $deviasiAmount = $request->input('deviasi_amount', 0); // Nilai Deviasi total
+        $cityLedgerAmount = $request->input('city_ledger_amount', 0); // Nilai City Ledger total
 
         // Dropdown Outlet
         $outlets = DB::table('tbl_data_outlet')
@@ -271,6 +274,8 @@ class PayrollReportController extends Controller
                     'bpjs_jkn' => 0,
                     'bpjs_tk' => 0,
                     'lb' => 0,
+                    'deviasi' => 0,
+                    'city_ledger' => 0,
                 ]);
 
                 // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
@@ -303,6 +308,9 @@ class PayrollReportController extends Controller
                         $totalIzinCuti += $value;
                     }
                 }
+                
+                // Hitung PH Bonus (Public Holiday bonus only, not extra_off)
+                $phBonus = $this->calculatePHBonus($userId, $start, $end);
                 
                 // Debug: Log leave data
                 \Log::info('Payroll - Leave data extracted', [
@@ -359,6 +367,51 @@ class PayrollReportController extends Controller
                 if ($totalHariKerja > 0) {
                     $rateProRate = $serviceChargeProRate / $totalHariKerja;
                 }
+            }
+
+            // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
+            $totalPointLB = 0;
+            foreach ($userData as $data) {
+                if ($data['masterData']->lb == 1) {
+                    $totalPointLB += $data['userPoint'];
+                }
+            }
+
+            // Step 3b: Hitung rate L & B (100% by point saja)
+            $rateLBByPoint = 0;
+
+            if ($lbAmount > 0 && $totalPointLB > 0) {
+                $rateLBByPoint = $lbAmount / $totalPointLB;
+            }
+
+            // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
+            $totalPointDeviasi = 0;
+            foreach ($userData as $data) {
+                if ($data['masterData']->deviasi == 1) {
+                    $totalPointDeviasi += $data['userPoint'];
+                }
+            }
+
+            // Step 3c: Hitung rate Deviasi (100% by point saja)
+            $rateDeviasiByPoint = 0;
+
+            if ($deviasiAmount > 0 && $totalPointDeviasi > 0) {
+                $rateDeviasiByPoint = $deviasiAmount / $totalPointDeviasi;
+            }
+
+            // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
+            $totalPointCityLedger = 0;
+            foreach ($userData as $data) {
+                if ($data['masterData']->city_ledger == 1) {
+                    $totalPointCityLedger += $data['userPoint'];
+                }
+            }
+
+            // Step 3d: Hitung rate City Ledger (100% by point saja)
+            $rateCityLedgerByPoint = 0;
+
+            if ($cityLedgerAmount > 0 && $totalPointCityLedger > 0) {
+                $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointCityLedger;
             }
 
             // Step 4: Hitung service charge per user dan total gaji
@@ -552,13 +605,41 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
+            // Hitung L & B (By Point saja) jika enabled
+            $lbByPointAmount = 0;
+            $lbTotal = 0;
+            
+            if ($masterData->lb == 1 && $lbAmount > 0) {
+                $lbByPointAmount = $rateLBByPoint * $userPoint;
+                $lbTotal = $lbByPointAmount;
+            }
+
+            // Hitung Deviasi (By Point saja) jika enabled
+            $deviasiByPointAmount = 0;
+            $deviasiTotal = 0;
+            
+            if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
+                $deviasiByPointAmount = $rateDeviasiByPoint * $userPoint;
+                $deviasiTotal = $deviasiByPointAmount;
+            }
+
+            // Hitung City Ledger (By Point saja) jika enabled
+            $cityLedgerByPointAmount = 0;
+            $cityLedgerTotal = 0;
+            
+            if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * $userPoint;
+                $cityLedgerTotal = $cityLedgerByPointAmount;
+            }
+
                 // Hitung custom earnings dan deductions
                 $userCustomItems = $customItems->get($user->id, collect());
                 $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
                 $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
 
-                // Hitung total gaji (service charge ditambahkan sebagai earning, potongan alpha dan unpaid leave sebagai deduction)
-                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
+                // Hitung total gaji (service charge ditambahkan sebagai earning, L&B, Deviasi, City Ledger, potongan alpha dan unpaid leave sebagai deduction)
+                // PH Bonus akan ditambahkan di gajian2, tidak dihitung di total gaji utama
+                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
                 
                 $payrollDataItem = [
                     'user_id' => $user->id,
@@ -578,6 +659,12 @@ class PayrollReportController extends Controller
                     'service_charge_by_point' => round($serviceChargeByPointAmount),
                     'service_charge_pro_rate' => round($serviceChargeProRateAmount),
                     'service_charge' => round($serviceChargeTotal),
+                    'lb_by_point' => round($lbByPointAmount),
+                    'lb_total' => round($lbTotal),
+                    'deviasi_by_point' => round($deviasiByPointAmount),
+                    'deviasi_total' => round($deviasiTotal),
+                    'city_ledger_by_point' => round($cityLedgerByPointAmount),
+                    'city_ledger_total' => round($cityLedgerTotal),
                     'bpjs_jkn' => round($bpjsJKN),
                     'bpjs_tk' => round($bpjsTK),
                     'custom_earnings' => round($customEarnings),
@@ -593,6 +680,7 @@ class PayrollReportController extends Controller
                     'total_izin_cuti' => $totalIzinCuti,
                     'izin_cuti_breakdown' => $izinCutiBreakdown,
                     'extra_off_days' => isset($leaveData['extra_off_days']) ? $leaveData['extra_off_days'] : 0, // SAMA PERSIS dengan Employee Summary
+                    'ph_bonus' => round($phBonus), // PH Bonus (hanya bonus, bukan extra_off)
                     'leave_data' => $leaveData, // Simpan leave_data untuk generate payroll
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
@@ -644,6 +732,9 @@ class PayrollReportController extends Controller
                 'month' => $month,
                 'year' => $year,
                 'service_charge' => $serviceCharge,
+                'lb_amount' => $lbAmount,
+                'deviasi_amount' => $deviasiAmount,
+                'city_ledger_amount' => $cityLedgerAmount,
             ],
         ]);
     }
@@ -1043,6 +1134,9 @@ class PayrollReportController extends Controller
         $month = $request->input('month');
         $year = $request->input('year');
         $serviceCharge = $request->input('service_charge', 0);
+        $lbAmount = $request->input('lb_amount', 0);
+        $deviasiAmount = $request->input('deviasi_amount', 0);
+        $cityLedgerAmount = $request->input('city_ledger_amount', 0);
 
         if (!$outletId || !$month || !$year) {
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
@@ -1088,6 +1182,9 @@ class PayrollReportController extends Controller
                 'bpjs_jkn' => 0,
                 'bpjs_tk' => 0,
                 'lb' => 0,
+                'lnb' => 0,
+                'deviasi' => 0,
+                'city_ledger' => 0,
             ]);
 
             $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
@@ -1147,6 +1244,51 @@ class PayrollReportController extends Controller
             }
         }
 
+        // Step 2b: Hitung total untuk L & B
+        $totalPointLB = 0;
+        foreach ($userData as $data) {
+            if ($data['masterData']->lb == 1) {
+                $totalPointLB += $data['userPoint'];
+            }
+        }
+
+        // Step 3b: Hitung rate L & B (100% by point saja)
+        $rateLBByPoint = 0;
+
+        if ($lbAmount > 0 && $totalPointLB > 0) {
+            $rateLBByPoint = $lbAmount / $totalPointLB;
+        }
+
+        // Step 2c: Hitung total untuk Deviasi
+        $totalPointDeviasi = 0;
+        foreach ($userData as $data) {
+            if ($data['masterData']->deviasi == 1) {
+                $totalPointDeviasi += $data['userPoint'];
+            }
+        }
+
+        // Step 3c: Hitung rate Deviasi (100% by point saja)
+        $rateDeviasiByPoint = 0;
+
+        if ($deviasiAmount > 0 && $totalPointDeviasi > 0) {
+            $rateDeviasiByPoint = $deviasiAmount / $totalPointDeviasi;
+        }
+
+        // Step 2d: Hitung total untuk City Ledger
+        $totalPointCityLedger = 0;
+        foreach ($userData as $data) {
+            if ($data['masterData']->city_ledger == 1) {
+                $totalPointCityLedger += $data['userPoint'];
+            }
+        }
+
+        // Step 3d: Hitung rate City Ledger (100% by point saja)
+        $rateCityLedgerByPoint = 0;
+
+        if ($cityLedgerAmount > 0 && $totalPointCityLedger > 0) {
+            $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointCityLedger;
+        }
+
         // Step 4: Hitung service charge per user dan export data
         $exportData = [];
         foreach ($userData as $userId => $data) {
@@ -1201,13 +1343,40 @@ class PayrollReportController extends Controller
                 }
             }
 
+            // Hitung L & B (By Point saja) jika enabled
+            $lbByPointAmount = 0;
+            $lbTotal = 0;
+            
+            if ($masterData->lb == 1 && $lbAmount > 0) {
+                $lbByPointAmount = $rateLBByPoint * $userPoint;
+                $lbTotal = $lbByPointAmount;
+            }
+
+            // Hitung Deviasi (By Point saja) jika enabled
+            $deviasiByPointAmount = 0;
+            $deviasiTotal = 0;
+            
+            if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
+                $deviasiByPointAmount = $rateDeviasiByPoint * $userPoint;
+                $deviasiTotal = $deviasiByPointAmount;
+            }
+
+            // Hitung City Ledger (By Point saja) jika enabled
+            $cityLedgerByPointAmount = 0;
+            $cityLedgerTotal = 0;
+            
+            if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * $userPoint;
+                $cityLedgerTotal = $cityLedgerByPointAmount;
+            }
+
             // Hitung potongan telat (flat rate Rp 500 per menit)
             $potonganTelat = 0;
             $gajiPerMenit = 500; // Flat rate Rp 500 per menit
             if ($totalTelat > 0) {
                 $potonganTelat = $totalTelat * $gajiPerMenit;
             }
-            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal - $potonganTelat - $bpjsJKN - $bpjsTK;
+            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal;
 
             $exportData[] = [
                 'NIK' => $user->nik,
@@ -1659,6 +1828,7 @@ class PayrollReportController extends Controller
         $month = $request->input('month');
         $year = $request->input('year');
         $serviceCharge = $request->input('service_charge', 0);
+        $type = $request->input('type', 'gajian1'); // 'gajian1' or 'gajian2'
 
         // Get user data
         $user = User::find($userId);
@@ -1720,6 +1890,9 @@ class PayrollReportController extends Controller
         // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
         if ($payrollDetail) {
             // Gunakan data dari payroll_generated_details
+            // Ambil gaji pokok dan tunjangan dari payroll_generated_details jika ada, jika tidak gunakan masterData
+            $gajiPokok = $payrollDetail->gaji_pokok ?? $masterData->gaji ?? 0;
+            $tunjangan = $payrollDetail->tunjangan ?? $masterData->tunjangan ?? 0;
             $gajiLembur = $payrollDetail->gaji_lembur ?? 0;
             $nominalLemburPerJam = $payrollDetail->nominal_lembur_per_jam ?? 0;
             $uangMakan = $payrollDetail->uang_makan ?? 0;
@@ -1757,6 +1930,9 @@ class PayrollReportController extends Controller
             }
         } else {
             // Jika belum di-generate, hitung ulang seperti biasa menggunakan logic dari printPayroll
+            // Ambil gaji pokok dan tunjangan dari masterData
+            $gajiPokok = $masterData->gaji ?? 0;
+            $tunjangan = $masterData->tunjangan ?? 0;
 
             // Ambil data attendance
             $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
@@ -1900,6 +2076,43 @@ class PayrollReportController extends Controller
         $potonganUnpaidLeave = $potonganUnpaidLeave ?? 0;
         $leaveData = $leaveData ?? [];
 
+        // Ambil data tambahan untuk gajian2
+        $lbTotal = 0;
+        $deviasiTotal = 0;
+        $cityLedgerTotal = 0;
+        $serviceChargeByPoint = 0;
+        $serviceChargeProRate = 0;
+        
+        if ($payrollDetail) {
+            $lbTotal = $payrollDetail->lb_total ?? 0;
+            $deviasiTotal = $payrollDetail->deviasi_total ?? 0;
+            $cityLedgerTotal = $payrollDetail->city_ledger_total ?? 0;
+            $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
+            $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+        }
+        
+        // Hitung total gaji berdasarkan type
+        $totalGajiFinal = 0;
+        if ($type === 'gajian1') {
+            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            $totalGajiFinal = ($masterData->gaji ?? 0) 
+                + ($masterData->tunjangan ?? 0) 
+                + ($customEarnings ?? 0) 
+                - ($customDeductions ?? 0) 
+                - ($potonganTelat ?? 0) 
+                - ($potonganAlpha ?? 0) 
+                - ($potonganUnpaidLeave ?? 0);
+        } else {
+            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
+            $totalGajiFinal = ($serviceChargeAmount ?? 0) 
+                + ($uangMakan ?? 0) 
+                + ($gajiLembur ?? 0) 
+                + ($phBonus ?? 0) 
+                - ($lbTotal ?? 0) 
+                - ($deviasiTotal ?? 0) 
+                - ($cityLedgerTotal ?? 0);
+        }
+
         // Check if download PDF is requested
         if ($request->has('download') && $request->download === 'pdf') {
             $pdf = \PDF::loadView('payroll.slip', [
@@ -1908,6 +2121,7 @@ class PayrollReportController extends Controller
                 'jabatan' => $jabatan,
                 'divisi' => $divisi,
                 'periode' => $periode,
+                'type' => $type,
                 'gaji_pokok' => $masterData->gaji,
                 'tunjangan' => $masterData->tunjangan,
                 'total_lembur' => $totalLembur,
@@ -1916,6 +2130,8 @@ class PayrollReportController extends Controller
                 'uang_makan' => $uangMakan,
                 'nominal_uang_makan' => $nominalUangMakan,
                 'service_charge' => round($serviceChargeAmount),
+                'service_charge_by_point' => round($serviceChargeByPoint),
+                'service_charge_pro_rate' => round($serviceChargeProRate),
                 'total_telat' => $totalTelat,
                 'bpjs_jkn' => $bpjsJKN,
                 'bpjs_tk' => $bpjsTK,
@@ -1927,15 +2143,20 @@ class PayrollReportController extends Controller
                 'total_alpha' => $totalAlpha,
                 'potongan_alpha' => round($potonganAlpha),
                 'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+                'lb_total' => round($lbTotal),
+                'deviasi_total' => round($deviasiTotal),
+                'city_ledger_total' => round($cityLedgerTotal),
+                'ph_bonus' => round($phBonus),
                 'leave_data' => $leaveData,
                 'leave_types' => $leaveTypes,
-                'total_gaji' => round($totalGaji),
+                'total_gaji' => round($totalGajiFinal),
                 'hari_kerja' => $hariKerja,
                 'master_data' => $masterData,
                 'logo_base64' => $logoBase64,
             ]);
 
-            return $pdf->download("slip_gaji_{$user->nama_lengkap}_{$periode}.pdf");
+            $typeLabel = $type === 'gajian1' ? 'Gajian1' : 'Gajian2';
+            return $pdf->download("slip_gaji_{$typeLabel}_{$user->nama_lengkap}_{$periode}.pdf");
         }
 
         return view('payroll.slip', [
@@ -1944,14 +2165,17 @@ class PayrollReportController extends Controller
             'jabatan' => $jabatan,
             'divisi' => $divisi,
             'periode' => $periode,
-            'gaji_pokok' => $masterData->gaji,
-            'tunjangan' => $masterData->tunjangan,
+            'type' => $type,
+            'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
+            'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
             'total_lembur' => $totalLembur,
             'gaji_lembur' => $gajiLembur,
             'nominal_lembur_per_jam' => $nominalLemburPerJam,
             'uang_makan' => $uangMakan,
             'nominal_uang_makan' => $nominalUangMakan,
             'service_charge' => round($serviceChargeAmount),
+            'service_charge_by_point' => round($serviceChargeByPoint),
+            'service_charge_pro_rate' => round($serviceChargeProRate),
             'total_telat' => $totalTelat,
             'bpjs_jkn' => $bpjsJKN,
             'bpjs_tk' => $bpjsTK,
@@ -1963,9 +2187,12 @@ class PayrollReportController extends Controller
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
             'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+            'lb_total' => round($lbTotal),
+            'deviasi_total' => round($deviasiTotal),
+            'city_ledger_total' => round($cityLedgerTotal),
             'leave_data' => $leaveData,
             'leave_types' => $leaveTypes,
-            'total_gaji' => round($totalGaji),
+            'total_gaji' => round($totalGajiFinal),
             'hari_kerja' => $hariKerja,
             'master_data' => $masterData,
             'logo_base64' => $logoBase64,
@@ -1979,6 +2206,7 @@ class PayrollReportController extends Controller
         $month = $request->input('month');
         $year = $request->input('year');
         $serviceCharge = $request->input('service_charge', 0);
+        $type = $request->input('type', 'gajian1'); // 'gajian1' or 'gajian2'
 
         if (!$userId || !$outletId || !$month || !$year) {
             return response()->json(['error' => 'Parameter tidak lengkap'], 400);
@@ -2038,6 +2266,9 @@ class PayrollReportController extends Controller
         // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
         if ($payrollDetail) {
             // Gunakan data dari payroll_generated_details
+            // Ambil gaji pokok dan tunjangan dari payroll_generated_details jika ada, jika tidak gunakan masterData
+            $gajiPokok = $payrollDetail->gaji_pokok ?? $masterData->gaji ?? 0;
+            $tunjangan = $payrollDetail->tunjangan ?? $masterData->tunjangan ?? 0;
             $gajiLembur = $payrollDetail->gaji_lembur ?? 0;
             $nominalLemburPerJam = $payrollDetail->nominal_lembur_per_jam ?? 0;
             $uangMakan = $payrollDetail->uang_makan ?? 0;
@@ -2075,6 +2306,10 @@ class PayrollReportController extends Controller
             }
         } else {
             // Jika belum di-generate, hitung ulang seperti biasa
+            // Ambil gaji pokok dan tunjangan dari masterData
+            $gajiPokok = $masterData->gaji ?? 0;
+            $tunjangan = $masterData->tunjangan ?? 0;
+            
             // Ambil data attendance
             $attendanceData = $this->getAttendanceData($userId, $outletId, $startDate, $endDate);
             $totalTelat = $attendanceData->sum('telat');
@@ -2220,6 +2455,43 @@ class PayrollReportController extends Controller
         $potonganUnpaidLeave = $potonganUnpaidLeave ?? 0;
         $leaveData = $leaveData ?? [];
 
+        // Ambil data tambahan untuk gajian2
+        $lbTotal = 0;
+        $deviasiTotal = 0;
+        $cityLedgerTotal = 0;
+        $serviceChargeByPoint = 0;
+        $serviceChargeProRate = 0;
+        
+        if ($payrollDetail) {
+            $lbTotal = $payrollDetail->lb_total ?? 0;
+            $deviasiTotal = $payrollDetail->deviasi_total ?? 0;
+            $cityLedgerTotal = $payrollDetail->city_ledger_total ?? 0;
+            $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
+            $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+        }
+        
+        // Hitung total gaji berdasarkan type
+        $totalGajiFinal = 0;
+        if ($type === 'gajian1') {
+            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            $totalGajiFinal = ($masterData->gaji ?? 0) 
+                + ($masterData->tunjangan ?? 0) 
+                + ($customEarnings ?? 0) 
+                - ($customDeductions ?? 0) 
+                - ($potonganTelat ?? 0) 
+                - ($potonganAlpha ?? 0) 
+                - ($potonganUnpaidLeave ?? 0);
+        } else {
+            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
+            $totalGajiFinal = ($serviceChargeAmount ?? 0) 
+                + ($uangMakan ?? 0) 
+                + ($gajiLembur ?? 0) 
+                + ($phBonus ?? 0) 
+                - ($lbTotal ?? 0) 
+                - ($deviasiTotal ?? 0) 
+                - ($cityLedgerTotal ?? 0);
+        }
+
         // Generate PDF
         $pdf = \PDF::loadView('payroll.slip', [
             'user' => $user,
@@ -2227,8 +2499,9 @@ class PayrollReportController extends Controller
             'divisi' => $divisi,
             'outlet' => $outlet,
             'periode' => $periode,
-            'gaji_pokok' => $masterData->gaji,
-            'tunjangan' => $masterData->tunjangan,
+            'type' => $type,
+            'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
+            'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
             'total_telat' => $totalTelat,
             'total_lembur' => $totalLembur,
             'nominal_lembur_per_jam' => isset($nominalLemburPerJam) ? $nominalLemburPerJam : (isset($nominalLembur) ? $nominalLembur : 0),
@@ -2236,6 +2509,8 @@ class PayrollReportController extends Controller
             'nominal_uang_makan' => $nominalUangMakan,
             'uang_makan' => round($uangMakan),
             'service_charge' => round($serviceChargeAmount),
+            'service_charge_by_point' => round($serviceChargeByPoint),
+            'service_charge_pro_rate' => round($serviceChargeProRate),
             'bpjs_jkn' => round($bpjsJKN),
             'bpjs_tk' => round($bpjsTK),
             'custom_earnings' => round($customEarnings),
@@ -2246,15 +2521,19 @@ class PayrollReportController extends Controller
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
             'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+            'lb_total' => round($lbTotal),
+            'deviasi_total' => round($deviasiTotal),
+            'city_ledger_total' => round($cityLedgerTotal),
             'leave_data' => $leaveData,
             'leave_types' => $leaveTypes,
-            'total_gaji' => round($totalGaji),
+            'total_gaji' => round($totalGajiFinal),
             'hari_kerja' => $hariKerja,
             'master_data' => $masterData,
             'logo_base64' => $logoBase64,
         ]);
 
-        $filename = "Slip_Gaji_{$user->nama_lengkap}_{$month}_{$year}.pdf";
+        $typeLabel = $type === 'gajian1' ? 'Gajian1' : 'Gajian2';
+        $filename = "Slip_Gaji_{$typeLabel}_{$user->nama_lengkap}_{$month}_{$year}.pdf";
         
         return $pdf->download($filename);
     }
@@ -2267,6 +2546,9 @@ class PayrollReportController extends Controller
             'month' => 'required|integer|between:1,12',
             'year' => 'required|integer|min:2020',
             'service_charge' => 'nullable|numeric|min:0',
+            'lb_amount' => 'nullable|numeric|min:0',
+            'deviasi_amount' => 'nullable|numeric|min:0',
+            'city_ledger_amount' => 'nullable|numeric|min:0',
             'payroll_data' => 'required|array',
         ]);
 
@@ -2277,6 +2559,9 @@ class PayrollReportController extends Controller
             $month = $request->month;
             $year = $request->year;
             $serviceCharge = $request->service_charge ?? 0;
+            $lbAmount = $request->lb_amount ?? 0;
+            $deviasiAmount = $request->deviasi_amount ?? 0;
+            $cityLedgerAmount = $request->city_ledger_amount ?? 0;
             $payrollData = $request->payroll_data;
 
             // Cek apakah payroll untuk periode ini sudah ada
@@ -2292,6 +2577,9 @@ class PayrollReportController extends Controller
                     ->where('id', $existingPayroll->id)
                     ->update([
                         'service_charge' => $serviceCharge,
+                        'lb_amount' => $lbAmount,
+                        'deviasi_amount' => $deviasiAmount,
+                        'city_ledger_amount' => $cityLedgerAmount,
                         'status' => 'generated',
                         'updated_at' => now(),
                         'updated_by' => auth()->id(),
@@ -2310,6 +2598,9 @@ class PayrollReportController extends Controller
                     'month' => $month,
                     'year' => $year,
                     'service_charge' => $serviceCharge,
+                    'lb_amount' => $lbAmount,
+                    'deviasi_amount' => $deviasiAmount,
+                    'city_ledger_amount' => $cityLedgerAmount,
                     'status' => 'generated',
                     'created_at' => now(),
                     'created_by' => auth()->id(),
@@ -2341,6 +2632,10 @@ class PayrollReportController extends Controller
                     'service_charge' => $item['service_charge'] ?? 0,
                     'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
                     'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'lb_total' => $item['lb_total'] ?? 0,
+                    'deviasi_total' => $item['deviasi_total'] ?? 0,
+                    'city_ledger_total' => $item['city_ledger_total'] ?? 0,
+                    'ph_bonus' => $item['ph_bonus'] ?? 0,
                     'custom_earnings' => $item['custom_earnings'] ?? 0,
                     'custom_deductions' => $item['custom_deductions'] ?? 0,
                     'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
@@ -2381,6 +2676,9 @@ class PayrollReportController extends Controller
         $request->validate([
             'payroll_id' => 'required|integer',
             'service_charge' => 'nullable|numeric|min:0',
+            'lb_amount' => 'nullable|numeric|min:0',
+            'deviasi_amount' => 'nullable|numeric|min:0',
+            'city_ledger_amount' => 'nullable|numeric|min:0',
             'payroll_data' => 'required|array',
         ]);
 
@@ -2389,6 +2687,9 @@ class PayrollReportController extends Controller
 
             $payrollId = $request->payroll_id;
             $serviceCharge = $request->service_charge ?? 0;
+            $lbAmount = $request->lb_amount ?? 0;
+            $deviasiAmount = $request->deviasi_amount ?? 0;
+            $cityLedgerAmount = $request->city_ledger_amount ?? 0;
             $payrollData = $request->payroll_data;
 
             // Cek apakah payroll ada
@@ -2416,6 +2717,9 @@ class PayrollReportController extends Controller
                 ->where('id', $payrollId)
                 ->update([
                     'service_charge' => $serviceCharge,
+                    'lb_amount' => $lbAmount,
+                    'deviasi_amount' => $deviasiAmount,
+                    'city_ledger_amount' => $cityLedgerAmount,
                     'status' => 'generated',
                     'updated_at' => now(),
                     'updated_by' => auth()->id(),
@@ -2449,6 +2753,10 @@ class PayrollReportController extends Controller
                     'service_charge' => $item['service_charge'] ?? 0,
                     'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
                     'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'lb_total' => $item['lb_total'] ?? 0,
+                    'deviasi_total' => $item['deviasi_total'] ?? 0,
+                    'city_ledger_total' => $item['city_ledger_total'] ?? 0,
+                    'ph_bonus' => $item['ph_bonus'] ?? 0,
                     'custom_earnings' => $item['custom_earnings'] ?? 0,
                     'custom_deductions' => $item['custom_deductions'] ?? 0,
                     'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
@@ -2622,6 +2930,9 @@ class PayrollReportController extends Controller
     {
         try {
             $userId = auth()->id();
+            $today = now();
+            $currentDate = $today->format('Y-m-d');
+            $currentDay = $today->day;
             
             // Ambil data payroll yang sudah di-generate untuk user ini
             $payrollList = DB::table('payroll_generated_details as pgd')
@@ -2645,9 +2956,71 @@ class PayrollReportController extends Controller
                 ->orderBy('pg.created_at', 'desc')
                 ->get();
 
+            // Generate 2 jenis slip gaji untuk setiap payroll
+            $result = [];
+            foreach ($payrollList as $payroll) {
+                $month = $payroll->month;
+                $year = $payroll->year;
+                
+                // Hitung tanggal gajian 1 (akhir bulan)
+                $lastDayOfMonth = date('t', mktime(0, 0, 0, $month, 1, $year));
+                $gajian1Date = sprintf('%04d-%02d-%02d', $year, $month, $lastDayOfMonth);
+                
+                // Hitung tanggal gajian 2 (tanggal 8 bulan berikutnya)
+                $nextMonth = $month + 1;
+                $nextYear = $year;
+                if ($nextMonth > 12) {
+                    $nextMonth = 1;
+                    $nextYear++;
+                }
+                $gajian2Date = sprintf('%04d-%02d-%02d', $nextYear, $nextMonth, 8);
+                
+                // Gajian 1: Akhir bulan
+                $gajian1 = (object) [
+                    'id' => $payroll->id . '_gajian1',
+                    'payroll_detail_id' => $payroll->id,
+                    'user_id' => $payroll->user_id,
+                    'outlet_id' => $payroll->outlet_id,
+                    'outlet_name' => $payroll->outlet_name,
+                    'month' => $month,
+                    'year' => $year,
+                    'type' => 'gajian1',
+                    'type_label' => 'Gajian 1 (Akhir Bulan)',
+                    'gajian_date' => $gajian1Date,
+                    'gajian_date_formatted' => date('d F Y', strtotime($gajian1Date)),
+                    'is_available' => $currentDate >= $gajian1Date, // Tersedia mulai tanggal gajian
+                    'status' => $payroll->status,
+                ];
+                
+                // Gajian 2: Tanggal 8 bulan berikutnya
+                $gajian2 = (object) [
+                    'id' => $payroll->id . '_gajian2',
+                    'payroll_detail_id' => $payroll->id,
+                    'user_id' => $payroll->user_id,
+                    'outlet_id' => $payroll->outlet_id,
+                    'outlet_name' => $payroll->outlet_name,
+                    'month' => $month,
+                    'year' => $year,
+                    'type' => 'gajian2',
+                    'type_label' => 'Gajian 2 (Tanggal 8)',
+                    'gajian_date' => $gajian2Date,
+                    'gajian_date_formatted' => date('d F Y', strtotime($gajian2Date)),
+                    'is_available' => $currentDate >= $gajian2Date, // Tersedia mulai tanggal gajian
+                    'status' => $payroll->status,
+                ];
+                
+                // Hanya tambahkan jika sudah tersedia (tanggal sudah lewat atau sama dengan hari ini)
+                if ($gajian1->is_available) {
+                    $result[] = $gajian1;
+                }
+                if ($gajian2->is_available) {
+                    $result[] = $gajian2;
+                }
+            }
+
             return response()->json([
                 'success' => true,
-                'data' => $payrollList
+                'data' => $result
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting user payroll list: ' . $e->getMessage());
@@ -2656,6 +3029,197 @@ class PayrollReportController extends Controller
                 'message' => 'Terjadi kesalahan saat mengambil data payroll'
             ], 500);
         }
+    }
+
+    /**
+     * Get payroll slip detail by type (gajian1 or gajian2)
+     */
+    public function getUserPayrollSlipDetail(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            $payrollDetailId = $request->input('payroll_detail_id');
+            $type = $request->input('type'); // 'gajian1' or 'gajian2'
+            
+            if (!$payrollDetailId || !$type) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parameter tidak lengkap'
+                ], 400);
+            }
+            
+            // Ambil data payroll detail
+            $payrollDetail = DB::table('payroll_generated_details as pgd')
+                ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
+                ->leftJoin('tbl_data_outlet as o', 'pg.outlet_id', '=', 'o.id_outlet')
+                ->where('pgd.id', $payrollDetailId)
+                ->where('pgd.user_id', $userId)
+                ->select('pgd.*', 'pg.month', 'pg.year', 'pg.outlet_id', 'o.nama_outlet as outlet_name')
+                ->first();
+            
+            if (!$payrollDetail) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data payroll tidak ditemukan'
+                ], 404);
+            }
+            
+            // Parse JSON fields
+            $customItems = $payrollDetail->custom_items ? json_decode($payrollDetail->custom_items, true) : [];
+            $leaveData = $payrollDetail->leave_data ? json_decode($payrollDetail->leave_data, true) : [];
+            
+            // Get leave types
+            $leaveTypes = DB::table('leave_types')
+                ->where('is_active', 1)
+                ->select('id', 'name')
+                ->get();
+            
+            // Build response berdasarkan jenis slip gaji
+            $response = [
+                'success' => true,
+                'data' => [
+                    'user_id' => $payrollDetail->user_id,
+                    'nik' => $payrollDetail->nik,
+                    'nama_lengkap' => $payrollDetail->nama_lengkap,
+                    'jabatan' => $payrollDetail->jabatan,
+                    'divisi' => $payrollDetail->divisi,
+                    'outlet_id' => $payrollDetail->outlet_id,
+                    'outlet_name' => $payrollDetail->outlet_name,
+                    'month' => $payrollDetail->month,
+                    'year' => $payrollDetail->year,
+                    'type' => $type,
+                    'type_label' => $type === 'gajian1' ? 'Gajian 1 (Akhir Bulan)' : 'Gajian 2 (Tanggal 8)',
+                    'periode' => $payrollDetail->periode,
+                ]
+            ];
+            
+            if ($type === 'gajian1') {
+                // Gajian 1: Akhir bulan
+                // 1. Gaji Pokok
+                // 2. Tunjangan
+                // 3. Custom Deduction
+                // 4. Custom Earning
+                // 5. Telat
+                // 6. Alpha & Unpaid Leave
+                // 7. Leave type breakdown
+                
+                $customDeductions = 0;
+                $customEarnings = 0;
+                $customDeductionItems = [];
+                $customEarningItems = [];
+                
+                // Parse custom items - bisa berupa array of objects atau array of arrays
+                if (is_array($customItems)) {
+                    foreach ($customItems as $item) {
+                        // Handle both array and object format
+                        $itemType = is_array($item) ? ($item['item_type'] ?? $item['type'] ?? null) : ($item->item_type ?? $item->type ?? null);
+                        $itemAmount = is_array($item) ? ($item['item_amount'] ?? $item['amount'] ?? 0) : ($item->item_amount ?? $item->amount ?? 0);
+                        $itemName = is_array($item) ? ($item['item_name'] ?? $item['name'] ?? '') : ($item->item_name ?? $item->name ?? '');
+                        $itemDescription = is_array($item) ? ($item['item_description'] ?? $item['description'] ?? null) : ($item->item_description ?? $item->description ?? null);
+                        
+                        $itemData = [
+                            'name' => $itemName,
+                            'type' => $itemType,
+                            'amount' => $itemAmount,
+                            'description' => $itemDescription,
+                        ];
+                        
+                        if ($itemType === 'deduction') {
+                            $customDeductions += $itemAmount;
+                            $customDeductionItems[] = $itemData;
+                        } else if ($itemType === 'earn') {
+                            $customEarnings += $itemAmount;
+                            $customEarningItems[] = $itemData;
+                        }
+                    }
+                }
+                
+                $response['data']['gajian1'] = [
+                    'gaji_pokok' => $payrollDetail->gaji_pokok ?? 0,
+                    'tunjangan' => $payrollDetail->tunjangan ?? 0,
+                    'custom_deductions' => $payrollDetail->custom_deductions ?? 0,
+                    'custom_deduction_items' => $customDeductionItems,
+                    'custom_earnings' => $payrollDetail->custom_earnings ?? 0,
+                    'custom_earning_items' => $customEarningItems,
+                    'potongan_telat' => $payrollDetail->potongan_telat ?? 0,
+                    'total_alpha' => $payrollDetail->total_alpha ?? 0,
+                    'potongan_alpha' => $payrollDetail->potongan_alpha ?? 0,
+                    'potongan_unpaid_leave' => $payrollDetail->potongan_unpaid_leave ?? 0,
+                    'leave_data' => $leaveData,
+                    'leave_types' => $leaveTypes,
+                    'total_gaji_gajian1' => ($payrollDetail->gaji_pokok ?? 0) 
+                        + ($payrollDetail->tunjangan ?? 0) 
+                        + ($payrollDetail->custom_earnings ?? 0) 
+                        - ($payrollDetail->custom_deductions ?? 0) 
+                        - ($payrollDetail->potongan_telat ?? 0) 
+                        - ($payrollDetail->potongan_alpha ?? 0) 
+                        - ($payrollDetail->potongan_unpaid_leave ?? 0),
+                ];
+            } else {
+                // Gajian 2: Tanggal 8 bulan berikutnya
+                // 1. Service Charge Point
+                // 2. Service Charge Prorate
+                // 3. Uang Makan
+                // 4. Lembur
+                // 5. L & B
+                // 6. Deviasi
+                // 7. City Ledger
+                // 8. PH Bonus
+                
+                $response['data']['gajian2'] = [
+                    'service_charge_by_point' => $payrollDetail->service_charge_by_point ?? 0,
+                    'service_charge_pro_rate' => $payrollDetail->service_charge_pro_rate ?? 0,
+                    'service_charge' => $payrollDetail->service_charge ?? 0,
+                    'uang_makan' => $payrollDetail->uang_makan ?? 0,
+                    'nominal_uang_makan' => $payrollDetail->nominal_uang_makan ?? 0,
+                    'total_lembur' => $payrollDetail->total_lembur ?? 0,
+                    'nominal_lembur_per_jam' => $payrollDetail->nominal_lembur_per_jam ?? 0,
+                    'gaji_lembur' => $payrollDetail->gaji_lembur ?? 0,
+                    'lb_total' => $payrollDetail->lb_total ?? 0,
+                    'deviasi_total' => $payrollDetail->deviasi_total ?? 0,
+                    'city_ledger_total' => $payrollDetail->city_ledger_total ?? 0,
+                    'ph_bonus' => $payrollDetail->ph_bonus ?? 0,
+                    'total_gaji_gajian2' => ($payrollDetail->service_charge ?? 0) 
+                        + ($payrollDetail->uang_makan ?? 0) 
+                        + ($payrollDetail->gaji_lembur ?? 0) 
+                        + ($payrollDetail->ph_bonus ?? 0) // PH Bonus ditambahkan sebagai earning
+                        - ($payrollDetail->lb_total ?? 0) 
+                        - ($payrollDetail->deviasi_total ?? 0) 
+                        - ($payrollDetail->city_ledger_total ?? 0),
+                ];
+            }
+            
+            return response()->json($response);
+        } catch (\Exception $e) {
+            \Log::error('Error getting payroll slip detail: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil detail slip gaji'
+            ], 500);
+        }
+    }
+
+    /**
+     * Calculate PH Bonus (Public Holiday bonus only, not extra_off)
+     */
+    private function calculatePHBonus($userId, $startDate, $endDate)
+    {
+        // Get holiday attendance compensations for this user in the period
+        // Only count bonus type, not extra_off
+        $compensations = DB::table('holiday_attendance_compensations')
+            ->where('user_id', $userId)
+            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->where('compensation_type', 'bonus') // Only bonus, not extra_off
+            ->whereIn('status', ['approved', 'used']) // Only count approved or used compensations
+            ->get();
+        
+        // Sum all bonus amounts
+        $phBonus = 0;
+        foreach ($compensations as $compensation) {
+            $phBonus += $compensation->compensation_amount ?? 0;
+        }
+        
+        return $phBonus;
     }
 
     /**
