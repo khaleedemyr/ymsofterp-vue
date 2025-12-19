@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\MemberAppsChallenge;
 use App\Models\MemberAppsChallengeProgress;
 use App\Models\MemberAppsMember;
+use App\Models\MemberAppsPointTransaction;
+use App\Models\MemberAppsPointEarning;
 use App\Events\ChallengeCompleted;
 use App\Events\ChallengeRolledBack;
 use Illuminate\Support\Facades\DB;
@@ -850,8 +852,9 @@ class ChallengeProgressService
         try {
             $rewardType = $rules['reward_type'] ?? 'none';
             
-            if ($rewardType === 'point' && $progress->reward_claimed) {
-                // Rollback points
+            // Handle point rewards (both 'point' and 'points')
+            if (($rewardType === 'point' || $rewardType === 'points') && $progress->reward_claimed) {
+                // Rollback points by finding and deleting the point transaction
                 $pointsToRollback = $rules['reward_value'] ?? $challenge->points_reward ?? 0;
                 if (is_array($pointsToRollback)) {
                     $pointsToRollback = (int)($pointsToRollback[0] ?? 0);
@@ -859,15 +862,131 @@ class ChallengeProgressService
                     $pointsToRollback = (int)$pointsToRollback;
                 }
 
-                if ($pointsToRollback > 0 && ($member->just_points ?? 0) >= $pointsToRollback) {
-                    $member->just_points = ($member->just_points ?? 0) - $pointsToRollback;
-                    $member->save();
+                if ($pointsToRollback > 0) {
+                    // Find point transactions related to this challenge reward
+                    // Reference ID format: CHALLENGE-{challengeId}-{progressId} or CHALLENGE-{challengeId}-{progressId}-LEGACY
+                    $referenceIdPattern = "CHALLENGE-{$challenge->id}-{$progress->id}";
+                    $legacyReferenceIdPattern = "CHALLENGE-{$challenge->id}-{$progress->id}-LEGACY";
                     
-                    Log::info('Challenge reward points rolled back', [
+                    Log::info('Rolling back challenge reward points', [
                         'member_id' => $member->id,
                         'challenge_id' => $challenge->id,
-                        'points_rolled_back' => $pointsToRollback
+                        'progress_id' => $progress->id,
+                        'points_to_rollback' => $pointsToRollback,
+                        'reference_pattern' => $referenceIdPattern,
+                        'legacy_reference_pattern' => $legacyReferenceIdPattern
                     ]);
+                    
+                    // Find point transactions with matching reference_id
+                    $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
+                        ->where('transaction_type', 'bonus')
+                        ->where('channel', 'challenge_reward')
+                        ->where(function($q) use ($referenceIdPattern, $legacyReferenceIdPattern) {
+                            $q->where('reference_id', $referenceIdPattern)
+                              ->orWhere('reference_id', $legacyReferenceIdPattern);
+                        })
+                        ->get();
+                    
+                    $totalPointsRolledBack = 0;
+                    
+                    foreach ($pointTransactions as $transaction) {
+                        // Find associated point earnings
+                        $pointEarnings = MemberAppsPointEarning::where('member_id', $member->id)
+                            ->where('point_transaction_id', $transaction->id)
+                            ->get();
+                        
+                        // Delete point earnings first (due to foreign key)
+                        foreach ($pointEarnings as $earning) {
+                            $totalPointsRolledBack += $earning->point_amount;
+                            $earning->delete();
+                            Log::info('Deleted point earning for challenge reward rollback', [
+                                'earning_id' => $earning->id,
+                                'point_amount' => $earning->point_amount
+                            ]);
+                        }
+                        
+                        // Delete point transaction
+                        $transaction->delete();
+                        Log::info('Deleted point transaction for challenge reward rollback', [
+                            'transaction_id' => $transaction->id,
+                            'point_amount' => $transaction->point_amount,
+                            'reference_id' => $transaction->reference_id
+                        ]);
+                    }
+                    
+                    // Update member's total points
+                    if ($totalPointsRolledBack > 0) {
+                        $currentPoints = $member->just_points ?? 0;
+                        $newPoints = max(0, $currentPoints - $totalPointsRolledBack);
+                        $member->just_points = $newPoints;
+                        $member->save();
+                        
+                        Log::info('Challenge reward points rolled back successfully', [
+                            'member_id' => $member->id,
+                            'challenge_id' => $challenge->id,
+                            'points_rolled_back' => $totalPointsRolledBack,
+                            'old_points' => $currentPoints,
+                            'new_points' => $newPoints,
+                            'transactions_deleted' => $pointTransactions->count()
+                        ]);
+                    } else {
+                        Log::warning('No point transactions found to rollback for challenge reward', [
+                            'member_id' => $member->id,
+                            'challenge_id' => $challenge->id,
+                            'progress_id' => $progress->id,
+                            'reference_pattern' => $referenceIdPattern
+                        ]);
+                    }
+                }
+            } elseif (!$rewardType || $rewardType === 'none') {
+                // Handle legacy points_reward if no reward_type is set
+                if ($challenge->points_reward && $challenge->points_reward > 0 && $progress->reward_claimed) {
+                    $pointsToRollback = (int)$challenge->points_reward;
+                    
+                    if ($pointsToRollback > 0) {
+                        // Find legacy point transactions
+                        $legacyReferenceIdPattern = "CHALLENGE-{$challenge->id}-{$progress->id}-LEGACY";
+                        
+                        $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
+                            ->where('transaction_type', 'bonus')
+                            ->where('channel', 'challenge_reward')
+                            ->where('reference_id', $legacyReferenceIdPattern)
+                            ->get();
+                        
+                        $totalPointsRolledBack = 0;
+                        
+                        foreach ($pointTransactions as $transaction) {
+                            // Find associated point earnings
+                            $pointEarnings = MemberAppsPointEarning::where('member_id', $member->id)
+                                ->where('point_transaction_id', $transaction->id)
+                                ->get();
+                            
+                            // Delete point earnings first
+                            foreach ($pointEarnings as $earning) {
+                                $totalPointsRolledBack += $earning->point_amount;
+                                $earning->delete();
+                            }
+                            
+                            // Delete point transaction
+                            $transaction->delete();
+                        }
+                        
+                        // Update member's total points
+                        if ($totalPointsRolledBack > 0) {
+                            $currentPoints = $member->just_points ?? 0;
+                            $newPoints = max(0, $currentPoints - $totalPointsRolledBack);
+                            $member->just_points = $newPoints;
+                            $member->save();
+                            
+                            Log::info('Legacy challenge reward points rolled back successfully', [
+                                'member_id' => $member->id,
+                                'challenge_id' => $challenge->id,
+                                'points_rolled_back' => $totalPointsRolledBack,
+                                'old_points' => $currentPoints,
+                                'new_points' => $newPoints
+                            ]);
+                        }
+                    }
                 }
             } elseif ($rewardType === 'item' && $progress->serial_code) {
                 // Rollback item - mark serial code as voided
@@ -896,7 +1015,8 @@ class ChallengeProgressService
             Log::error('Error rolling back challenge reward', [
                 'member_id' => $member->id,
                 'challenge_id' => $challenge->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
