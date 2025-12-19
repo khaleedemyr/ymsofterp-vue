@@ -643,6 +643,7 @@ class RewardController extends Controller
             $serialCode = null;
             $rewardType = null;
             $rewardData = [];
+            $rewardProcessed = false; // Track if reward was successfully processed
 
             // Handle different reward types
             if (isset($rules['reward_type'])) {
@@ -726,11 +727,28 @@ class RewardController extends Controller
                         ]);
                     }
                     
+                    // Item reward successfully processed
+                    $rewardProcessed = true;
+                    
                 } elseif ($rewardType === 'point' && isset($rules['reward_value'])) {
                     // Point reward - add points directly to member
                     $pointAmount = is_array($rules['reward_value']) 
                         ? (int)($rules['reward_value'][0] ?? 0) 
                         : (int)$rules['reward_value'];
+                    
+                    if ($pointAmount <= 0) {
+                        \Log::warning('Challenge point reward amount is invalid', [
+                            'member_id' => $member->id,
+                            'challenge_id' => $challengeId,
+                            'point_amount' => $pointAmount,
+                            'reward_value' => $rules['reward_value']
+                        ]);
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Invalid point reward amount. Please contact support.',
+                            'data' => ['points_added' => 0]
+                        ], 400);
+                    }
                     
                     if ($pointAmount > 0) {
                         try {
@@ -797,15 +815,27 @@ class RewardController extends Controller
                                         'error' => $e->getMessage()
                                     ]);
                                 }
+                                
+                                // Point reward successfully processed
+                                $rewardProcessed = true;
                             } else {
-                                \Log::warning('Challenge point reward returned null', [
+                                \Log::warning('Challenge point reward returned null - points were not added', [
                                     'member_id' => $member->id,
                                     'challenge_id' => $challengeId,
-                                    'points' => $pointAmount
+                                    'points' => $pointAmount,
+                                    'reference_id' => "CHALLENGE-{$challengeId}-{$progress->id}"
                                 ]);
-                                // Don't fail the request, just log warning
+                                // Points were not added - don't mark reward as claimed
                                 $rewardData['points_added'] = 0;
-                                $rewardData['points_error'] = 'Points may have already been added';
+                                $rewardData['points_error'] = 'Points may have already been added or failed to add';
+                                $rewardProcessed = false;
+                                
+                                // Return error response instead of continuing
+                                return response()->json([
+                                    'success' => false,
+                                    'message' => 'Failed to add points. Points may have already been added for this challenge.',
+                                    'data' => $rewardData
+                                ], 400);
                             }
                         } catch (\Exception $e) {
                             \Log::error('Error adding challenge point reward', [
@@ -940,6 +970,9 @@ class RewardController extends Controller
                     $rewardData['assigned_vouchers'] = $assignedVouchers;
                     $rewardData['reward_item_selection'] = $rewardItemSelection;
                     
+                    // Voucher reward successfully processed (even if some vouchers already existed)
+                    $rewardProcessed = true;
+                    
                     // Get voucher name for notification (use first assigned voucher)
                     $voucherName = 'Voucher';
                     if (!empty($assignedVouchers)) {
@@ -1034,12 +1067,17 @@ class RewardController extends Controller
                                 'error' => $e->getMessage()
                             ]);
                         }
+                        
+                        // Legacy point reward successfully processed
+                        $rewardProcessed = true;
                     } else {
-                        \Log::warning('Challenge legacy point reward returned null', [
+                        \Log::warning('Challenge legacy point reward returned null - points were not added', [
                             'member_id' => $member->id,
                             'challenge_id' => $challengeId,
-                            'points' => $challenge->points_reward
+                            'points' => $challenge->points_reward,
+                            'reference_id' => "CHALLENGE-{$challengeId}-{$progress->id}-LEGACY"
                         ]);
+                        // Don't set rewardProcessed to false here since this is legacy and might not be the primary reward
                     }
                 } catch (\Exception $e) {
                     \Log::error('Error adding challenge legacy point reward', [
@@ -1051,20 +1089,56 @@ class RewardController extends Controller
                 }
             }
 
-            // Mark reward as claimed
-            $progress->reward_claimed = true;
-            $progress->reward_claimed_at = now();
-            if ($serialCode) {
-                $progress->serial_code = $serialCode;
+            // Mark reward as claimed only if reward was successfully processed
+            // For point rewards (both new and legacy), only mark as claimed if points were actually added
+            // For other reward types (item, voucher), mark as claimed if rewardProcessed is true
+            // If no reward_type is set but legacy points_reward exists, mark as claimed if legacy points were added
+            $shouldMarkAsClaimed = false;
+            
+            if ($rewardType === 'point') {
+                // For point rewards, only mark as claimed if points were successfully added
+                $shouldMarkAsClaimed = $rewardProcessed;
+            } elseif ($rewardType === 'item' || $rewardType === 'voucher') {
+                // For item/voucher rewards, mark as claimed if reward was processed
+                $shouldMarkAsClaimed = $rewardProcessed;
+            } elseif (!$rewardType && $challenge->points_reward && $challenge->points_reward > 0) {
+                // Legacy challenge with points_reward but no reward_type - mark as claimed if legacy points were added
+                $shouldMarkAsClaimed = $rewardProcessed;
+            } else {
+                // No reward type or unknown reward type - mark as claimed for backward compatibility
+                // (some old challenges might not have reward_type set)
+                $shouldMarkAsClaimed = true;
             }
-            $progress->save();
-
-            \Log::info('Challenge reward claimed', [
-                'member_id' => $member->id,
-                'challenge_id' => $challengeId,
-                'serial_code' => $serialCode,
-                'reward_type' => $rewardType
-            ]);
+            
+            if ($shouldMarkAsClaimed) {
+                $progress->reward_claimed = true;
+                $progress->reward_claimed_at = now();
+                if ($serialCode) {
+                    $progress->serial_code = $serialCode;
+                }
+                $progress->save();
+                
+                \Log::info('Challenge reward claimed', [
+                    'member_id' => $member->id,
+                    'challenge_id' => $challengeId,
+                    'serial_code' => $serialCode,
+                    'reward_type' => $rewardType,
+                    'reward_processed' => $rewardProcessed
+                ]);
+            } else {
+                \Log::warning('Challenge reward not marked as claimed - reward processing failed', [
+                    'member_id' => $member->id,
+                    'challenge_id' => $challengeId,
+                    'reward_type' => $rewardType,
+                    'reward_data' => $rewardData
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to process reward. Points were not added. Please try again or contact support.',
+                    'data' => $rewardData
+                ], 400);
+            }
 
             // Refresh member to get updated points
             $member->refresh();
