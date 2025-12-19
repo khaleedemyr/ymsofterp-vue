@@ -645,6 +645,15 @@ class RewardController extends Controller
             $rewardData = [];
             $rewardProcessed = false; // Track if reward was successfully processed
 
+            \Log::info('Processing challenge reward claim', [
+                'member_id' => $member->id,
+                'challenge_id' => $challengeId,
+                'rules' => $rules,
+                'has_reward_type' => isset($rules['reward_type']),
+                'has_reward_value' => isset($rules['reward_value']),
+                'points_reward' => $challenge->points_reward ?? null
+            ]);
+
             // Handle different reward types
             if (isset($rules['reward_type'])) {
                 $rewardType = $rules['reward_type'];
@@ -730,27 +739,37 @@ class RewardController extends Controller
                     // Item reward successfully processed
                     $rewardProcessed = true;
                     
-                } elseif ($rewardType === 'point' && isset($rules['reward_value'])) {
+                } elseif ($rewardType === 'point' || $rewardType === 'points') {
                     // Point reward - add points directly to member
-                    $pointAmount = is_array($rules['reward_value']) 
-                        ? (int)($rules['reward_value'][0] ?? 0) 
-                        : (int)$rules['reward_value'];
-                    
-                    if ($pointAmount <= 0) {
-                        \Log::warning('Challenge point reward amount is invalid', [
+                    if (!isset($rules['reward_value'])) {
+                        \Log::warning('Challenge point reward has no reward_value', [
                             'member_id' => $member->id,
                             'challenge_id' => $challengeId,
-                            'point_amount' => $pointAmount,
-                            'reward_value' => $rules['reward_value']
+                            'reward_type' => $rewardType,
+                            'rules' => $rules
                         ]);
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Invalid point reward amount. Please contact support.',
-                            'data' => ['points_added' => 0]
-                        ], 400);
-                    }
+                        // Don't process if reward_value is missing
+                        $rewardProcessed = false;
+                    } else {
+                        $pointAmount = is_array($rules['reward_value']) 
+                            ? (int)($rules['reward_value'][0] ?? 0) 
+                            : (int)$rules['reward_value'];
                     
-                    if ($pointAmount > 0) {
+                        if ($pointAmount <= 0) {
+                            \Log::warning('Challenge point reward amount is invalid', [
+                                'member_id' => $member->id,
+                                'challenge_id' => $challengeId,
+                                'point_amount' => $pointAmount,
+                                'reward_value' => $rules['reward_value']
+                            ]);
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Invalid point reward amount. Please contact support.',
+                                'data' => ['points_added' => 0]
+                            ], 400);
+                        }
+                        
+                        if ($pointAmount > 0) {
                         try {
                             \Log::info('Attempting to add challenge point reward', [
                                 'member_id' => $member->id,
@@ -847,9 +866,10 @@ class RewardController extends Controller
                             ]);
                             return response()->json([
                                 'success' => false,
-                                'message' => 'Failed to add points: ' . $e->getMessage()
+                                    'message' => 'Failed to add points: ' . $e->getMessage()
                             ], 500);
                         }
+                    }
                     }
                     
                 } elseif ($rewardType === 'voucher' && isset($rules['reward_value'])) {
@@ -1004,7 +1024,26 @@ class RewardController extends Controller
             }
             
             // Also check legacy points_reward field (only if not already handled by reward_type)
-            if ($challenge->points_reward && $challenge->points_reward > 0 && $rewardType !== 'point') {
+            // Skip legacy points if reward_type is already 'point' or 'points'
+            // Only process legacy points if reward_type is not 'point'/'points' OR if reward_type is 'point'/'points' but reward_value is missing
+            $shouldProcessLegacyPoints = false;
+            if ($challenge->points_reward && $challenge->points_reward > 0) {
+                if ($rewardType !== 'point' && $rewardType !== 'points') {
+                    // No point reward type set, use legacy
+                    $shouldProcessLegacyPoints = true;
+                } elseif (($rewardType === 'point' || $rewardType === 'points') && !isset($rules['reward_value'])) {
+                    // Point reward type set but no reward_value, fallback to legacy
+                    \Log::info('Point reward type set but no reward_value, falling back to legacy points_reward', [
+                        'member_id' => $member->id,
+                        'challenge_id' => $challengeId,
+                        'reward_type' => $rewardType,
+                        'legacy_points' => $challenge->points_reward
+                    ]);
+                    $shouldProcessLegacyPoints = true;
+                }
+            }
+            
+            if ($shouldProcessLegacyPoints) {
                 try {
                     \Log::info('Attempting to add challenge legacy point reward', [
                         'member_id' => $member->id,
@@ -1075,9 +1114,18 @@ class RewardController extends Controller
                             'member_id' => $member->id,
                             'challenge_id' => $challengeId,
                             'points' => $challenge->points_reward,
-                            'reference_id' => "CHALLENGE-{$challengeId}-{$progress->id}-LEGACY"
+                            'reference_id' => "CHALLENGE-{$challengeId}-{$progress->id}-LEGACY",
+                            'reward_type' => $rewardType
                         ]);
-                        // Don't set rewardProcessed to false here since this is legacy and might not be the primary reward
+                        // If this is a fallback from point/points reward type, don't mark as processed
+                        // If this is a true legacy challenge (no reward_type), also don't mark as processed if points failed
+                        if ($rewardType === 'point' || $rewardType === 'points') {
+                            // This was a fallback from point/points reward type, so don't mark as processed
+                            $rewardProcessed = false;
+                        } else {
+                            // True legacy challenge - don't mark as processed if points failed
+                            $rewardProcessed = false;
+                        }
                     }
                 } catch (\Exception $e) {
                     \Log::error('Error adding challenge legacy point reward', [
@@ -1095,9 +1143,25 @@ class RewardController extends Controller
             // If no reward_type is set but legacy points_reward exists, mark as claimed if legacy points were added
             $shouldMarkAsClaimed = false;
             
-            if ($rewardType === 'point') {
+            \Log::info('Determining if reward should be marked as claimed', [
+                'member_id' => $member->id,
+                'challenge_id' => $challengeId,
+                'reward_type' => $rewardType,
+                'reward_processed' => $rewardProcessed,
+                'has_legacy_points' => ($challenge->points_reward && $challenge->points_reward > 0),
+                'legacy_points_value' => $challenge->points_reward ?? null
+            ]);
+            
+            if ($rewardType === 'point' || $rewardType === 'points') {
                 // For point rewards, only mark as claimed if points were successfully added
                 $shouldMarkAsClaimed = $rewardProcessed;
+                \Log::info('Point reward claim decision', [
+                    'member_id' => $member->id,
+                    'challenge_id' => $challengeId,
+                    'reward_type' => $rewardType,
+                    'reward_processed' => $rewardProcessed,
+                    'should_mark_as_claimed' => $shouldMarkAsClaimed
+                ]);
             } elseif ($rewardType === 'item' || $rewardType === 'voucher') {
                 // For item/voucher rewards, mark as claimed if reward was processed
                 $shouldMarkAsClaimed = $rewardProcessed;
@@ -1107,8 +1171,23 @@ class RewardController extends Controller
             } else {
                 // No reward type or unknown reward type - mark as claimed for backward compatibility
                 // (some old challenges might not have reward_type set)
-                $shouldMarkAsClaimed = true;
+                // BUT: if reward_type is set to something unknown, don't mark as claimed if reward wasn't processed
+                if ($rewardType) {
+                    // Unknown reward type - don't mark as claimed if not processed
+                    $shouldMarkAsClaimed = $rewardProcessed;
+                } else {
+                    // No reward type at all - mark as claimed for backward compatibility
+                    $shouldMarkAsClaimed = true;
+                }
             }
+            
+            \Log::info('Final claim decision', [
+                'member_id' => $member->id,
+                'challenge_id' => $challengeId,
+                'should_mark_as_claimed' => $shouldMarkAsClaimed,
+                'reward_type' => $rewardType,
+                'reward_processed' => $rewardProcessed
+            ]);
             
             if ($shouldMarkAsClaimed) {
                 $progress->reward_claimed = true;
