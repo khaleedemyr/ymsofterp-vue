@@ -370,48 +370,51 @@ class PayrollReportController extends Controller
             }
 
             // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
-            $totalPointLB = 0;
+            // Menggunakan (point × hari kerja) seperti service charge by point
+            $totalPointHariKerjaLB = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->lb == 1) {
-                    $totalPointLB += $data['userPoint'];
+                    $totalPointHariKerjaLB += $data['userPoint'] * $data['hariKerja'];
                 }
             }
 
-            // Step 3b: Hitung rate L & B (100% by point saja)
+            // Step 3b: Hitung rate L & B (100% by point × hari kerja)
             $rateLBByPoint = 0;
 
-            if ($lbAmount > 0 && $totalPointLB > 0) {
-                $rateLBByPoint = $lbAmount / $totalPointLB;
+            if ($lbAmount > 0 && $totalPointHariKerjaLB > 0) {
+                $rateLBByPoint = $lbAmount / $totalPointHariKerjaLB;
             }
 
             // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
-            $totalPointDeviasi = 0;
+            // Menggunakan (point × hari kerja) seperti service charge by point
+            $totalPointHariKerjaDeviasi = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->deviasi == 1) {
-                    $totalPointDeviasi += $data['userPoint'];
+                    $totalPointHariKerjaDeviasi += $data['userPoint'] * $data['hariKerja'];
                 }
             }
 
-            // Step 3c: Hitung rate Deviasi (100% by point saja)
+            // Step 3c: Hitung rate Deviasi (100% by point × hari kerja)
             $rateDeviasiByPoint = 0;
 
-            if ($deviasiAmount > 0 && $totalPointDeviasi > 0) {
-                $rateDeviasiByPoint = $deviasiAmount / $totalPointDeviasi;
+            if ($deviasiAmount > 0 && $totalPointHariKerjaDeviasi > 0) {
+                $rateDeviasiByPoint = $deviasiAmount / $totalPointHariKerjaDeviasi;
             }
 
             // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
-            $totalPointCityLedger = 0;
+            // Menggunakan (point × hari kerja) seperti service charge by point
+            $totalPointHariKerjaCityLedger = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->city_ledger == 1) {
-                    $totalPointCityLedger += $data['userPoint'];
+                    $totalPointHariKerjaCityLedger += $data['userPoint'] * $data['hariKerja'];
                 }
             }
 
-            // Step 3d: Hitung rate City Ledger (100% by point saja)
+            // Step 3d: Hitung rate City Ledger (100% by point × hari kerja)
             $rateCityLedgerByPoint = 0;
 
-            if ($cityLedgerAmount > 0 && $totalPointCityLedger > 0) {
-                $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointCityLedger;
+            if ($cityLedgerAmount > 0 && $totalPointHariKerjaCityLedger > 0) {
+                $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointHariKerjaCityLedger;
             }
 
             // Step 4: Hitung service charge per user dan total gaji
@@ -605,30 +608,33 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-            // Hitung L & B (By Point saja) jika enabled
+            // Hitung L & B (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $lbByPointAmount = 0;
             $lbTotal = 0;
             
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                $lbByPointAmount = $rateLBByPoint * $userPoint;
+                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerja);
                 $lbTotal = $lbByPointAmount;
             }
 
-            // Hitung Deviasi (By Point saja) jika enabled
+            // Hitung Deviasi (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $deviasiByPointAmount = 0;
             $deviasiTotal = 0;
             
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                $deviasiByPointAmount = $rateDeviasiByPoint * $userPoint;
+                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerja);
                 $deviasiTotal = $deviasiByPointAmount;
             }
 
-            // Hitung City Ledger (By Point saja) jika enabled
+            // Hitung City Ledger (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $cityLedgerByPointAmount = 0;
             $cityLedgerTotal = 0;
             
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                $cityLedgerByPointAmount = $rateCityLedgerByPoint * $userPoint;
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerja);
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
@@ -1245,48 +1251,51 @@ class PayrollReportController extends Controller
         }
 
         // Step 2b: Hitung total untuk L & B
-        $totalPointLB = 0;
+        // Menggunakan (point × hari kerja) seperti service charge by point
+        $totalPointHariKerjaLB = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->lb == 1) {
-                $totalPointLB += $data['userPoint'];
+                $totalPointHariKerjaLB += $data['userPoint'] * $data['hariKerja'];
             }
         }
 
-        // Step 3b: Hitung rate L & B (100% by point saja)
+        // Step 3b: Hitung rate L & B (100% by point × hari kerja)
         $rateLBByPoint = 0;
 
-        if ($lbAmount > 0 && $totalPointLB > 0) {
-            $rateLBByPoint = $lbAmount / $totalPointLB;
+        if ($lbAmount > 0 && $totalPointHariKerjaLB > 0) {
+            $rateLBByPoint = $lbAmount / $totalPointHariKerjaLB;
         }
 
         // Step 2c: Hitung total untuk Deviasi
-        $totalPointDeviasi = 0;
+        // Menggunakan (point × hari kerja) seperti service charge by point
+        $totalPointHariKerjaDeviasi = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->deviasi == 1) {
-                $totalPointDeviasi += $data['userPoint'];
+                $totalPointHariKerjaDeviasi += $data['userPoint'] * $data['hariKerja'];
             }
         }
 
-        // Step 3c: Hitung rate Deviasi (100% by point saja)
+        // Step 3c: Hitung rate Deviasi (100% by point × hari kerja)
         $rateDeviasiByPoint = 0;
 
-        if ($deviasiAmount > 0 && $totalPointDeviasi > 0) {
-            $rateDeviasiByPoint = $deviasiAmount / $totalPointDeviasi;
+        if ($deviasiAmount > 0 && $totalPointHariKerjaDeviasi > 0) {
+            $rateDeviasiByPoint = $deviasiAmount / $totalPointHariKerjaDeviasi;
         }
 
         // Step 2d: Hitung total untuk City Ledger
-        $totalPointCityLedger = 0;
+        // Menggunakan (point × hari kerja) seperti service charge by point
+        $totalPointHariKerjaCityLedger = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->city_ledger == 1) {
-                $totalPointCityLedger += $data['userPoint'];
+                $totalPointHariKerjaCityLedger += $data['userPoint'] * $data['hariKerja'];
             }
         }
 
-        // Step 3d: Hitung rate City Ledger (100% by point saja)
+        // Step 3d: Hitung rate City Ledger (100% by point × hari kerja)
         $rateCityLedgerByPoint = 0;
 
-        if ($cityLedgerAmount > 0 && $totalPointCityLedger > 0) {
-            $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointCityLedger;
+        if ($cityLedgerAmount > 0 && $totalPointHariKerjaCityLedger > 0) {
+            $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointHariKerjaCityLedger;
         }
 
         // Step 4: Hitung service charge per user dan export data
@@ -1343,30 +1352,33 @@ class PayrollReportController extends Controller
                 }
             }
 
-            // Hitung L & B (By Point saja) jika enabled
+            // Hitung L & B (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $lbByPointAmount = 0;
             $lbTotal = 0;
             
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                $lbByPointAmount = $rateLBByPoint * $userPoint;
+                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerja);
                 $lbTotal = $lbByPointAmount;
             }
 
-            // Hitung Deviasi (By Point saja) jika enabled
+            // Hitung Deviasi (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $deviasiByPointAmount = 0;
             $deviasiTotal = 0;
             
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                $deviasiByPointAmount = $rateDeviasiByPoint * $userPoint;
+                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerja);
                 $deviasiTotal = $deviasiByPointAmount;
             }
 
-            // Hitung City Ledger (By Point saja) jika enabled
+            // Hitung City Ledger (By Point × Hari Kerja) jika enabled
+            // Menggunakan (point × hari kerja) seperti service charge by point
             $cityLedgerByPointAmount = 0;
             $cityLedgerTotal = 0;
             
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                $cityLedgerByPointAmount = $rateCityLedgerByPoint * $userPoint;
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerja);
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
