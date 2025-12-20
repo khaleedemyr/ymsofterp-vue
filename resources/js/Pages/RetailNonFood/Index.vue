@@ -1,154 +1,257 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-2">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-shopping-bag text-green-500"></i> Outlet Retail Non Food
-        </h1>
-        <button @click="goCreate" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Baru
-        </button>
+    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <!-- Header Section -->
+      <div class="mb-8">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <div class="p-2 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg">
+                <i class="fa-solid fa-shopping-bag text-white text-xl"></i>
+              </div>
+              <span>Outlet Retail Non Food</span>
+            </h1>
+            <p class="text-sm text-gray-500 mt-1 ml-14">Kelola transaksi retail non food outlet</p>
+          </div>
+          <button 
+            @click="goCreate" 
+            class="group relative inline-flex items-center gap-2 bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold hover:from-green-600 hover:to-green-700 transform hover:-translate-y-0.5"
+          >
+            <i class="fa-solid fa-plus text-lg"></i>
+            <span>Tambah Baru</span>
+          </button>
+        </div>
       </div>
 
       <!-- Filter Section -->
-      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-filter text-green-500"></i> Filter Data
-        </h3>
+      <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-6 backdrop-blur-sm">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <div class="p-1.5 bg-green-100 rounded-lg">
+              <i class="fa-solid fa-filter text-green-600"></i>
+            </div>
+            Filter Data
+          </h3>
+          <div class="text-sm text-gray-500">
+            <span v-if="hasActiveFilters" class="text-green-600 font-semibold">
+              <i class="fa-solid fa-check-circle mr-1"></i>{{ activeFiltersCount }} filter aktif
+            </span>
+            <span v-else class="text-gray-400">
+              <i class="fa-solid fa-info-circle mr-1"></i>Tidak ada filter aktif
+            </span>
+          </div>
+        </div>
         
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <!-- Search -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Cari</label>
+          <div class="space-y-1">
+            <label class="block text-sm font-semibold text-gray-700 mb-1">
+              <i class="fa-solid fa-search mr-1 text-gray-400"></i>Cari
+            </label>
             <input 
               type="text" 
               v-model="filters.search" 
               placeholder="No. transaksi, outlet..."
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-gray-50 hover:bg-white"
             />
           </div>
 
           <!-- Date From -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
+          <div class="space-y-1">
+            <label class="block text-sm font-semibold text-gray-700 mb-1">
+              <i class="fa-solid fa-calendar-alt mr-1 text-gray-400"></i>Tanggal Dari
+            </label>
             <input 
               type="date" 
               v-model="filters.date_from" 
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-gray-50 hover:bg-white"
             />
           </div>
 
           <!-- Date To -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Sampai</label>
+          <div class="space-y-1">
+            <label class="block text-sm font-semibold text-gray-700 mb-1">
+              <i class="fa-solid fa-calendar-check mr-1 text-gray-400"></i>Tanggal Sampai
+            </label>
             <input 
               type="date" 
               v-model="filters.date_to" 
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-gray-50 hover:bg-white"
             />
           </div>
         </form>
 
         <!-- Filter Actions -->
-        <div class="flex justify-between items-center mt-4">
-          <div class="text-sm text-gray-600">
-            <span v-if="hasActiveFilters" class="text-green-600 font-medium">
-              Filter aktif: {{ activeFiltersCount }}
-            </span>
-            <span v-else class="text-gray-500">
-              Tidak ada filter aktif
-            </span>
-          </div>
-          <div class="flex gap-2">
-            <button 
-              @click="clearFilters" 
-              v-if="hasActiveFilters"
-              class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              <i class="fa-solid fa-times mr-1"></i> Reset Filter
-            </button>
-            <button 
-              @click="applyFilters" 
-              class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors"
-            >
-              <i class="fa-solid fa-search mr-1"></i> Terapkan Filter
-            </button>
-          </div>
+        <div class="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+          <button 
+            @click="clearFilters" 
+            v-if="hasActiveFilters"
+            class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 border-2 border-gray-200 rounded-xl hover:bg-gray-200 hover:border-gray-300 transition-all duration-200"
+          >
+            <i class="fa-solid fa-times"></i>
+            Reset Filter
+          </button>
+          <button 
+            @click="applyFilters" 
+            class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-xl hover:from-green-600 hover:to-green-700 shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5"
+          >
+            <i class="fa-solid fa-search"></i>
+            Terapkan Filter
+          </button>
         </div>
       </div>
 
       <!-- Results Info -->
-      <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-        <div class="flex justify-between items-center">
-          <div class="text-sm text-green-800">
-            <i class="fa-solid fa-info-circle mr-1"></i>
-            Menampilkan {{ props.retailNonFoods.data.length }} dari {{ props.retailNonFoods.total }} transaksi
-            <span v-if="hasActiveFilters" class="ml-2 font-medium">
-              (dengan filter aktif)
+      <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-xl p-4 mb-6 shadow-sm">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div class="flex items-center gap-2 text-sm font-semibold text-green-800">
+            <i class="fa-solid fa-info-circle text-lg"></i>
+            <span>Menampilkan <span class="font-bold text-green-900">{{ props.retailNonFoods.data.length }}</span> dari <span class="font-bold text-green-900">{{ props.retailNonFoods.total }}</span> transaksi</span>
+            <span v-if="hasActiveFilters" class="ml-2 px-2 py-0.5 bg-green-200 rounded-full text-xs">
+              (dengan filter)
             </span>
-          </div>
-          <div v-if="hasActiveFilters" class="text-xs text-green-600">
-            <i class="fa-solid fa-filter mr-1"></i>
-            Filter: {{ activeFiltersCount }} aktif
           </div>
         </div>
       </div>
 
-      <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <!-- Table Section -->
+      <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+            <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">No. Transaksi</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category Budget</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Total</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-calendar text-gray-400"></i>
+                    Tanggal
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-hashtag text-gray-400"></i>
+                    No. Transaksi
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-store text-gray-400"></i>
+                    Outlet
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-tags text-gray-400"></i>
+                    Category Budget
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-right text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-money-bill-wave text-gray-400"></i>
+                    Total
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-info-circle text-gray-400"></i>
+                    Status
+                  </div>
+                </th>
+                <th class="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <div class="flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-cog text-gray-400"></i>
+                    Aksi
+                  </div>
+                </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-if="!props.retailNonFoods.data.length">
-                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+            <tbody class="bg-white divide-y divide-gray-100">
+              <tr v-if="!props.retailNonFoods.data.length" class="hover:bg-gray-50">
+                <td colspan="7" class="text-center py-16">
+                  <div class="flex flex-col items-center gap-3">
+                    <div class="p-4 bg-gray-100 rounded-full">
+                      <i class="fa-solid fa-inbox text-4xl text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 font-medium">Tidak ada data transaksi</p>
+                    <p class="text-sm text-gray-400">Coba ubah filter atau tambahkan transaksi baru</p>
+                  </div>
+                </td>
               </tr>
-              <tr v-for="row in props.retailNonFoods.data" :key="row.id">
-                <td class="px-6 py-3">{{ formatDate(row.transaction_date) }}</td>
-                <td class="px-6 py-3">{{ row.retail_number }}</td>
-                <td class="px-6 py-3">{{ row.outlet?.nama_outlet || '-' }}</td>
-                <td class="px-6 py-3">{{ row.category_budget?.name || '-' }}</td>
-                <td class="px-6 py-3 text-right">{{ formatRupiah(row.total_amount) }}</td>
-                <td class="px-6 py-3">
+              <tr 
+                v-for="row in props.retailNonFoods.data" 
+                :key="row.id"
+                class="hover:bg-green-50/50 transition-colors duration-150 border-b border-gray-100"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-medium text-gray-900">
+                    {{ formatDate(row.transaction_date) }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-semibold text-gray-900 font-mono">
+                    {{ row.retail_number }}
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <div class="text-sm text-gray-900 font-medium">
+                    {{ row.outlet?.nama_outlet || '-' }}
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <div class="text-sm text-gray-700">
+                    {{ row.category_budget?.name || '-' }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right">
+                  <div class="text-sm font-bold text-green-700">
+                    {{ formatRupiah(row.total_amount) }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
                   <span :class="{
-                    'px-2 py-1 text-xs font-semibold rounded-full': true,
-                    'bg-yellow-100 text-yellow-800': row.status === 'pending',
-                    'bg-green-100 text-green-800': row.status === 'approved',
-                    'bg-red-100 text-red-800': row.status === 'rejected'
+                    'inline-flex items-center px-3 py-1.5 text-xs font-bold rounded-full shadow-sm': true,
+                    'bg-yellow-100 text-yellow-800 border border-yellow-200': row.status === 'pending',
+                    'bg-green-100 text-green-800 border border-green-200': row.status === 'approved',
+                    'bg-red-100 text-red-800 border border-red-200': row.status === 'rejected'
                   }">
+                    <i :class="{
+                      'fa-solid fa-clock mr-1.5': row.status === 'pending',
+                      'fa-solid fa-check-circle mr-1.5': row.status === 'approved',
+                      'fa-solid fa-times-circle mr-1.5': row.status === 'rejected'
+                    }"></i>
                     {{ formatStatus(row.status) }}
                   </span>
                 </td>
-                <td class="px-6 py-3">
-                  <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
-                    <i class="fa fa-eye mr-1"></i> Detail
-                  </button>
-                  <button 
-                    v-if="canDelete" 
-                    class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" 
-                    @click="onDelete(row)" 
-                    :disabled="loadingId === row.id"
-                    title="Hapus transaksi"
-                  >
-                    <span v-if="loadingId === row.id"><i class="fa fa-spinner fa-spin mr-1"></i> Menghapus...</span>
-                    <span v-else><i class="fa fa-trash mr-1"></i> Hapus</span>
-                  </button>
-                  <span 
-                    v-else-if="!canDelete" 
-                    class="inline-flex items-center text-xs text-gray-400 ml-2"
-                    title="Hanya admin yang dapat menghapus transaksi"
-                  >
-                    <i class="fa fa-lock mr-1"></i> Hapus
-                  </span>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center justify-center gap-2">
+                    <button 
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow transition-all duration-200 transform hover:scale-105" 
+                      @click="goDetail(row.id)"
+                    >
+                      <i class="fa fa-eye"></i>
+                      Detail
+                    </button>
+                    <button 
+                      v-if="canDelete" 
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-red-500 to-red-600 rounded-lg hover:from-red-600 hover:to-red-700 shadow-sm hover:shadow transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" 
+                      @click="onDelete(row)" 
+                      :disabled="loadingId === row.id"
+                      title="Hapus transaksi"
+                    >
+                      <span v-if="loadingId === row.id">
+                        <i class="fa fa-spinner fa-spin"></i>
+                      </span>
+                      <span v-else>
+                        <i class="fa fa-trash"></i>
+                      </span>
+                    </button>
+                    <span 
+                      v-else-if="!canDelete" 
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed"
+                      title="Hanya admin yang dapat menghapus transaksi"
+                    >
+                      <i class="fa fa-lock"></i>
+                    </span>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -157,17 +260,19 @@
       </div>
 
       <!-- Pagination -->
-      <div class="flex justify-end mt-4 gap-2">
+      <div class="flex flex-wrap justify-end items-center gap-2 mt-6">
         <button
           v-for="link in props.retailNonFoods.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
           v-html="link.label"
-          class="px-3 py-1 rounded-lg border text-sm font-semibold"
+          class="px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           :class="[
-            link.active ? 'bg-green-600 text-white shadow-lg' : 'bg-white text-green-700 hover:bg-green-50',
-            !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            link.active 
+              ? 'bg-gradient-to-r from-green-500 to-green-600 text-white border-green-600 shadow-lg' 
+              : 'bg-white text-green-700 border-green-200 hover:bg-green-50 hover:border-green-300',
+            !link.url ? 'cursor-not-allowed' : 'cursor-pointer'
           ]"
         />
       </div>
@@ -322,4 +427,4 @@ function formatRupiah(val) {
   if (!val) return 'Rp 0'
   return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-</script> 
+</script>
