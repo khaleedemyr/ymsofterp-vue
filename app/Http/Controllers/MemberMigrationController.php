@@ -294,6 +294,7 @@ class MemberMigrationController extends Controller
     /**
      * Migrate multiple customers
      * Optimized to process in chunks to avoid memory issues
+     * For large migrations, use artisan command: php artisan members:migrate --all
      */
     public function migrateMultiple(Request $request)
     {
@@ -303,12 +304,22 @@ class MemberMigrationController extends Controller
         ]);
         
         $customerIds = $request->customer_ids;
+        
+        // Limit to 500 customers per request to avoid timeout
+        if (count($customerIds) > 500) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Terlalu banyak customer. Maksimal 500 per request. Gunakan command: php artisan members:migrate --all untuk migrasi besar.',
+                'suggestion' => 'Untuk migrasi besar, jalankan: php artisan members:migrate --all --chunk=50'
+            ], 400);
+        }
+        
         $successCount = 0;
         $failedCount = 0;
         $errors = [];
         
-        // Process in chunks of 100 to avoid memory issues
-        $chunks = array_chunk($customerIds, 100);
+        // Process in smaller chunks of 50 to avoid timeout
+        $chunks = array_chunk($customerIds, 50);
         
         foreach ($chunks as $chunk) {
             // Get all customers in this chunk at once
