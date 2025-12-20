@@ -1795,6 +1795,13 @@ Route::middleware(['auth'])->group(function () {
     Route::get('member-notification/get-members', [\App\Http\Controllers\MemberNotificationController::class, 'getMembers'])->name('member-notification.get-members');
     Route::post('member-notification/send', [\App\Http\Controllers\MemberNotificationController::class, 'send'])->name('member-notification.send');
     Route::get('member-notification/{id}', [\App\Http\Controllers\MemberNotificationController::class, 'show'])->name('member-notification.show');
+    
+    // Manual Point Injection Routes
+    Route::get('manual-point', [\App\Http\Controllers\ManualPointController::class, 'index'])->name('manual-point.index');
+    Route::get('manual-point/create', [\App\Http\Controllers\ManualPointController::class, 'create'])->name('manual-point.create');
+    Route::get('manual-point/search-members', [\App\Http\Controllers\ManualPointController::class, 'searchMembers'])->name('manual-point.search-members');
+    Route::post('manual-point', [\App\Http\Controllers\ManualPointController::class, 'store'])->name('manual-point.store');
+    Route::get('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'show'])->name('manual-point.show');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
     

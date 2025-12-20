@@ -84,15 +84,14 @@ CREATE TABLE IF NOT EXISTS `job_batches` (
 - **Weekday:** `*`
 - **Command:** 
   ```
-  cd /home/username/public_html/ymsofterp && /usr/bin/php artisan queue:work --queue=notifications --tries=3 --timeout=300 --sleep=3 --max-jobs=1000 --max-time=3600 --stop-when-empty
+  cd /home/ymsuperadmin/public_html && php artisan queue:work --queue=notifications --tries=3 --timeout=300 --sleep=3 --max-jobs=1000 --max-time=3600 --stop-when-empty >> storage/logs/queue-worker.log 2>&1
   ```
-  *(Ganti `/home/username/public_html/ymsofterp` dengan path folder aplikasi Anda)*
 
 **Untuk Advanced (Unix Style):**
 - **Common Settings:** Pilih "Every Minute"
 - **Command:**
   ```
-  cd /home/username/public_html/ymsofterp && /usr/bin/php artisan queue:work --queue=notifications --tries=3 --timeout=300 --sleep=3 --max-jobs=1000 --max-time=3600 --stop-when-empty
+  cd /home/ymsuperadmin/public_html && php artisan queue:work --queue=notifications --tries=3 --timeout=300 --sleep=3 --max-jobs=1000 --max-time=3600 --stop-when-empty >> storage/logs/queue-worker.log 2>&1
   ```
 
 **Catatan:** 
@@ -102,22 +101,14 @@ CREATE TABLE IF NOT EXISTS `job_batches` (
 
 #### Cara 2: Menggunakan Shell Script (Lebih Stabil)
 
-1. Buat file `queue-worker.sh` di root folder aplikasi via File Manager
-2. Isi dengan:
-   ```bash
-   #!/bin/bash
-   cd /home/username/public_html/ymsofterp
-   /usr/bin/php artisan queue:work --queue=notifications --tries=3 --timeout=300 --sleep=3 --max-jobs=1000 --max-time=3600 --stop-when-empty
-   ```
-   *(Ganti path sesuai dengan folder aplikasi Anda)*
-
-3. Set permission file menjadi `755` (executable)
+1. Upload file `queue-worker.sh` ke root folder aplikasi via File Manager
+2. Set permission file menjadi `755` (executable)
    - Klik kanan file → Change Permissions → Centang "Execute" untuk Owner, Group, dan Public
 
-4. Setup cron job di cPanel:
+3. Setup cron job di cPanel:
    - **Command:** 
      ```
-     /home/username/public_html/ymsofterp/queue-worker.sh
+     cd /home/ymsuperadmin/public_html && bash queue-worker.sh >> storage/logs/queue-worker.log 2>&1
      ```
    - **Schedule:** Every Minute (`* * * * *`)
 
