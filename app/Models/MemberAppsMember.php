@@ -60,6 +60,11 @@ class MemberAppsMember extends Authenticatable
         return $this->belongsTo(MemberAppsOccupation::class, 'pekerjaan_id');
     }
 
+    public function deviceTokens()
+    {
+        return $this->hasMany(MemberAppsDeviceToken::class, 'member_id');
+    }
+
     public function getJenisKelaminTextAttribute()
     {
         return $this->jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan';

@@ -418,6 +418,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Data Member', icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
             { name: () => 'Migrasi Data Member', icon: 'fa-solid fa-database', route: '/member-migration', code: 'member_migration' },
+            { name: () => 'Kirim Notifikasi Member', icon: 'fa-solid fa-paper-plane', route: '/member-notification', code: 'member_notification' },
             { name: () => 'Push Notification', icon: 'fa-solid fa-bell', route: '/push-notification', code: 'push_notification' },
             { name: () => 'Dashboard CRM', icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },
             { name: () => 'Customer Analytics', icon: 'fa-solid fa-chart-pie', route: '/crm/customer-analytics', code: 'crm_analytics' },

@@ -1787,6 +1787,12 @@ Route::middleware(['auth'])->group(function () {
     Route::get('member-migration/get-ready-customers', [\App\Http\Controllers\MemberMigrationController::class, 'getReadyCustomers'])->name('member-migration.get-ready-customers');
     Route::post('member-migration/{customerId}/migrate', [\App\Http\Controllers\MemberMigrationController::class, 'migrate'])->name('member-migration.migrate');
     Route::post('member-migration/migrate-multiple', [\App\Http\Controllers\MemberMigrationController::class, 'migrateMultiple'])->name('member-migration.migrate-multiple');
+    
+    // Member Notification Routes
+    Route::get('member-notification', [\App\Http\Controllers\MemberNotificationController::class, 'index'])->name('member-notification.index');
+    Route::get('member-notification/search-members', [\App\Http\Controllers\MemberNotificationController::class, 'searchMembers'])->name('member-notification.search-members');
+    Route::get('member-notification/get-members', [\App\Http\Controllers\MemberNotificationController::class, 'getMembers'])->name('member-notification.get-members');
+    Route::post('member-notification/send', [\App\Http\Controllers\MemberNotificationController::class, 'send'])->name('member-notification.send');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
     
