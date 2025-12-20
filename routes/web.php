@@ -1781,6 +1781,12 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
                     Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
                 Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
+    
+    // Member Migration Routes
+    Route::get('member-migration', [\App\Http\Controllers\MemberMigrationController::class, 'index'])->name('member-migration.index');
+    Route::get('member-migration/get-ready-customers', [\App\Http\Controllers\MemberMigrationController::class, 'getReadyCustomers'])->name('member-migration.get-ready-customers');
+    Route::post('member-migration/{customerId}/migrate', [\App\Http\Controllers\MemberMigrationController::class, 'migrate'])->name('member-migration.migrate');
+    Route::post('member-migration/migrate-multiple', [\App\Http\Controllers\MemberMigrationController::class, 'migrateMultiple'])->name('member-migration.migrate-multiple');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
     
