@@ -73,8 +73,8 @@ class MemberMigrationController extends Controller
             });
         }
         
-        // Get customers
-        $customers = $query->orderBy('created_at', 'desc')->paginate(20)->withQueryString();
+        // Get customers - 500 per page for better migration efficiency
+        $customers = $query->orderBy('created_at', 'desc')->paginate(500)->withQueryString();
         
         // Get existing emails as a Set for faster lookup (only emails from current page customers)
         $currentPageEmails = $customers->getCollection()->pluck('email')->filter()->toArray();
