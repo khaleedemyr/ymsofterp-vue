@@ -28,12 +28,21 @@ class ApprovalController extends Controller
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
         
         // Get pending approvals from approval flows (new flow - sequential approval)
+        // Only show if there are pending approval flows (supervisors haven't all approved)
+        // Exclude rejected approvals and approvals waiting for HRD
         $approvalFlowsQuery = DB::table('absent_request_approval_flows as arf')
             ->join('absent_requests as ar', 'arf.absent_request_id', '=', 'ar.id')
             ->join('approval_requests as apr', 'ar.approval_request_id', '=', 'apr.id')
             ->join('users', 'apr.user_id', '=', 'users.id')
             ->join('leave_types', 'apr.leave_type_id', '=', 'leave_types.id')
-            ->where('arf.status', 'PENDING');
+            ->where('arf.status', 'PENDING')
+            ->where('apr.status', '!=', 'rejected') // Exclude rejected approvals
+            ->where(function($query) {
+                // Exclude approvals that are waiting for HRD (all supervisors approved)
+                // If hrd_status is 'pending', it means all supervisors approved and it should go to HRD
+                $query->whereNull('apr.hrd_status')
+                      ->orWhere('apr.hrd_status', '!=', 'pending');
+            });
         
         // Superadmin can see all, regular users only their own
         if (!$isSuperadmin) {

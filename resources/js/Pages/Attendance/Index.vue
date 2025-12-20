@@ -465,6 +465,20 @@
                       <strong>Alasan:</strong> {{ request.reason }}
                     </div>
                     
+                    <!-- Pending Approver Information -->
+                    <div v-if="request.pending_approver && (request.status === 'pending' || request.status === 'supervisor_approved')" 
+                         class="text-xs mb-2">
+                      <span class="inline-flex items-center px-2 py-1 rounded-md font-medium"
+                            :class="{
+                              'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200': request.pending_approver === 'HRD',
+                              'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': request.pending_approver !== 'HRD'
+                            }">
+                        <i class="fa-solid fa-clock mr-1"></i>
+                        <span v-if="request.pending_approver === 'HRD'">Menunggu persetujuan HRD</span>
+                        <span v-else>Menunggu persetujuan: {{ request.pending_approver }}</span>
+                      </span>
+                    </div>
+                    
                     <div class="text-xs text-gray-500 dark:text-gray-400">
                       <strong>Diajukan:</strong> {{ formatDateTime(request.created_at) }}
                     </div>

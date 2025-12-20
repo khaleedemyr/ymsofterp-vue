@@ -1353,6 +1353,7 @@ class AttendanceController extends Controller
     {
         $leaveRequests = DB::table('absent_requests')
             ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->leftJoin('approval_requests', 'absent_requests.approval_request_id', '=', 'approval_requests.id')
             ->where('absent_requests.user_id', $userId)
             ->where(function($query) use ($startDate, $endDate) {
                 $query->whereBetween('absent_requests.date_from', [$startDate, $endDate])
@@ -1371,10 +1372,34 @@ class AttendanceController extends Controller
                 'absent_requests.reason',
                 'absent_requests.status',
                 'absent_requests.created_at',
-                'leave_types.name as leave_type_name'
+                'leave_types.name as leave_type_name',
+                'approval_requests.hrd_status'
             ])
             ->orderBy('absent_requests.created_at', 'desc')
             ->get();
+        
+        // Add pending approver information for each request
+        foreach ($leaveRequests as $request) {
+            $request->pending_approver = null;
+            
+            // Check if waiting for HRD
+            if ($request->status === 'supervisor_approved' && $request->hrd_status === 'pending') {
+                $request->pending_approver = 'HRD';
+            } else if ($request->status === 'pending') {
+                // Check if there are pending approval flows (waiting for supervisor)
+                $pendingFlow = DB::table('absent_request_approval_flows')
+                    ->join('users', 'absent_request_approval_flows.approver_id', '=', 'users.id')
+                    ->where('absent_request_approval_flows.absent_request_id', $request->id)
+                    ->where('absent_request_approval_flows.status', 'PENDING')
+                    ->orderBy('absent_request_approval_flows.approval_level')
+                    ->select('users.nama_lengkap')
+                    ->first();
+                
+                if ($pendingFlow) {
+                    $request->pending_approver = $pendingFlow->nama_lengkap;
+                }
+            }
+        }
             
         return $leaveRequests;
     }
