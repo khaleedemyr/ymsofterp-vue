@@ -351,7 +351,11 @@ class MemberNotificationController extends Controller
 
                     // Send to each device token
                     foreach ($deviceTokens as $deviceToken) {
-                        $result = $fcmService->sendToDevice(
+                        $errorMessage = null;
+                        $result = false;
+                        
+                        // Use sendToDeviceWithError to get detailed error message
+                        $sendResult = $fcmService->sendToDeviceWithError(
                             $deviceToken->device_token,
                             $title,
                             $message,
@@ -363,6 +367,9 @@ class MemberNotificationController extends Controller
                             null,
                             $deviceToken->device_type
                         );
+                        
+                        $result = $sendResult['success'];
+                        $errorMessage = $sendResult['error'];
 
                         // Create recipient record
                         MemberAppsPushNotificationRecipient::create([
@@ -370,7 +377,7 @@ class MemberNotificationController extends Controller
                             'member_id' => $member->id,
                             'device_token_id' => $deviceToken->id,
                             'status' => $result ? 'sent' : 'failed',
-                            'error_message' => $result ? null : 'FCM send failed',
+                            'error_message' => $errorMessage,
                         ]);
 
                         if ($result) {

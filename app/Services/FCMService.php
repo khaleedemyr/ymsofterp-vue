@@ -61,6 +61,109 @@ class FCMService
     }
 
     /**
+     * Send push notification to a single device token with detailed error
+     * 
+     * @param string $deviceToken FCM device token
+     * @param string $title Notification title
+     * @param string $message Notification message
+     * @param array $data Additional data payload
+     * @param string|null $imageUrl Optional image URL for notification
+     * @param string|null $deviceType Device type ('ios' or 'android') to use correct API key
+     * @return array ['success' => bool, 'error' => string|null]
+     */
+    public function sendToDeviceWithError($deviceToken, $title, $message, $data = [], $imageUrl = null, $deviceType = null)
+    {
+        $apiKey = $this->getApiKey($deviceType);
+        
+        if (!$apiKey) {
+            return [
+                'success' => false,
+                'error' => 'FCM API Key not configured for ' . ($deviceType ?? 'device')
+            ];
+        }
+
+        if (empty($deviceToken)) {
+            return [
+                'success' => false,
+                'error' => 'Device token is empty'
+            ];
+        }
+
+        try {
+            $payload = [
+                'to' => $deviceToken,
+                'notification' => [
+                    'title' => $title,
+                    'body' => $message,
+                    'sound' => 'default',
+                    'badge' => 1,
+                ],
+                'data' => array_merge([
+                    'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                ], $data),
+                'priority' => 'high',
+            ];
+
+            // Add image if provided
+            if ($imageUrl) {
+                $payload['notification']['image'] = $imageUrl;
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => 'key=' . $apiKey,
+                'Content-Type' => 'application/json',
+            ])->post($this->fcmUrl, $payload);
+
+            if ($response->successful()) {
+                $responseData = $response->json();
+                
+                // Check if message was sent successfully
+                if (isset($responseData['success']) && $responseData['success'] == 1) {
+                    Log::info('FCM notification sent successfully', [
+                        'device_token' => substr($deviceToken, 0, 20) . '...',
+                        'title' => $title,
+                    ]);
+                    return ['success' => true, 'error' => null];
+                } else {
+                    // Extract error message from response
+                    $errorMsg = 'FCM send failed';
+                    if (isset($responseData['results'][0]['error'])) {
+                        $errorMsg = $responseData['results'][0]['error'];
+                    } elseif (isset($responseData['error'])) {
+                        $errorMsg = $responseData['error'];
+                    }
+                    
+                    Log::warning('FCM notification failed', [
+                        'device_token' => substr($deviceToken, 0, 20) . '...',
+                        'response' => $responseData,
+                        'error' => $errorMsg,
+                    ]);
+                    return ['success' => false, 'error' => $errorMsg];
+                }
+            } else {
+                $errorMsg = 'FCM API request failed: HTTP ' . $response->status();
+                $responseBody = $response->body();
+                if ($responseBody) {
+                    $errorMsg .= ' - ' . substr($responseBody, 0, 200);
+                }
+                
+                Log::error('FCM API request failed', [
+                    'status' => $response->status(),
+                    'response' => $responseBody,
+                ]);
+                return ['success' => false, 'error' => $errorMsg];
+            }
+        } catch (\Exception $e) {
+            $errorMsg = 'Exception: ' . $e->getMessage();
+            Log::error('Error sending FCM notification', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return ['success' => false, 'error' => $errorMsg];
+        }
+    }
+
+    /**
      * Send push notification to a single device token
      * 
      * @param string $deviceToken FCM device token
@@ -121,16 +224,31 @@ class FCMService
                     ]);
                     return true;
                 } else {
+                    // Extract error message from response
+                    $errorMsg = 'FCM send failed';
+                    if (isset($responseData['results'][0]['error'])) {
+                        $errorMsg = 'FCM Error: ' . $responseData['results'][0]['error'];
+                    } elseif (isset($responseData['error'])) {
+                        $errorMsg = 'FCM Error: ' . $responseData['error'];
+                    }
+                    
                     Log::warning('FCM notification failed', [
                         'device_token' => substr($deviceToken, 0, 20) . '...',
                         'response' => $responseData,
+                        'error' => $errorMsg,
                     ]);
                     return false;
                 }
             } else {
+                $errorMsg = 'FCM API request failed: HTTP ' . $response->status();
+                $responseBody = $response->body();
+                if ($responseBody) {
+                    $errorMsg .= ' - ' . substr($responseBody, 0, 200);
+                }
+                
                 Log::error('FCM API request failed', [
                     'status' => $response->status(),
-                    'response' => $response->body(),
+                    'response' => $responseBody,
                 ]);
                 return false;
             }
