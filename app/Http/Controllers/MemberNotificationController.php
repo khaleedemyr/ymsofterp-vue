@@ -319,7 +319,7 @@ class MemberNotificationController extends Controller
                 'sent_at' => now(),
             ]);
 
-            // Send notification using FCMService
+            // Send notification using FCMService (using sendToMember like other controllers)
             $fcmService = app(FCMService::class);
             $totalSuccess = 0;
             $totalFailed = 0;
@@ -347,61 +347,74 @@ class MemberNotificationController extends Controller
                         continue;
                     }
 
-                    $memberHasSuccess = false; // Track if at least one device token succeeded
-
-                    // Send to each device token
-                    foreach ($deviceTokens as $deviceToken) {
-                        $errorMessage = null;
-                        $result = false;
-                        
-                        // Use sendToDeviceWithError to get detailed error message
-                        $sendResult = $fcmService->sendToDeviceWithError(
-                            $deviceToken->device_token,
+                    // Use sendToMember like other controllers (VoucherController, AuthController)
+                    try {
+                        $result = $fcmService->sendToMember(
+                            $member,
                             $title,
                             $message,
                             [
                                 'type' => 'manual_notification',
                                 'title' => $title,
                                 'message' => $message,
-                            ],
-                            null,
-                            $deviceToken->device_type
-                        );
-                        
-                        $result = $sendResult['success'];
-                        $errorMessage = $sendResult['error'];
-
-                        // Create recipient record
-                        MemberAppsPushNotificationRecipient::create([
-                            'notification_id' => $notification->id,
-                            'member_id' => $member->id,
-                            'device_token_id' => $deviceToken->id,
-                            'status' => $result ? 'sent' : 'failed',
-                            'error_message' => $errorMessage,
-                        ]);
-
-                        if ($result) {
-                            $totalSuccess++;
-                            $memberHasSuccess = true;
-                        } else {
-                            $totalFailed++;
-                        }
-                    }
-
-                    // Save to member_apps_notifications for read tracking (only once per member)
-                    if ($memberHasSuccess && !in_array($member->id, $membersProcessed)) {
-                        MemberAppsNotification::create([
-                            'member_id' => $member->id,
-                            'type' => 'manual_notification',
-                            'title' => $title,
-                            'message' => $message,
-                            'data' => [
-                                'type' => 'manual_notification',
                                 'notification_id' => $notification->id,
-                            ],
-                            'is_read' => false,
+                            ]
+                        );
+
+                        $memberSuccessCount = $result['success_count'] ?? 0;
+                        $memberFailedCount = $result['failed_count'] ?? 0;
+
+                        // Create recipient records for each device token
+                        foreach ($deviceTokens as $deviceToken) {
+                            // Determine status based on result
+                            // If at least one succeeded, mark as sent, otherwise failed
+                            $status = ($memberSuccessCount > 0) ? 'sent' : 'failed';
+                            $errorMessage = ($memberSuccessCount > 0) ? null : 'FCM send failed';
+
+                            MemberAppsPushNotificationRecipient::create([
+                                'notification_id' => $notification->id,
+                                'member_id' => $member->id,
+                                'device_token_id' => $deviceToken->id,
+                                'status' => $status,
+                                'error_message' => $errorMessage,
+                            ]);
+                        }
+
+                        $totalSuccess += $memberSuccessCount;
+                        $totalFailed += $memberFailedCount;
+
+                        // Save to member_apps_notifications for read tracking (only once per member)
+                        if ($memberSuccessCount > 0 && !in_array($member->id, $membersProcessed)) {
+                            MemberAppsNotification::create([
+                                'member_id' => $member->id,
+                                'type' => 'manual_notification',
+                                'title' => $title,
+                                'message' => $message,
+                                'data' => [
+                                    'type' => 'manual_notification',
+                                    'notification_id' => $notification->id,
+                                ],
+                                'is_read' => false,
+                            ]);
+                            $membersProcessed[] = $member->id;
+                        }
+                    } catch (\Exception $e) {
+                        // If sendToMember throws exception, mark all device tokens as failed
+                        foreach ($deviceTokens as $deviceToken) {
+                            MemberAppsPushNotificationRecipient::create([
+                                'notification_id' => $notification->id,
+                                'member_id' => $member->id,
+                                'device_token_id' => $deviceToken->id,
+                                'status' => 'failed',
+                                'error_message' => 'Exception: ' . $e->getMessage(),
+                            ]);
+                        }
+                        $totalFailed += $deviceTokens->count();
+                        
+                        Log::error('Error sending notification to member', [
+                            'member_id' => $member->id,
+                            'error' => $e->getMessage(),
                         ]);
-                        $membersProcessed[] = $member->id;
                     }
                 }
             }
