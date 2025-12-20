@@ -16,6 +16,7 @@ class NonFoodPayment extends Model
         'payment_number',
         'purchase_order_ops_id',
         'purchase_requisition_id',
+        'retail_non_food_id',
         'supplier_id',
         'amount',
         'payment_method',
@@ -54,6 +55,11 @@ class NonFoodPayment extends Model
     public function purchaseRequisition()
     {
         return $this->belongsTo(PurchaseRequisition::class, 'purchase_requisition_id');
+    }
+
+    public function retailNonFood()
+    {
+        return $this->belongsTo(RetailNonFood::class, 'retail_non_food_id');
     }
 
     public function supplier()

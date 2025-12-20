@@ -29,6 +29,40 @@
             </div>
           </div>
 
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-2">Metode Pembayaran</label>
+              <select v-model="form.payment_method" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required>
+                <option value="">Pilih Metode Pembayaran</option>
+                <option value="cash">Cash</option>
+                <option value="contra_bon">Contra Bon</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-2">Supplier</label>
+              <Multiselect
+                v-model="form.supplier"
+                :options="props.suppliers"
+                :searchable="true"
+                :close-on-select="true"
+                :clear-on-select="false"
+                :preserve-search="true"
+                placeholder="Pilih atau cari supplier..."
+                track-by="id"
+                label="name"
+                :preselect-first="false"
+                class="w-full"
+              >
+                <template #option="{ option }">
+                  <div class="flex justify-between items-center">
+                    <span>{{ option.name }}</span>
+                    <span class="text-xs text-gray-500">{{ option.code }}</span>
+                  </div>
+                </template>
+              </Multiselect>
+            </div>
+          </div>
+
           <!-- Budget Information Section -->
           <div v-if="budgetInfo" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
             <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
@@ -185,11 +219,14 @@ import { ref, computed, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   outlets: Array,
   warehouse_outlets: Array,
-  categoryBudgets: Array
+  categoryBudgets: Array,
+  suppliers: Array
 })
 
 const page = usePage()
@@ -217,6 +254,8 @@ const form = ref({
   transaction_date: new Date().toISOString().split('T')[0],
   outlet_id: userOutletId.value == 1 ? '' : userOutletId.value,
   category_budget_id: '',
+  payment_method: '',
+  supplier: null,
   notes: '',
   items: [newItem()]
 })
@@ -357,6 +396,17 @@ watch(() => form.value.items, () => {
   })
 }, { deep: true })
 
+// Watch untuk otomatis pilih CASH SUPPLIER jika metode pembayaran cash
+watch(() => form.value.payment_method, async (newValue) => {
+  if (newValue === 'cash' && props.suppliers) {
+    // Cari supplier dengan nama "CASH SUPPLIER"
+    const cashSupplier = props.suppliers.find(s => s.name.toLowerCase().includes('cash supplier'))
+    if (cashSupplier) {
+      form.value.supplier = cashSupplier
+    }
+  }
+})
+
 function onFileChange(e) {
   files.value = Array.from(e.target.files)
   filePreviews.value = files.value.map(file => URL.createObjectURL(file))
@@ -389,6 +439,32 @@ async function submit() {
     })
     return
   }
+
+  // Validate payment_method is required
+  if (!form.value.payment_method) {
+    loading.value = false
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Metode Pembayaran Diperlukan',
+      text: 'Silakan pilih Metode Pembayaran sebelum menyimpan data.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
+
+  // Validate supplier is required
+  if (!form.value.supplier || !form.value.supplier.id) {
+    loading.value = false
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Supplier Diperlukan',
+      text: 'Silakan pilih Supplier sebelum menyimpan data.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
   
   loading.value = true
   try {
@@ -396,6 +472,8 @@ async function submit() {
     formData.append('outlet_id', form.value.outlet_id)
     formData.append('transaction_date', form.value.transaction_date)
     formData.append('category_budget_id', form.value.category_budget_id)
+    formData.append('payment_method', form.value.payment_method)
+    formData.append('supplier_id', form.value.supplier ? form.value.supplier.id : '')
     formData.append('notes', form.value.notes)
     form.value.items.forEach((item, idx) => {
       formData.append(`items[${idx}][item_name]`, item.item_name)
@@ -420,10 +498,32 @@ async function submit() {
       router.visit('/retail-non-food')
     }
   } catch (e) {
-    Swal.fire({
+    console.error('Error saving retail non food:', e)
+    console.error('Error response:', e.response)
+    console.error('Error data:', e.response?.data)
+    
+    let errorMessage = 'Gagal menyimpan transaksi'
+    
+    if (e.response?.data?.message) {
+      errorMessage = e.response.data.message
+    } else if (e.response?.data?.error) {
+      errorMessage = e.response.data.error
+    } else if (e.message) {
+      errorMessage = e.message
+    }
+    
+    // Jika ada validation errors, tampilkan detail
+    if (e.response?.data?.errors) {
+      const validationErrors = Object.values(e.response.data.errors).flat()
+      errorMessage = 'Validasi gagal:\n' + validationErrors.join('\n')
+    }
+    
+    await Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: e.response?.data?.message || 'Gagal menyimpan transaksi'
+      text: errorMessage,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
     })
   } finally {
     loading.value = false

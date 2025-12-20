@@ -111,26 +111,53 @@ class RetailNonFoodController extends Controller
             ->orderBy('name', 'asc')
             ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description']);
         
+        // Ambil data supplier
+        $suppliers = DB::table('suppliers')
+            ->where('status', 'active')
+            ->select('id', 'name', 'code')
+            ->orderBy('name')
+            ->get();
+        
         return Inertia::render('RetailNonFood/Form', [
             'user' => $user,
             'outlets' => $outlets,
-            'categoryBudgets' => $categoryBudgets
+            'categoryBudgets' => $categoryBudgets,
+            'suppliers' => $suppliers
         ]);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'transaction_date' => 'required|date',
-            'category_budget_id' => 'required|exists:purchase_requisition_categories,id',
-            'items' => 'required|array|min:1',
-            'items.*.item_name' => 'required|string',
-            'items.*.qty' => 'required|numeric|min:0',
-            'items.*.unit' => 'required|string',
-            'items.*.price' => 'required|numeric|min:0',
-            'notes' => 'nullable|string',
+        \Log::info('RETAIL_NON_FOOD_STORE: Starting store process', [
+            'user_id' => auth()->id(),
+            'request_data' => $request->except(['invoices'])
         ]);
+
+        try {
+            $request->validate([
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'transaction_date' => 'required|date',
+                'category_budget_id' => 'required|exists:purchase_requisition_categories,id',
+                'payment_method' => 'required|in:cash,contra_bon',
+                'supplier_id' => 'required|exists:suppliers,id',
+                'items' => 'required|array|min:1',
+                'items.*.item_name' => 'required|string',
+                'items.*.qty' => 'required|numeric|min:0',
+                'items.*.unit' => 'required|string',
+                'items.*.price' => 'required|numeric|min:0',
+                'notes' => 'nullable|string',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('RETAIL_NON_FOOD_STORE: Validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->except(['invoices'])
+            ]);
+            return response()->json([
+                'message' => 'Validasi gagal: ' . implode(', ', array_map(function($errors) {
+                    return implode(', ', $errors);
+                }, $e->errors()))
+            ], 422);
+        }
 
         try {
             DB::beginTransaction();
@@ -477,6 +504,8 @@ class RetailNonFoodController extends Controller
 
             // Buat retail non food
             $retailNonFood = RetailNonFood::create([
+                'supplier_id' => $request->supplier_id,
+                'payment_method' => $request->payment_method,
                 'retail_number' => $retailNumber,
                 'outlet_id' => $request->outlet_id,
                 'category_budget_id' => $request->category_budget_id,
@@ -528,9 +557,18 @@ class RetailNonFoodController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            \Log::error('RETAIL_NON_FOOD_STORE: Exception occurred', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'request_data' => $request->except(['invoices'])
+            ]);
+            
             return response()->json([
-                'message' => 'Gagal menyimpan transaksi',
-                'error' => $e->getMessage()
+                'message' => 'Gagal menyimpan transaksi: ' . $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'Terjadi kesalahan saat menyimpan transaksi'
             ], 500);
         }
     }

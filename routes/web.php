@@ -1297,6 +1297,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
     Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');
     Route::get('non-food-payments/pr-items/{prId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPRItems'])->name('non-food-payments.pr-items');
+    Route::get('non-food-payments/retail-non-food-items/{retailNonFoodId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getRetailNonFoodItems'])->name('non-food-payments.retail-non-food-items');
     Route::get('/api/non-food-payments/payment-info/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPaymentInfo'])->name('api.non-food-payments.payment-info');
     Route::post('non-food-payments/{nonFoodPayment}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve'])->name('non-food-payments.approve');
     Route::post('non-food-payments/{nonFoodPayment}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject'])->name('non-food-payments.reject');

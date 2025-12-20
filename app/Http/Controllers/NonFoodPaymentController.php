@@ -319,10 +319,54 @@ class NonFoodPaymentController extends Controller
             return true;
         })->take(50)->values();
 
+        // Get available Retail Non Food with payment_method = contra_bon that don't have payments yet
+        $retailNonFoodQuery = DB::table('retail_non_food as rnf')
+            ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
+            ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+            ->where('rnf.payment_method', 'contra_bon')
+            ->where('rnf.status', 'approved')
+            ->select(
+                'rnf.id',
+                'rnf.retail_number',
+                'rnf.transaction_date',
+                'rnf.total_amount',
+                'rnf.supplier_id',
+                'rnf.outlet_id',
+                'rnf.notes',
+                's.name as supplier_name',
+                'o.nama_outlet as outlet_name'
+            );
+
+        // Apply filters
+        if ($supplierId) {
+            $retailNonFoodQuery->where('rnf.supplier_id', $supplierId);
+        }
+        if ($dateFrom) {
+            $retailNonFoodQuery->whereDate('rnf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $retailNonFoodQuery->whereDate('rnf.transaction_date', '<=', $dateTo);
+        }
+
+        $allRetailNonFoods = $retailNonFoodQuery->orderBy('rnf.transaction_date', 'desc')
+            ->limit(100)
+            ->get();
+
+        // Filter Retail Non Food based on payment status
+        // Exclude if has any payment (except cancelled)
+        $availableRetailNonFoods = $allRetailNonFoods->filter(function($rnf) {
+            $hasPayment = DB::table('non_food_payments')
+                ->where('retail_non_food_id', $rnf->id)
+                ->where('status', '!=', 'cancelled')
+                ->exists();
+            return !$hasPayment;
+        })->take(50)->values();
+
         return Inertia::render('NonFoodPayment/Create', [
             'suppliers' => $suppliers,
             'availablePOs' => $availablePOs,
             'availablePRs' => $availablePRs,
+            'availableRetailNonFoods' => $availableRetailNonFoods,
             'filters' => $request->only(['supplier_id', 'date_from', 'date_to'])
         ]);
     }
@@ -664,6 +708,108 @@ class NonFoodPaymentController extends Controller
         }
     }
 
+    public function getRetailNonFoodItems($retailNonFoodId)
+    {
+        try {
+            // Get basic Retail Non Food info
+            $retailNonFood = DB::table('retail_non_food as rnf')
+                ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
+                ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
+                ->where('rnf.id', $retailNonFoodId)
+                ->select(
+                    'rnf.*',
+                    's.name as supplier_name',
+                    'o.nama_outlet as outlet_name',
+                    'prc.name as category_name',
+                    'prc.division as category_division',
+                    'prc.subcategory as category_subcategory',
+                    'prc.budget_type as category_budget_type'
+                )
+                ->first();
+
+            if (!$retailNonFood) {
+                return response()->json(['error' => 'Retail Non Food not found'], 404);
+            }
+
+            // Get Retail Non Food items
+            $items = DB::table('retail_non_food_items as rnfi')
+                ->where('rnfi.retail_non_food_id', $retailNonFoodId)
+                ->select(
+                    'rnfi.id',
+                    'rnfi.item_name',
+                    'rnfi.qty as quantity',
+                    'rnfi.unit',
+                    'rnfi.price',
+                    'rnfi.subtotal as total'
+                )
+                ->get();
+
+            // Group items by outlet (all items belong to same outlet for retail non food)
+            $itemsByOutlet = [
+                [
+                    'outlet_id' => $retailNonFood->outlet_id,
+                    'outlet_name' => $retailNonFood->outlet_name ?? 'Unknown Outlet',
+                    'category_id' => $retailNonFood->category_budget_id,
+                    'category_name' => $retailNonFood->category_name,
+                    'category_division' => $retailNonFood->category_division,
+                    'category_subcategory' => $retailNonFood->category_subcategory,
+                    'category_budget_type' => $retailNonFood->category_budget_type,
+                    'items' => $items->map(function($item) {
+                        return [
+                            'id' => $item->id,
+                            'item_name' => $item->item_name,
+                            'quantity' => $item->quantity,
+                            'unit' => $item->unit,
+                            'price' => $item->price,
+                            'total' => $item->total,
+                        ];
+                    })->toArray(),
+                    'outlet_total' => $items->sum('total')
+                ]
+            ];
+
+            // Get Retail Non Food invoices/attachments
+            $retailNonFoodAttachments = [];
+            try {
+                $retailNonFoodAttachments = DB::table('retail_non_food_invoices as rnfi')
+                    ->where('rnfi.retail_non_food_id', $retailNonFoodId)
+                    ->select(
+                        'rnfi.id',
+                        'rnfi.file_path as file_name',
+                        'rnfi.file_path',
+                        'rnfi.created_at'
+                    )
+                    ->get()
+                    ->map(function($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'file_name' => basename($attachment->file_path),
+                            'file_path' => $attachment->file_path,
+                            'file_type' => 'image/jpeg', // Default, bisa disesuaikan
+                            'file_size' => null,
+                            'created_at' => $attachment->created_at,
+                        ];
+                    })
+                    ->toArray();
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+            }
+
+            return response()->json([
+                'retail_non_food' => $retailNonFood,
+                'items_by_outlet' => $itemsByOutlet,
+                'total_amount' => $retailNonFood->total_amount,
+                'retail_non_food_attachments' => $retailNonFoodAttachments
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to load Retail Non Food items: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getPRItems($prId)
     {
         try {
@@ -903,6 +1049,7 @@ class NonFoodPaymentController extends Controller
         $validationRules = [
             'purchase_order_ops_id' => 'nullable|exists:purchase_order_ops,id',
             'purchase_requisition_id' => 'nullable|exists:purchase_requisitions,id',
+            'retail_non_food_id' => 'nullable|exists:retail_non_food,id',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,transfer,check',
             'payment_date' => 'required|date',
@@ -923,8 +1070,8 @@ class NonFoodPaymentController extends Controller
         $request->validate($validationRules);
 
         // Validate that at least one transaction is selected
-        if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id)) {
-            return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order atau Purchase Requisition).');
+        if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id) && empty($request->retail_non_food_id)) {
+            return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order, Purchase Requisition, atau Retail Non Food).');
         }
 
         // Validate supplier_id based on payment mode
@@ -993,6 +1140,33 @@ class NonFoodPaymentController extends Controller
             }
         }
 
+        // Check if Retail Non Food already has a payment
+        if ($request->retail_non_food_id) {
+            $existingPayment = NonFoodPayment::where('retail_non_food_id', $request->retail_non_food_id)
+                ->where('status', '!=', 'cancelled')
+                ->first();
+            if ($existingPayment) {
+                return back()->with('error', 'Retail Non Food ini sudah memiliki payment yang aktif.');
+            }
+            
+            // Validate retail non food exists and has payment_method = contra_bon
+            $retailNonFood = \App\Models\RetailNonFood::find($request->retail_non_food_id);
+            if (!$retailNonFood) {
+                return back()->with('error', 'Retail Non Food tidak ditemukan.');
+            }
+            if ($retailNonFood->payment_method !== 'contra_bon') {
+                return back()->with('error', 'Hanya Retail Non Food dengan metode pembayaran Contra Bon yang dapat dibuat payment.');
+            }
+            if ($retailNonFood->status !== 'approved') {
+                return back()->with('error', 'Retail Non Food harus berstatus approved untuk dibuat payment.');
+            }
+            
+            // Set supplier_id from retail non food if not provided
+            if (empty($request->supplier_id) && $retailNonFood->supplier_id) {
+                $request->merge(['supplier_id' => $retailNonFood->supplier_id]);
+            }
+        }
+
         // Check if PO's PR is on hold
         if ($request->purchase_order_ops_id) {
             $po = \App\Models\PurchaseOrderOps::find($request->purchase_order_ops_id);
@@ -1031,6 +1205,7 @@ class NonFoodPaymentController extends Controller
                 'payment_number' => $paymentNumber,
                 'purchase_order_ops_id' => $request->purchase_order_ops_id,
                 'purchase_requisition_id' => $request->purchase_requisition_id,
+                'retail_non_food_id' => $request->retail_non_food_id,
                 'supplier_id' => !empty($request->supplier_id) ? $request->supplier_id : null,
                 'amount' => $request->amount,
                 'payment_method' => $request->payment_method,
@@ -1070,6 +1245,9 @@ class NonFoodPaymentController extends Controller
             'purchaseRequisition.division',
             'purchaseRequisition.creator',
             'purchaseRequisition.outlet',
+            'retailNonFood.outlet',
+            'retailNonFood.supplier',
+            'retailNonFood.items',
             'supplier',
             'creator',
             'approver',
@@ -1145,10 +1323,51 @@ class NonFoodPaymentController extends Controller
             }
         }
 
+        // Get Retail Non Food attachments if payment is for Retail Non Food
+        $retailNonFoodAttachments = [];
+        if ($nonFoodPayment->retail_non_food_id) {
+            try {
+                $retailNonFoodAttachments = DB::table('retail_non_food_invoices as rnfi')
+                    ->where('rnfi.retail_non_food_id', $nonFoodPayment->retail_non_food_id)
+                    ->select(
+                        'rnfi.id',
+                        DB::raw('SUBSTRING_INDEX(rnfi.file_path, "/", -1) as file_name'),
+                        'rnfi.file_path',
+                        DB::raw("CASE 
+                            WHEN rnfi.file_path LIKE '%.jpg' OR rnfi.file_path LIKE '%.jpeg' THEN 'image/jpeg'
+                            WHEN rnfi.file_path LIKE '%.png' THEN 'image/png'
+                            WHEN rnfi.file_path LIKE '%.pdf' THEN 'application/pdf'
+                            ELSE 'image/jpeg'
+                        END as file_type"),
+                        DB::raw('NULL as file_size'),
+                        'rnfi.created_at'
+                    )
+                    ->get()
+                    ->map(function($attachment) {
+                        return [
+                            'id' => $attachment->id,
+                            'file_name' => $attachment->file_name,
+                            'file_path' => $attachment->file_path,
+                            'file_type' => $attachment->file_type,
+                            'file_size' => $attachment->file_size,
+                            'created_at' => $attachment->created_at,
+                        ];
+                    })
+                    ->toArray();
+            } catch (\Exception $e) {
+                // Table might not exist, continue without attachments
+                \Log::error('Error fetching retail non food attachments', [
+                    'error' => $e->getMessage(),
+                    'retail_non_food_id' => $nonFoodPayment->retail_non_food_id
+                ]);
+            }
+        }
+
         return Inertia::render('NonFoodPayment/Show', [
             'payment' => $nonFoodPayment,
             'po_attachments' => $poAttachments,
-            'pr_attachments' => $prAttachments
+            'pr_attachments' => $prAttachments,
+            'retail_non_food_attachments' => $retailNonFoodAttachments
         ]);
     }
 
