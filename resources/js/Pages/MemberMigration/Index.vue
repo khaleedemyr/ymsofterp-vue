@@ -53,13 +53,13 @@
               Migrasi Terpilih ({{ selectedCustomers.length }})
             </button>
             <button
-              @click="migrateAllReady"
-              :disabled="loading || stats.ready === 0"
+              @click="migrateCurrentPage"
+              :disabled="loading || readyInCurrentPage === 0"
               class="px-6 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <i v-if="loading" class="fa fa-spinner fa-spin"></i>
               <i v-else class="fa fa-database"></i>
-              Migrasi Semua yang Siap
+              Migrasi Halaman Ini ({{ readyInCurrentPage }})
             </button>
           </div>
         </div>
@@ -220,6 +220,10 @@ const selectAll = computed({
   }
 });
 
+const readyInCurrentPage = computed(() => {
+  return props.customers.data.filter(c => c.can_migrate).length;
+});
+
 function toggleSelectAll() {
   selectAll.value = !selectAll.value;
 }
@@ -378,134 +382,42 @@ async function migrateSelected() {
   }
 }
 
-async function migrateAllReady() {
-  // Get all ready customers from all pages, not just current page
-  // We need to fetch all ready customers from the backend
+async function migrateCurrentPage() {
+  // Get only ready customers from current page
+  const readyCustomers = props.customers.data.filter(c => c.can_migrate);
+  
+  if (readyCustomers.length === 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Ada Data',
+      text: 'Tidak ada customer yang siap untuk di-migrasi di halaman ini'
+    });
+    return;
+  }
+
+  const result = await Swal.fire({
+    title: 'Migrasi Halaman Ini?',
+    html: `
+      <p>Yakin ingin migrasi <strong>${readyCustomers.length} member</strong> yang siap di halaman ini?</p>
+      <p class="text-sm text-gray-600 mt-2">Ini hanya akan memigrasi customer yang terlihat di halaman saat ini.</p>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Ya, Migrasi',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) {
+    return;
+  }
+
   loading.value = true;
   try {
-    // Fetch all ready customer IDs from backend
-    const response = await axios.get('/member-migration/get-ready-customers');
-    const readyCustomerIds = response.data.customer_ids || [];
-    
-    if (readyCustomerIds.length === 0) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Tidak Ada Data',
-        text: 'Tidak ada customer yang siap untuk di-migrasi'
-      });
-      loading.value = false;
-      return;
-    }
-
-    // Warn if too many customers
-    if (readyCustomerIds.length > 500) {
-      const result = await Swal.fire({
-        title: 'Migrasi Besar Terdeteksi',
-        html: `
-          <p>Ditemukan <strong>${readyCustomerIds.length} member</strong> yang siap untuk di-migrasi.</p>
-          <p class="text-sm text-gray-600 mt-2">Untuk migrasi besar, disarankan menggunakan command line untuk menghindari timeout:</p>
-          <div class="bg-gray-100 p-3 rounded mt-2 text-left">
-            <code class="text-xs">php artisan members:migrate --all --chunk=50</code>
-          </div>
-          <p class="text-sm text-gray-600 mt-2">Atau lanjutkan dengan migrasi batch (maksimal 500 per batch)?</p>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#3085d6',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Lanjutkan Batch',
-        cancelButtonText: 'Batal'
-      });
-
-      if (!result.isConfirmed) {
-        loading.value = false;
-        return;
-      }
-      
-      // Process in batches of 500
-      let processed = 0;
-      let totalSuccess = 0;
-      let totalFailed = 0;
-      const allErrors = [];
-      
-      while (processed < readyCustomerIds.length) {
-        const batch = readyCustomerIds.slice(processed, processed + 500);
-        
-        try {
-          const migrateResponse = await axios.post('/member-migration/migrate-multiple', {
-            customer_ids: batch
-          });
-          
-          if (migrateResponse.data.success) {
-            totalSuccess += migrateResponse.data.success_count || 0;
-            totalFailed += migrateResponse.data.failed_count || 0;
-            if (migrateResponse.data.errors) {
-              allErrors.push(...migrateResponse.data.errors);
-            }
-          }
-        } catch (error) {
-          totalFailed += batch.length;
-          allErrors.push(`Batch ${Math.floor(processed / 500) + 1}: ${error.response?.data?.message || 'Gagal migrasi batch'}`);
-        }
-        
-        processed += batch.length;
-        
-        // Show progress
-        await Swal.fire({
-          title: 'Sedang Memproses...',
-          html: `Memproses ${processed} dari ${readyCustomerIds.length} member...`,
-          icon: 'info',
-          allowOutsideClick: false,
-          showConfirmButton: false,
-          timer: 2000
-        });
-      }
-      
-      await Swal.fire({
-        icon: 'success',
-        title: 'Migrasi Selesai',
-        html: `
-          <p>Berhasil: ${totalSuccess}</p>
-          <p>Gagal: ${totalFailed}</p>
-          ${allErrors.length > 0 ? `
-            <div class="mt-4 text-left">
-              <p class="font-semibold">Error Details (${Math.min(allErrors.length, 10)} dari ${allErrors.length}):</p>
-              <ul class="list-disc list-inside text-sm mt-2 max-h-60 overflow-y-auto">
-                ${allErrors.slice(0, 10).map(e => `<li>${e}</li>`).join('')}
-                ${allErrors.length > 10 ? `<li>... dan ${allErrors.length - 10} error lainnya</li>` : ''}
-              </ul>
-            </div>
-          ` : ''}
-        `,
-        width: '600px'
-      });
-      
-      router.reload();
-      loading.value = false;
-      return;
-    }
-
-    const result = await Swal.fire({
-      title: 'Migrasi Semua?',
-      html: `
-        <p>Yakin ingin migrasi <strong>${readyCustomerIds.length} member</strong> yang siap?</p>
-        <p class="text-sm text-gray-600 mt-2">Ini akan memigrasi semua customer yang status aktif dan email belum terdaftar di member_apps_members.</p>
-      `,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#6c757d',
-      confirmButtonText: 'Ya, Migrasi Semua',
-      cancelButtonText: 'Batal'
-    });
-
-    if (!result.isConfirmed) {
-      loading.value = false;
-      return;
-    }
-
+    const customerIds = readyCustomers.map(c => c.id);
     const migrateResponse = await axios.post('/member-migration/migrate-multiple', {
-      customer_ids: readyCustomerIds
+      customer_ids: customerIds
     });
     
     if (migrateResponse.data.success) {
