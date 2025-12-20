@@ -1790,9 +1790,11 @@ Route::middleware(['auth'])->group(function () {
     
     // Member Notification Routes
     Route::get('member-notification', [\App\Http\Controllers\MemberNotificationController::class, 'index'])->name('member-notification.index');
+    Route::get('member-notification/create', [\App\Http\Controllers\MemberNotificationController::class, 'create'])->name('member-notification.create');
     Route::get('member-notification/search-members', [\App\Http\Controllers\MemberNotificationController::class, 'searchMembers'])->name('member-notification.search-members');
     Route::get('member-notification/get-members', [\App\Http\Controllers\MemberNotificationController::class, 'getMembers'])->name('member-notification.get-members');
     Route::post('member-notification/send', [\App\Http\Controllers\MemberNotificationController::class, 'send'])->name('member-notification.send');
+    Route::get('member-notification/{id}', [\App\Http\Controllers\MemberNotificationController::class, 'show'])->name('member-notification.show');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
     

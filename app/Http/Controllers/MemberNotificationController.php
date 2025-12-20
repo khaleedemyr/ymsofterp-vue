@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsOccupation;
 use App\Models\MemberAppsDeviceToken;
+use App\Models\MemberAppsPushNotification;
+use App\Models\MemberAppsPushNotificationRecipient;
+use App\Models\MemberAppsNotification;
 use App\Services\FCMService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,9 +18,58 @@ use Inertia\Inertia;
 class MemberNotificationController extends Controller
 {
     /**
-     * Display the notification form
+     * Display list of sent notifications
      */
     public function index(Request $request)
+    {
+        $query = MemberAppsPushNotification::withCount([
+            'recipients as total_recipients',
+            'recipients as sent_count' => function ($q) {
+                $q->whereIn('status', ['sent', 'delivered', 'opened']);
+            },
+            'recipients as opened_count' => function ($q) {
+                $q->where('status', 'opened');
+            }
+        ])
+        ->orderBy('created_at', 'desc');
+
+        // Search
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('message', 'like', "%{$search}%");
+            });
+        }
+
+        // Filter by target type
+        if ($request->filled('target_type')) {
+            $query->where('target_type', $request->target_type);
+        }
+
+        // Pagination
+        $perPage = $request->get('per_page', 15);
+        $notifications = $query->paginate($perPage)->withQueryString();
+
+        // Get stats
+        $stats = [
+            'total_notifications' => MemberAppsPushNotification::count(),
+            'total_sent' => MemberAppsPushNotification::whereNotNull('sent_at')->count(),
+            'total_recipients' => MemberAppsPushNotificationRecipient::count(),
+            'total_opened' => MemberAppsPushNotificationRecipient::where('status', 'opened')->count(),
+        ];
+
+        return Inertia::render('MemberNotification/List', [
+            'notifications' => $notifications,
+            'stats' => $stats,
+            'filters' => $request->only(['search', 'target_type', 'per_page']),
+        ]);
+    }
+
+    /**
+     * Display the notification form
+     */
+    public function create()
     {
         // Get member levels
         $memberLevels = DB::table('member_apps_members')
@@ -45,7 +97,7 @@ class MemberNotificationController extends Controller
             'total_device_tokens' => MemberAppsDeviceToken::where('is_active', true)->count(),
         ];
 
-        return Inertia::render('MemberNotification/Index', [
+        return Inertia::render('MemberNotification/Create', [
             'memberLevels' => $memberLevels,
             'occupations' => $occupations,
             'stats' => $stats,
@@ -165,7 +217,6 @@ class MemberNotificationController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'message' => 'required|string',
-            'image_url' => 'nullable|url|max:500',
             'target_type' => 'required|in:all,selected,filtered',
             'member_ids' => 'required_if:target_type,selected|array',
             'member_ids.*' => 'integer|exists:member_apps_members,id',
@@ -181,7 +232,6 @@ class MemberNotificationController extends Controller
         try {
             $title = $request->title;
             $message = $request->message;
-            $imageUrl = $request->image_url;
             $targetType = $request->target_type;
 
             // Get target members
@@ -238,32 +288,122 @@ class MemberNotificationController extends Controller
                 'title' => $title,
             ]);
 
+            // Prepare target data for storage
+            $targetMemberIds = null;
+            $targetFilterCriteria = null;
+
+            if ($targetType === 'selected') {
+                $targetMemberIds = $request->member_ids ?? [];
+            } elseif ($targetType === 'filtered') {
+                $targetFilterCriteria = [
+                    'member_level' => $request->member_level,
+                    'pekerjaan_id' => $request->pekerjaan_id,
+                    'is_exclusive_member' => $request->is_exclusive_member,
+                ];
+            }
+
+            // Create notification record
+            $notification = MemberAppsPushNotification::create([
+                'title' => $title,
+                'message' => $message,
+                'notification_type' => 'general',
+                'target_type' => $targetType === 'all' ? 'all' : ($targetType === 'selected' ? 'specific' : 'filter'),
+                'target_member_ids' => $targetMemberIds,
+                'target_filter_criteria' => $targetFilterCriteria,
+                'data' => [
+                    'type' => 'manual_notification',
+                    'title' => $title,
+                    'message' => $message,
+                ],
+                'created_by' => auth()->id(),
+                'sent_at' => now(),
+            ]);
+
             // Send notification using FCMService
             $fcmService = app(FCMService::class);
             $totalSuccess = 0;
             $totalFailed = 0;
 
-            // Process in chunks to avoid memory issues
+            // Create recipient records and send notifications
             $chunks = $members->chunk(100);
+            $membersProcessed = []; // Track which members already have notification saved
 
             foreach ($chunks as $chunk) {
                 foreach ($chunk as $member) {
-                    $result = $fcmService->sendToMember(
-                        $member,
-                        $title,
-                        $message,
-                        [
+                    // Get device tokens for this member
+                    $deviceTokens = MemberAppsDeviceToken::where('member_id', $member->id)
+                        ->where('is_active', true)
+                        ->get();
+
+                    if ($deviceTokens->isEmpty()) {
+                        // Create recipient record with failed status
+                        MemberAppsPushNotificationRecipient::create([
+                            'notification_id' => $notification->id,
+                            'member_id' => $member->id,
+                            'status' => 'failed',
+                            'error_message' => 'No active device token',
+                        ]);
+                        $totalFailed++;
+                        continue;
+                    }
+
+                    $memberHasSuccess = false; // Track if at least one device token succeeded
+
+                    // Send to each device token
+                    foreach ($deviceTokens as $deviceToken) {
+                        $result = $fcmService->sendToDevice(
+                            $deviceToken->device_token,
+                            $title,
+                            $message,
+                            [
+                                'type' => 'manual_notification',
+                                'title' => $title,
+                                'message' => $message,
+                            ],
+                            null,
+                            $deviceToken->device_type
+                        );
+
+                        // Create recipient record
+                        MemberAppsPushNotificationRecipient::create([
+                            'notification_id' => $notification->id,
+                            'member_id' => $member->id,
+                            'device_token_id' => $deviceToken->id,
+                            'status' => $result ? 'sent' : 'failed',
+                            'error_message' => $result ? null : 'FCM send failed',
+                        ]);
+
+                        if ($result) {
+                            $totalSuccess++;
+                            $memberHasSuccess = true;
+                        } else {
+                            $totalFailed++;
+                        }
+                    }
+
+                    // Save to member_apps_notifications for read tracking (only once per member)
+                    if ($memberHasSuccess && !in_array($member->id, $membersProcessed)) {
+                        MemberAppsNotification::create([
+                            'member_id' => $member->id,
                             'type' => 'manual_notification',
                             'title' => $title,
                             'message' => $message,
-                        ],
-                        $imageUrl
-                    );
-
-                    $totalSuccess += $result['success_count'] ?? 0;
-                    $totalFailed += $result['failed_count'] ?? 0;
+                            'data' => [
+                                'type' => 'manual_notification',
+                                'notification_id' => $notification->id,
+                            ],
+                            'is_read' => false,
+                        ]);
+                        $membersProcessed[] = $member->id;
+                    }
                 }
             }
+
+            // Update notification counts
+            $notification->update([
+                'sent_count' => $totalSuccess,
+                'delivered_count' => $totalSuccess, // Assume delivered if sent successfully
+            ]);
 
             $message = "Notifikasi berhasil dikirim ke {$members->count()} member. Berhasil: {$totalSuccess}, Gagal: {$totalFailed}";
 
@@ -274,11 +414,91 @@ class MemberNotificationController extends Controller
             Log::error('Failed to send member notification', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request' => $request->except(['image_url']),
+                'request' => $request->all(),
             ]);
 
             return back()->withErrors(['error' => 'Gagal mengirim notifikasi: ' . $e->getMessage()])->withInput();
         }
+    }
+
+    /**
+     * Show notification detail with recipients
+     */
+    public function show($id)
+    {
+        $notification = MemberAppsPushNotification::with(['recipients.member', 'recipients.deviceToken'])
+            ->findOrFail($id);
+
+        // Get recipients with pagination
+        $recipientsQuery = MemberAppsPushNotificationRecipient::with(['member', 'deviceToken'])
+            ->where('notification_id', $id);
+
+        // Filter by status
+        if (request()->filled('status')) {
+            $recipientsQuery->where('status', request()->status);
+        }
+
+        // Search
+        if (request()->filled('search')) {
+            $search = request()->search;
+            $recipientsQuery->whereHas('member', function ($q) use ($search) {
+                $q->where('nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('member_id', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = request()->get('per_page', 20);
+        $recipients = $recipientsQuery->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
+
+        // Get read status from member_apps_notifications for each recipient
+        $recipientIds = $recipients->pluck('member_id')->unique()->toArray();
+        $readNotifications = MemberAppsNotification::where('type', 'manual_notification')
+            ->whereIn('member_id', $recipientIds)
+            ->where('is_read', true)
+            ->whereRaw('JSON_EXTRACT(data, "$.notification_id") = ?', [$id])
+            ->get()
+            ->keyBy('member_id');
+
+        // Enrich recipients with read status
+        $recipients->getCollection()->transform(function ($recipient) use ($readNotifications) {
+            $readNotif = $readNotifications->get($recipient->member_id);
+            if ($readNotif && $recipient->status !== 'failed') {
+                $recipient->is_read = true;
+                $recipient->read_at = $readNotif->read_at;
+                // Update status to opened if read
+                if ($recipient->status === 'sent' || $recipient->status === 'delivered') {
+                    $recipient->status = 'opened';
+                    $recipient->opened_at = $readNotif->read_at;
+                }
+            } else {
+                $recipient->is_read = false;
+                $recipient->read_at = null;
+            }
+            return $recipient;
+        });
+
+        // Stats - include read status from member_apps_notifications
+        $stats = [
+            'total_recipients' => MemberAppsPushNotificationRecipient::where('notification_id', $id)->count(),
+            'sent_count' => MemberAppsPushNotificationRecipient::where('notification_id', $id)
+                ->whereIn('status', ['sent', 'delivered', 'opened'])->count(),
+            'delivered_count' => MemberAppsPushNotificationRecipient::where('notification_id', $id)
+                ->whereIn('status', ['delivered', 'opened'])->count(),
+            'opened_count' => MemberAppsNotification::where('type', 'manual_notification')
+                ->whereRaw('JSON_EXTRACT(data, "$.notification_id") = ?', [$id])
+                ->where('is_read', true)
+                ->count(),
+            'failed_count' => MemberAppsPushNotificationRecipient::where('notification_id', $id)
+                ->where('status', 'failed')->count(),
+        ];
+
+        return Inertia::render('MemberNotification/Show', [
+            'notification' => $notification,
+            'recipients' => $recipients,
+            'stats' => $stats,
+            'filters' => request()->only(['status', 'search', 'per_page']),
+        ]);
     }
 }
 

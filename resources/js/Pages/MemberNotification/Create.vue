@@ -6,6 +6,12 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-bell"></i> Kirim Notifikasi Member
         </h1>
+        <Link
+          href="/member-notification"
+          class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+        >
+          <i class="fa-solid fa-list"></i> Daftar Notifikasi
+        </Link>
       </div>
 
       <!-- Stats Cards -->
@@ -54,20 +60,6 @@
             placeholder="Masukkan pesan notifikasi"
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           ></textarea>
-        </div>
-
-        <!-- Image URL -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            URL Gambar (Opsional)
-          </label>
-          <input
-            type="url"
-            v-model="form.image_url"
-            placeholder="https://example.com/image.jpg"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-          <div class="text-xs text-gray-500 mt-1">URL gambar untuk ditampilkan di notifikasi</div>
         </div>
 
         <!-- Target Type -->
@@ -256,7 +248,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { router, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 
@@ -269,7 +261,6 @@ const props = defineProps({
 const form = useForm({
   title: '',
   message: '',
-  image_url: '',
   target_type: 'all',
   member_ids: [],
   member_level: '',
@@ -367,6 +358,7 @@ const sendNotification = () => {
     preserveScroll: true,
     onSuccess: () => {
       resetForm();
+      router.visit('/member-notification');
     },
     onFinish: () => {
       loading.value = false;
