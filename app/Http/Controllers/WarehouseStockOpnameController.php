@@ -182,6 +182,8 @@ class WarehouseStockOpnameController extends Controller
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
             'items.*.qty_physical_large' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         $user = auth()->user();
@@ -205,6 +207,25 @@ class WarehouseStockOpnameController extends Controller
 
             // Create items (skip if items array is empty for autosave)
             $items = $validated['items'] ?? [];
+            
+            // For autosave, only save items that have been filled in
+            // Item is considered "filled in" if:
+            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
+            // 2. Has reason filled in
+            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
+            if ($request->has('autosave') && $request->autosave) {
+                $items = array_filter($items, function($itemData) {
+                    // Check if any physical qty field has been explicitly set (including 0)
+                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
+                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
+                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
+                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                    
+                    // Item is filled if any qty field is set OR reason is filled
+                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
+                });
+            }
+            
             foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('food_inventory_stocks')
@@ -221,15 +242,55 @@ class WarehouseStockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
 
-                // If physical qty not provided, use system qty (tombol "=")
-                $qtyPhysicalSmall = $itemData['qty_physical_small'] ?? $qtySystemSmall;
-                $qtyPhysicalMedium = $itemData['qty_physical_medium'] ?? $qtySystemMedium;
-                $qtyPhysicalLarge = $itemData['qty_physical_large'] ?? $qtySystemLarge;
+                // Get physical qty from request
+                // Check if value is explicitly provided (not null and not empty string)
+                // If null or empty string, use system qty (tombol "=")
+                // If 0 or any numeric value is provided, use that value
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
+                    ? (float)$itemData['qty_physical_small'] 
+                    : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
+                    ? (float)$itemData['qty_physical_medium'] 
+                    : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
+                    ? (float)$itemData['qty_physical_large'] 
+                    : $qtySystemLarge;
+                
+                // Log for debugging
+                \Log::info('Warehouse Stock Opname Item Processing', [
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
+                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
+                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
+                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
+                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
+                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
+                    'qty_physical_small_final' => $qtyPhysicalSmall,
+                    'qty_physical_medium_final' => $qtyPhysicalMedium,
+                    'qty_physical_large_final' => $qtyPhysicalLarge,
+                ]);
 
                 // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+
+                // Validate: if there's a difference, reason is required
+                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
+                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                
+                if ($hasDifference && !$hasReason) {
+                    // Skip autosave validation for reason
+                    if (!$request->has('autosave') || !$request->autosave) {
+                        DB::rollBack();
+                        return back()->withErrors([
+                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
+                        ]);
+                    }
+                }
 
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
@@ -251,6 +312,22 @@ class WarehouseStockOpnameController extends Controller
                     'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
                     'value_adjustment' => $valueAdjustment,
                 ]);
+            }
+
+            // Save approvers if provided (only if status is still DRAFT)
+            if ($stockOpname->status === 'DRAFT' && isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                // Delete existing approval flows if any
+                $stockOpname->approvalFlows()->delete();
+
+                // Create approval flows
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    WarehouseStockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                        'status' => 'PENDING',
+                    ]);
+                }
             }
 
             DB::commit();
@@ -314,9 +391,9 @@ class WarehouseStockOpnameController extends Controller
 
         // Get users for approver selection
         $usersQuery = DB::table('users')
-            ->leftJoin('jabatan', 'users.id_jabatan', '=', 'jabatan.id')
-            ->where('users.status', 'active')
-            ->select('users.id', 'users.nama_lengkap', 'jabatan.nama_jabatan')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'A')
+            ->select('users.id', 'users.nama_lengkap', 'tbl_data_jabatan.nama_jabatan')
             ->orderBy('users.nama_lengkap');
 
         $users = $usersQuery->get()->map(function($u) {
@@ -329,7 +406,7 @@ class WarehouseStockOpnameController extends Controller
 
         // Get approvers for display
         $approvers = $stockOpname->approvalFlows()
-            ->with('approver:id,nama_lengkap,email,id_jabatan')
+            ->with(['approver:id,nama_lengkap,email,id_jabatan', 'approver.jabatan:id_jabatan,nama_jabatan'])
             ->orderBy('approval_level')
             ->get()
             ->map(function($flow) {
@@ -337,7 +414,7 @@ class WarehouseStockOpnameController extends Controller
                     'id' => $flow->approver_id,
                     'name' => $flow->approver->nama_lengkap ?? '',
                     'email' => $flow->approver->email ?? '',
-                    'jabatan' => $flow->approver->jabatan->nama_jabatan ?? '',
+                    'jabatan' => ($flow->approver && $flow->approver->jabatan) ? $flow->approver->jabatan->nama_jabatan : '',
                 ];
             });
 
@@ -349,6 +426,7 @@ class WarehouseStockOpnameController extends Controller
             'canApprove' => $canApprove,
             'pendingFlow' => $pendingFlow,
             'users' => $users,
+            'user_outlet_id' => $user->id_outlet ?? null,
         ]);
     }
 
@@ -420,6 +498,7 @@ class WarehouseStockOpnameController extends Controller
             'warehouseDivisions' => $warehouseDivisions,
             'items' => $items,
             'approvers' => $approvers,
+            'user_outlet_id' => $user->id_outlet ?? null,
         ]);
     }
 
@@ -452,6 +531,8 @@ class WarehouseStockOpnameController extends Controller
             'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
             'items.*.qty_physical_large' => 'nullable|numeric|min:0',
             'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         try {
@@ -470,6 +551,25 @@ class WarehouseStockOpnameController extends Controller
 
             // Create new items (skip if items array is empty for autosave)
             $items = $validated['items'] ?? [];
+            
+            // For autosave, only save items that have been filled in
+            // Item is considered "filled in" if:
+            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
+            // 2. Has reason filled in
+            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
+            if ($request->has('autosave') && $request->autosave) {
+                $items = array_filter($items, function($itemData) {
+                    // Check if any physical qty field has been explicitly set (including 0)
+                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
+                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
+                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
+                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                    
+                    // Item is filled if any qty field is set OR reason is filled
+                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
+                });
+            }
+            
             foreach ($items as $itemData) {
                 // Get system qty from inventory stocks
                 $stock = DB::table('food_inventory_stocks')
@@ -486,15 +586,55 @@ class WarehouseStockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
 
-                // If physical qty not provided, use system qty (tombol "=")
-                $qtyPhysicalSmall = $itemData['qty_physical_small'] ?? $qtySystemSmall;
-                $qtyPhysicalMedium = $itemData['qty_physical_medium'] ?? $qtySystemMedium;
-                $qtyPhysicalLarge = $itemData['qty_physical_large'] ?? $qtySystemLarge;
+                // Get physical qty from request
+                // Check if value is explicitly provided (not null and not empty string)
+                // If null or empty string, use system qty (tombol "=")
+                // If 0 or any numeric value is provided, use that value
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
+                    ? (float)$itemData['qty_physical_small'] 
+                    : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
+                    ? (float)$itemData['qty_physical_medium'] 
+                    : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
+                    ? (float)$itemData['qty_physical_large'] 
+                    : $qtySystemLarge;
+                
+                // Log for debugging
+                \Log::info('Warehouse Stock Opname Item Update Processing', [
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
+                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
+                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
+                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
+                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
+                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
+                    'qty_physical_small_final' => $qtyPhysicalSmall,
+                    'qty_physical_medium_final' => $qtyPhysicalMedium,
+                    'qty_physical_large_final' => $qtyPhysicalLarge,
+                ]);
 
                 // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+
+                // Validate: if there's a difference, reason is required
+                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
+                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+                
+                if ($hasDifference && !$hasReason) {
+                    // Skip autosave validation for reason
+                    if (!$request->has('autosave') || !$request->autosave) {
+                        DB::rollBack();
+                        return back()->withErrors([
+                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
+                        ]);
+                    }
+                }
 
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
@@ -516,6 +656,22 @@ class WarehouseStockOpnameController extends Controller
                     'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
                     'value_adjustment' => $valueAdjustment,
                 ]);
+            }
+
+            // Save approvers if provided (only if status is still DRAFT)
+            if ($stockOpname->status === 'DRAFT' && isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                // Delete existing approval flows if any
+                $stockOpname->approvalFlows()->delete();
+
+                // Create approval flows
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    WarehouseStockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                        'status' => 'PENDING',
+                    ]);
+                }
             }
 
             DB::commit();
@@ -549,17 +705,34 @@ class WarehouseStockOpnameController extends Controller
     /**
      * Remove the specified warehouse stock opname from storage
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $stockOpname = WarehouseStockOpname::findOrFail($id);
-        $user = auth()->user();
-
-        // Only allow deletion if status is DRAFT
-        if ($stockOpname->status !== 'DRAFT') {
-            return back()->withErrors(['error' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.']);
-        }
-
         try {
+            $stockOpname = WarehouseStockOpname::find($id);
+            
+            if (!$stockOpname) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Stock opname tidak ditemukan.'
+                    ], 404);
+                }
+                return back()->withErrors(['error' => 'Stock opname tidak ditemukan.']);
+            }
+            
+            $user = auth()->user();
+
+            // Only allow deletion if status is DRAFT
+            if ($stockOpname->status !== 'DRAFT') {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.'
+                    ], 422);
+                }
+                return back()->withErrors(['error' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.']);
+            }
+
             DB::beginTransaction();
 
             // Delete items (cascade will handle this, but we do it explicitly)
@@ -573,10 +746,27 @@ class WarehouseStockOpnameController extends Controller
 
             DB::commit();
 
+            // Return JSON if AJAX request, otherwise redirect
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Stock Opname berhasil dihapus!'
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.index')
                            ->with('success', 'Warehouse Stock Opname berhasil dihapus!');
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            // Return JSON if AJAX request, otherwise redirect with error
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menghapus stock opname: ' . $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Gagal menghapus stock opname: ' . $e->getMessage()]);
         }
     }
@@ -600,6 +790,9 @@ class WarehouseStockOpnameController extends Controller
 
         try {
             DB::beginTransaction();
+
+            // Delete existing approval flows if any (in case of resubmit)
+            $stockOpname->approvalFlows()->delete();
 
             // Create approval flows
             foreach ($validated['approvers'] as $index => $approverId) {
@@ -739,85 +932,83 @@ class WarehouseStockOpnameController extends Controller
                 $newQtyLarge = $stock->qty_large + $qtyDiffLarge;
 
                 // Calculate new value
+                // For positive diff: add value using MAC
+                // For negative diff: subtract value using MAC
                 $valueAdjustment = $item->value_adjustment;
                 $newValue = $stock->value + $valueAdjustment;
 
-                // ============================================
-                // DISABLED: Update inventory tables
-                // Commented out temporarily - no insert/update to inventory
-                // ============================================
-                
-                // // Update stock
-                // DB::table('food_inventory_stocks')
-                //     ->where('id', $stock->id)
-                //     ->update([
-                //         'qty_small' => $newQtySmall,
-                //         'qty_medium' => $newQtyMedium,
-                //         'qty_large' => $newQtyLarge,
-                //         'value' => $newValue,
-                //         // MAC tidak berubah (sesuai rekomendasi)
-                //         'updated_at' => now(),
-                //     ]);
+                // Update stock
+                DB::table('food_inventory_stocks')
+                    ->where('id', $stock->id)
+                    ->update([
+                        'qty_small' => $newQtySmall,
+                        'qty_medium' => $newQtyMedium,
+                        'qty_large' => $newQtyLarge,
+                        'value' => $newValue,
+                        // MAC tidak berubah (sesuai rekomendasi)
+                        'updated_at' => now(),
+                    ]);
 
-                // // Get last card for saldo calculation
-                // $lastCard = DB::table('food_inventory_cards')
-                //     ->where('inventory_item_id', $inventoryItemId)
-                //     ->where('warehouse_id', $warehouseId)
-                //     ->orderByDesc('date')
-                //     ->orderByDesc('id')
-                //     ->first();
+                // Get last card for saldo calculation
+                $lastCard = DB::table('food_inventory_cards')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
 
-                // // Calculate new saldo
-                // if ($lastCard) {
-                //     $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
-                //     $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
-                //     $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
-                //     $saldoValue = $lastCard->saldo_value + $valueAdjustment;
-                // } else {
-                //     $saldoQtySmall = $newQtySmall;
-                //     $saldoQtyMedium = $newQtyMedium;
-                //     $saldoQtyLarge = $newQtyLarge;
-                //     $saldoValue = $newValue;
-                // }
+                // Calculate new saldo
+                if ($lastCard) {
+                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
+                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
+                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
+                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
+                } else {
+                    $saldoQtySmall = $newQtySmall;
+                    $saldoQtyMedium = $newQtyMedium;
+                    $saldoQtyLarge = $newQtyLarge;
+                    $saldoValue = $newValue;
+                }
 
-                // // Insert stock card
-                // DB::table('food_inventory_cards')->insert([
-                //     'inventory_item_id' => $inventoryItemId,
-                //     'warehouse_id' => $warehouseId,
-                //     'date' => $stockOpname->opname_date,
-                //     'reference_type' => 'warehouse_stock_opname',
-                //     'reference_id' => $stockOpname->id,
-                //     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
-                //     'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
-                //     'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                //     'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
-                //     'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
-                //     'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                //     'cost_per_small' => $mac,
-                //     'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                //     'cost_per_large' => $stock->last_cost_large ?? 0,
-                //     'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
-                //     'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                //     'saldo_qty_small' => $saldoQtySmall,
-                //     'saldo_qty_medium' => $saldoQtyMedium,
-                //     'saldo_qty_large' => $saldoQtyLarge,
-                //     'saldo_value' => $saldoValue,
-                //     'description' => 'Warehouse Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
-                //     'created_at' => now(),
-                //     'updated_at' => now(),
-                // ]);
+                // Insert stock card
+                DB::table('food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $stockOpname->opname_date,
+                    'reference_type' => 'warehouse_stock_opname',
+                    'reference_id' => $stockOpname->id,
+                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                    'cost_per_small' => $mac,
+                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                    'cost_per_large' => $stock->last_cost_large ?? 0,
+                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                    'saldo_qty_small' => $saldoQtySmall,
+                    'saldo_qty_medium' => $saldoQtyMedium,
+                    'saldo_qty_large' => $saldoQtyLarge,
+                    'saldo_value' => $saldoValue,
+                    'description' => 'Warehouse Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
 
-                // // Update cost history
-                // DB::table('food_inventory_cost_histories')->insert([
-                //     'inventory_item_id' => $inventoryItemId,
-                //     'warehouse_id' => $warehouseId,
-                //     'date' => $stockOpname->opname_date,
-                //     'old_cost' => $mac,
-                //     'new_cost' => $mac, // MAC tidak berubah
-                //     'mac' => $mac,
-                //     'created_at' => now(),
-                //     'updated_at' => now(),
-                // ]);
+                // Update cost history if MAC changed (though in our case MAC doesn't change)
+                // But we still record it for audit trail
+                DB::table('food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $stockOpname->opname_date,
+                    'old_cost' => $mac,
+                    'new_cost' => $mac, // MAC tidak berubah
+                    'mac' => $mac,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
 
             // Update status to completed
@@ -826,7 +1017,7 @@ class WarehouseStockOpnameController extends Controller
             DB::commit();
 
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
-                           ->with('success', 'Stock opname berhasil di-process! (Inventory update disabled)');
+                           ->with('success', 'Stock opname berhasil di-process!');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'Gagal process stock opname: ' . $e->getMessage()]);
@@ -954,17 +1145,32 @@ class WarehouseStockOpnameController extends Controller
             }
 
             // Filter to only show approvals where user is the next approver
+            // and all previous approval levels have been approved
             $filteredApprovals = $pendingApprovals->filter(function($opname) use ($user) {
-                $pendingFlows = $opname->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+                // Get all approval flows sorted by level
+                $allFlows = $opname->approvalFlows->sortBy('approval_level');
+                $pendingFlows = $allFlows->where('status', 'PENDING');
                 $nextApprover = $pendingFlows->first();
                 
                 if (!$nextApprover) {
                     return false;
                 }
 
+                // Check if all previous approval levels have been approved
+                $nextApprovalLevel = $nextApprover->approval_level;
+                $previousFlows = $allFlows->where('approval_level', '<', $nextApprovalLevel);
+                $allPreviousApproved = $previousFlows->every(function($flow) {
+                    return $flow->status === 'APPROVED';
+                });
+
+                // If previous levels are not all approved, don't show this approval
+                if (!$allPreviousApproved) {
+                    return false;
+                }
+
                 // Check if user is the next approver
                 if ($user->id_role === '5af56935b011a') {
-                    return true; // Superadmin can approve any
+                    return true; // Superadmin can approve any (but still need previous levels approved)
                 }
 
                 return $nextApprover->approver_id == $user->id;

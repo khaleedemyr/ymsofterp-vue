@@ -5598,7 +5598,9 @@ watch(locale, () => {
                                         </div>
                                     </div>
                                     <div class="text-xs text-purple-500 font-medium">
-                                        <i class="fa fa-user-check mr-1"></i>{{ opname.approver_name || 'Warehouse Stock Opname Approval' }}
+                                        <i class="fa fa-user-check mr-1"></i>
+                                        <span v-if="opname.approval_level">Level {{ opname.approval_level }}: </span>
+                                        {{ opname.approver_name || 'Warehouse Stock Opname Approval' }}
                                     </div>
                                 </div>
                             </div>
