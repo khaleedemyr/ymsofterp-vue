@@ -1327,8 +1327,25 @@ class NonFoodPaymentController extends Controller
 
         // Get Retail Non Food attachments if payment is for Retail Non Food
         $retailNonFoodAttachments = [];
+        
+        \Log::info('Checking for Retail Non Food attachments', [
+            'payment_id' => $nonFoodPayment->id,
+            'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+            'retail_non_food_id_raw' => $nonFoodPayment->getRawOriginal('retail_non_food_id') ?? 'null'
+        ]);
+        
         if ($nonFoodPayment->retail_non_food_id) {
             try {
+                // Try using relationship first
+                if ($nonFoodPayment->retailNonFood) {
+                    $invoices = $nonFoodPayment->retailNonFood->invoices;
+                    \Log::info('Retail Non Food invoices via relationship', [
+                        'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+                        'invoices_count' => $invoices->count()
+                    ]);
+                }
+                
+                // Also try direct query
                 $retailNonFoodAttachments = DB::table('retail_non_food_invoices as rnfi')
                     ->where('rnfi.retail_non_food_id', $nonFoodPayment->retail_non_food_id)
                     ->select(
@@ -1373,10 +1390,18 @@ class NonFoodPaymentController extends Controller
         } else {
             \Log::info('No retail_non_food_id found in payment', [
                 'payment_id' => $nonFoodPayment->id,
-                'retail_non_food_id' => $nonFoodPayment->retail_non_food_id
+                'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+                'payment_data' => $nonFoodPayment->toArray()
             ]);
         }
 
+        \Log::info('Returning NonFoodPayment Show data', [
+            'payment_id' => $nonFoodPayment->id,
+            'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+            'retail_non_food_attachments_count' => count($retailNonFoodAttachments),
+            'retail_non_food_attachments' => $retailNonFoodAttachments
+        ]);
+        
         return Inertia::render('NonFoodPayment/Show', [
             'payment' => $nonFoodPayment,
             'po_attachments' => $poAttachments,
