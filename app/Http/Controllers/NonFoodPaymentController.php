@@ -711,6 +711,10 @@ class NonFoodPaymentController extends Controller
 
     public function getRetailNonFoodItems($retailNonFoodId)
     {
+        \Log::info('getRetailNonFoodItems called', [
+            'retail_non_food_id' => $retailNonFoodId
+        ]);
+        
         try {
             // Get basic Retail Non Food info
             $retailNonFood = DB::table('retail_non_food as rnf')
@@ -731,6 +735,7 @@ class NonFoodPaymentController extends Controller
                 ->first();
 
             if (!$retailNonFood) {
+                \Log::warning('Retail Non Food not found', ['retail_non_food_id' => $retailNonFoodId]);
                 return response()->json(['error' => 'Retail Non Food not found'], 404);
             }
 
@@ -774,38 +779,111 @@ class NonFoodPaymentController extends Controller
             // Get Retail Non Food invoices/attachments
             $retailNonFoodAttachments = [];
             try {
+                \Log::info('Fetching retail non food attachments', [
+                    'retail_non_food_id' => $retailNonFoodId
+                ]);
+                
+                // Try using model relationship first
+                $retailNonFoodModel = \App\Models\RetailNonFood::find($retailNonFoodId);
+                if ($retailNonFoodModel) {
+                    $invoicesViaModel = $retailNonFoodModel->invoices;
+                    \Log::info('Retail non food invoices via model', [
+                        'retail_non_food_id' => $retailNonFoodId,
+                        'count' => $invoicesViaModel->count(),
+                        'invoices' => $invoicesViaModel->toArray()
+                    ]);
+                }
+                
+                // Also try direct query
+                $invoiceCount = DB::table('retail_non_food_invoices')
+                    ->where('retail_non_food_id', $retailNonFoodId)
+                    ->count();
+                
+                \Log::info('Retail non food invoices count (direct query)', [
+                    'retail_non_food_id' => $retailNonFoodId,
+                    'count' => $invoiceCount
+                ]);
+                
+                // Check all invoices in table (for debugging)
+                $allInvoices = DB::table('retail_non_food_invoices')
+                    ->select('id', 'retail_non_food_id', 'file_path')
+                    ->limit(10)
+                    ->get();
+                
+                \Log::info('Sample retail_non_food_invoices records', [
+                    'sample_count' => $allInvoices->count(),
+                    'samples' => $allInvoices->toArray()
+                ]);
+                
                 $retailNonFoodAttachments = DB::table('retail_non_food_invoices as rnfi')
                     ->where('rnfi.retail_non_food_id', $retailNonFoodId)
                     ->select(
                         'rnfi.id',
-                        'rnfi.file_path as file_name',
                         'rnfi.file_path',
                         'rnfi.created_at'
                     )
                     ->get()
                     ->map(function($attachment) {
+                        $filePath = $attachment->file_path;
+                        $fileName = basename($filePath);
+                        $fileExtension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                        
+                        // Determine file type based on extension
+                        $fileType = 'image/jpeg'; // Default
+                        if (in_array($fileExtension, ['jpg', 'jpeg'])) {
+                            $fileType = 'image/jpeg';
+                        } elseif ($fileExtension === 'png') {
+                            $fileType = 'image/png';
+                        } elseif ($fileExtension === 'pdf') {
+                            $fileType = 'application/pdf';
+                        }
+                        
                         return [
                             'id' => $attachment->id,
-                            'file_name' => basename($attachment->file_path),
-                            'file_path' => $attachment->file_path,
-                            'file_type' => 'image/jpeg', // Default, bisa disesuaikan
+                            'file_name' => $fileName,
+                            'file_path' => $filePath,
+                            'file_type' => $fileType,
                             'file_size' => null,
                             'created_at' => $attachment->created_at,
                         ];
                     })
                     ->toArray();
+                
+                \Log::info('Retail non food attachments fetched', [
+                    'retail_non_food_id' => $retailNonFoodId,
+                    'attachments_count' => count($retailNonFoodAttachments),
+                    'attachments' => $retailNonFoodAttachments
+                ]);
             } catch (\Exception $e) {
                 // Table might not exist, continue without attachments
+                \Log::error('Error fetching retail non food attachments', [
+                    'retail_non_food_id' => $retailNonFoodId,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
             }
 
-            return response()->json([
+            $responseData = [
                 'retail_non_food' => $retailNonFood,
                 'items_by_outlet' => $itemsByOutlet,
                 'total_amount' => $retailNonFood->total_amount,
                 'retail_non_food_attachments' => $retailNonFoodAttachments
+            ];
+            
+            \Log::info('Returning getRetailNonFoodItems response', [
+                'retail_non_food_id' => $retailNonFoodId,
+                'attachments_count' => count($retailNonFoodAttachments),
+                'has_attachments' => !empty($retailNonFoodAttachments)
             ]);
 
+            return response()->json($responseData);
+
         } catch (\Exception $e) {
+            \Log::error('Error in getRetailNonFoodItems', [
+                'retail_non_food_id' => $retailNonFoodId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'error' => 'Failed to load Retail Non Food items: ' . $e->getMessage()
             ], 500);

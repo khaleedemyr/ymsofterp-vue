@@ -101,7 +101,20 @@ function lihatData() {
   }, {
     preserveState: true,
     replace: true,
-    onFinish: () => nextTick(() => { loading.value = false; })
+    onFinish: async () => {
+      await nextTick();
+      loading.value = false;
+      // Check payroll status setelah reload data
+      await checkPayrollStatus();
+      // Set default payment_method untuk semua item jika belum ada
+      if (props.payrollData && props.payrollData.length > 0) {
+        props.payrollData.forEach(item => {
+          if (!item.payment_method) {
+            item.payment_method = 'transfer';
+          }
+        });
+      }
+    }
   });
 }
 
@@ -126,6 +139,17 @@ async function exportData() {
 // Format currency
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('id-ID').format(amount);
+};
+
+// Format date
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
 };
 
 // Filtered payroll data based on search query
@@ -201,6 +225,17 @@ watch(() => props.filter, (newFilter) => {
   deviasiAmount.value = newFilter?.deviasi_amount || '';
   cityLedgerAmount.value = newFilter?.city_ledger_amount || '';
 }, { immediate: true });
+
+// Watch payrollData untuk set default payment_method
+watch(() => props.payrollData, (newData) => {
+  if (newData && newData.length > 0) {
+    newData.forEach(item => {
+      if (!item.payment_method) {
+        item.payment_method = 'transfer';
+      }
+    });
+  }
+}, { immediate: true, deep: true });
 
 // Toggle expand row
 async function toggleExpand(userId) {
@@ -506,6 +541,16 @@ async function generatePayroll() {
       payrollId.value = response.data.payroll_id;
       payrollStatus.value = 'generated';
       await checkPayrollStatus();
+      // Set default payment_method untuk semua item
+      if (props.payrollData && props.payrollData.length > 0) {
+        props.payrollData.forEach(item => {
+          if (!item.payment_method) {
+            item.payment_method = 'transfer';
+          }
+        });
+      }
+      // Reload data untuk mendapatkan payment_method dari database
+      await lihatData();
     } else {
       Swal.fire('Error', response.data.message, 'error');
     }
@@ -514,6 +559,54 @@ async function generatePayroll() {
     Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat generate payroll', 'error');
   } finally {
     generating.value = false;
+  }
+}
+
+// Update Payment Method
+async function updatePaymentMethod(userId, paymentMethod) {
+  // Jika belum generate, hanya update local data (tidak save ke database)
+  if (payrollStatus.value !== 'generated') {
+    const item = props.payrollData.find(p => p.user_id === userId);
+    if (item) {
+      item.payment_method = paymentMethod;
+    }
+    return;
+  }
+
+  if (!payrollId.value) {
+    Swal.fire('Peringatan', 'Payroll belum di-generate', 'warning');
+    return;
+  }
+
+  console.log('Updating payment method:', {
+    userId,
+    paymentMethod,
+    payrollId: payrollId.value
+  });
+
+  try {
+    // Update payment_method di database
+    const response = await axios.post('/payroll/report/update-payment-method', {
+      payroll_id: payrollId.value,
+      user_id: userId,
+      payment_method: paymentMethod
+    });
+
+    console.log('Update payment method response:', response.data);
+
+    if (response.data.success) {
+      // Update local data
+      const item = props.payrollData.find(p => p.user_id === userId);
+      if (item) {
+        item.payment_method = paymentMethod;
+      }
+      console.log('Payment method updated successfully');
+    } else {
+      Swal.fire('Error', response.data.message || 'Gagal mengupdate payment method', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating payment method:', error);
+    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat mengupdate payment method', 'error');
   }
 }
 
@@ -874,6 +967,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Alpha</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Unpaid Leave</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Gaji</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Payment Method</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
                 </tr>
               </thead>
@@ -891,7 +985,20 @@ onMounted(() => {
                       </button>
                     </td>
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.nik }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-900 font-semibold">{{ item.nama_lengkap }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold">{{ item.nama_lengkap }}</span>
+                        <span v-if="item.is_new_employee" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Karyawan Baru
+                        </span>
+                      </div>
+                      <div v-if="item.no_rekening" class="text-xs text-gray-500 mt-1">
+                        {{ item.no_rekening }}
+                      </div>
+                      <div v-if="item.tanggal_masuk" class="text-xs text-gray-500 mt-1">
+                        Join: {{ formatDate(item.tanggal_masuk) }}
+                      </div>
+                    </td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.jabatan }}</td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.divisi }}</td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-purple-600">
@@ -1054,6 +1161,19 @@ onMounted(() => {
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600 bg-green-50 rounded-lg">
                       {{ formatCurrency(item.total_gaji) }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center">
+                      <select 
+                        v-model="item.payment_method"
+                        @change="updatePaymentMethod(item.user_id, $event.target.value)"
+                        class="px-3 py-2 rounded-lg text-sm font-semibold border-2 focus:outline-none focus:ring-2 focus:ring-offset-2 min-w-[120px] appearance-none bg-no-repeat bg-right pr-8 cursor-pointer hover:shadow-md transition-all"
+                        :class="(item.payment_method || 'transfer') === 'transfer' 
+                          ? 'bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500' 
+                          : 'bg-purple-100 text-purple-800 border-purple-300 focus:ring-purple-500'"
+                        style="background-image: url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 1em 1em;">
+                        <option value="transfer">Transfer</option>
+                        <option value="cash">Cash</option>
+                      </select>
                     </td>
                     <td class="px-4 py-3 text-sm text-center">
                       <div class="flex items-center justify-center gap-2">

@@ -68,7 +68,7 @@ class PayrollReportController extends Controller
             $users = User::where('status', 'A')
                 ->where('id_outlet', $outletId)
                 ->orderBy('nama_lengkap')
-                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet']);
+                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
 
             // Ambil data jabatan dan divisi
             $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
@@ -96,6 +96,20 @@ class PayrollReportController extends Controller
                 ->where('outlet_id', $outletId)
                 ->get()
                 ->keyBy('user_id');
+
+            // Cek apakah payroll sudah di-generate dan ambil payment_method
+            $payrollGenerated = DB::table('payroll_generated')
+                ->where('outlet_id', $outletId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+            
+            $payrollGeneratedDetails = collect();
+            if ($payrollGenerated) {
+                $payrollGeneratedDetails = DB::table('payroll_generated_details')
+                    ->where('payroll_generated_id', $payrollGenerated->id)
+                    ->pluck('payment_method', 'user_id');
+            }
 
             // Ambil data custom payroll items untuk periode ini
             $customItems = CustomPayrollItem::forOutlet($outletId)
@@ -245,7 +259,7 @@ class PayrollReportController extends Controller
             $userIds = $rows->pluck('user_id')->unique()->toArray();
             $allUserData = DB::table('users as u')
                 ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
-                ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
+                ->select('u.id', 'u.nik', 'u.no_rekening', 'u.tanggal_masuk', 'j.nama_jabatan as jabatan')
                 ->whereIn('u.id', $userIds)
                 ->get()
                 ->keyBy('id');
@@ -567,10 +581,49 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
+                // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll)
+                $isNewEmployee = false;
+                $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
+                if ($user->tanggal_masuk) {
+                    $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
+                    $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
+                    
+                    // Jika karyawan baru, hitung hari kerja dari tanggal masuk sampai akhir periode
+                    if ($isNewEmployee) {
+                        // Hitung hari kerja dari tanggal masuk sampai akhir periode (hitung hari kalender)
+                        $hariKerjaKaryawanBaru = $tanggalMasuk->diffInDays($endDate) + 1; // +1 untuk include tanggal masuk dan tanggal akhir
+                    }
+                }
+                
+                // Hitung gaji pokok dan tunjangan (pro rate untuk karyawan baru)
+                $gajiPokokFinal = $masterData->gaji;
+                $tunjanganFinal = $masterData->tunjangan;
+                
+                if ($isNewEmployee && $hariKerjaKaryawanBaru > 0) {
+                    // Pro rate: (gaji_pokok / 26) * hari_kerja
+                    $gajiPokokFinal = ($masterData->gaji / 26) * $hariKerjaKaryawanBaru;
+                    // Pro rate: (tunjangan / 26) * hari_kerja
+                    $tunjanganFinal = ($masterData->tunjangan / 26) * $hariKerjaKaryawanBaru;
+                    
+                    \Log::info('Karyawan baru - Pro rate calculation', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'tanggal_masuk' => $user->tanggal_masuk,
+                        'hari_kerja_karyawan_baru' => $hariKerjaKaryawanBaru,
+                        'gaji_pokok_original' => $masterData->gaji,
+                        'tunjangan_original' => $masterData->tunjangan,
+                        'gaji_pokok_pro_rate' => $gajiPokokFinal,
+                        'tunjangan_pro_rate' => $tunjanganFinal,
+                        'formula_gaji' => "({$masterData->gaji} / 26) × {$hariKerjaKaryawanBaru} = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "({$masterData->tunjangan} / 26) × {$hariKerjaKaryawanBaru} = {$tunjanganFinal}"
+                    ]);
+                }
+
                 // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+                // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $potonganAlpha = 0;
                 if ($totalAlpha > 0) {
-                    $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                    $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
                     $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
                     
                     // Debug logging untuk perhitungan potongan alpha
@@ -587,10 +640,11 @@ class PayrollReportController extends Controller
                 }
 
                 // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+                // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $potonganUnpaidLeave = 0;
                 $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
                 if ($unpaidLeaveDays > 0) {
-                    $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
+                    $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
                     $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
                     $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
                     
@@ -645,17 +699,21 @@ class PayrollReportController extends Controller
 
                 // Hitung total gaji (service charge ditambahkan sebagai earning, L&B, Deviasi, City Ledger, potongan alpha dan unpaid leave sebagai deduction)
                 // PH Bonus akan ditambahkan di gajian2, tidak dihitung di total gaji utama
-                $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
+                // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
+                $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
                 
                 $payrollDataItem = [
                     'user_id' => $user->id,
                     'nik' => $user->nik,
                     'nama_lengkap' => $user->nama_lengkap,
+                    'no_rekening' => $user->no_rekening ?? null,
+                    'tanggal_masuk' => $user->tanggal_masuk ?? null,
+                    'is_new_employee' => $isNewEmployee,
                     'jabatan' => $jabatans[$user->id_jabatan] ?? '-',
                     'divisi' => $divisions[$user->division_id] ?? '-',
                     'point' => $userPoint,
-                    'gaji_pokok' => $masterData->gaji,
-                    'tunjangan' => $masterData->tunjangan,
+                    'gaji_pokok' => round($gajiPokokFinal),
+                    'tunjangan' => round($tunjanganFinal),
                     'total_telat' => $totalTelat,
                     'total_lembur' => $totalLembur,
                     'nominal_lembur_per_jam' => $divisiNominalLembur[$user->division_id] ?? 0,
@@ -690,6 +748,7 @@ class PayrollReportController extends Controller
                     'leave_data' => $leaveData, // Simpan leave_data untuk generate payroll
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
+                    'payment_method' => $payrollGeneratedDetails->get($user->id, 'transfer'), // Default transfer jika belum di-generate
                 ];
                 
                 // Add dynamic leave data directly to payrollData item - SAMA PERSIS dengan Employee Summary
@@ -1157,7 +1216,7 @@ class PayrollReportController extends Controller
         $users = User::where('status', 'A')
             ->where('id_outlet', $outletId)
             ->orderBy('nama_lengkap')
-            ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet']);
+            ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening']);
 
         $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
         $divisions = DB::table('tbl_data_divisi')->pluck('nama_divisi', 'id');
@@ -1298,8 +1357,24 @@ class PayrollReportController extends Controller
             $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointHariKerjaCityLedger;
         }
 
+        // Cek apakah payroll sudah di-generate
+        $payrollGenerated = DB::table('payroll_generated')
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+        
+        $payrollGeneratedDetails = collect();
+        if ($payrollGenerated) {
+            $payrollGeneratedDetails = DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollGenerated->id)
+                ->get()
+                ->keyBy('user_id');
+        }
+
         // Step 4: Hitung service charge per user dan export data
-        $exportData = [];
+        $exportDataGajiAkhirBulan = [];
+        $exportDataTanggal8 = [];
         foreach ($userData as $userId => $data) {
             $user = $data['user'];
             $masterData = $data['masterData'];
@@ -1382,58 +1457,147 @@ class PayrollReportController extends Controller
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
-            // Hitung potongan telat (flat rate Rp 500 per menit)
+            // Gunakan data dari payroll_generated_details jika sudah di-generate
+            $payrollDetail = $payrollGeneratedDetails->get($userId);
+            
+            // Ambil payment method dari payroll_generated_details atau default 'transfer'
+            $paymentMethod = $payrollDetail ? ($payrollDetail->payment_method ?? 'transfer') : 'transfer';
+            
+            // Inisialisasi variabel dengan nilai default
+            $gajiPokok = $masterData->gaji;
+            $tunjangan = $masterData->tunjangan;
             $potonganTelat = 0;
             $gajiPerMenit = 500; // Flat rate Rp 500 per menit
-            if ($totalTelat > 0) {
-                $potonganTelat = $totalTelat * $gajiPerMenit;
+            $phBonus = 0;
+            $customEarnings = 0;
+            $customDeductions = 0;
+            $potonganAlpha = 0;
+            $potonganUnpaidLeave = 0;
+            $serviceChargeByPoint = 0;
+            $serviceChargeProRate = 0;
+            $serviceChargeTotal = 0;
+            
+            if ($payrollDetail) {
+                // Gunakan data dari generate payroll
+                $gajiPokok = $payrollDetail->gaji_pokok ?? $masterData->gaji;
+                $tunjangan = $payrollDetail->tunjangan ?? $masterData->tunjangan;
+                $totalTelat = $payrollDetail->total_telat ?? $totalTelat;
+                $totalLembur = $payrollDetail->total_lembur ?? $totalLembur;
+                $gajiLembur = $payrollDetail->gaji_lembur ?? $gajiLembur;
+                $uangMakan = $payrollDetail->uang_makan ?? $uangMakan;
+                $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
+                $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+                $serviceChargeTotal = $payrollDetail->service_charge ?? $serviceChargeTotal;
+                $bpjsJKN = $payrollDetail->bpjs_jkn ?? $bpjsJKN;
+                $bpjsTK = $payrollDetail->bpjs_tk ?? $bpjsTK;
+                $potonganTelat = $payrollDetail->potongan_telat ?? 0;
+                $lbTotal = $payrollDetail->lb_total ?? $lbTotal;
+                $deviasiTotal = $payrollDetail->deviasi_total ?? $deviasiTotal;
+                $cityLedgerTotal = $payrollDetail->city_ledger_total ?? $cityLedgerTotal;
+                $phBonus = $payrollDetail->ph_bonus ?? 0;
+                $hariKerja = $payrollDetail->hari_kerja ?? $hariKerja;
+                $paymentMethod = $payrollDetail->payment_method ?? 'transfer';
+                
+                // Ambil custom items dari JSON
+                if ($payrollDetail->custom_items) {
+                    $customItemsData = json_decode($payrollDetail->custom_items, true) ?? [];
+                    $customEarnings = collect($customItemsData)->where('item_type', 'earn')->sum('item_amount');
+                    $customDeductions = collect($customItemsData)->where('item_type', 'deduction')->sum('item_amount');
+                }
+                
+                // Ambil potongan alpha dan unpaid leave
+                $potonganAlpha = $payrollDetail->potongan_alpha ?? 0;
+                $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? 0;
+            } else {
+                // Hitung potongan telat (flat rate Rp 500 per menit)
+                if ($totalTelat > 0) {
+                    $potonganTelat = $totalTelat * $gajiPerMenit;
+                }
             }
-            $totalGaji = $masterData->gaji + $masterData->tunjangan + $gajiLembur + $uangMakan + $serviceChargeTotal - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal;
+            
+            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            $totalGajian1 = $gajiPokok + $tunjangan + $customEarnings - $customDeductions - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
+            
+            // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
+            $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus - $lbTotal - $deviasiTotal - $cityLedgerTotal;
 
-            $exportData[] = [
+            // Sheet 1: Gaji Akhir Bulan (Gajian 1)
+            $exportDataGajiAkhirBulan[] = [
                 'NIK' => $user->nik,
                 'Nama Karyawan' => $user->nama_lengkap,
+                'No. Rekening' => $user->no_rekening ?? '-',
+                'Payment Method' => ucfirst($paymentMethod),
                 'Jabatan' => $jabatans[$user->id_jabatan] ?? '-',
                 'Divisi' => $divisions[$user->division_id] ?? '-',
-                'Gaji Pokok' => $masterData->gaji,
-                'Tunjangan' => $masterData->tunjangan,
-                'Total Menit Telat' => $totalTelat,
-                'Total Jam Lembur' => $totalLembur,
-                'Gaji Lembur' => round($gajiLembur),
-                'Nominal Uang Makan/Hari' => DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nominal_uang_makan') ?? 0,
-                'Uang Makan' => round($uangMakan),
-                'Service Charge By Point' => round($serviceChargeByPointAmount),
-                'Service Charge Pro Rate' => round($serviceChargeProRateAmount),
-                'Service Charge Total' => round($serviceChargeTotal),
-                'BPJS JKN' => round($bpjsJKN),
-                'BPJS TK' => round($bpjsTK),
-                'Gaji per Menit' => round($gajiPerMenit, 2),
+                'Gaji Pokok' => $gajiPokok,
+                'Tunjangan' => $tunjangan,
+                'Custom Earnings' => round($customEarnings),
+                'Custom Deductions' => round($customDeductions),
                 'Potongan Telat' => round($potonganTelat),
-                'Total Gaji' => round($totalGaji),
+                'Potongan Alpha' => round($potonganAlpha),
+                'Potongan Unpaid Leave' => round($potonganUnpaidLeave),
+                'Total Gaji Akhir Bulan' => round($totalGajian1),
                 'Hari Kerja' => $hariKerja,
+                'Periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
+            ];
+
+            // Sheet 2: Tanggal 8 (Gajian 2)
+            $exportDataTanggal8[] = [
+                'NIK' => $user->nik,
+                'Nama Karyawan' => $user->nama_lengkap,
+                'No. Rekening' => $user->no_rekening ?? '-',
+                'Payment Method' => ucfirst($paymentMethod),
+                'Jabatan' => $jabatans[$user->id_jabatan] ?? '-',
+                'Divisi' => $divisions[$user->division_id] ?? '-',
+                'Service Charge' => round($serviceChargeTotal),
+                'Uang Makan' => round($uangMakan),
+                'Gaji Lembur' => round($gajiLembur),
+                'PH Bonus' => round($phBonus),
+                'L & B' => round($lbTotal),
+                'Deviasi' => round($deviasiTotal),
+                'City Ledger' => round($cityLedgerTotal),
+                'Total Gaji Tanggal 8' => round($totalGajian2),
                 'Periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
             ];
         }
 
-        // Generate Excel file
+        // Generate Excel file dengan 2 sheet
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Sheet 1: Gaji Akhir Bulan
+        $sheet1 = $spreadsheet->getActiveSheet();
+        $sheet1->setTitle('Gaji Akhir Bulan');
+        $sheet1->setCellValue('A1', 'LAPORAN PAYROLL - GAJI AKHIR BULAN');
+        $sheet1->setCellValue('A2', 'Outlet: ' . $outletName);
+        $sheet1->setCellValue('A3', 'Periode: ' . $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'));
 
-        // Set title
-        $sheet->setCellValue('A1', 'LAPORAN PAYROLL');
-        $sheet->setCellValue('A2', 'Outlet: ' . $outletName);
-        $sheet->setCellValue('A3', 'Periode: ' . $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'));
+        if (!empty($exportDataGajiAkhirBulan)) {
+            $headers1 = array_keys($exportDataGajiAkhirBulan[0]);
+            $sheet1->fromArray($headers1, null, 'A5');
+            $sheet1->fromArray($exportDataGajiAkhirBulan, null, 'A6');
+        }
 
-        // Set headers
-        $headers = array_keys($exportData[0] ?? []);
-        $sheet->fromArray($headers, null, 'A5');
+        // Auto size columns untuk sheet 1
+        foreach (range('A', 'S') as $col) {
+            $sheet1->getColumnDimension($col)->setAutoSize(true);
+        }
 
-        // Set data
-        $sheet->fromArray($exportData, null, 'A6');
+        // Sheet 2: Tanggal 8 (PH Bonus) - selalu dibuat
+        $sheet2 = $spreadsheet->createSheet();
+        $sheet2->setTitle('Tanggal 8');
+        $sheet2->setCellValue('A1', 'LAPORAN PAYROLL - TANGGAL 8 (PH BONUS)');
+        $sheet2->setCellValue('A2', 'Outlet: ' . $outletName);
+        $sheet2->setCellValue('A3', 'Periode: ' . $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'));
 
-        // Auto size columns
-        foreach (range('A', 'N') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        if (!empty($exportDataTanggal8)) {
+            $headers2 = array_keys($exportDataTanggal8[0]);
+            $sheet2->fromArray($headers2, null, 'A5');
+            $sheet2->fromArray($exportDataTanggal8, null, 'A6');
+        }
+
+        // Auto size columns untuk sheet 2
+        foreach (range('A', 'H') as $col) {
+            $sheet2->getColumnDimension($col)->setAutoSize(true);
         }
 
         // Download response
@@ -2660,6 +2824,7 @@ class PayrollReportController extends Controller
                     'periode' => $item['periode'] ?? null,
                     'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
                     'leave_data' => isset($item['leave_data']) ? json_encode($item['leave_data']) : (isset($item['izin_cuti_breakdown']) ? json_encode($item['izin_cuti_breakdown']) : null),
+                    'payment_method' => $item['payment_method'] ?? 'transfer', // Use payment_method from item or default to transfer
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -2781,6 +2946,7 @@ class PayrollReportController extends Controller
                     'periode' => $item['periode'] ?? null,
                     'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
                     'leave_data' => isset($item['leave_data']) ? json_encode($item['leave_data']) : (isset($item['izin_cuti_breakdown']) ? json_encode($item['izin_cuti_breakdown']) : null),
+                    'payment_method' => $item['payment_method'] ?? 'transfer', // Use existing payment_method or default to transfer
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -2798,6 +2964,60 @@ class PayrollReportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal update payroll: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Update Payment Method
+    public function updatePaymentMethod(Request $request)
+    {
+        $request->validate([
+            'payroll_id' => 'required|integer',
+            'user_id' => 'required|integer',
+            'payment_method' => 'required|in:transfer,cash',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $payrollId = $request->payroll_id;
+            $userId = $request->user_id;
+            $paymentMethod = $request->payment_method;
+
+            // Cek apakah payroll detail ada
+            $payrollDetail = DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollId)
+                ->where('user_id', $userId)
+                ->first();
+
+            if (!$payrollDetail) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payroll detail tidak ditemukan'
+                ], 404);
+            }
+
+            // Update payment_method
+            DB::table('payroll_generated_details')
+                ->where('payroll_generated_id', $payrollId)
+                ->where('user_id', $userId)
+                ->update([
+                    'payment_method' => $paymentMethod,
+                    'updated_at' => now(),
+                ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment method berhasil di-update'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error updating payment method: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update payment method: ' . $e->getMessage()
             ], 500);
         }
     }

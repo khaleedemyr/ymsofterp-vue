@@ -1454,9 +1454,13 @@ async function selectRetailNonFood(rnf) {
   // Load Retail Non Food items
   loadingPOItems.value = true;
   try {
+    console.log('Loading Retail Non Food items for ID:', rnf.id);
     const response = await axios.get(`/non-food-payments/retail-non-food-items/${rnf.id}`);
+    console.log('Response received:', response.data);
+    console.log('Attachments in response:', response.data.retail_non_food_attachments);
     itemsByOutlet.value = response.data.items_by_outlet || {};
     retailNonFoodAttachments.value = response.data.retail_non_food_attachments || [];
+    console.log('retailNonFoodAttachments.value set to:', retailNonFoodAttachments.value);
     prAttachments.value = [];
     poAttachments.value = [];
     
