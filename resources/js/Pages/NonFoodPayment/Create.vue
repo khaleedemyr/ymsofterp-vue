@@ -258,7 +258,7 @@
           </div>
 
           <!-- Attachments Section -->
-          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
+          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0) || (retailNonFoodAttachments && retailNonFoodAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Attachments</h3>
             
             <!-- PO Attachments -->
@@ -350,6 +350,56 @@
                         :href="`/purchase-requisitions/attachments/${attachment.id}/download`" 
                         target="_blank" 
                         class="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        <i class="fa fa-download"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Retail Non Food Attachments -->
+            <div v-if="selectedRetailNonFood && retailNonFoodAttachments && retailNonFoodAttachments.length > 0" class="mb-6">
+              <h4 class="text-md font-medium text-gray-700 mb-3">Retail Non Food Attachments</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div v-for="attachment in retailNonFoodAttachments" :key="`rnf-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
+                  <!-- Image Thumbnail -->
+                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(`/storage/${attachment.file_path}`, attachment.file_name)">
+                    <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
+                      <img
+                        :src="`/storage/${attachment.file_path}`"
+                        :alt="attachment.file_name"
+                        class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                        @click.stop="openLightbox(`/storage/${attachment.file_path}`, attachment.file_name)"
+                      />
+                    </div>
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
+                      <div class="opacity-0 group-hover:opacity-100 bg-white bg-opacity-90 text-gray-800 px-3 py-1 rounded-full text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fas fa-search-plus"></i>
+                        <span>View</span>
+                      </div>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
+                      <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Non-Image Files -->
+                  <div v-else class="flex items-center gap-3">
+                    <div class="flex-shrink-0">
+                      <i class="fa fa-file text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
+                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
+                    </div>
+                    <div class="flex-shrink-0">
+                      <a 
+                        :href="`/storage/${attachment.file_path}`" 
+                        target="_blank" 
+                        class="text-blue-600 hover:text-blue-800 text-sm"
+                        download
                       >
                         <i class="fa fa-download"></i>
                       </a>
@@ -1056,6 +1106,7 @@ const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
 const poAttachments = ref([]);
 const prAttachments = ref([]);
+const retailNonFoodAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 const originalAmount = ref(null);
@@ -1197,6 +1248,7 @@ function resetSelection() {
   itemsByOutlet.value = {};
   poAttachments.value = [];
   prAttachments.value = [];
+  retailNonFoodAttachments.value = [];
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
   form.retail_non_food_id = null;
@@ -1258,6 +1310,7 @@ async function selectPO(po) {
     itemsByOutlet.value = response.data.items_by_outlet || {};
     poAttachments.value = response.data.po_attachments || [];
     prAttachments.value = [];
+    retailNonFoodAttachments.value = [];
     
     // Update PO with discount info from API
     if (response.data.po_discount_info) {
@@ -1356,6 +1409,7 @@ async function selectPR(pr) {
     itemsByOutlet.value = response.data.items_by_outlet || {};
     prAttachments.value = response.data.pr_attachments || [];
     poAttachments.value = [];
+    retailNonFoodAttachments.value = [];
     
     // Update amount with total from API if available, and save as original
     if (response.data.total_amount) {
@@ -1402,7 +1456,8 @@ async function selectRetailNonFood(rnf) {
   try {
     const response = await axios.get(`/non-food-payments/retail-non-food-items/${rnf.id}`);
     itemsByOutlet.value = response.data.items_by_outlet || {};
-    prAttachments.value = response.data.retail_non_food_attachments || [];
+    retailNonFoodAttachments.value = response.data.retail_non_food_attachments || [];
+    prAttachments.value = [];
     poAttachments.value = [];
     
     // Update amount with total from API if available, and save as original
