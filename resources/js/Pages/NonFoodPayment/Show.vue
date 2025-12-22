@@ -569,6 +569,10 @@ const lightboxVisible = ref(false);
 const paymentInfo = ref(null);
 const loadingPaymentInfo = ref(false);
 
+// Debug: Log retail non food attachments
+console.log('Retail Non Food Attachments:', props.retail_non_food_attachments);
+console.log('Payment Retail Non Food ID:', props.payment?.retail_non_food_id);
+
 function formatDate(date) {
   if (!date) return '-';
   const d = new Date(date);

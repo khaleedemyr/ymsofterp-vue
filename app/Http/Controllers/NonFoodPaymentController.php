@@ -325,6 +325,7 @@ class NonFoodPaymentController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
             ->where('rnf.payment_method', 'contra_bon')
             ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
             ->select(
                 'rnf.id',
                 'rnf.retail_number',
@@ -717,6 +718,7 @@ class NonFoodPaymentController extends Controller
                 ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
                 ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
                 ->where('rnf.id', $retailNonFoodId)
+                ->whereNull('rnf.deleted_at')
                 ->select(
                     'rnf.*',
                     's.name as supplier_name',
@@ -1354,13 +1356,25 @@ class NonFoodPaymentController extends Controller
                         ];
                     })
                     ->toArray();
+                
+                \Log::info('Retail Non Food Attachments fetched', [
+                    'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+                    'count' => count($retailNonFoodAttachments),
+                    'attachments' => $retailNonFoodAttachments
+                ]);
             } catch (\Exception $e) {
                 // Table might not exist, continue without attachments
                 \Log::error('Error fetching retail non food attachments', [
                     'error' => $e->getMessage(),
-                    'retail_non_food_id' => $nonFoodPayment->retail_non_food_id
+                    'retail_non_food_id' => $nonFoodPayment->retail_non_food_id,
+                    'trace' => $e->getTraceAsString()
                 ]);
             }
+        } else {
+            \Log::info('No retail_non_food_id found in payment', [
+                'payment_id' => $nonFoodPayment->id,
+                'retail_non_food_id' => $nonFoodPayment->retail_non_food_id
+            ]);
         }
 
         return Inertia::render('NonFoodPayment/Show', [
