@@ -350,6 +350,7 @@ function typeLabel(type) {
   if (type === 'non_commodity') return 'Non Commodity';
   if (type === 'guest_supplies') return 'Guest Supplies';
   if (type === 'wrong_maker') return 'Wrong Maker';
+  if (type === 'training') return 'Training';
   return type;
 }
 function goBack() {

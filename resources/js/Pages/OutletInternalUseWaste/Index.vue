@@ -60,6 +60,7 @@
               <option value="non_commodity">Non Commodity</option>
               <option value="guest_supplies">Guest Supplies</option>
               <option value="wrong_maker">Wrong Maker</option>
+              <option value="training">Training</option>
             </select>
           </div>
         </div>
@@ -378,6 +379,7 @@ function typeLabel(type) {
   if (type === 'non_commodity') return 'Non Commodity';
   if (type === 'guest_supplies') return 'Guest Supplies';
   if (type === 'wrong_maker') return 'Wrong Maker';
+  if (type === 'training') return 'Training';
   return type;
 }
 

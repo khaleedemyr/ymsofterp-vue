@@ -169,7 +169,7 @@ class OutletInternalUseWasteController extends Controller
             $itemsMin = $request->input('autosave') ? 'min:0' : 'min:1';
             
             $request->validate([
-                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker',
+                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -618,7 +618,7 @@ class OutletInternalUseWasteController extends Controller
             DB::beginTransaction();
             
             // Determine if approval is required based on type
-            $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker'];
+            $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
             $requiresApproval = in_array($header->type, $typesRequiringApproval);
             
             // Determine new status
@@ -972,7 +972,7 @@ class OutletInternalUseWasteController extends Controller
         
         try {
             $request->validate([
-                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker',
+                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -998,7 +998,7 @@ class OutletInternalUseWasteController extends Controller
             $finalNumber = 'CIU-' . $date . '-' . $random;
             
             // Determine status based on type
-            $requiresApproval = in_array($request->type, ['r_and_d', 'marketing', 'wrong_maker']);
+            $requiresApproval = in_array($request->type, ['r_and_d', 'marketing', 'wrong_maker', 'training']);
             $newStatus = $requiresApproval ? 'SUBMITTED' : 'PROCESSED';
             
             // Create header with final status directly
@@ -1695,6 +1695,7 @@ class OutletInternalUseWasteController extends Controller
                 ['value' => 'marketing', 'label' => 'Marketing'],
                 ['value' => 'non_commodity', 'label' => 'Non Commodity'],
                 ['value' => 'guest_supplies', 'label' => 'Guest Supplies'],
+                ['value' => 'training', 'label' => 'Training'],
             ];
             
             // Filter warehouse outlets based on user outlet

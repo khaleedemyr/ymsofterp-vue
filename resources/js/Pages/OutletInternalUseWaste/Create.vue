@@ -19,6 +19,7 @@
                 <option value="non_commodity">Non Commodity</option>
                 <option value="guest_supplies">Guest Supplies</option>
                 <option value="wrong_maker">Wrong Maker</option>
+                <option value="training">Training</option>
               </select>
             </div>
             <div>
@@ -179,8 +180,8 @@
             <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Catatan tambahan"></textarea>
           </div>
 
-          <!-- Approval Flow Section (Only for r_and_d, marketing, wrong_maker) -->
-          <div v-if="form.type === 'r_and_d' || form.type === 'marketing' || form.type === 'wrong_maker'" class="mb-6">
+          <!-- Approval Flow Section (Only for r_and_d, marketing, wrong_maker, training) -->
+          <div v-if="form.type === 'r_and_d' || form.type === 'marketing' || form.type === 'wrong_maker' || form.type === 'training'" class="mb-6">
             <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow</h3>
             <p class="text-sm text-gray-600 mb-4">Tambahkan approver dalam urutan dari level terendah ke tertinggi. Approver pertama akan menjadi level terendah, dan approver terakhir akan menjadi level tertinggi.</p>
             
@@ -878,8 +879,8 @@ async function submit() {
   
   try {
     // Validation: check if approval required and approvers are set
-    // Only r_and_d, marketing, and wrong_maker require approval
-    const requiresApproval = form.value.type === 'r_and_d' || form.value.type === 'marketing' || form.value.type === 'wrong_maker'
+    // Only r_and_d, marketing, wrong_maker, and training require approval
+    const requiresApproval = form.value.type === 'r_and_d' || form.value.type === 'marketing' || form.value.type === 'wrong_maker' || form.value.type === 'training'
     if (requiresApproval && (!form.value.approvers || form.value.approvers.length === 0)) {
       Swal.fire({
         icon: 'error',
