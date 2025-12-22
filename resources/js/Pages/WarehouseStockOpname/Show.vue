@@ -304,6 +304,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   stockOpname: Object,
@@ -390,7 +391,12 @@ async function submitForApproval() {
     : (props.stockOpname.approvers || []).map(a => a.id || a);
 
   if (approvers.length === 0) {
-    alert('Pilih minimal 1 approver.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Pilih minimal 1 approver.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 
@@ -404,7 +410,12 @@ async function submitForApproval() {
     router.reload();
   } catch (error) {
     console.error('Error submitting:', error);
-    alert('Gagal submit untuk approval. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal submit untuk approval. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   } finally {
     submitting.value = false;
   }
@@ -412,7 +423,12 @@ async function submitForApproval() {
 
 async function approveStockOpname(action) {
   if (action === 'reject' && !rejectComments.value) {
-    alert('Alasan reject wajib diisi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Alasan reject wajib diisi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 
@@ -430,14 +446,30 @@ async function approveStockOpname(action) {
     router.reload();
   } catch (error) {
     console.error('Error approving:', error);
-    alert('Gagal proses approval. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal proses approval. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   } finally {
     approving.value = false;
   }
 }
 
 async function processStockOpname() {
-  if (!confirm('Yakin ingin process stock opname ini? Inventory akan di-update.')) {
+  const result = await Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Yakin ingin process stock opname ini? Inventory akan di-update.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Ya, Process',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) {
     return;
   }
 
@@ -447,7 +479,12 @@ async function processStockOpname() {
     router.reload();
   } catch (error) {
     console.error('Error processing:', error);
-    alert('Gagal process stock opname. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal process stock opname. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   } finally {
     processing.value = false;
   }
@@ -460,11 +497,27 @@ async function submitForApprovalDirect() {
     : [];
 
   if (approvers.length === 0) {
-    alert('Tidak ada approvers. Silakan edit stock opname dan tambahkan approvers terlebih dahulu, atau gunakan tombol "Submit dengan Approvers Baru".');
+    Swal.fire({
+      title: 'Error',
+      text: 'Tidak ada approvers. Silakan edit stock opname dan tambahkan approvers terlebih dahulu, atau gunakan tombol "Submit dengan Approvers Baru".',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 
-  if (!confirm('Yakin ingin submit stock opname untuk approval?')) {
+  const result = await Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Yakin ingin submit stock opname untuk approval?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    confirmButtonText: 'Ya, Submit',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) {
     return;
   }
 
@@ -477,14 +530,30 @@ async function submitForApprovalDirect() {
     router.reload();
   } catch (error) {
     console.error('Error submitting:', error);
-    alert('Gagal submit untuk approval. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal submit untuk approval. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   } finally {
     submitting.value = false;
   }
 }
 
 async function deleteStockOpname() {
-  if (!confirm('Yakin ingin menghapus stock opname ini?')) {
+  const result = await Swal.fire({
+    title: 'Konfirmasi',
+    text: 'Yakin ingin menghapus stock opname ini?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!result.isConfirmed) {
     return;
   }
 
@@ -493,7 +562,12 @@ async function deleteStockOpname() {
     router.visit(route('warehouse-stock-opnames.index'));
   } catch (error) {
     console.error('Error deleting:', error);
-    alert('Gagal menghapus stock opname. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal menghapus stock opname. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   }
 }
 </script>

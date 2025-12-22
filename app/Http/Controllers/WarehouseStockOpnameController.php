@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\WarehouseStockOpname;
 use App\Models\WarehouseStockOpnameItem;
 use App\Models\WarehouseStockOpnameApprovalFlow;
+use App\Models\WarehouseStockOpnameAdjustment;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -544,6 +545,7 @@ class WarehouseStockOpnameController extends Controller
                 'warehouse_division_id' => $validated['warehouse_division_id'] ?? null,
                 'opname_date' => $validated['opname_date'],
                 'notes' => $validated['notes'] ?? null,
+                'updated_by' => $user->id,
             ]);
 
             // Delete existing items
@@ -1008,6 +1010,24 @@ class WarehouseStockOpnameController extends Controller
                     'mac' => $mac,
                     'created_at' => now(),
                     'updated_at' => now(),
+                ]);
+
+                // Insert adjustment record to new table
+                WarehouseStockOpnameAdjustment::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'stock_opname_item_id' => $item->id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'warehouse_division_id' => $stockOpname->warehouse_division_id,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $item->reason,
+                    'mac_before' => $item->mac_before,
+                    'mac_after' => $item->mac_after,
+                    'value_adjustment' => $valueAdjustment,
+                    'processed_at' => now(),
+                    'processed_by' => $user->id,
                 ]);
             }
 

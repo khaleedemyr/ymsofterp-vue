@@ -14,6 +14,25 @@
       </div>
 
       <form @submit.prevent="submitForm" class="bg-white rounded-xl shadow-lg p-6">
+        <!-- Autosave Status -->
+        <div class="mb-4 flex items-center justify-end gap-2 text-sm">
+          <span v-if="autosaveStatus === 'saving'" class="text-blue-600 flex items-center gap-1">
+            <i class="fas fa-spinner fa-spin"></i>
+            Menyimpan...
+          </span>
+          <span v-else-if="autosaveStatus === 'saved'" class="text-green-600 flex items-center gap-1">
+            <i class="fas fa-check-circle"></i>
+            Tersimpan
+            <span v-if="lastSavedAt" class="text-xs text-gray-500">
+              ({{ new Date(lastSavedAt).toLocaleTimeString('id-ID') }})
+            </span>
+          </span>
+          <span v-else-if="autosaveStatus === 'error'" class="text-red-600 flex items-center gap-1">
+            <i class="fas fa-exclamation-circle"></i>
+            Gagal menyimpan
+          </span>
+        </div>
+
         <!-- Basic Information -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
@@ -154,15 +173,6 @@
         <div v-if="form.items.length > 0" class="mb-6">
           <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-semibold text-gray-800">Items ({{ form.items.length }})</h3>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                @click="autoFillAll"
-                class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
-              >
-                <i class="fa-solid fa-equals mr-2"></i> Auto Fill Semua (=)
-              </button>
-            </div>
           </div>
 
           <div class="overflow-x-auto">
@@ -170,9 +180,6 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Item</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Small</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Medium</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Large</th>
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Small
                   </th>
@@ -186,7 +193,6 @@
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Subtotal<br/>(Qty × MAC)</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-48">Selisih</th>
                   <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Alasan</th>
-                  <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-20">Action</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
@@ -196,7 +202,7 @@
                     class="bg-blue-50 hover:bg-blue-100 cursor-pointer transition"
                     @click="toggleCategory(categoryName)"
                   >
-                    <td class="px-4 py-3 font-bold text-gray-800" colspan="12">
+                    <td class="px-4 py-3 font-bold text-gray-800" colspan="8">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <i 
@@ -227,28 +233,15 @@
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">
                       <div class="font-semibold pl-6">{{ item.item_name }}</div>
                     </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_small) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.small_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_medium) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.medium_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_large) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.large_unit_name }}</div>
-                    </td>
                     <td class="px-3 py-3">
                       <div class="flex items-center gap-2">
                         <input
                           v-model.number="item.qty_physical_small"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'small')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_small)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.small_unit_name || '-' }}</span>
                       </div>
@@ -258,11 +251,10 @@
                         <input
                           v-model.number="item.qty_physical_medium"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'medium')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_medium)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.medium_unit_name || '-' }}</span>
                       </div>
@@ -272,11 +264,10 @@
                         <input
                           v-model.number="item.qty_physical_large"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'large')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_large)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
                       </div>
@@ -285,18 +276,16 @@
                       <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
                     </td>
                     <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-semibold">{{ formatCurrency(getSubtotal(item)) }}</div>
+                      <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
                     </td>
                     <td class="px-3 py-3 text-center text-sm">
-                      <div v-if="hasDifference(item)" class="space-y-1">
-                        <div
-                          v-for="(diff, idx) in getDifferenceArray(item)"
-                          :key="idx"
+                      <div v-if="hasDifference(item)">
+                        <span
                           :class="getDifferenceClass(item)"
                           class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
                         >
-                          {{ diff }}
-                        </div>
+                          {{ getDifferenceSign(item) }}
+                        </span>
                       </div>
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
@@ -310,28 +299,18 @@
                       />
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
-                    <td class="px-3 py-3 text-center">
-                      <button
-                        type="button"
-                        @click="autoFillItem(item)"
-                        class="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors shadow-sm hover:shadow-md"
-                        title="Auto fill dengan qty system"
-                      >
-                        <i class="fa-solid fa-equals"></i>
-                      </button>
-                    </td>
                   </tr>
                 </template>
               </tbody>
               <tfoot class="bg-gray-100 border-t-2 border-gray-400">
                 <tr>
-                  <td class="px-4 py-4 text-right font-bold text-gray-900" colspan="8">
+                  <td class="px-4 py-4 text-right font-bold text-gray-900" colspan="5">
                     GRAND TOTAL
                   </td>
                   <td class="px-3 py-4 text-right font-bold text-gray-900 text-lg">
-                    {{ formatCurrency(grandTotal) }}
+                    {{ formatNumber(grandTotal) }}
                   </td>
-                  <td class="px-3 py-4" colspan="3"></td>
+                  <td class="px-3 py-4" colspan="2"></td>
                 </tr>
               </tfoot>
             </table>
@@ -379,6 +358,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   warehouses: Array,
@@ -403,6 +383,13 @@ const expandedCategories = ref(new Set());
 const approverSearch = ref('');
 const approverResults = ref([]);
 const showApproverDropdown = ref(false);
+const approverSearchTimeout = ref(null);
+
+// Autosave
+const draftId = ref(null);
+const autosaveStatus = ref('idle'); // idle, saving, saved, error
+const autosaveTimeout = ref(null);
+const lastSavedAt = ref(null);
 
 // Group items by category
 const groupedItems = computed(() => {
@@ -420,7 +407,11 @@ const groupedItems = computed(() => {
 // Calculate subtotal for an item (qty_physical_small * mac)
 function getSubtotal(item) {
   if (!item) return 0;
-  const qtyPhysical = item.qty_physical_small ?? item.qty_system_small ?? 0;
+  // Return 0 if qty_physical_small is not filled (null/undefined/empty)
+  if (item.qty_physical_small === null || item.qty_physical_small === undefined || item.qty_physical_small === '') {
+    return 0;
+  }
+  const qtyPhysical = parseFloat(item.qty_physical_small) || 0;
   const mac = parseFloat(item.mac) || 0;
   return qtyPhysical * mac;
 }
@@ -485,7 +476,12 @@ async function loadItems() {
     // Check if response.data is an array
     if (!Array.isArray(response.data)) {
       console.error('Response is not an array:', response.data);
-      alert('Format data tidak valid. Silakan coba lagi.');
+      Swal.fire({
+        title: 'Error',
+        text: 'Format data tidak valid. Silakan coba lagi.',
+        icon: 'error',
+        confirmButtonColor: '#3085d6'
+      });
       return;
     }
 
@@ -525,26 +521,18 @@ async function loadItems() {
       errorMessage = 'Tidak ada response dari server. Silakan cek koneksi internet.';
     }
     
-    alert(errorMessage);
+    Swal.fire({
+      title: 'Error',
+      text: errorMessage,
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     form.items = [];
   } finally {
     loadingItems.value = false;
   }
 }
 
-function autoFillItem(item) {
-  item.qty_physical_small = item.qty_system_small;
-  item.qty_physical_medium = item.qty_system_medium;
-  item.qty_physical_large = item.qty_system_large;
-  item.reason = '';
-  calculateDifference(item);
-}
-
-function autoFillAll() {
-  form.items.forEach(item => {
-    autoFillItem(item);
-  });
-}
 
 function onQtyPhysicalChange(item, changedUnit) {
   const value = item[`qty_physical_${changedUnit}`];
@@ -629,6 +617,19 @@ function hasDifference(item) {
   return diffSmall !== 0 || diffMedium !== 0 || diffLarge !== 0;
 }
 
+function formatDifference(item) {
+  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
+  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
+  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
+  
+  const parts = [];
+  if (diffSmall !== 0) parts.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
+  if (diffMedium !== 0) parts.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
+  if (diffLarge !== 0) parts.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
+  
+  return parts.join(', ') || '0';
+}
+
 function getDifferenceArray(item) {
   const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
   const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
@@ -646,6 +647,13 @@ function getDifferenceArray(item) {
   }
   
   return diffs.length > 0 ? diffs : ['0'];
+}
+
+function getDifferenceSign(item) {
+  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
+  if (diffSmall > 0) return '+';
+  if (diffSmall < 0) return '-';
+  return '0';
 }
 
 function getDifferenceClass(item) {
@@ -681,23 +689,36 @@ async function loadApprovers(search = '') {
       }
     });
     
-    if (response.data.success) {
-      approverResults.value = response.data.users;
-      showApproverDropdown.value = true;
+    console.log('Approvers response:', response.data);
+    
+    if (response.data && response.data.success) {
+      approverResults.value = response.data.users || [];
+      showApproverDropdown.value = approverResults.value.length > 0;
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
     }
   } catch (error) {
     console.error('Failed to load approvers:', error);
     approverResults.value = [];
+    showApproverDropdown.value = false;
   }
 }
 
 function onApproverSearch() {
-  if (approverSearch.value.length >= 2) {
-    loadApprovers(approverSearch.value);
-  } else {
-    approverResults.value = [];
-    showApproverDropdown.value = false;
+  // Debounce search to avoid too many API calls
+  if (approverSearchTimeout.value) {
+    clearTimeout(approverSearchTimeout.value);
   }
+  
+  approverSearchTimeout.value = setTimeout(() => {
+    if (approverSearch.value.length >= 2) {
+      loadApprovers(approverSearch.value);
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
+    }
+  }, 300);
 }
 
 function addApprover(user) {
@@ -708,6 +729,7 @@ function addApprover(user) {
   // Check if user already exists
   if (!form.approvers.find(approver => approver && approver.id === user.id)) {
     form.approvers.push(user);
+    triggerAutosave();
   }
   approverSearch.value = '';
   showApproverDropdown.value = false;
@@ -715,38 +737,225 @@ function addApprover(user) {
 
 function removeApprover(index) {
   form.approvers.splice(index, 1);
+  triggerAutosave();
 }
 
 function reorderApprover(fromIndex, toIndex) {
   const approver = form.approvers.splice(fromIndex, 1)[0];
   form.approvers.splice(toIndex, 0, approver);
+  triggerAutosave();
+}
+
+// Autosave function
+async function autosave() {
+  // Skip autosave if form is not valid enough (at least warehouse must be selected)
+  if (!form.warehouse_id) {
+    return;
+  }
+
+  // Skip if already submitting
+  if (submitting.value) {
+    return;
+  }
+
+  autosaveStatus.value = 'saving';
+
+  try {
+    // Only autosave items that have been explicitly filled (not null/undefined)
+    // This prevents overwriting user input with system qty
+    const itemsToSave = form.items.map(item => {
+      const itemData = {
+        inventory_item_id: item.inventory_item_id,
+        reason: item.reason || '',
+      };
+      
+      // Only include qty_physical if it's been explicitly set (not null/undefined)
+      // This way, backend won't overwrite with system qty
+      if (item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '') {
+        itemData.qty_physical_small = parseFloat(item.qty_physical_small);
+      }
+      if (item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '') {
+        itemData.qty_physical_medium = parseFloat(item.qty_physical_medium);
+      }
+      if (item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '') {
+        itemData.qty_physical_large = parseFloat(item.qty_physical_large);
+      }
+      
+      return itemData;
+    });
+
+    // Prepare approvers array (only IDs)
+    const approversIds = form.approvers
+      .filter(approver => approver && approver.id)
+      .map(approver => approver.id);
+
+    const formData = {
+      warehouse_id: form.warehouse_id,
+      warehouse_division_id: form.warehouse_division_id,
+      opname_date: form.opname_date,
+      notes: form.notes,
+      items: itemsToSave,
+      approvers: approversIds,
+      autosave: true,
+    };
+
+    let response;
+    if (draftId.value) {
+      // Update existing draft
+      response = await axios.put(route('warehouse-stock-opnames.update', draftId.value), formData);
+    } else {
+      // Create new draft
+      response = await axios.post(route('warehouse-stock-opnames.store'), formData);
+    }
+
+    if (response.data.success) {
+      if (response.data.id && !draftId.value) {
+        draftId.value = response.data.id;
+      }
+      autosaveStatus.value = 'saved';
+      lastSavedAt.value = new Date();
+      
+      // Clear saved status after 3 seconds
+      setTimeout(() => {
+        if (autosaveStatus.value === 'saved') {
+          autosaveStatus.value = 'idle';
+        }
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Autosave error:', error);
+    autosaveStatus.value = 'error';
+    
+    // Clear error status after 5 seconds
+    setTimeout(() => {
+      if (autosaveStatus.value === 'error') {
+        autosaveStatus.value = 'idle';
+      }
+    }, 5000);
+  }
+}
+
+// Debounced autosave
+function triggerAutosave() {
+  // Clear existing timeout
+  if (autosaveTimeout.value) {
+    clearTimeout(autosaveTimeout.value);
+  }
+
+  // Set new timeout (2 seconds after last change)
+  autosaveTimeout.value = setTimeout(() => {
+    autosave();
+  }, 2000);
 }
 
 function submitForm() {
   if (form.items.length === 0) {
-    alert('Minimal harus ada 1 item.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Minimal harus ada 1 item.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 
+  // Ensure all items have correct data structure
+  const itemsToSubmit = form.items.map(item => {
+    const processedItem = {
+      inventory_item_id: item.inventory_item_id,
+      qty_physical_small: item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '' 
+        ? parseFloat(item.qty_physical_small) 
+        : null,
+      qty_physical_medium: item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '' 
+        ? parseFloat(item.qty_physical_medium) 
+        : null,
+      qty_physical_large: item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '' 
+        ? parseFloat(item.qty_physical_large) 
+        : null,
+      reason: item.reason || '',
+    };
+    
+    // Log for debugging
+    console.log('Item before processing:', {
+      inventory_item_id: item.inventory_item_id,
+      qty_physical_small_raw: item.qty_physical_small,
+      qty_physical_medium_raw: item.qty_physical_medium,
+      qty_physical_large_raw: item.qty_physical_large,
+      qty_system_small: item.qty_system_small,
+      qty_system_medium: item.qty_system_medium,
+      qty_system_large: item.qty_system_large,
+    });
+    console.log('Item after processing:', processedItem);
+    
+    return processedItem;
+  });
+
+  // Log for debugging
+  console.log('All items to submit:', itemsToSubmit);
+
   submitting.value = true;
-  form.post(route('warehouse-stock-opnames.store'), {
+  
+  // If draft exists, use update route, otherwise use store
+  const routeName = draftId.value ? 'warehouse-stock-opnames.update' : 'warehouse-stock-opnames.store';
+  const routeParams = draftId.value ? { id: draftId.value } : {};
+  
+  // Prepare approvers array (only IDs)
+  const approversIds = form.approvers
+    .filter(approver => approver && approver.id)
+    .map(approver => approver.id);
+
+  // Create a new form with the processed items
+  const submitForm = useForm({
+    warehouse_id: form.warehouse_id,
+    warehouse_division_id: form.warehouse_division_id,
+    opname_date: form.opname_date,
+    notes: form.notes,
+    items: itemsToSubmit,
+    approvers: approversIds,
+  });
+  
+  submitForm.post(route(routeName, routeParams), {
     preserveScroll: true,
     onSuccess: () => {
       submitting.value = false;
+      // Clear draft ID after successful submit
+      draftId.value = null;
     },
     onError: (errors) => {
       submitting.value = false;
       console.error('Error:', errors);
+      Swal.fire({
+        title: 'Error',
+        text: 'Gagal menyimpan stock opname. Silakan coba lagi.',
+        icon: 'error',
+        confirmButtonColor: '#3085d6'
+      });
     },
   });
 }
 
 // Load items when warehouse or warehouse division changes
-watch(() => [form.warehouse_id, form.warehouse_division_id], () => {
-  if (form.warehouse_id) {
+watch(() => form.warehouse_division_id, () => {
+  if (form.warehouse_division_id) {
     loadItems();
   }
 });
+
+// Watch form changes for autosave (but not items to avoid overwriting user input)
+watch([
+  () => form.warehouse_id,
+  () => form.warehouse_division_id,
+  () => form.opname_date,
+  () => form.notes,
+], () => {
+  triggerAutosave();
+});
+
+// Watch items changes separately with debounce to avoid overwriting while user is typing
+watch(() => form.items, () => {
+  // Only autosave items if user has finished editing (debounced)
+  triggerAutosave();
+}, { deep: true });
 
 // Auto load items if already selected
 if (form.warehouse_id && form.items.length === 0) {

@@ -360,6 +360,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   stockOpname: Object,
@@ -463,7 +464,12 @@ async function loadItems() {
     }));
   } catch (error) {
     console.error('Error loading items:', error);
-    alert('Gagal memuat items. Silakan coba lagi.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Gagal memuat items. Silakan coba lagi.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
   } finally {
     loadingItems.value = false;
   }
@@ -656,7 +662,12 @@ function reorderApprover(fromIndex, toIndex) {
 
 function submitForm() {
   if (form.items.length === 0) {
-    alert('Minimal harus ada 1 item.');
+    Swal.fire({
+      title: 'Error',
+      text: 'Minimal harus ada 1 item.',
+      icon: 'error',
+      confirmButtonColor: '#3085d6'
+    });
     return;
   }
 

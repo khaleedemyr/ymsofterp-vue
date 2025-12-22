@@ -62,95 +62,143 @@
 
       <!-- Table -->
       <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Opname Number</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Warehouse</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Warehouse Division</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Tanggal</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Created By</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-if="stockOpnames.data.length === 0">
-              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data warehouse stock opname.</td>
-            </tr>
-            <tr
-              v-for="opname in stockOpnames.data"
-              :key="opname.id"
-              class="hover:bg-gray-50 transition"
-            >
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {{ opname.opname_number }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {{ opname.warehouse?.name || '-' }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {{ opname.warehouse_division?.name || '-' }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {{ formatDate(opname.opname_date) }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span :class="getStatusClass(opname.status)" class="px-2 py-1 rounded-full text-xs font-semibold">
-                  {{ opname.status }}
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {{ opname.creator?.nama_lengkap || '-' }}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm">
-                <div class="flex gap-2">
-                  <Link
-                    :href="route('warehouse-stock-opnames.show', opname.id)"
-                    class="text-blue-600 hover:text-blue-800 font-semibold"
-                  >
-                    View
-                  </Link>
-                  <Link
-                    v-if="opname.status === 'DRAFT'"
-                    :href="route('warehouse-stock-opnames.edit', opname.id)"
-                    class="text-green-600 hover:text-green-800 font-semibold"
-                  >
-                    Edit
-                  </Link>
-                  <button
-                    v-if="opname.status === 'DRAFT'"
-                    @click="deleteStockOpname(opname.id)"
-                    class="text-red-600 hover:text-red-800 font-semibold"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gradient-to-r from-blue-50 to-indigo-50">
+              <tr>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-hashtag mr-2 text-blue-500"></i>Opname Number
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-warehouse mr-2 text-blue-500"></i>Warehouse
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-building mr-2 text-blue-500"></i>Warehouse Division
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-calendar mr-2 text-blue-500"></i>Tanggal
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-info-circle mr-2 text-blue-500"></i>Status
+                </th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-user mr-2 text-blue-500"></i>Created By
+                </th>
+                <th class="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <i class="fa-solid fa-cog mr-2 text-blue-500"></i>Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-if="stockOpnames.data.length === 0">
+                <td colspan="7" class="text-center py-16">
+                  <div class="flex flex-col items-center justify-center">
+                    <i class="fa-solid fa-inbox text-6xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500 text-lg font-medium">Tidak ada data warehouse stock opname</p>
+                    <p class="text-gray-400 text-sm mt-2">Mulai dengan membuat warehouse stock opname baru</p>
+                  </div>
+                </td>
+              </tr>
+              <tr
+                v-for="opname in stockOpnames.data"
+                :key="opname.id"
+                class="hover:bg-blue-50 transition-colors duration-150"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-semibold text-gray-900">
+                    {{ opname.opname_number }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-700">
+                    <i class="fa-solid fa-warehouse mr-2 text-gray-400"></i>
+                    {{ opname.warehouse?.name || '-' }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-700">
+                    <i class="fa-solid fa-building mr-2 text-gray-400"></i>
+                    {{ opname.warehouse_division?.name || '-' }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-700">
+                    <i class="fa-solid fa-calendar mr-2 text-gray-400"></i>
+                    {{ formatDate(opname.opname_date) }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="getStatusClass(opname.status)" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold">
+                    <i :class="getStatusIcon(opname.status)" class="mr-1.5"></i>
+                    {{ opname.status }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-700">
+                    <i class="fa-solid fa-user mr-2 text-gray-400"></i>
+                    {{ opname.creator?.nama_lengkap || '-' }}
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center justify-center gap-2">
+                    <Link
+                      :href="route('warehouse-stock-opnames.show', opname.id)"
+                      class="inline-flex items-center px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+                      title="View Details"
+                    >
+                      <i class="fa-solid fa-eye mr-1.5"></i>
+                      View
+                    </Link>
+                    <Link
+                      v-if="opname.status === 'DRAFT'"
+                      :href="route('warehouse-stock-opnames.edit', opname.id)"
+                      class="inline-flex items-center px-3 py-1.5 bg-green-500 text-white text-xs font-semibold rounded-lg hover:bg-green-600 transition-colors shadow-sm"
+                      title="Edit"
+                    >
+                      <i class="fa-solid fa-edit mr-1.5"></i>
+                      Edit
+                    </Link>
+                    <button
+                      v-if="opname.status === 'DRAFT'"
+                      @click="deleteStockOpname(opname.id)"
+                      class="inline-flex items-center px-3 py-1.5 bg-red-500 text-white text-xs font-semibold rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                      title="Delete"
+                    >
+                      <i class="fa-solid fa-trash mr-1.5"></i>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Pagination -->
-      <div class="mt-4 flex justify-between items-center" v-if="stockOpnames.data.length > 0">
-        <div class="text-sm text-gray-600">
-          Menampilkan {{ stockOpnames.from }} - {{ stockOpnames.to }} dari {{ stockOpnames.total }} data
+      <div class="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4" v-if="stockOpnames.data.length > 0">
+        <div class="text-sm text-gray-600 bg-gray-50 px-4 py-2 rounded-lg">
+          <i class="fa-solid fa-info-circle mr-2 text-blue-500"></i>
+          Menampilkan <span class="font-semibold text-gray-900">{{ stockOpnames.from }}</span> - 
+          <span class="font-semibold text-gray-900">{{ stockOpnames.to }}</span> dari 
+          <span class="font-semibold text-gray-900">{{ stockOpnames.total }}</span> data
         </div>
         <div class="flex gap-2">
           <Link
             v-if="stockOpnames.prev_page_url"
             :href="stockOpnames.prev_page_url"
-            class="px-3 py-1 rounded border text-sm bg-white text-blue-700 hover:bg-blue-50"
+            class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-semibold text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
           >
-            &lt; Prev
+            <i class="fa-solid fa-chevron-left mr-2"></i>
+            Prev
           </Link>
           <Link
             v-if="stockOpnames.next_page_url"
             :href="stockOpnames.next_page_url"
-            class="px-3 py-1 rounded border text-sm bg-white text-blue-700 hover:bg-blue-50"
+            class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-semibold text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
           >
-            Next &gt;
+            Next
+            <i class="fa-solid fa-chevron-right ml-2"></i>
           </Link>
         </div>
       </div>
@@ -163,6 +211,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   stockOpnames: Object,
@@ -192,26 +241,78 @@ function formatDate(date) {
 
 function getStatusClass(status) {
   const classes = {
-    DRAFT: 'bg-gray-200 text-gray-800',
-    SUBMITTED: 'bg-yellow-200 text-yellow-800',
-    APPROVED: 'bg-green-200 text-green-800',
-    REJECTED: 'bg-red-200 text-red-800',
-    COMPLETED: 'bg-blue-200 text-blue-800',
+    DRAFT: 'bg-gray-100 text-gray-700 border border-gray-300',
+    SUBMITTED: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+    APPROVED: 'bg-green-100 text-green-700 border border-green-300',
+    REJECTED: 'bg-red-100 text-red-700 border border-red-300',
+    COMPLETED: 'bg-blue-100 text-blue-700 border border-blue-300',
   };
-  return classes[status] || 'bg-gray-200 text-gray-800';
+  return classes[status] || 'bg-gray-100 text-gray-700 border border-gray-300';
+}
+
+function getStatusIcon(status) {
+  const icons = {
+    DRAFT: 'fa-solid fa-file',
+    SUBMITTED: 'fa-solid fa-paper-plane',
+    APPROVED: 'fa-solid fa-check-circle',
+    REJECTED: 'fa-solid fa-times-circle',
+    COMPLETED: 'fa-solid fa-check-double',
+  };
+  return icons[status] || 'fa-solid fa-info-circle';
 }
 
 async function deleteStockOpname(id) {
-  if (!confirm('Yakin ingin menghapus stock opname ini?')) {
-    return;
-  }
+  const result = await Swal.fire({
+    title: 'Hapus Warehouse Stock Opname?',
+    text: 'Apakah Anda yakin ingin menghapus warehouse stock opname ini? Tindakan ini tidak dapat dibatalkan.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus!',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    showLoaderOnConfirm: true,
+    preConfirm: async () => {
+      try {
+        const response = await axios.delete(route('warehouse-stock-opnames.destroy', id), {
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          }
+        });
+        return response;
+      } catch (error) {
+        let errorMessage = 'Gagal menghapus warehouse stock opname';
+        if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        Swal.showValidationMessage(errorMessage);
+        return false;
+      }
+    },
+    allowOutsideClick: () => !Swal.isLoading()
+  });
 
-  try {
-    await axios.delete(route('warehouse-stock-opnames.destroy', id));
+  if (result.isConfirmed && result.value) {
+    await Swal.fire({
+      title: 'Berhasil!',
+      text: 'Warehouse stock opname berhasil dihapus.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6',
+      timer: 2000,
+      timerProgressBar: true
+    });
+    
     router.reload();
-  } catch (error) {
-    console.error('Error deleting:', error);
-    alert('Gagal menghapus stock opname. Silakan coba lagi.');
+  } else if (result.isDismissed) {
+    // User cancelled, do nothing
+  } else {
+    // Error occurred, already shown in validation message
   }
 }
 </script>
