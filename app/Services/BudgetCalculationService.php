@@ -90,7 +90,7 @@ class BudgetCalculationService
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, null, $year, $month, $dateFrom, $dateTo);
 
         // Get total PR items (all PR items for this category)
-        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month);
+        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month, $dateFrom, $dateTo);
 
         // Get total PO items (all PO items for this category - approved)
         $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
@@ -175,7 +175,7 @@ class BudgetCalculationService
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
 
         // Get total PR items (all PR items for this category/outlet)
-        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month);
+        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
 
         // Get total PO items (all PO items for this category/outlet - approved)
         $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
@@ -460,13 +460,26 @@ class BudgetCalculationService
 
     /**
      * Calculate PR Total Amount (all PR items for this category/outlet)
+     * PENTING: Gunakan filter tanggal dari pri.created_at (atau pr.created_at jika pri.created_at tidak ada)
+     * dan hitung menggunakan qty*unit_price untuk konsistensi dengan query manual
      */
-    private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month): float
+    private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month, string $dateFrom, string $dateTo): float
     {
         $query = DB::table('purchase_requisition_items as pri')
             ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-            ->whereYear('pr.created_at', $year)
-            ->whereMonth('pr.created_at', $month)
+            // Filter berdasarkan tanggal created_at dari pri (atau pr jika pri.created_at tidak ada)
+            // Gunakan date range untuk konsistensi dengan query manual
+            ->where(function($q) use ($dateFrom, $dateTo) {
+                // Jika pri.created_at ada, gunakan itu, jika tidak gunakan pr.created_at
+                $q->where(function($q2) use ($dateFrom, $dateTo) {
+                    $q2->whereNotNull('pri.created_at')
+                       ->whereBetween(DB::raw('DATE(pri.created_at)'), [$dateFrom, $dateTo]);
+                })
+                ->orWhere(function($q2) use ($dateFrom, $dateTo) {
+                    $q2->whereNull('pri.created_at')
+                       ->whereBetween(DB::raw('DATE(pr.created_at)'), [$dateFrom, $dateTo]);
+                });
+            })
             ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
             ->where('pr.is_held', false);
 
@@ -478,8 +491,10 @@ class BudgetCalculationService
             $query->where('pri.category_id', $categoryId);
         }
 
+        // Gunakan qty*unit_price untuk konsistensi dengan query manual
+        // Jika subtotal ada dan sudah benar, bisa juga gunakan subtotal, tapi untuk konsistensi gunakan qty*unit_price
         return $query->groupBy('pri.id') // Group by PR item ID to avoid duplicates
-            ->sum('pri.subtotal');
+            ->sum(DB::raw('pri.qty * pri.unit_price'));
     }
 
     /**
