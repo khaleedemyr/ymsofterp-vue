@@ -338,6 +338,24 @@ class PayrollReportController extends Controller
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
                 $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
 
+                // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
+                $isNewEmployee = false;
+                $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
+                if ($user->tanggal_masuk) {
+                    $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
+                    $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
+                    
+                    // Jika karyawan baru, hitung hari kerja dari tanggal masuk sampai akhir periode
+                    if ($isNewEmployee) {
+                        // Hitung hari kerja dari tanggal masuk sampai akhir periode (hitung hari kalender)
+                        $hariKerjaKaryawanBaru = $tanggalMasuk->diffInDays($endDate) + 1; // +1 untuk include tanggal masuk dan tanggal akhir
+                    }
+                }
+                
+                // Gunakan hari kerja yang sesuai (hariKerjaKaryawanBaru untuk karyawan baru, hariKerja untuk karyawan lama)
+                // Ini penting untuk perhitungan service charge prorate yang konsisten
+                $hariKerjaUntukServiceCharge = $isNewEmployee ? $hariKerjaKaryawanBaru : $hariKerja;
+
                 // Simpan data user untuk perhitungan service charge
                 $userData[$user->id] = [
                     'user' => $user,
@@ -345,7 +363,10 @@ class PayrollReportController extends Controller
                     'employeeRows' => $employeeRows, // Simpan employeeRows untuk digunakan nanti
                     'totalTelat' => $totalTelat,
                     'totalLembur' => $totalLembur,
-                    'hariKerja' => $hariKerja,
+                    'hariKerja' => $hariKerja, // Hari kerja aktual (jumlah hari bekerja)
+                    'hariKerjaKaryawanBaru' => $hariKerjaKaryawanBaru, // Hari kerja untuk karyawan baru
+                    'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja yang digunakan untuk service charge
+                    'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
                     'totalAlpha' => $totalAlpha,
                     'totalIzinCuti' => $totalIzinCuti,
                     'izinCutiBreakdown' => $izinCutiBreakdown,
@@ -355,13 +376,16 @@ class PayrollReportController extends Controller
             }
 
             // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
             $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
             $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
             
             foreach ($userData as $data) {
                 if ($data['masterData']->sc == 1) {
-                    $totalPointHariKerja += $data['userPoint'] * $data['hariKerja'];
-                    $totalHariKerja += $data['hariKerja'];
+                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                    $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
+                    $totalHariKerja += $hariKerjaSC;
                 }
             }
 
@@ -438,7 +462,10 @@ class PayrollReportController extends Controller
                 $employeeRows = $data['employeeRows']; // Gunakan employeeRows dari Employee Summary
                 $totalTelat = $data['totalTelat'];
                 $totalLembur = $data['totalLembur'];
-                $hariKerja = $data['hariKerja'];
+                $hariKerja = $data['hariKerja']; // Hari kerja aktual (jumlah hari bekerja)
+                $hariKerjaKaryawanBaru = $data['hariKerjaKaryawanBaru'] ?? $hariKerja; // Hari kerja untuk karyawan baru
+                $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
+                $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
                 $userPoint = $data['userPoint'];
                 $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData, default ke array kosong jika tidak ada
                 $izinCutiBreakdown = $data['izinCutiBreakdown'] ?? []; // Ambil izinCutiBreakdown dari userData, default ke array kosong jika tidak ada
@@ -555,16 +582,19 @@ class PayrollReportController extends Controller
                 }
 
                 // Hitung service charge (By Point dan Pro Rate) jika enabled
+                // PENTING: Gunakan hariKerjaUntukServiceCharge yang sudah dihitung di Step 1 untuk konsistensi
                 $serviceChargeByPointAmount = 0;
                 $serviceChargeProRateAmount = 0;
                 $serviceChargeTotal = 0;
                 
                 if ($masterData->sc == 1 && $serviceCharge > 0) {
                     // Service charge by point = rate × (point × hari kerja)
-                    $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerja);
+                    // Untuk karyawan baru, gunakan hariKerjaKaryawanBaru untuk konsistensi dengan gaji pokok
+                    $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                     
                     // Service charge pro rate = rate × hari kerja
-                    $serviceChargeProRateAmount = $rateProRate * $hariKerja;
+                    // Untuk karyawan baru, gunakan hariKerjaKaryawanBaru untuk konsistensi dengan gaji pokok
+                    $serviceChargeProRateAmount = $rateProRate * $hariKerjaUntukServiceCharge;
                     
                     // Total service charge per user
                     $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
@@ -576,46 +606,46 @@ class PayrollReportController extends Controller
                         'sc_enabled' => $masterData->sc,
                         'service_charge_input' => $serviceCharge,
                         'hari_kerja' => $hariKerja,
+                        'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                        'is_new_employee' => $isNewEmployee,
                         'user_point' => $userPoint,
                         'reason' => $masterData->sc != 1 ? 'sc not enabled' : 'service_charge input is 0'
                     ]);
                 }
-
-                // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll)
-                $isNewEmployee = false;
-                $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
-                if ($user->tanggal_masuk) {
-                    $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
-                    $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
-                    
-                    // Jika karyawan baru, hitung hari kerja dari tanggal masuk sampai akhir periode
-                    if ($isNewEmployee) {
-                        // Hitung hari kerja dari tanggal masuk sampai akhir periode (hitung hari kalender)
-                        $hariKerjaKaryawanBaru = $tanggalMasuk->diffInDays($endDate) + 1; // +1 untuk include tanggal masuk dan tanggal akhir
-                    }
-                }
                 
                 // Hitung gaji pokok dan tunjangan (pro rate untuk karyawan baru)
+                // PENTING: Gunakan hari kerja yang sama dengan service charge prorate (proporsi yang sama)
+                // Service charge prorate menggunakan: rate × hari kerja untuk service charge
+                // Dimana rate = total service charge prorate / total hari kerja semua karyawan
+                // Jadi untuk gaji pokok dan tunjangan, gunakan proporsi yang sama: (hari kerja untuk service charge / total hari kerja standar)
                 $gajiPokokFinal = $masterData->gaji;
                 $tunjanganFinal = $masterData->tunjangan;
                 
-                if ($isNewEmployee && $hariKerjaKaryawanBaru > 0) {
-                    // Pro rate: (gaji_pokok / 26) * hari_kerja
-                    $gajiPokokFinal = ($masterData->gaji / 26) * $hariKerjaKaryawanBaru;
-                    // Pro rate: (tunjangan / 26) * hari_kerja
-                    $tunjanganFinal = ($masterData->tunjangan / 26) * $hariKerjaKaryawanBaru;
+                if ($isNewEmployee && $hariKerjaUntukServiceCharge > 0) {
+                    // Hitung total hari kerja standar dalam periode payroll (dari tanggal 26 bulan sebelumnya sampai 25 bulan yang dipilih)
+                    // Ini adalah total hari kalender dalam periode, bukan total hari kerja karyawan
+                    $totalHariKalenderPeriode = $startDate->diffInDays($endDate) + 1; // +1 untuk include tanggal awal dan akhir
+                    
+                    // Pro rate menggunakan proporsi yang sama dengan service charge prorate
+                    // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
+                    // Ini sama dengan proporsi yang digunakan service charge prorate
+                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
+                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
                     
                     \Log::info('Karyawan baru - Pro rate calculation', [
                         'user_id' => $user->id,
                         'nama_lengkap' => $user->nama_lengkap,
                         'tanggal_masuk' => $user->tanggal_masuk,
                         'hari_kerja_karyawan_baru' => $hariKerjaKaryawanBaru,
+                        'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                        'total_hari_kalender_periode' => $totalHariKalenderPeriode,
                         'gaji_pokok_original' => $masterData->gaji,
                         'tunjangan_original' => $masterData->tunjangan,
                         'gaji_pokok_pro_rate' => $gajiPokokFinal,
                         'tunjangan_pro_rate' => $tunjanganFinal,
-                        'formula_gaji' => "({$masterData->gaji} / 26) × {$hariKerjaKaryawanBaru} = {$gajiPokokFinal}",
-                        'formula_tunjangan' => "({$masterData->tunjangan} / 26) × {$hariKerjaKaryawanBaru} = {$tunjanganFinal}"
+                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                     ]);
                 }
 
@@ -1208,15 +1238,17 @@ class PayrollReportController extends Controller
         }
 
         // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
-        // Sama seperti report attendance
-        $startDate = Carbon::create($year, $month, 26)->subMonth();
-        $endDate = Carbon::create($year, $month, 25);
+        // SAMA PERSIS dengan index() dan Employee Summary
+        $start = date('Y-m-d', strtotime("$year-$month-26 -1 month"));
+        $end = date('Y-m-d', strtotime("$year-$month-25"));
+        $startDate = Carbon::parse($start);
+        $endDate = Carbon::parse($end);
 
-        // Ambil data seperti di index()
+        // Ambil data seperti di index() - SAMA PERSIS
         $users = User::where('status', 'A')
             ->where('id_outlet', $outletId)
             ->orderBy('nama_lengkap')
-            ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening']);
+            ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
 
         $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
         $divisions = DB::table('tbl_data_divisi')->pluck('nama_divisi', 'id');
@@ -1234,9 +1266,152 @@ class PayrollReportController extends Controller
         $divisiNominalUangMakan = DB::table('tbl_data_divisi')->pluck('nominal_uang_makan', 'id');
         $levelNominalDasarBPJS = DB::table('tbl_data_level')->pluck('nilai_dasar_potongan_bpjs', 'id');
 
-        // Step 1: Hitung semua data dasar untuk semua user terlebih dahulu
+        // ========== GUNAKAN QUERY DAN PROSES YANG SAMA PERSIS DENGAN INDEX() DAN EMPLOYEE SUMMARY ==========
+        // Query data absensi - SAMA PERSIS dengan index() dan Employee Summary
+        $chunkSize = 5000;
+        $rawData = collect();
+        
+        $sub = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->join('users as u', 'up.user_id', '=', 'u.id')
+            ->select(
+                'a.scan_date',
+                'a.inoutmode',
+                'u.id as user_id',
+                'u.nama_lengkap',
+                'u.division_id'
+            )
+            ->where('u.id_outlet', $outletId)
+            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+
+        // Gunakan chunk untuk mencegah memory overflow
+        $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
+            $rawData = $rawData->merge($chunk);
+        });
+
+        // Proses data manual untuk menangani cross-day - SAMA PERSIS dengan Employee Summary
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id . '_' . $date;
+            
+            if (!isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap,
+                    'division_id' => $scan->division_id,
+                    'scans' => []
+                ];
+            }
+            
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode
+            ];
+        }
+
+        // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
+        $finalData = [];
+        foreach ($processedData as $key => $data) {
+            // Gunakan smart cross-day processing yang sama dengan Employee Summary
+            $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            $result['division_id'] = $data['division_id'];
+            $finalData[] = $result;
+        }
+
+        $dataRows = collect($finalData)->map(function($item) {
+            return (object) $item;
+        });
+
+        // Ambil data shift untuk perhitungan lembur - SAMA PERSIS dengan Employee Summary
+        $allShiftData = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+            ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+            ->get()
+            ->groupBy(function($item) {
+                return $item->user_id . '_' . $item->tanggal;
+            });
+
+        // Hitung lembur untuk setiap baris - SAMA PERSIS dengan Employee Summary
+        foreach ($dataRows as $row) {
+            $shiftKey = $row->user_id . '_' . $row->tanggal;
+            $shiftData = $allShiftData->get($shiftKey, collect())->first();
+            
+            if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
+                // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
+                $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftData->time_end);
+            } else {
+                $row->lembur = 0;
+            }
+        }
+
+        // Ambil semua tanggal libur dalam periode
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$start, $end])
+            ->pluck('keterangan', 'tgl_libur');
+
+        // Build rows for each tanggal in period - SAMA PERSIS dengan Employee Summary
+        $rows = collect();
+        foreach ($dataRows as $row) {
+            $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
+            $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
+            $telat = 0;
+            $lembur = $row->lembur ?? 0;
+            
+            $shiftKey = $row->user_id . '_' . $row->tanggal;
+            $shift = $allShiftData->get($shiftKey, collect())->first();
+
+            if ($shift) {
+                // Hitung telat dan lembur berdasarkan shift - SAMA PERSIS dengan Employee Summary
+                if ($shift->time_start && $jam_masuk) {
+                    $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
+                }
+                
+                // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
+                if ($shift->time_end && $jam_keluar) {
+                    $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
+                    $telat += $earlyCheckoutTelat;
+                    
+                    // Gunakan perhitungan lembur yang konsisten
+                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                }
+            }
+
+            $rows->push((object)[
+                'tanggal' => $row->tanggal,
+                'user_id' => $row->user_id,
+                'nama_lengkap' => $row->nama_lengkap,
+                'division_id' => $row->division_id,
+                'jam_masuk' => $row->jam_masuk,
+                'jam_keluar' => $row->jam_keluar,
+                'total_masuk' => $row->total_masuk,
+                'total_keluar' => $row->total_keluar,
+                'telat' => $telat,
+                'lembur' => $lembur,
+                'is_cross_day' => $row->is_cross_day,
+                'shift_start' => $shift->time_start ?? null,
+                'shift_end' => $shift->time_end ?? null,
+            ]);
+        }
+
+        // Group by employee - SAMA PERSIS dengan Employee Summary
+        $employeeGroups = $rows->groupBy('user_id');
+
+        // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
         $userData = [];
-        foreach ($users as $user) {
+        foreach ($employeeGroups as $userId => $employeeRows) {
+            $user = $users->firstWhere('id', $userId);
+            
+            if (!$user) {
+                continue; // Skip jika user tidak ada di list users
+            }
+
+            // Ambil data master payroll untuk user ini
             $masterData = $payrollMaster->get($user->id, (object)[
                 'gaji' => 0,
                 'tunjangan' => 0,
@@ -1247,59 +1422,106 @@ class PayrollReportController extends Controller
                 'bpjs_jkn' => 0,
                 'bpjs_tk' => 0,
                 'lb' => 0,
-                'lnb' => 0,
                 'deviasi' => 0,
                 'city_ledger' => 0,
             ]);
 
-            $attendanceData = $this->getAttendanceData($user->id, $outletId, $startDate, $endDate);
-            $totalTelat = $attendanceData->sum('telat');
-            // Gunakan total_lembur jika ada (sudah include Extra Off overtime), jika tidak gunakan lembur biasa
-            $totalLembur = $attendanceData->sum(function($item) {
-                return $item['total_lembur'] ?? $item['lembur'] ?? 0;
-            });
+            // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
+            $totalTelat = $employeeRows->sum('telat');
+            
+            // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
+            $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
+            
+            // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
+            $totalLemburRegular = floor($employeeRows->sum('lembur'));
+            $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
-            // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
-            $hariKerja = $attendanceData->filter(function($item) {
-                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
-            })->count();
+            // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
+            $hariKerja = $employeeRows->count();
+
+            // Hitung total alpha menggunakan method yang sama dengan Employee Summary
+            $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $start, $end);
+            
+            // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
+            $leaveData = $this->calculateLeaveData($userId, $start, $end);
+            
+            // Extract breakdown dari leaveData - SAMA PERSIS dengan Employee Summary
+            $izinCutiBreakdown = [];
+            $totalIzinCuti = 0;
+            foreach ($leaveData as $key => $value) {
+                if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                    $izinCutiBreakdown[$key] = $value;
+                    $totalIzinCuti += $value;
+                }
+            }
+            
+            // Hitung PH Bonus (Public Holiday bonus only, not extra_off)
+            $phBonus = $this->calculatePHBonus($userId, $start, $end);
 
             // Ambil point dari level melalui jabatan
             $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
             $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
 
-            // Simpan data user
+            // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
+            $isNewEmployee = false;
+            $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
+            if ($user->tanggal_masuk) {
+                $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
+                $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
+                
+                // Jika karyawan baru, hitung hari kerja dari tanggal masuk sampai akhir periode
+                if ($isNewEmployee) {
+                    // Hitung hari kerja dari tanggal masuk sampai akhir periode (hitung hari kalender)
+                    $hariKerjaKaryawanBaru = $tanggalMasuk->diffInDays($endDate) + 1; // +1 untuk include tanggal masuk dan tanggal akhir
+                }
+            }
+            
+            // Gunakan hari kerja yang sesuai (hariKerjaKaryawanBaru untuk karyawan baru, hariKerja untuk karyawan lama)
+            // Ini penting untuk perhitungan service charge prorate yang konsisten
+            $hariKerjaUntukServiceCharge = $isNewEmployee ? $hariKerjaKaryawanBaru : $hariKerja;
+
+            // Simpan data user untuk perhitungan service charge
             $userData[$user->id] = [
                 'user' => $user,
                 'masterData' => $masterData,
-                'attendanceData' => $attendanceData,
+                'employeeRows' => $employeeRows, // Simpan employeeRows untuk digunakan nanti
                 'totalTelat' => $totalTelat,
                 'totalLembur' => $totalLembur,
-                'hariKerja' => $hariKerja,
+                'hariKerja' => $hariKerja, // Hari kerja aktual (jumlah hari bekerja)
+                'hariKerjaKaryawanBaru' => $hariKerjaKaryawanBaru, // Hari kerja untuk karyawan baru
+                'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja yang digunakan untuk service charge
+                'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
+                'totalAlpha' => $totalAlpha,
+                'totalIzinCuti' => $totalIzinCuti,
+                'izinCutiBreakdown' => $izinCutiBreakdown,
+                'leaveData' => $leaveData, // Simpan leaveData untuk digunakan di Step 4
                 'userPoint' => $userPoint,
             ];
         }
 
-        // Step 2: Hitung total untuk service charge
-        $totalPointHariKerja = 0;
-        $totalHariKerja = 0;
+        // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
+        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
+        $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
+        $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
         
         foreach ($userData as $data) {
             if ($data['masterData']->sc == 1) {
-                $totalPointHariKerja += $data['userPoint'] * $data['hariKerja'];
-                $totalHariKerja += $data['hariKerja'];
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
+                $totalHariKerja += $hariKerjaSC;
             }
         }
 
         // Step 3: Hitung rate service charge (50:50)
-        $serviceChargeByPoint = 0;
-        $serviceChargeProRate = 0;
-        $rateByPoint = 0;
-        $rateProRate = 0;
+        $serviceChargeByPoint = 0; // 50% untuk by point
+        $serviceChargeProRate = 0; // 50% untuk pro rate
+        $rateByPoint = 0; // Rate per (point × hari kerja)
+        $rateProRate = 0; // Rate per hari kerja
 
         if ($serviceCharge > 0) {
-            $serviceChargeByPoint = $serviceCharge / 2;
-            $serviceChargeProRate = $serviceCharge / 2;
+            $serviceChargeByPoint = $serviceCharge / 2; // 50%
+            $serviceChargeProRate = $serviceCharge / 2; // 50%
 
             if ($totalPointHariKerja > 0) {
                 $rateByPoint = $serviceChargeByPoint / $totalPointHariKerja;
@@ -1309,7 +1531,7 @@ class PayrollReportController extends Controller
             }
         }
 
-        // Step 2b: Hitung total untuk L & B
+        // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaLB = 0;
         foreach ($userData as $data) {
@@ -1325,7 +1547,7 @@ class PayrollReportController extends Controller
             $rateLBByPoint = $lbAmount / $totalPointHariKerjaLB;
         }
 
-        // Step 2c: Hitung total untuk Deviasi
+        // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaDeviasi = 0;
         foreach ($userData as $data) {
@@ -1341,7 +1563,7 @@ class PayrollReportController extends Controller
             $rateDeviasiByPoint = $deviasiAmount / $totalPointHariKerjaDeviasi;
         }
 
-        // Step 2d: Hitung total untuk City Ledger
+        // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaCityLedger = 0;
         foreach ($userData as $data) {
@@ -1372,17 +1594,31 @@ class PayrollReportController extends Controller
                 ->keyBy('user_id');
         }
 
-        // Step 4: Hitung service charge per user dan export data
+        // Ambil custom payroll items untuk periode ini - SAMA PERSIS dengan index()
+        $customItems = CustomPayrollItem::forOutlet($outletId)
+            ->forPeriod($month, $year)
+            ->get()
+            ->groupBy('user_id');
+
+        // Step 4: Hitung service charge per user dan export data - GUNAKAN LOGIKA YANG SAMA DENGAN index()
         $exportDataGajiAkhirBulan = [];
         $exportDataTanggal8 = [];
         foreach ($userData as $userId => $data) {
             $user = $data['user'];
             $masterData = $data['masterData'];
+            $employeeRows = $data['employeeRows']; // Gunakan employeeRows dari Employee Summary
             $totalTelat = $data['totalTelat'];
             $totalLembur = $data['totalLembur'];
-            $hariKerja = $data['hariKerja'];
+            $hariKerja = $data['hariKerja']; // Hari kerja aktual (jumlah hari bekerja)
+            $hariKerjaKaryawanBaru = $data['hariKerjaKaryawanBaru'] ?? $hariKerja; // Hari kerja untuk karyawan baru
+            $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
+            $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
             $userPoint = $data['userPoint'];
+            $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData
+            $totalAlpha = $data['totalAlpha'] ?? 0;
+            $phBonus = $this->calculatePHBonus($userId, $start, $end);
 
+            // Hitung gaji lembur menggunakan nominal_lembur dari divisi
             $gajiLembur = 0;
             if ($totalLembur > 0 && $masterData->ot == 1) {
                 $nominalLembur = $divisiNominalLembur[$user->division_id] ?? 0;
@@ -1397,13 +1633,21 @@ class PayrollReportController extends Controller
             }
 
             // Hitung service charge (By Point dan Pro Rate) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge yang sudah dihitung di Step 1 untuk konsistensi
             $serviceChargeByPointAmount = 0;
             $serviceChargeProRateAmount = 0;
             $serviceChargeTotal = 0;
             
             if ($masterData->sc == 1 && $serviceCharge > 0) {
-                $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerja);
-                $serviceChargeProRateAmount = $rateProRate * $hariKerja;
+                // Service charge by point = rate × (point × hari kerja)
+                // Untuk karyawan baru, gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
+                
+                // Service charge pro rate = rate × hari kerja
+                // Untuk karyawan baru, gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $serviceChargeProRateAmount = $rateProRate * $hariKerjaUntukServiceCharge;
+                
+                // Total service charge per user
                 $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
             }
 
@@ -1457,48 +1701,78 @@ class PayrollReportController extends Controller
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
+            // Hitung potongan telat (flat rate Rp 500 per menit)
+            $potonganTelat = 0;
+            $gajiPerMenit = 500; // Flat rate Rp 500 per menit
+            if ($totalTelat > 0) {
+                $potonganTelat = $totalTelat * $gajiPerMenit;
+            }
+
+            // Hitung gaji pokok dan tunjangan (pro rate untuk karyawan baru)
+            // PENTING: Gunakan hari kerja yang sama dengan service charge prorate (proporsi yang sama)
+            $gajiPokokFinal = $masterData->gaji;
+            $tunjanganFinal = $masterData->tunjangan;
+            
+            if ($isNewEmployee && $hariKerjaUntukServiceCharge > 0) {
+                // Hitung total hari kerja standar dalam periode payroll
+                $totalHariKalenderPeriode = $startDate->diffInDays($endDate) + 1; // +1 untuk include tanggal awal dan akhir
+                
+                // Pro rate menggunakan proporsi yang sama dengan service charge prorate
+                $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+            }
+
+            // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+            // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
+            $potonganAlpha = 0;
+            if ($totalAlpha > 0) {
+                $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
+                $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+            }
+
+            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+            // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
+            $potonganUnpaidLeave = 0;
+            $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
+            if ($unpaidLeaveDays > 0) {
+                $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
+                $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
+            }
+
+            // Hitung custom earnings dan deductions - SAMA PERSIS dengan index()
+            $userCustomItems = $customItems->get($user->id, collect());
+            $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
+            $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
+
             // Gunakan data dari payroll_generated_details jika sudah di-generate
             $payrollDetail = $payrollGeneratedDetails->get($userId);
             
             // Ambil payment method dari payroll_generated_details atau default 'transfer'
             $paymentMethod = $payrollDetail ? ($payrollDetail->payment_method ?? 'transfer') : 'transfer';
             
-            // Inisialisasi variabel dengan nilai default
-            $gajiPokok = $masterData->gaji;
-            $tunjangan = $masterData->tunjangan;
-            $potonganTelat = 0;
-            $gajiPerMenit = 500; // Flat rate Rp 500 per menit
-            $phBonus = 0;
-            $customEarnings = 0;
-            $customDeductions = 0;
-            $potonganAlpha = 0;
-            $potonganUnpaidLeave = 0;
-            $serviceChargeByPoint = 0;
-            $serviceChargeProRate = 0;
-            $serviceChargeTotal = 0;
-            
+            // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
             if ($payrollDetail) {
-                // Gunakan data dari generate payroll
-                $gajiPokok = $payrollDetail->gaji_pokok ?? $masterData->gaji;
-                $tunjangan = $payrollDetail->tunjangan ?? $masterData->tunjangan;
+                $gajiPokokFinal = $payrollDetail->gaji_pokok ?? $gajiPokokFinal;
+                $tunjanganFinal = $payrollDetail->tunjangan ?? $tunjanganFinal;
                 $totalTelat = $payrollDetail->total_telat ?? $totalTelat;
                 $totalLembur = $payrollDetail->total_lembur ?? $totalLembur;
                 $gajiLembur = $payrollDetail->gaji_lembur ?? $gajiLembur;
                 $uangMakan = $payrollDetail->uang_makan ?? $uangMakan;
-                $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
-                $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+                $serviceChargeByPointAmount = $payrollDetail->service_charge_by_point ?? $serviceChargeByPointAmount;
+                $serviceChargeProRateAmount = $payrollDetail->service_charge_pro_rate ?? $serviceChargeProRateAmount;
                 $serviceChargeTotal = $payrollDetail->service_charge ?? $serviceChargeTotal;
                 $bpjsJKN = $payrollDetail->bpjs_jkn ?? $bpjsJKN;
                 $bpjsTK = $payrollDetail->bpjs_tk ?? $bpjsTK;
-                $potonganTelat = $payrollDetail->potongan_telat ?? 0;
+                $potonganTelat = $payrollDetail->potongan_telat ?? $potonganTelat;
                 $lbTotal = $payrollDetail->lb_total ?? $lbTotal;
                 $deviasiTotal = $payrollDetail->deviasi_total ?? $deviasiTotal;
                 $cityLedgerTotal = $payrollDetail->city_ledger_total ?? $cityLedgerTotal;
-                $phBonus = $payrollDetail->ph_bonus ?? 0;
+                $phBonus = $payrollDetail->ph_bonus ?? $phBonus;
                 $hariKerja = $payrollDetail->hari_kerja ?? $hariKerja;
                 $paymentMethod = $payrollDetail->payment_method ?? 'transfer';
                 
-                // Ambil custom items dari JSON
+                // Ambil custom items dari JSON jika ada
                 if ($payrollDetail->custom_items) {
                     $customItemsData = json_decode($payrollDetail->custom_items, true) ?? [];
                     $customEarnings = collect($customItemsData)->where('item_type', 'earn')->sum('item_amount');
@@ -1506,17 +1780,12 @@ class PayrollReportController extends Controller
                 }
                 
                 // Ambil potongan alpha dan unpaid leave
-                $potonganAlpha = $payrollDetail->potongan_alpha ?? 0;
-                $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? 0;
-            } else {
-                // Hitung potongan telat (flat rate Rp 500 per menit)
-                if ($totalTelat > 0) {
-                    $potonganTelat = $totalTelat * $gajiPerMenit;
-                }
+                $potonganAlpha = $payrollDetail->potongan_alpha ?? $potonganAlpha;
+                $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? $potonganUnpaidLeave;
             }
             
             // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
-            $totalGajian1 = $gajiPokok + $tunjangan + $customEarnings - $customDeductions - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
+            $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
             
             // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
             $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus - $lbTotal - $deviasiTotal - $cityLedgerTotal;
@@ -1529,8 +1798,8 @@ class PayrollReportController extends Controller
                 'Payment Method' => ucfirst($paymentMethod),
                 'Jabatan' => $jabatans[$user->id_jabatan] ?? '-',
                 'Divisi' => $divisions[$user->division_id] ?? '-',
-                'Gaji Pokok' => $gajiPokok,
-                'Tunjangan' => $tunjangan,
+                'Gaji Pokok' => round($gajiPokokFinal),
+                'Tunjangan' => round($tunjanganFinal),
                 'Custom Earnings' => round($customEarnings),
                 'Custom Deductions' => round($customDeductions),
                 'Potongan Telat' => round($potonganTelat),
