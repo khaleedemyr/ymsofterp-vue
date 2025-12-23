@@ -36,7 +36,7 @@
 
         <!-- Filters -->
         <div class="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-2">
                 <i class="fa-solid fa-calendar-alt mr-1 text-blue-500"></i>
@@ -56,49 +56,6 @@
               <input 
                 type="date" 
                 v-model="filters.date_to" 
-                class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-2">
-                <i class="fa-solid fa-filter mr-1 text-blue-500"></i>
-                Status
-              </label>
-              <select 
-                v-model="filters.status" 
-                class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="all">All Status</option>
-                <option value="draft">Draft</option>
-                <option value="approved">Approved</option>
-                <option value="received">Received</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-2">
-                <i class="fa-solid fa-truck mr-1 text-blue-500"></i>
-                Supplier
-              </label>
-              <select 
-                v-model="filters.supplier_id" 
-                class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="">All Suppliers</option>
-                <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
-                  {{ supplier.name }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-2">
-                <i class="fa-solid fa-search mr-1 text-blue-500"></i>
-                Search
-              </label>
-              <input 
-                type="text" 
-                v-model="filters.search" 
-                placeholder="PO Number, Supplier, PR..."
                 class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
             </div>
@@ -666,23 +623,35 @@
               <i class="fa-solid fa-table text-indigo-600"></i>
               Purchase Orders Detail
             </h3>
-            <div class="flex items-center gap-3">
-              <div class="text-sm text-gray-500">
-                Showing {{ purchaseOrders.from }} - {{ purchaseOrders.to }} of {{ purchaseOrders.total }}
+            <div class="flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto">
+              <!-- Search Input -->
+              <div class="w-full md:w-auto">
+                <input 
+                  type="text" 
+                  v-model="filters.search" 
+                  @keyup.enter="applyFilters"
+                  placeholder="Search PO Number, Supplier, PR... (Press Enter)"
+                  class="w-full md:w-64 px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                />
               </div>
-              <div class="flex items-center gap-2">
-                <label class="text-sm text-gray-600 whitespace-nowrap">Per Page:</label>
-                <select 
-                  v-model="filters.per_page" 
-                  @change="applyFilters"
-                  class="px-3 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                >
-                  <option :value="10">10</option>
-                  <option :value="15">15</option>
-                  <option :value="25">25</option>
-                  <option :value="50">50</option>
-                  <option :value="100">100</option>
-                </select>
+              <div class="flex items-center gap-3">
+                <div class="text-sm text-gray-500">
+                  Showing {{ purchaseOrders.from }} - {{ purchaseOrders.to }} of {{ purchaseOrders.total }}
+                </div>
+                <div class="flex items-center gap-2">
+                  <label class="text-sm text-gray-600 whitespace-nowrap">Per Page:</label>
+                  <select 
+                    v-model="filters.per_page" 
+                    @change="applyFilters"
+                    class="px-3 py-2 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
+                  >
+                    <option :value="10">10</option>
+                    <option :value="15">15</option>
+                    <option :value="25">25</option>
+                    <option :value="50">50</option>
+                    <option :value="100">100</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -1588,6 +1557,8 @@ function applyFilters() {
   // Reset pagination when filters change
   const filterParams = {
     ...filters,
+    status: 'all', // Always use 'all' since filter is removed
+    supplier_id: '', // Always use empty since filter is removed
     page: 1,
     supplier_page: 1,
     item_page: 1,
