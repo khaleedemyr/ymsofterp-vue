@@ -309,7 +309,12 @@
                                             }
                                         @endphp
                                         @if($category)
-                                            {{ $category->division ?? $category->name ?? 'N/A' }}
+                                            @php
+                                                $division = $category->division ?? '';
+                                                $name = $category->name ?? '';
+                                                $display = trim($division . ($division && $name ? ' - ' : '') . $name);
+                                            @endphp
+                                            {{ $display ?: 'N/A' }}
                                         @else
                                             N/A
                                         @endif
