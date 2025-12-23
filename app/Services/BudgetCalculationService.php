@@ -89,14 +89,21 @@ class BudgetCalculationService
         // SIMPLIFIED: Tidak menggunakan non_food_payments, langsung dari PO items yang approved
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, null, $year, $month, $dateFrom, $dateTo);
 
-        // Get total PR items (all PR items for this category)
+        // Get total PR items (all PR items for this category - termasuk yang sudah jadi PO)
+        // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
         $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month, $dateFrom, $dateTo);
-
-        // Get total PO items (all PO items for this category - approved)
-        $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
 
         // Get unpaid amounts (SIMPLIFIED: hanya PR unpaid)
         $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, null, $year, $month);
+        
+        // Get total PO items (all PO items for this category - approved)
+        $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
+        
+        // PENTING: PR Paid = PR Total - PR Unpaid (untuk memastikan konsistensi)
+        // Ini memastikan bahwa PR Total = PR Unpaid + PR Paid
+        // PR Paid adalah semua PR items yang sudah jadi PO (atau tidak unpaid)
+        $prPaidAmount = $prTotalAmount - $prUnpaidAmount;
+        
         $poUnpaidAmount = 0; // PO Unpaid = 0 (karena semua PO items sudah dihitung sebagai paid)
         $nfpUnpaidAmount = 0; // NFP Unpaid = 0 (karena kita tidak pakai NFP lagi)
 
@@ -106,9 +113,14 @@ class BudgetCalculationService
         $nfpPaidAmount = 0;
 
         // Calculate totals
-        $unpaidAmount = $prUnpaidAmount; // Hanya PR unpaid
+        // Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+        $categoryUsedAmount = $prTotalAmount + $retailNonFoodApproved;
+        
+        // Paid Amount = PO Total + RNF (untuk tracking payment status)
         $paidAmount = $paidAmountFromPo + $retailNonFoodApproved;
-        $categoryUsedAmount = $paidAmount + $unpaidAmount;
+        
+        // Unpaid Amount = PR Unpaid (untuk tracking unpaid items)
+        $unpaidAmount = $prUnpaidAmount;
 
         $totalWithCurrent = $categoryUsedAmount + $currentAmount;
         $remainingAfterCurrent = $categoryBudget - $totalWithCurrent;
@@ -124,9 +136,10 @@ class BudgetCalculationService
             'remaining_after_current' => $remainingAfterCurrent,
             'exceeds_budget' => $totalWithCurrent > $categoryBudget,
             'breakdown' => [
-                'pr_total' => $prTotalAmount,
-                'pr_unpaid' => $prUnpaidAmount,
-                'po_total' => $poTotalAmount,
+                'pr_total' => $prTotalAmount, // Semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                'pr_unpaid' => $prUnpaidAmount, // PR items yang belum jadi PO
+                'pr_paid' => $prPaidAmount, // PR items yang sudah jadi PO = PR Total - PR Unpaid
+                'po_total' => $poTotalAmount, // Total PO items (untuk referensi, bisa berbeda dari pr_paid)
                 'po_unpaid' => $poUnpaidAmount,
                 'nfp_submitted' => $nfpSubmittedAmount,
                 'nfp_approved' => $nfpApprovedAmount,
@@ -174,14 +187,21 @@ class BudgetCalculationService
         // SIMPLIFIED: Tidak menggunakan non_food_payments, langsung dari PO items yang approved
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
 
-        // Get total PR items (all PR items for this category/outlet)
+        // Get total PR items (all PR items for this category/outlet - termasuk yang sudah jadi PO)
+        // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
         $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
-
-        // Get total PO items (all PO items for this category/outlet - approved)
-        $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
 
         // Get unpaid amounts for this outlet (SIMPLIFIED: hanya PR unpaid)
         $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, $outletId, $year, $month);
+        
+        // Get total PO items (all PO items for this category/outlet - approved)
+        $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
+        
+        // PENTING: PR Paid = PR Total - PR Unpaid (untuk memastikan konsistensi)
+        // Ini memastikan bahwa PR Total = PR Unpaid + PR Paid
+        // PR Paid adalah semua PR items yang sudah jadi PO (atau tidak unpaid)
+        $prPaidAmount = $prTotalAmount - $prUnpaidAmount;
+        
         $poUnpaidAmount = 0; // PO Unpaid = 0 (karena semua PO items sudah dihitung sebagai paid)
         $nfpUnpaidAmount = 0; // NFP Unpaid = 0 (karena kita tidak pakai NFP lagi)
 
@@ -191,9 +211,14 @@ class BudgetCalculationService
         $nfpPaidAmount = 0;
 
         // Calculate totals
-        $unpaidAmount = $prUnpaidAmount; // Hanya PR unpaid
+        // Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+        $outletUsedAmount = $prTotalAmount + $outletRetailNonFoodApproved;
+        
+        // Paid Amount = PO Total + RNF (untuk tracking payment status)
         $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved;
-        $outletUsedAmount = $paidAmount + $unpaidAmount;
+        
+        // Unpaid Amount = PR Unpaid (untuk tracking unpaid items)
+        $unpaidAmount = $prUnpaidAmount;
 
         $totalWithCurrent = $outletUsedAmount + $currentAmount;
         $remainingAfterCurrent = $outletBudget->allocated_budget - $totalWithCurrent;
@@ -214,9 +239,10 @@ class BudgetCalculationService
                 'name' => $outletBudget->outlet->nama_outlet ?? 'Unknown Outlet',
             ],
             'breakdown' => [
-                'pr_total' => $prTotalAmount,
-                'pr_unpaid' => $prUnpaidAmount,
-                'po_total' => $poTotalAmount,
+                'pr_total' => $prTotalAmount, // Semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                'pr_unpaid' => $prUnpaidAmount, // PR items yang belum jadi PO
+                'pr_paid' => $prPaidAmount, // PR items yang sudah jadi PO = PR Total - PR Unpaid
+                'po_total' => $poTotalAmount, // Total PO items (untuk referensi, bisa berbeda dari pr_paid)
                 'po_unpaid' => $poUnpaidAmount,
                 'nfp_submitted' => $nfpSubmittedAmount,
                 'nfp_approved' => $nfpApprovedAmount,

@@ -34,25 +34,6 @@
           </div>
         </div>
         
-        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-yellow-500">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Paid Amount</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(summary.paid_amount) }}</p>
-            </div>
-            <i class="fa fa-check-circle text-yellow-500 text-2xl"></i>
-          </div>
-        </div>
-        
-        <div class="bg-white rounded-xl shadow-lg p-4 border-l-4 border-red-500">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Unpaid Amount</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(summary.unpaid_amount) }}</p>
-            </div>
-            <i class="fa fa-exclamation-circle text-red-500 text-2xl"></i>
-          </div>
-        </div>
       </div>
 
       <!-- Filters -->
@@ -299,87 +280,21 @@
 
                 <!-- Budget Information (always visible) -->
                 <div class="p-4">
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- Budget Limit -->
                     <div class="bg-blue-50 rounded-lg p-3">
                       <div class="text-xs text-gray-500 mb-1">Budget Limit</div>
                       <div class="text-lg font-bold text-blue-600">{{ formatCurrency(categoryGroup.total_budget_limit) }}</div>
                     </div>
                     
-                    <!-- Paid Amount -->
-                    <div class="bg-green-50 rounded-lg p-3 relative">
-                      <div class="flex items-center justify-between mb-1">
-                        <div class="text-xs text-gray-500">Paid Amount</div>
-                        <button 
-                          v-if="categoryGroup.transactions && categoryGroup.transactions.paid && categoryGroup.transactions.paid.length > 0"
-                          @click="toggleBudgetCard(categoryGroup.category_id, 'paid')"
-                          class="text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <i :class="isBudgetCardExpanded(categoryGroup.category_id, 'paid') ? 'fa fa-chevron-up' : 'fa fa-chevron-down'" class="text-xs"></i>
-                        </button>
+                    <!-- Used Budget -->
+                    <div class="bg-orange-50 rounded-lg p-3">
+                      <div class="text-xs text-gray-500 mb-1">Used Budget</div>
+                      <div class="text-lg font-bold text-orange-600">
+                        {{ formatCurrency(getUsedBudget(categoryGroup)) }}
                       </div>
-                      <div class="text-lg font-bold text-green-600">{{ formatCurrency(categoryGroup.total_paid_amount) }}</div>
-                      <div class="text-xs text-gray-500">{{ getPercentage(categoryGroup.total_paid_amount, categoryGroup.budget_limit) }}% of budget</div>
-                      
-                      <!-- Transaction Details -->
-                      <div v-if="isBudgetCardExpanded(categoryGroup.category_id, 'paid') && categoryGroup.transactions && categoryGroup.transactions.paid" class="mt-3 pt-3 border-t border-green-200">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Transaction Details:</div>
-                        <div class="max-h-60 overflow-y-auto space-y-2">
-                          <div v-for="(transaction, idx) in categoryGroup.transactions.paid" :key="idx" class="bg-white rounded p-2 text-xs">
-                            <div class="flex items-center justify-between">
-                              <div class="flex items-center gap-2 flex-wrap">
-                                <span :class="transaction.type === 'retail_non_food' ? 'bg-teal-100 text-teal-800' : 'bg-blue-100 text-blue-800'" class="px-2 py-0.5 rounded text-xs font-medium">
-                                  {{ transaction.type === 'retail_non_food' ? 'RNF' : 'PR' }}
-                                </span>
-                                <span class="font-medium">{{ transaction.number }}</span>
-                                <span v-if="transaction.payment_number" class="text-gray-500 text-xs">
-                                  (Payment: {{ transaction.payment_number }})
-                                </span>
-                              </div>
-                              <span class="font-bold text-green-600">{{ formatCurrency(transaction.amount) }}</span>
-                            </div>
-                            <div class="text-gray-500 mt-1">
-                              {{ transaction.outlet }} • {{ formatDate(transaction.date) }}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <!-- Unpaid Amount -->
-                    <div class="bg-red-50 rounded-lg p-3 relative">
-                      <div class="flex items-center justify-between mb-1">
-                        <div class="text-xs text-gray-500">Unpaid Amount</div>
-                        <button 
-                          v-if="categoryGroup.transactions && categoryGroup.transactions.unpaid && categoryGroup.transactions.unpaid.length > 0"
-                          @click="toggleBudgetCard(categoryGroup.category_id, 'unpaid')"
-                          class="text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <i :class="isBudgetCardExpanded(categoryGroup.category_id, 'unpaid') ? 'fa fa-chevron-up' : 'fa fa-chevron-down'" class="text-xs"></i>
-                        </button>
-                      </div>
-                      <div class="text-lg font-bold text-red-600">{{ formatCurrency(categoryGroup.total_unpaid_amount) }}</div>
-                      <div class="text-xs text-gray-500">{{ getPercentage(categoryGroup.total_unpaid_amount, categoryGroup.budget_limit) }}% of budget</div>
-                      
-                      <!-- Transaction Details -->
-                      <div v-if="isBudgetCardExpanded(categoryGroup.category_id, 'unpaid') && categoryGroup.transactions && categoryGroup.transactions.unpaid" class="mt-3 pt-3 border-t border-red-200">
-                        <div class="text-xs font-medium text-gray-700 mb-2">Transaction Details:</div>
-                        <div class="max-h-60 overflow-y-auto space-y-2">
-                          <div v-for="(transaction, idx) in categoryGroup.transactions.unpaid" :key="idx" class="bg-white rounded p-2 text-xs">
-                            <div class="flex items-center justify-between">
-                              <div class="flex items-center gap-2">
-                                <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-medium">PR</span>
-                                <span class="font-medium">{{ transaction.number }}</span>
-                                <span v-if="transaction.po_numbers" class="text-gray-400">•</span>
-                                <span v-if="transaction.po_numbers" class="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-medium">PO: {{ transaction.po_numbers }}</span>
-                              </div>
-                              <span class="font-bold text-red-600">{{ formatCurrency(transaction.amount) }}</span>
-                            </div>
-                            <div class="text-gray-500 mt-1">
-                              {{ transaction.outlet }} • {{ formatDate(transaction.date) }}
-                            </div>
-                          </div>
-                        </div>
+                      <div class="text-xs text-gray-500">
+                        {{ getPercentage(getUsedBudget(categoryGroup), categoryGroup.budget_limit) }}% of budget
                       </div>
                     </div>
                     
@@ -402,14 +317,14 @@
                     </h5>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div class="p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                        <p class="text-blue-600 font-medium text-xs mb-1">PR</p>
-                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.pr_total || 0) }}</p>
-                        <p class="text-xs text-gray-500 mt-1">Total PR items<br>yang sudah dibuat</p>
+                        <p class="text-blue-600 font-medium text-xs mb-1">PR Unpaid</p>
+                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.pr_unpaid || 0) }}</p>
+                        <p class="text-xs text-gray-500 mt-1">PR items yang<br>belum dibuat PO</p>
                       </div>
-                      <div class="p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                        <p class="text-blue-600 font-medium text-xs mb-1">PO</p>
-                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.po_total || 0) }}</p>
-                        <p class="text-xs text-gray-500 mt-1">Total PO items<br>yang sudah dibuat</p>
+                      <div class="p-3 bg-white rounded-lg border border-green-100 shadow-sm">
+                        <p class="text-green-600 font-medium text-xs mb-1">PR Paid (PO)</p>
+                        <p class="text-base font-bold text-green-800">{{ formatCurrency(categoryGroup.budget_breakdown.pr_paid || 0) }}</p>
+                        <p class="text-xs text-gray-500 mt-1">PR items yang<br>sudah jadi PO</p>
                       </div>
                       <div class="p-3 bg-white rounded-lg border border-purple-100 shadow-sm">
                         <p class="text-purple-600 font-medium text-xs mb-1">Retail Non Food</p>
@@ -417,28 +332,10 @@
                         <p class="text-xs text-gray-500 mt-1">Status: Approved</p>
                       </div>
                     </div>
-                  </div>
-                  
-                  <!-- Budget Breakdown by Source (Old) -->
-                  <div v-if="categoryGroup.budget_breakdown && (categoryGroup.budget_breakdown.pr_unpaid_amount || categoryGroup.budget_breakdown.rnf_amount)" class="mt-4 pt-4 border-t border-gray-200">
-                    <div class="text-xs font-medium text-gray-700 mb-3">Total Penggunaan Budget:</div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <!-- PR Unpaid Amount -->
-                      <div class="bg-orange-50 rounded-lg p-3">
-                        <div class="text-xs text-gray-500 mb-1">PR Unpaid</div>
-                        <div class="text-base font-bold text-orange-600">{{ formatCurrency(categoryGroup.budget_breakdown.pr_unpaid_amount || 0) }}</div>
-                        <div class="text-xs text-gray-500 mt-1">
-                          {{ getPercentage(categoryGroup.budget_breakdown.pr_unpaid_amount || 0, categoryGroup.total_budget_limit) }}% of budget
-                        </div>
-                      </div>
-                      
-                      <!-- RNF Amount -->
-                      <div class="bg-teal-50 rounded-lg p-3">
-                        <div class="text-xs text-gray-500 mb-1">RNF (Retail Non-Food)</div>
-                        <div class="text-base font-bold text-teal-600">{{ formatCurrency(categoryGroup.budget_breakdown.rnf_amount || 0) }}</div>
-                        <div class="text-xs text-gray-500 mt-1">
-                          {{ getPercentage(categoryGroup.budget_breakdown.rnf_amount || 0, categoryGroup.total_budget_limit) }}% of budget
-                        </div>
+                    <div class="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-gray-700">Total PR Items (PR Unpaid + PR Paid):</span>
+                        <span class="text-sm font-bold text-gray-900">{{ formatCurrency(categoryGroup.budget_breakdown.pr_total || 0) }}</span>
                       </div>
                     </div>
                   </div>
@@ -447,13 +344,13 @@
                   <div class="mt-4">
                     <div class="flex justify-between text-xs text-gray-600 mb-1">
                       <span>Budget Usage</span>
-                      <span>{{ getPercentage((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit) }}%</span>
+                      <span>{{ getPercentage(getUsedBudget(categoryGroup), categoryGroup.budget_limit) }}%</span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         class="h-2 rounded-full transition-all duration-300"
-                        :class="getProgressBarColor((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit)"
-                        :style="{ width: `${Math.min(getPercentage((categoryGroup.total_paid_amount || 0) + (categoryGroup.total_unpaid_amount || 0), categoryGroup.budget_limit), 100)}%` }"
+                        :class="getProgressBarColor(getUsedBudget(categoryGroup), categoryGroup.budget_limit)"
+                        :style="{ width: `${Math.min(getPercentage(getUsedBudget(categoryGroup), categoryGroup.budget_limit), 100)}%` }"
                       ></div>
                     </div>
                   </div>
@@ -667,6 +564,12 @@ function onFilterChange() {
 function exportReport() {
   // TODO: Implement export functionality
   console.log('Export report functionality to be implemented');
+}
+
+function getUsedBudget(categoryGroup) {
+  const prTotal = parseFloat(categoryGroup.budget_breakdown?.pr_total || 0);
+  const rnf = parseFloat(categoryGroup.budget_breakdown?.retail_non_food || 0);
+  return prTotal + rnf;
 }
 
 function formatCurrency(value) {

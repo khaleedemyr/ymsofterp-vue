@@ -530,9 +530,10 @@ class OpexReportController extends Controller
                     // PENTING: Gunakan data dari BudgetCalculationService untuk konsistensi
                     $paidAmountFromPo = $budgetInfo['breakdown']['po_total'] ?? 0;
                     $prUnpaidAmount = $budgetInfo['breakdown']['pr_unpaid'] ?? 0;
+                    $prPaidAmount = $budgetInfo['breakdown']['pr_paid'] ?? $budgetInfo['breakdown']['po_total'] ?? 0;
                     $poUnpaidAmount = $budgetInfo['breakdown']['po_unpaid'] ?? 0;
                     $outletRetailNonFoodApproved = $budgetInfo['breakdown']['retail_non_food'] ?? 0;
-                    $prTotalAmount = $budgetInfo['breakdown']['pr_total'] ?? 0;
+                    $prTotalAmount = $budgetInfo['breakdown']['pr_total'] ?? 0; // Semua PR items yang sudah dibuat
                     $poTotalAmount = $budgetInfo['breakdown']['po_total'] ?? 0;
                     
                     // NFP breakdown = 0 (karena kita tidak pakai NFP lagi)
@@ -540,25 +541,32 @@ class OpexReportController extends Controller
                     $nfpApprovedAmount = 0;
                     $nfpPaidAmount = 0;
                     
-                    // SIMPLIFIED: Total unpaid = PR unpaid saja (karena PO items sudah dihitung sebagai paid)
-                    $unpaidAmount = $prUnpaidAmount;
+                    // LOGIKA YANG BENAR:
+                    // - PR Total = semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                    // - PR Unpaid = PR items yang belum jadi PO
+                    // - PR Paid = PR items yang sudah jadi PO = PO Total
+                    // - Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+                    // - Remaining Budget = Budget Limit - Used Budget
+                    // - Paid Amount = PO Total + RNF (untuk tracking payment status)
+                    // - Unpaid Amount = PR Unpaid (untuk tracking unpaid items)
                     
-                    // SIMPLIFIED: Total used = PO items (approved) + Retail Non Food (approved) + PR unpaid
-                    $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved;
-                    $outletUsedAmount = $paidAmount + $unpaidAmount;
+                    $unpaidAmount = $prUnpaidAmount; // PR items yang belum jadi PO
+                    $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved; // PO + RNF (untuk info payment)
+                    $outletUsedAmount = $prTotalAmount + $outletRetailNonFoodApproved; // Used = PR Total + RNF
                     
                     $outletMap[] = [
                         'outlet_id' => $outletId,
                         'outlet_name' => $outletBudget->outlet_name,
                         'budget_limit' => $outletBudget->allocated_budget,
-                        'paid_amount' => $paidAmount,
-                        'unpaid_amount' => $unpaidAmount,
-                        'used_amount' => $outletUsedAmount, // Total used (paid + unpaid)
-                        'remaining_budget' => $outletBudget->allocated_budget - $outletUsedAmount,
+                        'paid_amount' => $paidAmount, // PO + RNF (untuk info payment status)
+                        'unpaid_amount' => $unpaidAmount, // PR Unpaid (untuk info unpaid items)
+                        'used_amount' => $outletUsedAmount, // PR Total (semua PR items yang sudah dibuat)
+                        'remaining_budget' => $outletBudget->allocated_budget - $outletUsedAmount, // Budget - Used (PR Total + RNF)
                         'breakdown' => [
-                            'pr_total' => $prTotalAmount, // Total PR items yang sudah dibuat
-                            'pr_unpaid' => $prUnpaidAmount, // PR yang belum dibuat PO
-                            'po_total' => $poTotalAmount, // Total PO items yang sudah dibuat (approved)
+                            'pr_total' => $prTotalAmount, // Semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                            'pr_unpaid' => $prUnpaidAmount, // PR items yang belum dibuat PO
+                            'pr_paid' => $prPaidAmount, // PR items yang sudah jadi PO (alias PO Total)
+                            'po_total' => $poTotalAmount, // Total PO items (sama dengan pr_paid, untuk backward compatibility)
                             'po_unpaid' => $poUnpaidAmount, // 0 (karena semua PO items sudah dihitung sebagai paid)
                             'nfp_submitted' => 0, // Tidak digunakan lagi
                             'nfp_approved' => 0, // Tidak digunakan lagi
@@ -573,7 +581,6 @@ class OpexReportController extends Controller
                 }
 
                 $categoryGroup['outlets'] = $outletMap;
-                $categoryGroup['total_remaining_budget'] = $category->budget_limit - ($categoryGroup['total_paid_amount'] + $categoryGroup['total_unpaid_amount']);
                 
                 // Calculate detailed breakdown for PER_OUTLET (sum from all outlets)
                 // PENTING: Semua breakdown sudah dihitung per outlet dari BudgetCalculationService
@@ -601,10 +608,17 @@ class OpexReportController extends Controller
                     }
                 }
                 
+                // Calculate total used amount (PR Total + RNF)
+                $totalUsedAmount = $totalPrTotal + $totalRnf;
+                
+                // PENTING: PR Paid = PR Total - PR Unpaid (untuk konsistensi)
+                $totalPrPaid = $totalPrTotal - $totalPrUnpaid;
+                
                 $categoryGroup['budget_breakdown'] = [
-                    'pr_total' => $totalPrTotal, // Total PR items yang sudah dibuat
-                    'pr_unpaid' => $totalPrUnpaid, // PR yang belum dibuat PO
-                    'po_total' => $totalPoTotal, // Total PO items yang sudah dibuat
+                    'pr_total' => $totalPrTotal, // Semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                    'pr_unpaid' => $totalPrUnpaid, // PR items yang belum dibuat PO
+                    'pr_paid' => $totalPrPaid, // PR items yang sudah jadi PO = PR Total - PR Unpaid
+                    'po_total' => $totalPoTotal, // Total PO items (untuk referensi, bisa berbeda dari pr_paid)
                     'po_unpaid' => $totalPoUnpaid, // PO yang belum dibuat NFP (0 karena semua PO sudah dihitung sebagai paid)
                     'nfp_submitted' => $totalNfpSubmitted, // Tidak digunakan lagi
                     'nfp_approved' => $totalNfpApproved, // Tidak digunakan lagi
@@ -612,9 +626,15 @@ class OpexReportController extends Controller
                     'retail_non_food' => $totalRnf, // Retail Non Food Approved
                     // Keep old fields for backward compatibility
                     'nfp_amount' => $totalNfpPaid,
-                    'pr_unpaid_amount' => $totalPrUnpaid + $totalPoUnpaid + $totalNfpApproved,
+                    'pr_unpaid_amount' => $totalPrUnpaid, // PENTING: Hanya PR Unpaid
                     'rnf_amount' => $totalRnf,
                 ];
+                
+                // PENTING: 
+                // - Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+                // - Remaining Budget = Budget Limit - Used Budget
+                // - PR Total = semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                $categoryGroup['total_remaining_budget'] = $category->budget_limit - $totalUsedAmount;
             } else {
                 // For GLOBAL budget type, use BudgetCalculationService for consistent calculation
                 // GLOBAL: Sum all items for this category (no outlet filter at all)
@@ -635,17 +655,30 @@ class OpexReportController extends Controller
                 // Extract values from BudgetCalculationService
                 $paidAmountFromPo = $budgetInfo['breakdown']['po_total'] ?? 0;
                 $prUnpaidAmount = $budgetInfo['breakdown']['pr_unpaid'] ?? 0;
+                $prPaidAmount = $budgetInfo['breakdown']['pr_paid'] ?? $budgetInfo['breakdown']['po_total'] ?? 0;
                 $poUnpaidAmount = $budgetInfo['breakdown']['po_unpaid'] ?? 0;
                 $retailNonFoodApproved = $budgetInfo['breakdown']['retail_non_food'] ?? 0;
-                $prTotalAmount = $budgetInfo['breakdown']['pr_total'] ?? 0;
+                $prTotalAmount = $budgetInfo['breakdown']['pr_total'] ?? 0; // Semua PR items yang sudah dibuat
                 $poTotalAmount = $budgetInfo['breakdown']['po_total'] ?? 0;
                 
                 // GLOBAL: Calculate totals directly from BudgetCalculationService
-                // Used amount = PO items (approved) + Retail Non Food (approved) + PR unpaid
-                $categoryGroup['total_paid_amount'] = $budgetInfo['category_used_amount'] - $prUnpaidAmount; // Paid = Used - Unpaid
-                $categoryGroup['total_unpaid_amount'] = $prUnpaidAmount;
-                $categoryGroup['total_remaining_budget'] = $budgetInfo['category_remaining_amount'] ?? 0;
+                // LOGIKA YANG BENAR:
+                // - PR Total = semua PR items yang sudah dibuat (termasuk yang sudah jadi PO)
+                // - PR Unpaid = PR items yang belum jadi PO
+                // - PR Paid = PR items yang sudah jadi PO = PO Total
+                // - Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+                // - Remaining Budget = Budget Limit - Used Budget
+                // - Paid Amount = PO Total + RNF (untuk tracking payment status)
+                // - Unpaid Amount = PR Unpaid (untuk tracking unpaid items)
                 
+                $categoryGroup['total_paid_amount'] = $poTotalAmount + $retailNonFoodApproved; // PO + RNF
+                $categoryGroup['total_unpaid_amount'] = $prUnpaidAmount; // PR Unpaid
+                
+                // PENTING: Used Budget = PR Total + RNF (karena RNF juga menggunakan budget)
+                // Remaining Budget = Budget Limit - Used Budget
+                $totalUsedAmount = $prTotalAmount + $retailNonFoodApproved;
+                $categoryGroup['total_remaining_budget'] = $category->budget_limit - $totalUsedAmount;
+
                 // Get Retail Non Food data for display (with outlet info for transaction details)
                 $retailNonFoodData = DB::table('retail_non_food as rnf')
                     ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
@@ -664,7 +697,7 @@ class OpexReportController extends Controller
                         DB::raw('"retail_non_food" as source_type')
                     )
                     ->get();
-                
+
                 // Build outlet map for display only (not for used amount calculation)
                 // This is just for showing breakdown per outlet in UI, but used amount is calculated globally
                 $outletMap = [];
@@ -687,7 +720,7 @@ class OpexReportController extends Controller
                     $itemTotal = $row->po_item_total ?? 0;
                     $outletMap[$outletId]['paid_amount'] += $itemTotal;
                 }
-                
+
                 // Calculate remaining budget for each outlet (for display only)
                 foreach ($outletMap as &$outlet) {
                     $outlet['remaining_budget'] = $outlet['budget_limit'] - $outlet['paid_amount'] - $outlet['unpaid_amount'];
@@ -705,6 +738,7 @@ class OpexReportController extends Controller
                 $categoryGroup['budget_breakdown'] = $budgetInfo['breakdown'] ?? [
                     'pr_total' => 0,
                     'pr_unpaid' => 0,
+                    'pr_paid' => 0,
                     'po_total' => 0,
                     'po_unpaid' => 0,
                     'nfp_submitted' => 0,
@@ -713,11 +747,16 @@ class OpexReportController extends Controller
                     'retail_non_food' => 0,
                 ];
                 
-                // Keep old fields for backward compatibility
+                // Ensure pr_paid field exists (PR items yang sudah jadi PO = PR Total - PR Unpaid)
+                if (!isset($categoryGroup['budget_breakdown']['pr_paid'])) {
+                    $prTotal = $categoryGroup['budget_breakdown']['pr_total'] ?? 0;
+                    $prUnpaid = $categoryGroup['budget_breakdown']['pr_unpaid'] ?? 0;
+                    $categoryGroup['budget_breakdown']['pr_paid'] = $prTotal - $prUnpaid;
+                }
+                
+                    // Keep old fields for backward compatibility
                 $categoryGroup['budget_breakdown']['nfp_amount'] = $categoryGroup['budget_breakdown']['nfp_paid'] ?? 0;
-                $categoryGroup['budget_breakdown']['pr_unpaid_amount'] = ($categoryGroup['budget_breakdown']['pr_unpaid'] ?? 0) + 
-                                                                         ($categoryGroup['budget_breakdown']['po_unpaid'] ?? 0) + 
-                                                                         ($categoryGroup['budget_breakdown']['nfp_approved'] ?? 0);
+                $categoryGroup['budget_breakdown']['pr_unpaid_amount'] = $categoryGroup['budget_breakdown']['pr_unpaid'] ?? 0; // PENTING: Hanya PR Unpaid
                 $categoryGroup['budget_breakdown']['rnf_amount'] = $categoryGroup['budget_breakdown']['retail_non_food'] ?? 0;
             }
 
