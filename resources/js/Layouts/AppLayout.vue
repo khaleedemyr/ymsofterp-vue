@@ -241,6 +241,7 @@ const menuGroups = [
             { name: () => 'Purchase Order Foods', icon: 'fa-solid fa-file-invoice-dollar', route: '/po-foods', code: 'po_foods' },
             { name: () => 'Purchase Order Ops', icon: 'fa-solid fa-file-invoice', route: '/po-ops', code: 'purchase_order_ops' },
             { name: () => 'Report PO GR', icon: 'fa-solid fa-chart-line', route: '/po-report', code: 'po_report' },
+            { name: () => 'Report Purchase Order Ops', icon: 'fa-solid fa-chart-bar', route: '/po-ops/report', code: 'po_ops_report' },
         ],
     },
     {

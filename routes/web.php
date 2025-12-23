@@ -451,6 +451,11 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
 
     // Purchase Order Ops routes
     Route::get('/po-ops', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'index'])->name('po-ops.index');
+    Route::get('/po-ops/report', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'index'])->name('po-ops.report');
+    Route::get('/po-ops/report/supplier/{supplierId}', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getSupplierDetail'])->name('po-ops.report.supplier-detail');
+    Route::get('/po-ops/report/item-detail', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getItemDetail'])->name('po-ops.report.item-detail');
+    Route::get('/po-ops/report/outlet/{outletId}', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getOutletDetail'])->name('po-ops.report.outlet-detail');
+    Route::get('/po-ops/report/category/{categoryId}', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getCategoryDetail'])->name('po-ops.report.category-detail');
       Route::get('/po-ops/approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers'])->name('po-ops.approvers');
     Route::get('/po-ops/create', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'create'])->name('po-ops.create');
     Route::post('/po-ops/generate', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'generatePO'])->name('po-ops.generate');
