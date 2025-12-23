@@ -41,7 +41,7 @@
             <tr v-for="item in (goodReceive?.items || details)" :key="item.id">
               <td>{{ item.item_name || item.item?.name || '-' }}</td>
               <td>{{ item.unit_name || item.unit?.name || '-' }}</td>
-              <td class="text-right">{{ item.qty }}</td>
+              <td class="text-right">{{ item.qty_do ?? item.qty }}</td>
               <td class="text-right">{{ item.received_qty }}</td>
             </tr>
           </tbody>

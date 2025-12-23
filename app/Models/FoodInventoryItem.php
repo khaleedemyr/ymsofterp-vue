@@ -17,6 +17,10 @@ class FoodInventoryItem extends Model
         'updated_at',
     ];
 
+    public function item() {
+        return $this->belongsTo(Item::class, 'item_id');
+    }
+
     public function smallUnit() {
         return $this->belongsTo(Unit::class, 'small_unit_id');
     }

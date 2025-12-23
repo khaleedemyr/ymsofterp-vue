@@ -397,9 +397,9 @@ const canApproveSSD = computed(() => {
       && props.rejection.status === 'draft'
       && !props.rejection.ssd_manager_approved_at;
   } else {
-    // For other warehouses, SSD Manager (id_jabatan=161) can approve
+    // For other warehouses, SSD Manager (id_jabatan=161) atau Asisten SSD Manager (id_jabatan=172) bisa approve
     // Tapi harus sudah di-approve asisten SSD manager terlebih dahulu
-    return ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
+    return ((user?.id_jabatan === 161 || user?.id_jabatan === 172) && user?.status === 'A' || isSuperadmin.value)
       && props.rejection.status === 'draft'
       && props.rejection.assistant_ssd_manager_approved_at
       && !props.rejection.ssd_manager_approved_at;

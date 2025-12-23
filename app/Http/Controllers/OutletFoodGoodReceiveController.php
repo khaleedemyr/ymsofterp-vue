@@ -441,16 +441,25 @@ class OutletFoodGoodReceiveController extends Controller
             )
             ->where('gr.id', $id)
             ->first();
-        // Ambil detail
+        // Ambil detail - qty DO harus dari delivery_order_items, bukan dari outlet_food_good_receive_items
         $details = DB::table('outlet_food_good_receive_items as gri')
             ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+            ->leftJoin('delivery_order_items as doi', function($join) {
+                $join->on('doi.delivery_order_id', '=', 'gr.delivery_order_id')
+                     ->on('doi.item_id', '=', 'gri.item_id');
+            })
             ->select(
                 'gri.*',
                 'i.name as item_name',
-                'u.name as unit_name'
+                'u.name as unit_name',
+                // Qty DO harus dari delivery_order_items.qty_packing_list, bukan dari gri.qty (yang mungkin dari floor order)
+                // Gunakan MAX untuk menghindari duplikasi jika ada multiple rows (seharusnya tidak terjadi)
+                DB::raw('COALESCE(MAX(doi.qty_packing_list), gri.qty) as qty_do')
             )
             ->where('gri.outlet_food_good_receive_id', $id)
+            ->groupBy('gri.id', 'gri.outlet_food_good_receive_id', 'gri.item_id', 'gri.unit_id', 'gri.qty', 'gri.received_qty', 'gri.remaining_qty', 'gri.receive_date', 'gri.created_at', 'gri.updated_at', 'i.name', 'u.name')
             ->get();
         // Ambil delivery order beserta floor order & packing list
         $deliveryOrder = null;

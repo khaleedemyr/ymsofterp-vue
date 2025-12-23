@@ -510,6 +510,8 @@ class OutletRejectionController extends Controller
         $approverTitle = $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
         
         // Untuk rejection non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
+        // Asisten SSD Manager juga bisa approve level 2, tapi harus sudah ada approval level 1 dulu
+        $user = Auth::user();
         if (!$isMKWarehouse && !$rejection->assistant_ssd_manager_approved_at) {
             return redirect()->route('outlet-rejections.index')->with('error', 'Outlet Rejection harus di-approve Asisten SSD Manager terlebih dahulu');
         }

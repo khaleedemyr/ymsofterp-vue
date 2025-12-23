@@ -2472,11 +2472,15 @@ class ReportController extends Controller
                     }),
                 ];
             });
-        // Retail Non Food
+        // Retail Non Food - hanya yang payment_method bukan contra_bon
         $retailNonFoods = \App\Models\RetailNonFood::with(['items', 'invoices', 'categoryBudget'])
             ->where('outlet_id', $outletId)
             ->whereDate('transaction_date', $date)
             ->where('status', 'approved')
+            ->where(function($q) {
+                $q->where('payment_method', '!=', 'contra_bon')
+                  ->orWhereNull('payment_method');
+            })
             ->get()
             ->map(function($rnf) use ($outletId) {
                 $budgetInfo = null;

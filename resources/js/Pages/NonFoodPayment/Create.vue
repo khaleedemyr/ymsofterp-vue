@@ -58,7 +58,20 @@
 
         <!-- Available Purchase Requisitions -->
         <div v-if="mappedPRs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
-          <h2 class="text-xl font-bold text-gray-800 mb-4">Available Purchase Requisitions</h2>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Available Purchase Requisitions</h2>
+            <div class="flex items-center gap-2">
+              <div class="relative">
+                <input
+                  type="text"
+                  v-model="searchPR"
+                  placeholder="Cari PR number, title, atau mode..."
+                  class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 w-64"
+                />
+                <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+              </div>
+            </div>
+          </div>
           <div class="space-y-4">
             <div v-for="pr in mappedPRs" :key="pr.id" 
                  class="border rounded-lg p-4 transition" 
@@ -96,7 +109,20 @@
 
         <!-- Available Retail Non Food (Contra Bon) -->
         <div v-if="mappedRetailNonFoods.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
-          <h2 class="text-xl font-bold text-gray-800 mb-4">Available Retail Non Food (Contra Bon)</h2>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Available Retail Non Food (Contra Bon)</h2>
+            <div class="flex items-center gap-2">
+              <div class="relative">
+                <input
+                  type="text"
+                  v-model="searchRetailNonFood"
+                  placeholder="Cari retail number, supplier, atau outlet..."
+                  class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 w-64"
+                />
+                <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+              </div>
+            </div>
+          </div>
           <div class="space-y-4">
             <div v-for="rnf in mappedRetailNonFoods" :key="rnf.id" 
                  class="border rounded-lg p-4 transition border-gray-200 hover:bg-gray-50 cursor-pointer"
@@ -125,10 +151,32 @@
           </div>
         </div>
 
-        <div v-if="mappedPOs.length === 0 && mappedPRs.length === 0 && mappedRetailNonFoods.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+        <div v-if="mappedPOs.length === 0 && mappedPRs.length === 0 && (props.availableRetailNonFoods || []).length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
           <div class="text-gray-500">
             <i class="fa fa-inbox text-4xl mb-4"></i>
             <p>Tidak ada Purchase Order, Purchase Requisition, atau Retail Non Food yang tersedia untuk dibayar.</p>
+          </div>
+        </div>
+        
+        <!-- Show message if search returns no results for Purchase Requisitions -->
+        <div v-if="(props.availablePRs || []).length > 0 && mappedPRs.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+          <div class="text-gray-500">
+            <i class="fa fa-search text-4xl mb-4"></i>
+            <p>Tidak ada Purchase Requisition yang ditemukan untuk pencarian "{{ searchPR }}".</p>
+            <button @click="searchPR = ''" class="mt-4 text-blue-600 hover:text-blue-800 underline">
+              Hapus filter pencarian
+            </button>
+          </div>
+        </div>
+        
+        <!-- Show message if search returns no results for Retail Non Food -->
+        <div v-if="(props.availableRetailNonFoods || []).length > 0 && mappedRetailNonFoods.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+          <div class="text-gray-500">
+            <i class="fa fa-search text-4xl mb-4"></i>
+            <p>Tidak ada Retail Non Food yang ditemukan untuk pencarian "{{ searchRetailNonFood }}".</p>
+            <button @click="searchRetailNonFood = ''" class="mt-4 text-blue-600 hover:text-blue-800 underline">
+              Hapus filter pencarian
+            </button>
           </div>
         </div>
       </div>
@@ -1082,18 +1130,54 @@ const mappedPOs = computed(() => {
   }));
 });
 
-// Map PR data to ensure is_held is boolean
+// Search for Purchase Requisitions
+const searchPR = ref('');
+
+// Map PR data to ensure is_held is boolean with search filter
 const mappedPRs = computed(() => {
-  return (props.availablePRs || []).map(pr => ({
+  const prs = (props.availablePRs || []).map(pr => ({
     ...pr,
     is_held: pr.is_held === true || pr.is_held === 1 || pr.is_held === '1' || pr.is_held === 'true',
     hold_reason: pr.hold_reason || null
   }));
+  
+  if (!searchPR.value) {
+    return prs;
+  }
+  
+  const searchTerm = searchPR.value.toLowerCase();
+  return prs.filter(pr => {
+    const prNumber = (pr.pr_number || '').toLowerCase();
+    const title = (pr.title || '').toLowerCase();
+    const mode = (pr.mode || '').toLowerCase();
+    
+    return prNumber.includes(searchTerm) || 
+           title.includes(searchTerm) || 
+           mode.includes(searchTerm);
+  });
 });
 
-// Map Retail Non Food data
+// Search for Retail Non Food
+const searchRetailNonFood = ref('');
+
+// Map Retail Non Food data with search filter
 const mappedRetailNonFoods = computed(() => {
-  return props.availableRetailNonFoods || [];
+  const retailNonFoods = props.availableRetailNonFoods || [];
+  
+  if (!searchRetailNonFood.value) {
+    return retailNonFoods;
+  }
+  
+  const searchTerm = searchRetailNonFood.value.toLowerCase();
+  return retailNonFoods.filter(rnf => {
+    const retailNumber = (rnf.retail_number || '').toLowerCase();
+    const supplierName = (rnf.supplier_name || '').toLowerCase();
+    const outletName = (rnf.outlet_name || '').toLowerCase();
+    
+    return retailNumber.includes(searchTerm) || 
+           supplierName.includes(searchTerm) || 
+           outletName.includes(searchTerm);
+  });
 });
 
 const isSubmitting = ref(false);
