@@ -1725,6 +1725,7 @@ class PurchaseOrderOpsReportController extends Controller
         $sheet->setTitle('Item Analysis');
         
         // Get all item analysis data with full details including categories
+        // Note: We need to get outlet from PR, so we join through PR items -> PR -> outlet
         $query = DB::table('purchase_order_ops_items as poi')
             ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
@@ -1740,6 +1741,7 @@ class PurchaseOrderOpsReportController extends Controller
             })
             ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
             ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
+            // Join outlet from PR
             ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
             ->whereBetween('po.date', [$filters['date_from'], $filters['date_to']]);
 
@@ -1784,8 +1786,39 @@ class PurchaseOrderOpsReportController extends Controller
         $this->applyHeaderStyle($sheet, 'A' . $row . ':N' . $row);
         $row++;
         
+        // Data - Group items by PR to batch fetch outlets if needed
+        $prNumbers = [];
+        foreach ($items as $item) {
+            if ($item->pr_number && !$item->outlet_name) {
+                $prNumbers[] = $item->pr_number;
+            }
+        }
+        
+        // Batch fetch outlets for PRs that don't have outlet from join
+        $outletMap = [];
+        if (!empty($prNumbers)) {
+            $outlets = DB::table('purchase_requisitions as pr')
+                ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                ->whereIn('pr.pr_number', array_unique($prNumbers))
+                ->select('pr.pr_number', 'o.nama_outlet')
+                ->get()
+                ->keyBy('pr_number');
+            
+            foreach ($outlets as $prNumber => $outlet) {
+                $outletMap[$prNumber] = $outlet->nama_outlet;
+            }
+        }
+        
         // Data
         foreach ($items as $item) {
+            // Get outlet from PR detail - use from join first, then from batch map
+            $outletName = $item->outlet_name;
+            
+            // If outlet_name is not available, try to get from batch map
+            if (!$outletName && $item->pr_number && isset($outletMap[$item->pr_number])) {
+                $outletName = $outletMap[$item->pr_number];
+            }
+            
             $sheet->setCellValue('A' . $row, $item->item_name);
             $sheet->setCellValue('B' . $row, $item->unit);
             $sheet->setCellValue('C' . $row, $item->category_name ?: '-');
@@ -1794,7 +1827,7 @@ class PurchaseOrderOpsReportController extends Controller
             $sheet->setCellValue('F' . $row, ucfirst($item->po_status));
             $sheet->setCellValue('G' . $row, $item->supplier_name ?: '-');
             $sheet->setCellValue('H' . $row, $item->pr_number ?: '-');
-            $sheet->setCellValue('I' . $row, $item->outlet_name ?: '-');
+            $sheet->setCellValue('I' . $row, $outletName ?: '-');
             $sheet->setCellValue('J' . $row, $item->creator_name ?: '-');
             $sheet->setCellValue('K' . $row, number_format((float)$item->quantity, 2));
             $sheet->setCellValue('L' . $row, number_format((float)$item->price, 2));
