@@ -87,11 +87,26 @@ class FoodInventoryAdjustmentController extends Controller
                 'new_data' => json_encode($request->all()),
                 'created_at' => now(),
             ]);
-            // Notifikasi hanya ke SSD Manager dan Cost Control Manager
-            $notifUsers = DB::table('users')
-                ->whereIn('id_jabatan', [161, 167])
-                ->where('status', 'A')
-                ->pluck('id');
+            
+            // Cek warehouse untuk menentukan approver
+            $warehouse = DB::table('warehouses')->where('id', $request->warehouse_id)->first();
+            $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            
+            // Notifikasi berdasarkan warehouse
+            if ($isMKWarehouse) {
+                // Untuk MK warehouse: langsung ke Sous Chef MK (179) saja
+                $notifUsers = DB::table('users')
+                    ->where('id_jabatan', 179)
+                    ->where('status', 'A')
+                    ->pluck('id');
+            } else {
+                // Untuk non-MK warehouse: ke Asisten SSD Manager (172) dulu
+                $notifUsers = DB::table('users')
+                    ->where('id_jabatan', 172)
+                    ->where('status', 'A')
+                    ->pluck('id');
+            }
+            
             foreach ($notifUsers as $uid) {
                 NotificationService::insert([
                     'user_id' => $uid,
@@ -119,11 +134,34 @@ class FoodInventoryAdjustmentController extends Controller
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             $adj = DB::table('food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
+            
+            // Cek warehouse untuk menentukan flow approval
+            $warehouse = DB::table('warehouses')->where('id', $adj->warehouse_id)->first();
+            $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            
             $update = [];
             $desc = '';
+            
             if ($isSuperadmin) {
-                // Superadmin mengikuti flow approval, bukan langsung approved
+                // Superadmin mengikuti flow approval berdasarkan warehouse
                 if ($adj->status == 'waiting_approval') {
+                    if ($isMKWarehouse) {
+                        // MK: langsung ke waiting_cost_control (Sous Chef MK)
+                        $update['status'] = 'waiting_cost_control';
+                        $update['approved_by_ssd_manager'] = $user->id;
+                        $update['approved_at_ssd_manager'] = now();
+                        $update['ssd_manager_note'] = $request->note;
+                        $desc = 'Superadmin approve tahap Sous Chef MK stock adjustment ID: ' . $id;
+                    } else {
+                        // Non-MK: approve sebagai Asisten SSD Manager
+                        $update['status'] = 'waiting_ssd_manager';
+                        $update['approved_by_assistant_ssd_manager'] = $user->id;
+                        $update['approved_at_assistant_ssd_manager'] = now();
+                        $update['assistant_ssd_manager_note'] = $request->note;
+                        $desc = 'Superadmin approve tahap Asisten SSD Manager stock adjustment ID: ' . $id;
+                    }
+                } else if ($adj->status == 'waiting_ssd_manager') {
+                    // Non-MK: dari Asisten SSD Manager ke Cost Control
                     $update['status'] = 'waiting_cost_control';
                     $update['approved_by_ssd_manager'] = $user->id;
                     $update['approved_at_ssd_manager'] = now();
@@ -138,20 +176,80 @@ class FoodInventoryAdjustmentController extends Controller
                 } else {
                     throw new \Exception('Status dokumen tidak valid untuk approval');
                 }
-            } else if (in_array($user->id_jabatan, [161, 172]) && $adj->status == 'waiting_approval') {
-                $update['status'] = 'waiting_cost_control';
-                $update['approved_by_ssd_manager'] = $user->id;
-                $update['approved_at_ssd_manager'] = now();
-                $update['ssd_manager_note'] = $request->note;
-                $desc = 'SSD Manager approve stock adjustment ID: ' . $id;
-            } else if ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control') {
-                $update['status'] = 'approved';
-                $update['approved_by_cost_control_manager'] = $user->id;
-                $update['approved_at_cost_control_manager'] = now();
-                $update['cost_control_manager_note'] = $request->note;
-                $desc = 'Cost Control Manager approve stock adjustment ID: ' . $id;
+            } else if ($isMKWarehouse) {
+                // MK Warehouse: hanya Sous Chef MK (179) yang bisa approve
+                if ($user->id_jabatan == 179 && $adj->status == 'waiting_approval') {
+                    $update['status'] = 'waiting_cost_control';
+                    $update['approved_by_ssd_manager'] = $user->id;
+                    $update['approved_at_ssd_manager'] = now();
+                    $update['ssd_manager_note'] = $request->note;
+                    $desc = 'Sous Chef MK approve stock adjustment ID: ' . $id;
+                } else if ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control') {
+                    $update['status'] = 'approved';
+                    $update['approved_by_cost_control_manager'] = $user->id;
+                    $update['approved_at_cost_control_manager'] = now();
+                    $update['cost_control_manager_note'] = $request->note;
+                    $desc = 'Cost Control Manager approve stock adjustment ID: ' . $id;
+                } else {
+                    throw new \Exception('Anda tidak berhak approve pada tahap ini');
+                }
             } else {
-                throw new \Exception('Anda tidak berhak approve pada tahap ini');
+                // Non-MK Warehouse: Asisten SSD Manager (172) dulu, baru SSD Manager (161)
+                if ($user->id_jabatan == 172 && $adj->status == 'waiting_approval') {
+                    $update['status'] = 'waiting_ssd_manager';
+                    $update['approved_by_assistant_ssd_manager'] = $user->id;
+                    $update['approved_at_assistant_ssd_manager'] = now();
+                    $update['assistant_ssd_manager_note'] = $request->note;
+                    $desc = 'Asisten SSD Manager approve stock adjustment ID: ' . $id;
+                    
+                    // Notifikasi ke SSD Manager untuk approval selanjutnya
+                    $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
+                    $adjNumber = $adj->number;
+                    $warehouseName = $warehouse->name ?? '-';
+                    foreach ($ssdManagers as $uid) {
+                        NotificationService::insert([
+                            'user_id' => $uid,
+                            'type' => 'stock_adjustment_approval',
+                            'message' => "Stock Adjustment #$adjNumber dari $warehouseName sudah di-approve Asisten SSD Manager, menunggu approval SSD Manager.",
+                            'url' => '/food-inventory-adjustment/' . $id,
+                            'is_read' => 0,
+                        ]);
+                    }
+                } else if (in_array($user->id_jabatan, [161, 172]) && $adj->status == 'waiting_ssd_manager') {
+                    // SSD Manager atau Asisten SSD Manager bisa approve level 2 (jika sudah ada approval level 1)
+                    // Asisten SSD Manager bisa approve level 2 juga (skip level 1 jika dia yang approve)
+                    $isAssistantSSDManager = $user->id_jabatan == 172;
+                    if (!$adj->approved_at_assistant_ssd_manager && $user->id_jabatan == 161) {
+                        throw new \Exception('Stock Adjustment harus di-approve Asisten SSD Manager terlebih dahulu');
+                    }
+                    $update['status'] = 'waiting_cost_control';
+                    $update['approved_by_ssd_manager'] = $user->id;
+                    $update['approved_at_ssd_manager'] = now();
+                    $update['ssd_manager_note'] = $request->note;
+                    $desc = ($user->id_jabatan == 172 ? 'Asisten SSD Manager' : 'SSD Manager') . ' approve stock adjustment ID: ' . $id;
+                    
+                    // Notifikasi ke Cost Control Manager
+                    $costControlManagers = DB::table('users')->where('id_jabatan', 167)->where('status', 'A')->pluck('id');
+                    $adjNumber = $adj->number;
+                    $warehouseName = $warehouse->name ?? '-';
+                    foreach ($costControlManagers as $uid) {
+                        NotificationService::insert([
+                            'user_id' => $uid,
+                            'type' => 'stock_adjustment_approval',
+                            'message' => "Stock Adjustment #$adjNumber dari $warehouseName sudah di-approve SSD Manager, menunggu approval Cost Control Manager.",
+                            'url' => '/food-inventory-adjustment/' . $id,
+                            'is_read' => 0,
+                        ]);
+                    }
+                } else if ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control') {
+                    $update['status'] = 'approved';
+                    $update['approved_by_cost_control_manager'] = $user->id;
+                    $update['approved_at_cost_control_manager'] = now();
+                    $update['cost_control_manager_note'] = $request->note;
+                    $desc = 'Cost Control Manager approve stock adjustment ID: ' . $id;
+                } else {
+                    throw new \Exception('Anda tidak berhak approve pada tahap ini');
+                }
             }
             DB::table('food_inventory_adjustments')->where('id', $id)->update($update);
             DB::table('activity_logs')->insert([
@@ -164,10 +262,7 @@ class FoodInventoryAdjustmentController extends Controller
                 'created_at' => now(),
             ]);
             // Jika status sudah approved, lakukan update ke inventory
-            if (
-                ($isSuperadmin && $adj->status == 'waiting_cost_control') ||
-                ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control')
-            ) {
+            if ($update['status'] == 'approved') {
                 $this->processInventory($id);
             }
             DB::commit();
@@ -195,16 +290,42 @@ class FoodInventoryAdjustmentController extends Controller
             $user = auth()->user();
             $adj = DB::table('food_inventory_adjustments')->where('id', $id)->first();
             if (!$adj) throw new \Exception('Adjustment not found');
+            
+            // Cek warehouse untuk menentukan flow approval
+            $warehouse = DB::table('warehouses')->where('id', $adj->warehouse_id)->first();
+            $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            
             $update = ['status' => 'rejected', 'updated_at' => now()];
-            if (in_array($user->id_jabatan, [161, 172])) {
-                $update['ssd_manager_note'] = $request->note;
-            } else if ($user->id_jabatan == 167) {
-                $update['cost_control_manager_note'] = $request->note;
-            } else if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
-                if ($adj->status == 'waiting_approval') {
+            
+            if ($isMKWarehouse) {
+                // MK Warehouse: hanya Sous Chef MK (179)
+                if ($user->id_jabatan == 179) {
                     $update['ssd_manager_note'] = $request->note;
-                } else if ($adj->status == 'waiting_cost_control') {
+                } else if ($user->id_jabatan == 167) {
                     $update['cost_control_manager_note'] = $request->note;
+                } else if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
+                    if ($adj->status == 'waiting_approval' || $adj->status == 'waiting_cost_control') {
+                        $update['ssd_manager_note'] = $request->note;
+                    } else if ($adj->status == 'waiting_cost_control') {
+                        $update['cost_control_manager_note'] = $request->note;
+                    }
+                }
+            } else {
+                // Non-MK Warehouse
+                if ($user->id_jabatan == 172) {
+                    $update['assistant_ssd_manager_note'] = $request->note;
+                } else if (in_array($user->id_jabatan, [161, 172])) {
+                    $update['ssd_manager_note'] = $request->note;
+                } else if ($user->id_jabatan == 167) {
+                    $update['cost_control_manager_note'] = $request->note;
+                } else if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
+                    if ($adj->status == 'waiting_approval') {
+                        $update['assistant_ssd_manager_note'] = $request->note;
+                    } else if ($adj->status == 'waiting_ssd_manager') {
+                        $update['ssd_manager_note'] = $request->note;
+                    } else if ($adj->status == 'waiting_cost_control') {
+                        $update['cost_control_manager_note'] = $request->note;
+                    }
                 }
             }
             DB::table('food_inventory_adjustments')->where('id', $id)->update($update);

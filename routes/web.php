@@ -1109,6 +1109,7 @@ Route::delete('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseS
 Route::post('/warehouse-stock-opnames/{id}/submit-approval', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'submitForApproval'])->name('warehouse-stock-opnames.submit-approval');
 Route::post('/warehouse-stock-opnames/{id}/approve', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'approve'])->name('warehouse-stock-opnames.approve');
 Route::post('/warehouse-stock-opnames/{id}/process', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'process'])->name('warehouse-stock-opnames.process');
+Route::get('/api/warehouse-stock-opnames/check-divisions', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'checkWarehouseDivisions'])->name('warehouse-stock-opnames.check-divisions');
 Route::get('/api/warehouse-stock-opnames/get-items', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getItems'])->name('warehouse-stock-opnames.get-items');
 Route::get('/api/warehouse-stock-opnames/approvers', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getApprovers'])->name('warehouse-stock-opnames.approvers');
 Route::get('/api/warehouse-stock-opnames/pending-approvals', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getPendingApprovals'])->name('warehouse-stock-opnames.pending-approvals')->middleware('auth');

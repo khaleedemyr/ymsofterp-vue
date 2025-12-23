@@ -1,27 +1,57 @@
 <template>
   <div>
-    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-      <i class="fa-solid fa-industry text-blue-500"></i> Buat Produksi Baru
-    </h2>
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
-      <select v-model="form.warehouse_id" class="input input-bordered w-full" required>
+    <div class="flex items-center gap-2 mb-6">
+      <div class="p-2 bg-blue-100 rounded-lg">
+        <i class="fa-solid fa-industry text-blue-600"></i>
+      </div>
+      <h2 class="text-xl font-bold text-gray-800">Form Produksi Baru</h2>
+    </div>
+
+    <!-- Warehouse Selection -->
+    <div class="mb-6">
+      <label class="block text-sm font-semibold text-gray-700 mb-2">
+        <i class="fa-solid fa-warehouse text-blue-500 mr-2"></i> Warehouse
+      </label>
+      <select 
+        v-model="form.warehouse_id" 
+        class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" 
+        required
+      >
         <option value="" disabled>Pilih Warehouse</option>
         <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
       </select>
     </div>
-    <form @submit.prevent="submit" class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <form @submit.prevent="submit" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Produksi</label>
-          <input type="date" v-model="form.production_date" class="input input-bordered w-full" required :disabled="!form.warehouse_id" />
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-calendar-day text-blue-500 mr-2"></i> Tanggal Produksi
+          </label>
+          <input 
+            type="date" 
+            v-model="form.production_date" 
+            class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" 
+            required 
+            :disabled="!form.warehouse_id" 
+          />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Batch Number</label>
-          <input type="text" v-model="form.batch_number" class="input input-bordered w-full" placeholder="Batch/No Lot" :disabled="!form.warehouse_id" />
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-barcode text-blue-500 mr-2"></i> Batch Number
+          </label>
+          <input 
+            type="text" 
+            v-model="form.batch_number" 
+            class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" 
+            placeholder="Batch/No Lot" 
+            :disabled="!form.warehouse_id" 
+          />
         </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Item Hasil Produksi</label>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-box text-blue-500 mr-2"></i> Item Hasil Produksi
+          </label>
           <Multiselect
             v-model="form.item_id"
             :options="items"
@@ -36,65 +66,176 @@
             class="w-full"
             @select="onItemChange"
           />
-          <div v-if="itemsWithBom && itemsWithBom.length" class="text-xs text-gray-500 mt-1">
-            💡 <strong>{{ itemsWithBom.length }}</strong> item tersedia dengan BOM. 
-            <span v-if="form.item_id && !isItemHasBom(form.item_id)" class="text-orange-600">
+          <div v-if="itemsWithBom && itemsWithBom.length" class="text-xs text-gray-600 mt-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+            <i class="fa-solid fa-lightbulb text-blue-500 mr-1"></i>
+            <strong>{{ itemsWithBom.length }}</strong> item tersedia dengan BOM. 
+            <span v-if="form.item_id && !isItemHasBom(form.item_id)" class="text-orange-600 font-semibold">
               Item yang dipilih tidak memiliki BOM.
             </span>
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Qty Produksi</label>
-          <input type="number" min="1" v-model.number="form.qty" class="input input-bordered w-full" required @input="onQtyChange" :disabled="!form.warehouse_id || !form.item_id" />
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-calculator text-blue-500 mr-2"></i> Qty Produksi
+          </label>
+          <input 
+            type="number" 
+            min="0" 
+            step="0.01" 
+            v-model.number="form.qty" 
+            class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" 
+            required 
+            @input="onQtyChange" 
+            :disabled="!form.warehouse_id || !form.item_id"
+            placeholder="0.00"
+          />
+          <p class="text-xs text-gray-500 mt-1">Bisa menggunakan desimal (contoh: 0.5, 1.25)</p>
         </div>
-        <div class="md:col-span-2 flex gap-2 items-end">
+        <div class="md:col-span-2 flex gap-4 items-end">
           <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Qty Jadi</label>
-            <input type="number" min="0" v-model.number="form.qty_jadi" class="input input-bordered w-full" :disabled="!form.item_id" />
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-check-circle text-blue-500 mr-2"></i> Qty Jadi
+            </label>
+            <input 
+              type="number" 
+              min="0" 
+              step="0.01" 
+              v-model.number="form.qty_jadi" 
+              class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" 
+              :disabled="!form.item_id"
+              placeholder="0.00"
+            />
           </div>
-          <div style="min-width:120px">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-            <select v-model="form.unit_jadi" class="input input-bordered w-full" :disabled="!form.item_id">
+          <div class="w-40">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-ruler text-blue-500 mr-2"></i> Unit
+            </label>
+            <select 
+              v-model="form.unit_jadi" 
+              class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" 
+              :disabled="!form.item_id"
+            >
               <option value="" disabled>Pilih Unit</option>
               <option v-for="u in unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
             </select>
           </div>
         </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Catatan</label>
-          <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Catatan tambahan" :disabled="!form.warehouse_id"></textarea>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-note-sticky text-blue-500 mr-2"></i> Catatan
+          </label>
+          <textarea 
+            v-model="form.notes" 
+            class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none" 
+            rows="3" 
+            placeholder="Catatan tambahan (opsional)" 
+            :disabled="!form.warehouse_id"
+          ></textarea>
         </div>
       </div>
-      <div v-if="bom.length" class="mt-6">
-        <h3 class="font-semibold mb-2 text-blue-700">Bahan Baku (BOM)</h3>
-        <table class="min-w-full bg-white rounded shadow text-sm">
-          <thead class="bg-blue-100">
-            <tr>
-              <th class="px-2 py-1 text-left">Bahan</th>
-              <th class="px-2 py-1 text-right">Qty/1</th>
-              <th class="px-2 py-1 text-right">Total</th>
-              <th class="px-2 py-1 text-right">Unit</th>
-              <th class="px-2 py-1 text-right">Stok</th>
-              <th class="px-2 py-1 text-right">Sisa</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="b in bom" :key="b.material_item_id" :class="b.sisa < 0 ? 'bg-red-50' : ''">
-              <td class="px-2 py-1">{{ b.material_name }}</td>
-              <td class="px-2 py-1 text-right">{{ formatNumber(b.qty_per_1) }}</td>
-              <td class="px-2 py-1 text-right">{{ formatNumber(b.qty_total) }}</td>
-              <td class="px-2 py-1 text-right">{{ b.unit_name }}</td>
-              <td class="px-2 py-1 text-right">{{ formatNumber(b.stok) }}</td>
-              <td class="px-2 py-1 text-right font-bold" :class="b.sisa < 0 ? 'text-red-600' : 'text-green-700'">{{ formatNumber(b.sisa) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="bom.some(b => b.sisa < 0)" class="text-red-600 mt-2">Stok bahan tidak cukup untuk produksi!</div>
+      <!-- BOM Table -->
+      <div v-if="bom.length" class="mt-6 bg-gray-50 rounded-xl p-4 border border-gray-200">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="p-2 bg-amber-100 rounded-lg">
+            <i class="fa-solid fa-list-check text-amber-600"></i>
+          </div>
+          <h3 class="font-bold text-gray-800">Bahan Baku (BOM)</h3>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full bg-white rounded-lg shadow-sm">
+            <thead class="bg-gradient-to-r from-amber-600 to-amber-700">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-box text-amber-200"></i>
+                    <span>Bahan</span>
+                  </div>
+                </th>
+                <th class="px-4 py-3 text-right text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-calculator text-amber-200"></i>
+                    <span>Qty/1</span>
+                  </div>
+                </th>
+                <th class="px-4 py-3 text-right text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-sigma text-amber-200"></i>
+                    <span>Total</span>
+                  </div>
+                </th>
+                <th class="px-4 py-3 text-right text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-ruler text-amber-200"></i>
+                    <span>Unit</span>
+                  </div>
+                </th>
+                <th class="px-4 py-3 text-right text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-warehouse text-amber-200"></i>
+                    <span>Stok</span>
+                  </div>
+                </th>
+                <th class="px-4 py-3 text-right text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center justify-end gap-2">
+                    <i class="fa-solid fa-balance-scale text-amber-200"></i>
+                    <span>Sisa</span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+              <tr 
+                v-for="b in bom" 
+                :key="b.material_item_id" 
+                :class="b.sisa < 0 ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-amber-50'"
+                class="transition-colors"
+              >
+                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ b.material_name }}</td>
+                <td class="px-4 py-3 text-sm text-right text-gray-700">{{ formatNumber(b.qty_per_1) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-gray-700 font-semibold">{{ formatNumber(b.qty_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right">
+                  <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                    {{ b.unit_name }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-right text-gray-700">{{ formatNumber(b.stok) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold" :class="b.sisa < 0 ? 'text-red-600' : 'text-green-700'">
+                  <span :class="b.sisa < 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold">
+                    {{ formatNumber(b.sisa) }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="bom.some(b => b.sisa < 0)" class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div class="flex items-center gap-2 text-red-700 font-semibold">
+            <i class="fa-solid fa-exclamation-triangle"></i>
+            <span>Stok bahan tidak cukup untuk produksi!</span>
+          </div>
+        </div>
       </div>
-      <div class="flex justify-end gap-2 mt-6">
-        <button type="button" class="btn btn-ghost" @click="$emit('cancel')">Batal</button>
-        <button type="submit" class="btn btn-primary bg-blue-600 hover:bg-blue-700 text-white" :disabled="loading || bom.some(b => b.sisa < 0) || !form.item_id || !form.qty">
-          <span v-if="loading" class="animate-spin mr-2"><i class="fa fa-spinner"></i></span>
+
+      <!-- Action Buttons -->
+      <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
+        <button 
+          type="button" 
+          class="px-6 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all font-semibold border-2 border-gray-200 hover:border-gray-300"
+          @click="$emit('cancel')"
+        >
+          <i class="fa-solid fa-times mr-2"></i> Batal
+        </button>
+        <button 
+          type="submit" 
+          class="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all font-semibold transform hover:-translate-y-0.5"
+          :disabled="loading || bom.some(b => b.sisa < 0) || !form.item_id || !form.qty || form.qty <= 0"
+        >
+          <span v-if="loading" class="animate-spin mr-2 inline-block">
+            <i class="fa fa-spinner"></i>
+          </span>
+          <span v-else>
+            <i class="fa-solid fa-save mr-2"></i>
+          </span>
           Simpan Produksi
         </button>
       </div>
@@ -124,7 +265,7 @@ const form = ref({
   production_date: new Date().toISOString().slice(0, 10),
   batch_number: '',
   item_id: null,
-  qty: 1,
+  qty: 0,
   notes: '',
   unit_id: '',
   qty_jadi: '',

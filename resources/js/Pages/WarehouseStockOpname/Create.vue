@@ -51,17 +51,25 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Warehouse Division</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Warehouse Division
+              <span v-if="warehouseHasDivisions" class="text-red-500">*</span>
+            </label>
             <select
               v-model="form.warehouse_division_id"
-              @change="loadItems"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              @change="onWarehouseDivisionChange"
+              :required="warehouseHasDivisions"
+              :disabled="!form.warehouse_id || checkingDivisions"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
-              <option value="">Semua Division</option>
+              <option value="">{{ warehouseHasDivisions ? 'Pilih Division' : 'Semua Division' }}</option>
               <option v-for="wd in filteredWarehouseDivisions" :key="wd.id" :value="wd.id">
                 {{ wd.name }}
               </option>
             </select>
+            <p v-if="checkingDivisions" class="text-xs text-gray-500 mt-1">
+              <i class="fa fa-spinner fa-spin mr-1"></i>Memeriksa division...
+            </p>
           </div>
 
           <div>
@@ -384,6 +392,9 @@ const approverSearch = ref('');
 const approverResults = ref([]);
 const showApproverDropdown = ref(false);
 const approverSearchTimeout = ref(null);
+const warehouseHasDivisions = ref(false);
+const checkingDivisions = ref(false);
+const warehouseDivisionsList = ref([]);
 
 // Autosave
 const draftId = ref(null);
@@ -444,6 +455,11 @@ watch(() => form.items, (newItems) => {
 }, { immediate: true });
 
 const filteredWarehouseDivisions = computed(() => {
+  // Use divisions from API check if available, otherwise use props
+  if (warehouseDivisionsList.value.length > 0) {
+    return warehouseDivisionsList.value;
+  }
+  
   let divisions = props.warehouseDivisions || [];
   
   if (form.warehouse_id) {
@@ -453,13 +469,61 @@ const filteredWarehouseDivisions = computed(() => {
   return divisions;
 });
 
-function onWarehouseChange() {
+async function onWarehouseChange() {
   form.warehouse_division_id = '';
   form.items = [];
+  warehouseHasDivisions.value = false;
+  warehouseDivisionsList.value = [];
+  
+  if (!form.warehouse_id) {
+    return;
+  }
+
+  // Check if warehouse has divisions
+  checkingDivisions.value = true;
+  try {
+    const response = await axios.get(route('warehouse-stock-opnames.check-divisions'), {
+      params: {
+        warehouse_id: form.warehouse_id,
+      },
+    });
+
+    if (response.data && response.data.has_divisions) {
+      warehouseHasDivisions.value = true;
+      warehouseDivisionsList.value = response.data.divisions || [];
+      // Items will be loaded when user selects a division
+    } else {
+      warehouseHasDivisions.value = false;
+      warehouseDivisionsList.value = [];
+      // If no divisions, load items immediately
+      await loadItems();
+    }
+  } catch (error) {
+    console.error('Error checking warehouse divisions:', error);
+    // On error, assume no divisions and try to load items
+    warehouseHasDivisions.value = false;
+    await loadItems();
+  } finally {
+    checkingDivisions.value = false;
+  }
+}
+
+function onWarehouseDivisionChange() {
+  if (form.warehouse_division_id) {
+    loadItems();
+  } else {
+    form.items = [];
+  }
 }
 
 async function loadItems() {
   if (!form.warehouse_id) {
+    form.items = [];
+    return;
+  }
+
+  // If warehouse has divisions but no division selected, don't load items
+  if (warehouseHasDivisions.value && !form.warehouse_division_id) {
     form.items = [];
     return;
   }
@@ -934,9 +998,12 @@ function submitForm() {
   });
 }
 
-// Load items when warehouse or warehouse division changes
+// Load items when warehouse division changes (only if warehouse doesn't require division or division is selected)
 watch(() => form.warehouse_division_id, () => {
   if (form.warehouse_division_id) {
+    loadItems();
+  } else if (!warehouseHasDivisions.value) {
+    // If warehouse doesn't have divisions, load items when division is cleared
     loadItems();
   }
 });
@@ -957,9 +1024,9 @@ watch(() => form.items, () => {
   triggerAutosave();
 }, { deep: true });
 
-// Auto load items if already selected
+// Auto check divisions and load items if warehouse is already selected
 if (form.warehouse_id && form.items.length === 0) {
-  loadItems();
+  onWarehouseChange();
 }
 </script>
 

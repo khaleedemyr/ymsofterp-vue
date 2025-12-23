@@ -87,7 +87,7 @@ class AuthController extends Controller
             'mobile_phone' => 'required|string|max:20',
             'tanggal_lahir' => 'required|date',
             'jenis_kelamin' => 'required|in:L,P',
-            'pekerjaan_id' => 'nullable|exists:member_apps_occupations,id',
+            'pekerjaan_id' => 'required|exists:member_apps_occupations,id',
             'password' => 'required|string|min:6',
             'pin' => 'nullable|string|min:4|max:6',
             'referral_member_id' => 'nullable|string|exists:member_apps_members,member_id',
@@ -112,7 +112,7 @@ class AuthController extends Controller
                 'mobile_phone' => $normalizedMobile, // Store normalized mobile phone
                 'tanggal_lahir' => $request->tanggal_lahir,
                 'jenis_kelamin' => $request->jenis_kelamin,
-                'pekerjaan_id' => $request->pekerjaan_id,
+                'pekerjaan_id' => $request->pekerjaan_id, // Required field
                 'password' => Hash::make($request->password),
                 'pin' => $request->pin ? Hash::make($request->pin) : null,
                 'member_level' => 'Silver', // Default level untuk member baru (Silver, Loyal, Elite)

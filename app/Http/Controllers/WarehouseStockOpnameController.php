@@ -1087,6 +1087,27 @@ class WarehouseStockOpnameController extends Controller
     }
 
     /**
+     * Check if warehouse has divisions
+     */
+    public function checkWarehouseDivisions(Request $request)
+    {
+        $validated = $request->validate([
+            'warehouse_id' => 'required|integer',
+        ]);
+
+        $divisions = DB::table('warehouse_division')
+            ->where('warehouse_id', $validated['warehouse_id'])
+            ->select('id', 'name', 'warehouse_id')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'has_divisions' => $divisions->count() > 0,
+            'divisions' => $divisions,
+        ]);
+    }
+
+    /**
      * Get inventory items via API (for AJAX)
      */
     public function getItems(Request $request)

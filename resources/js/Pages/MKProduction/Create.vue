@@ -1,18 +1,29 @@
 <template>
   <AppLayout>
-    <div class="max-w-3xl mx-auto py-10 px-2">
-      <div class="flex items-center gap-2 mb-4">
-        <button @click="goBack" class="btn btn-ghost !px-3 !py-2 rounded-full shadow hover:bg-blue-50">
-          <i class="fa fa-arrow-left text-lg"></i>
-        </button>
-        <div>
-          <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">
-            <i class="fa-solid fa-industry text-blue-500"></i> Buat MK Production
-          </h1>
-          <div class="text-gray-500 text-sm mt-1">Pencatatan produksi Main Kitchen (sauce, seasoning, dll)</div>
+    <div class="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <!-- Header Section -->
+      <div class="mb-6">
+        <div class="flex items-center gap-4 mb-4">
+          <button 
+            @click="goBack" 
+            class="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <i class="fa fa-arrow-left text-gray-600 text-xl"></i>
+          </button>
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div class="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+                <i class="fa-solid fa-industry text-white text-xl"></i>
+              </div>
+              <span>Buat MK Production</span>
+            </h1>
+            <p class="text-gray-600 ml-16">Pencatatan produksi Main Kitchen (sauce, seasoning, dll)</p>
+          </div>
         </div>
       </div>
-      <div class="bg-white rounded-xl shadow-lg p-8 mt-2">
+
+      <!-- Form Card -->
+      <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sm:p-8">
         <MKProductionForm :items="items" :warehouses="warehouses" @submitted="onSubmitted" @cancel="goBack" />
       </div>
     </div>
