@@ -400,28 +400,16 @@
                     <h5 class="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                       <i class="fa fa-list-ul text-blue-500"></i>Budget Breakdown Detail
                     </h5>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div class="p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                        <p class="text-blue-600 font-medium text-xs mb-1">PR Unpaid</p>
-                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.pr_unpaid || 0) }}</p>
-                        <p class="text-xs text-gray-500 mt-1">PR Submitted & Approved<br>yang belum dibuat PO</p>
+                        <p class="text-blue-600 font-medium text-xs mb-1">PR</p>
+                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.pr_total || 0) }}</p>
+                        <p class="text-xs text-gray-500 mt-1">Total PR items<br>yang sudah dibuat</p>
                       </div>
                       <div class="p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                        <p class="text-blue-600 font-medium text-xs mb-1">PO Unpaid</p>
-                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.po_unpaid || 0) }}</p>
-                        <p class="text-xs text-gray-500 mt-1">PO Submitted & Approved<br>yang belum dibuat NFP</p>
-                      </div>
-                      <div class="p-3 bg-white rounded-lg border border-orange-100 shadow-sm">
-                        <p class="text-orange-600 font-medium text-xs mb-1">NFP Submitted</p>
-                        <p class="text-base font-bold text-orange-600">{{ formatCurrency(categoryGroup.budget_breakdown.nfp_submitted || 0) }}</p>
-                      </div>
-                      <div class="p-3 bg-white rounded-lg border border-yellow-100 shadow-sm">
-                        <p class="text-yellow-600 font-medium text-xs mb-1">NFP Approved</p>
-                        <p class="text-base font-bold text-yellow-600">{{ formatCurrency(categoryGroup.budget_breakdown.nfp_approved || 0) }}</p>
-                      </div>
-                      <div class="p-3 bg-white rounded-lg border border-green-100 shadow-sm">
-                        <p class="text-green-600 font-medium text-xs mb-1">NFP Paid</p>
-                        <p class="text-base font-bold text-green-600">{{ formatCurrency(categoryGroup.budget_breakdown.nfp_paid || 0) }}</p>
+                        <p class="text-blue-600 font-medium text-xs mb-1">PO</p>
+                        <p class="text-base font-bold text-blue-800">{{ formatCurrency(categoryGroup.budget_breakdown.po_total || 0) }}</p>
+                        <p class="text-xs text-gray-500 mt-1">Total PO items<br>yang sudah dibuat</p>
                       </div>
                       <div class="p-3 bg-white rounded-lg border border-purple-100 shadow-sm">
                         <p class="text-purple-600 font-medium text-xs mb-1">Retail Non Food</p>
@@ -432,18 +420,9 @@
                   </div>
                   
                   <!-- Budget Breakdown by Source (Old) -->
-                  <div v-if="categoryGroup.budget_breakdown && (categoryGroup.budget_breakdown.nfp_amount || categoryGroup.budget_breakdown.pr_unpaid_amount || categoryGroup.budget_breakdown.rnf_amount)" class="mt-4 pt-4 border-t border-gray-200">
+                  <div v-if="categoryGroup.budget_breakdown && (categoryGroup.budget_breakdown.pr_unpaid_amount || categoryGroup.budget_breakdown.rnf_amount)" class="mt-4 pt-4 border-t border-gray-200">
                     <div class="text-xs font-medium text-gray-700 mb-3">Total Penggunaan Budget:</div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <!-- NFP Amount -->
-                      <div class="bg-blue-50 rounded-lg p-3">
-                        <div class="text-xs text-gray-500 mb-1">NFP (Non-Food Payment)</div>
-                        <div class="text-base font-bold text-blue-600">{{ formatCurrency(categoryGroup.budget_breakdown.nfp_amount || 0) }}</div>
-                        <div class="text-xs text-gray-500 mt-1">
-                          {{ getPercentage(categoryGroup.budget_breakdown.nfp_amount || 0, categoryGroup.total_budget_limit) }}% of budget
-                        </div>
-                      </div>
-                      
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <!-- PR Unpaid Amount -->
                       <div class="bg-orange-50 rounded-lg p-3">
                         <div class="text-xs text-gray-500 mb-1">PR Unpaid</div>
@@ -534,28 +513,16 @@
                         <h5 class="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-2">
                           <i class="fa fa-list-ul text-blue-500"></i>Budget Breakdown Detail
                         </h5>
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                           <div class="p-2 bg-white rounded border border-blue-100">
-                            <p class="text-blue-600 font-medium">PR Unpaid</p>
-                            <p class="text-sm font-bold text-blue-800">{{ formatCurrency(outlet.breakdown.pr_unpaid || 0) }}</p>
-                            <p class="text-xs text-gray-500 mt-1">PR Submitted & Approved<br>yang belum dibuat PO</p>
+                            <p class="text-blue-600 font-medium">PR</p>
+                            <p class="text-sm font-bold text-blue-800">{{ formatCurrency(outlet.breakdown.pr_total || 0) }}</p>
+                            <p class="text-xs text-gray-500 mt-1">Total PR items<br>yang sudah dibuat</p>
                           </div>
                           <div class="p-2 bg-white rounded border border-blue-100">
-                            <p class="text-blue-600 font-medium">PO Unpaid</p>
-                            <p class="text-sm font-bold text-blue-800">{{ formatCurrency(outlet.breakdown.po_unpaid || 0) }}</p>
-                            <p class="text-xs text-gray-500 mt-1">PO Submitted & Approved<br>yang belum dibuat NFP</p>
-                          </div>
-                          <div class="p-2 bg-white rounded border border-orange-100">
-                            <p class="text-orange-600 font-medium">NFP Submitted</p>
-                            <p class="text-sm font-bold text-orange-600">{{ formatCurrency(outlet.breakdown.nfp_submitted || 0) }}</p>
-                          </div>
-                          <div class="p-2 bg-white rounded border border-yellow-100">
-                            <p class="text-yellow-600 font-medium">NFP Approved</p>
-                            <p class="text-sm font-bold text-yellow-600">{{ formatCurrency(outlet.breakdown.nfp_approved || 0) }}</p>
-                          </div>
-                          <div class="p-2 bg-white rounded border border-green-100">
-                            <p class="text-green-600 font-medium">NFP Paid</p>
-                            <p class="text-sm font-bold text-green-600">{{ formatCurrency(outlet.breakdown.nfp_paid || 0) }}</p>
+                            <p class="text-blue-600 font-medium">PO</p>
+                            <p class="text-sm font-bold text-blue-800">{{ formatCurrency(outlet.breakdown.po_total || 0) }}</p>
+                            <p class="text-xs text-gray-500 mt-1">Total PO items<br>yang sudah dibuat</p>
                           </div>
                           <div class="p-2 bg-white rounded border border-purple-100">
                             <p class="text-purple-600 font-medium">Retail Non Food</p>

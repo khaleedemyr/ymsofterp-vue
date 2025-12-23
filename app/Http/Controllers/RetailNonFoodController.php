@@ -724,146 +724,96 @@ class RetailNonFoodController extends Controller
                 ]);
             }
 
-            // Hitung budget yang sudah digunakan (bulan berjalan) - same logic as Opex Report
+            // Use BudgetCalculationService for consistent calculation (same as PurchaseRequisitionController)
             $currentMonth = date('n'); // 1-12
             $currentYear = date('Y');
             $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
             $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
             
-            // Get PR IDs in this category for the month (BUDGET IS MONTHLY - filter by month)
-            // All budget calculations must use current month filter
-            $prIds = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                ->whereYear('created_at', date('Y', strtotime($dateFrom)))
-                ->whereMonth('created_at', date('m', strtotime($dateFrom)))
-                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                ->pluck('id')
-                ->toArray();
+            // For GLOBAL budget type, outletId must be null (no outlet filter)
+            $budgetService = new BudgetCalculationService();
+            $budgetInfoResult = $budgetService->getBudgetInfo(
+                categoryId: $category->id,
+                outletId: null, // GLOBAL budget: no outlet filter
+                dateFrom: $dateFrom,
+                dateTo: $dateTo,
+                currentAmount: 0 // No current amount for budget info
+            );
             
-            // Get PO IDs that are linked to PRs in this category (from current month)
-            $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->whereIn('poi.source_id', $prIds)
-                ->distinct()
-                ->pluck('poi.purchase_order_ops_id')
-                ->toArray();
+            if (!$budgetInfoResult['success']) {
+                return response()->json([
+                    'budget_info' => null,
+                    'error' => $budgetInfoResult['message'] ?? 'Failed to get budget information'
+                ], 500);
+            }
             
-            // Get paid amount from non_food_payments (payments in current month for PRs in current month)
-            $paidAmountFromPo = DB::table('non_food_payments as nfp')
-                ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                ->whereIn('nfp.status', ['paid', 'approved'])
-                ->where('nfp.status', '!=', 'cancelled')
-                ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                ->sum('nfp.amount');
-            
-            // Get Retail Non Food amounts (same logic as Opex Report - use whereBetween for date filter)
-            $retailNonFoodApproved = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                ->whereBetween('transaction_date', [$dateFrom, $dateTo])
-                ->where('status', 'approved')
-                ->sum('total_amount');
-            
+            // Get Retail Non Food pending amount (for display only, not included in used amount)
             $retailNonFoodPending = RetailNonFood::where('category_budget_id', $request->category_budget_id)
                 ->whereBetween('transaction_date', [$dateFrom, $dateTo])
                 ->where('status', 'pending')
                 ->sum('total_amount');
             
-            // Add Retail Non Food approved amount (directly paid, same as Opex Report)
-            $paidAmount = $paidAmountFromPo + $retailNonFoodApproved;
+            // Extract values from budget service result
+            $budgetInfo = $budgetInfoResult;
+            $retailNonFoodApproved = $budgetInfo['breakdown']['retail_non_food'] ?? 0;
+            $paidAmount = $budgetInfo['breakdown']['po_total'] + $retailNonFoodApproved; // PO total + RNF approved
+            $unpaidAmount = $budgetInfo['breakdown']['pr_unpaid'] ?? 0;
+            $categoryUsedAmount = $budgetInfo['category_used_amount'] ?? 0;
+            $remainingBudget = $budgetInfo['category_remaining_amount'] ?? 0;
             
-            // Get all PRs in this category for the month (same logic as Opex Report - use whereYear/whereMonth based on dateFrom)
-            // Exclude held PRs
-            $allPrs = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                ->whereYear('created_at', date('Y', strtotime($dateFrom)))
-                ->whereMonth('created_at', date('m', strtotime($dateFrom)))
-                ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                ->where('is_held', false) // Exclude held PRs
-                ->get();
-            
-            // Get PO totals per PR (same logic as Opex Report - use whereBetween for date filter)
-            // Exclude held PRs from unpaid calculation
-            $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                ->where('pr.category_id', $request->category_budget_id)
-                ->where('pr.is_held', false) // Exclude held PRs
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->where('poo.status', 'approved')
-                ->whereBetween('poo.date', [$dateFrom, $dateTo])
-                ->groupBy('pr.id')
-                ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                ->pluck('po_total', 'pr_id')
+            // Calculate approved and unapproved amounts for display (same logic as PurchaseRequisitionController)
+            // Support both old structure (category at PR level) and new structure (category at items level)
+            $prIds = DB::table('purchase_requisitions as pr')
+                ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                ->where(function($q) use ($category) {
+                    $q->where('pr.category_id', $category->id)
+                      ->orWhere('pri.category_id', $category->id);
+                })
+                ->whereYear('pr.created_at', $currentYear)
+                ->whereMonth('pr.created_at', $currentMonth)
+                ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                ->where('pr.is_held', false)
+                ->distinct()
+                ->pluck('pr.id')
                 ->toArray();
             
-            // Get total paid per PR
-            // Exclude held PRs from unpaid calculation
-            $paidTotalsByPr = DB::table('non_food_payments as nfp')
-                ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                ->where('pr.category_id', $request->category_budget_id)
-                ->where('pr.is_held', false) // Exclude held PRs
-                ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                ->whereIn('nfp.status', ['paid', 'approved'])
-                ->where('nfp.status', '!=', 'cancelled')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->groupBy('pr.id')
-                ->select('pr.id as pr_id', DB::raw('SUM(nfp.amount) as total_paid'))
-                ->pluck('total_paid', 'pr_id')
-                ->toArray();
+            $prsForStatus = PurchaseRequisition::whereIn('id', $prIds)->get();
+            $approvedAmount = 0;
+            $unapprovedAmount = 0;
             
-            // Calculate unpaid for each PR (exclude held PRs)
-            $unpaidAmount = 0;
-            foreach ($allPrs as $pr) {
-                // Skip held PRs (double check)
-                if ($pr->is_held) {
-                    continue;
+            foreach ($prsForStatus as $pr) {
+                // For PR Ops mode: calculate based on items in this category
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                    $categoryItemsSubtotal = DB::table('purchase_requisition_items')
+                        ->where('purchase_requisition_id', $pr->id)
+                        ->where('category_id', $category->id)
+                        ->sum('subtotal');
+                    $prAmount = $categoryItemsSubtotal ?? 0;
+                } else {
+                    // For other modes: use PR amount
+                    $prAmount = $pr->amount;
                 }
                 
-                $prId = $pr->id;
-                $poTotal = $poTotalsByPr[$prId] ?? 0;
-                $totalPaid = $paidTotalsByPr[$prId] ?? 0;
-                
-                // If PR hasn't been converted to PO, use PR amount
-                // If PR has been converted to PO, use PO total
-                $prTotalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                $unpaidAmount += max(0, $prTotalAmount - $totalPaid);
+                if (in_array($pr->status, ['APPROVED', 'PROCESSED', 'COMPLETED'])) {
+                    $approvedAmount += $prAmount;
+                }
+                if ($pr->status === 'SUBMITTED') {
+                    $unapprovedAmount += $prAmount;
+                }
             }
-            
-            // Calculate category used amount = Paid (from non_food_payments + RNF approved) + Unpaid PR
-            // Same logic as Opex Report: RNF pending is NOT included in total used amount
-            // Opex Report shows: total_paid_amount (includes RNF approved) + total_unpaid_amount (PR unpaid only)
-            $categoryUsedAmount = $paidAmount + $unpaidAmount;
-            
-            // Calculate approved and unapproved amounts for display (same logic as Opex Report - use whereYear/whereMonth based on dateFrom)
-            $approvedAmount = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                ->whereYear('created_at', date('Y', strtotime($dateFrom)))
-                ->whereMonth('created_at', date('m', strtotime($dateFrom)))
-                ->whereIn('status', ['APPROVED', 'PROCESSED', 'COMPLETED'])
-                ->sum('amount');
-            
-            $unapprovedAmount = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                ->whereYear('created_at', date('Y', strtotime($dateFrom)))
-                ->whereMonth('created_at', date('m', strtotime($dateFrom)))
-                ->where('status', 'SUBMITTED')
-                ->sum('amount');
             
             $totalApprovedAmount = $approvedAmount + $retailNonFoodApproved;
             $totalUnapprovedAmount = $unapprovedAmount + $retailNonFoodPending;
-            
-            // Sisa budget (can be negative if exceeded)
-            $remainingBudget = $category->budget_limit - $categoryUsedAmount;
             
             // Persentase penggunaan
             $budgetPercentage = $category->budget_limit > 0 
                 ? round(($categoryUsedAmount / $category->budget_limit) * 100, 2) 
                 : 0;
 
-            // Calculate purchase requisition used amount (paid + unpaid, same as Opex Report)
-            // This represents the total PR amount that has been used (either paid or still unpaid)
-            // Note: This is only PR-related, RNF is separate
-            $purchaseRequisitionUsed = $paidAmountFromPo + $unpaidAmount;
+            // Calculate purchase requisition used amount (paid + unpaid)
+            $purchaseRequisitionUsed = $budgetInfo['breakdown']['po_total'] + $unpaidAmount;
             
-            // Calculate retail non food used amount
-            // For display: show approved + pending, but for budget calculation only approved is counted
+            // Calculate retail non food used amount (for display: approved + pending)
             $retailNonFoodUsed = $retailNonFoodApproved + $retailNonFoodPending;
             
             return response()->json([
@@ -873,20 +823,22 @@ class RetailNonFoodController extends Controller
                     'division' => $category->division,
                     'subcategory' => $category->subcategory,
                     'budget_limit' => $category->budget_limit,
-                    'category_used_amount' => $categoryUsedAmount, // Paid + Unpaid + RNF pending
+                    'category_used_amount' => $categoryUsedAmount, // Paid + Unpaid (from BudgetCalculationService)
                     'total_used' => $categoryUsedAmount, // Alias for frontend compatibility
-                    'paid_amount' => $paidAmount, // From non_food_payments + RNF approved
-                    'unpaid_amount' => $unpaidAmount, // Unpaid PR amount
+                    'paid_amount' => $paidAmount, // PO total + RNF approved
+                    'unpaid_amount' => $unpaidAmount, // PR unpaid (from BudgetCalculationService)
                     'retail_non_food_approved' => $retailNonFoodApproved,
                     'retail_non_food_pending' => $retailNonFoodPending,
                     'retail_non_food_used' => $retailNonFoodUsed, // For frontend display
                     'purchase_requisition_used' => $purchaseRequisitionUsed, // For frontend display
                     'approved_amount' => $totalApprovedAmount,
                     'unapproved_amount' => $totalUnapprovedAmount,
-                    'remaining_budget' => $remainingBudget, // Can be negative
+                    'remaining_budget' => $remainingBudget,
                     'budget_percentage' => $budgetPercentage,
                     'current_month' => $currentMonth,
                     'current_year' => $currentYear,
+                    // Include breakdown from BudgetCalculationService for consistency
+                    'breakdown' => $budgetInfo['breakdown'] ?? [],
                 ]
             ]);
 

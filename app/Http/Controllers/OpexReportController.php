@@ -582,93 +582,55 @@ class OpexReportController extends Controller
                         ->pluck('poi.purchase_order_ops_id')
                         ->toArray();
                     
-                    // Get paid amount from non_food_payments for this outlet (same logic as getBudgetInfo)
-                    // 
-                    // SKENARIO KOMPLEKS:
-                    // 1. 1 PR bisa jadi beberapa PO → Loop semua PO yang terkait dengan PR untuk outlet/category ini ✅
-                    // 2. 1 PO bisa gabungan dari beberapa PR dan outlet → Hitung proporsi PO items untuk outlet/category ini ✅
-                    // 3. 1 NFP biasanya membayar 1 PO (via purchase_order_ops_id) → Loop per PO, hitung proporsi per payment ✅
-                    //
-                    // LOGIKA PROPORSIONAL:
-                    // - Untuk setiap PO yang terkait dengan outlet/category ini:
-                    //   1. Hitung total PO items untuk outlet/category ini
-                    //   2. Hitung total semua PO items di PO tersebut
-                    //   3. Hitung proporsi: (outlet items) / (total items)
-                    //   4. Alokasikan payment: payment_amount * proportion
-                    // - Ini memastikan jika 1 PO gabungan dari beberapa outlet, hanya proporsi yang sesuai yang dihitung
-                    //
-                    $paidAmountFromPo = 0;
-                    if (!empty($poIdsInCategory)) {
-                        // Loop semua PO yang terkait dengan outlet/category ini
-                        foreach ($poIdsInCategory as $poId) {
-                            // STEP 1: Get PO items yang berasal dari PR items di outlet/category ini
-                            // Ini menghitung berapa banyak PO items yang benar-benar untuk outlet/category ini
-                            // (untuk handle skenario: 1 PO gabungan dari beberapa PR dan outlet)
-                            $outletPoItemIds = DB::table('purchase_order_ops_items as poi')
-                                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                                ->leftJoin('purchase_requisition_items as pri', function($join) {
-                                    $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                         ->where(function($q) {
-                                             $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                               ->orWhere(function($q2) {
-                                                   $q2->whereNull('poi.pr_ops_item_id')
-                                                      ->whereColumn('poi.item_name', 'pri.item_name');
-                                               });
-                                         });
-                                })
-                                ->where('poi.purchase_order_ops_id', $poId)
-                                ->where('poi.source_type', 'purchase_requisition_ops')
-                                ->where(function($q) use ($category, $outletId) {
-                                    // Old structure: category and outlet at PR level
-                                    $q->where(function($q2) use ($category, $outletId) {
-                                        $q2->where('pr.category_id', $category->id)
-                                           ->where('pr.outlet_id', $outletId);
-                                    })
-                                    // New structure: category and outlet at items level
-                                    ->orWhere(function($q2) use ($category, $outletId) {
-                                        $q2->where('pri.category_id', $category->id)
-                                           ->where('pri.outlet_id', $outletId);
-                                    });
-                                })
-                                ->pluck('poi.total')
-                                ->toArray();
-                            
-                            // STEP 2: Get payment untuk PO ini
-                            // Catatan: 1 NFP biasanya membayar 1 PO (via purchase_order_ops_id)
-                            // Jika ada skenario 1 NFP membayar beberapa PO, perlu struktur tambahan
-                            $poPayment = DB::table('non_food_payments')
-                                ->where('purchase_order_ops_id', $poId)
-                                ->where('status', 'paid') // Only 'paid' status, not 'approved'
-                                ->where('status', '!=', 'cancelled')
-                                ->whereBetween('payment_date', [$dateFrom, $dateTo])
-                                ->first();
-                            
-                            if ($poPayment) {
-                                // STEP 3: Verify PO is still approved (not deleted)
-                                $poStatus = DB::table('purchase_order_ops')
-                                    ->where('id', $poId)
-                                    ->value('status');
-                                
-                                if ($poStatus === 'approved') {
-                                    // STEP 4: Hitung proporsi untuk alokasi payment
-                                    // Proporsi = (PO items untuk outlet/category ini) / (total semua PO items)
-                                    // Ini memastikan jika 1 PO gabungan dari beberapa outlet, hanya proporsi yang sesuai yang dihitung
-                                    $poTotalItems = DB::table('purchase_order_ops_items')
-                                        ->where('purchase_order_ops_id', $poId)
-                                        ->sum('total');
-                                    
-                                    if ($poTotalItems > 0) {
-                                        $outletPoItemsTotal = array_sum($outletPoItemIds);
-                                        $proportion = $outletPoItemsTotal / $poTotalItems;
-                                        
-                                        // STEP 5: Alokasikan payment berdasarkan proporsi
-                                        // allocated_amount = payment_amount * proportion
-                                        $paidAmountFromPo += $poPayment->amount * $proportion;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // SIMPLIFIED: Hitung langsung dari PO items, tidak perlu join ke non_food_payments
+                    // Paid = PO items yang sudah ada di PO dengan status approved (semua PO items dianggap "committed")
+                    // Logic: Jika PO sudah approved, berarti items sudah "used" untuk budget
+                    $paidAmountFromPo = DB::table('purchase_order_ops_items as poi')
+                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
+                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                        ->leftJoin('purchase_requisition_items as pri', function($join) use ($category, $outletId) {
+                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
+                                 ->where(function($q) use ($category, $outletId) {
+                                     // Prefer exact match by pr_ops_item_id
+                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                       // Fallback: match by item_name, but also match by outlet_id and category_id to avoid duplicates
+                                       ->orWhere(function($q2) use ($category, $outletId) {
+                                           $q2->whereNull('poi.pr_ops_item_id')
+                                              ->whereColumn('poi.item_name', 'pri.item_name')
+                                              ->where('pri.outlet_id', $outletId)
+                                              ->where('pri.category_id', $category->id)
+                                              // Only match the first PR item if multiple exist (to avoid double counting)
+                                              ->whereRaw('pri.id = (
+                                                  SELECT MIN(pri2.id) 
+                                                  FROM purchase_requisition_items as pri2 
+                                                  WHERE pri2.purchase_requisition_id = pri.purchase_requisition_id 
+                                                  AND pri2.item_name = pri.item_name
+                                                  AND pri2.outlet_id = ?
+                                                  AND pri2.category_id = ?
+                                              )', [$outletId, $category->id]);
+                                       });
+                                 });
+                        })
+                        ->where(function($q) use ($category, $outletId) {
+                            // Old structure: category and outlet at PR level
+                            $q->where(function($q2) use ($category, $outletId) {
+                                $q2->where('pr.category_id', $category->id)
+                                   ->where('pr.outlet_id', $outletId);
+                            })
+                            // New structure: category and outlet at items level
+                            ->orWhere(function($q2) use ($category, $outletId) {
+                                $q2->where('pri.category_id', $category->id)
+                                   ->where('pri.outlet_id', $outletId);
+                            });
+                        })
+                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
+                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
+                        ->where('pr.is_held', false)
+                        ->where('poi.source_type', 'purchase_requisition_ops')
+                        ->where('poo.status', 'approved') // Only approved POs
+                        ->whereBetween('poo.date', [$dateFrom, $dateTo])
+                        ->groupBy('poi.id') // Group by PO item ID to avoid duplicates
+                        ->sum('poi.total');
                     
                     // Get Retail Non Food for this outlet
                     $outletRetailNonFoodApproved = DB::table('retail_non_food')
@@ -678,361 +640,60 @@ class OpexReportController extends Controller
                         ->where('status', 'approved')
                         ->sum('total_amount');
                     
-                    // Get unpaid PR data for this outlet (same logic as getBudgetInfo)
-                    $prIdsForUnpaid = DB::table('purchase_requisitions as pr')
-                        ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
+                    // Hitung total PR items yang sudah dibuat (baik sudah jadi PO maupun belum)
+                    // PR Total = semua PR items untuk category/outlet ini
+                    $prTotalAmount = DB::table('purchase_requisition_items as pri')
+                        ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
+                        ->where('pri.outlet_id', $outletId)
+                        ->where('pri.category_id', $category->id)
+                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
+                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
+                        ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
+                        ->where('pr.is_held', false)
+                        ->groupBy('pri.id') // Group by PR item ID to avoid duplicates
+                        ->sum('pri.subtotal');
+                    
+                    // Hitung PR items yang belum jadi PO (unpaid)
+                    $prUnpaidAmount = DB::table('purchase_requisition_items as pri')
+                        ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
                         ->leftJoin('purchase_order_ops_items as poi', function($join) {
                             $join->on('pr.id', '=', 'poi.source_id')
-                                 ->where('poi.source_type', '=', 'purchase_requisition_ops');
+                                 ->where('poi.source_type', '=', 'purchase_requisition_ops')
+                                 ->where(function($q) {
+                                     // Match by pr_ops_item_id or item_name
+                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                                       ->orWhere(function($q2) {
+                                           $q2->whereNull('poi.pr_ops_item_id')
+                                              ->whereColumn('poi.item_name', 'pri.item_name');
+                                       });
+                                 });
                         })
-                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('non_food_payments as nfp', 'pr.id', '=', 'nfp.purchase_requisition_id')
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
+                        ->where('pri.outlet_id', $outletId)
+                        ->where('pri.category_id', $category->id)
                         ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
                         ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
                         ->whereIn('pr.status', ['SUBMITTED', 'APPROVED'])
                         ->where('pr.is_held', false)
-                        ->whereNull('poo.id')
-                        ->whereNull('nfp.id')
-                        ->distinct()
-                        ->pluck('pr.id')
-                        ->toArray();
+                        ->whereNull('poi.id') // PR item yang belum jadi PO item
+                        ->groupBy('pri.id') // Group by PR item ID to avoid duplicates
+                        ->sum('pri.subtotal');
                     
-                    $allPrs = DB::table('purchase_requisitions')->whereIn('id', $prIdsForUnpaid)->get();
+                    // PO Total = semua PO items yang sudah dibuat (approved) untuk category/outlet ini
+                    // Ini sama dengan paidAmountFromPo
+                    $poTotalAmount = $paidAmountFromPo;
                     
-                    // Get PO totals per PR for this outlet
-                    $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->whereIn('poo.status', ['submitted', 'approved'])
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                        ->pluck('po_total', 'pr_id')
-                        ->toArray();
-                    
-                    // Get total paid per PR for this outlet
-                    $paidTotalsByPr = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->where('nfp.status', 'paid')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->where('poo.status', 'approved')
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(nfp.amount) as total_paid'))
-                        ->pluck('total_paid', 'pr_id')
-                        ->toArray();
-                    
-                    // Get unpaid PO data for this outlet
-                    $allPOs = DB::table('purchase_order_ops as poo')
-                        ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->leftJoin('non_food_payments as nfp', 'poo.id', '=', 'nfp.purchase_order_ops_id')
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->whereIn('poo.status', ['submitted', 'approved'])
-                        ->whereNull('nfp.id')
-                        ->groupBy('poo.id')
-                        ->select('poo.id as po_id', DB::raw('SUM(poi.total) as po_total'))
-                        ->get();
-                    
-                    // Calculate unpaid for each PR
-                    // IMPORTANT: Untuk PR Ops (mode pr_ops/purchase_payment), hitung berdasarkan items di outlet tersebut
-                    // Untuk mode lain, gunakan PR amount
-                    $prUnpaidAmount = 0;
-                    foreach ($allPrs as $pr) {
-                        // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
-                        if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
-                            // Hitung subtotal items di outlet ini
-                            $outletItemsSubtotal = DB::table('purchase_requisition_items')
-                                ->where('purchase_requisition_id', $pr->id)
-                                ->where('outlet_id', $outletId)
-                                ->where('category_id', $category->id)
-                                ->sum('subtotal');
-                            $prUnpaidAmount += $outletItemsSubtotal ?? 0;
-                        } else {
-                            // Untuk mode lain: gunakan PR amount
-                            $prUnpaidAmount += $pr->amount;
-                        }
-                    }
-                    
-                    // Calculate unpaid for each PO
+                    // PO Unpaid = 0 (karena semua PO items sudah dihitung sebagai paid)
                     $poUnpaidAmount = 0;
-                    foreach ($allPOs as $po) {
-                        $poUnpaidAmount += $po->po_total ?? 0;
-                    }
                     
-                    // Calculate unpaid NFP for this outlet
-                    $nfpUnpaidFromPr = DB::table('non_food_payments as nfp')
-                        ->join('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->whereIn('nfp.status', ['pending', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
+                    // NFP breakdown = 0 (karena kita tidak pakai NFP lagi)
+                    $nfpSubmittedAmount = 0;
+                    $nfpApprovedAmount = 0;
+                    $nfpPaidAmount = 0;
                     
-                    $nfpUnpaidFromPo = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                            $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
-                                 ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                        })
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNotNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->whereIn('nfp.status', ['pending', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
+                    // SIMPLIFIED: Total unpaid = PR unpaid saja (karena PO items sudah dihitung sebagai paid)
+                    $unpaidAmount = $prUnpaidAmount;
                     
-                    $nfpUnpaidAmount = ($nfpUnpaidFromPr ?? 0) + ($nfpUnpaidFromPo ?? 0);
-                    
-                    // Get NFP breakdown by status (submitted, approved, paid) for this outlet
-                    // NFP Submitted
-                    $nfpSubmittedFromPr = DB::table('non_food_payments as nfp')
-                        ->join('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->where('nfp.status', 'submitted')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
-                    
-                    $nfpSubmittedFromPo = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                            $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
-                                 ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                        })
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNotNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->where('nfp.status', 'submitted')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
-                    
-                    $nfpSubmittedAmount = ($nfpSubmittedFromPr ?? 0) + ($nfpSubmittedFromPo ?? 0);
-                    
-                    // NFP Approved (status = 'approved', belum paid)
-                    $nfpApprovedFromPr = DB::table('non_food_payments as nfp')
-                        ->join('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->where('nfp.status', 'approved')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
-                    
-                    $nfpApprovedFromPo = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                            $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
-                                 ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                        })
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('purchase_requisition_items as pri', function($join) {
-                            $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                                 ->where(function($q) {
-                                     $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                       ->orWhere(function($q2) {
-                                           $q2->whereNull('poi.pr_ops_item_id')
-                                              ->whereColumn('poi.item_name', 'pri.item_name');
-                                       });
-                                 });
-                        })
-                        ->where(function($q) use ($category, $outletId) {
-                            $q->where(function($q2) use ($category, $outletId) {
-                                $q2->where('pr.category_id', $category->id)
-                                   ->where('pr.outlet_id', $outletId);
-                            })
-                            ->orWhere(function($q2) use ($category, $outletId) {
-                                $q2->where('pri.category_id', $category->id)
-                                   ->where('pri.outlet_id', $outletId);
-                            });
-                        })
-                        ->whereYear('pr.created_at', date('Y', strtotime($dateFrom)))
-                        ->whereMonth('pr.created_at', date('m', strtotime($dateFrom)))
-                        ->where('pr.is_held', false)
-                        ->whereNotNull('nfp.purchase_order_ops_id')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->where('nfp.status', 'approved')
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->sum('nfp.amount');
-                    
-                    $nfpApprovedAmount = ($nfpApprovedFromPr ?? 0) + ($nfpApprovedFromPo ?? 0);
-                    
-                    // NFP Paid (already calculated in paidAmountFromPo)
-                    $nfpPaidAmount = $paidAmountFromPo;
-                    
-                    // Total unpaid = PR unpaid + PO unpaid + NFP unpaid
-                    $unpaidAmount = $prUnpaidAmount + $poUnpaidAmount + $nfpUnpaidAmount;
-                    
-                    // Total used = Paid (from non_food_payments 'paid' + RNF 'approved') + Unpaid (PR + PO + NFP 'approved')
+                    // SIMPLIFIED: Total used = PO items (approved) + Retail Non Food (approved) + PR unpaid
                     $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved;
                     $outletUsedAmount = $paidAmount + $unpaidAmount;
                     
@@ -1045,11 +706,13 @@ class OpexReportController extends Controller
                         'used_amount' => $outletUsedAmount, // Total used (paid + unpaid)
                         'remaining_budget' => $outletBudget->allocated_budget - $outletUsedAmount,
                         'breakdown' => [
-                            'pr_unpaid' => $prUnpaidAmount, // PR Submitted & Approved yang belum dibuat PO
-                            'po_unpaid' => $poUnpaidAmount, // PO Submitted & Approved yang belum dibuat NFP
-                            'nfp_submitted' => $nfpSubmittedAmount, // NFP Submitted
-                            'nfp_approved' => $nfpApprovedAmount, // NFP Approved (unpaid)
-                            'nfp_paid' => $nfpPaidAmount, // NFP Paid
+                            'pr_total' => $prTotalAmount, // Total PR items yang sudah dibuat
+                            'pr_unpaid' => $prUnpaidAmount, // PR yang belum dibuat PO
+                            'po_total' => $poTotalAmount, // Total PO items yang sudah dibuat (approved)
+                            'po_unpaid' => $poUnpaidAmount, // 0 (karena semua PO items sudah dihitung sebagai paid)
+                            'nfp_submitted' => 0, // Tidak digunakan lagi
+                            'nfp_approved' => 0, // Tidak digunakan lagi
+                            'nfp_paid' => 0, // Tidak digunakan lagi
                             'retail_non_food' => $outletRetailNonFoodApproved, // Retail Non Food Approved
                         ],
                     ];
@@ -1117,7 +780,9 @@ class OpexReportController extends Controller
                 $totalPrUnpaidAmount = $categoryGroup['total_unpaid_amount'];
                 
                 // Calculate detailed breakdown for PER_OUTLET (sum from all outlets)
+                $totalPrTotal = 0;
                 $totalPrUnpaid = 0;
+                $totalPoTotal = 0;
                 $totalPoUnpaid = 0;
                 $totalNfpSubmitted = 0;
                 $totalNfpApproved = 0;
@@ -1126,7 +791,9 @@ class OpexReportController extends Controller
                 
                 foreach ($outletMap as $outlet) {
                     if (isset($outlet['breakdown'])) {
+                        $totalPrTotal += $outlet['breakdown']['pr_total'] ?? 0;
                         $totalPrUnpaid += $outlet['breakdown']['pr_unpaid'] ?? 0;
+                        $totalPoTotal += $outlet['breakdown']['po_total'] ?? 0;
                         $totalPoUnpaid += $outlet['breakdown']['po_unpaid'] ?? 0;
                         $totalNfpSubmitted += $outlet['breakdown']['nfp_submitted'] ?? 0;
                         $totalNfpApproved += $outlet['breakdown']['nfp_approved'] ?? 0;
@@ -1136,11 +803,13 @@ class OpexReportController extends Controller
                 }
                 
                 $categoryGroup['budget_breakdown'] = [
-                    'pr_unpaid' => $totalPrUnpaid, // PR Submitted & Approved yang belum dibuat PO
-                    'po_unpaid' => $totalPoUnpaid, // PO Submitted & Approved yang belum dibuat NFP
-                    'nfp_submitted' => $totalNfpSubmitted, // NFP Submitted
-                    'nfp_approved' => $totalNfpApproved, // NFP Approved (unpaid)
-                    'nfp_paid' => $totalNfpPaid, // NFP Paid
+                    'pr_total' => $totalPrTotal, // Total PR items yang sudah dibuat
+                    'pr_unpaid' => $totalPrUnpaid, // PR yang belum dibuat PO
+                    'po_total' => $totalPoTotal, // Total PO items yang sudah dibuat
+                    'po_unpaid' => $totalPoUnpaid, // PO yang belum dibuat NFP (0 karena semua PO sudah dihitung sebagai paid)
+                    'nfp_submitted' => $totalNfpSubmitted, // Tidak digunakan lagi
+                    'nfp_approved' => $totalNfpApproved, // Tidak digunakan lagi
+                    'nfp_paid' => $totalNfpPaid, // Tidak digunakan lagi
                     'retail_non_food' => $totalRnf, // Retail Non Food Approved
                     // Keep old fields for backward compatibility
                     'nfp_amount' => $totalNfpPaid,
@@ -1148,331 +817,42 @@ class OpexReportController extends Controller
                     'rnf_amount' => $totalRnf,
                 ];
             } else {
-                // For GLOBAL budget type, get paid amount from non_food_payments (actual payment amount)
-                // Ambil langsung dari non_food_payments tanpa join ke PO items untuk menghindari double counting
-                // Filter category melalui relasi PO -> PO Items -> PR
-                // 1 payment = 1 transaksi pembayaran yang unik, tidak boleh dihitung berkali-kali
+                // For GLOBAL budget type, use BudgetCalculationService for consistent calculation
+                // GLOBAL: Sum all items for this category (no outlet filter at all)
+                $budgetService = new BudgetCalculationService();
+                $budgetInfo = $budgetService->getBudgetInfo(
+                    categoryId: $category->id,
+                    outletId: null, // GLOBAL budget: no outlet filter
+                    dateFrom: $dateFrom,
+                    dateTo: $dateTo,
+                    currentAmount: 0 // No current amount for report
+                );
                 
-                // Get PR IDs in this category for the selected date range (follow date filter from above)
-                // Support both old structure (category at PR level) and new structure (category at items level)
-                // Use whereBetween to follow the date filter selected by user
-                $prIdsInCategory = DB::table('purchase_requisitions as pr')
-                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->where('pr.is_held', false) // Exclude held PRs
-                    ->distinct()
-                    ->pluck('pr.id')
-                    ->toArray();
-                
-                // Get PO IDs that are linked to PRs in this category (from selected date range)
-                $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->whereIn('poi.source_id', $prIdsInCategory)
-                    ->distinct()
-                    ->pluck('poi.purchase_order_ops_id')
-                    ->toArray();
-                
-                // Get paid payments directly from non_food_payments (grouped by payment ID to avoid duplicates)
-                // 1 payment = 1 transaksi pembayaran unik, tidak dihitung berkali-kali
-                // Support both old structure (outlet at PR level) and new structure (outlet at items level)
-                // Ambil outlet dari items (new structure) atau fallback ke PR level (old structure)
-                $paidPaymentsData = DB::table('non_food_payments as nfp')
-                    ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                        $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
-                             ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                    })
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', function($join) {
-                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                   ->orWhere(function($q2) {
-                                       $q2->whereNull('poi.pr_ops_item_id')
-                                          ->whereColumn('poi.item_name', 'pri.item_name');
-                                   });
-                             });
-                    })
-                    ->leftJoin('tbl_data_outlet as o', function($join) {
-                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
-                    })
-                    ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                    ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                    ->where('nfp.status', 'paid') // Only 'paid' status, not 'approved'
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->groupBy('nfp.id') // Group by payment ID saja untuk menghindari duplikasi
-                    ->select(
-                        DB::raw('MIN(COALESCE(pri.outlet_id, pr.outlet_id)) as outlet_id'), // Ambil outlet dari items atau PR
-                        DB::raw('MIN(o.nama_outlet) as outlet_name'),
-                        'nfp.amount as total_paid_amount', // Payment amount (unique per payment ID)
-                        DB::raw('GROUP_CONCAT(DISTINCT pr.pr_number ORDER BY pr.pr_number SEPARATOR ", ") as pr_numbers'),
-                        'nfp.payment_date as transaction_date',
-                        'nfp.payment_number',
-                        'nfp.status',
-                        DB::raw('nfp.id as payment_id'),
-                        DB::raw('"purchase_requisition" as source_type')
-                    )
-                    ->get();
-
-                // Get unpaid PR data
-                // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO dan belum jadi NFP
-                // Support both old structure (category/outlet at PR level) and new structure (category/outlet at items level)
-                // Exclude held PRs and rejected PRs
-                $allPrs = DB::table('purchase_requisitions as pr')
-                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                    ->leftJoin('tbl_data_outlet as o', function($join) {
-                        // Support both old structure (outlet at PR level) and new structure (outlet at items level)
-                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
-                    })
-                    ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                        $join->on('pr.id', '=', 'poi.source_id')
-                             ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                    })
-                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('non_food_payments as nfp', 'pr.id', '=', 'nfp.purchase_requisition_id')
-                    ->where(function($q) use ($category) {
-                        // Support both old structure (category at PR level) and new structure (category at items level)
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED']) // Only SUBMITTED and APPROVED
-                    ->where('pr.is_held', false) // Exclude held PRs
-                    ->whereNull('poo.id') // PR yang belum jadi PO (belum ada PO)
-                    ->whereNull('nfp.id') // PR yang belum jadi NFP (baik langsung maupun melalui PO)
-                    ->groupBy(
-                        'pr.id', 
-                        'o.id_outlet', 
-                        'o.nama_outlet', 
-                        'pr.amount', 
-                        'pr.pr_number', 
-                        'pr.created_at', 
-                        'pr.status',
-                        DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)') // Add COALESCE to GROUP BY
-                    )
-                    ->select(
-                        'pr.id as pr_id',
-                        DB::raw('COALESCE(pri.outlet_id, pr.outlet_id) as outlet_id'), // Support both structures
-                        'o.nama_outlet as outlet_name',
-                        'pr.amount as pr_amount',
-                        'pr.pr_number',
-                        'pr.created_at as transaction_date',
-                        'pr.status'
-                    )
-                    ->get();
-
-                // Get PO totals per PR - untuk cek apakah PR sudah jadi PO
-                $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', function($join) {
-                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                   ->orWhere(function($q2) {
-                                       $q2->whereNull('poi.pr_ops_item_id')
-                                          ->whereColumn('poi.item_name', 'pri.item_name');
-                                   });
-                             });
-                    })
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->where('pr.is_held', false)
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->whereIn('poo.status', ['submitted', 'approved']) // PO dengan status SUBMITTED dan APPROVED
-                    ->groupBy('pr.id')
-                    ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                    ->pluck('po_total', 'pr_id')
-                    ->toArray();
-
-                // Get unpaid PO data
-                // NEW LOGIC: PO unpaid = PO dengan status SUBMITTED dan APPROVED yang belum jadi NFP
-                // Get all POs in this category
-                $allPOs = DB::table('purchase_order_ops as poo')
-                    ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', function($join) {
-                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                   ->orWhere(function($q2) {
-                                       $q2->whereNull('poi.pr_ops_item_id')
-                                          ->whereColumn('poi.item_name', 'pri.item_name');
-                                   });
-                             });
-                    })
-                    ->leftJoin('tbl_data_outlet as o', function($join) {
-                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
-                    })
-                    ->leftJoin('non_food_payments as nfp', 'poo.id', '=', 'nfp.purchase_order_ops_id')
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->where('pr.is_held', false)
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->whereIn('poo.status', ['submitted', 'approved']) // PO dengan status SUBMITTED dan APPROVED
-                    ->whereNull('nfp.id') // PO yang belum jadi NFP (belum ada NFP)
-                    ->groupBy('poo.id', 'poo.number', 'poo.date', 'o.id_outlet', 'o.nama_outlet')
-                    ->select(
-                        'poo.id as po_id',
-                        'poo.number as po_number',
-                        'poo.date as po_date',
-                        'o.id_outlet as outlet_id',
-                        'o.nama_outlet as outlet_name',
-                        DB::raw('SUM(poi.total) as po_total')
-                    )
-                    ->get();
-
-                // Get unpaid NFP data
-                // NEW LOGIC: NFP unpaid = NFP dengan status pending dan approved
-                // Mencakup NFP yang langsung dari PR (tanpa PO) dan NFP yang melalui PO
-                // Case 1: NFP langsung dari PR
-                $unpaidNfpFromPr = DB::table('non_food_payments as nfp')
-                    ->join('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                    ->leftJoin('tbl_data_outlet as o', function($join) {
-                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
-                    })
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->where('pr.is_held', false)
-                    ->whereNull('nfp.purchase_order_ops_id') // NFP langsung dari PR (tanpa PO)
-                    ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                    ->whereIn('nfp.status', ['pending', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->groupBy('nfp.id', 'nfp.amount', 'nfp.payment_date', 'nfp.payment_number', 'nfp.status', 'o.id_outlet', 'o.nama_outlet')
-                    ->select(
-                        'o.id_outlet as outlet_id',
-                        'o.nama_outlet as outlet_name',
-                        'nfp.amount as unpaid_amount',
-                        'nfp.payment_number',
-                        'nfp.payment_date as transaction_date',
-                        'nfp.status',
-                        DB::raw('NULL as po_id')
-                    )
-                    ->get();
-                
-                // Case 2: NFP melalui PO
-                $unpaidNfpFromPo = DB::table('non_food_payments as nfp')
-                    ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', function($join) {
-                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                   ->orWhere(function($q2) {
-                                       $q2->whereNull('poi.pr_ops_item_id')
-                                          ->whereColumn('poi.item_name', 'pri.item_name');
-                                   });
-                             });
-                    })
-                    ->leftJoin('tbl_data_outlet as o', function($join) {
-                        $join->on(DB::raw('COALESCE(pri.outlet_id, pr.outlet_id)'), '=', 'o.id_outlet');
-                    })
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->where('pr.is_held', false)
-                    ->whereNotNull('nfp.purchase_order_ops_id') // NFP melalui PO
-                    ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                    ->whereIn('nfp.status', ['pending', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->groupBy('nfp.id', 'nfp.purchase_order_ops_id', 'nfp.amount', 'nfp.payment_date', 'nfp.payment_number', 'nfp.status', 'o.id_outlet', 'o.nama_outlet')
-                    ->select(
-                        'o.id_outlet as outlet_id',
-                        'o.nama_outlet as outlet_name',
-                        'nfp.amount as unpaid_amount',
-                        'nfp.payment_number',
-                        'nfp.payment_date as transaction_date',
-                        'nfp.status',
-                        'nfp.purchase_order_ops_id as po_id'
-                    )
-                    ->get();
-                
-                // Combine both results
-                $unpaidNfpData = $unpaidNfpFromPr->merge($unpaidNfpFromPo);
-
-                // Calculate unpaid for each PR
-                // NEW LOGIC: PR unpaid = PR dengan status SUBMITTED dan APPROVED yang belum jadi PO
-                // PR yang sudah difilter di query (belum jadi PO)
-                // IMPORTANT: Untuk GLOBAL budget, sum semua items dari semua outlets (tidak filter outlet)
-                // Untuk PR Ops, hitung berdasarkan items.subtotal di category ini (sum semua outlets)
-                $prData = collect();
-                foreach ($allPrs as $pr) {
-                    // Get PR model untuk mendapatkan mode
-                    $prModel = \App\Models\PurchaseRequisition::find($pr->pr_id);
-                    
-                    // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                    if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
-                        // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
-                        $categoryItemsSubtotal = DB::table('purchase_requisition_items')
-                            ->where('purchase_requisition_id', $pr->pr_id)
-                            ->where('category_id', $category->id)
-                            ->sum('subtotal');
-                        $prAmount = $categoryItemsSubtotal ?? 0;
-                    } else {
-                        // Untuk mode lain: gunakan PR amount
-                        $prAmount = $pr->pr_amount;
-                    }
-                    
-                    // PR yang sudah difilter di query (belum jadi PO, status SUBMITTED/APPROVED)
-                    $prData->push((object)[
-                        'outlet_id' => $pr->outlet_id,
-                        'outlet_name' => $pr->outlet_name,
-                        'po_item_total' => $prAmount,
-                        'pr_number' => $pr->pr_number,
-                        'po_numbers' => null, // PR hasn't been converted to PO
-                        'transaction_date' => $pr->transaction_date,
-                        'status' => $pr->status,
-                        'payment_id' => null,
-                        'payment_amount' => null,
-                        'source_type' => 'purchase_requisition'
-                    ]);
+                if (!$budgetInfo['success']) {
+                    // Skip this category if error
+                    continue;
                 }
-
-                // Calculate unpaid for each PO
-                // NEW LOGIC: PO unpaid = PO dengan status SUBMITTED dan APPROVED yang belum jadi NFP
-                // PO yang sudah difilter di query (belum jadi NFP, status SUBMITTED/APPROVED)
-                $poData = collect();
-                foreach ($allPOs as $po) {
-                    // PO yang sudah difilter di query (belum jadi NFP, status SUBMITTED/APPROVED)
-                    $poData->push((object)[
-                        'outlet_id' => $po->outlet_id,
-                        'outlet_name' => $po->outlet_name,
-                        'po_item_total' => $po->po_total,
-                        'po_number' => $po->po_number,
-                        'transaction_date' => $po->po_date,
-                        'status' => 'approved',
-                        'payment_id' => null,
-                        'payment_amount' => null,
-                        'source_type' => 'purchase_order'
-                    ]);
-                }
-
-                // Get Retail Non Food data for this category (with date filter, matching Retail Non Food form)
-                // Retail Non Food is directly paid, so use total_amount
+                
+                // Extract values from BudgetCalculationService
+                $paidAmountFromPo = $budgetInfo['breakdown']['po_total'] ?? 0;
+                $prUnpaidAmount = $budgetInfo['breakdown']['pr_unpaid'] ?? 0;
+                $poUnpaidAmount = $budgetInfo['breakdown']['po_unpaid'] ?? 0;
+                $retailNonFoodApproved = $budgetInfo['breakdown']['retail_non_food'] ?? 0;
+                $prTotalAmount = $budgetInfo['breakdown']['pr_total'] ?? 0;
+                $poTotalAmount = $budgetInfo['breakdown']['po_total'] ?? 0;
+                
+                // GLOBAL: Calculate totals directly from BudgetCalculationService
+                // Used amount = PO items (approved) + Retail Non Food (approved) + PR unpaid
+                $categoryGroup['total_paid_amount'] = $budgetInfo['category_used_amount'] - $prUnpaidAmount; // Paid = Used - Unpaid
+                $categoryGroup['total_unpaid_amount'] = $prUnpaidAmount;
+                $categoryGroup['total_remaining_budget'] = $budgetInfo['category_remaining_amount'] ?? 0;
+                
+                // Get Retail Non Food data for display (with outlet info for transaction details)
                 $retailNonFoodData = DB::table('retail_non_food as rnf')
                     ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
                     ->where('rnf.category_budget_id', $category->id)
                     ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
-                    ->where('rnf.status', 'approved') // Only approved, matching Retail Non Food form
+                    ->where('rnf.status', 'approved')
                     ->select(
                         'o.id_outlet as outlet_id',
                         'o.nama_outlet as outlet_name',
@@ -1480,96 +860,17 @@ class OpexReportController extends Controller
                         'rnf.retail_number',
                         'rnf.transaction_date',
                         'rnf.status',
-                        DB::raw('rnf.id as payment_id'), // Retail Non Food approved is considered paid
+                        DB::raw('rnf.id as payment_id'),
                         DB::raw('rnf.total_amount as payment_amount'),
                         DB::raw('"retail_non_food" as source_type')
                     )
                     ->get();
-
+                
+                // Build outlet map for display only (not for used amount calculation)
+                // This is just for showing breakdown per outlet in UI, but used amount is calculated globally
                 $outletMap = [];
                 
-                // Process paid payments data (from non_food_payments - actual payment amount)
-                // 1 payment = 1 transaksi, tidak dihitung berkali-kali meskipun PO punya beberapa items
-                foreach ($paidPaymentsData as $row) {
-                    $outletId = $row->outlet_id;
-                    
-                    if (!isset($outletMap[$outletId])) {
-                        $outletMap[$outletId] = [
-                            'outlet_id' => $outletId,
-                            'outlet_name' => $row->outlet_name,
-                            'budget_limit' => $category->budget_limit ?? 0,
-                            'paid_amount' => 0,
-                            'unpaid_amount' => 0,
-                            'remaining_budget' => 0
-                        ];
-                    }
-
-                    $itemTotal = $row->total_paid_amount ?? 0; // Payment amount (unique per payment ID)
-                    $outletMap[$outletId]['paid_amount'] += $itemTotal;
-                    $categoryGroup['total_paid_amount'] += $itemTotal;
-                }
-
-                // Process unpaid PR data (PR that don't have paid payments)
-                foreach ($prData as $row) {
-                    $outletId = $row->outlet_id;
-                    
-                    if (!isset($outletMap[$outletId])) {
-                        $outletMap[$outletId] = [
-                            'outlet_id' => $outletId,
-                            'outlet_name' => $row->outlet_name,
-                            'budget_limit' => $category->budget_limit ?? 0,
-                            'paid_amount' => 0,
-                            'unpaid_amount' => 0,
-                            'remaining_budget' => 0
-                        ];
-                    }
-
-                    $itemTotal = $row->po_item_total ?? 0;
-                    $outletMap[$outletId]['unpaid_amount'] += $itemTotal;
-                    $categoryGroup['total_unpaid_amount'] += $itemTotal;
-                }
-
-                // Process unpaid PO data (PO that haven't been paid or partially paid)
-                foreach ($poData as $row) {
-                    $outletId = $row->outlet_id;
-                    
-                    if (!isset($outletMap[$outletId])) {
-                        $outletMap[$outletId] = [
-                            'outlet_id' => $outletId,
-                            'outlet_name' => $row->outlet_name,
-                            'budget_limit' => $category->budget_limit ?? 0,
-                            'paid_amount' => 0,
-                            'unpaid_amount' => 0,
-                            'remaining_budget' => 0
-                        ];
-                    }
-
-                    $itemTotal = $row->po_item_total ?? 0;
-                    $outletMap[$outletId]['unpaid_amount'] += $itemTotal;
-                    $categoryGroup['total_unpaid_amount'] += $itemTotal;
-                }
-
-                // Process unpaid NFP data (NFP with status 'approved' but not 'paid')
-                foreach ($unpaidNfpData as $row) {
-                    $outletId = $row->outlet_id;
-                    
-                    if (!isset($outletMap[$outletId])) {
-                        $outletMap[$outletId] = [
-                            'outlet_id' => $outletId,
-                            'outlet_name' => $row->outlet_name,
-                            'budget_limit' => $category->budget_limit ?? 0,
-                            'paid_amount' => 0,
-                            'unpaid_amount' => 0,
-                            'remaining_budget' => 0
-                        ];
-                    }
-
-                    $itemTotal = $row->unpaid_amount ?? 0;
-                    $outletMap[$outletId]['unpaid_amount'] += $itemTotal;
-                    $categoryGroup['total_unpaid_amount'] += $itemTotal;
-                }
-
-                // Process Retail Non Food data (always considered as paid - direct payment)
+                // Process Retail Non Food data for display
                 foreach ($retailNonFoodData as $row) {
                     $outletId = $row->outlet_id;
                     
@@ -1586,145 +887,39 @@ class OpexReportController extends Controller
 
                     $itemTotal = $row->po_item_total ?? 0;
                     $outletMap[$outletId]['paid_amount'] += $itemTotal;
-                    $categoryGroup['total_paid_amount'] += $itemTotal;
                 }
-
-                // Calculate remaining budget for each outlet
+                
+                // Calculate remaining budget for each outlet (for display only)
                 foreach ($outletMap as &$outlet) {
                     $outlet['remaining_budget'] = $outlet['budget_limit'] - $outlet['paid_amount'] - $outlet['unpaid_amount'];
                 }
 
                 $categoryGroup['outlets'] = array_values($outletMap);
-                $categoryGroup['total_remaining_budget'] = $category->budget_limit - $categoryGroup['total_paid_amount'] - $categoryGroup['total_unpaid_amount'];
                 
-                // Add transaction details for expandable view
-                $paidTransactions = [];
-                $unpaidTransactions = [];
-                
-                // Add paid payments from non_food_payments (1 payment = 1 entry)
-                foreach ($paidPaymentsData as $row) {
-                    $paidTransactions[] = [
-                        'type' => 'purchase_requisition',
-                        'number' => $row->pr_numbers ?? '-', // PR numbers terkait dengan payment ini
-                        'payment_number' => $row->payment_number ?? '-',
-                        'date' => $row->transaction_date,
-                        'outlet' => $row->outlet_name,
-                        'amount' => $row->total_paid_amount, // Payment amount (unique per payment)
-                        'status' => $row->status ?? 'paid'
-                    ];
-                }
-                
-                // Add unpaid PR
-                foreach ($prData as $row) {
-                    $unpaidTransactions[] = [
-                        'type' => 'purchase_requisition',
-                        'number' => $row->pr_number ?? '-',
-                        'po_numbers' => $row->po_numbers ?? null, // PO ops numbers if PR has been converted to PO
-                        'date' => $row->transaction_date,
-                        'outlet' => $row->outlet_name,
-                        'amount' => $row->po_item_total,
-                        'status' => $row->status
-                    ];
-                }
-                
-                // Add unpaid PO
-                foreach ($poData as $row) {
-                    $unpaidTransactions[] = [
-                        'type' => 'purchase_order',
-                        'number' => $row->po_number ?? '-',
-                        'date' => $row->transaction_date,
-                        'outlet' => $row->outlet_name,
-                        'amount' => $row->po_item_total,
-                        'status' => $row->status
-                    ];
-                }
-                
-                // Add unpaid NFP
-                foreach ($unpaidNfpData as $row) {
-                    $unpaidTransactions[] = [
-                        'type' => 'non_food_payment',
-                        'number' => $row->payment_number ?? '-',
-                        'date' => $row->transaction_date,
-                        'outlet' => $row->outlet_name,
-                        'amount' => $row->unpaid_amount,
-                        'status' => $row->status
-                    ];
-                }
-                
-                // Add Retail Non Food (direct payment)
-                foreach ($retailNonFoodData as $row) {
-                    $paidTransactions[] = [
-                        'type' => 'retail_non_food',
-                        'number' => $row->retail_number ?? '-',
-                        'date' => $row->transaction_date,
-                        'outlet' => $row->outlet_name,
-                        'amount' => $row->po_item_total,
-                        'status' => $row->status
-                    ];
-                }
-                
+                // Add transaction details for expandable view (empty for global budget - not used)
                 $categoryGroup['transactions'] = [
-                    'paid' => $paidTransactions,
-                    'unpaid' => $unpaidTransactions
+                    'paid' => [],
+                    'unpaid' => []
                 ];
                 
-                // Calculate breakdown by source type with detail
-                // Get PR unpaid amount (from prData)
-                $prUnpaidAmount = $prData->sum('po_item_total');
-                
-                // Get PO unpaid amount (from poData)
-                $poUnpaidAmount = $poData->sum('po_item_total');
-                
-                // Get NFP breakdown by status
-                // NFP Submitted
-                $nfpSubmittedAmount = DB::table('non_food_payments as nfp')
-                    ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('purchase_order_ops_items as poi', function($join) {
-                        $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
-                             ->where('poi.source_type', '=', 'purchase_requisition_ops');
-                    })
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('purchase_requisition_items as pri', function($join) {
-                        $join->on('pr.id', '=', 'pri.purchase_requisition_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
-                                   ->orWhere(function($q2) {
-                                       $q2->whereNull('poi.pr_ops_item_id')
-                                          ->whereColumn('poi.item_name', 'pri.item_name');
-                                   });
-                             });
-                    })
-                    ->where(function($q) use ($category) {
-                        $q->where('pr.category_id', $category->id)
-                          ->orWhere('pri.category_id', $category->id);
-                    })
-                    ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-                    ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                    ->where('nfp.status', 'submitted')
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->sum('nfp.amount');
-                
-                // NFP Approved (unpaid)
-                $nfpApprovedAmount = $unpaidNfpData->sum('unpaid_amount');
-                
-                // NFP Paid
-                $nfpPaidAmount = $paidPaymentsData->sum('total_paid_amount');
-                
-                // RNF Approved
-                $rnfAmount = $retailNonFoodData->sum('po_item_total');
-                
-                $categoryGroup['budget_breakdown'] = [
-                    'pr_unpaid' => $prUnpaidAmount, // PR Submitted & Approved yang belum dibuat PO
-                    'po_unpaid' => $poUnpaidAmount, // PO Submitted & Approved yang belum dibuat NFP
-                    'nfp_submitted' => $nfpSubmittedAmount, // NFP Submitted
-                    'nfp_approved' => $nfpApprovedAmount, // NFP Approved (unpaid)
-                    'nfp_paid' => $nfpPaidAmount, // NFP Paid
-                    'retail_non_food' => $rnfAmount, // Retail Non Food Approved
-                    // Keep old fields for backward compatibility
-                    'nfp_amount' => $nfpPaidAmount,
-                    'pr_unpaid_amount' => $prUnpaidAmount + $poUnpaidAmount + $nfpApprovedAmount,
-                    'rnf_amount' => $rnfAmount,
+                // Use breakdown from BudgetCalculationService (already calculated correctly)
+                $categoryGroup['budget_breakdown'] = $budgetInfo['breakdown'] ?? [
+                    'pr_total' => 0,
+                    'pr_unpaid' => 0,
+                    'po_total' => 0,
+                    'po_unpaid' => 0,
+                    'nfp_submitted' => 0,
+                    'nfp_approved' => 0,
+                    'nfp_paid' => 0,
+                    'retail_non_food' => 0,
                 ];
+                
+                // Keep old fields for backward compatibility
+                $categoryGroup['budget_breakdown']['nfp_amount'] = $categoryGroup['budget_breakdown']['nfp_paid'] ?? 0;
+                $categoryGroup['budget_breakdown']['pr_unpaid_amount'] = ($categoryGroup['budget_breakdown']['pr_unpaid'] ?? 0) + 
+                                                                         ($categoryGroup['budget_breakdown']['po_unpaid'] ?? 0) + 
+                                                                         ($categoryGroup['budget_breakdown']['nfp_approved'] ?? 0);
+                $categoryGroup['budget_breakdown']['rnf_amount'] = $categoryGroup['budget_breakdown']['retail_non_food'] ?? 0;
             }
 
             $categoryGroups[] = $categoryGroup;

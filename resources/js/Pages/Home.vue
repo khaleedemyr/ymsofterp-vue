@@ -6443,28 +6443,16 @@ watch(locale, () => {
                             <h5 class="text-sm font-semibold text-gray-800 dark:text-white mb-3 flex items-center gap-2">
                                 <i class="fa fa-list-ul text-blue-500"></i>Budget Breakdown Detail
                             </h5>
-                            <div class="space-y-3">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
-                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PR Unpaid</p>
-                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.pr_unpaid || 0) }}</p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">PR Submitted & Approved yang belum dibuat PO</p>
+                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PR</p>
+                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.pr_total || 0) }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total PR items<br>yang sudah dibuat</p>
                                 </div>
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
-                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PO Unpaid</p>
-                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.po_unpaid || 0) }}</p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">PO Submitted & Approved yang belum dibuat NFP</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-orange-800 shadow-sm">
-                                    <p class="text-orange-600 dark:text-orange-400 font-medium text-sm mb-1">NFP Submitted</p>
-                                    <p class="text-lg font-bold text-orange-600 dark:text-orange-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.nfp_submitted || 0) }}</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-yellow-100 dark:border-yellow-800 shadow-sm">
-                                    <p class="text-yellow-600 dark:text-yellow-400 font-medium text-sm mb-1">NFP Approved</p>
-                                    <p class="text-lg font-bold text-yellow-600 dark:text-yellow-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.nfp_approved || 0) }}</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-100 dark:border-green-800 shadow-sm">
-                                    <p class="text-green-600 dark:text-green-400 font-medium text-sm mb-1">NFP Paid</p>
-                                    <p class="text-lg font-bold text-green-600 dark:text-green-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.nfp_paid || 0) }}</p>
+                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PO</p>
+                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(prApprovalBudgetInfo.breakdown.po_total || 0) }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total PO items<br>yang sudah dibuat</p>
                                 </div>
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-purple-100 dark:border-purple-800 shadow-sm">
                                     <p class="text-purple-600 dark:text-purple-400 font-medium text-sm mb-1">Retail Non Food</p>
@@ -7476,28 +7464,16 @@ watch(locale, () => {
                             <h5 class="text-sm font-semibold text-gray-800 dark:text-white mb-3 flex items-center gap-2">
                                 <i class="fa fa-list-ul text-blue-500"></i>Budget Breakdown Detail
                             </h5>
-                            <div class="space-y-3">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
-                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PR Unpaid</p>
-                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.pr_unpaid || 0) }}</p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">PR Submitted & Approved yang belum dibuat PO</p>
+                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PR</p>
+                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.pr_total || 0) }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total PR items<br>yang sudah dibuat</p>
                                 </div>
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
-                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PO Unpaid</p>
-                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.po_unpaid || 0) }}</p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">PO Submitted & Approved yang belum dibuat NFP</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-orange-800 shadow-sm">
-                                    <p class="text-orange-600 dark:text-orange-400 font-medium text-sm mb-1">NFP Submitted</p>
-                                    <p class="text-lg font-bold text-orange-600 dark:text-orange-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.nfp_submitted || 0) }}</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-yellow-100 dark:border-yellow-800 shadow-sm">
-                                    <p class="text-yellow-600 dark:text-yellow-400 font-medium text-sm mb-1">NFP Approved</p>
-                                    <p class="text-lg font-bold text-yellow-600 dark:text-yellow-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.nfp_approved || 0) }}</p>
-                                </div>
-                                <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-100 dark:border-green-800 shadow-sm">
-                                    <p class="text-green-600 dark:text-green-400 font-medium text-sm mb-1">NFP Paid</p>
-                                    <p class="text-lg font-bold text-green-600 dark:text-green-300">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.nfp_paid || 0) }}</p>
+                                    <p class="text-blue-600 dark:text-blue-400 font-medium text-sm mb-1">PO</p>
+                                    <p class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(poOpsApprovalBudgetInfo.breakdown.po_total || 0) }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total PO items<br>yang sudah dibuat</p>
                                 </div>
                                 <div class="p-3 bg-white dark:bg-gray-800 rounded-lg border border-purple-100 dark:border-purple-800 shadow-sm">
                                     <p class="text-purple-600 dark:text-purple-400 font-medium text-sm mb-1">Retail Non Food</p>

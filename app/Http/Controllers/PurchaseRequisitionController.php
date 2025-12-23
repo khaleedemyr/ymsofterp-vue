@@ -2531,11 +2531,15 @@ class PurchaseRequisitionController extends Controller
                     $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
                     $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
                     
+                    // For GLOBAL budget type, outletId must be null (no outlet filter)
+                    // For PER_OUTLET budget type, outletId is required
+                    $outletIdForBudgetCalculation = $category->isGlobalBudget() ? null : $outletIdForBudget;
+                    
                     // Use BudgetCalculationService
                     $budgetService = new BudgetCalculationService();
                     $budgetInfoResult = $budgetService->getBudgetInfo(
                         categoryId: $category->id,
-                        outletId: $outletIdForBudget,
+                        outletId: $outletIdForBudgetCalculation,
                         dateFrom: $dateFrom,
                         dateTo: $dateTo,
                         currentAmount: 0 // No current amount for approval modal
@@ -4277,6 +4281,16 @@ class PurchaseRequisitionController extends Controller
             return response()->json(['success' => false, 'message' => 'Category is required']);
         }
 
+        // Get category to check budget type
+        $category = \App\Models\PurchaseRequisitionCategory::find($categoryId);
+        if (!$category) {
+            return response()->json(['success' => false, 'message' => 'Category not found']);
+        }
+
+        // For GLOBAL budget type, outletId must be null (no outlet filter)
+        // For PER_OUTLET budget type, outletId is required
+        $outletIdForCalculation = $category->isGlobalBudget() ? null : $outletId;
+
         // Calculate date range for the month (BUDGET IS MONTHLY)
         $dateFrom = date('Y-m-01', mktime(0, 0, 0, $month, 1, $year));
         $dateTo = date('Y-m-t', mktime(0, 0, 0, $month, 1, $year));
@@ -4285,7 +4299,7 @@ class PurchaseRequisitionController extends Controller
         $budgetService = new BudgetCalculationService();
         $budgetInfo = $budgetService->getBudgetInfo(
             categoryId: $categoryId,
-            outletId: $outletId,
+            outletId: $outletIdForCalculation,
             dateFrom: $dateFrom,
             dateTo: $dateTo,
             currentAmount: $currentAmount
