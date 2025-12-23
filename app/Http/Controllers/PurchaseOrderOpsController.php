@@ -13,6 +13,7 @@ use App\Models\PurchaseOrderOpsApprovalFlow;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\BudgetCalculationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -613,6 +614,7 @@ class PurchaseOrderOpsController extends Controller
             'source_pr.division',
             'source_pr.outlet',
             'source_pr.creator',
+            'source_pr.items', // PENTING: Load PR items untuk mendapatkan category_id dan outlet_id
             'source_pr.attachments.uploader',
             'approvalFlows.approver',
             'attachments.uploader'
@@ -1852,6 +1854,7 @@ class PurchaseOrderOpsController extends Controller
 
     /**
      * Get budget info for a purchase requisition
+     * PENTING: Menggunakan BudgetCalculationService untuk konsistensi dengan OpexReport
      */
     private function getBudgetInfo($purchaseRequisition, $overrideOutletId = null, $overrideCategoryId = null, $excludePoId = null)
     {
@@ -1861,8 +1864,32 @@ class PurchaseOrderOpsController extends Controller
             'overrideCategoryId' => $overrideCategoryId,
         ]);
         
-        $categoryId = $overrideCategoryId ?? $purchaseRequisition->category_id;
-        $outletId = $overrideOutletId ?? $purchaseRequisition->outlet_id;
+        // Get category and outlet from PR items (new structure) or PR level (old structure)
+        $categoryId = $overrideCategoryId;
+        $outletId = $overrideOutletId;
+        
+        // If not provided, try to get from PR items first (new structure)
+        if (!$categoryId || !$outletId) {
+            $prItems = $purchaseRequisition->items ?? collect();
+            if ($prItems->count() > 0) {
+                $firstItem = $prItems->first();
+                if (!$categoryId) {
+                    $categoryId = $firstItem->category_id ?? $purchaseRequisition->category_id;
+                }
+                if (!$outletId) {
+                    $outletId = $firstItem->outlet_id ?? $purchaseRequisition->outlet_id;
+                }
+            } else {
+                // Fallback to PR level (old structure)
+                if (!$categoryId) {
+                    $categoryId = $purchaseRequisition->category_id;
+                }
+                if (!$outletId) {
+                    $outletId = $purchaseRequisition->outlet_id;
+                }
+            }
+        }
+        
         $currentAmount = $purchaseRequisition->amount;
         $year = $purchaseRequisition->created_at->year;
         $month = $purchaseRequisition->created_at->month;
@@ -1871,22 +1898,48 @@ class PurchaseOrderOpsController extends Controller
             return null;
         }
 
-        // Get category budget
-        $category = PurchaseRequisitionCategory::find($categoryId);
-        if (!$category) {
-            return null;
-        }
-
         // Calculate date range for the month (BUDGET IS MONTHLY)
         $dateFrom = date('Y-m-01', mktime(0, 0, 0, $month, 1, $year));
         $dateTo = date('Y-m-t', mktime(0, 0, 0, $month, 1, $year));
-
-        $budgetInfo = [];
-
-        if ($category->isGlobalBudget()) {
-            // GLOBAL BUDGET: Calculate across all outlets
-            // Used amount = Paid (from non_food_payments) + Unpaid PR + Retail Non Food (same logic as approval)
-            $categoryBudget = $category->budget_limit;
+        
+        // PENTING: Gunakan BudgetCalculationService untuk konsistensi dengan OpexReport
+        $budgetService = new BudgetCalculationService();
+        $budgetInfoResult = $budgetService->getBudgetInfo(
+            categoryId: $categoryId,
+            outletId: $outletId,
+            dateFrom: $dateFrom,
+            dateTo: $dateTo,
+            currentAmount: $currentAmount
+        );
+        
+        if (!$budgetInfoResult['success']) {
+            \Log::warning('Failed to get budget info from BudgetCalculationService: ' . ($budgetInfoResult['message'] ?? 'Unknown error'));
+            return null;
+        }
+        
+        // Convert BudgetCalculationService result to format expected by frontend
+        $budgetInfo = [
+            'budget_type' => $budgetInfoResult['budget_type'],
+            'current_year' => $year,
+            'current_month' => $month,
+            'category_budget' => $budgetInfoResult['category_budget'],
+            'category_used_amount' => $budgetInfoResult['category_used_amount'] ?? 0,
+            'category_remaining_amount' => $budgetInfoResult['category_remaining_amount'] ?? 0,
+            'breakdown' => $budgetInfoResult['breakdown'] ?? [],
+        ];
+        
+        // Add outlet-specific fields for PER_OUTLET budget
+        if ($budgetInfoResult['budget_type'] === 'PER_OUTLET') {
+            $budgetInfo['outlet_budget'] = $budgetInfoResult['outlet_budget'] ?? 0;
+            $budgetInfo['outlet_used_amount'] = $budgetInfoResult['outlet_used_amount'] ?? 0;
+            $budgetInfo['outlet_remaining_amount'] = $budgetInfoResult['outlet_remaining_amount'] ?? 0;
+            $budgetInfo['real_remaining_budget'] = $budgetInfoResult['outlet_remaining_amount'] ?? 0;
+            $budgetInfo['outlet_info'] = $budgetInfoResult['outlet_info'] ?? null;
+        }
+        
+        return $budgetInfo;
+    }
+}
             
             // Get PR IDs in this category for the month (BUDGET IS MONTHLY - filter by month)
             // Support both old structure (category at PR level) and new structure (category at items level)
