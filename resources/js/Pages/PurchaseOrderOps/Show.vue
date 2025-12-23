@@ -302,6 +302,36 @@ function getMonthName(monthNumber) {
   return months[monthNumber - 1] || 'Unknown'
 }
 
+// Get category display with division-name
+function getCategoryDisplay() {
+  if (!props.po.source_pr) return 'N/A'
+  
+  // Try to get category from PR items first (new structure)
+  if (props.po.source_pr.items && props.po.source_pr.items.length > 0) {
+    const itemWithCategory = props.po.source_pr.items.find(item => item.category_id && item.category)
+    if (itemWithCategory && itemWithCategory.category) {
+      const category = itemWithCategory.category
+      // division is a string field, not a relationship
+      const divisionName = category.division || ''
+      const categoryName = category.name || ''
+      const display = `${divisionName}${divisionName && categoryName ? ' - ' : ''}${categoryName}`
+      return display.trim() || 'N/A'
+    }
+  }
+  
+  // Fallback to PR level category (old structure)
+  if (props.po.source_pr.category) {
+    const category = props.po.source_pr.category
+    // division is a string field, not a relationship
+    const divisionName = category.division || ''
+    const categoryName = category.name || ''
+    const display = `${divisionName}${divisionName && categoryName ? ' - ' : ''}${categoryName}`
+    return display.trim() || 'N/A'
+  }
+  
+  return 'N/A'
+}
+
 // Watch approver search
 watch(approverSearch, (newSearch) => {
   if (newSearch.length >= 2) {
@@ -527,6 +557,10 @@ const canDeleteAttachment = (attachment) => {
               <div>
                 <label class="text-sm font-medium text-gray-600">Source PR</label>
                 <p class="text-gray-900">{{ po.source_pr?.pr_number || '-' }}</p>
+              </div>
+              <div v-if="getCategoryDisplay()">
+                <label class="text-sm font-medium text-gray-600">Category</label>
+                <p class="text-gray-900">{{ getCategoryDisplay() }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-600">Arrival Date</label>

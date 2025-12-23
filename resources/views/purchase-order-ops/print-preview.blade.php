@@ -310,9 +310,11 @@
                                         @endphp
                                         @if($category)
                                             @php
-                                                $division = $category->division ?? '';
-                                                $name = $category->name ?? '';
-                                                $display = trim($division . ($division && $name ? ' - ' : '') . $name);
+                                                // Get division name from category->division (string field, not relationship)
+                                                $divisionName = $category->division ?? '';
+                                                $categoryName = $category->name ?? '';
+                                                // Display division-name if available, otherwise just category name
+                                                $display = trim($divisionName . ($divisionName && $categoryName ? ' - ' : '') . $categoryName);
                                             @endphp
                                             {{ $display ?: 'N/A' }}
                                         @else
