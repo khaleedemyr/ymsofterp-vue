@@ -292,11 +292,49 @@
                             <div>
                                 <div style="margin-bottom: 5px;">
                                     <span style="font-weight: bold; color: #333;">Category:</span>
-                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->category->name ?? 'N/A' }}</span>
+                                    <span style="color: #666; margin-left: 5px;">
+                                        @php
+                                            // Get category from PR items (new structure) or fallback to PR level (old structure)
+                                            $category = null;
+                                            if ($po->purchase_requisition->items && $po->purchase_requisition->items->count() > 0) {
+                                                // Get first item with category
+                                                $itemWithCategory = $po->purchase_requisition->items->where('category_id', '!=', null)->first();
+                                                if ($itemWithCategory && $itemWithCategory->category) {
+                                                    $category = $itemWithCategory->category;
+                                                }
+                                            }
+                                            // Fallback to PR level category (old structure)
+                                            if (!$category && $po->purchase_requisition->category) {
+                                                $category = $po->purchase_requisition->category;
+                                            }
+                                        @endphp
+                                        @if($category)
+                                            {{ $category->division ?? $category->name ?? 'N/A' }}
+                                        @else
+                                            N/A
+                                        @endif
+                                    </span>
                                 </div>
                                 <div style="margin-bottom: 5px;">
                                     <span style="font-weight: bold; color: #333;">Outlet:</span>
-                                    <span style="color: #666; margin-left: 5px;">{{ $po->purchase_requisition->outlet->nama_outlet ?? 'N/A' }}</span>
+                                    <span style="color: #666; margin-left: 5px;">
+                                        @php
+                                            // Get outlet from PR items (new structure) or fallback to PR level (old structure)
+                                            $outlet = null;
+                                            if ($po->purchase_requisition->items && $po->purchase_requisition->items->count() > 0) {
+                                                // Get first item with outlet
+                                                $itemWithOutlet = $po->purchase_requisition->items->where('outlet_id', '!=', null)->first();
+                                                if ($itemWithOutlet && $itemWithOutlet->outlet) {
+                                                    $outlet = $itemWithOutlet->outlet;
+                                                }
+                                            }
+                                            // Fallback to PR level outlet (old structure)
+                                            if (!$outlet && $po->purchase_requisition->outlet) {
+                                                $outlet = $po->purchase_requisition->outlet;
+                                            }
+                                        @endphp
+                                        {{ $outlet->nama_outlet ?? 'N/A' }}
+                                    </span>
                                 </div>
                                 <div style="margin-bottom: 5px;">
                                     <span style="font-weight: bold; color: #333;">Amount:</span>
