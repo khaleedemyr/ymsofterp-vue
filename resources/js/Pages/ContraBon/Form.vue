@@ -7,6 +7,9 @@ import axios from 'axios';
 
 const props = defineProps({
   contraBon: Object, // for edit, can be null for create
+  availableRetailNonFoods: Array,
+  suppliers: Array,
+  filters: Object,
 });
 
 const isEdit = computed(() => !!props.contraBon);
@@ -22,6 +25,12 @@ const retailFoodList = ref([]);
 
 // Warehouse Retail Food variables
 const warehouseRetailFoodList = ref([]);
+
+// Retail Non Food variables
+const retailNonFoodList = ref([]);
+const showRetailNonFoodModal = ref(false);
+const retailNonFoodSearchQuery = ref('');
+const filteredRetailNonFoodList = ref([]);
 
 // Loading state untuk initial load
 const initialLoading = ref(false);
@@ -92,6 +101,12 @@ onMounted(async () => {
     const dd = String(today.getDate()).padStart(2, '0');
     form.date = `${yyyy}-${mm}-${dd}`;
     
+    // Load retail non food from props
+    if (props.availableRetailNonFoods) {
+      retailNonFoodList.value = props.availableRetailNonFoods;
+      filteredRetailNonFoodList.value = props.availableRetailNonFoods;
+    }
+    
     // Tidak load data di sini - akan di-load saat diperlukan (lazy loading)
     initialLoading.value = false;
   } else {
@@ -145,6 +160,19 @@ onMounted(async () => {
               supplier_name: props.contraBon.supplier?.name || '',
               data: null
             });
+          } else if (source.source_type === 'retail_non_food' && source.source_id) {
+            // Gunakan camelCase untuk relasi Laravel
+            const retailNonFood = source.retailNonFood || source.retail_non_food;
+            const retailNumber = retailNonFood?.retail_number || 'Retail Non Food';
+            selectedSources.value.push({
+              key: `rnf-${source.source_id}`,
+              type: 'retail_non_food',
+              source_id: source.source_id,
+              display: retailNumber,
+              supplier_id: props.contraBon.supplier_id,
+              supplier_name: props.contraBon.supplier?.name || '',
+              data: null
+            });
           }
         });
       } else {
@@ -176,6 +204,16 @@ onMounted(async () => {
             type: 'warehouse_retail_food',
             source_id: props.contraBon.source_id,
             display: props.contraBon.warehouseRetailFood?.retail_number || 'Warehouse Retail Food',
+            supplier_id: props.contraBon.supplier_id,
+            supplier_name: props.contraBon.supplier?.name || '',
+            data: null
+          });
+        } else if (props.contraBon.source_type === 'retail_non_food' && props.contraBon.source_id) {
+          selectedSources.value.push({
+            key: `rnf-${props.contraBon.source_id}`,
+            type: 'retail_non_food',
+            source_id: props.contraBon.source_id,
+            display: props.contraBon.retailNonFood?.retail_number || 'Retail Non Food',
             supplier_id: props.contraBon.supplier_id,
             supplier_name: props.contraBon.supplier?.name || '',
             data: null
@@ -326,6 +364,112 @@ function closeRetailFoodModal() {
 function closeWarehouseRetailFoodModal() {
   showWarehouseRetailFoodModal.value = false;
   warehouseRetailFoodSearchQuery.value = '';
+}
+
+function openRetailNonFoodModal() {
+  showRetailNonFoodModal.value = true;
+  retailNonFoodSearchQuery.value = '';
+  filteredRetailNonFoodList.value = retailNonFoodList.value;
+}
+
+function closeRetailNonFoodModal() {
+  showRetailNonFoodModal.value = false;
+  retailNonFoodSearchQuery.value = '';
+}
+
+function filterRetailNonFoodList() {
+  if (!retailNonFoodSearchQuery.value.trim()) {
+    filteredRetailNonFoodList.value = retailNonFoodList.value;
+    return;
+  }
+  const query = retailNonFoodSearchQuery.value.toLowerCase();
+  filteredRetailNonFoodList.value = retailNonFoodList.value.filter(rnf => 
+    (rnf.retail_number || '').toLowerCase().includes(query) ||
+    (rnf.supplier_name || '').toLowerCase().includes(query) ||
+    (rnf.outlet_name || '').toLowerCase().includes(query)
+  );
+}
+
+async function selectRetailNonFoodFromModal(rnf) {
+  // Check if this source already exists
+  const existingSource = selectedSources.value.find(s => 
+    s.type === 'retail_non_food' && s.source_id === rnf.id
+  );
+  
+  if (existingSource) {
+    Swal.fire('Info', 'Source ini sudah ditambahkan', 'info');
+    closeRetailNonFoodModal();
+    return;
+  }
+  
+  // Load retail non food items
+  loadingPOGR.value = true;
+  try {
+    const response = await axios.get(`/non-food-payments/retail-non-food-items/${rnf.id}`);
+    const itemsData = response.data.items_by_outlet || {};
+    
+    // Add source to selectedSources
+    const sourceKey = `rnf-${rnf.id}`;
+    const sourceData = {
+      key: sourceKey,
+      type: 'retail_non_food',
+      source_id: rnf.id,
+      display: `${rnf.retail_number} - ${rnf.supplier_name}`,
+      supplier_id: rnf.supplier_id,
+      supplier_name: rnf.supplier_name,
+      data: rnf
+    };
+    selectedSources.value.push(sourceData);
+    
+    // Add items from this source to form.items
+    const allItems = [];
+    Object.values(itemsData).forEach(outletData => {
+      if (outletData.items && outletData.items.length > 0) {
+        const newItems = outletData.items.map(item => ({
+          gr_item_id: null,
+          item_id: item.item_id || null,
+          po_item_id: null,
+          unit_id: item.unit_id || null,
+          quantity: item.quantity,
+          price: item.price,
+          discount_percent: 0,
+          discount_amount: 0,
+          notes: '',
+          item_name: item.item_name,
+          unit_name: item.unit_name,
+          retail_non_food_item_id: item.id,
+          selected: false,
+          // Source info
+          source_type: 'retail_non_food',
+          source_id: rnf.id,
+          source_display: rnf.retail_number,
+          po_id: null,
+          gr_id: null,
+          _rowKey: Date.now() + '-' + Math.random() + '-rnf',
+        }));
+        allItems.push(...newItems);
+      }
+    });
+    
+    form.items.push(...allItems);
+    
+    // Update supplier detail
+    if (rnf.supplier_id) {
+      try {
+        const supplierResponse = await axios.get(`/api/suppliers/${rnf.supplier_id}`);
+        supplierDetail.value = supplierResponse.data;
+      } catch (e) {
+        console.error('Error loading supplier:', e);
+      }
+    }
+    
+    closeRetailNonFoodModal();
+  } catch (e) {
+    console.error('Error loading retail non food items:', e);
+    Swal.fire('Error', 'Gagal memuat detail Retail Non Food', 'error');
+  } finally {
+    loadingPOGR.value = false;
+  }
 }
 
 function selectPOFromModal(po) {
@@ -597,6 +741,12 @@ function onFileChange(e) {
 function formatCurrency(value) {
   if (value == null) return '-';
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(value);
+}
+
+function formatDate(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 // Computed untuk menghitung subtotal dari item yang dicentang (with discount item)
@@ -1192,6 +1342,14 @@ function getUnitName(item) {
               <i class="fa fa-plus"></i>
               <span>Tambah Warehouse Retail Food</span>
             </button>
+            <button 
+              type="button" 
+              @click="openRetailNonFoodModal"
+              class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:ring-2 focus:ring-green-500 flex items-center gap-2"
+            >
+              <i class="fa fa-plus"></i>
+              <span>Tambah Retail Non Food</span>
+            </button>
           </div>
         </div>
 
@@ -1213,6 +1371,9 @@ function getUnitName(item) {
                 </span>
                 <span v-else-if="source.type === 'warehouse_retail_food'" class="text-indigo-500">
                   <i class="fa fa-warehouse"></i>
+                </span>
+                <span v-else-if="source.type === 'retail_non_food'" class="text-green-500">
+                  <i class="fa fa-shopping-bag"></i>
                 </span>
                 <span class="font-medium text-gray-700">{{ source.display }}</span>
               </div>
@@ -1312,6 +1473,10 @@ function getUnitName(item) {
                      <span v-else-if="item.source_type === 'warehouse_retail_food'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                        <i class="fa fa-warehouse mr-1"></i>
                        {{ item.source_display || 'Warehouse RF' }}
+                     </span>
+                     <span v-else-if="item.source_type === 'retail_non_food'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                       <i class="fa fa-shopping-bag mr-1"></i>
+                       {{ item.source_display || 'Retail Non Food' }}
                      </span>
                      <span v-else class="text-gray-400">-</span>
                    </td>
@@ -1572,6 +1737,59 @@ function getUnitName(item) {
                 <div class="text-right">
                   <div class="text-sm text-gray-500">Retail Food</div>
                   <div class="text-sm text-gray-500">{{ rf.transaction_date }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Retail Non Food List -->
+    <div v-if="showRetailNonFoodModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="p-6 border-b">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Pilih Retail Non Food</h3>
+            <button @click="closeRetailNonFoodModal" class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+          <div class="mt-4">
+            <input 
+              v-model="retailNonFoodSearchQuery" 
+              @input="filterRetailNonFoodList"
+              type="text" 
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" 
+              placeholder="Cari Retail Non Food, Supplier, atau Outlet..."
+            />
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="filteredRetailNonFoodList.length === 0" class="p-8 text-center text-gray-500">
+            Tidak ada data yang ditemukan
+          </div>
+          <div v-else class="divide-y divide-gray-200">
+            <div 
+              v-for="rnf in filteredRetailNonFoodList" 
+              :key="rnf.id" 
+              @click="selectRetailNonFoodFromModal(rnf)"
+              class="p-4 cursor-pointer hover:bg-green-50 transition-colors"
+            >
+              <div class="flex items-center gap-3">
+                <span class="text-green-500 text-xl">🟢</span>
+                <div class="flex-1">
+                  <div class="font-semibold text-lg">{{ rnf.retail_number }}</div>
+                  <div class="text-gray-600">{{ rnf.supplier_name }}</div>
+                  <div v-if="rnf.outlet_name" class="text-sm text-green-600 mt-1">
+                    <i class="fa fa-map-marker-alt"></i> {{ rnf.outlet_name }}
+                  </div>
+                  <div class="text-sm text-gray-500 mt-1">
+                    {{ formatDate(rnf.transaction_date) }} - {{ formatCurrency(rnf.total_amount) }}
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-sm text-gray-500">Retail Non Food</div>
                 </div>
               </div>
             </div>

@@ -107,54 +107,10 @@
           </div>
         </div>
 
-        <!-- Available Retail Non Food (Contra Bon) -->
-        <div v-if="mappedRetailNonFoods.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold text-gray-800">Available Retail Non Food (Contra Bon)</h2>
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <input
-                  type="text"
-                  v-model="searchRetailNonFood"
-                  placeholder="Cari retail number, supplier, atau outlet..."
-                  class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 w-64"
-                />
-                <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-              </div>
-            </div>
-          </div>
-          <div class="space-y-4">
-            <div v-for="rnf in mappedRetailNonFoods" :key="rnf.id" 
-                 class="border rounded-lg p-4 transition border-gray-200 hover:bg-gray-50 cursor-pointer"
-                 @click="selectRetailNonFood(rnf)">
-              <div class="flex items-center justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1">
-                    <div class="font-semibold text-gray-900">{{ rnf.retail_number }}</div>
-                  </div>
-                  <div class="text-sm text-gray-600">{{ rnf.supplier_name }}</div>
-                  <div class="text-sm text-gray-500">
-                    {{ formatDate(rnf.transaction_date) }} - {{ formatCurrency(rnf.total_amount) }}
-                  </div>
-                  <div v-if="rnf.outlet_name" class="text-xs text-gray-600 mt-1">
-                    <i class="fa fa-store mr-1"></i>Outlet: {{ rnf.outlet_name }}
-                  </div>
-                </div>
-                <div class="text-right">
-                  <button type="button" 
-                          class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">
-                    <i class="fa fa-arrow-right mr-1"></i> Pilih
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="mappedPOs.length === 0 && mappedPRs.length === 0 && (props.availableRetailNonFoods || []).length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+        <div v-if="mappedPOs.length === 0 && mappedPRs.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
           <div class="text-gray-500">
             <i class="fa fa-inbox text-4xl mb-4"></i>
-            <p>Tidak ada Purchase Order, Purchase Requisition, atau Retail Non Food yang tersedia untuk dibayar.</p>
+            <p>Tidak ada Purchase Order atau Purchase Requisition yang tersedia untuk dibayar.</p>
           </div>
         </div>
         
@@ -168,25 +124,14 @@
             </button>
           </div>
         </div>
-        
-        <!-- Show message if search returns no results for Retail Non Food -->
-        <div v-if="(props.availableRetailNonFoods || []).length > 0 && mappedRetailNonFoods.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
-          <div class="text-gray-500">
-            <i class="fa fa-search text-4xl mb-4"></i>
-            <p>Tidak ada Retail Non Food yang ditemukan untuk pencarian "{{ searchRetailNonFood }}".</p>
-            <button @click="searchRetailNonFood = ''" class="mt-4 text-blue-600 hover:text-blue-800 underline">
-              Hapus filter pencarian
-            </button>
-          </div>
-        </div>
       </div>
 
-      <!-- Step 2: Form Payment dengan Detail PO/PR/Retail Non Food -->
-      <form v-if="selectedPO || selectedPR || selectedRetailNonFood" @submit.prevent="submitForm" class="space-y-6">
-        <!-- PO/PR/Retail Non Food Information -->
+      <!-- Step 2: Form Payment dengan Detail PO/PR -->
+      <form v-if="selectedPO || selectedPR" @submit.prevent="submitForm" class="space-y-6">
+        <!-- PO/PR Information -->
         <div class="bg-white rounded-2xl shadow-2xl p-6">
           <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold text-gray-800">{{ selectedPO ? 'Detail Purchase Order' : selectedPR ? 'Detail Purchase Requisition' : 'Detail Retail Non Food' }}</h2>
+            <h2 class="text-xl font-bold text-gray-800">{{ selectedPO ? 'Detail Purchase Order' : 'Detail Purchase Requisition' }}</h2>
             <div class="flex items-center gap-2">
               <button
                 v-if="selectedPO"
@@ -205,16 +150,16 @@
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
-              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Number' : selectedPR ? 'PR Number' : 'Retail Number' }}</label>
-              <p class="mt-1 text-lg font-semibold text-gray-900">{{ selectedPO ? selectedPO.number : selectedPR ? selectedPR.pr_number : selectedRetailNonFood.retail_number }}</p>
+              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Number' : 'PR Number' }}</label>
+              <p class="mt-1 text-lg font-semibold text-gray-900">{{ selectedPO ? selectedPO.number : selectedPR.pr_number }}</p>
             </div>
-            <div v-if="selectedPO || selectedRetailNonFood">
+            <div v-if="selectedPO">
               <label class="block text-sm font-medium text-gray-700">Supplier</label>
-              <p class="mt-1 text-gray-900">{{ selectedPO ? selectedPO.supplier_name : selectedRetailNonFood.supplier_name }}</p>
+              <p class="mt-1 text-gray-900">{{ selectedPO.supplier_name }}</p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Date' : selectedPR ? 'PR Date' : 'Transaction Date' }}</label>
-              <p class="mt-1 text-gray-900">{{ formatDate(selectedPO ? selectedPO.date : selectedPR ? selectedPR.date : selectedRetailNonFood.transaction_date) }}</p>
+              <label class="block text-sm font-medium text-gray-700">{{ selectedPO ? 'PO Date' : 'PR Date' }}</label>
+              <p class="mt-1 text-gray-900">{{ formatDate(selectedPO ? selectedPO.date : selectedPR.date) }}</p>
             </div>
             <div v-if="selectedPO && selectedPO.po_discount_info?.subtotal">
               <label class="block text-sm font-medium text-gray-700">Subtotal</label>
@@ -235,7 +180,7 @@
             <div>
               <label class="block text-sm font-medium text-gray-700">Grand Total (Setelah Discount{{ selectedPO && selectedPO.po_discount_info && selectedPO.po_discount_info.ppn_enabled ? ' + PPN' : '' }})</label>
               <p class="mt-1 text-lg font-bold text-green-600">
-                {{ formatCurrency(selectedPO ? (selectedPO.po_discount_info?.grand_total || selectedPO.grand_total) : selectedPR ? selectedPR.amount : selectedRetailNonFood.total_amount) }}
+                {{ formatCurrency(selectedPO ? (selectedPO.po_discount_info?.grand_total || selectedPO.grand_total) : selectedPR.amount) }}
               </p>
               <p v-if="selectedPO && selectedPO.po_discount_info" class="mt-1 text-xs text-gray-500">
                 <span v-if="selectedPO.po_discount_info.discount_total_percent > 0 || selectedPO.po_discount_info.discount_total_amount > 0">
@@ -306,7 +251,7 @@
           </div>
 
           <!-- Attachments Section -->
-          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0) || (retailNonFoodAttachments && retailNonFoodAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
+          <div v-if="(poAttachments && poAttachments.length > 0) || (prAttachments && prAttachments.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Attachments</h3>
             
             <!-- PO Attachments -->
@@ -407,61 +352,11 @@
               </div>
             </div>
 
-            <!-- Retail Non Food Attachments -->
-            <div v-if="selectedRetailNonFood && retailNonFoodAttachments && retailNonFoodAttachments.length > 0" class="mb-6">
-              <h4 class="text-md font-medium text-gray-700 mb-3">Retail Non Food Attachments</h4>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div v-for="attachment in retailNonFoodAttachments" :key="`rnf-${attachment.id}`" class="border border-gray-200 rounded-lg p-3">
-                  <!-- Image Thumbnail -->
-                  <div v-if="isImageFile(attachment.file_name)" class="relative group cursor-pointer" @click="openLightbox(`/storage/${attachment.file_path}`, attachment.file_name)">
-                    <div class="aspect-square bg-gray-100 border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200">
-                      <img
-                        :src="`/storage/${attachment.file_path}`"
-                        :alt="attachment.file_name"
-                        class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
-                        @click.stop="openLightbox(`/storage/${attachment.file_path}`, attachment.file_name)"
-                      />
-                    </div>
-                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center">
-                      <div class="opacity-0 group-hover:opacity-100 bg-white bg-opacity-90 text-gray-800 px-3 py-1 rounded-full text-sm transition-all duration-200 flex items-center gap-2">
-                        <i class="fas fa-search-plus"></i>
-                        <span>View</span>
-                      </div>
-                    </div>
-                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white p-2">
-                      <p class="text-xs truncate font-medium">{{ attachment.file_name }}</p>
-                    </div>
-                  </div>
-                  
-                  <!-- Non-Image Files -->
-                  <div v-else class="flex items-center gap-3">
-                    <div class="flex-shrink-0">
-                      <i class="fa fa-file text-gray-500 text-xl"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-gray-900 truncate">{{ attachment.file_name }}</p>
-                      <p class="text-xs text-gray-500">{{ formatFileSize(attachment.file_size) }}</p>
-                    </div>
-                    <div class="flex-shrink-0">
-                      <a 
-                        :href="`/storage/${attachment.file_path}`" 
-                        target="_blank" 
-                        class="text-blue-600 hover:text-blue-800 text-sm"
-                        download
-                      >
-                        <i class="fa fa-download"></i>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
           </div>
 
           <!-- PO/PR Items Grouped by Outlet -->
           <div v-if="itemsByOutlet && Object.keys(itemsByOutlet).length > 0">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items {{ selectedPO ? 'per Outlet' : (selectedPR ? 'per Outlet & Category' : '') }}</h3>
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Items {{ selectedPO ? 'per Outlet' : 'per Outlet & Category' }}</h3>
             
             <div v-for="(outletData, outletKey) in itemsByOutlet" :key="outletKey" class="mb-6">
               <!-- Outlet Header -->
@@ -613,7 +508,7 @@
                 :searchable="true"
                 :close-on-select="true"
                 :show-labels="false"
-                :disabled="selectedPO || selectedRetailNonFood"
+                :disabled="selectedPO"
                 placeholder="Pilih Supplier"
                 label="name"
                 track-by="id"
@@ -631,9 +526,6 @@
               </multiselect>
               <p v-if="selectedPO" class="mt-1 text-xs text-gray-500">
                 Supplier diambil dari Purchase Order
-              </p>
-              <p v-if="selectedRetailNonFood" class="mt-1 text-xs text-gray-500">
-                Supplier diambil dari Retail Non Food
               </p>
               <p v-if="selectedPR && isSupplierRequired" class="mt-1 text-xs text-gray-500">
                 Pilih supplier untuk payment ini (wajib)
@@ -1117,7 +1009,6 @@ const props = defineProps({
   suppliers: Array,
   availablePOs: Array,
   availablePRs: Array,
-  availableRetailNonFoods: Array,
   filters: Object
 });
 
@@ -1157,40 +1048,16 @@ const mappedPRs = computed(() => {
   });
 });
 
-// Search for Retail Non Food
-const searchRetailNonFood = ref('');
-
-// Map Retail Non Food data with search filter
-const mappedRetailNonFoods = computed(() => {
-  const retailNonFoods = props.availableRetailNonFoods || [];
-  
-  if (!searchRetailNonFood.value) {
-    return retailNonFoods;
-  }
-  
-  const searchTerm = searchRetailNonFood.value.toLowerCase();
-  return retailNonFoods.filter(rnf => {
-    const retailNumber = (rnf.retail_number || '').toLowerCase();
-    const supplierName = (rnf.supplier_name || '').toLowerCase();
-    const outletName = (rnf.outlet_name || '').toLowerCase();
-    
-    return retailNumber.includes(searchTerm) || 
-           supplierName.includes(searchTerm) || 
-           outletName.includes(searchTerm);
-  });
-});
 
 const isSubmitting = ref(false);
 const selectedPO = ref(null);
 const selectedPR = ref(null);
-const selectedRetailNonFood = ref(null);
 const selectedSupplier = ref(null);
 const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
 const poAttachments = ref([]);
 const prAttachments = ref([]);
-const retailNonFoodAttachments = ref([]);
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 const originalAmount = ref(null);
@@ -1204,7 +1071,6 @@ const paymentInfo = ref({
 const form = reactive({
   purchase_order_ops_id: null,
   purchase_requisition_id: null,
-  retail_non_food_id: null,
   supplier_id: '',
   amount: '',
   payment_method: '',
@@ -1220,11 +1086,6 @@ const form = reactive({
 const shouldShowSupplier = computed(() => {
   // If PO is selected, always show supplier (taken from PO)
   if (selectedPO.value) {
-    return true;
-  }
-  
-  // If Retail Non Food is selected, always show supplier (taken from Retail Non Food)
-  if (selectedRetailNonFood.value) {
     return true;
   }
   
@@ -1246,11 +1107,6 @@ const shouldShowSupplier = computed(() => {
 const isSupplierRequired = computed(() => {
   // If PO is selected, supplier is always required (from PO)
   if (selectedPO.value) {
-    return true;
-  }
-  
-  // If Retail Non Food is selected, supplier is always required (from Retail Non Food)
-  if (selectedRetailNonFood.value) {
     return true;
   }
   
@@ -1326,16 +1182,13 @@ function closeLightbox() {
 function resetSelection() {
   selectedPO.value = null;
   selectedPR.value = null;
-  selectedRetailNonFood.value = null;
   selectedSupplier.value = null;
   poItems.value = [];
   itemsByOutlet.value = {};
   poAttachments.value = [];
   prAttachments.value = [];
-  retailNonFoodAttachments.value = [];
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
-  form.retail_non_food_id = null;
   form.supplier_id = '';
   form.amount = '';
   form.is_partial_payment = false;
@@ -1357,8 +1210,6 @@ function resetAmountToOriginal() {
     form.amount = selectedPO.value.grand_total;
   } else if (selectedPR.value) {
     form.amount = selectedPR.value.amount;
-  } else if (selectedRetailNonFood.value) {
-    form.amount = selectedRetailNonFood.value.total_amount;
   }
 }
 
@@ -1394,7 +1245,6 @@ async function selectPO(po) {
     itemsByOutlet.value = response.data.items_by_outlet || {};
     poAttachments.value = response.data.po_attachments || [];
     prAttachments.value = [];
-    retailNonFoodAttachments.value = [];
     
     // Update PO with discount info from API
     if (response.data.po_discount_info) {
@@ -1493,7 +1343,6 @@ async function selectPR(pr) {
     itemsByOutlet.value = response.data.items_by_outlet || {};
     prAttachments.value = response.data.pr_attachments || [];
     poAttachments.value = [];
-    retailNonFoodAttachments.value = [];
     
     // Update amount with total from API if available, and save as original
     if (response.data.total_amount) {
@@ -1515,64 +1364,12 @@ async function selectPR(pr) {
   }
 }
 
-async function selectRetailNonFood(rnf) {
-  selectedRetailNonFood.value = rnf;
-  selectedPO.value = null;
-  selectedPR.value = null;
-  form.retail_non_food_id = rnf.id;
-  form.purchase_order_ops_id = null;
-  form.purchase_requisition_id = null;
-  
-  // Set supplier_id from retail non food
-  if (rnf.supplier_id && props.suppliers) {
-    const supplier = props.suppliers.find(s => s.id == rnf.supplier_id);
-    if (supplier) {
-      selectedSupplier.value = supplier;
-      form.supplier_id = rnf.supplier_id;
-    }
-  }
-  
-  form.amount = rnf.total_amount;
-  originalAmount.value = rnf.total_amount;
-  
-  // Load Retail Non Food items
-  loadingPOItems.value = true;
-  try {
-    console.log('Loading Retail Non Food items for ID:', rnf.id);
-    const response = await axios.get(`/non-food-payments/retail-non-food-items/${rnf.id}`);
-    console.log('Response received:', response.data);
-    console.log('Attachments in response:', response.data.retail_non_food_attachments);
-    itemsByOutlet.value = response.data.items_by_outlet || {};
-    retailNonFoodAttachments.value = response.data.retail_non_food_attachments || [];
-    console.log('retailNonFoodAttachments.value set to:', retailNonFoodAttachments.value);
-    prAttachments.value = [];
-    poAttachments.value = [];
-    
-    // Update amount with total from API if available, and save as original
-    if (response.data.total_amount) {
-      form.amount = response.data.total_amount;
-      originalAmount.value = response.data.total_amount;
-    }
-    
-    // Update selectedRetailNonFood with full data
-    if (response.data.retail_non_food) {
-      selectedRetailNonFood.value = { ...selectedRetailNonFood.value, ...response.data.retail_non_food };
-    }
-  } catch (error) {
-    console.error('Error loading Retail Non Food items:', error);
-    import('sweetalert2').then(({ default: Swal }) => {
-      Swal.fire('Error', 'Gagal memuat detail Retail Non Food', 'error');
-    });
-  } finally {
-    loadingPOItems.value = false;
-  }
-}
 
 function submitForm() {
   // Validate that at least one transaction is selected
-  if (!form.purchase_order_ops_id && !form.purchase_requisition_id && !form.retail_non_food_id) {
+  if (!form.purchase_order_ops_id && !form.purchase_requisition_id) {
     import('sweetalert2').then(({ default: Swal }) => {
-      Swal.fire('Error', 'Pilih minimal satu transaksi (Purchase Order, Purchase Requisition, atau Retail Non Food).', 'error');
+      Swal.fire('Error', 'Pilih minimal satu transaksi (Purchase Order atau Purchase Requisition).', 'error');
     });
     return;
   }

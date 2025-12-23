@@ -18,7 +18,7 @@ class ContraBonController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator', 'sources'])->orderByDesc('created_at');
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood', 'creator', 'sources'])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
@@ -99,6 +99,11 @@ class ContraBonController extends Controller
                         $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
                         $sourceOutlets[] = $warehouseName . ($divisionName ? ' - ' . $divisionName : '');
                         $sourceTypeDisplays[] = 'Warehouse Retail Food';
+                    } elseif ($source->source_type === 'retail_non_food' && $source->retailNonFood) {
+                        $retailNonFood = $source->retailNonFood;
+                        $sourceNumbers[] = $retailNonFood->retail_number ?? '';
+                        $sourceOutlets[] = $retailNonFood->outlet ? $retailNonFood->outlet->nama_outlet : '';
+                        $sourceTypeDisplays[] = 'Retail Non Food';
                     }
                 }
                 
@@ -176,9 +181,69 @@ class ContraBonController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
-        return inertia('ContraBon/Form');
+        // Get filter parameters
+        $supplierId = $request->input('supplier_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        // Get available Retail Non Food with payment_method = contra_bon that don't have contra bon yet
+        $retailNonFoodQuery = DB::table('retail_non_food as rnf')
+            ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
+            ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+            ->where('rnf.payment_method', 'contra_bon')
+            ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
+            ->select(
+                'rnf.id',
+                'rnf.retail_number',
+                'rnf.transaction_date',
+                'rnf.total_amount',
+                'rnf.supplier_id',
+                'rnf.outlet_id',
+                'rnf.notes',
+                's.name as supplier_name',
+                'o.nama_outlet as outlet_name'
+            );
+
+        // Apply filters
+        if ($supplierId) {
+            $retailNonFoodQuery->where('rnf.supplier_id', $supplierId);
+        }
+        if ($dateFrom) {
+            $retailNonFoodQuery->whereDate('rnf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $retailNonFoodQuery->whereDate('rnf.transaction_date', '<=', $dateTo);
+        }
+
+        $allRetailNonFoods = $retailNonFoodQuery->orderBy('rnf.transaction_date', 'desc')
+            ->limit(100)
+            ->get();
+
+        // Filter Retail Non Food that don't have contra bon yet
+        // Check if retail_non_food_id exists in food_contra_bon_sources
+        $availableRetailNonFoods = $allRetailNonFoods->filter(function($rnf) {
+            $hasContraBon = DB::table('food_contra_bon_sources')
+                ->where('source_type', 'retail_non_food')
+                ->where('source_id', $rnf->id)
+                ->exists();
+            return !$hasContraBon;
+        })->take(50)->values();
+
+        // Get suppliers for filter dropdown
+        $suppliers = DB::table('suppliers')
+            ->where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return inertia('ContraBon/Form', [
+            'availableRetailNonFoods' => $availableRetailNonFoods,
+            'suppliers' => $suppliers,
+            'filters' => $request->only(['supplier_id', 'date_from', 'date_to'])
+        ]);
     }
 
     public function store(Request $request)
@@ -193,7 +258,7 @@ class ContraBonController extends Controller
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
             'supplier_invoice_number' => 'nullable|string|max:100',
-            'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food',
+            'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food,retail_non_food',
         ];
         
         // Conditional validation based on source_type
@@ -205,7 +270,7 @@ class ContraBonController extends Controller
             $rules['items.*.unit_id'] = 'nullable|exists:units,id';
             $rules['items.*.gr_item_id'] = 'nullable|exists:food_good_receive_items,id';
         } else {
-            // For retail_food and warehouse_retail_food:
+            // For retail_food, warehouse_retail_food, and retail_non_food:
             // - po_id dan gr_id tidak required
             // - source_id required
             // - item_id dan unit_id tidak required jika ada item_name dan unit_name
@@ -688,6 +753,7 @@ class ContraBonController extends Controller
             'sources.purchaseOrder',
             'sources.retailFood',
             'sources.warehouseRetailFood',
+            'sources.retailNonFood',
             'items.item',
             'items.unit',
             'items.grItem' => function($query) {
@@ -755,6 +821,11 @@ class ContraBonController extends Controller
                     $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
                     $sourceOutlets[] = $warehouseName . ($divisionName ? ' - ' . $divisionName : '');
                     $sourceTypeDisplays[] = 'Warehouse Retail Food';
+                } elseif ($source->source_type === 'retail_non_food' && $source->retailNonFood) {
+                    $retailNonFood = $source->retailNonFood;
+                    $sourceNumbers[] = $retailNonFood->retail_number ?? '';
+                    $sourceOutlets[] = $retailNonFood->outlet ? $retailNonFood->outlet->nama_outlet : '';
+                    $sourceTypeDisplays[] = 'Retail Non Food';
                 }
             }
             
@@ -902,6 +973,12 @@ class ContraBonController extends Controller
             $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
             $contraBon->source_type_display = 'Warehouse Retail Food';
             $contraBon->source_types = ['Warehouse Retail Food'];
+        } elseif ($contraBon->source_type === 'retail_non_food') {
+            $retailNonFood = \App\Models\RetailNonFood::find($contraBon->source_id);
+            $contraBon->source_numbers = [$retailNonFood->retail_number ?? ''];
+            $contraBon->source_outlets = [$retailNonFood->outlet ? $retailNonFood->outlet->nama_outlet : ''];
+            $contraBon->source_type_display = 'Retail Non Food';
+            $contraBon->source_types = ['Retail Non Food'];
         } else {
             $contraBon->source_numbers = [];
             $contraBon->source_outlets = [];
@@ -1349,7 +1426,7 @@ class ContraBonController extends Controller
             
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
-            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'creator', 'sources'])
+            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood', 'creator', 'sources'])
                 ->where('status', 'draft')
                 ->orderByDesc('created_at');
             
@@ -2081,6 +2158,7 @@ class ContraBonController extends Controller
             'sources.purchaseOrder',
             'sources.retailFood',
             'sources.warehouseRetailFood',
+            'sources.retailNonFood',
             'items.item',
             'items.unit',
             'items.grItem' => function($query) {

@@ -35,5 +35,10 @@ class ContraBonSource extends Model
     {
         return $this->belongsTo(RetailWarehouseFood::class, 'source_id');
     }
+
+    public function retailNonFood()
+    {
+        return $this->belongsTo(RetailNonFood::class, 'source_id');
+    }
 }
 

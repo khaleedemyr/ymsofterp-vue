@@ -64,6 +64,11 @@ class ContraBon extends Model
         return $this->belongsTo(RetailWarehouseFood::class, 'source_id');
     }
 
+    public function retailNonFood()
+    {
+        return $this->belongsTo(RetailNonFood::class, 'source_id');
+    }
+
     public function items()
     {
         return $this->hasMany(ContraBonItem::class, 'contra_bon_id');

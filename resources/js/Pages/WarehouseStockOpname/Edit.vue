@@ -32,17 +32,25 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Warehouse Division</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Warehouse Division
+              <span v-if="warehouseHasDivisions" class="text-red-500">*</span>
+            </label>
             <select
               v-model="form.warehouse_division_id"
-              @change="loadItems"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              @change="onWarehouseDivisionChange"
+              :required="warehouseHasDivisions"
+              :disabled="!form.warehouse_id || checkingDivisions"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
-              <option value="">Semua Division</option>
+              <option value="">{{ warehouseHasDivisions ? 'Pilih Division' : 'Semua Division' }}</option>
               <option v-for="wd in filteredWarehouseDivisions" :key="wd.id" :value="wd.id">
                 {{ wd.name }}
               </option>
             </select>
+            <p v-if="checkingDivisions" class="text-xs text-gray-500 mt-1">
+              <i class="fa fa-spinner fa-spin mr-1"></i>Memeriksa division...
+            </p>
           </div>
 
           <div>
@@ -100,7 +108,7 @@
           </div>
 
           <!-- Approvers List -->
-          <div v-if="form.approvers.length > 0" class="space-y-2">
+          <div v-if="form.approvers && form.approvers.length > 0" class="space-y-2">
             <h4 class="font-medium text-gray-700">Urutan Approval (Terendah ke Tertinggi):</h4>
             
             <template v-for="(approver, index) in form.approvers" :key="approver?.id || index">
@@ -119,7 +127,7 @@
                       <i class="fa fa-arrow-up"></i>
                     </button>
                     <button
-                      v-if="index < form.approvers.length - 1"
+                      v-if="form.approvers && index < form.approvers.length - 1"
                       @click="reorderApprover(index, index + 1)"
                       class="p-1 text-gray-500 hover:text-gray-700"
                       title="Pindah ke bawah"
@@ -151,18 +159,9 @@
         </div>
 
         <!-- Items Table -->
-        <div v-if="form.items.length > 0" class="mb-6">
+        <div v-if="form.items && form.items.length > 0" class="mb-6">
           <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-semibold text-gray-800">Items ({{ form.items.length }})</h3>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                @click="autoFillAll"
-                class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
-              >
-                <i class="fa-solid fa-equals mr-2"></i> Auto Fill Semua (=)
-              </button>
-            </div>
           </div>
 
           <div class="overflow-x-auto">
@@ -170,9 +169,6 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Item</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Small</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Medium</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Qty System<br/>Large</th>
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Small
                   </th>
@@ -182,9 +178,10 @@
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Large
                   </th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">MAC</th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Subtotal<br/>(Qty × MAC)</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-48">Selisih</th>
                   <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Alasan</th>
-                  <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-20">Action</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
@@ -194,7 +191,7 @@
                     class="bg-blue-50 hover:bg-blue-100 cursor-pointer transition"
                     @click="toggleCategory(categoryName)"
                   >
-                    <td class="px-4 py-3 font-bold text-gray-800" colspan="10">
+                    <td class="px-4 py-3 font-bold text-gray-800" colspan="8">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <i 
@@ -225,28 +222,15 @@
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">
                       <div class="font-semibold pl-6">{{ item.item_name }}</div>
                     </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_small) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.small_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_medium) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.medium_unit_name }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatNumber(item.qty_system_large) }}</div>
-                      <div class="text-xs text-gray-500">{{ item.large_unit_name }}</div>
-                    </td>
                     <td class="px-3 py-3">
                       <div class="flex items-center gap-2">
                         <input
                           v-model.number="item.qty_physical_small"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'small')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_small)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.small_unit_name || '-' }}</span>
                       </div>
@@ -256,11 +240,10 @@
                         <input
                           v-model.number="item.qty_physical_medium"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'medium')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_medium)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.medium_unit_name || '-' }}</span>
                       </div>
@@ -270,25 +253,28 @@
                         <input
                           v-model.number="item.qty_physical_large"
                           type="number"
-                          step="0.01"
+                          step="any"
                           min="0"
                           @input="onQtyPhysicalChange(item, 'large')"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          :placeholder="formatNumber(item.qty_system_large)"
                         />
                         <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
                       </div>
                     </td>
+                    <td class="px-3 py-3 text-sm text-right text-gray-700">
+                      <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
+                    </td>
+                    <td class="px-3 py-3 text-sm text-right text-gray-700">
+                      <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
+                    </td>
                     <td class="px-3 py-3 text-center text-sm">
-                      <div v-if="hasDifference(item)" class="space-y-1">
-                        <div
-                          v-for="(diff, idx) in getDifferenceArray(item)"
-                          :key="idx"
+                      <div v-if="hasDifference(item)">
+                        <span
                           :class="getDifferenceClass(item)"
                           class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
                         >
-                          {{ diff }}
-                        </div>
+                          {{ getDifferenceSign(item) }}
+                        </span>
                       </div>
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
@@ -302,19 +288,20 @@
                       />
                       <span v-else class="text-gray-400 text-xs">-</span>
                     </td>
-                    <td class="px-3 py-3 text-center">
-                      <button
-                        type="button"
-                        @click="autoFillItem(item)"
-                        class="px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors shadow-sm hover:shadow-md"
-                        title="Auto fill dengan qty system"
-                      >
-                        <i class="fa-solid fa-equals"></i>
-                      </button>
-                    </td>
                   </tr>
                 </template>
               </tbody>
+              <tfoot class="bg-gray-100 border-t-2 border-gray-400">
+                <tr>
+                  <td class="px-4 py-4 text-right font-bold text-gray-900" colspan="5">
+                    GRAND TOTAL
+                  </td>
+                  <td class="px-3 py-4 text-right font-bold text-gray-900 text-lg">
+                    {{ formatNumber(grandTotal) }}
+                  </td>
+                  <td class="px-3 py-4" colspan="2"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -326,13 +313,13 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else-if="form.items.length === 0 && form.warehouse_id" class="text-center py-8 text-gray-500">
+        <div v-else-if="(!form.items || form.items.length === 0) && form.warehouse_id" class="text-center py-8 text-gray-500">
           <i class="fa-solid fa-inbox text-4xl mb-4"></i>
           <p>Tidak ada item dengan stock untuk warehouse yang dipilih.</p>
         </div>
 
         <!-- Submit Button -->
-        <div v-if="form.items.length > 0" class="flex justify-end gap-4 mt-6">
+        <div v-if="form.items && form.items.length > 0" class="flex justify-end gap-4 mt-6">
           <button
             type="button"
             @click="$inertia.visit(route('warehouse-stock-opnames.index'))"
@@ -376,16 +363,28 @@ const form = useForm({
   opname_date: props.stockOpname?.opname_date || new Date().toISOString().split('T')[0],
   notes: props.stockOpname?.notes || '',
   items: props.items || [],
+  approvers: props.approvers || [],
 });
 
 const loadingItems = ref(false);
 const submitting = ref(false);
 const expandedCategories = ref(new Set());
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+const approverSearchTimeout = ref(null);
+const warehouseHasDivisions = ref(false);
+const checkingDivisions = ref(false);
+const warehouseDivisionsList = ref([]);
 
 // Group items by category
 const groupedItems = computed(() => {
   const grouped = {};
+  if (!form.items || !Array.isArray(form.items)) {
+    return grouped;
+  }
   form.items.forEach(item => {
+    if (!item) return;
     const categoryName = item.category_name || 'Uncategorized';
     if (!grouped[categoryName]) {
       grouped[categoryName] = [];
@@ -393,6 +392,26 @@ const groupedItems = computed(() => {
     grouped[categoryName].push(item);
   });
   return grouped;
+});
+
+// Calculate subtotal for an item (qty_physical_small * mac)
+function getSubtotal(item) {
+  if (!item) return 0;
+  // Return 0 if qty_physical_small is not filled (null/undefined/empty)
+  if (item.qty_physical_small === null || item.qty_physical_small === undefined || item.qty_physical_small === '') {
+    return 0;
+  }
+  const qtyPhysical = parseFloat(item.qty_physical_small) || 0;
+  const mac = parseFloat(item.mac) || 0;
+  return qtyPhysical * mac;
+}
+
+// Calculate grand total
+const grandTotal = computed(() => {
+  if (!form.items || !Array.isArray(form.items) || form.items.length === 0) return 0;
+  return form.items.reduce((total, item) => {
+    return total + getSubtotal(item);
+  }, 0);
 });
 
 function toggleCategory(categoryName) {
@@ -405,16 +424,23 @@ function toggleCategory(categoryName) {
 
 // Auto expand all categories on load
 watch(() => form.items, (newItems) => {
-  if (newItems && newItems.length > 0) {
+  if (newItems && Array.isArray(newItems) && newItems.length > 0) {
     const categories = new Set();
     newItems.forEach(item => {
-      categories.add(item.category_name || 'Uncategorized');
+      if (item) {
+        categories.add(item.category_name || 'Uncategorized');
+      }
     });
     expandedCategories.value = categories;
   }
 }, { immediate: true });
 
 const filteredWarehouseDivisions = computed(() => {
+  // Use divisions from API check if available, otherwise use props
+  if (warehouseDivisionsList.value.length > 0) {
+    return warehouseDivisionsList.value;
+  }
+  
   let divisions = props.warehouseDivisions || [];
   
   if (form.warehouse_id) {
@@ -424,13 +450,62 @@ const filteredWarehouseDivisions = computed(() => {
   return divisions;
 });
 
-function onWarehouseChange() {
+async function onWarehouseChange() {
   form.warehouse_division_id = '';
   form.items = [];
+  warehouseHasDivisions.value = false;
+  warehouseDivisionsList.value = [];
+  
+  if (!form.warehouse_id) {
+    return;
+  }
+
+  // Check if warehouse has divisions
+  checkingDivisions.value = true;
+  try {
+    const response = await axios.get(route('warehouse-stock-opnames.check-divisions'), {
+      params: {
+        warehouse_id: form.warehouse_id,
+      },
+    });
+
+    if (response.data && response.data.has_divisions) {
+      warehouseHasDivisions.value = true;
+      warehouseDivisionsList.value = response.data.divisions || [];
+      // Items will be loaded when user selects a division
+    } else {
+      warehouseHasDivisions.value = false;
+      warehouseDivisionsList.value = [];
+      // If no divisions, load items immediately
+      await loadItems();
+    }
+  } catch (error) {
+    console.error('Error checking warehouse divisions:', error);
+    warehouseHasDivisions.value = false;
+    warehouseDivisionsList.value = [];
+    // Try to load items anyway
+    await loadItems();
+  } finally {
+    checkingDivisions.value = false;
+  }
+}
+
+function onWarehouseDivisionChange() {
+  if (form.warehouse_division_id) {
+    loadItems();
+  } else {
+    form.items = [];
+  }
 }
 
 async function loadItems() {
   if (!form.warehouse_id) {
+    form.items = [];
+    return;
+  }
+
+  // If warehouse has divisions, require division selection
+  if (warehouseHasDivisions.value && !form.warehouse_division_id) {
     form.items = [];
     return;
   }
@@ -451,10 +526,10 @@ async function loadItems() {
       qty_system_small: parseFloat(item.qty_system_small) || 0,
       qty_system_medium: parseFloat(item.qty_system_medium) || 0,
       qty_system_large: parseFloat(item.qty_system_large) || 0,
-      qty_physical_small: null,
-      qty_physical_medium: null,
-      qty_physical_large: null,
-      reason: '',
+      qty_physical_small: item.qty_physical_small !== null && item.qty_physical_small !== undefined ? parseFloat(item.qty_physical_small) : null,
+      qty_physical_medium: item.qty_physical_medium !== null && item.qty_physical_medium !== undefined ? parseFloat(item.qty_physical_medium) : null,
+      qty_physical_large: item.qty_physical_large !== null && item.qty_physical_large !== undefined ? parseFloat(item.qty_physical_large) : null,
+      reason: item.reason || '',
       small_unit_name: item.small_unit_name,
       medium_unit_name: item.medium_unit_name,
       large_unit_name: item.large_unit_name,
@@ -475,19 +550,6 @@ async function loadItems() {
   }
 }
 
-function autoFillItem(item) {
-  item.qty_physical_small = item.qty_system_small;
-  item.qty_physical_medium = item.qty_system_medium;
-  item.qty_physical_large = item.qty_system_large;
-  item.reason = '';
-  calculateDifference(item);
-}
-
-function autoFillAll() {
-  form.items.forEach(item => {
-    autoFillItem(item);
-  });
-}
 
 function onQtyPhysicalChange(item, changedUnit) {
   const value = item[`qty_physical_${changedUnit}`];
@@ -572,23 +634,11 @@ function hasDifference(item) {
   return diffSmall !== 0 || diffMedium !== 0 || diffLarge !== 0;
 }
 
-function getDifferenceArray(item) {
+function getDifferenceSign(item) {
   const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  
-  const diffs = [];
-  if (diffSmall !== 0) {
-    diffs.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
-  }
-  if (diffMedium !== 0) {
-    diffs.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
-  }
-  if (diffLarge !== 0) {
-    diffs.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
-  }
-  
-  return diffs.length > 0 ? diffs : ['0'];
+  if (diffSmall > 0) return '+';
+  if (diffSmall < 0) return '-';
+  return '0';
 }
 
 function getDifferenceClass(item) {
@@ -601,6 +651,11 @@ function getDifferenceClass(item) {
 function formatNumber(val) {
   if (val == null) return '0';
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCurrency(val) {
+  if (val == null || val === '' || isNaN(val)) return 'Rp 0';
+  return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function loadApprovers(search = '') {
@@ -630,12 +685,19 @@ async function loadApprovers(search = '') {
 }
 
 function onApproverSearch() {
-  if (approverSearch.value.length >= 2) {
-    loadApprovers(approverSearch.value);
-  } else {
-    approverResults.value = [];
-    showApproverDropdown.value = false;
+  // Debounce search to avoid too many API calls
+  if (approverSearchTimeout.value) {
+    clearTimeout(approverSearchTimeout.value);
   }
+  
+  approverSearchTimeout.value = setTimeout(() => {
+    if (approverSearch.value.length >= 2) {
+      loadApprovers(approverSearch.value);
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
+    }
+  }, 300);
 }
 
 function addApprover(user) {
@@ -661,7 +723,7 @@ function reorderApprover(fromIndex, toIndex) {
 }
 
 function submitForm() {
-  if (form.items.length === 0) {
+  if (!form.items || !Array.isArray(form.items) || form.items.length === 0) {
     Swal.fire({
       title: 'Error',
       text: 'Minimal harus ada 1 item.',
@@ -684,16 +746,29 @@ function submitForm() {
   });
 }
 
-// Load items when warehouse or warehouse division changes
-watch(() => [form.warehouse_id, form.warehouse_division_id], () => {
-  if (form.warehouse_id) {
-    loadItems();
-  }
-});
-
-// Auto load items if already selected
-if (form.warehouse_id && form.items.length === 0) {
-  loadItems();
+// Auto check divisions if warehouse is already selected
+if (form.warehouse_id) {
+  // Check divisions without clearing items (since this is edit mode)
+  checkingDivisions.value = true;
+  axios.get(route('warehouse-stock-opnames.check-divisions'), {
+    params: {
+      warehouse_id: form.warehouse_id,
+    },
+  }).then(response => {
+    if (response.data && response.data.has_divisions) {
+      warehouseHasDivisions.value = true;
+      warehouseDivisionsList.value = response.data.divisions || [];
+    } else {
+      warehouseHasDivisions.value = false;
+      warehouseDivisionsList.value = [];
+    }
+  }).catch(error => {
+    console.error('Error checking warehouse divisions:', error);
+    warehouseHasDivisions.value = false;
+    warehouseDivisionsList.value = [];
+  }).finally(() => {
+    checkingDivisions.value = false;
+  });
 }
 </script>
 

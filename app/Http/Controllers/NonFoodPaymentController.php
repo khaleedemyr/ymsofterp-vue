@@ -349,25 +349,10 @@ class NonFoodPaymentController extends Controller
             $retailNonFoodQuery->whereDate('rnf.transaction_date', '<=', $dateTo);
         }
 
-        $allRetailNonFoods = $retailNonFoodQuery->orderBy('rnf.transaction_date', 'desc')
-            ->limit(100)
-            ->get();
-
-        // Filter Retail Non Food based on payment status
-        // Exclude if has any payment (except cancelled)
-        $availableRetailNonFoods = $allRetailNonFoods->filter(function($rnf) {
-            $hasPayment = DB::table('non_food_payments')
-                ->where('retail_non_food_id', $rnf->id)
-                ->where('status', '!=', 'cancelled')
-                ->exists();
-            return !$hasPayment;
-        })->take(50)->values();
-
         return Inertia::render('NonFoodPayment/Create', [
             'suppliers' => $suppliers,
             'availablePOs' => $availablePOs,
             'availablePRs' => $availablePRs,
-            'availableRetailNonFoods' => $availableRetailNonFoods,
             'filters' => $request->only(['supplier_id', 'date_from', 'date_to'])
         ]);
     }
