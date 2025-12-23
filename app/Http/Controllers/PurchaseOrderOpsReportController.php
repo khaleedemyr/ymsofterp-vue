@@ -7,6 +7,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 
 class PurchaseOrderOpsReportController extends Controller
 {
@@ -40,6 +45,25 @@ class PurchaseOrderOpsReportController extends Controller
         
         // Get item analysis with pagination
         $itemAnalysis = $this->getItemAnalysis($filters, $request->input('item_per_page', 15), $request->input('item_search', ''), $request->input('item_page', 1));
+        
+        // Ensure it's a paginated result, not a query builder
+        // Force execution by converting to array and back to ensure it's serialized correctly
+        if ($itemAnalysis instanceof \Illuminate\Pagination\LengthAwarePaginator) {
+            // Access items to force query execution
+            $items = $itemAnalysis->items();
+            // Recreate paginator with executed data to ensure proper serialization
+            $itemAnalysis = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items,
+                $itemAnalysis->total(),
+                $itemAnalysis->perPage(),
+                $itemAnalysis->currentPage(),
+                [
+                    'path' => $itemAnalysis->path(),
+                    'pageName' => 'item_page',
+                ]
+            );
+            $itemAnalysis->appends($request->except('item_page'));
+        }
 
         // Get PO per outlet data
         $poPerOutlet = $this->getPOPerOutlet($filters);
@@ -274,6 +298,11 @@ class PurchaseOrderOpsReportController extends Controller
         })->sortByDesc('total_value')
         ->values();
 
+        if ($perPage > 10000) {
+            // For export, return all data without pagination
+            return $suppliersWithPayment;
+        }
+
         // Create paginator manually
         $currentPage = $page;
         $items = $suppliersWithPayment->forPage($currentPage, $perPage);
@@ -431,9 +460,22 @@ class PurchaseOrderOpsReportController extends Controller
             });
         }
 
-        return $query->orderBy('po.date', 'desc')
-            ->orderBy('po.created_at', 'desc')
-            ->paginate($perPage)
+        if ($perPage > 10000) {
+            // For export, return all data without pagination
+            return $query->orderBy('po.date', 'desc')
+                ->orderBy('po.created_at', 'desc')
+                ->get();
+        }
+        
+        $query = $query->orderBy('po.date', 'desc')
+            ->orderBy('po.created_at', 'desc');
+            
+        if ($perPage > 10000) {
+            // For export, return all data without pagination
+            return $query->get();
+        }
+        
+        return $query->paginate($perPage)
             ->withQueryString();
     }
 
@@ -456,7 +498,7 @@ class PurchaseOrderOpsReportController extends Controller
             $query->where('poi.item_name', 'like', '%' . $search . '%');
         }
 
-        return $query->select(
+        $query = $query->select(
                 'poi.item_name',
                 'poi.unit',
                 DB::raw('SUM(poi.quantity) as total_quantity'),
@@ -469,8 +511,14 @@ class PurchaseOrderOpsReportController extends Controller
                 DB::raw('COUNT(*) as item_count')
             )
             ->groupBy('poi.item_name', 'poi.unit')
-            ->orderByDesc('total_value')
-            ->paginate($perPage, ['*'], 'item_page', $page)
+            ->orderByDesc('total_value');
+            
+        if ($perPage > 10000) {
+            // For export, return all data without pagination
+            return $query->get();
+        }
+        
+        return $query->paginate($perPage, ['*'], 'item_page', $page)
             ->appends([
                 'item_search' => $search,
                 'item_per_page' => $perPage,
@@ -1457,10 +1505,511 @@ class PurchaseOrderOpsReportController extends Controller
         ]);
     }
 
-    public function export(Request $request)
+    public function exportExcel(Request $request)
     {
-        // TODO: Implement export functionality
-        return response()->json(['message' => 'Export functionality coming soon']);
+        $filters = [
+            'date_from' => $request->input('date_from', Carbon::now()->startOfMonth()->format('Y-m-d')),
+            'date_to' => $request->input('date_to', Carbon::now()->endOfMonth()->format('Y-m-d')),
+            'status' => $request->input('status', 'all'),
+            'supplier_id' => $request->input('supplier_id', ''),
+            'search' => $request->input('search', ''),
+        ];
+
+        // Create new Spreadsheet
+        $spreadsheet = new Spreadsheet();
+        
+        // Remove default sheet
+        $spreadsheet->removeSheetByIndex(0);
+
+        // Sheet 1: Summary Metrics
+        $this->createSummarySheet($spreadsheet, $filters);
+        
+        // Sheet 2: Top Suppliers
+        $this->createSuppliersSheet($spreadsheet, $filters);
+        
+        // Sheet 3: Item Analysis (with categories and full details)
+        $this->createItemAnalysisSheet($spreadsheet, $filters);
+        
+        // Sheet 4: Purchase Orders Detail
+        $this->createPurchaseOrdersSheet($spreadsheet, $filters);
+        
+        // Sheet 5: Payment Analysis
+        $this->createPaymentAnalysisSheet($spreadsheet, $filters);
+        
+        // Sheet 6: PO per Outlet
+        $this->createPOPerOutletSheet($spreadsheet, $filters);
+        
+        // Sheet 7: PO per Category
+        $this->createPOPerCategorySheet($spreadsheet, $filters);
+
+        // Set first sheet as active
+        $spreadsheet->setActiveSheetIndex(0);
+
+        // Create writer and output
+        $writer = new Xlsx($spreadsheet);
+        $filename = 'PO_Ops_Report_' . date('Ymd_His') . '.xlsx';
+        
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+        
+        $writer->save('php://output');
+        exit;
+    }
+
+    private function createSummarySheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Summary');
+        
+        $summary = $this->getSummaryMetrics($filters);
+        $statusDistribution = $this->getStatusDistribution($filters);
+        $paymentAnalysis = $this->getPaymentAnalysis($filters);
+        
+        $row = 1;
+        
+        // Title
+        $sheet->setCellValue('A' . $row, 'Purchase Order Ops Report - Summary');
+        $sheet->mergeCells('A' . $row . ':D' . $row);
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(16);
+        $row += 2;
+        
+        // Date Range
+        $sheet->setCellValue('A' . $row, 'Period:');
+        $sheet->setCellValue('B' . $row, $filters['date_from'] . ' to ' . $filters['date_to']);
+        $row += 2;
+        
+        // Summary Metrics
+        $sheet->setCellValue('A' . $row, 'Summary Metrics');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total PO');
+        $sheet->setCellValue('B' . $row, $summary['total_po'] ?? 0);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Value');
+        $sheet->setCellValue('B' . $row, number_format($summary['total_value'] ?? 0, 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Approved PO');
+        $sheet->setCellValue('B' . $row, $summary['approved_count'] ?? 0);
+        $row++;
+        
+        // Calculate approved value
+        $approvedValueQuery = DB::table('purchase_order_ops as po')
+            ->whereBetween('po.date', [$filters['date_from'], $filters['date_to']])
+            ->where('po.status', 'approved');
+        
+        if ($filters['supplier_id']) {
+            $approvedValueQuery->where('po.supplier_id', $filters['supplier_id']);
+        }
+        
+        if ($filters['search']) {
+            $approvedValueQuery->leftJoin('suppliers as s_search', 'po.supplier_id', '=', 's_search.id')
+                  ->leftJoin('purchase_requisitions as pr_search', 'po.source_id', '=', 'pr_search.id')
+                  ->leftJoin('tbl_data_outlet as o_search', 'pr_search.outlet_id', '=', 'o_search.id_outlet')
+                  ->where(function($q) use ($filters) {
+                      $q->where('po.number', 'like', '%' . $filters['search'] . '%')
+                        ->orWhere('s_search.name', 'like', '%' . $filters['search'] . '%')
+                        ->orWhere('pr_search.pr_number', 'like', '%' . $filters['search'] . '%')
+                        ->orWhere('o_search.nama_outlet', 'like', '%' . $filters['search'] . '%');
+                  });
+        }
+        
+        $approvedValueTotal = $approvedValueQuery->sum('po.grand_total') ?? 0;
+        
+        $sheet->setCellValue('A' . $row, 'Approved Value');
+        $sheet->setCellValue('B' . $row, number_format($approvedValueTotal, 2));
+        $row += 2;
+        
+        // Status Distribution
+        $sheet->setCellValue('A' . $row, 'Status Distribution');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Status');
+        $sheet->setCellValue('B' . $row, 'Count');
+        $sheet->getStyle('A' . $row . ':B' . $row)->getFont()->setBold(true);
+        $row++;
+        
+        foreach ($statusDistribution as $status) {
+            $sheet->setCellValue('A' . $row, ucfirst($status['status']));
+            $sheet->setCellValue('B' . $row, $status['count']);
+            $row++;
+        }
+        
+        $row += 2;
+        
+        // Payment Analysis
+        $sheet->setCellValue('A' . $row, 'Payment Analysis');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Value (Approved PO)');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_value'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Paid');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_paid'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Pending');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_pending'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Unpaid');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_unpaid'], 2));
+        
+        // Auto-size columns
+        foreach (range('A', 'D') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        
+        // Apply header styles
+        $this->applyHeaderStyle($sheet, 'A1:D1');
+    }
+
+    private function createSuppliersSheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Top Suppliers');
+        
+        $suppliers = $this->getSupplierAnalysis($filters, 10000, '', 1); // Get all suppliers
+        
+        $row = 1;
+        
+        // Headers
+        $headers = ['Supplier Name', 'PO Count', 'Total Value', 'Avg Value', 'Total Paid', 'Total Pending', 'Total Unpaid', 'Paid %', 'Pending %', 'Unpaid %'];
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . $row, $header);
+            $col++;
+        }
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':J' . $row);
+        $row++;
+        
+        // Data
+        foreach ($suppliers as $supplier) {
+            $totalValue = (float)$supplier['total_value'];
+            $totalPaid = (float)$supplier['total_paid'];
+            $totalPending = (float)$supplier['total_pending'];
+            $totalUnpaid = (float)$supplier['total_unpaid'];
+            
+            $paidPercent = $totalValue > 0 ? ($totalPaid / $totalValue * 100) : 0;
+            $pendingPercent = $totalValue > 0 ? ($totalPending / $totalValue * 100) : 0;
+            $unpaidPercent = $totalValue > 0 ? ($totalUnpaid / $totalValue * 100) : 0;
+            
+            $sheet->setCellValue('A' . $row, $supplier['supplier_name']);
+            $sheet->setCellValue('B' . $row, $supplier['po_count']);
+            $sheet->setCellValue('C' . $row, number_format($totalValue, 2));
+            $sheet->setCellValue('D' . $row, number_format($supplier['avg_value'], 2));
+            $sheet->setCellValue('E' . $row, number_format($totalPaid, 2));
+            $sheet->setCellValue('F' . $row, number_format($totalPending, 2));
+            $sheet->setCellValue('G' . $row, number_format($totalUnpaid, 2));
+            $sheet->setCellValue('H' . $row, number_format($paidPercent, 2) . '%');
+            $sheet->setCellValue('I' . $row, number_format($pendingPercent, 2) . '%');
+            $sheet->setCellValue('J' . $row, number_format($unpaidPercent, 2) . '%');
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'J') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function createItemAnalysisSheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Item Analysis');
+        
+        // Get all item analysis data with full details including categories
+        $query = DB::table('purchase_order_ops_items as poi')
+            ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
+            ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
+            ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
+            ->leftJoin('purchase_requisition_items as pri', function($join) {
+                $join->where(function($q) {
+                    $q->whereColumn('poi.pr_ops_item_id', 'pri.id')
+                      ->orWhere(function($q2) {
+                          $q2->where('poi.source_type', '=', 'purchase_requisition_ops')
+                             ->whereColumn('poi.source_id', 'pri.id');
+                      });
+                });
+            })
+            ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
+            ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
+            ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+            ->whereBetween('po.date', [$filters['date_from'], $filters['date_to']]);
+
+        if ($filters['status'] !== 'all') {
+            $query->where('po.status', $filters['status']);
+        }
+
+        if ($filters['supplier_id']) {
+            $query->where('po.supplier_id', $filters['supplier_id']);
+        }
+
+        $items = $query->select(
+                'poi.item_name',
+                'poi.unit',
+                'poi.quantity',
+                'poi.price',
+                'poi.discount_amount',
+                'poi.total',
+                'po.number as po_number',
+                'po.date as po_date',
+                'po.status as po_status',
+                's.name as supplier_name',
+                'creator.nama_lengkap as creator_name',
+                'pr.pr_number as pr_number',
+                'o.nama_outlet as outlet_name',
+                DB::raw('CONCAT(COALESCE(prc.division, ""), IF(prc.division IS NOT NULL AND prc.name IS NOT NULL, " - ", ""), COALESCE(prc.name, "")) as category_name')
+            )
+            ->orderBy('poi.item_name')
+            ->orderBy('poi.unit')
+            ->orderBy('po.date', 'desc')
+            ->get();
+
+        $row = 1;
+        
+        // Headers
+        $headers = ['Item Name', 'Unit', 'Category', 'PO Number', 'PO Date', 'PO Status', 'Supplier', 'PR Number', 'Outlet', 'Creator', 'Quantity', 'Price', 'Discount', 'Total'];
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . $row, $header);
+            $col++;
+        }
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':N' . $row);
+        $row++;
+        
+        // Data
+        foreach ($items as $item) {
+            $sheet->setCellValue('A' . $row, $item->item_name);
+            $sheet->setCellValue('B' . $row, $item->unit);
+            $sheet->setCellValue('C' . $row, $item->category_name ?: '-');
+            $sheet->setCellValue('D' . $row, $item->po_number);
+            $sheet->setCellValue('E' . $row, $item->po_date);
+            $sheet->setCellValue('F' . $row, ucfirst($item->po_status));
+            $sheet->setCellValue('G' . $row, $item->supplier_name ?: '-');
+            $sheet->setCellValue('H' . $row, $item->pr_number ?: '-');
+            $sheet->setCellValue('I' . $row, $item->outlet_name ?: '-');
+            $sheet->setCellValue('J' . $row, $item->creator_name ?: '-');
+            $sheet->setCellValue('K' . $row, number_format((float)$item->quantity, 2));
+            $sheet->setCellValue('L' . $row, number_format((float)$item->price, 2));
+            $sheet->setCellValue('M' . $row, number_format((float)$item->discount_amount, 2));
+            $sheet->setCellValue('N' . $row, number_format((float)$item->total, 2));
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'N') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function createPurchaseOrdersSheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Purchase Orders');
+        
+        $purchaseOrders = $this->getPurchaseOrders($filters, 10000); // Get all POs
+        
+        $row = 1;
+        
+        // Headers
+        $headers = ['PO Number', 'Date', 'Supplier', 'Status', 'Subtotal', 'Discount', 'PPN', 'Grand Total', 'Creator', 'PM Approved', 'GM Finance Approved', 'PR Number', 'Outlet', 'Item Count', 'Payment Count', 'Total Paid', 'Total Pending', 'Remaining'];
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . $row, $header);
+            $col++;
+        }
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':R' . $row);
+        $row++;
+        
+        // Data
+        foreach ($purchaseOrders as $po) {
+            $sheet->setCellValue('A' . $row, $po->number);
+            $sheet->setCellValue('B' . $row, $po->date);
+            $sheet->setCellValue('C' . $row, $po->supplier_name ?: '-');
+            $sheet->setCellValue('D' . $row, ucfirst($po->status));
+            $sheet->setCellValue('E' . $row, number_format((float)$po->subtotal, 2));
+            $sheet->setCellValue('F' . $row, number_format((float)$po->discount_total_amount, 2));
+            $sheet->setCellValue('G' . $row, number_format((float)$po->ppn_amount, 2));
+            $sheet->setCellValue('H' . $row, number_format((float)$po->grand_total, 2));
+            $sheet->setCellValue('I' . $row, $po->creator_name ?: '-');
+            $sheet->setCellValue('J' . $row, $po->purchasing_manager_name ?: '-');
+            $sheet->setCellValue('K' . $row, $po->gm_finance_name ?: '-');
+            $sheet->setCellValue('L' . $row, $po->source_pr_number ?: '-');
+            $sheet->setCellValue('M' . $row, $po->outlet_name ?: '-');
+            $sheet->setCellValue('N' . $row, $po->item_count ?: 0);
+            $sheet->setCellValue('O' . $row, $po->payment_count ?: 0);
+            $sheet->setCellValue('P' . $row, number_format((float)($po->total_paid ?? 0), 2));
+            $sheet->setCellValue('Q' . $row, number_format((float)($po->total_pending ?? 0), 2));
+            $sheet->setCellValue('R' . $row, number_format((float)($po->remaining_amount ?? 0), 2));
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'R') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function createPaymentAnalysisSheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Payment Analysis');
+        
+        $paymentAnalysis = $this->getPaymentAnalysis($filters);
+        
+        $row = 1;
+        
+        // Title
+        $sheet->setCellValue('A' . $row, 'Payment Analysis');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
+        $row += 2;
+        
+        // Summary
+        $sheet->setCellValue('A' . $row, 'Total Value (Approved PO)');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_value'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Paid');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_paid'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Pending');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_pending'], 2));
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Total Unpaid');
+        $sheet->setCellValue('B' . $row, number_format($paymentAnalysis['total_unpaid'], 2));
+        $row += 2;
+        
+        // Payment Status Count
+        $sheet->setCellValue('A' . $row, 'Payment Status');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(12);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Status');
+        $sheet->setCellValue('B' . $row, 'Count');
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':B' . $row);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Fully Paid');
+        $sheet->setCellValue('B' . $row, $paymentAnalysis['fully_paid_count'] ?? 0);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Partially Paid');
+        $sheet->setCellValue('B' . $row, $paymentAnalysis['partially_paid_count'] ?? 0);
+        $row++;
+        
+        $sheet->setCellValue('A' . $row, 'Unpaid');
+        $sheet->setCellValue('B' . $row, $paymentAnalysis['unpaid_count'] ?? 0);
+        
+        // Auto-size columns
+        foreach (range('A', 'B') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function createPOPerOutletSheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('PO per Outlet');
+        
+        $poPerOutlet = $this->getPOPerOutlet($filters);
+        
+        $row = 1;
+        
+        // Headers
+        $headers = ['Outlet Name', 'PO Count', 'Total Value', 'Total Paid', 'Total Pending', 'Total Unpaid'];
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . $row, $header);
+            $col++;
+        }
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':F' . $row);
+        $row++;
+        
+        // Data
+        foreach ($poPerOutlet as $outlet) {
+            $sheet->setCellValue('A' . $row, $outlet['outlet_name']);
+            $sheet->setCellValue('B' . $row, $outlet['po_count']);
+            $sheet->setCellValue('C' . $row, number_format($outlet['total_value'], 2));
+            $sheet->setCellValue('D' . $row, number_format($outlet['total_paid'], 2));
+            $sheet->setCellValue('E' . $row, number_format($outlet['total_pending'], 2));
+            $sheet->setCellValue('F' . $row, number_format($outlet['total_unpaid'], 2));
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'F') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function createPOPerCategorySheet($spreadsheet, $filters)
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('PO per Category');
+        
+        $poPerCategory = $this->getPOPerCategory($filters);
+        
+        $row = 1;
+        
+        // Headers
+        $headers = ['Category', 'PO Count', 'Total Value', 'Total Paid', 'Total Pending', 'Total Unpaid'];
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . $row, $header);
+            $col++;
+        }
+        $this->applyHeaderStyle($sheet, 'A' . $row . ':F' . $row);
+        $row++;
+        
+        // Data
+        foreach ($poPerCategory as $category) {
+            // Use category_name (which already contains the display format from getPOPerCategory)
+            $categoryName = $category['category_name'] ?? 'Unknown';
+            $sheet->setCellValue('A' . $row, $categoryName);
+            $sheet->setCellValue('B' . $row, $category['po_count'] ?? 0);
+            $sheet->setCellValue('C' . $row, number_format($category['total_value'] ?? 0, 2));
+            $sheet->setCellValue('D' . $row, number_format($category['total_paid'] ?? 0, 2));
+            $sheet->setCellValue('E' . $row, number_format($category['total_pending'] ?? 0, 2));
+            $sheet->setCellValue('F' . $row, number_format($category['total_unpaid'] ?? 0, 2));
+            $row++;
+        }
+        
+        // Auto-size columns
+        foreach (range('A', 'F') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    private function applyHeaderStyle($sheet, $range)
+    {
+        $sheet->getStyle($range)->applyFromArray([
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+            ],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '4472C4'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => Border::BORDER_THIN,
+                ],
+            ],
+        ]);
     }
 }
 

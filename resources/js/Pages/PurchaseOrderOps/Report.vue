@@ -583,13 +583,13 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200">
-                <tr v-if="itemAnalysis.data && itemAnalysis.data.length === 0" class="hover:bg-gray-50">
+                <tr v-if="itemAnalysisList.length === 0" class="hover:bg-gray-50">
                   <td colspan="11" class="px-4 py-8 text-center text-gray-500">
                     <i class="fa-solid fa-search-minus text-2xl mb-2"></i>
                     <p>Tidak ada item yang ditemukan</p>
                   </td>
                 </tr>
-                <tr v-for="item in (itemAnalysis.data || itemAnalysis)" :key="item.item_name + item.unit" 
+                <tr v-for="item in itemAnalysisList" :key="item.item_name + item.unit" 
                     class="hover:bg-orange-50 transition-colors">
                   <td class="px-4 py-4 whitespace-nowrap">
                     <div class="font-semibold text-gray-900">{{ item.item_name }}</div>
@@ -636,21 +636,21 @@
           </div>
           
           <!-- Item Pagination -->
-          <div v-if="itemAnalysis.current_page" class="mt-6 flex items-center justify-between">
+          <div v-if="props.itemAnalysis && props.itemAnalysis.current_page" class="mt-6 flex items-center justify-between">
             <div class="text-sm text-gray-700">
-              Showing {{ itemAnalysis.from }} to {{ itemAnalysis.to }} of {{ itemAnalysis.total }} results
+              Showing {{ props.itemAnalysis.from }} to {{ props.itemAnalysis.to }} of {{ props.itemAnalysis.total }} results
             </div>
             <div class="flex gap-2">
               <button 
-                v-if="itemAnalysis.prev_page_url"
-                @click="loadItemPage(itemAnalysis.current_page - 1)"
+                v-if="props.itemAnalysis.prev_page_url"
+                @click="loadItemPage(props.itemAnalysis.current_page - 1)"
                 class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
               >
                 <i class="fa-solid fa-chevron-left"></i> Previous
               </button>
               <button 
-                v-if="itemAnalysis.next_page_url"
-                @click="loadItemPage(itemAnalysis.current_page + 1)"
+                v-if="props.itemAnalysis.next_page_url"
+                @click="loadItemPage(props.itemAnalysis.current_page + 1)"
                 class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
               >
                 Next <i class="fa-solid fa-chevron-right"></i>
@@ -1638,9 +1638,90 @@ function refreshData() {
   applyFilters();
 }
 
+const itemAnalysisList = computed(() => {
+  // Debug: Log what we receive
+  console.log('=== ITEM ANALYSIS DEBUG ===');
+  console.log('props.itemAnalysis:', props.itemAnalysis);
+  console.log('Type:', typeof props.itemAnalysis);
+  console.log('Is Array:', Array.isArray(props.itemAnalysis));
+  
+  if (!props.itemAnalysis) {
+    console.log('itemAnalysis is null/undefined');
+    return [];
+  }
+  
+  // Laravel paginator structure: { data: [...], current_page: ..., total: ..., ... }
+  // Inertia might wrap it differently, so check both direct access and nested
+  let dataArray = null;
+  
+  // Check if it's a direct array
+  if (Array.isArray(props.itemAnalysis)) {
+    console.log('Found direct array with', props.itemAnalysis.length, 'items');
+    dataArray = props.itemAnalysis;
+  }
+  // Check for paginated data (Laravel paginator)
+  else if (props.itemAnalysis.data !== undefined) {
+    console.log('Found data property:', props.itemAnalysis.data);
+    if (Array.isArray(props.itemAnalysis.data)) {
+      console.log('data is array with', props.itemAnalysis.data.length, 'items');
+      dataArray = props.itemAnalysis.data;
+    } else {
+      console.log('data exists but is not array, type:', typeof props.itemAnalysis.data);
+    }
+  }
+  // Check for other possible structures
+  else if (props.itemAnalysis.items && Array.isArray(props.itemAnalysis.items)) {
+    console.log('Found items property with', props.itemAnalysis.items.length, 'items');
+    dataArray = props.itemAnalysis.items;
+  }
+  // Try to access as object with numeric keys (sometimes Inertia does this)
+  else if (typeof props.itemAnalysis === 'object' && props.itemAnalysis !== null) {
+    console.log('Found object, keys:', Object.keys(props.itemAnalysis));
+    // Check if it's an object that can be converted to array
+    const keys = Object.keys(props.itemAnalysis);
+    if (keys.length > 0 && keys.some(k => !isNaN(parseInt(k)))) {
+      // It might be an object with numeric keys
+      console.log('Object has numeric keys, converting to array');
+      dataArray = Object.values(props.itemAnalysis);
+    }
+  }
+  
+  if (dataArray && Array.isArray(dataArray)) {
+    console.log('Final dataArray length:', dataArray.length);
+    // Filter out null/undefined items and ensure they have item_name
+    const filtered = dataArray.filter(i => i && i.item_name);
+    console.log('Filtered length:', filtered.length);
+    console.log('First item:', filtered[0]);
+    return filtered;
+  }
+  
+  console.log('No valid data array found');
+  return [];
+});
+
+function getItemAnalysisList() {
+  return itemAnalysisList.value;
+}
+
+// Debug on mount
+onMounted(() => {
+  console.log('=== COMPONENT MOUNTED ===');
+  console.log('props.itemAnalysis:', props.itemAnalysis);
+  console.log('itemAnalysisList.value:', itemAnalysisList.value);
+});
+
 function exportReport() {
-  // TODO: Implement export
-  alert('Export functionality coming soon!');
+  // Build query string from current filters
+  const params = new URLSearchParams({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    status: filters.status,
+    supplier_id: filters.supplier_id || '',
+    search: filters.search || '',
+  });
+  
+  // Open export URL in new window to trigger download
+  window.open(route('po-ops.report.export') + '?' + params.toString(), '_blank');
 }
 
 async function showSupplierDetail(supplierId) {
