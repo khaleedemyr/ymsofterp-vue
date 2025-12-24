@@ -73,7 +73,7 @@ class PayrollReportController extends Controller
             $users = User::where('status', 'A')
                 ->where('id_outlet', $outletId)
                 ->orderBy('nama_lengkap')
-                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
 
             // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
             // HANYA karyawan yang resign di periode ini yang akan muncul
@@ -91,7 +91,7 @@ class PayrollReportController extends Controller
                 if (!empty($newResignedIds)) {
                     $resignedUsers = User::whereIn('id', $newResignedIds)
                         ->where('id_outlet', $outletId)
-                        ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+                        ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
                     $users = $users->merge($resignedUsers);
                 }
             }
@@ -147,11 +147,11 @@ class PayrollReportController extends Controller
             
             // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
             if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty()) {
-                // Ambil data karyawan untuk mapping
+                // Ambil data karyawan untuk mapping (include status untuk perhitungan statistik)
                 $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
                     ->where('id_outlet', $outletId)
                     ->orderBy('nama_lengkap')
-                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
                 
                 // Ambil data resignation untuk periode tersebut
                 $resignations = EmployeeResignation::where('status', 'approved')
@@ -322,12 +322,17 @@ class PayrollReportController extends Controller
                     $payrollData->push($payrollDataItem);
                 }
                 
-                // Hitung statistik karyawan
-                $totalMP = $users->count();
-                $totalMPAktif = User::where('status', 'A')
-                    ->where('id_outlet', $outletId)
-                    ->count();
-                $totalMPResign = !empty($resignations) ? $resignations->count() : 0;
+                // Hitung statistik karyawan dari data yang SEBENARNYA masuk ke payrollData (bukan dari $users)
+                // Ambil user_id dari payrollData untuk memastikan sinkron dengan data di tabel
+                $userIdsInPayrollData = $payrollData->pluck('user_id')->unique();
+                $usersInPayrollData = $users->whereIn('id', $userIdsInPayrollData);
+                
+                $totalMP = $usersInPayrollData->count(); // Total semua karyawan yang ada di payrollData
+                // Hitung total MP aktif dari users yang ada di payrollData (status = 'A')
+                $totalMPAktif = $usersInPayrollData->where('status', 'A')->count();
+                // Hitung total MP resign dari users yang ada di payrollData dan ada di resignations
+                $resignedIdsInPayrollData = $resignations->pluck('employee_id')->toArray();
+                $totalMPResign = $usersInPayrollData->whereIn('id', $resignedIdsInPayrollData)->count();
                 
                 // Return early dengan data dari payroll_generated_details
                 return Inertia::render('Payroll/Report', [
@@ -1112,12 +1117,16 @@ class PayrollReportController extends Controller
                 $payrollData->push($payrollDataItem);
             }
             
-            // Hitung statistik karyawan
-            $totalMP = $users->count(); // Total semua karyawan (aktif + resign)
-            $totalMPAktif = User::where('status', 'A')
-                ->where('id_outlet', $outletId)
-                ->count(); // Total karyawan aktif
-            $totalMPResign = !empty($resignedEmployeeIds) ? count($resignedEmployeeIds) : 0; // Total karyawan yang resign di periode ini
+            // Hitung statistik karyawan dari data yang SEBENARNYA masuk ke payrollData (bukan dari $users)
+            // Ambil user_id dari payrollData untuk memastikan sinkron dengan data di tabel
+            $userIdsInPayrollData = $payrollData->pluck('user_id')->unique();
+            $usersInPayrollData = $users->whereIn('id', $userIdsInPayrollData);
+            
+            $totalMP = $usersInPayrollData->count(); // Total semua karyawan yang ada di payrollData
+            // Hitung total MP aktif dari users yang ada di payrollData (status = 'A')
+            $totalMPAktif = $usersInPayrollData->where('status', 'A')->count();
+            // Hitung total MP resign dari users yang ada di payrollData dan ada di resignations
+            $totalMPResign = $usersInPayrollData->whereIn('id', $resignedEmployeeIds)->count();
         } else {
             $totalMP = 0;
             $totalMPAktif = 0;
