@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Models\User;
 use App\Models\CustomPayrollItem;
+use App\Models\EmployeeResignation;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -64,9 +65,26 @@ class PayrollReportController extends Controller
             $startDate = Carbon::parse($start);
             $endDate = Carbon::parse($end);
 
+            // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
+            // HANYA karyawan yang resign di periode ini yang akan muncul
+            $resignations = EmployeeResignation::where('status', 'approved')
+                ->where('outlet_id', $outletId)
+                ->whereBetween('resignation_date', [$start, $end])
+                ->get(['employee_id', 'resignation_date'])
+                ->keyBy('employee_id');
+
             // Ambil data karyawan di outlet tersebut
-            $users = User::where('status', 'A')
-                ->where('id_outlet', $outletId)
+            // Include karyawan aktif (status 'A') dan karyawan yang resign di periode tersebut SAJA
+            $resignedEmployeeIds = $resignations->pluck('employee_id')->toArray();
+            
+            $users = User::where('id_outlet', $outletId)
+                ->where(function($query) use ($resignedEmployeeIds) {
+                    $query->where('status', 'A');
+                    // Hanya tambahkan karyawan yang resign jika ada yang resign di periode ini
+                    if (!empty($resignedEmployeeIds)) {
+                        $query->orWhereIn('id', $resignedEmployeeIds);
+                    }
+                })
                 ->orderBy('nama_lengkap')
                 ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
 
@@ -732,6 +750,18 @@ class PayrollReportController extends Controller
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
                 
+                // Cek apakah user resign di periode ini SAJA
+                // Hanya set resignation_date jika karyawan benar-benar resign di periode payroll yang dipilih
+                $resignation = $resignations->get($user->id);
+                $resignationDate = null;
+                if ($resignation && $resignation->resignation_date) {
+                    // Pastikan resignation_date benar-benar dalam periode
+                    $resignDate = Carbon::parse($resignation->resignation_date);
+                    if ($resignDate->between($startDate, $endDate)) {
+                        $resignationDate = $resignation->resignation_date->format('Y-m-d');
+                    }
+                }
+                
                 $payrollDataItem = [
                     'user_id' => $user->id,
                     'nik' => $user->nik,
@@ -739,6 +769,7 @@ class PayrollReportController extends Controller
                     'no_rekening' => $user->no_rekening ?? null,
                     'tanggal_masuk' => $user->tanggal_masuk ?? null,
                     'is_new_employee' => $isNewEmployee,
+                    'resignation_date' => $resignationDate,
                     'jabatan' => $jabatans[$user->id_jabatan] ?? '-',
                     'divisi' => $divisions[$user->division_id] ?? '-',
                     'point' => $userPoint,

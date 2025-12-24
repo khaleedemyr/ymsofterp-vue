@@ -986,10 +986,13 @@ onMounted(() => {
                     </td>
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.nik }}</td>
                     <td class="px-4 py-3 text-sm text-gray-900">
-                      <div class="flex items-center gap-2">
+                      <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-semibold">{{ item.nama_lengkap }}</span>
                         <span v-if="item.is_new_employee" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                           Karyawan Baru
+                        </span>
+                        <span v-if="item.resignation_date" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Resign
                         </span>
                       </div>
                       <div v-if="item.no_rekening" class="text-xs text-gray-500 mt-1">
@@ -997,6 +1000,9 @@ onMounted(() => {
                       </div>
                       <div v-if="item.tanggal_masuk" class="text-xs text-gray-500 mt-1">
                         Join: {{ formatDate(item.tanggal_masuk) }}
+                      </div>
+                      <div v-if="item.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
+                        Resign: {{ formatDate(item.resignation_date) }}
                       </div>
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.jabatan }}</td>
