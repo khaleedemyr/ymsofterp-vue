@@ -287,6 +287,15 @@ class ContraBonController extends Controller
     {
         $sourceType = $request->input('source_type', 'purchase_order');
         
+        // Debug: Log source_type untuk memastikan deteksi benar
+        \Log::info('Contra Bon store - source_type detection', [
+            'source_type' => $sourceType,
+            'source_type_raw' => $request->input('source_type'),
+            'po_id' => $request->input('po_id'),
+            'gr_id' => $request->input('gr_id'),
+            'source_id' => $request->input('source_id'),
+        ]);
+        
         $rules = [
             'date' => 'required|date',
             'items' => 'required|array',
@@ -381,6 +390,13 @@ class ContraBonController extends Controller
                 $supplierId = $warehouseRetailFood->supplier_id;
                 $poId = null;
                 $grId = null;
+            } elseif ($sourceType === 'retail_non_food') {
+                // Convert source_id to integer if it's a string
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $retailNonFood = \App\Models\RetailNonFood::findOrFail($sourceIdInt);
+                $supplierId = $retailNonFood->supplier_id;
+                $poId = null;
+                $grId = null;
             }
             
             // Generate contra bon number
@@ -428,10 +444,10 @@ class ContraBonController extends Controller
                 $imagePath = $request->file('image')->store('contra_bon_images', 'public');
             }
 
-            // Convert source_id to integer if needed (for retail_food and warehouse_retail_food)
+            // Convert source_id to integer if needed (for retail_food, warehouse_retail_food, and retail_non_food)
             // For purchase_order, source_id should be null because we have po_id and gr_id separately
             $sourceIdForSave = null;
-            if ($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food') {
+            if ($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food' || $sourceType === 'retail_non_food') {
                 $sourceIdForSave = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
             }
             // For purchase_order, source_id is not needed (we use po_id and gr_id)
