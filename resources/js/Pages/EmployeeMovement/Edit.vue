@@ -274,9 +274,9 @@ const selectEmployee = async (employee) => {
 
 const submit = () => {
   // Calculate total salary from gaji_pokok and tunjangan
-  const gajiPokok = unformatCurrency(form.gaji_pokok_to);
-  const tunjangan = unformatCurrency(form.tunjangan_to);
-  form.salary_to = (parseInt(gajiPokok) || 0) + (parseInt(tunjangan) || 0);
+  const gajiPokok = parseInt(form.gaji_pokok_to) || 0;
+  const tunjangan = parseInt(form.tunjangan_to) || 0;
+  form.salary_to = gajiPokok + tunjangan;
   
   // Extract string values from multiselect objects
   const positionToValue = form.position_to?.id || '';
@@ -812,9 +812,10 @@ const goBack = () => {
                         <div>
                           <label class="block text-xs text-gray-500 mb-1">Gaji Pokok</label>
                           <input
-                            v-model="form.gaji_pokok_to"
-                            @input="form.gaji_pokok_to = formatCurrency($event.target.value)"
-                            type="text"
+                            v-model.number="form.gaji_pokok_to"
+                            type="number"
+                            min="0"
+                            step="1"
                             placeholder="0"
                             class="w-full px-3 py-2 border border-gray-300 rounded-md"
                           />
@@ -822,9 +823,10 @@ const goBack = () => {
                         <div>
                           <label class="block text-xs text-gray-500 mb-1">Tunjangan</label>
                           <input
-                            v-model="form.tunjangan_to"
-                            @input="form.tunjangan_to = formatCurrency($event.target.value)"
-                            type="text"
+                            v-model.number="form.tunjangan_to"
+                            type="number"
+                            min="0"
+                            step="1"
                             placeholder="0"
                             class="w-full px-3 py-2 border border-gray-300 rounded-md"
                           />

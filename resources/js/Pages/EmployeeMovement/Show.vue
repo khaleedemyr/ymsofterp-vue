@@ -612,18 +612,20 @@ function approveMovement(status) {
                           <div>
                             <label class="block text-xs text-gray-500 mb-1">Gaji Pokok</label>
                             <input
-                              v-model="salaryForm.gaji_pokok_to"
-                              @input="salaryForm.gaji_pokok_to = formatCurrencyInput($event.target.value)"
-                              type="text"
+                              v-model.number="salaryForm.gaji_pokok_to"
+                              type="number"
+                              min="0"
+                              step="1"
                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                           </div>
                           <div>
                             <label class="block text-xs text-gray-500 mb-1">Tunjangan</label>
                             <input
-                              v-model="salaryForm.tunjangan_to"
-                              @input="salaryForm.tunjangan_to = formatCurrencyInput($event.target.value)"
-                              type="text"
+                              v-model.number="salaryForm.tunjangan_to"
+                              type="number"
+                              min="0"
+                              step="1"
                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                             />
                           </div>

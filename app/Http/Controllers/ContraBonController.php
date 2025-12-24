@@ -18,7 +18,7 @@ class ContraBonController extends Controller
 {
     public function index(Request $request)
     {
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood', 'creator', 'sources'])->orderByDesc('created_at');
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood', 'creator', 'sources.purchaseOrder', 'sources.retailFood', 'sources.warehouseRetailFood', 'sources.retailNonFood'])->orderByDesc('created_at');
 
         if ($request->search) {
             $search = $request->search;
@@ -64,6 +64,28 @@ class ContraBonController extends Controller
                 foreach ($contraBon->sources as $source) {
                     if ($source->source_type === 'purchase_order' && $source->purchaseOrder) {
                         $po = $source->purchaseOrder;
+                        
+                        // AMBIL GR NUMBERS DARI SOURCE
+                        if ($source->gr_id) {
+                            $grNumber = DB::table('food_good_receives')
+                                ->where('id', $source->gr_id)
+                                ->value('gr_number');
+                            if ($grNumber) {
+                                $sourceNumbers[] = $grNumber;
+                            }
+                        }
+                        
+                        // AMBIL GR NUMBERS DARI ITEMS (jika ada gr_item_id)
+                        $grNumbersFromItems = DB::table('food_contra_bon_items as cbi')
+                            ->join('food_good_receive_items as gri', 'cbi.gr_item_id', '=', 'gri.id')
+                            ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
+                            ->where('cbi.contra_bon_id', $contraBon->id)
+                            ->whereNotNull('cbi.gr_item_id')
+                            ->distinct()
+                            ->pluck('gr.gr_number')
+                            ->toArray();
+                        $sourceNumbers = array_merge($sourceNumbers, $grNumbersFromItems);
+                        
                         // Get source information based on PO source_type
                         if ($po->source_type === 'pr_foods' || !$po->source_type) {
                             $prNumbers = DB::table('pr_foods as pr')
@@ -115,6 +137,19 @@ class ContraBonController extends Controller
                 // Old data: single source (backward compatibility)
                 $po = $contraBon->purchaseOrder;
                 
+                $sourceNumbers = [];
+                
+                // AMBIL GR NUMBERS DARI ITEMS (jika ada gr_item_id)
+                $grNumbersFromItems = DB::table('food_contra_bon_items as cbi')
+                    ->join('food_good_receive_items as gri', 'cbi.gr_item_id', '=', 'gri.id')
+                    ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
+                    ->where('cbi.contra_bon_id', $contraBon->id)
+                    ->whereNotNull('cbi.gr_item_id')
+                    ->distinct()
+                    ->pluck('gr.gr_number')
+                    ->toArray();
+                $sourceNumbers = array_merge($sourceNumbers, $grNumbersFromItems);
+                
                 // Get source information based on PO source_type
                 if ($po->source_type === 'pr_foods' || !$po->source_type) {
                     // For PR Foods, get PR numbers
@@ -126,7 +161,8 @@ class ContraBonController extends Controller
                         ->pluck('pr.pr_number')
                         ->toArray();
                     
-                    $contraBon->source_numbers = $prNumbers;
+                    $sourceNumbers = array_merge($sourceNumbers, $prNumbers);
+                    $contraBon->source_numbers = array_unique(array_filter($sourceNumbers));
                     $contraBon->source_outlets = []; // PR Foods tidak punya outlet
                     $contraBon->source_type_display = 'PR Foods';
                     $contraBon->source_types = ['PR Foods'];
@@ -140,13 +176,14 @@ class ContraBonController extends Controller
                         ->distinct()
                         ->get();
                     
-                    
-                    $contraBon->source_numbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                    $roNumbers = $roData->pluck('order_number')->unique()->filter()->toArray();
+                    $sourceNumbers = array_merge($sourceNumbers, $roNumbers);
+                    $contraBon->source_numbers = array_unique(array_filter($sourceNumbers));
                     $contraBon->source_outlets = $roData->pluck('nama_outlet')->unique()->filter()->toArray();
                     $contraBon->source_type_display = 'RO Supplier';
                     $contraBon->source_types = ['RO Supplier'];
                 } else {
-                    $contraBon->source_numbers = [];
+                    $contraBon->source_numbers = array_unique(array_filter($sourceNumbers));
                     $contraBon->source_outlets = [];
                     $contraBon->source_type_display = 'Unknown';
                     $contraBon->source_types = ['Unknown'];

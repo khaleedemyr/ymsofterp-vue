@@ -18,16 +18,16 @@
         </div>
         <div v-if="form.type === 'percent' || form.type === 'nominal'">
           <label class="block text-sm font-medium text-gray-700">Value</label>
-          <input v-model="form.value" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
+          <input v-model.number="form.value" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
         </div>
         <div v-if="form.type === 'percent'">
           <label class="block text-sm font-medium text-gray-700">Maximum Diskon</label>
-          <input v-model="form.max_discount" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" />
+          <input v-model.number="form.max_discount" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" />
           <p class="mt-1 text-sm text-gray-500">Kosongkan jika tidak ada batasan maksimum diskon</p>
         </div>
         <div v-if="form.type === 'bundle'">
           <label class="block text-sm font-medium text-gray-700">Harga Paket</label>
-          <input v-model="form.value" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
+          <input v-model.number="form.value" type="number" min="0" step="0.01" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-pink-500 focus:border-pink-500" required />
         </div>
         <div v-if="form.type === 'bogo'">
           <label class="block text-sm font-medium text-gray-700">Item Promo (Buy)</label>
