@@ -278,6 +278,11 @@ const submit = () => {
   const tunjangan = parseInt(form.tunjangan_to) || 0;
   form.salary_to = gajiPokok + tunjangan;
   
+  // Unformat salary_from (remove commas) before submit
+  if (form.salary_from) {
+    form.salary_from = parseInt(unformatCurrency(form.salary_from)) || 0;
+  }
+  
   // Extract string values from multiselect objects
   const positionToValue = form.position_to?.id || '';
   const levelToValue = form.level_to?.id || '';
