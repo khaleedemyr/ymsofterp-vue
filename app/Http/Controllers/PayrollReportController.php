@@ -2141,8 +2141,8 @@ class PayrollReportController extends Controller
                 $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? $potonganUnpaidLeave;
             }
             
-            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
-            $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
+            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - BPJS JKN - BPJS TK - Telat - Alpha - Unpaid Leave
+            $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - ($bpjsJKN ?? 0) - ($bpjsTK ?? 0) - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
             
             // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
             $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus + ($customEarningsGajian2 ?? 0) - $lbTotal - $deviasiTotal - $cityLedgerTotal - ($customDeductionsGajian2 ?? 0);
@@ -2159,6 +2159,8 @@ class PayrollReportController extends Controller
                 'Tunjangan' => round($tunjanganFinal),
                 'Custom Earnings (Gajian 1)' => round($customEarnings),
                 'Custom Deductions (Gajian 1)' => round($customDeductions),
+                'BPJS JKN' => round($bpjsJKN ?? 0),
+                'BPJS TK' => round($bpjsTK ?? 0),
                 'Potongan Telat' => round($potonganTelat),
                 'Potongan Alpha' => round($potonganAlpha),
                 'Potongan Unpaid Leave' => round($potonganUnpaidLeave),
