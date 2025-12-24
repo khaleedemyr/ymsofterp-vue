@@ -2027,6 +2027,7 @@ class ContraBonController extends Controller
     {
         try {
             // Get all retail foods in one query
+            // Exclude those that already have contra bon
             $retailFoods = \DB::table('retail_food as rf')
                 ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
                 ->join('users as creator', 'rf.created_by', '=', 'creator.id')
@@ -2034,6 +2035,12 @@ class ContraBonController extends Controller
                 ->leftJoin('warehouse_outlets as wo', 'rf.warehouse_outlet_id', '=', 'wo.id')
                 ->where('rf.payment_method', 'contra_bon')
                 ->where('rf.status', 'approved')
+                ->whereNotExists(function ($query) {
+                    $query->select(\DB::raw(1))
+                        ->from('food_contra_bon_sources as cbs')
+                        ->whereColumn('cbs.source_id', 'rf.id')
+                        ->where('cbs.source_type', 'retail_food');
+                })
                 ->select(
                     'rf.id as retail_food_id',
                     'rf.retail_number',
@@ -2117,6 +2124,7 @@ class ContraBonController extends Controller
     {
         try {
             // Get all warehouse retail foods in one query
+            // Exclude those that already have contra bon
             $warehouseRetailFoods = \DB::table('retail_warehouse_food as rwf')
                 ->join('suppliers as s', 'rwf.supplier_id', '=', 's.id')
                 ->join('users as creator', 'rwf.created_by', '=', 'creator.id')
@@ -2124,6 +2132,12 @@ class ContraBonController extends Controller
                 ->leftJoin('warehouse_division as wd', 'rwf.warehouse_division_id', '=', 'wd.id')
                 ->where('rwf.payment_method', 'contra_bon')
                 ->where('rwf.status', 'approved')
+                ->whereNotExists(function ($query) {
+                    $query->select(\DB::raw(1))
+                        ->from('food_contra_bon_sources as cbs')
+                        ->whereColumn('cbs.source_id', 'rwf.id')
+                        ->where('cbs.source_type', 'warehouse_retail_food');
+                })
                 ->select(
                     'rwf.id as retail_warehouse_food_id',
                     'rwf.retail_number',
