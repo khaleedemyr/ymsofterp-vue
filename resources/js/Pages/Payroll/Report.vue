@@ -11,6 +11,7 @@ const props = defineProps({
   years: Array,
   payrollData: Array,
   leaveTypes: Array,
+  statistics: Object,
   filter: Object,
 });
 
@@ -47,7 +48,8 @@ const customItemForm = ref({
   item_type: 'earn',
   item_name: '',
   item_amount: '',
-  item_description: ''
+  item_description: '',
+  gajian_type: 'gajian1' // 'gajian1' untuk gaji akhir bulan, 'gajian2' untuk gaji tanggal 8
 });
 
 // Format month to 2 digits
@@ -395,7 +397,8 @@ function resetCustomItemForm() {
     item_type: 'earn',
     item_name: '',
     item_amount: '',
-    item_description: ''
+    item_description: '',
+    gajian_type: 'gajian1' // Default ke gajian1
   };
 }
 
@@ -856,6 +859,22 @@ onMounted(() => {
       <!-- Data Section -->
       <div class="flex-1 w-full">
         <div v-if="filteredPayrollData && filteredPayrollData.length > 0" class="w-full">
+          <!-- Employee Statistics Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gradient-to-br from-blue-400 to-blue-600 text-white p-4 rounded-xl shadow-lg">
+              <div class="text-sm font-medium">TOTAL MP</div>
+              <div class="text-2xl font-bold">{{ props.statistics?.total_mp || 0 }}</div>
+            </div>
+            <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
+              <div class="text-sm font-medium">TOTAL MP AKTIF</div>
+              <div class="text-2xl font-bold">{{ props.statistics?.total_mp_aktif || 0 }}</div>
+            </div>
+            <div class="bg-gradient-to-br from-red-400 to-red-600 text-white p-4 rounded-xl shadow-lg">
+              <div class="text-sm font-medium">TOTAL MP RESIGN</div>
+              <div class="text-2xl font-bold">{{ props.statistics?.total_mp_resign || 0 }}</div>
+            </div>
+          </div>
+
           <!-- Summary Cards -->
                       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-11 gap-4 mb-6">
             <div class="bg-gradient-to-br from-green-400 to-green-600 text-white p-4 rounded-xl shadow-lg">
@@ -934,6 +953,7 @@ onMounted(() => {
             <table class="w-full min-w-[1200px] divide-y divide-blue-200 bg-white rounded-2xl shadow-2xl animate-fade-in-up">
               <thead class="bg-gradient-to-r from-blue-600 to-green-400 text-white sticky top-0 z-10" style="position: sticky; top: 0;">
                 <tr>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12">No</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12"></th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
@@ -975,6 +995,7 @@ onMounted(() => {
                 <template v-for="(item, index) in filteredPayrollData" :key="item.user_id">
                   <!-- Main Row -->
                   <tr :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'" class="hover:bg-blue-50 transition-colors">
+                    <td class="px-4 py-3 text-center text-sm font-medium text-gray-700">{{ index + 1 }}</td>
                     <td class="px-4 py-3 text-center">
                       <button @click="toggleExpand(item.user_id)" 
                               :class="[
@@ -1429,6 +1450,14 @@ onMounted(() => {
             </div>
 
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Gajian</label>
+              <select v-model="customItemForm.gajian_type" required class="w-full form-input rounded-lg">
+                <option value="gajian1">Gajian 1 (Gaji Akhir Bulan)</option>
+                <option value="gajian2">Gajian 2 (Gaji Tanggal 8)</option>
+              </select>
+            </div>
+
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Nama Item</label>
               <input v-model="customItemForm.item_name" type="text" required 
                      class="w-full form-input rounded-lg" placeholder="Contoh: Bonus, Potongan, dll">
@@ -1479,6 +1508,7 @@ onMounted(() => {
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Item</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jumlah</th>
+                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gajian</th>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Deskripsi</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
               </tr>
@@ -1489,6 +1519,16 @@ onMounted(() => {
                 <td class="px-4 py-3 text-sm text-center font-bold" 
                     :class="selectedItemType === 'earn' ? 'text-green-600' : 'text-red-600'">
                   {{ formatCurrency(item.item_amount) }}
+                </td>
+                <td class="px-4 py-3 text-sm text-center">
+                  <span v-if="item.gajian_type === 'gajian2'" 
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    Gajian 2 (Tgl 8)
+                  </span>
+                  <span v-else 
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    Gajian 1 (Akhir Bulan)
+                  </span>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-600">{{ item.item_description || '-' }}</td>
                 <td class="px-4 py-3 text-sm text-center">

@@ -16,7 +16,8 @@ class CustomPayrollItem extends Model
         'item_type',
         'item_name',
         'item_amount',
-        'item_description'
+        'item_description',
+        'gajian_type' // 'gajian1' untuk gaji akhir bulan, 'gajian2' untuk gaji tanggal 8
     ];
 
     protected $casts = [
@@ -66,5 +67,23 @@ class CustomPayrollItem extends Model
     public function scopeDeductions($query)
     {
         return $query->where('item_type', 'deduction');
+    }
+
+    // Scope untuk filter berdasarkan gajian type
+    public function scopeForGajianType($query, $gajianType)
+    {
+        return $query->where('gajian_type', $gajianType);
+    }
+
+    // Scope untuk gajian 1 (gaji akhir bulan)
+    public function scopeGajian1($query)
+    {
+        return $query->where('gajian_type', 'gajian1');
+    }
+
+    // Scope untuk gajian 2 (gaji tanggal 8)
+    public function scopeGajian2($query)
+    {
+        return $query->where('gajian_type', 'gajian2');
     }
 }

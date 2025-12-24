@@ -149,6 +149,7 @@ class EmployeeMovementController extends Controller
     {
         $processedRequest = $this->preprocessRequestData($request);
 
+        // Validasi dasar
         $validated = $processedRequest->validate([
             'employee_id' => 'required|exists:users,id',
             'employee_name' => 'required|string|max:255',
@@ -172,8 +173,6 @@ class EmployeeMovementController extends Controller
             'level_from' => 'nullable|string|max:255',
             'level_to' => 'nullable|string|max:255',
             'salary_change' => 'boolean',
-            'salary_from' => 'nullable|numeric|min:0',
-            'salary_to' => 'nullable|numeric|min:0',
             'department_change' => 'boolean',
             'department_from' => 'nullable|string|max:255',
             'department_to' => 'nullable|string|max:255',
@@ -196,6 +195,19 @@ class EmployeeMovementController extends Controller
             'approvers.*' => 'nullable|exists:users,id',
             'status' => 'nullable|in:draft,pending,approved,rejected,executed,error',
         ]);
+        
+        // Validasi conditional untuk salary: hanya validasi jika salary_change = true
+        if ($processedRequest->input('salary_change') == true || $processedRequest->input('salary_change') === 'true' || $processedRequest->input('salary_change') === 1) {
+            $salaryValidation = $processedRequest->validate([
+                'salary_from' => 'required|numeric|min:0',
+                'salary_to' => 'required|numeric|min:0',
+            ]);
+            $validated = array_merge($validated, $salaryValidation);
+        } else {
+            // Jika salary_change = false, set salary_from dan salary_to ke null
+            $validated['salary_from'] = null;
+            $validated['salary_to'] = null;
+        }
 
         // Handle file uploads
         if ($request->hasFile('kpi_attachment')) {
@@ -803,6 +815,7 @@ class EmployeeMovementController extends Controller
     {
         $processedRequest = $this->preprocessRequestData($request);
 
+        // Validasi dasar
         $validated = $processedRequest->validate([
             'employee_id' => 'required|exists:users,id',
             'employee_name' => 'required|string|max:255',
@@ -826,8 +839,6 @@ class EmployeeMovementController extends Controller
             'level_from' => 'nullable|string|max:255',
             'level_to' => 'nullable|string|max:255',
             'salary_change' => 'boolean',
-            'salary_from' => 'nullable|numeric|min:0',
-            'salary_to' => 'nullable|numeric|min:0',
             'department_change' => 'boolean',
             'department_from' => 'nullable|string|max:255',
             'department_to' => 'nullable|string|max:255',
@@ -848,6 +859,19 @@ class EmployeeMovementController extends Controller
             'bod_approver_id' => 'nullable|exists:users,id',
             'status' => 'nullable|in:draft,pending,approved,rejected,executed,error',
         ]);
+        
+        // Validasi conditional untuk salary: hanya validasi jika salary_change = true
+        if ($processedRequest->input('salary_change') == true || $processedRequest->input('salary_change') === 'true' || $processedRequest->input('salary_change') === 1) {
+            $salaryValidation = $processedRequest->validate([
+                'salary_from' => 'required|numeric|min:0',
+                'salary_to' => 'required|numeric|min:0',
+            ]);
+            $validated = array_merge($validated, $salaryValidation);
+        } else {
+            // Jika salary_change = false, set salary_from dan salary_to ke null
+            $validated['salary_from'] = null;
+            $validated['salary_to'] = null;
+        }
 
         // Handle file uploads
         if ($request->hasFile('kpi_attachment')) {

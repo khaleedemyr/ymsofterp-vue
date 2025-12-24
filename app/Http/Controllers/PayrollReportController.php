@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use App\Models\User;
 use App\Models\CustomPayrollItem;
 use App\Models\EmployeeResignation;
+use App\Http\Controllers\AttendanceReportController;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -55,6 +56,9 @@ class PayrollReportController extends Controller
 
         $payrollData = collect();
         $leaveTypes = collect(); // Initialize leaveTypes
+        $totalMP = 0;
+        $totalMPAktif = 0;
+        $totalMPResign = 0;
 
         if ($outletId && $month && $year) {
             // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
@@ -65,6 +69,12 @@ class PayrollReportController extends Controller
             $startDate = Carbon::parse($start);
             $endDate = Carbon::parse($end);
 
+            // Ambil data karyawan di outlet tersebut (HANYA yang aktif) - KEMBALIKAN KE LOGIKA SEMULA
+            $users = User::where('status', 'A')
+                ->where('id_outlet', $outletId)
+                ->orderBy('nama_lengkap')
+                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+
             // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
             // HANYA karyawan yang resign di periode ini yang akan muncul
             $resignations = EmployeeResignation::where('status', 'approved')
@@ -73,20 +83,18 @@ class PayrollReportController extends Controller
                 ->get(['employee_id', 'resignation_date'])
                 ->keyBy('employee_id');
 
-            // Ambil data karyawan di outlet tersebut
-            // Include karyawan aktif (status 'A') dan karyawan yang resign di periode tersebut SAJA
+            // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
             $resignedEmployeeIds = $resignations->pluck('employee_id')->toArray();
-            
-            $users = User::where('id_outlet', $outletId)
-                ->where(function($query) use ($resignedEmployeeIds) {
-                    $query->where('status', 'A');
-                    // Hanya tambahkan karyawan yang resign jika ada yang resign di periode ini
-                    if (!empty($resignedEmployeeIds)) {
-                        $query->orWhereIn('id', $resignedEmployeeIds);
-                    }
-                })
-                ->orderBy('nama_lengkap')
-                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+            if (!empty($resignedEmployeeIds)) {
+                $existingUserIds = $users->pluck('id')->toArray();
+                $newResignedIds = array_diff($resignedEmployeeIds, $existingUserIds);
+                if (!empty($newResignedIds)) {
+                    $resignedUsers = User::whereIn('id', $newResignedIds)
+                        ->where('id_outlet', $outletId)
+                        ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+                    $users = $users->merge($resignedUsers);
+                }
+            }
 
             // Ambil data jabatan dan divisi
             $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
@@ -115,7 +123,7 @@ class PayrollReportController extends Controller
                 ->get()
                 ->keyBy('user_id');
 
-            // Cek apakah payroll sudah di-generate dan ambil payment_method
+            // Cek apakah payroll sudah di-generate
             $payrollGenerated = DB::table('payroll_generated')
                 ->where('outlet_id', $outletId)
                 ->where('month', $month)
@@ -123,10 +131,226 @@ class PayrollReportController extends Controller
                 ->first();
             
             $payrollGeneratedDetails = collect();
+            $payrollGeneratedDetailsFull = collect();
             if ($payrollGenerated) {
+                // Ambil payment_method untuk backward compatibility
                 $payrollGeneratedDetails = DB::table('payroll_generated_details')
                     ->where('payroll_generated_id', $payrollGenerated->id)
                     ->pluck('payment_method', 'user_id');
+                
+                // Ambil semua data payroll yang sudah di-generate
+                $payrollGeneratedDetailsFull = DB::table('payroll_generated_details')
+                    ->where('payroll_generated_id', $payrollGenerated->id)
+                    ->get()
+                    ->keyBy('user_id');
+            }
+            
+            // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
+            if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty()) {
+                // Ambil data karyawan untuk mapping
+                $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
+                    ->where('id_outlet', $outletId)
+                    ->orderBy('nama_lengkap')
+                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk']);
+                
+                // Ambil data resignation untuk periode tersebut
+                $resignations = EmployeeResignation::where('status', 'approved')
+                    ->where('outlet_id', $outletId)
+                    ->whereBetween('resignation_date', [$start, $end])
+                    ->get(['employee_id', 'resignation_date'])
+                    ->keyBy('employee_id');
+                
+                // Ambil data custom items untuk periode ini
+                $customItems = CustomPayrollItem::forOutlet($outletId)
+                    ->forPeriod($month, $year)
+                    ->get()
+                    ->groupBy('user_id');
+                
+                // Ambil semua leave types untuk breakdown izin/cuti
+                $leaveTypes = DB::table('leave_types')
+                    ->orderBy('name')
+                    ->get(['id', 'name']);
+                
+                // Format data dari payroll_generated_details ke format yang dibutuhkan frontend
+                foreach ($payrollGeneratedDetailsFull as $userId => $detail) {
+                    $user = $users->firstWhere('id', $userId);
+                    if (!$user) {
+                        continue; // Skip jika user tidak ditemukan
+                    }
+                    
+                    // Ambil custom items dari database (lebih lengkap daripada yang di JSON)
+                    $userCustomItems = $customItems->get($user->id, collect());
+                    
+                    // Decode custom_items dari JSON sebagai fallback
+                    $customItemsData = json_decode($detail->custom_items ?? '[]', true) ?? [];
+                    $customItemsCollection = collect($customItemsData);
+                    
+                    // Jika ada custom items dari database, gunakan yang dari database (lebih lengkap)
+                    // Jika tidak ada, gunakan yang dari JSON
+                    if ($userCustomItems->isNotEmpty()) {
+                        $customItemsCollection = $userCustomItems;
+                    }
+                    
+                    // Pisahkan custom items berdasarkan gajian_type
+                    $customItemsGajian1 = $customItemsCollection->filter(function($item) {
+                        $gajianType = is_object($item) ? ($item->gajian_type ?? null) : ($item['gajian_type'] ?? null);
+                        return !isset($gajianType) || $gajianType === null || $gajianType === 'gajian1';
+                    });
+                    $customItemsGajian2 = $customItemsCollection->filter(function($item) {
+                        $gajianType = is_object($item) ? ($item->gajian_type ?? null) : ($item['gajian_type'] ?? null);
+                        return $gajianType === 'gajian2';
+                    });
+                    
+                    $customEarningsGajian1 = $customItemsGajian1->filter(function($item) {
+                        $itemType = is_object($item) ? ($item->item_type ?? null) : ($item['item_type'] ?? null);
+                        return $itemType === 'earn';
+                    })->sum(function($item) {
+                        return is_object($item) ? ($item->item_amount ?? 0) : ($item['item_amount'] ?? 0);
+                    });
+                    $customDeductionsGajian1 = $customItemsGajian1->filter(function($item) {
+                        $itemType = is_object($item) ? ($item->item_type ?? null) : ($item['item_type'] ?? null);
+                        return $itemType === 'deduction';
+                    })->sum(function($item) {
+                        return is_object($item) ? ($item->item_amount ?? 0) : ($item['item_amount'] ?? 0);
+                    });
+                    $customEarningsGajian2 = $customItemsGajian2->filter(function($item) {
+                        $itemType = is_object($item) ? ($item->item_type ?? null) : ($item['item_type'] ?? null);
+                        return $itemType === 'earn';
+                    })->sum(function($item) {
+                        return is_object($item) ? ($item->item_amount ?? 0) : ($item['item_amount'] ?? 0);
+                    });
+                    $customDeductionsGajian2 = $customItemsGajian2->filter(function($item) {
+                        $itemType = is_object($item) ? ($item->item_type ?? null) : ($item['item_type'] ?? null);
+                        return $itemType === 'deduction';
+                    })->sum(function($item) {
+                        return is_object($item) ? ($item->item_amount ?? 0) : ($item['item_amount'] ?? 0);
+                    });
+                    
+                    // Decode leave_data
+                    $leaveData = json_decode($detail->leave_data ?? '[]', true) ?? [];
+                    
+                    // Extract breakdown dari leaveData
+                    $izinCutiBreakdown = [];
+                    $totalIzinCuti = 0;
+                    foreach ($leaveData as $key => $value) {
+                        if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                            $izinCutiBreakdown[$key] = $value;
+                            $totalIzinCuti += $value;
+                        }
+                    }
+                    
+                    // Cek apakah karyawan baru
+                    $isNewEmployee = false;
+                    if ($user->tanggal_masuk) {
+                        $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
+                        $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
+                    }
+                    
+                    // Cek resignation
+                    $resignation = $resignations->get($user->id);
+                    $resignationDate = null;
+                    if ($resignation && $resignation->resignation_date) {
+                        $resignDate = Carbon::parse($resignation->resignation_date);
+                        if ($resignDate->between($startDate, $endDate)) {
+                            $resignationDate = $resignation->resignation_date->format('Y-m-d');
+                        }
+                    }
+                    
+                    // Hitung total gaji dari data yang sudah di-generate
+                    $totalGaji = $detail->total_gaji ?? 0;
+                    
+                    // Format data sesuai dengan struktur yang dibutuhkan frontend
+                    $payrollDataItem = [
+                        'user_id' => $user->id,
+                        'nik' => $detail->nik ?? $user->nik,
+                        'nama_lengkap' => $detail->nama_lengkap ?? $user->nama_lengkap,
+                        'no_rekening' => $detail->no_rekening ?? $user->no_rekening ?? null,
+                        'tanggal_masuk' => $user->tanggal_masuk ?? null,
+                        'is_new_employee' => $isNewEmployee,
+                        'resignation_date' => $resignationDate,
+                        'jabatan' => $detail->jabatan ?? null,
+                        'divisi' => $detail->divisi ?? null,
+                        'point' => $detail->point ?? 0,
+                        'gaji_pokok' => round($detail->gaji_pokok ?? 0),
+                        'tunjangan' => round($detail->tunjangan ?? 0),
+                        'total_telat' => $detail->total_telat ?? 0,
+                        'total_lembur' => $detail->total_lembur ?? 0,
+                        'nominal_lembur_per_jam' => $detail->nominal_lembur_per_jam ?? 0,
+                        'gaji_lembur' => round($detail->gaji_lembur ?? 0),
+                        'nominal_uang_makan' => $detail->nominal_uang_makan ?? 0,
+                        'uang_makan' => round($detail->uang_makan ?? 0),
+                        'service_charge_by_point' => round($detail->service_charge_by_point ?? 0),
+                        'service_charge_pro_rate' => round($detail->service_charge_pro_rate ?? 0),
+                        'service_charge' => round($detail->service_charge ?? 0),
+                        'bpjs_jkn' => round($detail->bpjs_jkn ?? 0),
+                        'bpjs_tk' => round($detail->bpjs_tk ?? 0),
+                        'lb_total' => round($detail->lb_total ?? 0),
+                        'deviasi_total' => round($detail->deviasi_total ?? 0),
+                        'city_ledger_total' => round($detail->city_ledger_total ?? 0),
+                        'ph_bonus' => round($detail->ph_bonus ?? 0),
+                        'custom_earnings' => round($customEarningsGajian1),
+                        'custom_deductions' => round($customDeductionsGajian1),
+                        'custom_earnings_gajian1' => round($customEarningsGajian1),
+                        'custom_deductions_gajian1' => round($customDeductionsGajian1),
+                        'custom_items_gajian1' => $customItemsGajian1,
+                        'custom_earnings_gajian2' => round($customEarningsGajian2),
+                        'custom_deductions_gajian2' => round($customDeductionsGajian2),
+                        'custom_items_gajian2' => $customItemsGajian2,
+                        'custom_items' => $customItemsCollection, // Untuk backward compatibility
+                        'gaji_per_menit' => round($detail->gaji_per_menit ?? 500, 2),
+                        'potongan_telat' => round($detail->potongan_telat ?? 0),
+                        'total_alpha' => $detail->total_alpha ?? 0,
+                        'potongan_alpha' => round($detail->potongan_alpha ?? 0),
+                        'potongan_unpaid_leave' => round($detail->potongan_unpaid_leave ?? 0),
+                        'total_gaji' => round($totalGaji),
+                        'hari_kerja' => $detail->hari_kerja ?? 0,
+                        'total_izin_cuti' => $totalIzinCuti,
+                        'izin_cuti_breakdown' => $izinCutiBreakdown,
+                        'extra_off_days' => isset($leaveData['extra_off_days']) ? $leaveData['extra_off_days'] : 0,
+                        'leave_data' => $leaveData,
+                        'periode' => $detail->periode ?? ($startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y')),
+                        'payment_method' => $detail->payment_method ?? 'transfer',
+                    ];
+                    
+                    // Add dynamic leave data directly to payrollData item
+                    foreach ($leaveData as $key => $value) {
+                        if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                            $payrollDataItem[$key] = $value;
+                        }
+                    }
+                    
+                    $payrollData->push($payrollDataItem);
+                }
+                
+                // Hitung statistik karyawan
+                $totalMP = $users->count();
+                $totalMPAktif = User::where('status', 'A')
+                    ->where('id_outlet', $outletId)
+                    ->count();
+                $totalMPResign = !empty($resignations) ? $resignations->count() : 0;
+                
+                // Return early dengan data dari payroll_generated_details
+                return Inertia::render('Payroll/Report', [
+                    'outlets' => $outlets,
+                    'months' => $months,
+                    'years' => $years,
+                    'payrollData' => $payrollData,
+                    'leaveTypes' => $leaveTypes,
+                    'statistics' => [
+                        'total_mp' => $totalMP ?? 0,
+                        'total_mp_aktif' => $totalMPAktif ?? 0,
+                        'total_mp_resign' => $totalMPResign ?? 0,
+                    ],
+                    'filter' => [
+                        'outlet_id' => $outletId,
+                        'month' => $month,
+                        'year' => $year,
+                        'service_charge' => $serviceCharge,
+                        'lb_amount' => $lbAmount,
+                        'deviasi_amount' => $deviasiAmount,
+                        'city_ledger_amount' => $cityLedgerAmount,
+                    ],
+                ]);
             }
 
             // Ambil data custom payroll items untuk periode ini
@@ -142,9 +366,14 @@ class PayrollReportController extends Controller
 
             // ========== GUNAKAN QUERY DAN PROSES YANG SAMA PERSIS DENGAN EMPLOYEE SUMMARY ==========
             // Query data absensi - SAMA PERSIS dengan Employee Summary
+            // Ambil data absensi dari user yang aktif (status 'A') DAN user yang resign di periode ini
+            $validUserIds = $users->pluck('id')->toArray();
+            
             $chunkSize = 5000;
             $rawData = collect();
             
+            // Query absensi - SAMA PERSIS dengan employeeSummary di AttendanceReportController
+            // TIDAK filter berdasarkan status, hanya filter berdasarkan outlet_id
             $sub = DB::table('att_log as a')
                 ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
                 ->join('user_pins as up', function($q) {
@@ -158,9 +387,13 @@ class PayrollReportController extends Controller
                     'u.nama_lengkap',
                     'u.division_id'
                 )
-                ->where('u.id_outlet', $outletId)
                 ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
-
+            
+            // Apply filter outlet - SAMA PERSIS dengan employeeSummary
+            if (!empty($outletId)) {
+                $sub->where('u.id_outlet', $outletId);
+            }
+            
             // Gunakan chunk untuk mencegah memory overflow
             $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
                 $rawData = $rawData->merge($chunk);
@@ -323,9 +556,10 @@ class PayrollReportController extends Controller
                 // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
                 $hariKerja = $employeeRows->count();
 
-                // Hitung total alpha menggunakan method yang sama dengan Employee Summary
-                // Gunakan outlet_id yang sama dengan filter data lainnya untuk konsistensi
-                $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $start, $end);
+                // Hitung total alpha menggunakan method yang sama persis dengan AttendanceReportController
+                // GUNAKAN METHOD calculateAlpaDays yang sudah COPY PERSIS dari AttendanceReportController
+                // SAMA PERSIS dengan employeeSummary: kirim null untuk outlet_id
+                $totalAlpha = $this->calculateAlpaDays($userId, null, $start, $end);
                 
                 // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
                 $leaveData = $this->calculateLeaveData($userId, $start, $end);
@@ -485,6 +719,8 @@ class PayrollReportController extends Controller
                 $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
                 $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
                 $userPoint = $data['userPoint'];
+                $totalAlpha = $data['totalAlpha'] ?? 0; // Ambil totalAlpha dari userData
+                $totalIzinCuti = $data['totalIzinCuti'] ?? 0; // Ambil totalIzinCuti dari userData
                 $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData, default ke array kosong jika tidak ada
                 $izinCutiBreakdown = $data['izinCutiBreakdown'] ?? []; // Ambil izinCutiBreakdown dari userData, default ke array kosong jika tidak ada
                 
@@ -740,13 +976,37 @@ class PayrollReportController extends Controller
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
-                // Hitung custom earnings dan deductions
+                // Hitung custom earnings dan deductions - PISAHKAN BERDASARKAN GAJIAN TYPE
                 $userCustomItems = $customItems->get($user->id, collect());
-                $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
-                $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
+                
+                // Custom items untuk Gajian 1 (gaji akhir bulan)
+                $userCustomItemsGajian1 = $userCustomItems->where('gajian_type', 'gajian1');
+                $customEarningsGajian1 = $userCustomItemsGajian1->where('item_type', 'earn')->sum('item_amount');
+                $customDeductionsGajian1 = $userCustomItemsGajian1->where('item_type', 'deduction')->sum('item_amount');
+                
+                // Custom items untuk Gajian 2 (gaji tanggal 8)
+                $userCustomItemsGajian2 = $userCustomItems->where('gajian_type', 'gajian2');
+                $customEarningsGajian2 = $userCustomItemsGajian2->where('item_type', 'earn')->sum('item_amount');
+                $customDeductionsGajian2 = $userCustomItemsGajian2->where('item_type', 'deduction')->sum('item_amount');
+                
+                // Untuk backward compatibility, jika gajian_type null atau tidak ada, default ke gajian1
+                $userCustomItemsDefault = $userCustomItems->whereNull('gajian_type')->where(function($item) {
+                    return !isset($item->gajian_type);
+                });
+                $customEarningsDefault = $userCustomItemsDefault->where('item_type', 'earn')->sum('item_amount');
+                $customDeductionsDefault = $userCustomItemsDefault->where('item_type', 'deduction')->sum('item_amount');
+                
+                // Total custom untuk gajian1 (termasuk yang default/null)
+                $customEarningsGajian1 += $customEarningsDefault;
+                $customDeductionsGajian1 += $customDeductionsDefault;
+                
+                // Total custom untuk perhitungan total gaji (hanya gajian1)
+                $customEarnings = $customEarningsGajian1;
+                $customDeductions = $customDeductionsGajian1;
 
                 // Hitung total gaji (service charge ditambahkan sebagai earning, L&B, Deviasi, City Ledger, potongan alpha dan unpaid leave sebagai deduction)
                 // PH Bonus akan ditambahkan di gajian2, tidak dihitung di total gaji utama
+                // Custom items gajian2 TIDAK masuk ke total gaji utama, hanya gajian1
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
                 
@@ -795,6 +1055,12 @@ class PayrollReportController extends Controller
                     'custom_earnings' => round($customEarnings),
                     'custom_deductions' => round($customDeductions),
                     'custom_items' => $userCustomItems,
+                    'custom_earnings_gajian1' => round($customEarningsGajian1),
+                    'custom_deductions_gajian1' => round($customDeductionsGajian1),
+                    'custom_items_gajian1' => $userCustomItemsGajian1->merge($userCustomItemsDefault),
+                    'custom_earnings_gajian2' => round($customEarningsGajian2),
+                    'custom_deductions_gajian2' => round($customDeductionsGajian2),
+                    'custom_items_gajian2' => $userCustomItemsGajian2,
                     'gaji_per_menit' => round($gajiPerMenit, 2),
                     'potongan_telat' => round($potonganTelat),
                     'potongan_alpha' => round($potonganAlpha),
@@ -845,6 +1111,17 @@ class PayrollReportController extends Controller
                 
                 $payrollData->push($payrollDataItem);
             }
+            
+            // Hitung statistik karyawan
+            $totalMP = $users->count(); // Total semua karyawan (aktif + resign)
+            $totalMPAktif = User::where('status', 'A')
+                ->where('id_outlet', $outletId)
+                ->count(); // Total karyawan aktif
+            $totalMPResign = !empty($resignedEmployeeIds) ? count($resignedEmployeeIds) : 0; // Total karyawan yang resign di periode ini
+        } else {
+            $totalMP = 0;
+            $totalMPAktif = 0;
+            $totalMPResign = 0;
         }
 
         return Inertia::render('Payroll/Report', [
@@ -853,6 +1130,11 @@ class PayrollReportController extends Controller
             'years' => $years,
             'payrollData' => $payrollData,
             'leaveTypes' => $leaveTypes,
+            'statistics' => [
+                'total_mp' => $totalMP ?? 0,
+                'total_mp_aktif' => $totalMPAktif ?? 0,
+                'total_mp_resign' => $totalMPResign ?? 0,
+            ],
             'filter' => [
                 'outlet_id' => $outletId,
                 'month' => $month,
@@ -1771,10 +2053,27 @@ class PayrollReportController extends Controller
                 $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
             }
 
-            // Hitung custom earnings dan deductions - SAMA PERSIS dengan index()
+            // Hitung custom earnings dan deductions - PISAHKAN BERDASARKAN GAJIAN TYPE
             $userCustomItems = $customItems->get($user->id, collect());
-            $customEarnings = $userCustomItems->where('item_type', 'earn')->sum('item_amount');
-            $customDeductions = $userCustomItems->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Custom items untuk Gajian 1
+            $userCustomItemsGajian1 = $userCustomItems->where('gajian_type', 'gajian1');
+            // Untuk backward compatibility, jika gajian_type null atau tidak ada, default ke gajian1
+            $userCustomItemsDefault = $userCustomItems->filter(function($item) {
+                return !isset($item->gajian_type) || $item->gajian_type === null;
+            });
+            $userCustomItemsGajian1 = $userCustomItemsGajian1->merge($userCustomItemsDefault);
+            $customEarningsGajian1 = $userCustomItemsGajian1->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian1 = $userCustomItemsGajian1->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Custom items untuk Gajian 2
+            $userCustomItemsGajian2 = $userCustomItems->where('gajian_type', 'gajian2');
+            $customEarningsGajian2 = $userCustomItemsGajian2->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian2 = $userCustomItemsGajian2->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Set untuk gajian1 (default)
+            $customEarnings = $customEarningsGajian1;
+            $customDeductions = $customDeductionsGajian1;
 
             // Gunakan data dari payroll_generated_details jika sudah di-generate
             $payrollDetail = $payrollGeneratedDetails->get($userId);
@@ -1803,11 +2102,29 @@ class PayrollReportController extends Controller
                 $hariKerja = $payrollDetail->hari_kerja ?? $hariKerja;
                 $paymentMethod = $payrollDetail->payment_method ?? 'transfer';
                 
-                // Ambil custom items dari JSON jika ada
+                // Ambil custom items dari JSON jika ada - PISAHKAN BERDASARKAN GAJIAN TYPE
                 if ($payrollDetail->custom_items) {
                     $customItemsData = json_decode($payrollDetail->custom_items, true) ?? [];
-                    $customEarnings = collect($customItemsData)->where('item_type', 'earn')->sum('item_amount');
-                    $customDeductions = collect($customItemsData)->where('item_type', 'deduction')->sum('item_amount');
+                    $customItemsCollection = collect($customItemsData);
+                    
+                    // Custom items untuk Gajian 1
+                    $customItemsGajian1 = $customItemsCollection->where('gajian_type', 'gajian1');
+                    // Untuk backward compatibility, jika gajian_type null atau tidak ada, default ke gajian1
+                    $customItemsDefault = $customItemsCollection->filter(function($item) {
+                        return !isset($item['gajian_type']) || $item['gajian_type'] === null;
+                    });
+                    $customItemsGajian1 = $customItemsGajian1->merge($customItemsDefault);
+                    $customEarningsGajian1 = $customItemsGajian1->where('item_type', 'earn')->sum('item_amount');
+                    $customDeductionsGajian1 = $customItemsGajian1->where('item_type', 'deduction')->sum('item_amount');
+                    
+                    // Custom items untuk Gajian 2
+                    $customItemsGajian2 = $customItemsCollection->where('gajian_type', 'gajian2');
+                    $customEarningsGajian2 = $customItemsGajian2->where('item_type', 'earn')->sum('item_amount');
+                    $customDeductionsGajian2 = $customItemsGajian2->where('item_type', 'deduction')->sum('item_amount');
+                    
+                    // Set untuk gajian1 (default)
+                    $customEarnings = $customEarningsGajian1;
+                    $customDeductions = $customDeductionsGajian1;
                 }
                 
                 // Ambil potongan alpha dan unpaid leave
@@ -1815,11 +2132,11 @@ class PayrollReportController extends Controller
                 $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? $potonganUnpaidLeave;
             }
             
-            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
             $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
             
-            // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
-            $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus - $lbTotal - $deviasiTotal - $cityLedgerTotal;
+            // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
+            $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus + ($customEarningsGajian2 ?? 0) - $lbTotal - $deviasiTotal - $cityLedgerTotal - ($customDeductionsGajian2 ?? 0);
 
             // Sheet 1: Gaji Akhir Bulan (Gajian 1)
             $exportDataGajiAkhirBulan[] = [
@@ -1831,8 +2148,8 @@ class PayrollReportController extends Controller
                 'Divisi' => $divisions[$user->division_id] ?? '-',
                 'Gaji Pokok' => round($gajiPokokFinal),
                 'Tunjangan' => round($tunjanganFinal),
-                'Custom Earnings' => round($customEarnings),
-                'Custom Deductions' => round($customDeductions),
+                'Custom Earnings (Gajian 1)' => round($customEarnings),
+                'Custom Deductions (Gajian 1)' => round($customDeductions),
                 'Potongan Telat' => round($potonganTelat),
                 'Potongan Alpha' => round($potonganAlpha),
                 'Potongan Unpaid Leave' => round($potonganUnpaidLeave),
@@ -1856,6 +2173,8 @@ class PayrollReportController extends Controller
                 'L & B' => round($lbTotal),
                 'Deviasi' => round($deviasiTotal),
                 'City Ledger' => round($cityLedgerTotal),
+                'Custom Earnings (Gajian 2)' => round($customEarningsGajian2 ?? 0),
+                'Custom Deductions (Gajian 2)' => round($customDeductionsGajian2 ?? 0),
                 'Total Gaji Tanggal 8' => round($totalGajian2),
                 'Periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
             ];
@@ -2218,7 +2537,8 @@ class PayrollReportController extends Controller
             'item_type' => 'required|in:earn,deduction',
             'item_name' => 'required|string|max:255',
             'item_amount' => 'required|numeric|min:0',
-            'item_description' => 'nullable|string'
+            'item_description' => 'nullable|string',
+            'gajian_type' => 'nullable|in:gajian1,gajian2' // Optional, default ke gajian1 jika tidak ada
         ]);
 
         try {
@@ -2230,7 +2550,8 @@ class PayrollReportController extends Controller
                 'item_type' => $request->item_type,
                 'item_name' => $request->item_name,
                 'item_amount' => $request->item_amount,
-                'item_description' => $request->item_description
+                'item_description' => $request->item_description,
+                'gajian_type' => $request->gajian_type ?? 'gajian1' // Default ke gajian1 jika tidak ada
             ]);
 
             return response()->json([
@@ -2469,14 +2790,30 @@ class PayrollReportController extends Controller
                 }
             }
 
-            // Get custom items
+            // Get custom items - PISAHKAN BERDASARKAN GAJIAN TYPE
             $customItems = CustomPayrollItem::forOutlet($outletId)
                 ->forPeriod($month, $year)
                 ->where('user_id', $userId)
                 ->get();
             
-            $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
-            $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
+            // Custom items untuk Gajian 1
+            $customItemsGajian1 = $customItems->where('gajian_type', 'gajian1');
+            // Untuk backward compatibility, jika gajian_type null atau tidak ada, default ke gajian1
+            $customItemsDefault = $customItems->filter(function($item) {
+                return !isset($item->gajian_type) || $item->gajian_type === null;
+            });
+            $customItemsGajian1 = $customItemsGajian1->merge($customItemsDefault);
+            $customEarningsGajian1 = $customItemsGajian1->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian1 = $customItemsGajian1->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Custom items untuk Gajian 2
+            $customItemsGajian2 = $customItems->where('gajian_type', 'gajian2');
+            $customEarningsGajian2 = $customItemsGajian2->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian2 = $customItemsGajian2->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Set untuk gajian1 (default)
+            $customEarnings = $customEarningsGajian1;
+            $customDeductions = $customDeductionsGajian1;
 
             // Hitung service charge jika enabled
             $serviceChargeAmount = 0;
@@ -2558,6 +2895,7 @@ class PayrollReportController extends Controller
         $cityLedgerTotal = 0;
         $serviceChargeByPoint = 0;
         $serviceChargeProRate = 0;
+        $phBonus = 0;
         
         if ($payrollDetail) {
             $lbTotal = $payrollDetail->lb_total ?? 0;
@@ -2565,28 +2903,31 @@ class PayrollReportController extends Controller
             $cityLedgerTotal = $payrollDetail->city_ledger_total ?? 0;
             $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
             $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+            $phBonus = $payrollDetail->ph_bonus ?? 0;
         }
         
         // Hitung total gaji berdasarkan type
         $totalGajiFinal = 0;
         if ($type === 'gajian1') {
-            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
             $totalGajiFinal = ($masterData->gaji ?? 0) 
                 + ($masterData->tunjangan ?? 0) 
-                + ($customEarnings ?? 0) 
-                - ($customDeductions ?? 0) 
+                + ($customEarningsGajian1 ?? $customEarnings ?? 0) 
+                - ($customDeductionsGajian1 ?? $customDeductions ?? 0) 
                 - ($potonganTelat ?? 0) 
                 - ($potonganAlpha ?? 0) 
                 - ($potonganUnpaidLeave ?? 0);
         } else {
-            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
+            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
             $totalGajiFinal = ($serviceChargeAmount ?? 0) 
                 + ($uangMakan ?? 0) 
                 + ($gajiLembur ?? 0) 
                 + ($phBonus ?? 0) 
+                + ($customEarningsGajian2 ?? 0)
                 - ($lbTotal ?? 0) 
                 - ($deviasiTotal ?? 0) 
-                - ($cityLedgerTotal ?? 0);
+                - ($cityLedgerTotal ?? 0)
+                - ($customDeductionsGajian2 ?? 0);
         }
 
         // Check if download PDF is requested
@@ -2614,6 +2955,12 @@ class PayrollReportController extends Controller
                 'custom_earnings' => $customEarnings,
                 'custom_deductions' => $customDeductions,
                 'custom_items' => $customItems,
+                'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings,
+                'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions,
+                'custom_items_gajian1' => $customItemsGajian1 ?? collect(),
+                'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
+                'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
+                'custom_items_gajian2' => $customItemsGajian2 ?? collect(),
                 'gaji_per_menit' => round($gajiPerMenit, 2),
                 'potongan_telat' => round($potonganTelat),
                 'total_alpha' => $totalAlpha,
@@ -2653,12 +3000,18 @@ class PayrollReportController extends Controller
             'service_charge_by_point' => round($serviceChargeByPoint),
             'service_charge_pro_rate' => round($serviceChargeProRate),
             'total_telat' => $totalTelat,
-            'bpjs_jkn' => $bpjsJKN,
-            'bpjs_tk' => $bpjsTK,
-            'custom_earnings' => $customEarnings,
-            'custom_deductions' => $customDeductions,
-            'custom_items' => $customItems,
-            'gaji_per_menit' => round($gajiPerMenit, 2),
+                'bpjs_jkn' => $bpjsJKN,
+                'bpjs_tk' => $bpjsTK,
+                'custom_earnings' => $customEarnings,
+                'custom_deductions' => $customDeductions,
+                'custom_items' => $customItems,
+                'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings,
+                'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions,
+                'custom_items_gajian1' => $customItemsGajian1 ?? collect(),
+                'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
+                'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
+                'custom_items_gajian2' => $customItemsGajian2 ?? collect(),
+                'gaji_per_menit' => round($gajiPerMenit, 2),
             'potongan_telat' => round($potonganTelat),
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
@@ -2847,14 +3200,30 @@ class PayrollReportController extends Controller
                 }
             }
 
-            // Get custom items
+            // Get custom items - PISAHKAN BERDASARKAN GAJIAN TYPE
             $customItems = CustomPayrollItem::forOutlet($outletId)
                 ->forPeriod($month, $year)
                 ->where('user_id', $userId)
                 ->get();
             
-            $customEarnings = $customItems->where('item_type', 'earn')->sum('item_amount');
-            $customDeductions = $customItems->where('item_type', 'deduction')->sum('item_amount');
+            // Custom items untuk Gajian 1
+            $customItemsGajian1 = $customItems->where('gajian_type', 'gajian1');
+            // Untuk backward compatibility, jika gajian_type null atau tidak ada, default ke gajian1
+            $customItemsDefault = $customItems->filter(function($item) {
+                return !isset($item->gajian_type) || $item->gajian_type === null;
+            });
+            $customItemsGajian1 = $customItemsGajian1->merge($customItemsDefault);
+            $customEarningsGajian1 = $customItemsGajian1->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian1 = $customItemsGajian1->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Custom items untuk Gajian 2
+            $customItemsGajian2 = $customItems->where('gajian_type', 'gajian2');
+            $customEarningsGajian2 = $customItemsGajian2->where('item_type', 'earn')->sum('item_amount');
+            $customDeductionsGajian2 = $customItemsGajian2->where('item_type', 'deduction')->sum('item_amount');
+            
+            // Set untuk gajian1 (default)
+            $customEarnings = $customEarningsGajian1;
+            $customDeductions = $customDeductionsGajian1;
 
             // Hitung service charge jika enabled
             $serviceChargeAmount = 0;
@@ -2937,6 +3306,7 @@ class PayrollReportController extends Controller
         $cityLedgerTotal = 0;
         $serviceChargeByPoint = 0;
         $serviceChargeProRate = 0;
+        $phBonus = 0;
         
         if ($payrollDetail) {
             $lbTotal = $payrollDetail->lb_total ?? 0;
@@ -2944,28 +3314,31 @@ class PayrollReportController extends Controller
             $cityLedgerTotal = $payrollDetail->city_ledger_total ?? 0;
             $serviceChargeByPoint = $payrollDetail->service_charge_by_point ?? 0;
             $serviceChargeProRate = $payrollDetail->service_charge_pro_rate ?? 0;
+            $phBonus = $payrollDetail->ph_bonus ?? 0;
         }
         
         // Hitung total gaji berdasarkan type
         $totalGajiFinal = 0;
         if ($type === 'gajian1') {
-            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning - Custom Deduction - Telat - Alpha - Unpaid Leave
+            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
             $totalGajiFinal = ($masterData->gaji ?? 0) 
                 + ($masterData->tunjangan ?? 0) 
-                + ($customEarnings ?? 0) 
-                - ($customDeductions ?? 0) 
+                + ($customEarningsGajian1 ?? $customEarnings ?? 0) 
+                - ($customDeductionsGajian1 ?? $customDeductions ?? 0) 
                 - ($potonganTelat ?? 0) 
                 - ($potonganAlpha ?? 0) 
                 - ($potonganUnpaidLeave ?? 0);
         } else {
-            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus - L & B - Deviasi - City Ledger
+            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
             $totalGajiFinal = ($serviceChargeAmount ?? 0) 
                 + ($uangMakan ?? 0) 
                 + ($gajiLembur ?? 0) 
                 + ($phBonus ?? 0) 
+                + ($customEarningsGajian2 ?? 0)
                 - ($lbTotal ?? 0) 
                 - ($deviasiTotal ?? 0) 
-                - ($cityLedgerTotal ?? 0);
+                - ($cityLedgerTotal ?? 0)
+                - ($customDeductionsGajian2 ?? 0);
         }
 
         // Generate PDF
@@ -2992,6 +3365,12 @@ class PayrollReportController extends Controller
             'custom_earnings' => round($customEarnings),
             'custom_deductions' => round($customDeductions),
             'custom_items' => $customItems,
+            'custom_earnings_gajian1' => round($customEarningsGajian1 ?? $customEarnings),
+            'custom_deductions_gajian1' => round($customDeductionsGajian1 ?? $customDeductions),
+            'custom_items_gajian1' => $customItemsGajian1 ?? collect(),
+            'custom_earnings_gajian2' => round($customEarningsGajian2 ?? 0),
+            'custom_deductions_gajian2' => round($customDeductionsGajian2 ?? 0),
+            'custom_items_gajian2' => $customItemsGajian2 ?? collect(),
             'gaji_per_menit' => round($gajiPerMenit, 2),
             'potongan_telat' => round($potonganTelat),
             'total_alpha' => $totalAlpha,
@@ -3859,8 +4238,7 @@ class PayrollReportController extends Controller
 
     /**
      * Calculate alpa days (days with shift but no attendance and no absent request)
-     * SAMA PERSIS dengan AttendanceReportController::calculateAlpaDays
-     * Hanya hitung tanggal yang sudah lewat (< hari ini)
+     * COPY PERSIS dari AttendanceReportController::calculateAlpaDays
      */
     private function calculateAlpaDays($userId, $outletId, $startDate, $endDate)
     {
@@ -3873,24 +4251,19 @@ class PayrollReportController extends Controller
             $dt->modify('+1 day');
         }
         
-        // Get user's shifts for the period - SAMA PERSIS dengan AttendanceReportController
-        $shiftsQuery = DB::table('user_shifts as us')
+        // Get user's shifts for the period - COPY PERSIS dari AttendanceReportController
+        $shifts = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
+            ->where('us.outlet_id', $outletId)
             ->whereIn('us.tanggal', $period)
             ->whereNotNull('us.shift_id') // Must have a shift (not off)
-            ->where('s.shift_name', '!=', 'off'); // Exclude 'off' shifts
-        
-        // Only filter by outlet_id if it's not null (sama seperti Employee Summary)
-        if ($outletId !== null) {
-            $shiftsQuery->where('us.outlet_id', $outletId);
-        }
-        
-        $shifts = $shiftsQuery->select('us.tanggal', 's.shift_name')
+            ->where('s.shift_name', '!=', 'off') // Exclude 'off' shifts
+            ->select('us.tanggal', 's.shift_name')
             ->get()
             ->keyBy('tanggal');
         
-        // Get user's attendance data using the same logic as AttendanceReportController
+        // Get user's attendance data - COPY PERSIS dari AttendanceReportController
         $rawData = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function($q) {
@@ -4000,9 +4373,87 @@ class PayrollReportController extends Controller
         
         // Check each day in the period
         foreach ($period as $date) {
-            // Only count alpa for dates that have already passed (< hari ini, bukan <=)
-            if ($date >= $today) {
-                continue; // Skip today and future dates
+            // Only count alpa for dates that have already passed (including today)
+            if ($date > $today) {
+                continue; // Skip future dates
+            }
+            
+            $hasShift = $shifts->has($date);
+            $hasAttendance = in_array($date, $attendanceDates);
+            $hasAbsent = in_array($date, $absentDateArray);
+            
+            // Alpa: has shift but no attendance and no absent request
+            if ($hasShift && !$hasAttendance && !$hasAbsent) {
+                $alpaDays++;
+            }
+        }
+        
+        return $alpaDays;
+    }
+
+    /**
+     * Calculate alpha days using employeeRows data for consistency
+     * This ensures alpha calculation uses the same attendance data as hari kerja calculation
+     */
+    private function calculateAlpaDaysFromEmployeeRows($userId, $outletId, $startDate, $endDate, $employeeRows)
+    {
+        // Get all days in the period
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+        
+        // Get attendance dates from employeeRows (days with actual attendance)
+        $attendanceDates = $employeeRows->pluck('tanggal')->unique()->toArray();
+        
+        // Get user's shifts for the period - COPY PERSIS dari AttendanceReportController
+        $shifts = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->where('us.outlet_id', $outletId)
+            ->whereIn('us.tanggal', $period)
+            ->whereNotNull('us.shift_id') // Must have a shift (not off)
+            ->where('s.shift_name', '!=', 'off') // Exclude 'off' shifts
+            ->select('us.tanggal', 's.shift_name')
+            ->get()
+            ->keyBy('tanggal');
+        
+        // Get user's approved absent requests for the period
+        $absentDates = DB::table('absent_requests')
+            ->where('user_id', $userId)
+            ->where('status', 'approved')
+            ->where(function($query) use ($startDate, $endDate) {
+                $query->whereBetween('date_from', [$startDate, $endDate])
+                      ->orWhereBetween('date_to', [$startDate, $endDate])
+                      ->orWhere(function($q) use ($startDate, $endDate) {
+                          $q->where('date_from', '<=', $startDate)
+                            ->where('date_to', '>=', $endDate);
+                      });
+            })
+            ->get();
+        
+        // Create array of all absent dates
+        $absentDateArray = [];
+        foreach ($absentDates as $absent) {
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            while ($fromDate <= $toDate) {
+                $absentDateArray[] = $fromDate->format('Y-m-d');
+                $fromDate->modify('+1 day');
+            }
+        }
+        
+        $alpaDays = 0;
+        $today = date('Y-m-d');
+        
+        // Check each day in the period
+        foreach ($period as $date) {
+            // Only count alpa for dates that have already passed (including today) - COPY PERSIS dari AttendanceReportController
+            if ($date > $today) {
+                continue; // Skip future dates
             }
             
             $hasShift = $shifts->has($date);

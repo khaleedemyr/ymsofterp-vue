@@ -336,6 +336,20 @@
                     <td>-</td>
                     <td class="earnings">Rp {{ number_format($ph_bonus ?? 0, 0, ',', '.') }}</td>
                 </tr>
+                @if(isset($custom_earnings_gajian2) && $custom_earnings_gajian2 > 0)
+                <tr>
+                    <td>9. Custom Earning</td>
+                    <td>{{ $custom_items_gajian2 && $custom_items_gajian2->where('item_type', 'earn')->count() > 0 ? $custom_items_gajian2->where('item_type', 'earn')->count() : 0 }} item</td>
+                    <td class="earnings">Rp {{ number_format($custom_earnings_gajian2, 0, ',', '.') }}</td>
+                </tr>
+                @endif
+                @if(isset($custom_deductions_gajian2) && $custom_deductions_gajian2 > 0)
+                <tr>
+                    <td>10. Custom Deduction</td>
+                    <td>{{ $custom_items_gajian2 && $custom_items_gajian2->where('item_type', 'deduction')->count() > 0 ? $custom_items_gajian2->where('item_type', 'deduction')->count() : 0 }} item</td>
+                    <td class="deductions">Rp {{ number_format($custom_deductions_gajian2, 0, ',', '.') }}</td>
+                </tr>
+                @endif
             @endif
 
             <!-- TOTAL -->
@@ -353,22 +367,55 @@
 
     @if($type === 'gajian1')
         <!-- GAJIAN 1: Tampilkan Custom Items dan Leave Type Breakdown -->
-        @if(isset($custom_items) && $custom_items->count() > 0)
+        @php
+            $customItemsToShow = isset($custom_items_gajian1) && $custom_items_gajian1->count() > 0 ? $custom_items_gajian1 : (isset($custom_items) ? $custom_items->where('gajian_type', 'gajian1') : collect());
+            // Untuk backward compatibility, jika tidak ada gajian_type, tampilkan semua custom items
+            if ($customItemsToShow->count() == 0 && isset($custom_items)) {
+                $customItemsToShow = $custom_items->filter(function($item) {
+                    return !isset($item->gajian_type) || $item->gajian_type === null || $item->gajian_type === 'gajian1';
+                });
+            }
+        @endphp
+        @if($customItemsToShow->count() > 0)
         <div class="custom-items">
             <strong>Detail Custom Items:</strong><br>
-            @foreach($custom_items as $item)
+            @foreach($customItemsToShow as $item)
                 <div class="custom-item">
-                    • {{ $item->item_name }} ({{ ucfirst($item->item_type) }}): 
-                    <span class="{{ $item->item_type == 'earn' ? 'earnings' : 'deductions' }}">
-                        {{ $item->item_type == 'earn' ? '+' : '-' }} Rp {{ number_format($item->item_amount, 0, ',', '.') }}
+                    • {{ $item->item_name ?? $item['item_name'] }} ({{ ucfirst($item->item_type ?? $item['item_type']) }}): 
+                    <span class="{{ ($item->item_type ?? $item['item_type']) == 'earn' ? 'earnings' : 'deductions' }}">
+                        {{ ($item->item_type ?? $item['item_type']) == 'earn' ? '+' : '-' }} Rp {{ number_format($item->item_amount ?? $item['item_amount'], 0, ',', '.') }}
                     </span>
-                    @if($item->item_description)
-                        <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description }}</span>
+                    @if($item->item_description ?? $item['item_description'] ?? null)
+                        <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description ?? $item['item_description'] }}</span>
                     @endif
                 </div>
             @endforeach
         </div>
         @endif
+    @else
+        <!-- GAJIAN 2: Tampilkan Custom Items -->
+        @php
+            $customItemsToShow = isset($custom_items_gajian2) && $custom_items_gajian2->count() > 0 ? $custom_items_gajian2 : collect();
+        @endphp
+        @if($customItemsToShow->count() > 0)
+        <div class="custom-items">
+            <strong>Detail Custom Items:</strong><br>
+            @foreach($customItemsToShow as $item)
+                <div class="custom-item">
+                    • {{ $item->item_name ?? $item['item_name'] }} ({{ ucfirst($item->item_type ?? $item['item_type']) }}): 
+                    <span class="{{ ($item->item_type ?? $item['item_type']) == 'earn' ? 'earnings' : 'deductions' }}">
+                        {{ ($item->item_type ?? $item['item_type']) == 'earn' ? '+' : '-' }} Rp {{ number_format($item->item_amount ?? $item['item_amount'], 0, ',', '.') }}
+                    </span>
+                    @if($item->item_description ?? $item['item_description'] ?? null)
+                        <br><span style="margin-left: 10px; font-style: italic;">{{ $item->item_description ?? $item['item_description'] }}</span>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+        @endif
+    @endif
+
+    @if($type === 'gajian1')
 
         @if(isset($leave_data) && is_array($leave_data) && count($leave_data) > 0)
         <div class="custom-items" style="margin-top: 10px;">
