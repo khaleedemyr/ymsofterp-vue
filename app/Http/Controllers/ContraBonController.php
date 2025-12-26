@@ -2218,6 +2218,16 @@ class ContraBonController extends Controller
 
     public function edit($id)
     {
+        $user = Auth::user();
+        
+        // Validasi: Hanya Finance Manager (id_jabatan == 160) dan Superadmin yang bisa edit
+        $isFinanceManager = $user->id_jabatan == 160 && $user->status == 'A';
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        
+        if (!$isFinanceManager && !$isSuperadmin) {
+            return back()->withErrors(['error' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.']);
+        }
+        
         $contraBon = ContraBon::with([
             'supplier',
             'purchaseOrder',
@@ -2348,6 +2358,422 @@ class ContraBonController extends Controller
         return inertia('ContraBon/Form', [
             'contraBon' => $contraBon
         ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $user = Auth::user();
+        
+        // Validasi: Hanya Finance Manager (id_jabatan == 160) dan Superadmin yang bisa edit
+        $isFinanceManager = $user->id_jabatan == 160 && $user->status == 'A';
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        
+        if (!$isFinanceManager && !$isSuperadmin) {
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.'
+                ], 403);
+            }
+            return back()->withErrors(['error' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.']);
+        }
+        
+        $contraBon = ContraBon::findOrFail($id);
+        
+        // Gunakan logika yang sama dengan store, tapi untuk update
+        $sourceType = $request->input('source_type', $contraBon->source_type ?? 'purchase_order');
+        
+        $rules = [
+            'date' => 'required|date',
+            'items' => 'required|array',
+            'items.*.quantity' => 'required|numeric|min:0',
+            'items.*.price' => 'required|numeric|min:0',
+            'notes' => 'nullable|string',
+            'image' => 'nullable|image|max:2048',
+            'supplier_invoice_number' => 'nullable|string|max:100',
+            'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food,retail_non_food',
+        ];
+        
+        // Conditional validation based on source_type
+        if ($sourceType === 'purchase_order') {
+            $rules['po_id'] = 'required|exists:purchase_order_foods,id';
+            $rules['gr_id'] = 'required|exists:food_good_receives,id';
+            $rules['items.*.item_id'] = 'nullable|exists:items,id';
+            $rules['items.*.unit_id'] = 'nullable|exists:units,id';
+            $rules['items.*.gr_item_id'] = 'nullable|exists:food_good_receive_items,id';
+        } else {
+            $rules['source_id'] = 'required';
+            $rules['items.*.item_id'] = 'nullable|exists:items,id';
+            $rules['items.*.unit_id'] = 'nullable|exists:units,id';
+            foreach ($request->input('items', []) as $index => $item) {
+                $itemId = $item['item_id'] ?? null;
+                $unitId = $item['unit_id'] ?? null;
+                if ($itemId === 'null' || $itemId === '' || $itemId === null) {
+                    $rules["items.{$index}.item_name"] = 'required|string';
+                }
+                if ($unitId === 'null' || $unitId === '' || $unitId === null) {
+                    $rules["items.{$index}.unit_name"] = 'required|string';
+                }
+            }
+        }
+        
+        try {
+            $request->validate($rules);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Contra Bon update validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->except(['image']),
+            ]);
+            
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $e->errors()
+                ], 422);
+            }
+            
+            throw $e;
+        }
+
+        DB::beginTransaction();
+        try {
+            $sourceType = $request->input('source_type', $contraBon->source_type ?? 'purchase_order');
+            $sourceId = $request->input('source_id');
+            $supplierId = null;
+            $poId = null;
+            $grId = null;
+
+            // Handle different source types (same as store)
+            if ($sourceType === 'purchase_order') {
+                $po = PurchaseOrderFood::findOrFail($request->po_id);
+                $supplierId = $po->supplier_id;
+                $poId = $po->id;
+                $grId = $request->input('gr_id');
+            } elseif ($sourceType === 'retail_food') {
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $retailFood = \App\Models\RetailFood::findOrFail($sourceIdInt);
+                $supplierId = $retailFood->supplier_id;
+            } elseif ($sourceType === 'warehouse_retail_food') {
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $warehouseRetailFood = \App\Models\RetailWarehouseFood::findOrFail($sourceIdInt);
+                $supplierId = $warehouseRetailFood->supplier_id;
+            } elseif ($sourceType === 'retail_non_food') {
+                $sourceIdInt = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+                $retailNonFood = \App\Models\RetailNonFood::findOrFail($sourceIdInt);
+                $supplierId = $retailNonFood->supplier_id;
+            }
+            
+            // Calculate total amount with discount (same as store)
+            $subtotal = collect($request->items)->sum(function ($item) {
+                $quantity = floatval($item['quantity'] ?? 0);
+                $price = floatval($item['price'] ?? 0);
+                $subtotalItem = $quantity * $price;
+                
+                $discountPercent = floatval($item['discount_percent'] ?? 0);
+                $discountAmount = floatval($item['discount_amount'] ?? 0);
+                
+                if ($discountPercent > 0) {
+                    $discount = $subtotalItem * ($discountPercent / 100);
+                } else if ($discountAmount > 0) {
+                    $discount = $discountAmount;
+                } else {
+                    $discount = 0;
+                }
+                
+                return $subtotalItem - $discount;
+            });
+            
+            $discountTotalPercent = floatval($request->discount_total_percent ?? 0);
+            $discountTotalAmount = floatval($request->discount_total_amount ?? 0);
+            
+            $discountTotal = 0;
+            if ($discountTotalPercent > 0) {
+                $discountTotal = $subtotal * ($discountTotalPercent / 100);
+            } else if ($discountTotalAmount > 0) {
+                $discountTotal = $discountTotalAmount;
+            }
+            
+            $totalAmount = $subtotal - $discountTotal;
+
+            // Handle image upload
+            $imagePath = $contraBon->image_path;
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($imagePath && \Storage::disk('public')->exists($imagePath)) {
+                    \Storage::disk('public')->delete($imagePath);
+                }
+                $imagePath = $request->file('image')->store('contra_bon_images', 'public');
+            }
+
+            $sourceIdForSave = null;
+            if ($sourceType === 'retail_food' || $sourceType === 'warehouse_retail_food' || $sourceType === 'retail_non_food') {
+                $sourceIdForSave = is_numeric($sourceId) ? (int)$sourceId : $sourceId;
+            }
+            
+            // Update contra bon
+            $contraBonData = [
+                'date' => $request->date,
+                'supplier_id' => $supplierId,
+                'total_amount' => $totalAmount,
+                'discount_total_percent' => $discountTotalPercent,
+                'discount_total_amount' => $discountTotalAmount,
+                'notes' => $request->notes,
+                'image_path' => $imagePath,
+                'supplier_invoice_number' => $request->supplier_invoice_number,
+                'source_type' => $sourceType,
+            ];
+            
+            if ($sourceIdForSave !== null) {
+                $contraBonData['source_id'] = $sourceIdForSave;
+            }
+            
+            if ($poId !== null) {
+                $contraBonData['po_id'] = $poId;
+            }
+            
+            $contraBon->update($contraBonData);
+            
+            // Delete existing sources and items
+            $contraBon->sources()->delete();
+            $contraBon->items()->delete();
+            
+            // Save multiple sources (same as store)
+            $sources = $request->input('sources', []);
+            if (empty($sources) && $request->input('source_type')) {
+                $sourceIdForPivot = null;
+                if ($sourceType === 'purchase_order') {
+                    $sourceIdForPivot = $poId;
+                } else {
+                    $sourceIdForPivot = $sourceIdForSave;
+                }
+                
+                $sources = [[
+                    'source_type' => $sourceType,
+                    'source_id' => $sourceIdForPivot,
+                    'po_id' => $poId,
+                    'gr_id' => $grId,
+                ]];
+            }
+            
+            foreach ($sources as $source) {
+                $sourceTypeForSource = $source['source_type'] ?? $sourceType;
+                $sourceIdForSource = $source['source_id'] ?? null;
+                
+                if ($sourceIdForSource === 'undefined' || $sourceIdForSource === 'null' || $sourceIdForSource === '') {
+                    $sourceIdForSource = null;
+                }
+                
+                if ($sourceTypeForSource === 'purchase_order') {
+                    if ($sourceIdForSource === null || $sourceIdForSource === '' || $sourceIdForSource === 'null' || $sourceIdForSource === 'undefined') {
+                        $sourceIdForSource = $source['po_id'] ?? $poId;
+                    }
+                }
+                
+                if ($sourceIdForSource !== null && $sourceIdForSource !== '' && $sourceIdForSource !== 'null' && $sourceIdForSource !== 'undefined') {
+                    if (is_numeric($sourceIdForSource)) {
+                        $sourceIdForSource = (int)$sourceIdForSource;
+                    } else {
+                        if ($sourceTypeForSource === 'purchase_order') {
+                            $sourceIdForSource = $source['po_id'] ?? $poId;
+                        } else {
+                            $sourceIdForSource = null;
+                        }
+                    }
+                } else {
+                    $sourceIdForSource = null;
+                }
+                
+                if ($sourceTypeForSource === 'purchase_order' && $sourceIdForSource === null) {
+                    $sourceIdForSource = $source['po_id'] ?? $poId;
+                }
+                
+                ContraBonSource::create([
+                    'contra_bon_id' => $contraBon->id,
+                    'source_type' => $sourceTypeForSource,
+                    'source_id' => $sourceIdForSource,
+                    'po_id' => $source['po_id'] ?? ($sourceTypeForSource === 'purchase_order' ? $poId : null),
+                    'gr_id' => $source['gr_id'] ?? ($sourceTypeForSource === 'purchase_order' ? $grId : null),
+                ]);
+            }
+            
+            // Create contra bon items (same logic as store)
+            foreach ($request->items as $item) {
+                $itemId = $item['item_id'] ?? null;
+                $unitId = $item['unit_id'] ?? null;
+                
+                if ($itemId === 'null' || $itemId === '' || $itemId === null || (is_string($itemId) && strtolower(trim($itemId)) === 'null')) {
+                    $itemId = null;
+                } else {
+                    $itemId = is_numeric($itemId) ? (int)$itemId : $itemId;
+                }
+                
+                if ($unitId === 'null' || $unitId === '' || $unitId === null || (is_string($unitId) && strtolower(trim($unitId)) === 'null')) {
+                    $unitId = null;
+                } else {
+                    $unitId = is_numeric($unitId) ? (int)$unitId : $unitId;
+                }
+                
+                $grItemId = $item['gr_item_id'] ?? null;
+                if ($grItemId === 'null' || $grItemId === '' || $grItemId === null) {
+                    $grItemId = null;
+                } else {
+                    $grItemId = is_numeric($grItemId) ? (int)$grItemId : $grItemId;
+                }
+                
+                if ($sourceType === 'purchase_order' && (!$itemId || !$unitId) && $grItemId) {
+                    $grItem = DB::table('food_good_receive_items as gri')
+                        ->where('gri.id', $grItemId)
+                        ->select('gri.item_id', 'gri.unit_id')
+                        ->first();
+                    
+                    if ($grItem) {
+                        if (!$itemId && $grItem->item_id) {
+                            $itemId = $grItem->item_id;
+                        }
+                        if (!$unitId && $grItem->unit_id) {
+                            $unitId = $grItem->unit_id;
+                        }
+                    }
+                }
+                
+                // Find item by name if needed
+                if (!$itemId && isset($item['item_name']) && !empty(trim($item['item_name']))) {
+                    $itemName = trim($item['item_name']);
+                    $foundItem = \DB::table('items')->where('name', $itemName)->first();
+                    if (!$foundItem) {
+                        $foundItem = \DB::table('items')->whereRaw('LOWER(name) = LOWER(?)', [$itemName])->first();
+                    }
+                    if (!$foundItem) {
+                        $foundItem = \DB::table('items')->whereRaw('LOWER(name) LIKE LOWER(?)', ['%' . $itemName . '%'])->first();
+                    }
+                    if ($foundItem) {
+                        $itemId = $foundItem->id;
+                    } else {
+                        throw new \Exception("Item dengan nama '{$itemName}' tidak ditemukan di database.");
+                    }
+                }
+                
+                // Find unit by name if needed
+                if (!$unitId && isset($item['unit_name']) && !empty(trim($item['unit_name']))) {
+                    $unitName = trim($item['unit_name']);
+                    $foundUnit = \DB::table('units')->where('name', $unitName)->first();
+                    if (!$foundUnit) {
+                        $foundUnit = \DB::table('units')->whereRaw('LOWER(name) = LOWER(?)', [$unitName])->first();
+                    }
+                    if (!$foundUnit) {
+                        $foundUnit = \DB::table('units')->whereRaw('LOWER(name) LIKE LOWER(?)', ['%' . $unitName . '%'])->first();
+                    }
+                    if ($foundUnit) {
+                        $unitId = $foundUnit->id;
+                    } else {
+                        throw new \Exception("Unit dengan nama '{$unitName}' tidak ditemukan di database.");
+                    }
+                }
+                
+                if (!$itemId) {
+                    throw new \Exception("Item ID tidak boleh kosong.");
+                }
+                if (!$unitId) {
+                    throw new \Exception("Unit ID tidak boleh kosong.");
+                }
+                
+                $quantity = floatval($item['quantity'] ?? 0);
+                $price = floatval($item['price'] ?? 0);
+                $subtotalItem = $quantity * $price;
+                
+                $discountPercent = floatval($item['discount_percent'] ?? 0);
+                $discountAmount = floatval($item['discount_amount'] ?? 0);
+                
+                $discount = 0;
+                if ($discountPercent > 0) {
+                    $discount = $subtotalItem * ($discountPercent / 100);
+                } else if ($discountAmount > 0) {
+                    $discount = $discountAmount;
+                }
+                
+                $itemTotal = $subtotalItem - $discount;
+                
+                $contraBonItemData = [
+                    'contra_bon_id' => $contraBon->id,
+                    'item_id' => $itemId,
+                    'unit_id' => $unitId,
+                    'quantity' => $item['quantity'],
+                    'price' => $item['price'],
+                    'discount_percent' => $discountPercent,
+                    'discount_amount' => $discountAmount,
+                    'total' => $itemTotal,
+                    'notes' => $item['notes'] ?? null
+                ];
+                
+                $poItemId = $item['po_item_id'] ?? null;
+                if ($poItemId !== null && $poItemId !== 'null' && $poItemId !== '') {
+                    $contraBonItemData['po_item_id'] = is_numeric($poItemId) ? (int)$poItemId : $poItemId;
+                }
+                
+                $grItemId = $item['gr_item_id'] ?? null;
+                if ($grItemId !== null && $grItemId !== 'null' && $grItemId !== '') {
+                    $contraBonItemData['gr_item_id'] = is_numeric($grItemId) ? (int)$grItemId : $grItemId;
+                }
+                
+                $retailFoodItemId = $item['retail_food_item_id'] ?? null;
+                if ($retailFoodItemId !== null && $retailFoodItemId !== 'null' && $retailFoodItemId !== '') {
+                    $contraBonItemData['retail_food_item_id'] = is_numeric($retailFoodItemId) ? (int)$retailFoodItemId : $retailFoodItemId;
+                }
+                
+                $warehouseRetailFoodItemId = $item['warehouse_retail_food_item_id'] ?? null;
+                if ($warehouseRetailFoodItemId !== null && $warehouseRetailFoodItemId !== 'null' && $warehouseRetailFoodItemId !== '') {
+                    $contraBonItemData['warehouse_retail_food_item_id'] = is_numeric($warehouseRetailFoodItemId) ? (int)$warehouseRetailFoodItemId : $warehouseRetailFoodItemId;
+                }
+                
+                ContraBonItem::create($contraBonItemData);
+            }
+
+            // Activity log
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'contra_bon',
+                'description' => 'Update Contra Bon: ' . $contraBon->number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $contraBon->fresh()->toArray(),
+            ]);
+
+            DB::commit();
+            
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Contra Bon berhasil di-update',
+                    'data' => [
+                        'id' => $contraBon->id,
+                        'number' => $contraBon->number
+                    ]
+                ], 200);
+            }
+            
+            return redirect()->route('contra-bons.show', $contraBon->id)
+                ->with('success', 'Contra Bon berhasil di-update');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            \Log::error('Error updating Contra Bon', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'contra_bon_id' => $id,
+            ]);
+            
+            if (($request->wantsJson() || $request->ajax() || $request->expectsJson()) && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal update Contra Bon: ' . $e->getMessage()
+                ], 500);
+            }
+            
+            return back()->withErrors(['error' => 'Gagal update Contra Bon: ' . $e->getMessage()]);
+        }
     }
 
     public function destroy($id)

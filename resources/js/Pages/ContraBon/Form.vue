@@ -1155,7 +1155,7 @@ async function onSubmit() {
   
   // Pastikan source info sudah ter-update sebelum submit
   if (isEdit.value) {
-    form.put(`/contra-bons/${props.contraBon.id}`, {
+    form.put(route('contra-bons.update', props.contraBon.id), {
       onSuccess: async () => {
         await Swal.close();
         await Swal.fire('Berhasil', 'Data berhasil disimpan', 'success');

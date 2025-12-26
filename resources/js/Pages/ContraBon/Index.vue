@@ -121,7 +121,11 @@
                   <button @click="goToDetail(cb.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
-                  <button @click="goToEdit(cb.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                  <button 
+                    v-if="canEdit"
+                    @click="goToEdit(cb.id)" 
+                    class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition"
+                  >
                     <i class="fa fa-pencil-alt mr-1"></i> Edit
                   </button>
                   <button @click="confirmDelete(cb.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
@@ -153,7 +157,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -164,6 +168,15 @@ const props = defineProps({
 });
 
 const page = usePage();
+
+// Check if user can edit (Finance Manager or Superadmin)
+const canEdit = computed(() => {
+  const user = page.props.auth?.user;
+  if (!user) return false;
+  const isFinanceManager = user.id_jabatan == 160 && user.status == 'A';
+  const isSuperadmin = user.id_role === '5af56935b011a' && user.status === 'A';
+  return isFinanceManager || isSuperadmin;
+});
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');

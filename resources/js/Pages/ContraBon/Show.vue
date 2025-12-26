@@ -2,8 +2,15 @@
   <AppLayout>
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="mb-4">
+        <div class="mb-4 flex justify-between items-center">
           <button @click="$inertia.visit('/contra-bons')" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
+          <button 
+            v-if="canEdit"
+            @click="$inertia.visit(`/contra-bons/${contraBon.id}/edit`)" 
+            class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-semibold flex items-center gap-2"
+          >
+            <i class="fa fa-pencil-alt"></i> Edit
+          </button>
         </div>
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
           <div class="p-6 bg-white border-b border-gray-200">
@@ -247,6 +254,12 @@ const props = defineProps({
 const isSuperadmin = computed(() =>
   props.user?.id_role === '5af56935b011a' && props.user?.status === 'A'
 )
+
+// Check if user can edit (Finance Manager or Superadmin)
+const canEdit = computed(() => {
+  const isFinanceManager = props.user?.id_jabatan == 160 && props.user?.status == 'A';
+  return isFinanceManager || isSuperadmin.value;
+})
 
 const canApproveFinanceManager = computed(() =>
   ((props.user?.id_jabatan === 160 && props.user?.status === 'A') || isSuperadmin.value)

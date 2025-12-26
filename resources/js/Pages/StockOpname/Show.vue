@@ -164,10 +164,10 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Item</th>
+                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty System</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty Physical</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Total MAC<br/>(Qty Physical × MAC)</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Value Adjustment</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Alasan</th>
               </tr>
@@ -182,20 +182,24 @@
                   {{ item.inventory_item?.item?.name || '-' }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
+                  <div>S: {{ formatNumber(item.qty_system_small) }}</div>
+                  <div>M: {{ formatNumber(item.qty_system_medium) }}</div>
+                  <div>L: {{ formatNumber(item.qty_system_large) }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   <div>S: {{ formatNumber(item.qty_physical_small) }}</div>
                   <div>M: {{ formatNumber(item.qty_physical_medium) }}</div>
                   <div>L: {{ formatNumber(item.qty_physical_large) }}</div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-center">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <span :class="getDifferenceClass(item)" class="px-2 py-1 rounded font-semibold">
-                    {{ getDifferenceSign(item) }}
+                    <div>S: {{ formatNumber(item.qty_diff_small) }}</div>
+                    <div>M: {{ formatNumber(item.qty_diff_medium) }}</div>
+                    <div>L: {{ formatNumber(item.qty_diff_large) }}</div>
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   {{ formatCurrency(item.mac_before) }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
-                  <div class="font-semibold">{{ formatNumber(getTotalMAC(item)) }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <span :class="item.value_adjustment >= 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
@@ -375,27 +379,9 @@ function hasDifference(item) {
 }
 
 function getDifferenceClass(item) {
-  if (item.qty_diff_small > 0) return 'text-green-600';
-  if (item.qty_diff_small < 0) return 'text-red-600';
+  if (item.qty_diff_small > 0 || item.qty_diff_medium > 0 || item.qty_diff_large > 0) return 'text-green-600';
+  if (item.qty_diff_small < 0 || item.qty_diff_medium < 0 || item.qty_diff_large < 0) return 'text-red-600';
   return 'text-gray-600';
-}
-
-function getDifferenceSign(item) {
-  if (item.qty_diff_small > 0) return '+';
-  if (item.qty_diff_small < 0) return '-';
-  return '0';
-}
-
-// Calculate total MAC for an item (qty_physical_small * mac_before)
-function getTotalMAC(item) {
-  if (!item) return 0;
-  // Return 0 if qty_physical_small is not filled (null/undefined/empty)
-  if (item.qty_physical_small === null || item.qty_physical_small === undefined || item.qty_physical_small === '') {
-    return 0;
-  }
-  const qtyPhysical = parseFloat(item.qty_physical_small) || 0;
-  const mac = parseFloat(item.mac_before) || 0;
-  return qtyPhysical * mac;
 }
 
 async function submitForApproval() {
