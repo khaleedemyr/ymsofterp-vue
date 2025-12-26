@@ -1997,6 +1997,8 @@ Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])
 
 // Payroll Report Routes
 Route::get('/payroll/report', [App\Http\Controllers\PayrollReportController::class, 'index'])->name('payroll.report');
+Route::get('/payroll/report/service-charge', [App\Http\Controllers\PayrollReportController::class, 'getServiceCharge'])->name('payroll.report.service-charge');
+Route::get('/payroll/report/city-ledger-amount', [App\Http\Controllers\PayrollReportController::class, 'getCityLedgerAmount'])->name('payroll.report.city-ledger-amount');
 Route::get('/payroll/report/export', [App\Http\Controllers\PayrollReportController::class, 'export'])->name('payroll.report.export');
 Route::get('/payroll/report/attendance-detail', [App\Http\Controllers\PayrollReportController::class, 'getAttendanceDetail'])->name('payroll.report.attendance-detail');
 

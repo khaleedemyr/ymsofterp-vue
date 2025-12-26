@@ -19,10 +19,40 @@ class PayrollReportController extends Controller
         $outletId = $request->input('outlet_id');
         $month = $request->input('month', date('m'));
         $year = $request->input('year', date('Y'));
-        $serviceCharge = $request->input('service_charge', 0); // Nilai service charge per karyawan
+        $serviceChargeInput = $request->input('service_charge', null); // Input manual service charge (nullable)
         $lbAmount = $request->input('lb_amount', 0); // Nilai L & B total
         $deviasiAmount = $request->input('deviasi_amount', 0); // Nilai Deviasi total
         $cityLedgerAmount = $request->input('city_ledger_amount', 0); // Nilai City Ledger total
+        
+        // Hitung service charge dari orders jika tidak ada input manual
+        $serviceCharge = 0;
+        if ($serviceChargeInput !== null && $serviceChargeInput !== '') {
+            // Jika ada input manual, gunakan input manual
+            $serviceCharge = (float)$serviceChargeInput;
+        } elseif ($outletId && $month && $year) {
+            // Jika tidak ada input manual, ambil dari orders
+            // Periode service charge: 1-31 dari bulan yang dipilih
+            $serviceChargeStart = Carbon::create($year, $month, 1)->startOfDay();
+            $serviceChargeEnd = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
+            
+            // Get outlet qr_code untuk filter orders
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->where('status', 'A')
+                ->first(['qr_code']);
+            
+            if ($outlet && $outlet->qr_code) {
+                // Sum service charge dari orders
+                $serviceChargeResult = DB::table('orders')
+                    ->where('kode_outlet', $outlet->qr_code)
+                    ->whereBetween('created_at', [$serviceChargeStart, $serviceChargeEnd])
+                    ->where('status', '!=', 'cancelled') // Exclude cancelled orders
+                    ->sum('service');
+                
+                // Ambil 80% dari total service charge
+                $serviceCharge = (float)($serviceChargeResult ?? 0) * 0.8;
+            }
+        }
 
         // Dropdown Outlet
         $outlets = DB::table('tbl_data_outlet')
@@ -5006,6 +5036,208 @@ class PayrollReportController extends Controller
             ]);
             
             return 0; // Return 0 if there's an error
+        }
+    }
+
+    /**
+     * Get service charge from orders for selected outlet and month
+     * Returns 80% of total service charge
+     */
+    public function getServiceCharge(Request $request)
+    {
+        try {
+            $outletId = $request->input('outlet_id');
+            $month = $request->input('month');
+            $year = $request->input('year');
+
+            if (!$outletId || !$month || !$year) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet, bulan, dan tahun harus diisi',
+                    'service_charge' => 0
+                ]);
+            }
+
+            // Periode service charge: 1-31 dari bulan yang dipilih
+            $serviceChargeStart = Carbon::create($year, $month, 1)->startOfDay();
+            $serviceChargeEnd = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
+            
+            // Get outlet qr_code untuk filter orders
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->where('status', 'A')
+                ->first(['qr_code']);
+            
+            $serviceCharge = 0;
+            if ($outlet && $outlet->qr_code) {
+                // Sum service charge dari orders
+                $serviceChargeResult = DB::table('orders')
+                    ->where('kode_outlet', $outlet->qr_code)
+                    ->whereBetween('created_at', [$serviceChargeStart, $serviceChargeEnd])
+                    ->where('status', '!=', 'cancelled') // Exclude cancelled orders
+                    ->sum('service');
+                
+                // Ambil 80% dari total service charge
+                $serviceCharge = (float)($serviceChargeResult ?? 0) * 0.8;
+            }
+
+            return response()->json([
+                'success' => true,
+                'service_charge' => $serviceCharge
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting service charge: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil service charge',
+                'service_charge' => 0
+            ]);
+        }
+    }
+
+    /**
+     * Get city ledger amount from orders for selected outlet and month
+     * Sum grand_total from orders with mode='City Ledger'
+     */
+    public function getCityLedgerAmount(Request $request)
+    {
+        try {
+            $outletId = $request->input('outlet_id');
+            $month = $request->input('month');
+            $year = $request->input('year');
+
+            if (!$outletId || !$month || !$year) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet, bulan, dan tahun harus diisi',
+                    'city_ledger_amount' => 0
+                ]);
+            }
+
+            // Periode city ledger: 1-31 dari bulan yang dipilih (sama dengan service charge)
+            $cityLedgerStart = Carbon::create($year, $month, 1)->startOfDay();
+            $cityLedgerEnd = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
+            
+            // Get outlet qr_code untuk filter orders
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->where('status', 'A')
+                ->first(['qr_code']);
+            
+            $cityLedgerAmount = 0;
+            if ($outlet && $outlet->qr_code) {
+                // Sum grand_total dari orders dengan mode='City Ledger'
+                $cityLedgerResult = DB::table('orders')
+                    ->where('kode_outlet', $outlet->qr_code)
+                    ->where('mode', 'City Ledger')
+                    ->whereBetween('created_at', [$cityLedgerStart, $cityLedgerEnd])
+                    ->where('status', '!=', 'cancelled') // Exclude cancelled orders
+                    ->sum('grand_total');
+                
+                $cityLedgerAmount = (float)($cityLedgerResult ?? 0);
+            }
+            
+            // Tambahkan sum MAC dari menu category cost outlet dengan type='wrong_maker'
+            // Periode: 1-31 dari bulan yang dipilih (sama dengan service charge)
+            $wrongMakerMacTotal = 0;
+            if ($outletId) {
+                // Ambil semua header wrong_maker yang sudah approved untuk periode tersebut
+                $wrongMakerHeaders = DB::table('outlet_internal_use_waste_headers as h')
+                    ->where('h.outlet_id', $outletId)
+                    ->where('h.type', 'wrong_maker')
+                    ->where('h.status', 'APPROVED')
+                    ->whereBetween('h.date', [$cityLedgerStart, $cityLedgerEnd])
+                    ->select('h.id', 'h.date', 'h.warehouse_outlet_id')
+                    ->get();
+                
+                // Loop setiap header untuk hitung total MAC
+                foreach ($wrongMakerHeaders as $header) {
+                    // Ambil warehouse_outlet_id dari header
+                    $warehouseOutletId = $header->warehouse_outlet_id;
+                    
+                    // Ambil details untuk header ini
+                    $details = DB::table('outlet_internal_use_waste_details as d')
+                        ->join('items as item', 'd.item_id', '=', 'item.id')
+                        ->leftJoin('outlet_food_inventory_items as fi', 'item.id', '=', 'fi.item_id')
+                        ->where('d.header_id', $header->id)
+                        ->select(
+                            'd.qty',
+                            'd.unit_id',
+                            'fi.id as inventory_item_id',
+                            'item.small_unit_id',
+                            'item.medium_unit_id',
+                            'item.large_unit_id',
+                            'item.small_conversion_qty',
+                            'item.medium_conversion_qty'
+                        )
+                        ->get();
+                    
+                    foreach ($details as $detail) {
+                        // Ambil MAC dari cost history pada tanggal transaksi
+                        $mac = 0;
+                        if ($detail->inventory_item_id) {
+                            $macRow = DB::table('outlet_food_inventory_cost_histories')
+                                ->where('inventory_item_id', $detail->inventory_item_id)
+                                ->where('id_outlet', $outletId)
+                                ->where('warehouse_outlet_id', $warehouseOutletId)
+                                ->where('date', '<=', $header->date)
+                                ->orderByDesc('date')
+                                ->orderByDesc('id')
+                                ->select('mac')
+                                ->first();
+                            
+                            if ($macRow) {
+                                $mac = (float)($macRow->mac ?? 0);
+                            } else {
+                                // Fallback ke last_cost_small dari stock
+                                $stockRow = DB::table('outlet_food_inventory_stocks')
+                                    ->where('inventory_item_id', $detail->inventory_item_id)
+                                    ->where('id_outlet', $outletId)
+                                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                                    ->select('last_cost_small')
+                                    ->first();
+                                
+                                if ($stockRow) {
+                                    $mac = (float)($stockRow->last_cost_small ?? 0);
+                                }
+                            }
+                        }
+                        
+                        // Konversi qty ke small unit
+                        $qty = (float)$detail->qty;
+                        $smallConv = (float)($detail->small_conversion_qty ?: 1);
+                        $mediumConv = (float)($detail->medium_conversion_qty ?: 1);
+                        
+                        $qtySmall = 0;
+                        if ($detail->unit_id == $detail->small_unit_id) {
+                            $qtySmall = $qty;
+                        } elseif ($detail->unit_id == $detail->medium_unit_id) {
+                            $qtySmall = $qty * $smallConv;
+                        } elseif ($detail->unit_id == $detail->large_unit_id) {
+                            $qtySmall = $qty * $mediumConv * $smallConv;
+                        }
+                        
+                        // Hitung subtotal MAC dan tambahkan ke total
+                        $subtotalMac = $qtySmall * $mac;
+                        $wrongMakerMacTotal += $subtotalMac;
+                    }
+                }
+            }
+            
+            // Total city ledger amount = sum grand_total dari orders + sum MAC dari wrong_maker
+            $cityLedgerAmount = $cityLedgerAmount + $wrongMakerMacTotal;
+
+            return response()->json([
+                'success' => true,
+                'city_ledger_amount' => $cityLedgerAmount
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting city ledger amount: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil city ledger amount',
+                'city_ledger_amount' => 0
+            ]);
         }
     }
 }

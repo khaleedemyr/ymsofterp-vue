@@ -228,6 +228,79 @@ watch(() => props.filter, (newFilter) => {
   cityLedgerAmount.value = newFilter?.city_ledger_amount || '';
 }, { immediate: true });
 
+// Function untuk load service charge dari orders
+async function loadServiceCharge() {
+  if (!outletId.value || !month.value || !year.value) {
+    return;
+  }
+
+  try {
+    const response = await axios.get(route('payroll.report.service-charge'), {
+      params: {
+        outlet_id: outletId.value,
+        month: formatMonth(month.value),
+        year: year.value
+      }
+    });
+
+    if (response.data.success) {
+      // Set service charge dengan 80% dari total (sudah dihitung di backend)
+      // Format dengan 2 desimal
+      const scValue = response.data.service_charge || 0;
+      serviceCharge.value = parseFloat(scValue).toFixed(2);
+    }
+  } catch (error) {
+    console.error('Error loading service charge:', error);
+    // Tidak perlu show error, biarkan user input manual jika gagal
+  }
+}
+
+// Function untuk load city ledger amount dari orders
+async function loadCityLedgerAmount() {
+  if (!outletId.value || !month.value || !year.value) {
+    return;
+  }
+
+  try {
+    const response = await axios.get(route('payroll.report.city-ledger-amount'), {
+      params: {
+        outlet_id: outletId.value,
+        month: formatMonth(month.value),
+        year: year.value
+      }
+    });
+
+    if (response.data.success) {
+      // Set city ledger amount dengan format 2 desimal
+      const clValue = response.data.city_ledger_amount || 0;
+      cityLedgerAmount.value = parseFloat(clValue).toFixed(2);
+    }
+  } catch (error) {
+    console.error('Error loading city ledger amount:', error);
+    // Tidak perlu show error, biarkan user input manual jika gagal
+  }
+}
+
+// Function untuk format service charge saat blur (2 desimal)
+function formatServiceCharge() {
+  if (serviceCharge.value) {
+    const value = parseFloat(serviceCharge.value);
+    if (!isNaN(value)) {
+      serviceCharge.value = value.toFixed(2);
+    }
+  }
+}
+
+// Function untuk format city ledger amount saat blur (2 desimal)
+function formatCityLedgerAmount() {
+  if (cityLedgerAmount.value) {
+    const value = parseFloat(cityLedgerAmount.value);
+    if (!isNaN(value)) {
+      cityLedgerAmount.value = value.toFixed(2);
+    }
+  }
+}
+
 // Watch payrollData untuk set default payment_method
 watch(() => props.payrollData, (newData) => {
   if (newData && newData.length > 0) {
@@ -705,10 +778,17 @@ async function rollbackPayroll() {
   }
 }
 
-// Watch for changes in outlet, month, year to check payroll status
-watch([outletId, month, year], () => {
-  if (outletId.value && month.value && year.value) {
+// Watch for changes in outlet, month, year to check payroll status and load service charge & city ledger
+watch([outletId, month, year], async ([newOutletId, newMonth, newYear], [oldOutletId, oldMonth, oldYear]) => {
+  if (newOutletId && newMonth && newYear) {
     checkPayrollStatus();
+    // Auto-load service charge dan city ledger amount saat outlet, bulan, atau tahun berubah
+    if (newOutletId !== oldOutletId || newMonth !== oldMonth || newYear !== oldYear) {
+      await Promise.all([
+        loadServiceCharge(),
+        loadCityLedgerAmount()
+      ]);
+    }
   }
 });
 
@@ -716,6 +796,9 @@ watch([outletId, month, year], () => {
 onMounted(() => {
   if (outletId.value && month.value && year.value) {
     checkPayrollStatus();
+    // Load service charge dan city ledger amount saat pertama kali mount jika outlet, month, dan year sudah dipilih
+    loadServiceCharge();
+    loadCityLedgerAmount();
   }
 });
 </script>
@@ -756,6 +839,7 @@ onMounted(() => {
             min="0"
             placeholder="Service Charge"
             class="form-input rounded-xl shadow-lg w-48"
+            @blur="formatServiceCharge"
           />
           
           <input
@@ -776,14 +860,21 @@ onMounted(() => {
             class="form-input rounded-xl shadow-lg w-48"
           />
           
-          <input
-            v-model="cityLedgerAmount"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="City Ledger Amount"
-            class="form-input rounded-xl shadow-lg w-48"
-          />
+          <div class="flex flex-col">
+            <input
+              v-model="cityLedgerAmount"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="City Ledger Amount"
+              class="form-input rounded-xl shadow-lg w-48"
+              @blur="formatCityLedgerAmount"
+            />
+            <p class="text-xs text-gray-500 mt-1 w-48">
+              <i class="fa-solid fa-info-circle mr-1"></i>
+              Diambil dari: Orders (City Ledger) + MAC Wrong Maker
+            </p>
+          </div>
           
           <div class="relative flex-1 min-w-[300px]">
             <input
