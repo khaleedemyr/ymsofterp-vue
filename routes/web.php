@@ -1101,6 +1101,9 @@ Route::get('/api/stock-opnames/pending-approvals', [\App\Http\Controllers\StockO
 // Stock Opname Adjustment Report Routes
 Route::get('/stock-opname-adjustment-report', [\App\Http\Controllers\StockOpnameAdjustmentReportController::class, 'index'])->name('stock-opname-adjustment-report.index');
 
+// Outlet Stock Opname Report Routes (Only Approved)
+Route::get('/outlet-stock-opname-report', [\App\Http\Controllers\OutletStockOpnameReportController::class, 'index'])->name('outlet-stock-opname-report.index');
+
 // Warehouse Stock Opname Routes
 Route::get('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'index'])->name('warehouse-stock-opnames.index');
 Route::get('/warehouse-stock-opnames/create', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'create'])->name('warehouse-stock-opnames.create');

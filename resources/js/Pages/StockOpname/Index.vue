@@ -5,12 +5,20 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-clipboard-check text-blue-500"></i> Stock Opname
         </h1>
-        <Link
-          :href="route('stock-opnames.create')"
-          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
-        >
-          <i class="fa-solid fa-plus mr-2"></i> Buat Stock Opname Baru
-        </Link>
+        <div class="flex gap-3">
+          <Link
+            :href="route('outlet-stock-opname-report.index')"
+            class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa-solid fa-file-lines mr-2"></i> Report
+          </Link>
+          <Link
+            :href="route('stock-opnames.create')"
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa-solid fa-plus mr-2"></i> Buat Stock Opname Baru
+          </Link>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -246,6 +254,7 @@ function formatDate(date) {
 function getStatusClass(status) {
   const classes = {
     DRAFT: 'bg-gray-100 text-gray-700 border border-gray-300',
+    SAVED: 'bg-blue-100 text-blue-700 border border-blue-300',
     SUBMITTED: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
     APPROVED: 'bg-green-100 text-green-700 border border-green-300',
     REJECTED: 'bg-red-100 text-red-700 border border-red-300',
@@ -257,6 +266,7 @@ function getStatusClass(status) {
 function getStatusIcon(status) {
   const icons = {
     DRAFT: 'fa-solid fa-file',
+    SAVED: 'fa-solid fa-save',
     SUBMITTED: 'fa-solid fa-paper-plane',
     APPROVED: 'fa-solid fa-check-circle',
     REJECTED: 'fa-solid fa-times-circle',

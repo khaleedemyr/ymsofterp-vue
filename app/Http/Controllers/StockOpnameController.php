@@ -234,13 +234,16 @@ class StockOpnameController extends Controller
             // Generate opname number
             $opnameNumber = $this->generateOpnameNumber();
 
+            // Determine status: if autosave, keep as DRAFT; if manual save, set to SAVED
+            $status = ($request->has('autosave') && $request->autosave) ? 'DRAFT' : 'SAVED';
+
             // Create stock opname
             $stockOpname = StockOpname::create([
                 'opname_number' => $opnameNumber,
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'opname_date' => $validated['opname_date'],
-                'status' => 'DRAFT',
+                'status' => $status,
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => $user->id,
             ]);
@@ -512,10 +515,10 @@ class StockOpnameController extends Controller
             abort(403, 'Anda tidak memiliki akses untuk stock opname ini.');
         }
 
-        // Only allow editing if status is DRAFT
+        // Only allow editing if status is DRAFT (not SAVED or other statuses)
         if ($stockOpname->status !== 'DRAFT') {
             return redirect()->route('stock-opnames.show', $stockOpname->id)
-                           ->with('error', 'Stock opname hanya dapat diedit jika status adalah DRAFT.');
+                           ->with('error', 'Stock opname hanya dapat diedit jika belum disimpan. Setelah klik tombol Simpan Draft, data tidak dapat diedit lagi.');
         }
 
         // Get outlets
@@ -600,9 +603,9 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk stock opname ini.']);
         }
 
-        // Only allow editing if status is DRAFT
+        // Only allow editing if status is DRAFT (not SAVED or other statuses)
         if ($stockOpname->status !== 'DRAFT') {
-            return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika status adalah DRAFT.']);
+            return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika belum disimpan. Setelah klik tombol Simpan Draft, data tidak dapat diedit lagi.']);
         }
 
         // For autosave, allow empty items array
@@ -637,11 +640,15 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
+            // Determine status: if autosave, keep as DRAFT; if manual save, set to SAVED
+            $status = ($request->has('autosave') && $request->autosave) ? 'DRAFT' : 'SAVED';
+
             // Update stock opname header
             $stockOpname->update([
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'opname_date' => $validated['opname_date'],
+                'status' => $status,
                 'notes' => $validated['notes'] ?? null,
                 'updated_by' => $user->id,
             ]);
@@ -923,7 +930,7 @@ class StockOpnameController extends Controller
         }
 
         if (!$stockOpname->canBeSubmitted()) {
-            return back()->withErrors(['error' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT dan ada items.']);
+            return back()->withErrors(['error' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT atau SAVED dan ada items.']);
         }
 
         $validated = $request->validate([

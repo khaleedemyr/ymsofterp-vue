@@ -86,6 +86,27 @@
               </div>
             </div>
 
+            <div v-if="stockOpname.status === 'SAVED'" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 class="font-semibold text-blue-800 mb-2">Aksi Tersedia</h4>
+              <p class="text-sm text-blue-700 mb-3">Data sudah disimpan dan tidak dapat diedit lagi.</p>
+              <div class="flex flex-col gap-2">
+                <button
+                  @click="submitForApprovalDirect"
+                  :disabled="!stockOpname.approvers || stockOpname.approvers.length === 0"
+                  class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  :title="(!stockOpname.approvers || stockOpname.approvers.length === 0) ? 'Tambahkan approvers terlebih dahulu' : 'Submit untuk Approval'"
+                >
+                  Submit untuk Approval
+                </button>
+                <button
+                  @click="showSubmitModal = true"
+                  class="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold"
+                >
+                  <i class="fa-solid fa-user-plus mr-2"></i> Submit dengan Approvers Baru
+                </button>
+              </div>
+            </div>
+
             <div v-if="canApprove && stockOpname.status === 'SUBMITTED'" class="bg-green-50 border border-green-200 rounded-lg p-4">
               <h4 class="font-semibold text-green-800 mb-2">Approval</h4>
               <div class="flex gap-2">
@@ -346,6 +367,7 @@ function formatCurrency(val) {
 function getStatusClass(status) {
   const classes = {
     DRAFT: 'bg-gray-200 text-gray-800',
+    SAVED: 'bg-blue-200 text-blue-800',
     SUBMITTED: 'bg-yellow-200 text-yellow-800',
     APPROVED: 'bg-green-200 text-green-800',
     REJECTED: 'bg-red-200 text-red-800',
