@@ -279,8 +279,21 @@ const submit = () => {
   form.salary_to = gajiPokok + tunjangan;
   
   // Unformat salary_from (remove commas) before submit
-  if (form.salary_from) {
-    form.salary_from = parseInt(unformatCurrency(form.salary_from)) || 0;
+  // IMPORTANT: Always process salary_from if salary_change is true, even if it's empty
+  // This ensures the field is sent to backend and validation passes
+  if (form.salary_change) {
+    // Always ensure salary_from is a number, default to 0 if empty/null/undefined
+    if (form.salary_from && form.salary_from !== '' && form.salary_from !== null) {
+      const unformatted = unformatCurrency(form.salary_from);
+      form.salary_from = unformatted ? parseInt(unformatted) || 0 : 0;
+    } else {
+      // If salary_from is empty/null/undefined, set to 0
+      // This is required by backend when salary_change = true
+      form.salary_from = 0;
+    }
+  } else {
+    // If salary_change is false, set to null (backend will handle this)
+    form.salary_from = null;
   }
   
   // Extract string values from multiselect objects

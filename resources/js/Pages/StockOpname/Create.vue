@@ -400,6 +400,8 @@ const draftId = ref(null);
 const autosaveStatus = ref('idle'); // idle, saving, saved, error
 const autosaveTimeout = ref(null);
 const lastSavedAt = ref(null);
+const autosaveInProgress = ref(false); // Flag to prevent multiple simultaneous autosaves
+const lastAutosaveData = ref(null); // Track last saved data to avoid unnecessary saves
 
 // Autosave function
 async function autosave() {
@@ -413,6 +415,31 @@ async function autosave() {
     return;
   }
 
+  // PERFORMANCE: Prevent multiple simultaneous autosaves
+  if (autosaveInProgress.value) {
+    return;
+  }
+
+  // PERFORMANCE: Skip if no significant changes (compare with last saved data)
+  const currentData = JSON.stringify({
+    outlet_id: form.outlet_id,
+    warehouse_outlet_id: form.warehouse_outlet_id,
+    opname_date: form.opname_date,
+    notes: form.notes,
+    items: form.items.map(item => ({
+      inventory_item_id: item.inventory_item_id,
+      qty_physical_small: item.qty_physical_small,
+      qty_physical_medium: item.qty_physical_medium,
+      qty_physical_large: item.qty_physical_large,
+      reason: item.reason,
+    })),
+  });
+  
+  if (lastAutosaveData.value === currentData) {
+    return; // No changes, skip autosave
+  }
+
+  autosaveInProgress.value = true;
   autosaveStatus.value = 'saving';
 
   try {
@@ -469,6 +496,7 @@ async function autosave() {
       }
       autosaveStatus.value = 'saved';
       lastSavedAt.value = new Date();
+      lastAutosaveData.value = currentData; // Update last saved data
       
       // Clear saved status after 3 seconds
       setTimeout(() => {
@@ -487,20 +515,32 @@ async function autosave() {
         autosaveStatus.value = 'idle';
       }
     }, 5000);
+  } finally {
+    autosaveInProgress.value = false;
   }
 }
 
-// Debounced autosave
+// PERFORMANCE OPTIMIZATION: Debounced autosave with longer delay
+// Increased from 2s to 8s to reduce server load when many users are editing
 function triggerAutosave() {
+  // Don't trigger if autosave is already in progress
+  if (autosaveInProgress.value) {
+    return;
+  }
+
   // Clear existing timeout
   if (autosaveTimeout.value) {
     clearTimeout(autosaveTimeout.value);
   }
 
-  // Set new timeout (2 seconds after last change)
+  // PERFORMANCE: Increased debounce from 2s to 8s to reduce frequency
+  // This significantly reduces server load when 50+ users are editing simultaneously
   autosaveTimeout.value = setTimeout(() => {
-    autosave();
-  }, 2000);
+    // Double check before autosave
+    if (!autosaveInProgress.value && !submitting.value) {
+      autosave();
+    }
+  }, 8000); // 8 seconds debounce
 }
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');

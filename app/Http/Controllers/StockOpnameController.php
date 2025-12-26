@@ -266,13 +266,33 @@ class StockOpnameController extends Controller
                 });
             }
             
-            foreach ($items as $itemData) {
-                // Get system qty from inventory stocks
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $itemData['inventory_item_id'])
+            // PERFORMANCE OPTIMIZATION: Batch query untuk stocks (fix N+1 query problem)
+            // Get all inventory item IDs
+            $inventoryItemIds = array_column($items, 'inventory_item_id');
+            
+            // Batch fetch all stocks in one query instead of querying per item
+            $stocks = [];
+            if (!empty($inventoryItemIds)) {
+                $stocksQuery = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_id'])
-                    ->first();
+                    ->get();
+                
+                // Index by inventory_item_id for fast lookup
+                foreach ($stocksQuery as $stock) {
+                    $stocks[$stock->inventory_item_id] = $stock;
+                }
+            }
+            
+            // Prepare items for batch insert
+            $itemsToInsert = [];
+            
+            foreach ($items as $itemData) {
+                $inventoryItemId = $itemData['inventory_item_id'];
+                
+                // Get stock from batch result
+                $stock = $stocks[$inventoryItemId] ?? null;
 
                 if (!$stock) {
                     continue; // Skip if stock not found
@@ -296,23 +316,6 @@ class StockOpnameController extends Controller
                 $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
                     ? (float)$itemData['qty_physical_large'] 
                     : $qtySystemLarge;
-                
-                // Log for debugging
-                \Log::info('Stock Opname Item Processing', [
-                    'inventory_item_id' => $itemData['inventory_item_id'],
-                    'qty_system_small' => $qtySystemSmall,
-                    'qty_system_medium' => $qtySystemMedium,
-                    'qty_system_large' => $qtySystemLarge,
-                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
-                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
-                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
-                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
-                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
-                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
-                    'qty_physical_small_final' => $qtyPhysicalSmall,
-                    'qty_physical_medium_final' => $qtyPhysicalMedium,
-                    'qty_physical_large_final' => $qtyPhysicalLarge,
-                ]);
 
                 // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
@@ -336,9 +339,10 @@ class StockOpnameController extends Controller
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
 
-                StockOpnameItem::create([
+                // Prepare for batch insert
+                $itemsToInsert[] = [
                     'stock_opname_id' => $stockOpname->id,
-                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'inventory_item_id' => $inventoryItemId,
                     'qty_system_small' => $qtySystemSmall,
                     'qty_system_medium' => $qtySystemMedium,
                     'qty_system_large' => $qtySystemLarge,
@@ -352,7 +356,14 @@ class StockOpnameController extends Controller
                     'mac_before' => $mac,
                     'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
                     'value_adjustment' => $valueAdjustment,
-                ]);
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            
+            // PERFORMANCE OPTIMIZATION: Batch insert all items at once
+            if (!empty($itemsToInsert)) {
+                StockOpnameItem::insert($itemsToInsert);
             }
 
             // Save approvers if provided (only if status is still DRAFT)
@@ -635,40 +646,51 @@ class StockOpnameController extends Controller
                 'updated_by' => $user->id,
             ]);
 
-            // Delete existing items
-            $stockOpname->items()->delete();
+            // PERFORMANCE OPTIMIZATION: Use upsert pattern instead of delete & recreate
+            // Get existing items indexed by inventory_item_id
+            $existingItems = $stockOpname->items()->get()->keyBy('inventory_item_id');
 
-            // Create new items (skip if items array is empty for autosave)
+            // Process new items (skip if items array is empty for autosave)
             $items = $validated['items'] ?? [];
             
             // For autosave, only save items that have been filled in
-            // Item is considered "filled in" if:
-            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
-            // 2. Has reason filled in
-            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
             if ($request->has('autosave') && $request->autosave) {
                 $items = array_filter($items, function($itemData) {
-                    // Check if any physical qty field has been explicitly set (including 0)
                     $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
                     $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
                     $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
                     $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
-                    
-                    // Item is filled if any qty field is set OR reason is filled
                     return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
                 });
             }
             
-            foreach ($items as $itemData) {
-                // Get system qty from inventory stocks
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $itemData['inventory_item_id'])
+            // PERFORMANCE OPTIMIZATION: Batch query untuk stocks (fix N+1 query problem)
+            $inventoryItemIds = array_column($items, 'inventory_item_id');
+            $stocks = [];
+            if (!empty($inventoryItemIds)) {
+                $stocksQuery = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_id'])
-                    ->first();
-
+                    ->get();
+                
+                foreach ($stocksQuery as $stock) {
+                    $stocks[$stock->inventory_item_id] = $stock;
+                }
+            }
+            
+            // Prepare items for batch operations
+            $itemsToInsert = [];
+            $itemsToUpdate = [];
+            $inventoryItemIdsToKeep = [];
+            
+            foreach ($items as $itemData) {
+                $inventoryItemId = $itemData['inventory_item_id'];
+                $inventoryItemIdsToKeep[] = $inventoryItemId;
+                
+                $stock = $stocks[$inventoryItemId] ?? null;
                 if (!$stock) {
-                    continue; // Skip if stock not found
+                    continue;
                 }
 
                 $qtySystemSmall = $stock->qty_small ?? 0;
@@ -676,10 +698,6 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
 
-                // Get physical qty from request
-                // Check if value is explicitly provided (not null and not empty string)
-                // If null or empty string, use system qty (tombol "=")
-                // If 0 or any numeric value is provided, use that value
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
                     ? (float)$itemData['qty_physical_small'] 
                     : $qtySystemSmall;
@@ -689,35 +707,15 @@ class StockOpnameController extends Controller
                 $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
                     ? (float)$itemData['qty_physical_large'] 
                     : $qtySystemLarge;
-                
-                // Log for debugging
-                \Log::info('Stock Opname Item Update Processing', [
-                    'inventory_item_id' => $itemData['inventory_item_id'],
-                    'qty_system_small' => $qtySystemSmall,
-                    'qty_system_medium' => $qtySystemMedium,
-                    'qty_system_large' => $qtySystemLarge,
-                    'qty_physical_small_input' => $itemData['qty_physical_small'] ?? 'not set',
-                    'qty_physical_medium_input' => $itemData['qty_physical_medium'] ?? 'not set',
-                    'qty_physical_large_input' => $itemData['qty_physical_large'] ?? 'not set',
-                    'qty_physical_small_exists' => array_key_exists('qty_physical_small', $itemData),
-                    'qty_physical_medium_exists' => array_key_exists('qty_physical_medium', $itemData),
-                    'qty_physical_large_exists' => array_key_exists('qty_physical_large', $itemData),
-                    'qty_physical_small_final' => $qtyPhysicalSmall,
-                    'qty_physical_medium_final' => $qtyPhysicalMedium,
-                    'qty_physical_large_final' => $qtyPhysicalLarge,
-                ]);
 
-                // Calculate difference
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
 
-                // Validate: if there's a difference, reason is required
                 $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
                 $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
                 
                 if ($hasDifference && !$hasReason) {
-                    // Skip autosave validation for reason
                     if (!$request->has('autosave') || !$request->autosave) {
                         DB::rollBack();
                         return back()->withErrors([
@@ -726,12 +724,9 @@ class StockOpnameController extends Controller
                     }
                 }
 
-                // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
-
-                StockOpnameItem::create([
-                    'stock_opname_id' => $stockOpname->id,
-                    'inventory_item_id' => $itemData['inventory_item_id'],
+                
+                $itemDataToSave = [
                     'qty_system_small' => $qtySystemSmall,
                     'qty_system_medium' => $qtySystemMedium,
                     'qty_system_large' => $qtySystemLarge,
@@ -743,9 +738,51 @@ class StockOpnameController extends Controller
                     'qty_diff_large' => $qtyDiffLarge,
                     'reason' => $itemData['reason'] ?? null,
                     'mac_before' => $mac,
-                    'mac_after' => $mac, // MAC tidak berubah (sesuai rekomendasi)
+                    'mac_after' => $mac,
                     'value_adjustment' => $valueAdjustment,
-                ]);
+                ];
+
+                // Check if item already exists
+                if ($existingItems->has($inventoryItemId)) {
+                    // Update existing item
+                    $existingItem = $existingItems[$inventoryItemId];
+                    $itemsToUpdate[] = [
+                        'id' => $existingItem->id,
+                        ...$itemDataToSave,
+                        'updated_at' => now(),
+                    ];
+                } else {
+                    // Insert new item
+                    $itemsToInsert[] = [
+                        'stock_opname_id' => $stockOpname->id,
+                        'inventory_item_id' => $inventoryItemId,
+                        ...$itemDataToSave,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+            }
+            
+            // PERFORMANCE OPTIMIZATION: Batch operations
+            // Delete items that are no longer in the list (only if not autosave)
+            if (!$request->has('autosave') || !$request->autosave) {
+                $stockOpname->items()
+                    ->whereNotIn('inventory_item_id', $inventoryItemIdsToKeep)
+                    ->delete();
+            }
+            
+            // Batch update existing items
+            if (!empty($itemsToUpdate)) {
+                foreach ($itemsToUpdate as $itemUpdate) {
+                    $id = $itemUpdate['id'];
+                    unset($itemUpdate['id']);
+                    StockOpnameItem::where('id', $id)->update($itemUpdate);
+                }
+            }
+            
+            // Batch insert new items
+            if (!empty($itemsToInsert)) {
+                StockOpnameItem::insert($itemsToInsert);
             }
 
             // Save approvers if provided (only if status is still DRAFT)
