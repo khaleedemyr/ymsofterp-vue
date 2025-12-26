@@ -672,6 +672,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
 
 Route::get('/items/import/template', [ItemController::class, 'downloadImportTemplate'])->name('items.import.template');
 Route::get('/api/items/for-modifier-bom', [App\Http\Controllers\ItemController::class, 'apiForModifierBom']);
+Route::get('/api/items/categories-by-region-outlet', [App\Http\Controllers\ItemController::class, 'getCategoriesByRegionOutlet']);
 Route::get('/items/bom/import/template', [ItemController::class, 'downloadBomImportTemplate'])->name('items.bom.import.template');
 Route::post('/items/import/preview', [ItemController::class, 'previewImport'])->name('items.import.preview');
 Route::post('/items/bom/import/preview', [ItemController::class, 'previewBomImport'])->name('items.bom.import.preview');

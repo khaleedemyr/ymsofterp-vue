@@ -164,13 +164,14 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
 
                     // Validasi hash untuk memastikan data tidak berubah
                     $expectedHash = md5($this->getRowValue($row, 'item_id') . $this->getRowValue($row, 'sku') . $this->getRowValue($row, 'item_name'));
-                    if ($this->getRowValue($row, 'validation_jangan_diubah') !== $expectedHash) {
+                    $validationHash = $this->getRowValue($row, 'validation_hash_jangan_diubah') ?: $this->getRowValue($row, 'validation_jangan_diubah');
+                    if ($validationHash && $validationHash !== $expectedHash) {
                         \Log::warning('PriceUpdateImport@collection - Hash mismatch, trying fallback lookup', [
                             'item_id' => $this->getRowValue($row, 'item_id'),
                             'template_sku' => $this->getRowValue($row, 'sku'),
                             'item_name' => $this->getRowValue($row, 'item_name'),
                             'expected_hash' => $expectedHash,
-                            'actual_hash' => $this->getRowValue($row, 'validation_jangan_diubah')
+                            'actual_hash' => $validationHash
                         ]);
                         
                         // Fallback: cari item berdasarkan ID dan nama saja (ignore SKU mismatch)
@@ -191,15 +192,54 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
                         ]);
                     } else {
                         // Cek item dengan hash yang match
-                        $item = Item::where('id', $this->getRowValue($row, 'item_id'))
-                            ->where('sku', $this->getRowValue($row, 'sku'))
-                            ->where('name', $this->getRowValue($row, 'item_name'))
+                        $itemId = $this->getRowValue($row, 'item_id');
+                        $sku = $this->getRowValue($row, 'sku');
+                        $itemName = $this->getRowValue($row, 'item_name');
+                        
+                        // Cari item - coba dengan ID, SKU, dan name dulu
+                        $item = Item::where('id', $itemId)
+                            ->where('sku', $sku)
+                            ->where('name', $itemName)
                             ->where('status', 'active')
                             ->first();
                         
+                        // Jika tidak ditemukan, coba dengan ID dan name saja (SKU mungkin berubah)
                         if (!$item) {
-                            throw new \Exception('Item tidak ditemukan atau tidak aktif');
+                            \Log::warning('PriceUpdateImport@collection - Item not found with exact match, trying fallback', [
+                                'item_id' => $itemId,
+                                'sku' => $sku,
+                                'item_name' => $itemName
+                            ]);
+                            
+                            $item = Item::where('id', $itemId)
+                                ->where('name', $itemName)
+                                ->where('status', 'active')
+                                ->first();
                         }
+                        
+                        // Jika masih tidak ditemukan, coba dengan ID saja
+                        if (!$item) {
+                            \Log::warning('PriceUpdateImport@collection - Item not found with name match, trying ID only', [
+                                'item_id' => $itemId,
+                                'sku' => $sku,
+                                'item_name' => $itemName
+                            ]);
+                            
+                            $item = Item::where('id', $itemId)
+                                ->where('status', 'active')
+                                ->first();
+                        }
+                        
+                        if (!$item) {
+                            throw new \Exception("Item tidak ditemukan atau tidak aktif. ID: {$itemId}, SKU: {$sku}, Name: {$itemName}");
+                        }
+                        
+                        \Log::info('PriceUpdateImport@collection - Item found', [
+                            'item_id' => $item->id,
+                            'item_name' => $item->name,
+                            'db_sku' => $item->sku,
+                            'template_sku' => $sku
+                        ]);
                     }
 
                     \Log::info('PriceUpdateImport@collection - Item found', [
@@ -217,39 +257,126 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
                     $newPriceRaw = null;
                     if (!empty($this->getRowValue($row, 'new_price'))) {
                         $newPriceRaw = $this->getRowValue($row, 'new_price');
+                    } elseif (!empty($this->getRowValue($row, 'new_price_isi_untuk_update_kosongkan_jika_tidak_diubah'))) {
+                        $newPriceRaw = $this->getRowValue($row, 'new_price_isi_untuk_update_kosongkan_jika_tidak_diubah');
                     } elseif (!empty($this->getRowValue($row, 'new_price_kosongkan_jika_tidak_diupdate'))) {
                         $newPriceRaw = $this->getRowValue($row, 'new_price_kosongkan_jika_tidak_diupdate');
                     }
                     
-                    // Parse new price dan price type dari format "14152.94 region" atau "14152.94 all"
+                    // Ambil region/outlet dari kolom - cek berbagai kemungkinan nama kolom
+                    // Excel dengan WithHeadingRow biasanya mengubah header menjadi lowercase dengan spasi atau underscore
+                    // "Region/Outlet Name" bisa menjadi: "region/outlet name", "region_outlet_name", dll
+                    $possibleKeys = [
+                        'regionoutlet_name',   // Format yang muncul di log (tanpa underscore di awal)
+                        'region/outlet name',   // Lowercase dengan spasi (paling umum)
+                        'Region/Outlet Name',   // Original dengan kapital
+                        'region_outlet_name',  // Underscore untuk slash dan spasi
+                        'region_outlet',     // Tanpa "name"
+                        'regionoutlet',        // Tanpa spasi dan slash
+                        'Region/Outlet',       // Tanpa "Name"
+                    ];
+                    
+                    $regionOutlet = null;
+                    foreach ($possibleKeys as $key) {
+                        $value = $this->getRowValue($row, $key);
+                        if (!empty($value) && $value !== 'All') {
+                            $regionOutlet = $value;
+                            break;
+                        }
+                    }
+                    
+                    // Jika masih kosong, coba akses langsung dari array dengan key yang mungkin
+                    if (empty($regionOutlet)) {
+                        // Coba akses langsung dari array jika row adalah array
+                        if (is_array($row)) {
+                            // Cek berbagai variasi key
+                            $directKeys = ['regionoutlet_name', 'region_outlet_name', 'region/outlet name', 'Region/Outlet Name'];
+                            foreach ($directKeys as $key) {
+                                if (isset($row[$key]) && !empty($row[$key]) && $row[$key] !== 'All') {
+                                    $regionOutlet = $row[$key];
+                                    break;
+                                }
+                            }
+                            
+                            // Jika masih kosong, coba ambil dari array index (kolom ke-5, index 4)
+                            if (empty($regionOutlet)) {
+                                $rowArray = array_values($row);
+                                // Kolom: Item ID(0), SKU(1), Item Name(2), Category(3), Region/Outlet Name(4), Current Price(5), New Price(6), Validation(7)
+                                if (isset($rowArray[4]) && !empty($rowArray[4]) && $rowArray[4] !== 'All') {
+                                    $regionOutlet = $rowArray[4];
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Jika masih kosong, set ke 'All'
+                    if (empty($regionOutlet)) {
+                        $regionOutlet = 'All';
+                    }
+                    
+                    \Log::info('PriceUpdateImport@collection - Region/Outlet parsing', [
+                        'item_name' => $this->getRowValue($row, 'item_name'),
+                        'parsed_region_outlet' => $regionOutlet,
+                        'row_keys' => is_array($row) ? array_keys($row) : (is_object($row) ? array_keys((array)$row) : []),
+                        'regionoutlet_name_direct' => is_array($row) && isset($row['regionoutlet_name']) ? $row['regionoutlet_name'] : 'NOT_FOUND'
+                    ]);
+                    
+                    // Auto-detect price type berdasarkan region/outlet name
+                    // Jika regionOutlet = 'All', maka priceType = 'all'
+                    // Jika regionOutlet adalah nama region, maka priceType = 'region'
+                    // Jika regionOutlet adalah nama outlet, maka priceType = 'outlet'
+                    if ($regionOutlet && $regionOutlet !== 'All' && $regionOutlet !== '') {
+                        // Cek apakah ini nama region
+                        $region = \DB::table('regions')->where('name', $regionOutlet)->first();
+                        if ($region) {
+                            $priceType = 'region';
+                            \Log::info('PriceUpdateImport@collection - Detected as region', [
+                                'region_outlet' => $regionOutlet,
+                                'region_id' => $region->id,
+                                'item_name' => $this->getRowValue($row, 'item_name')
+                            ]);
+                        } else {
+                            // Cek apakah ini nama outlet
+                            $outlet = \DB::table('tbl_data_outlet')->where('nama_outlet', $regionOutlet)->first();
+                            if ($outlet) {
+                                $priceType = 'outlet';
+                                \Log::info('PriceUpdateImport@collection - Detected as outlet', [
+                                    'region_outlet' => $regionOutlet,
+                                    'outlet_id' => $outlet->id_outlet,
+                                    'item_name' => $this->getRowValue($row, 'item_name')
+                                ]);
+                            } else {
+                                // Jika tidak ditemukan, default ke 'all'
+                                $priceType = 'all';
+                                \Log::warning('PriceUpdateImport@collection - Region/Outlet not found, defaulting to all', [
+                                    'region_outlet' => $regionOutlet,
+                                    'item_name' => $this->getRowValue($row, 'item_name')
+                                ]);
+                            }
+                        }
+                    } else {
+                        // Jika regionOutlet kosong atau 'All', set ke 'all'
+                        $priceType = 'all';
+                        \Log::info('PriceUpdateImport@collection - Region/Outlet is All or empty, using all', [
+                            'region_outlet' => $regionOutlet,
+                            'item_name' => $this->getRowValue($row, 'item_name')
+                        ]);
+                    }
+                    
+                    // Parse new price
                     if ($newPriceRaw) {
-                        // Cek apakah new_price_raw sudah dalam format "price type" (e.g., "39200.00 all")
+                        // Cek apakah new_price_raw masih dalam format lama "price type" (e.g., "39200.00 all")
                         if (is_string($newPriceRaw) && strpos($newPriceRaw, ' ') !== false) {
                             $parts = explode(' ', trim($newPriceRaw));
                             if (count($parts) >= 2) {
+                                // Format lama: "14152.94 region" - ambil harga saja, ignore type karena sudah di-detect dari region/outlet
                                 $newPrice = $parts[0];
-                                $priceType = $parts[1];
-                                
-                                \Log::info('PriceUpdateImport@collection - Parsed from combined field', [
-                                    'item_name' => $this->getRowValue($row, 'item_name'),
-                                    'new_price_raw' => $newPriceRaw,
-                                    'parsed_price' => $newPrice,
-                                    'parsed_type' => $priceType
-                                ]);
                             } else {
                                 $newPrice = $newPriceRaw;
                             }
                         } else {
-                            // Jika bukan format combined, gunakan kolom terpisah
+                            // Format baru: kolom terpisah
                             $newPrice = $newPriceRaw;
-                            $priceType = $this->getRowValue($row, 'price_type', 'all');
-                        }
-                        
-                        // Ambil region/outlet dari kolom terpisah
-                        if (!empty($this->getRowValue($row, 'region_outlet'))) {
-                            $regionOutlet = $this->getRowValue($row, 'region_outlet');
-                        } elseif (!empty($this->getRowValue($row, 'regionoutlet'))) {
-                            $regionOutlet = $this->getRowValue($row, 'regionoutlet');
                         }
                     }
                     
@@ -257,13 +384,15 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
                         'item_name' => $this->getRowValue($row, 'item_name'),
                         'new_price_raw' => $newPriceRaw,
                         'parsed_new_price' => $newPrice,
-                        'parsed_price_type' => $priceType,
+                        'detected_price_type' => $priceType,
                         'parsed_region_outlet' => $regionOutlet,
                         'new_price_direct' => $this->getRowValue($row, 'new_price', 'NOT_FOUND'),
-                        'new_price_long' => $this->getRowValue($row, 'new_price_kosongkan_jika_tidak_diupdate', 'NOT_FOUND'),
-                        'price_type_column' => $this->getRowValue($row, 'price_type', 'NOT_FOUND'),
+                        'new_price_long' => $this->getRowValue($row, 'new_price_isi_untuk_update_kosongkan_jika_tidak_diubah', 'NOT_FOUND'),
+                        'region_outlet_name_column' => $this->getRowValue($row, 'region_outlet_name', 'NOT_FOUND'),
+                        'Region/Outlet Name_column' => $this->getRowValue($row, 'Region/Outlet Name', 'NOT_FOUND'),
                         'region_outlet_column' => $this->getRowValue($row, 'region_outlet', 'NOT_FOUND'),
-                        'regionoutlet_column' => $this->getRowValue($row, 'regionoutlet', 'NOT_FOUND')
+                        'regionoutlet_column' => $this->getRowValue($row, 'regionoutlet', 'NOT_FOUND'),
+                        'all_row_keys' => is_array($row) ? array_keys($row) : (is_object($row) ? array_keys((array)$row) : [])
                     ]);
                     
                     if (empty($newPrice) || $newPrice === '' || $newPrice === null) {
@@ -288,14 +417,7 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
                     $newPrice = (float) $newPrice;
                     $currentPrice = (float) ($this->getRowValue($row, 'current_price', 0));
                     
-                    // Gunakan priceType dan regionOutlet yang sudah di-parse dari new_price
-                    // Jika tidak ada di new_price, gunakan dari kolom terpisah
-                    if ($priceType === 'all' && !empty($this->getRowValue($row, 'price_type'))) {
-                        $priceType = $this->getRowValue($row, 'price_type');
-                    }
-                    if ($regionOutlet === 'All' && !empty($this->getRowValue($row, 'region_outlet'))) {
-                        $regionOutlet = $this->getRowValue($row, 'region_outlet');
-                    }
+                    // PriceType sudah di-detect otomatis dari region/outlet name
 
                     \Log::info('PriceUpdateImport@collection - Price validation', [
                         'item_name' => $this->getRowValue($row, 'item_name'),
@@ -445,28 +567,44 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
         $outletId = null;
         $availabilityPriceType = 'all';
 
-        if ($priceType === 'region' && $regionOutlet !== 'All') {
+        // Normalize priceType
+        $priceType = strtolower(trim($priceType));
+
+        // Pastikan regionOutlet tidak kosong dan bukan 'All'
+        // SELALU cari region/outlet berdasarkan nama, tidak peduli priceType yang dikirim
+        if ($regionOutlet && $regionOutlet !== 'All' && $regionOutlet !== '' && trim($regionOutlet) !== '') {
+            // SELALU coba cari region dulu
             $region = \DB::table('regions')->where('name', $regionOutlet)->first();
-            \Log::info('PriceUpdateImport@updateItemPrice - Region lookup', [
-                'region_outlet' => $regionOutlet,
-                'region_found' => $region ? true : false,
-                'region_id' => $region ? $region->id : null
-            ]);
             if ($region) {
                 $regionId = $region->id;
                 $availabilityPriceType = 'region';
+                \Log::info('PriceUpdateImport@updateItemPrice - Found as region', [
+                    'region_outlet' => $regionOutlet,
+                    'region_id' => $region->id,
+                    'original_price_type' => $priceType
+                ]);
+            } else {
+                // Jika bukan region, coba cari outlet
+                $outlet = \DB::table('tbl_data_outlet')->where('nama_outlet', $regionOutlet)->first();
+                if ($outlet) {
+                    $outletId = $outlet->id_outlet;
+                    $availabilityPriceType = 'outlet';
+                    \Log::info('PriceUpdateImport@updateItemPrice - Found as outlet', [
+                        'region_outlet' => $regionOutlet,
+                        'outlet_id' => $outlet->id_outlet,
+                        'original_price_type' => $priceType
+                    ]);
+                } else {
+                    // Jika tidak ditemukan sama sekali, throw error
+                    throw new \Exception("Region/Outlet '{$regionOutlet}' tidak ditemukan untuk item '{$item->name}'. Pastikan nama region/outlet sesuai dengan data master.");
+                }
             }
-        } elseif ($priceType === 'outlet' && $regionOutlet !== 'All') {
-            $outlet = \DB::table('tbl_data_outlet')->where('nama_outlet', $regionOutlet)->first();
-            \Log::info('PriceUpdateImport@updateItemPrice - Outlet lookup', [
-                'region_outlet' => $regionOutlet,
-                'outlet_found' => $outlet ? true : false,
-                'outlet_id' => $outlet ? $outlet->id_outlet : null
+        } else {
+            // Jika regionOutlet kosong atau 'All', baru gunakan type 'all'
+            $availabilityPriceType = 'all';
+            \Log::info('PriceUpdateImport@updateItemPrice - Using all type', [
+                'region_outlet' => $regionOutlet
             ]);
-            if ($outlet) {
-                $outletId = $outlet->id_outlet;
-                $availabilityPriceType = 'outlet';
-            }
         }
 
         \Log::info('PriceUpdateImport@updateItemPrice - Before updateOrCreate', [
@@ -474,32 +612,142 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
             'region_id' => $regionId,
             'outlet_id' => $outletId,
             'availability_price_type' => $availabilityPriceType,
-            'new_price' => $newPrice
+            'new_price' => $newPrice,
+            'price_type_input' => $priceType,
+            'region_outlet_input' => $regionOutlet
         ]);
 
-        // Cek existing price sebelum update
+        // Cari existing price berdasarkan item_id, region_id, outlet_id, dan availability_price_type
+        // Ini penting untuk memastikan kita update price yang tepat, bukan membuat baru
         $existingPrice = ItemPrice::where('item_id', $item->id)
-            ->where('region_id', $regionId)
-            ->where('outlet_id', $outletId)
+            ->where(function($q) use ($regionId, $outletId, $availabilityPriceType) {
+                // Match berdasarkan region_id dan outlet_id
+                if ($availabilityPriceType === 'region' && $regionId) {
+                    $q->where('region_id', $regionId)
+                      ->whereNull('outlet_id');
+                } elseif ($availabilityPriceType === 'outlet' && $outletId) {
+                    $q->where('outlet_id', $outletId)
+                      ->whereNull('region_id');
+                } else {
+                    // Type 'all'
+                    $q->whereNull('region_id')
+                      ->whereNull('outlet_id');
+                }
+            })
             ->first();
         
         \Log::info('PriceUpdateImport@updateItemPrice - Existing price check', [
             'existing_price_found' => $existingPrice ? true : false,
-            'existing_price' => $existingPrice ? $existingPrice->price : null
+            'existing_price' => $existingPrice ? $existingPrice->price : null,
+            'existing_price_type' => $existingPrice ? $existingPrice->availability_price_type : null,
+            'existing_region_id' => $existingPrice ? $existingPrice->region_id : null,
+            'existing_outlet_id' => $existingPrice ? $existingPrice->outlet_id : null
         ]);
 
-        // Update atau create price
-        $result = ItemPrice::updateOrCreate(
-            [
+        // Update atau create price dengan kondisi yang tepat
+        // Pastikan kita update price yang tepat berdasarkan region_id/outlet_id yang spesifik
+        // JANGAN update type 'all' jika ada region/outlet yang spesifik
+        if ($availabilityPriceType === 'region' && $regionId) {
+            // Update price untuk region spesifik - cari existing dengan kondisi yang tepat
+            $existing = ItemPrice::where('item_id', $item->id)
+                ->where('region_id', $regionId)
+                ->whereNull('outlet_id')
+                ->first();
+            
+            if ($existing) {
+                // Update existing
+                $existing->update([
+                    'price' => $newPrice,
+                    'availability_price_type' => 'region',
+                ]);
+                $result = $existing;
+            } else {
+                // Create new
+                $result = ItemPrice::create([
+                    'item_id' => $item->id,
+                    'region_id' => $regionId,
+                    'outlet_id' => null,
+                    'price' => $newPrice,
+                    'availability_price_type' => 'region',
+                ]);
+            }
+            
+            \Log::info('PriceUpdateImport@updateItemPrice - Updated/Created region price', [
                 'item_id' => $item->id,
                 'region_id' => $regionId,
-                'outlet_id' => $outletId,
-            ],
-            [
+                'region_name' => $regionOutlet,
                 'price' => $newPrice,
-                'availability_price_type' => $availabilityPriceType,
-            ]
-        );
+                'was_recently_created' => $result->wasRecentlyCreated ?? false
+            ]);
+        } elseif ($availabilityPriceType === 'outlet' && $outletId) {
+            // Update price untuk outlet spesifik - cari existing dengan kondisi yang tepat
+            $existing = ItemPrice::where('item_id', $item->id)
+                ->where('outlet_id', $outletId)
+                ->whereNull('region_id')
+                ->first();
+            
+            if ($existing) {
+                // Update existing
+                $existing->update([
+                    'price' => $newPrice,
+                    'availability_price_type' => 'outlet',
+                ]);
+                $result = $existing;
+            } else {
+                // Create new
+                $result = ItemPrice::create([
+                    'item_id' => $item->id,
+                    'outlet_id' => $outletId,
+                    'region_id' => null,
+                    'price' => $newPrice,
+                    'availability_price_type' => 'outlet',
+                ]);
+            }
+            
+            \Log::info('PriceUpdateImport@updateItemPrice - Updated/Created outlet price', [
+                'item_id' => $item->id,
+                'outlet_id' => $outletId,
+                'outlet_name' => $regionOutlet,
+                'price' => $newPrice,
+                'was_recently_created' => $result->wasRecentlyCreated ?? false
+            ]);
+        } else {
+            // Type 'all' - HANYA jika memang regionOutlet = 'All' atau kosong
+            // JANGAN buat type 'all' jika ada region/outlet name yang spesifik tapi tidak ditemukan
+            if ($regionOutlet === 'All' || empty($regionOutlet) || trim($regionOutlet) === '') {
+                $existing = ItemPrice::where('item_id', $item->id)
+                    ->whereNull('region_id')
+                    ->whereNull('outlet_id')
+                    ->first();
+                
+                if ($existing) {
+                    // Update existing
+                    $existing->update([
+                        'price' => $newPrice,
+                        'availability_price_type' => 'all',
+                    ]);
+                    $result = $existing;
+                } else {
+                    // Create new
+                    $result = ItemPrice::create([
+                        'item_id' => $item->id,
+                        'region_id' => null,
+                        'outlet_id' => null,
+                        'price' => $newPrice,
+                        'availability_price_type' => 'all',
+                    ]);
+                }
+                
+                \Log::info('PriceUpdateImport@updateItemPrice - Updated/Created all price', [
+                    'item_id' => $item->id,
+                    'price' => $newPrice,
+                    'was_recently_created' => $result->wasRecentlyCreated ?? false
+                ]);
+            } else {
+                // Jika region/outlet name ada tapi tidak ditemukan, throw error
+                throw new \Exception("Region/Outlet '{$regionOutlet}' tidak ditemukan untuk item '{$item->name}'. Pastikan nama region/outlet sesuai dengan data master.");
+            }
+        }
 
         \Log::info('PriceUpdateImport@updateItemPrice - After updateOrCreate', [
             'result_id' => $result->id,
@@ -532,9 +780,12 @@ class PriceUpdateImport implements ToCollection, WithHeadingRow, WithValidation
             'item_name' => 'required|string',
             'current_price' => 'nullable|numeric|min:0',
             'new_price' => 'nullable|numeric|min:0',
-            'price_type' => 'required|in:all,region,outlet',
+            'new_price_isi_untuk_update_kosongkan_jika_tidak_diubah' => 'nullable|numeric|min:0',
+            'price_type' => 'nullable|in:all,region,outlet,All,Region,Outlet',
+            'region_outlet_name' => 'nullable|string',
             'region_outlet' => 'nullable|string',
-            'validation_jangan_diubah' => 'required|string',
+            'validation_hash_jangan_diubah' => 'nullable|string',
+            'validation_jangan_diubah' => 'nullable|string',
         ];
     }
 

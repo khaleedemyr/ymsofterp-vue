@@ -1536,12 +1536,21 @@ class ItemController extends Controller
 
     public function downloadPriceUpdateTemplate(Request $request)
     {
-        $regionId = $request->get('region_id');
-        $outletId = $request->get('outlet_id');
+        // Support single atau multiple values (bisa dari region_id[] atau region_id)
+        $regionIds = $request->input('region_id', []);
+        $outletIds = $request->input('outlet_id', []);
+        $categoryIds = $request->input('category_id', []);
+        $subCategoryIds = $request->input('sub_category_id', []);
         $priceType = $request->get('price_type', 'all');
 
+        // Normalize to array - handle both single value and array
+        $regionIds = is_array($regionIds) ? array_filter($regionIds) : (!empty($regionIds) ? [$regionIds] : []);
+        $outletIds = is_array($outletIds) ? array_filter($outletIds) : (!empty($outletIds) ? [$outletIds] : []);
+        $categoryIds = is_array($categoryIds) ? array_filter($categoryIds) : (!empty($categoryIds) ? [$categoryIds] : []);
+        $subCategoryIds = is_array($subCategoryIds) ? array_filter($subCategoryIds) : (!empty($subCategoryIds) ? [$subCategoryIds] : []);
+
         return Excel::download(
-            new \App\Exports\PriceUpdateTemplateExport($regionId, $outletId, $priceType),
+            new \App\Exports\PriceUpdateTemplateExport($regionIds, $outletIds, $categoryIds, $subCategoryIds, $priceType),
             'price_update_template.xlsx'
         );
     }
@@ -2230,6 +2239,128 @@ class ItemController extends Controller
             ->get();
 
         return response()->json($items);
+    }
+
+    /**
+     * API: Get categories and sub categories based on selected regions/outlets
+     */
+    public function getCategoriesByRegionOutlet(Request $request)
+    {
+        try {
+            $regionIds = $request->input('region_ids', []);
+            $outletIds = $request->input('outlet_ids', []);
+            $priceType = $request->input('price_type', 'all');
+
+            // Normalize to array
+            $regionIds = is_array($regionIds) ? array_filter($regionIds) : (!empty($regionIds) ? [$regionIds] : []);
+            $outletIds = is_array($outletIds) ? array_filter($outletIds) : (!empty($outletIds) ? [$outletIds] : []);
+
+            // Jika user pilih region, ambil juga outlet_ids yang ada di region tersebut
+            if (!empty($regionIds)) {
+                $outletsInRegions = \DB::table('tbl_data_outlet')
+                    ->whereIn('region_id', $regionIds)
+                    ->where('status', 'A')
+                    ->pluck('id_outlet')
+                    ->toArray();
+                // Gabungkan dengan outletIds yang sudah dipilih
+                $outletIds = array_unique(array_merge($outletIds, $outletsInRegions));
+            }
+
+            // Jika user pilih outlet, ambil juga region_ids dari outlet tersebut
+            if (!empty($outletIds)) {
+                $regionsFromOutlets = \DB::table('tbl_data_outlet')
+                    ->whereIn('id_outlet', $outletIds)
+                    ->where('status', 'A')
+                    ->pluck('region_id')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+                // Gabungkan dengan regionIds yang sudah dipilih
+                $regionIds = array_unique(array_merge($regionIds, $regionsFromOutlets));
+            }
+
+            // Query items yang memiliki price atau availability di region/outlet yang dipilih
+            $itemQuery = Item::where('status', 'active');
+
+            // Filter berdasarkan region/outlet melalui item_prices atau item_availabilities
+            if (!empty($regionIds) || !empty($outletIds)) {
+                $itemQuery->where(function($q) use ($regionIds, $outletIds, $priceType) {
+                    // Filter melalui item_prices
+                    $q->whereHas('prices', function($priceQ) use ($regionIds, $outletIds, $priceType) {
+                        $priceQ->where(function($pq) use ($regionIds, $outletIds, $priceType) {
+                            // Always include 'all' type
+                            $pq->where('availability_price_type', 'all');
+                            
+                            // Include region prices
+                            if (!empty($regionIds)) {
+                                $pq->orWhere(function($rq) use ($regionIds) {
+                                    $rq->where('availability_price_type', 'region')
+                                       ->whereIn('region_id', $regionIds);
+                                });
+                            }
+                            
+                            // Include outlet prices
+                            if (!empty($outletIds)) {
+                                $pq->orWhere(function($oq) use ($outletIds) {
+                                    $oq->where('availability_price_type', 'outlet')
+                                       ->whereIn('outlet_id', $outletIds);
+                                });
+                            }
+                        });
+                    })
+                    // Atau filter melalui item_availabilities
+                    ->orWhereHas('availabilities', function($availQ) use ($regionIds, $outletIds) {
+                        $availQ->where(function($aq) use ($regionIds, $outletIds) {
+                            // Always include 'all' type
+                            $aq->where('availability_type', 'all');
+                            
+                            // Include region availabilities
+                            if (!empty($regionIds)) {
+                                $aq->orWhere(function($rq) use ($regionIds) {
+                                    $rq->where('availability_type', 'region')
+                                       ->whereIn('region_id', $regionIds);
+                                });
+                            }
+                            
+                            // Include outlet availabilities
+                            if (!empty($outletIds)) {
+                                $aq->orWhere(function($oq) use ($outletIds) {
+                                    $oq->where('availability_type', 'outlet')
+                                       ->whereIn('outlet_id', $outletIds);
+                                });
+                            }
+                        });
+                    });
+                });
+            }
+
+            // Get unique category_ids and sub_category_ids
+            $items = $itemQuery->select('category_id', 'sub_category_id')
+                ->distinct()
+                ->get();
+
+            $categoryIds = $items->pluck('category_id')->filter()->unique()->values()->toArray();
+            $subCategoryIds = $items->pluck('sub_category_id')->filter()->unique()->values()->toArray();
+
+            // Get categories and sub categories
+            $categories = \App\Models\Category::whereIn('id', $categoryIds)->get(['id', 'name']);
+            $subCategories = \App\Models\SubCategory::whereIn('id', $subCategoryIds)->get(['id', 'name']);
+
+            return response()->json([
+                'categories' => $categories,
+                'sub_categories' => $subCategories
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('ItemController@getCategoriesByRegionOutlet - Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'error' => 'Failed to get categories',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

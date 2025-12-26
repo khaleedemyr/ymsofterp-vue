@@ -346,7 +346,7 @@
 
       <!-- Modal Filter Price Update -->
       <div v-if="showPriceUpdateFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
           <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
             <i class="fa-solid fa-filter text-blue-500"></i> 
             Filter Price Update Template
@@ -356,29 +356,88 @@
           </button>
           
           <div class="space-y-4">
+            <!-- Multiple Regions -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Price Type</label>
-              <select v-model="priceUpdateFilter.priceType" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                <option value="all">All Prices</option>
-                <option value="region">Region Specific</option>
-                <option value="outlet">Outlet Specific</option>
-              </select>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Region <span class="text-gray-500 text-xs">(Bisa pilih beberapa, kosongkan jika tidak perlu)</span>
+              </label>
+              <div class="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto">
+                <label v-for="region in regions" :key="region.id" class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    :value="region.id" 
+                    v-model="priceUpdateFilter.regionIds"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{{ region.name }}</span>
+                </label>
+              </div>
             </div>
             
-            <div v-if="priceUpdateFilter.priceType === 'region'">
-              <label class="block text-sm font-medium text-gray-700 mb-1">Region</label>
-              <select v-model="priceUpdateFilter.regionId" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                <option value="">Select Region</option>
-                <option v-for="region in regions" :key="region.id" :value="region.id">{{ region.name }}</option>
-              </select>
+            <!-- Multiple Outlets -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Outlet <span class="text-gray-500 text-xs">(Bisa pilih beberapa, kosongkan jika tidak perlu)</span>
+              </label>
+              <div class="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto">
+                <label v-for="outlet in outlets" :key="outlet.id_outlet" class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    :value="outlet.id_outlet" 
+                    v-model="priceUpdateFilter.outletIds"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{{ outlet.nama_outlet }}</span>
+                </label>
+              </div>
             </div>
-            
-            <div v-if="priceUpdateFilter.priceType === 'outlet'">
-              <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
-              <select v-model="priceUpdateFilter.outletId" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                <option value="">Select Outlet</option>
-                <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
-              </select>
+
+            <!-- Category Filter -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Category <span class="text-gray-500 text-xs">(Berdasarkan region/outlet yang dipilih)</span>
+                <span v-if="loadingCategories" class="text-blue-500 text-xs ml-2">
+                  <i class="fa-solid fa-spinner fa-spin"></i> Loading...
+                </span>
+              </label>
+              <div class="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto">
+                <div v-if="filteredCategories.length === 0 && !loadingCategories" class="text-gray-500 text-sm p-2">
+                  Pilih region/outlet terlebih dahulu atau tidak ada category yang tersedia
+                </div>
+                <label v-for="category in filteredCategories" :key="category.id" class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    :value="category.id" 
+                    v-model="priceUpdateFilter.categoryIds"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{{ category.name }}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Sub Category Filter -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Sub Category <span class="text-gray-500 text-xs">(Berdasarkan region/outlet yang dipilih)</span>
+                <span v-if="loadingCategories" class="text-blue-500 text-xs ml-2">
+                  <i class="fa-solid fa-spinner fa-spin"></i> Loading...
+                </span>
+              </label>
+              <div class="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto">
+                <div v-if="filteredSubCategories.length === 0 && !loadingCategories" class="text-gray-500 text-sm p-2">
+                  Pilih region/outlet terlebih dahulu atau tidak ada sub category yang tersedia
+                </div>
+                <label v-for="subCategory in filteredSubCategories" :key="subCategory.id" class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    :value="subCategory.id" 
+                    v-model="priceUpdateFilter.subCategoryIds"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{{ subCategory.name }}</span>
+                </label>
+              </div>
             </div>
           </div>
           
@@ -449,10 +508,14 @@ const priceUpdateFileInput = ref(null)
 const importType = ref('') // 'items', 'bom', atau 'price-update'
 const showPriceUpdateFilterModal = ref(false)
 const priceUpdateFilter = ref({
-  priceType: 'all',
-  regionId: '',
-  outletId: ''
+  regionIds: [],
+  outletIds: [],
+  categoryIds: [],
+  subCategoryIds: []
 })
+const filteredCategories = ref([])
+const filteredSubCategories = ref([])
+const loadingCategories = ref(false)
 
 function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
@@ -568,22 +631,114 @@ function downloadPriceUpdateTemplate() {
 function closePriceUpdateFilterModal() {
   showPriceUpdateFilterModal.value = false
   priceUpdateFilter.value = {
-    priceType: 'all',
-    regionId: '',
-    outletId: ''
+    regionIds: [],
+    outletIds: [],
+    categoryIds: [],
+    subCategoryIds: []
+  }
+  filteredCategories.value = []
+  filteredSubCategories.value = []
+}
+
+async function fetchCategoriesByRegionOutlet() {
+  // Reset categories/subcategories jika tidak ada region/outlet yang dipilih
+  if (priceUpdateFilter.value.regionIds.length === 0 && priceUpdateFilter.value.outletIds.length === 0) {
+    filteredCategories.value = []
+    filteredSubCategories.value = []
+    return
+  }
+
+  loadingCategories.value = true
+  try {
+    const params = new URLSearchParams()
+    // Set price_type berdasarkan pilihan: jika ada region = 'region', jika ada outlet = 'outlet', jika keduanya = 'all'
+    let priceType = 'all'
+    if (priceUpdateFilter.value.regionIds.length > 0 && priceUpdateFilter.value.outletIds.length > 0) {
+      priceType = 'all'
+    } else if (priceUpdateFilter.value.regionIds.length > 0) {
+      priceType = 'region'
+    } else if (priceUpdateFilter.value.outletIds.length > 0) {
+      priceType = 'outlet'
+    }
+    params.append('price_type', priceType)
+    
+    if (priceUpdateFilter.value.regionIds.length > 0) {
+      priceUpdateFilter.value.regionIds.forEach(id => {
+        params.append('region_ids[]', id)
+      })
+    }
+    
+    if (priceUpdateFilter.value.outletIds.length > 0) {
+      priceUpdateFilter.value.outletIds.forEach(id => {
+        params.append('outlet_ids[]', id)
+      })
+    }
+
+    const response = await axios.get(`/api/items/categories-by-region-outlet?${params.toString()}`)
+    filteredCategories.value = response.data.categories || []
+    filteredSubCategories.value = response.data.sub_categories || []
+    
+    // Reset selected categories/subcategories yang tidak ada di filtered list
+    priceUpdateFilter.value.categoryIds = priceUpdateFilter.value.categoryIds.filter(id => 
+      filteredCategories.value.some(cat => cat.id === id)
+    )
+    priceUpdateFilter.value.subCategoryIds = priceUpdateFilter.value.subCategoryIds.filter(id => 
+      filteredSubCategories.value.some(subCat => subCat.id === id)
+    )
+  } catch (error) {
+    console.error('Error fetching categories:', error)
+    filteredCategories.value = []
+    filteredSubCategories.value = []
+  } finally {
+    loadingCategories.value = false
   }
 }
 
+// Watch untuk regionIds dan outletIds
+watch([() => priceUpdateFilter.value.regionIds, () => priceUpdateFilter.value.outletIds], () => {
+  fetchCategoriesByRegionOutlet()
+}, { deep: true })
+
 function downloadPriceUpdateTemplateWithFilter() {
   const params = new URLSearchParams()
-  if (priceUpdateFilter.value.priceType !== 'all') {
-    params.append('price_type', priceUpdateFilter.value.priceType)
+  
+  // Set price_type berdasarkan pilihan: jika ada region = 'region', jika ada outlet = 'outlet', jika keduanya = 'all'
+  let priceType = 'all'
+  if (priceUpdateFilter.value.regionIds.length > 0 && priceUpdateFilter.value.outletIds.length > 0) {
+    priceType = 'all'
+  } else if (priceUpdateFilter.value.regionIds.length > 0) {
+    priceType = 'region'
+  } else if (priceUpdateFilter.value.outletIds.length > 0) {
+    priceType = 'outlet'
   }
-  if (priceUpdateFilter.value.regionId) {
-    params.append('region_id', priceUpdateFilter.value.regionId)
+  params.append('price_type', priceType)
+  
+  // Multiple region_ids
+  if (priceUpdateFilter.value.regionIds && priceUpdateFilter.value.regionIds.length > 0) {
+    priceUpdateFilter.value.regionIds.forEach(id => {
+      params.append('region_id[]', id)
+    })
   }
-  if (priceUpdateFilter.value.outletId) {
-    params.append('outlet_id', priceUpdateFilter.value.outletId)
+  
+  // Multiple outlet_ids
+  if (priceUpdateFilter.value.outletIds && priceUpdateFilter.value.outletIds.length > 0) {
+    priceUpdateFilter.value.outletIds.forEach(id => {
+      params.append('outlet_id[]', id)
+    })
+  }
+  
+  // Multiple category_ids
+  if (priceUpdateFilter.value.categoryIds && priceUpdateFilter.value.categoryIds.length > 0) {
+    priceUpdateFilter.value.categoryIds.forEach(id => {
+      params.append('category_id[]', id)
+    })
+  }
+  
+  // Multiple sub_category_ids
+  if (priceUpdateFilter.value.subCategoryIds && priceUpdateFilter.value.subCategoryIds.length > 0) {
+    priceUpdateFilter.value.subCategoryIds.forEach(id => {
+      params.append('sub_category_id[]', id)
+    })
   }
   
   const url = route('items.price-update.template') + (params.toString() ? '?' + params.toString() : '')

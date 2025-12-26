@@ -256,6 +256,21 @@ class PayrollReportController extends Controller
                         }
                     }
                     
+                    // Ambil data master payroll untuk user ini (untuk setting enabled/disabled)
+                    $masterData = $payrollMaster->get($user->id, (object)[
+                        'gaji' => 0,
+                        'tunjangan' => 0,
+                        'ot' => 0,
+                        'um' => 0,
+                        'ph' => 0,
+                        'sc' => 0,
+                        'bpjs_jkn' => 0,
+                        'bpjs_tk' => 0,
+                        'lb' => 0,
+                        'deviasi' => 0,
+                        'city_ledger' => 0,
+                    ]);
+                    
                     // Hitung total gaji dari data yang sudah di-generate
                     $totalGaji = $detail->total_gaji ?? 0;
                     
@@ -310,6 +325,7 @@ class PayrollReportController extends Controller
                         'leave_data' => $leaveData,
                         'periode' => $detail->periode ?? ($startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y')),
                         'payment_method' => $detail->payment_method ?? 'transfer',
+                        'master_data' => $masterData, // PENTING: Tambahkan master_data untuk setting enabled/disabled
                     ];
                     
                     // Add dynamic leave data directly to payrollData item
@@ -598,6 +614,7 @@ class PayrollReportController extends Controller
                 // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
                 $isNewEmployee = false;
                 $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
+                $tanggalMasuk = null;
                 if ($user->tanggal_masuk) {
                     $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
                     // HANYA dianggap karyawan baru jika tanggal masuk BENAR-BENAR dalam periode payroll
@@ -626,6 +643,7 @@ class PayrollReportController extends Controller
                 $isResignedEmployee = false;
                 $hariKerjaKaryawanResign = $hariKerja; // Default: hari kerja normal
                 $resignation = $resignations->get($user->id);
+                $resignationDate = null;
                 if ($resignation && $resignation->resignation_date) {
                     $resignationDate = Carbon::parse($resignation->resignation_date);
                     // HANYA dianggap karyawan resign jika tanggal resign BENAR-BENAR dalam periode payroll
@@ -650,13 +668,29 @@ class PayrollReportController extends Controller
                     ]);
                 }
                 
-                // Gunakan hari kerja yang sesuai (hariKerjaKaryawanBaru untuk karyawan baru, hariKerjaKaryawanResign untuk karyawan resign, hariKerja untuk karyawan lama)
+                // Gunakan hari kerja yang sesuai
+                // PENTING: Jika karyawan baru DAN resign dalam periode yang sama, hitung dari tanggal masuk sampai tanggal resign
                 // Ini penting untuk perhitungan service charge prorate yang konsisten
-                if ($isNewEmployee) {
+                if ($isNewEmployee && $isResignedEmployee && $tanggalMasuk && $resignationDate) {
+                    // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
+                    // Hitung hari kerja dari tanggal masuk sampai tanggal resign (inklusif)
+                    $hariKerjaUntukServiceCharge = $tanggalMasuk->diffInDays($resignationDate) + 1;
+                    
+                    \Log::info('Detected new employee who resigned in same period', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'tanggal_masuk' => $user->tanggal_masuk,
+                        'resignation_date' => $resignation ? $resignation->resignation_date : null,
+                        'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
+                    ]);
+                } elseif ($isNewEmployee) {
+                    // Karyawan baru saja (tidak resign)
                     $hariKerjaUntukServiceCharge = $hariKerjaKaryawanBaru;
                 } elseif ($isResignedEmployee) {
+                    // Karyawan resign saja (bukan baru)
                     $hariKerjaUntukServiceCharge = $hariKerjaKaryawanResign;
                 } else {
+                    // Karyawan biasa
                     $hariKerjaUntukServiceCharge = $hariKerja;
                 }
 
@@ -714,11 +748,14 @@ class PayrollReportController extends Controller
             }
 
             // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $totalPointHariKerjaLB = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->lb == 1) {
-                    $totalPointHariKerjaLB += $data['userPoint'] * $data['hariKerja'];
+                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                    $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
                 }
             }
 
@@ -730,11 +767,14 @@ class PayrollReportController extends Controller
             }
 
             // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $totalPointHariKerjaDeviasi = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->deviasi == 1) {
-                    $totalPointHariKerjaDeviasi += $data['userPoint'] * $data['hariKerja'];
+                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                    $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
                 }
             }
 
@@ -746,11 +786,14 @@ class PayrollReportController extends Controller
             }
 
             // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $totalPointHariKerjaCityLedger = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->city_ledger == 1) {
-                    $totalPointHariKerjaCityLedger += $data['userPoint'] * $data['hariKerja'];
+                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                    $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
                 }
             }
 
@@ -937,7 +980,34 @@ class PayrollReportController extends Controller
                 
                 // HANYA prorate jika karyawan baru ATAU karyawan resign
                 // Karyawan biasa TIDAK di-prorate, meskipun hari kerja < total hari kalender periode
-                if ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                if ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                    // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
+                    // Pro rate menggunakan proporsi yang sama dengan service charge prorate
+                    // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
+                    // Hari kerja untuk service charge sudah dihitung dari tanggal masuk sampai tanggal resign
+                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
+                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    
+                    $resignation = $resignations->get($user->id);
+                    \Log::info('Karyawan baru yang resign - Pro rate calculation', [
+                        'user_id' => $user->id,
+                        'nama_lengkap' => $user->nama_lengkap,
+                        'tanggal_masuk' => $user->tanggal_masuk,
+                        'resignation_date' => $resignation ? $resignation->resignation_date : null,
+                        'is_new_employee' => $isNewEmployee,
+                        'is_resigned_employee' => $isResignedEmployee,
+                        'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
+                        'total_hari_kalender_periode' => $totalHariKalenderPeriode,
+                        'gaji_pokok_original' => $masterData->gaji,
+                        'tunjangan_original' => $masterData->tunjangan,
+                        'gaji_pokok_pro_rate' => $gajiPokokFinal,
+                        'tunjangan_pro_rate' => $tunjanganFinal,
+                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                    ]);
+                } elseif ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                    // Karyawan baru saja (tidak resign)
                     // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                     // Ini sama dengan proporsi yang digunakan service charge prorate
@@ -961,6 +1031,7 @@ class PayrollReportController extends Controller
                         'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                     ]);
                 } elseif ($isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                    // Karyawan resign saja (bukan baru)
                     // Untuk karyawan resign, hitung prorate dari awal periode sampai tanggal resign
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                     $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
@@ -1041,32 +1112,38 @@ class PayrollReportController extends Controller
                 }
 
             // Hitung L & B (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $lbByPointAmount = 0;
             $lbTotal = 0;
             
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $lbTotal = $lbByPointAmount;
             }
 
             // Hitung Deviasi (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $deviasiByPointAmount = 0;
             $deviasiTotal = 0;
             
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $deviasiTotal = $deviasiByPointAmount;
             }
 
             // Hitung City Ledger (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $cityLedgerByPointAmount = 0;
             $cityLedgerTotal = 0;
             
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
@@ -1897,6 +1974,7 @@ class PayrollReportController extends Controller
             // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
             $isNewEmployee = false;
             $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
+            $tanggalMasuk = null;
             if ($user->tanggal_masuk) {
                 $tanggalMasuk = Carbon::parse($user->tanggal_masuk);
                 $isNewEmployee = $tanggalMasuk->greaterThanOrEqualTo($startDate) && $tanggalMasuk->lessThanOrEqualTo($endDate);
@@ -1912,6 +1990,7 @@ class PayrollReportController extends Controller
             $isResignedEmployee = false;
             $hariKerjaKaryawanResign = $hariKerja; // Default: hari kerja normal
             $resignation = $resignations->get($user->id);
+            $resignationDate = null;
             if ($resignation && $resignation->resignation_date) {
                 $resignationDate = Carbon::parse($resignation->resignation_date);
                 $isResignedEmployee = $resignationDate->greaterThanOrEqualTo($startDate) && $resignationDate->lessThanOrEqualTo($endDate);
@@ -1923,13 +2002,21 @@ class PayrollReportController extends Controller
                 }
             }
             
-            // Gunakan hari kerja yang sesuai (hariKerjaKaryawanBaru untuk karyawan baru, hariKerjaKaryawanResign untuk karyawan resign, hariKerja untuk karyawan lama)
+            // Gunakan hari kerja yang sesuai
+            // PENTING: Jika karyawan baru DAN resign dalam periode yang sama, hitung dari tanggal masuk sampai tanggal resign
             // Ini penting untuk perhitungan service charge prorate yang konsisten
-            if ($isNewEmployee) {
+            if ($isNewEmployee && $isResignedEmployee && $tanggalMasuk && $resignationDate) {
+                // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
+                // Hitung hari kerja dari tanggal masuk sampai tanggal resign (inklusif)
+                $hariKerjaUntukServiceCharge = $tanggalMasuk->diffInDays($resignationDate) + 1;
+            } elseif ($isNewEmployee) {
+                // Karyawan baru saja (tidak resign)
                 $hariKerjaUntukServiceCharge = $hariKerjaKaryawanBaru;
             } elseif ($isResignedEmployee) {
+                // Karyawan resign saja (bukan baru)
                 $hariKerjaUntukServiceCharge = $hariKerjaKaryawanResign;
             } else {
+                // Karyawan biasa
                 $hariKerjaUntukServiceCharge = $hariKerja;
             }
 
@@ -1987,11 +2074,14 @@ class PayrollReportController extends Controller
         }
 
         // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
+        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaLB = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->lb == 1) {
-                $totalPointHariKerjaLB += $data['userPoint'] * $data['hariKerja'];
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
             }
         }
 
@@ -2003,11 +2093,14 @@ class PayrollReportController extends Controller
         }
 
         // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
+        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaDeviasi = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->deviasi == 1) {
-                $totalPointHariKerjaDeviasi += $data['userPoint'] * $data['hariKerja'];
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
             }
         }
 
@@ -2019,11 +2112,14 @@ class PayrollReportController extends Controller
         }
 
         // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
+        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
         // Menggunakan (point × hari kerja) seperti service charge by point
         $totalPointHariKerjaCityLedger = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->city_ledger == 1) {
-                $totalPointHariKerjaCityLedger += $data['userPoint'] * $data['hariKerja'];
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
+                $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
             }
         }
 
@@ -2129,32 +2225,38 @@ class PayrollReportController extends Controller
             }
 
             // Hitung L & B (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $lbByPointAmount = 0;
             $lbTotal = 0;
             
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $lbTotal = $lbByPointAmount;
             }
 
             // Hitung Deviasi (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $deviasiByPointAmount = 0;
             $deviasiTotal = 0;
             
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $deviasiTotal = $deviasiByPointAmount;
             }
 
             // Hitung City Ledger (By Point × Hari Kerja) jika enabled
+            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
             $cityLedgerByPointAmount = 0;
             $cityLedgerTotal = 0;
             
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerja);
+                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
+                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
                 $cityLedgerTotal = $cityLedgerByPointAmount;
             }
 
@@ -2167,24 +2269,105 @@ class PayrollReportController extends Controller
 
             // Hitung gaji pokok dan tunjangan (pro rate untuk karyawan baru dan karyawan resign)
             // PENTING: Gunakan hari kerja yang sama dengan service charge prorate (proporsi yang sama)
+            // Service charge prorate menggunakan: rate × hari kerja untuk service charge
+            // Dimana rate = total service charge prorate / total hari kerja semua karyawan
+            // Jadi untuk gaji pokok dan tunjangan, gunakan proporsi yang sama: (hari kerja untuk service charge / total hari kerja standar)
             $gajiPokokFinal = $masterData->gaji;
             $tunjanganFinal = $masterData->tunjangan;
             
-            // Hitung total hari kerja standar dalam periode payroll
+            // Hitung total hari kerja standar dalam periode payroll (dari tanggal 26 bulan sebelumnya sampai 25 bulan yang dipilih)
+            // Ini adalah total hari kalender dalam periode, bukan total hari kerja karyawan
             $totalHariKalenderPeriode = $startDate->diffInDays($endDate) + 1; // +1 untuk include tanggal awal dan akhir
             
             // HANYA prorate jika karyawan baru ATAU karyawan resign
             // Karyawan biasa TIDAK di-prorate, meskipun hari kerja < total hari kalender periode
-            if ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+            if ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
                 // Pro rate menggunakan proporsi yang sama dengan service charge prorate
+                // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
+                // Hari kerja untuk service charge sudah dihitung dari tanggal masuk sampai tanggal resign
                 $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
                 $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                
+                $resignation = $resignations->get($user->id);
+                \Log::info('Karyawan baru yang resign - Pro rate calculation (Export)', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'tanggal_masuk' => $user->tanggal_masuk,
+                    'resignation_date' => $resignation ? $resignation->resignation_date : null,
+                    'is_new_employee' => $isNewEmployee,
+                    'is_resigned_employee' => $isResignedEmployee,
+                    'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
+                    'total_hari_kalender_periode' => $totalHariKalenderPeriode,
+                    'gaji_pokok_original' => $masterData->gaji,
+                    'tunjangan_original' => $masterData->tunjangan,
+                    'gaji_pokok_pro_rate' => $gajiPokokFinal,
+                    'tunjangan_pro_rate' => $tunjanganFinal,
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                ]);
+            } elseif ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                // Karyawan baru saja (tidak resign)
+                // Pro rate menggunakan proporsi yang sama dengan service charge prorate
+                // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
+                // Ini sama dengan proporsi yang digunakan service charge prorate
+                $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
+                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                
+                \Log::info('Karyawan baru - Pro rate calculation (Export)', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'tanggal_masuk' => $user->tanggal_masuk,
+                    'is_new_employee' => $isNewEmployee,
+                    'hari_kerja_karyawan_baru' => $hariKerjaKaryawanBaru,
+                    'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                    'total_hari_kalender_periode' => $totalHariKalenderPeriode,
+                    'gaji_pokok_original' => $masterData->gaji,
+                    'tunjangan_original' => $masterData->tunjangan,
+                    'gaji_pokok_pro_rate' => $gajiPokokFinal,
+                    'tunjangan_pro_rate' => $tunjanganFinal,
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                ]);
             } elseif ($isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                // Karyawan resign saja (bukan baru)
                 // Untuk karyawan resign, hitung prorate dari awal periode sampai tanggal resign
+                // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                 $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
                 $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                
+                $resignation = $resignations->get($user->id);
+                \Log::info('Karyawan resign - Pro rate calculation (Export)', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'is_resigned_employee' => $isResignedEmployee,
+                    'resignation_date' => $resignation ? $resignation->resignation_date : null,
+                    'hari_kerja_karyawan_resign' => $hariKerjaKaryawanResign,
+                    'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                    'total_hari_kalender_periode' => $totalHariKalenderPeriode,
+                    'gaji_pokok_original' => $masterData->gaji,
+                    'tunjangan_original' => $masterData->tunjangan,
+                    'gaji_pokok_pro_rate' => $gajiPokokFinal,
+                    'tunjangan_pro_rate' => $tunjanganFinal,
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                ]);
+            } else {
+                // Karyawan biasa: tidak di-prorate (gaji pokok dan tunjangan full)
+                \Log::info('Karyawan biasa - No pro rate (Export)', [
+                    'user_id' => $user->id,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'is_new_employee' => $isNewEmployee,
+                    'is_resigned_employee' => $isResignedEmployee,
+                    'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                    'total_hari_kalender_periode' => $totalHariKalenderPeriode,
+                    'gaji_pokok_final' => $gajiPokokFinal,
+                    'tunjangan_final' => $tunjanganFinal,
+                ]);
             }
-            // Karyawan biasa: tidak di-prorate (gaji pokok dan tunjangan full)
 
             // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
             // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
