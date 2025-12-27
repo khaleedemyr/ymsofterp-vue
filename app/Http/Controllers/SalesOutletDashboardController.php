@@ -47,6 +47,14 @@ class SalesOutletDashboardController extends Controller
         ]);
     }
 
+    /**
+     * Get dashboard data (public method untuk AI service)
+     */
+    public function getDashboardDataPublic($dateFrom, $dateTo, $period = 'daily')
+    {
+        return $this->getDashboardData($dateFrom, $dateTo, $period);
+    }
+
     private function getDashboardData($dateFrom, $dateTo, $period)
     {
         // 1. Overview Metrics
@@ -173,7 +181,14 @@ class SalesOutletDashboardController extends Controller
             'total_commission_fee' => (float) $result->total_commission_fee,
             'total_manual_discount' => (float) $result->total_manual_discount,
             'revenue_growth' => (float) $revenueGrowth,
-            'order_growth' => (float) $orderGrowth
+            'order_growth' => (float) $orderGrowth,
+            // Tambahkan data bulan sebelumnya untuk perbandingan akurat
+            'previous_period' => [
+                'date_from' => $prevDateFrom,
+                'date_to' => $prevDateTo,
+                'total_orders' => (int) $prevResult->total_orders,
+                'total_revenue' => (float) $prevResult->total_revenue,
+            ]
         ];
     }
 

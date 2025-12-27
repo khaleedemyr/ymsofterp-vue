@@ -815,3 +815,8 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.support.admin.update-status');
 });
 
+// AI Analytics Routes - Moved to web.php for session-based auth
+// Route::middleware(['auth:web'])->prefix('ai')->group(function () {
+//     Route::get('/insight', [\App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('api.ai.insight');
+// });
+

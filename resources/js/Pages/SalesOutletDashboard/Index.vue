@@ -9,6 +9,7 @@ import OutletDetailsModal from './Components/OutletDetailsModal.vue';
 import OutletDailyRevenueModal from './Components/OutletDailyRevenueModal.vue';
 import OutletLunchDinnerModal from './Components/OutletLunchDinnerModal.vue';
 import OutletWeekendWeekdayModal from './Components/OutletWeekendWeekdayModal.vue';
+import AIAnalytics from './Components/AIAnalytics.vue';
 
 const props = defineProps({
     dashboardData: Object,
@@ -2724,6 +2725,9 @@ const menuRegionChartOptions = computed(() => ({
 
                 <!-- Dashboard Content -->
                 <div v-else>
+                    <!-- AI Analytics Insight -->
+                    <AIAnalytics :filters="filters" />
+                    
                     <!-- Overview Metrics -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4 mb-6">
                         <!-- Total Orders -->

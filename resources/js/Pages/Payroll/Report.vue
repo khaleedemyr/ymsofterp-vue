@@ -330,31 +330,63 @@ async function fetchAttendanceDetail(userId) {
   loadingDetails.value[userId] = true;
   try {
     // Calculate payroll period (26th of previous month to 25th of current month)
+    // PERBAIKAN: Pastikan format tanggal benar (26-25 bukan 25-24)
     let startDate, endDate;
     
+    // PERBAIKAN: Hitung periode payroll dengan benar (26 bulan sebelumnya - 25 bulan yang dipilih)
+    // month.value adalah 1-based (1=Jan, 12=Dec), Date constructor menggunakan 0-based (0=Jan, 11=Dec)
     if (month.value === 1) {
       // January: 26 Dec previous year to 25 Jan current year
-      startDate = new Date(year.value - 1, 11, 26);
-      endDate = new Date(year.value, 0, 25);
+      startDate = new Date(year.value - 1, 11, 26); // 11 = December (0-based)
+      endDate = new Date(year.value, 0, 25); // 0 = January (0-based)
     } else {
       // Other months: 26 previous month to 25 current month
-      startDate = new Date(year.value, month.value - 2, 26);
-      endDate = new Date(year.value, month.value - 1, 25);
+      // Contoh: month.value = 12 (Desember)
+      //   - startDate: 26 November = new Date(year, 10, 26) (November = index 10)
+      //   - endDate: 25 Desember = new Date(year, 11, 25) (Desember = index 11)
+      const prevMonthIndex = month.value - 2; // month.value (1-based) - 2 = bulan sebelumnya (0-based)
+      const currentMonthIndex = month.value - 1; // month.value (1-based) - 1 = bulan saat ini (0-based)
+      startDate = new Date(year.value, prevMonthIndex, 26);
+      endDate = new Date(year.value, currentMonthIndex, 25);
     }
+    
+    // Pastikan timezone tidak mempengaruhi tanggal (gunakan format lokal, bukan UTC)
+    // Set ke local time dengan timezone yang benar
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth();
+    const startDay = startDate.getDate();
+    startDate = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
+    
+    const endYear = endDate.getFullYear();
+    const endMonth = endDate.getMonth();
+    const endDay = endDate.getDate();
+    endDate = new Date(endYear, endMonth, endDay, 23, 59, 59, 999);
+    
+    // Format tanggal sebagai YYYY-MM-DD menggunakan format lokal (bukan UTC)
+    // Ini menghindari masalah timezone yang mengubah tanggal
+    const formatLocalDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    const startDateStr = formatLocalDate(startDate);
+    const endDateStr = formatLocalDate(endDate);
     
     console.log('Fetching attendance detail:', {
       userId,
       outletId: outletId.value,
-      startDate: startDate.toISOString().split('T')[0],
-      endDate: endDate.toISOString().split('T')[0]
+      startDate: startDateStr,
+      endDate: endDateStr
     });
     
     const response = await axios.get('/payroll/report/attendance-detail', {
       params: {
         user_id: userId,
         outlet_id: outletId.value,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0]
+        start_date: startDateStr,
+        end_date: endDateStr
       }
     });
     

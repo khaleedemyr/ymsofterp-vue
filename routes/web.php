@@ -1484,6 +1484,8 @@ Route::get('/sales-outlet-dashboard/export-bank-promo-discount-transactions', [A
 Route::get('/sales-outlet-dashboard/non-promo-bank-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'getNonPromoBankDiscountTransactions'])->name('sales-outlet-dashboard.non-promo-bank-discount-transactions');
 Route::get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'exportNonPromoBankDiscountTransactions'])->name('sales-outlet-dashboard.export-non-promo-bank-discount-transactions');
 Route::get('/sales-outlet-dashboard/promo-usage-by-outlet', [App\Http\Controllers\SalesOutletDashboardController::class, 'getPromoUsageByOutlet'])->name('sales-outlet-dashboard.promo-usage-by-outlet');
+Route::get('/sales-outlet-dashboard/ai/insight', [App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('sales-outlet-dashboard.ai.insight');
+Route::post('/sales-outlet-dashboard/ai/ask', [App\Http\Controllers\AIAnalyticsController::class, 'askQuestion'])->name('sales-outlet-dashboard.ai.ask');
 Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
 Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
 Route::post('/retail-warehouse-sale/search-items-by-name', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName'])->name('retail-warehouse-sale.search-items-by-name');

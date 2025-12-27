@@ -125,9 +125,9 @@ class PayrollReportController extends Controller
                 // Buat collection resignations yang sudah difilter berdasarkan outlet user
                 $resignedUserIds = $resignedUsers->pluck('id')->toArray();
                 $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
-                    ->keyBy('employee_id');
-                
-                // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
+                ->keyBy('employee_id');
+
+            // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
                 $existingUserIds = $users->pluck('id')->toArray();
                 $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
                 if (!empty($newResignedIds)) {
@@ -159,9 +159,8 @@ class PayrollReportController extends Controller
             $levelNominalDasarBPJS = DB::table('tbl_data_level')
                 ->pluck('nilai_dasar_potongan_bpjs', 'id');
 
-            // Ambil data master payroll
+            // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
             $payrollMaster = DB::table('payroll_master')
-                ->where('outlet_id', $outletId)
                 ->get()
                 ->keyBy('user_id');
 
@@ -187,8 +186,18 @@ class PayrollReportController extends Controller
                     ->keyBy('user_id');
             }
             
+            // Debug: Log status payroll generated
+            \Log::info('Payroll - Check generated status', [
+                'payroll_generated_exists' => $payrollGenerated ? true : false,
+                'payroll_generated_details_count' => $payrollGeneratedDetailsFull->count(),
+                'outlet_id' => $outletId,
+                'month' => $month,
+                'year' => $year
+            ]);
+            
             // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
             if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty()) {
+                \Log::info('Payroll - Using generated payroll data');
                 // Ambil data karyawan untuk mapping (include status untuk perhitungan statistik)
                 $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
                     ->where('id_outlet', $outletId)
@@ -213,7 +222,7 @@ class PayrollReportController extends Controller
                     
                     $resignedUserIds = $resignedUsers->pluck('id')->toArray();
                     $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
-                        ->keyBy('employee_id');
+                    ->keyBy('employee_id');
                     
                     // PERBAIKAN: Tambahkan karyawan yang resign ke list users jika belum ada di payroll_generated_details
                     $existingUserIds = $users->pluck('id')->toArray();
@@ -456,6 +465,9 @@ class PayrollReportController extends Controller
                 $totalMPResign = $usersInPayrollData->whereIn('id', $resignedIdsInPayrollData)->count();
                 
                 // Return early dengan data dari payroll_generated_details
+                \Log::info('Payroll - Returning generated payroll data to frontend', [
+                    'payroll_data_count' => $payrollData->count()
+                ]);
                 return Inertia::render('Payroll/Report', [
                     'outlets' => $outlets,
                     'months' => $months,
@@ -644,18 +656,33 @@ class PayrollReportController extends Controller
             // Group by employee - SAMA PERSIS dengan Employee Summary
             $employeeGroups = $rows->groupBy('user_id');
 
+            // Debug: Log bahwa kita masuk ke path non-generated payroll
+            \Log::info('Payroll - Using non-generated payroll path', [
+                'users_count' => $users->count(),
+                'employee_groups_count' => $employeeGroups->count(),
+                'start_date' => $start,
+                'end_date' => $end
+            ]);
+
             // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
             // PERBAIKAN: Loop berdasarkan $users untuk memastikan semua user (termasuk yang resign tanpa absensi) diproses
             $userData = [];
             foreach ($users as $user) {
                 $userId = $user->id;
+                
+                // Debug: Log masuk ke loop user
+                \Log::info('Payroll - Processing user', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown'
+                ]);
+                
                 $employeeRows = $employeeGroups->get($userId, collect());
                 
                 // Jika user tidak punya data absensi, buat employeeRows kosong
                 if ($employeeRows->isEmpty()) {
                     $firstRow = null;
                 } else {
-                    $firstRow = $employeeRows->first();
+                $firstRow = $employeeRows->first();
                 }
 
                 // Ambil data master payroll untuk user ini
@@ -706,7 +733,35 @@ class PayrollReportController extends Controller
                 }
                 
                 // Hitung PH Bonus (Public Holiday bonus only, not extra_off)
+                // Debug: Log sebelum memanggil calculatePHBonus
+                \Log::info('Payroll - Before calculatePHBonus', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown',
+                    'start_date' => $start,
+                    'end_date' => $end,
+                    'start_type' => gettype($start),
+                    'end_type' => gettype($end)
+                ]);
+                
                 $phBonus = $this->calculatePHBonus($userId, $start, $end);
+                
+                // Debug: Log PH Bonus untuk semua user (termasuk yang 0)
+                \Log::info('Payroll - PH Bonus calculated', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown',
+                    'start_date' => $start,
+                    'end_date' => $end,
+                    'ph_bonus' => $phBonus,
+                    'ph_bonus_type' => gettype($phBonus)
+                ]);
+                
+                // Pastikan $phBonus tidak di-reset setelah ini
+                if ($phBonus > 0) {
+                    \Log::info('Payroll - PH Bonus is greater than 0', [
+                        'user_id' => $userId,
+                        'ph_bonus' => $phBonus
+                    ]);
+                }
                 
                 // Debug: Log leave data
                 \Log::info('Payroll - Leave data extracted', [
@@ -820,6 +875,7 @@ class PayrollReportController extends Controller
                     'totalIzinCuti' => $totalIzinCuti,
                     'izinCutiBreakdown' => $izinCutiBreakdown,
                     'leaveData' => $leaveData, // Simpan leaveData untuk digunakan di Step 4
+                    'phBonus' => $phBonus, // Simpan phBonus untuk digunakan di Step 4
                     'userPoint' => $userPoint,
                 ];
             }
@@ -931,6 +987,7 @@ class PayrollReportController extends Controller
                 $totalIzinCuti = $data['totalIzinCuti'] ?? 0; // Ambil totalIzinCuti dari userData
                 $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData, default ke array kosong jika tidak ada
                 $izinCutiBreakdown = $data['izinCutiBreakdown'] ?? []; // Ambil izinCutiBreakdown dari userData, default ke array kosong jika tidak ada
+                $phBonus = $data['phBonus'] ?? 0; // Ambil phBonus dari userData, default ke 0 jika tidak ada
                 
                 // Hitung gaji lembur menggunakan nominal_lembur dari divisi
                 $gajiLembur = 0;
@@ -1353,6 +1410,10 @@ class PayrollReportController extends Controller
                     'extra_off_days' => isset($leaveData['extra_off_days']) ? $leaveData['extra_off_days'] : 0, // SAMA PERSIS dengan Employee Summary
                     'ph_bonus' => round($phBonus), // PH Bonus (hanya bonus, bukan extra_off)
                     'leave_data' => $leaveData, // Simpan leave_data untuk generate payroll
+                    
+                    // Debug: Log ph_bonus sebelum disimpan ke payrollDataItem
+                    '_debug_ph_bonus_before_round' => $phBonus,
+                    '_debug_ph_bonus_after_round' => round($phBonus),
                     'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
                     'master_data' => $masterData,
                     'payment_method' => $payrollGeneratedDetails->get($user->id, 'transfer'), // Default transfer jika belum di-generate
@@ -1384,9 +1445,12 @@ class PayrollReportController extends Controller
                     'nama_lengkap' => $user->nama_lengkap,
                     'extra_off_days' => $payrollDataItem['extra_off_days'] ?? 'NOT SET',
                     'sick_leave_days' => $payrollDataItem['sick_leave_days'] ?? 'NOT SET',
+                    'ph_bonus' => $payrollDataItem['ph_bonus'] ?? 'NOT SET',
                     'all_leave_keys' => $allLeaveKeys,
                     'has_extra_off_days' => isset($payrollDataItem['extra_off_days']),
-                    'extra_off_days_value' => $payrollDataItem['extra_off_days'] ?? null
+                    'extra_off_days_value' => $payrollDataItem['extra_off_days'] ?? null,
+                    'has_ph_bonus' => isset($payrollDataItem['ph_bonus']),
+                    'ph_bonus_value' => $payrollDataItem['ph_bonus'] ?? null
                 ]);
                 
                 $payrollData->push($payrollDataItem);
@@ -1408,6 +1472,44 @@ class PayrollReportController extends Controller
             $totalMPResign = 0;
         }
 
+        // Debug: Log PH Bonus data yang dikirim ke frontend
+        $phBonusSummary = $payrollData->map(function($item) {
+            $phBonus = $item['ph_bonus'] ?? 0;
+            // Convert to number if it's a string
+            if (is_string($phBonus)) {
+                $phBonus = (float) $phBonus;
+            }
+            return [
+                'user_id' => $item['user_id'] ?? 'N/A',
+                'nama_lengkap' => $item['nama_lengkap'] ?? 'N/A',
+                'ph_bonus' => $phBonus,
+                'ph_bonus_type' => gettype($item['ph_bonus'] ?? null),
+                'has_ph_bonus_key' => isset($item['ph_bonus'])
+            ];
+        });
+        
+        $usersWithPHBonus = $phBonusSummary->filter(function($item) {
+            return ($item['ph_bonus'] ?? 0) > 0;
+        });
+        
+        // Log sample data untuk debug
+        $sampleData = $payrollData->take(3)->map(function($item) {
+            return [
+                'user_id' => $item['user_id'] ?? 'N/A',
+                'nama_lengkap' => $item['nama_lengkap'] ?? 'N/A',
+                'ph_bonus' => $item['ph_bonus'] ?? 'NOT SET',
+                'ph_bonus_type' => gettype($item['ph_bonus'] ?? null),
+                'has_ph_bonus_key' => isset($item['ph_bonus'])
+            ];
+        });
+        
+        \Log::info('Payroll - Sending PH Bonus data to frontend', [
+            'total_users' => $payrollData->count(),
+            'users_with_ph_bonus' => $usersWithPHBonus->count(),
+            'ph_bonus_summary' => $usersWithPHBonus->toArray(),
+            'sample_data' => $sampleData->toArray()
+        ]);
+        
         return Inertia::render('Payroll/Report', [
             'outlets' => $outlets,
             'months' => $months,
@@ -1868,9 +1970,9 @@ class PayrollReportController extends Controller
             // Buat collection resignations yang sudah difilter berdasarkan outlet user
             $resignedUserIds = $resignedUsers->pluck('id')->toArray();
             $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
-                ->keyBy('employee_id');
-            
-            // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
+            ->keyBy('employee_id');
+
+        // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
             $existingUserIds = $users->pluck('id')->toArray();
             $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
             if (!empty($newResignedIds)) {
@@ -1885,8 +1987,8 @@ class PayrollReportController extends Controller
         $divisions = DB::table('tbl_data_divisi')->pluck('nama_divisi', 'id');
         $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
 
+        // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
         $payrollMaster = DB::table('payroll_master')
-            ->where('outlet_id', $outletId)
             ->get()
             ->keyBy('user_id');
 
@@ -2033,13 +2135,16 @@ class PayrollReportController extends Controller
         // Group by employee - SAMA PERSIS dengan Employee Summary
         $employeeGroups = $rows->groupBy('user_id');
 
-        // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
+        // Step 1: Hitung semua data dasar untuk semua user - PERBAIKAN: Loop berdasarkan $users, bukan $employeeGroups
+        // Ini memastikan semua user (termasuk yang tidak punya data attendance) masuk ke export
         $userData = [];
-        foreach ($employeeGroups as $userId => $employeeRows) {
-            $user = $users->firstWhere('id', $userId);
+        foreach ($users as $user) {
+            $userId = $user->id;
+            $employeeRows = $employeeGroups->get($userId, collect());
             
-            if (!$user) {
-                continue; // Skip jika user tidak ada di list users
+            // Jika user tidak punya data absensi, buat employeeRows kosong
+            if ($employeeRows->isEmpty()) {
+                // User tanpa data attendance tetap diproses
             }
 
             // Ambil data master payroll untuk user ini
@@ -2058,17 +2163,24 @@ class PayrollReportController extends Controller
             ]);
 
             // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
-            $totalTelat = $employeeRows->sum('telat');
-            
-            // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
-            $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
-            
-            // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
-            $totalLemburRegular = floor($employeeRows->sum('lembur'));
-            $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
+            // PERBAIKAN: Handle kasus ketika user tidak punya data attendance
+            if ($employeeRows->isEmpty()) {
+                $totalTelat = 0;
+                $totalLembur = 0;
+                $hariKerja = 0;
+            } else {
+                $totalTelat = $employeeRows->sum('telat');
+                
+                // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
+                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
+                
+                // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
+                $totalLemburRegular = floor($employeeRows->sum('lembur'));
+                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
-            // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
-            $hariKerja = $employeeRows->count();
+                // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
+                $hariKerja = $employeeRows->count();
+            }
 
             // Hitung total alpha menggunakan method yang sama dengan Employee Summary
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $start, $end);
@@ -2159,9 +2271,18 @@ class PayrollReportController extends Controller
                 'totalIzinCuti' => $totalIzinCuti,
                 'izinCutiBreakdown' => $izinCutiBreakdown,
                 'leaveData' => $leaveData, // Simpan leaveData untuk digunakan di Step 4
+                'phBonus' => $phBonus, // Simpan phBonus untuk digunakan di Step 4
                 'userPoint' => $userPoint,
             ];
         }
+        
+        // Debug: Log jumlah user yang diproses
+        \Log::info('Export - User Data Count', [
+            'total_users' => $users->count(),
+            'user_data_count' => count($userData),
+            'employee_groups_count' => $employeeGroups->count(),
+            'missing_users' => $users->count() - count($userData)
+        ]);
 
         // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
@@ -2261,10 +2382,24 @@ class PayrollReportController extends Controller
         
         $payrollGeneratedDetails = collect();
         if ($payrollGenerated) {
+            // PERBAIKAN: Pastikan mengambil semua kolom termasuk payment_method
             $payrollGeneratedDetails = DB::table('payroll_generated_details')
                 ->where('payroll_generated_id', $payrollGenerated->id)
+                ->select('*') // Explicitly select all columns to ensure payment_method is included
                 ->get()
                 ->keyBy('user_id');
+            
+            // Debug: Log sample payment_method values
+            \Log::info('Export - Payroll Generated Details', [
+                'payroll_generated_id' => $payrollGenerated->id,
+                'total_details' => $payrollGeneratedDetails->count(),
+                'sample_payment_methods' => $payrollGeneratedDetails->take(5)->map(function($item) {
+                    return [
+                        'user_id' => $item->user_id,
+                        'payment_method' => $item->payment_method ?? 'null'
+                    ];
+                })->values()->toArray()
+            ]);
         }
 
         // Ambil custom payroll items untuk periode ini - SAMA PERSIS dengan index()
@@ -2535,7 +2670,23 @@ class PayrollReportController extends Controller
             $payrollDetail = $payrollGeneratedDetails->get($userId);
             
             // Ambil payment method dari payroll_generated_details atau default 'transfer'
-            $paymentMethod = $payrollDetail ? ($payrollDetail->payment_method ?? 'transfer') : 'transfer';
+            // PERBAIKAN: Pastikan payment_method diambil dengan benar dari payroll_generated_details
+            if ($payrollDetail && isset($payrollDetail->payment_method) && !empty($payrollDetail->payment_method)) {
+                $paymentMethod = $payrollDetail->payment_method;
+            } else {
+                $paymentMethod = 'transfer'; // Default jika belum di-generate atau belum di-set
+            }
+            
+            // Debug: Log payment method untuk user tertentu
+            if ($userId <= 10) { // Log untuk 10 user pertama saja untuk menghindari log terlalu banyak
+                \Log::info('Export - Payment Method', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'payroll_detail_exists' => $payrollDetail ? true : false,
+                    'payment_method' => $paymentMethod,
+                    'payment_method_from_detail' => $payrollDetail->payment_method ?? 'null'
+                ]);
+            }
             
             // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
             if ($payrollDetail) {
@@ -2556,7 +2707,10 @@ class PayrollReportController extends Controller
                 $cityLedgerTotal = $payrollDetail->city_ledger_total ?? $cityLedgerTotal;
                 $phBonus = $payrollDetail->ph_bonus ?? $phBonus;
                 $hariKerja = $payrollDetail->hari_kerja ?? $hariKerja;
-                $paymentMethod = $payrollDetail->payment_method ?? 'transfer';
+                // PERBAIKAN: Jangan timpa payment_method jika sudah di-set sebelumnya, atau jika payment_method dari detail tidak null
+                if (isset($payrollDetail->payment_method) && !empty($payrollDetail->payment_method)) {
+                    $paymentMethod = $payrollDetail->payment_method;
+                }
                 
                 // Ambil custom items dari JSON jika ada - PISAHKAN BERDASARKAN GAJIAN TYPE
                 if ($payrollDetail->custom_items) {
@@ -2699,6 +2853,15 @@ class PayrollReportController extends Controller
         if (!$userId || !$outletId || !$startDate || !$endDate) {
             return response()->json(['error' => 'Missing required parameters'], 400);
         }
+        
+        // Debug: Log tanggal yang diterima
+        \Log::info('Attendance Detail - Received dates', [
+            'user_id' => $userId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'start_date_type' => gettype($startDate),
+            'end_date_type' => gettype($endDate)
+        ]);
 
         // Use AttendanceController method to get attendance data (same logic as my attendance)
         $attendanceController = new AttendanceController();
@@ -3115,9 +3278,9 @@ class PayrollReportController extends Controller
         }
 
         // Get master data (untuk konfigurasi payroll, bukan data per periode)
+        // Ambil berdasarkan user_id saja, tanpa filter outlet_id
         $masterData = DB::table('payroll_master')
             ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
             ->first();
 
         if (!$masterData) {
@@ -3531,9 +3694,9 @@ class PayrollReportController extends Controller
         }
 
         // Get master data (untuk konfigurasi payroll, bukan data per periode)
+        // Ambil berdasarkan user_id saja, tanpa filter outlet_id
         $masterData = DB::table('payroll_master')
             ->where('user_id', $userId)
-            ->where('outlet_id', $outletId)
             ->first();
 
         if (!$masterData) {
@@ -4573,11 +4736,41 @@ class PayrollReportController extends Controller
      */
     private function calculatePHBonus($userId, $startDate, $endDate)
     {
+        // Debug: Log masuk ke method
+        \Log::info('calculatePHBonus - Method called', [
+            'user_id' => $userId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'start_type' => gettype($startDate),
+            'end_type' => gettype($endDate)
+        ]);
+        
         // Get holiday attendance compensations for this user in the period
         // Only count bonus type, not extra_off
+        // PERBAIKAN: Convert Carbon to string format 'Y-m-d' untuk whereBetween (sama seperti calculatePHData di AttendanceReportController)
+        $startDateStr = $startDate instanceof \Carbon\Carbon ? $startDate->format('Y-m-d') : $startDate;
+        $endDateStr = $endDate instanceof \Carbon\Carbon ? $endDate->format('Y-m-d') : $endDate;
+        
+        // Pastikan format tanggal benar (Y-m-d) - handle jika sudah string
+        if (is_string($startDateStr) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDateStr)) {
+            $startDateStr = date('Y-m-d', strtotime($startDateStr));
+        }
+        if (is_string($endDateStr) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDateStr)) {
+            $endDateStr = date('Y-m-d', strtotime($endDateStr));
+        }
+        
+        // Debug: Log query parameters
+        \Log::info('calculatePHBonus - Query parameters', [
+            'user_id' => $userId,
+            'start_date_str' => $startDateStr,
+            'end_date_str' => $endDateStr,
+            'start_date_original' => $startDate,
+            'end_date_original' => $endDate
+        ]);
+        
         $compensations = DB::table('holiday_attendance_compensations')
             ->where('user_id', $userId)
-            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->whereBetween('holiday_date', [$startDateStr, $endDateStr])
             ->where('compensation_type', 'bonus') // Only bonus, not extra_off
             ->whereIn('status', ['approved', 'used']) // Only count approved or used compensations
             ->get();
@@ -4587,6 +4780,23 @@ class PayrollReportController extends Controller
         foreach ($compensations as $compensation) {
             $phBonus += $compensation->compensation_amount ?? 0;
         }
+        
+        // Debug logging untuk memastikan query benar (log semua, termasuk yang 0)
+        \Log::info('calculatePHBonus - Query result', [
+            'user_id' => $userId,
+            'start_date' => $startDateStr,
+            'end_date' => $endDateStr,
+            'ph_bonus' => $phBonus,
+            'compensations_count' => $compensations->count(),
+            'compensations' => $compensations->map(function($c) {
+                return [
+                    'id' => $c->id,
+                    'holiday_date' => $c->holiday_date,
+                    'compensation_amount' => $c->compensation_amount,
+                    'status' => $c->status
+                ];
+            })->toArray()
+        ]);
         
         return $phBonus;
     }
