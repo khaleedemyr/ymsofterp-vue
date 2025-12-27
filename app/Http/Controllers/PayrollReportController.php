@@ -107,23 +107,35 @@ class PayrollReportController extends Controller
 
             // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
             // HANYA karyawan yang resign di periode ini yang akan muncul
-            $resignations = EmployeeResignation::where('status', 'approved')
-                ->where('outlet_id', $outletId)
+            // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
+            // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
+            $allResignations = EmployeeResignation::where('status', 'approved')
                 ->whereBetween('resignation_date', [$start, $end])
-                ->get(['employee_id', 'resignation_date'])
-                ->keyBy('employee_id');
-
-            // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
-            $resignedEmployeeIds = $resignations->pluck('employee_id')->toArray();
+                ->get(['employee_id', 'resignation_date', 'outlet_id']);
+            
+            // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
+            // Ambil employee_id dari resignations yang memiliki user dengan outlet yang sesuai
+            $resignedEmployeeIds = $allResignations->pluck('employee_id')->toArray();
             if (!empty($resignedEmployeeIds)) {
+                // Ambil user yang resign dengan outlet yang sesuai - TIDAK memfilter status (bisa 'A' atau 'N')
+                $resignedUsers = User::whereIn('id', $resignedEmployeeIds)
+                    ->where('id_outlet', $outletId)
+                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+                
+                // Buat collection resignations yang sudah difilter berdasarkan outlet user
+                $resignedUserIds = $resignedUsers->pluck('id')->toArray();
+                $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
+                    ->keyBy('employee_id');
+                
+                // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
                 $existingUserIds = $users->pluck('id')->toArray();
-                $newResignedIds = array_diff($resignedEmployeeIds, $existingUserIds);
+                $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
                 if (!empty($newResignedIds)) {
-                    $resignedUsers = User::whereIn('id', $newResignedIds)
-                        ->where('id_outlet', $outletId)
-                        ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
-                    $users = $users->merge($resignedUsers);
+                    $newResignedUsers = $resignedUsers->whereIn('id', $newResignedIds);
+                    $users = $users->merge($newResignedUsers);
                 }
+            } else {
+                $resignations = collect()->keyBy('employee_id');
             }
 
             // Ambil data jabatan dan divisi
@@ -184,11 +196,35 @@ class PayrollReportController extends Controller
                     ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
                 
                 // Ambil data resignation untuk periode tersebut
-                $resignations = EmployeeResignation::where('status', 'approved')
-                    ->where('outlet_id', $outletId)
+                // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
+                // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
+                $allResignations = EmployeeResignation::where('status', 'approved')
                     ->whereBetween('resignation_date', [$start, $end])
-                    ->get(['employee_id', 'resignation_date'])
-                    ->keyBy('employee_id');
+                    ->get(['employee_id', 'resignation_date', 'outlet_id']);
+                
+                // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
+                // TIDAK memfilter status user (bisa 'A' atau 'N')
+                $resignedEmployeeIds = $allResignations->pluck('employee_id')->toArray();
+                if (!empty($resignedEmployeeIds)) {
+                    // Ambil user yang resign dengan outlet yang sesuai - TIDAK memfilter status
+                    $resignedUsers = User::whereIn('id', $resignedEmployeeIds)
+                        ->where('id_outlet', $outletId)
+                        ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+                    
+                    $resignedUserIds = $resignedUsers->pluck('id')->toArray();
+                    $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
+                        ->keyBy('employee_id');
+                    
+                    // PERBAIKAN: Tambahkan karyawan yang resign ke list users jika belum ada di payroll_generated_details
+                    $existingUserIds = $users->pluck('id')->toArray();
+                    $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
+                    if (!empty($newResignedIds)) {
+                        $newResignedUsers = $resignedUsers->whereIn('id', $newResignedIds);
+                        $users = $users->merge($newResignedUsers);
+                    }
+                } else {
+                    $resignations = collect()->keyBy('employee_id');
+                }
                 
                 // Ambil data custom items untuk periode ini
                 $customItems = CustomPayrollItem::forOutlet($outletId)
@@ -202,10 +238,49 @@ class PayrollReportController extends Controller
                     ->get(['id', 'name']);
                 
                 // Format data dari payroll_generated_details ke format yang dibutuhkan frontend
-                foreach ($payrollGeneratedDetailsFull as $userId => $detail) {
-                    $user = $users->firstWhere('id', $userId);
-                    if (!$user) {
-                        continue; // Skip jika user tidak ditemukan
+                // PERBAIKAN: Loop berdasarkan $users untuk memastikan semua user (termasuk yang resign) diproses
+                foreach ($users as $user) {
+                    $userId = $user->id;
+                    $detail = $payrollGeneratedDetailsFull->get($userId);
+                    
+                    // Jika user tidak ada di payroll_generated_details, buat detail kosong
+                    if (!$detail) {
+                        $detail = (object)[
+                            'nik' => $user->nik,
+                            'nama_lengkap' => $user->nama_lengkap,
+                            'no_rekening' => $user->no_rekening,
+                            'gaji_pokok' => 0,
+                            'tunjangan' => 0,
+                            'total_telat' => 0,
+                            'total_lembur' => 0,
+                            'nominal_lembur_per_jam' => 0,
+                            'gaji_lembur' => 0,
+                            'nominal_uang_makan' => 0,
+                            'uang_makan' => 0,
+                            'service_charge_by_point' => 0,
+                            'service_charge_pro_rate' => 0,
+                            'service_charge' => 0,
+                            'bpjs_jkn' => 0,
+                            'bpjs_tk' => 0,
+                            'lb_total' => 0,
+                            'deviasi_total' => 0,
+                            'city_ledger_total' => 0,
+                            'ph_bonus' => 0,
+                            'total_gaji' => 0,
+                            'hari_kerja' => 0,
+                            'gaji_per_menit' => 500,
+                            'potongan_telat' => 0,
+                            'total_alpha' => 0,
+                            'potongan_alpha' => 0,
+                            'potongan_unpaid_leave' => 0,
+                            'custom_items' => '[]',
+                            'leave_data' => '[]',
+                            'periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
+                            'payment_method' => 'transfer',
+                            'jabatan' => null,
+                            'divisi' => null,
+                            'point' => 0,
+                        ];
                     }
                     
                     // Ambil custom items dari database (lebih lengkap daripada yang di JSON)
@@ -570,13 +645,17 @@ class PayrollReportController extends Controller
             $employeeGroups = $rows->groupBy('user_id');
 
             // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
+            // PERBAIKAN: Loop berdasarkan $users untuk memastikan semua user (termasuk yang resign tanpa absensi) diproses
             $userData = [];
-            foreach ($employeeGroups as $userId => $employeeRows) {
-                $firstRow = $employeeRows->first();
-                $user = $users->firstWhere('id', $userId);
+            foreach ($users as $user) {
+                $userId = $user->id;
+                $employeeRows = $employeeGroups->get($userId, collect());
                 
-                if (!$user) {
-                    continue; // Skip jika user tidak ada di list users
+                // Jika user tidak punya data absensi, buat employeeRows kosong
+                if ($employeeRows->isEmpty()) {
+                    $firstRow = null;
+                } else {
+                    $firstRow = $employeeRows->first();
                 }
 
                 // Ambil data master payroll untuk user ini
@@ -1770,23 +1849,36 @@ class PayrollReportController extends Controller
 
         // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
         // HANYA karyawan yang resign di periode ini yang akan muncul
-        $resignations = EmployeeResignation::where('status', 'approved')
-            ->where('outlet_id', $outletId)
+        // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
+        // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
+        $allResignations = EmployeeResignation::where('status', 'approved')
             ->whereBetween('resignation_date', [$start, $end])
-            ->get(['employee_id', 'resignation_date'])
-            ->keyBy('employee_id');
-
-        // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
-        $resignedEmployeeIds = $resignations->pluck('employee_id')->toArray();
+            ->get(['employee_id', 'resignation_date', 'outlet_id']);
+        
+        // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
+        // Ambil employee_id dari resignations yang memiliki user dengan outlet yang sesuai
+        // TIDAK memfilter status user (bisa 'A' atau 'N')
+        $resignedEmployeeIds = $allResignations->pluck('employee_id')->toArray();
         if (!empty($resignedEmployeeIds)) {
+            // Ambil user yang resign dengan outlet yang sesuai - TIDAK memfilter status
+            $resignedUsers = User::whereIn('id', $resignedEmployeeIds)
+                ->where('id_outlet', $outletId)
+                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+            
+            // Buat collection resignations yang sudah difilter berdasarkan outlet user
+            $resignedUserIds = $resignedUsers->pluck('id')->toArray();
+            $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)
+                ->keyBy('employee_id');
+            
+            // Tambahkan karyawan yang resign di periode ini ke list users (jika belum ada)
             $existingUserIds = $users->pluck('id')->toArray();
-            $newResignedIds = array_diff($resignedEmployeeIds, $existingUserIds);
+            $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
             if (!empty($newResignedIds)) {
-                $resignedUsers = User::whereIn('id', $newResignedIds)
-                    ->where('id_outlet', $outletId)
-                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
-                $users = $users->merge($resignedUsers);
+                $newResignedUsers = $resignedUsers->whereIn('id', $newResignedIds);
+                $users = $users->merge($newResignedUsers);
             }
+        } else {
+            $resignations = collect()->keyBy('employee_id');
         }
 
         $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
