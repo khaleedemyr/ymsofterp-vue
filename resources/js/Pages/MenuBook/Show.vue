@@ -60,12 +60,12 @@
           </div>
         </div>
 
-        <!-- Zoom Controls -->
-        <div class="flex justify-center mb-6">
-          <div class="bg-white/80 backdrop-blur-sm rounded-full shadow-xl p-3 flex items-center gap-4 border border-amber-100">
+        <!-- Zoom Controls - Fixed position agar tidak tertutup -->
+        <div class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 mb-6">
+          <div class="bg-white/90 backdrop-blur-sm rounded-full shadow-2xl p-3 flex items-center gap-4 border-2 border-amber-200">
             <button
               @click="zoomOut"
-              class="w-10 h-10 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-700 flex items-center justify-center transition-all duration-300 hover:scale-110"
+              class="w-10 h-10 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-700 flex items-center justify-center transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="zoomLevel <= 0.5"
             >
               <i class="fa-solid fa-minus"></i>
@@ -73,7 +73,7 @@
             <span class="text-amber-700 font-semibold min-w-[60px] text-center">{{ Math.round(zoomLevel * 100) }}%</span>
             <button
               @click="zoomIn"
-              class="w-10 h-10 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-700 flex items-center justify-center transition-all duration-300 hover:scale-110"
+              class="w-10 h-10 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-700 flex items-center justify-center transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="zoomLevel >= 2"
             >
               <i class="fa-solid fa-plus"></i>
@@ -88,49 +88,61 @@
         </div>
 
         <!-- Book Viewer -->
-        <div v-if="filteredPages.length > 0" class="flex justify-center items-center min-h-[600px]">
+        <div v-if="filteredPages.length > 0" class="flex justify-center items-center min-h-[600px] mt-20">
           <div class="relative" :style="{ transform: `scale(${zoomLevel})`, transformOrigin: 'center', transition: 'transform 0.3s ease' }">
             <!-- Desktop: 2 pages view -->
-            <div v-if="!isMobile" class="book-container relative">
-              <div class="flex gap-4 items-center">
+            <div v-if="!isMobile" class="book-container relative" style="perspective: 2500px;">
+              <div class="flex gap-4 items-center relative">
                 <!-- Left Page -->
                 <div
-                  class="book-page shadow-2xl rounded-l-lg overflow-hidden bg-white"
-                  :class="{ 'flip-left': isFlipping && flipDirection === 'left' }"
+                  class="book-page shadow-2xl rounded-l-lg overflow-hidden bg-white relative"
+                  :class="{ 
+                    'flip-left': isFlipping && flipDirection === 'left',
+                    'flip-right-active': isFlipping && flipDirection === 'right'
+                  }"
+                  style="transform-origin: right center;"
                 >
-                  <img
-                    v-if="currentLeftPage && getImageUrl(currentLeftPage.image)"
-                    :src="getImageUrl(currentLeftPage.image)"
-                    :alt="`Page ${currentLeftPage.page_order}`"
-                    class="w-full h-full object-contain"
-                    draggable="false"
-                    @error="(e) => { e.target.style.display = 'none'; }"
-                  />
-                  <div v-else class="w-[500px] h-[700px] bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
-                    <div class="text-center text-amber-400">
-                      <i class="fa-solid fa-book-open text-6xl mb-4"></i>
-                      <p class="text-xl font-serif">Cover</p>
+                  <div class="page-content">
+                    <img
+                      v-if="currentLeftPage && getImageUrl(currentLeftPage.image)"
+                      :src="getImageUrl(currentLeftPage.image)"
+                      :alt="`Page ${currentLeftPage.page_order}`"
+                      class="w-full h-full object-contain"
+                      draggable="false"
+                      @error="(e) => { e.target.style.display = 'none'; }"
+                    />
+                    <div v-else class="w-[500px] h-[700px] bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
+                      <div class="text-center text-amber-400">
+                        <i class="fa-solid fa-book-open text-6xl mb-4"></i>
+                        <p class="text-xl font-serif">Cover</p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <!-- Right Page -->
                 <div
-                  class="book-page shadow-2xl rounded-r-lg overflow-hidden bg-white"
-                  :class="{ 'flip-right': isFlipping && flipDirection === 'right' }"
+                  class="book-page shadow-2xl rounded-r-lg overflow-hidden bg-white relative"
+                  :class="{ 
+                    'flip-right': isFlipping && flipDirection === 'right',
+                    'flip-left-active': isFlipping && flipDirection === 'left'
+                  }"
+                  style="transform-origin: left center;"
                 >
-                  <img
-                    v-if="currentRightPage && getImageUrl(currentRightPage.image)"
-                    :src="getImageUrl(currentRightPage.image)"
-                    :alt="`Page ${currentRightPage.page_order}`"
-                    class="w-full h-full object-contain"
-                    draggable="false"
-                    @error="(e) => { e.target.style.display = 'none'; }"
-                  />
-                  <div v-else class="w-[500px] h-[700px] bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
-                    <div class="text-center text-amber-400">
-                      <i class="fa-solid fa-book-open text-6xl mb-4"></i>
-                      <p class="text-xl font-serif">End</p>
+                  <div class="page-content">
+                    <img
+                      v-if="currentRightPage && getImageUrl(currentRightPage.image)"
+                      :src="getImageUrl(currentRightPage.image)"
+                      :alt="`Page ${currentRightPage.page_order}`"
+                      class="w-full h-full object-contain"
+                      draggable="false"
+                      @error="(e) => { e.target.style.display = 'none'; }"
+                    />
+                    <div v-else class="w-[500px] h-[700px] bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
+                      <div class="text-center text-amber-400">
+                        <i class="fa-solid fa-book-open text-6xl mb-4"></i>
+                        <p class="text-xl font-serif">End</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -138,19 +150,21 @@
             </div>
 
             <!-- Mobile: Single page -->
-            <div v-else class="book-container-mobile">
+            <div v-else class="book-container-mobile" style="perspective: 1500px;">
               <div
-                class="book-page-mobile shadow-2xl rounded-lg overflow-hidden bg-white"
+                class="book-page-mobile shadow-2xl rounded-lg overflow-hidden bg-white relative"
                 :class="{ 'flip': isFlipping }"
               >
-                <img
-                  v-if="currentPage && getImageUrl(currentPage.image)"
-                  :src="getImageUrl(currentPage.image)"
-                  :alt="`Page ${currentPage.page_order}`"
-                  class="w-full h-full object-contain"
-                  draggable="false"
-                  @error="(e) => { e.target.style.display = 'none'; }"
-                />
+                <div class="page-content">
+                  <img
+                    v-if="currentPage && getImageUrl(currentPage.image)"
+                    :src="getImageUrl(currentPage.image)"
+                    :alt="`Page ${currentPage.page_order}`"
+                    class="w-full h-full object-contain"
+                    draggable="false"
+                    @error="(e) => { e.target.style.display = 'none'; }"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -405,7 +419,8 @@ const nextPage = () => {
     setTimeout(() => {
       currentPageIndex.value++;
       isFlipping.value = false;
-    }, 300);
+      flipDirection.value = '';
+    }, 800); // Durasi lebih lama untuk efek flip yang lebih smooth
   }
 };
 
@@ -416,7 +431,8 @@ const previousPage = () => {
     setTimeout(() => {
       currentPageIndex.value--;
       isFlipping.value = false;
-    }, 300);
+      flipDirection.value = '';
+    }, 800); // Durasi lebih lama untuk efek flip yang lebih smooth
   }
 };
 
@@ -428,7 +444,8 @@ const goToPage = (index) => {
     setTimeout(() => {
       currentPageIndex.value = targetPageIndex;
       isFlipping.value = false;
-    }, 300);
+      flipDirection.value = '';
+    }, 800); // Durasi lebih lama untuk efek flip yang lebih smooth
   }
 };
 
@@ -572,26 +589,76 @@ onUnmounted(() => {
 .book-page {
   width: 500px;
   height: 700px;
-  transition: transform 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
 }
 
 .book-page-mobile {
   width: 90vw;
   max-width: 400px;
   height: 600px;
-  transition: transform 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
 }
 
+.page-content {
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+/* Flip Left - Halaman kiri membuka ke kiri (rotate dari kanan) */
 .flip-left {
-  transform: perspective(1000px) rotateY(-15deg);
+  transform: perspective(2500px) rotateY(-180deg) translateZ(0);
+  z-index: 10;
 }
 
+/* Flip Right - Halaman kanan membuka ke kanan (rotate dari kiri) */
 .flip-right {
-  transform: perspective(1000px) rotateY(15deg);
+  transform: perspective(2500px) rotateY(180deg) translateZ(0);
+  z-index: 10;
 }
 
+/* Active state untuk halaman yang sedang di-flip - efek membuka */
+.flip-left-active {
+  transform: perspective(2500px) rotateY(-30deg) translateZ(0);
+  z-index: 5;
+}
+
+.flip-right-active {
+  transform: perspective(2500px) rotateY(30deg) translateZ(0);
+  z-index: 5;
+}
+
+/* Mobile flip */
 .flip {
-  transform: perspective(1000px) rotateY(5deg);
+  transform: perspective(1500px) rotateY(180deg) translateZ(0);
+}
+
+/* Shadow effect saat flip - efek depth yang lebih realistis */
+.book-page.flip-left,
+.book-page.flip-right {
+  box-shadow: 
+    -30px 0 50px rgba(0, 0, 0, 0.4),
+    -10px 0 20px rgba(0, 0, 0, 0.3),
+    inset -10px 0 20px rgba(0, 0, 0, 0.1);
+}
+
+.book-page.flip-left-active,
+.book-page.flip-right-active {
+  box-shadow: 
+    -15px 0 30px rgba(0, 0, 0, 0.3),
+    -5px 0 10px rgba(0, 0, 0, 0.2);
+}
+
+.book-page-mobile.flip {
+  box-shadow: 
+    -20px 0 40px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(0, 0, 0, 0.2);
 }
 
 @media (max-width: 768px) {
