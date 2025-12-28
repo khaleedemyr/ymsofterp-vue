@@ -56,6 +56,7 @@ use App\Http\Controllers\ButcherAnalysisReportController;
 use App\Http\Controllers\InternalUseWasteController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\MenuController;
+use App\Http\Controllers\MenuBookController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserRoleController;
 use App\Http\Controllers\OpsKitchen\ActionPlanGuestReviewController;
@@ -712,6 +713,21 @@ Route::post('/items/price-update/preview', [ItemController::class, 'previewPrice
 Route::post('/items/price-update/import', [ItemController::class, 'importPriceUpdate'])->name('items.price-update.import');
 Route::resource('modifiers', ModifierController::class);
 Route::resource('modifier-options', ModifierOptionController::class);
+
+// Menu Book routes
+Route::get('/menu-book', [MenuBookController::class, 'index'])->name('menu-book.index');
+Route::post('/menu-book', [MenuBookController::class, 'storeBook'])->name('menu-book.store-book');
+Route::put('/menu-book/{menuBook}', [MenuBookController::class, 'updateBook'])->name('menu-book.update-book');
+Route::post('/menu-book/{menuBook}', [MenuBookController::class, 'updateBook'])->name('menu-book.update-book');
+Route::delete('/menu-book/{menuBook}', [MenuBookController::class, 'destroyBook'])->name('menu-book.destroy-book');
+
+// Menu Book Pages routes
+Route::get('/menu-book/{menuBook}', [MenuBookController::class, 'show'])->name('menu-book.show');
+Route::post('/menu-book/{menuBook}/page', [MenuBookController::class, 'store'])->name('menu-book.page.store');
+Route::put('/menu-book/page/{menuBookPage}', [MenuBookController::class, 'update'])->name('menu-book.page.update');
+Route::post('/menu-book/page/{menuBookPage}', [MenuBookController::class, 'update'])->name('menu-book.page.update');
+Route::delete('/menu-book/page/{menuBookPage}', [MenuBookController::class, 'destroy'])->name('menu-book.page.destroy');
+Route::post('/menu-book/page/update-order', [MenuBookController::class, 'updateOrder'])->name('menu-book.page.update-order');
 // PR Foods specific routes MUST come BEFORE resource route to avoid conflicts
 Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
 Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);
