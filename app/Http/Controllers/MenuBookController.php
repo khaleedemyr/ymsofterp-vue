@@ -483,5 +483,84 @@ class MenuBookController extends Controller
             return back()->withErrors(['error' => 'Gagal menghapus halaman: ' . $e->getMessage()]);
         }
     }
+
+    // ========== CUSTOMER PUBLIC VIEWS ==========
+    
+    // List outlets yang memiliki menu books
+    public function customerIndex()
+    {
+        // Get outlets that have active menu books with pages
+        $outlets = \DB::table('tbl_data_outlet as o')
+            ->join('menu_book_outlets as mbo', 'o.id_outlet', '=', 'mbo.outlet_id')
+            ->join('menu_books as mb', 'mbo.menu_book_id', '=', 'mb.id')
+            ->join('menu_book_pages as mbp', 'mb.id', '=', 'mbp.menu_book_id')
+            ->where('o.status', 'A')
+            ->where('mb.status', 'active')
+            ->where('mbp.status', 'active')
+            ->select('o.*')
+            ->distinct()
+            ->orderBy('o.nama_outlet')
+            ->get();
+
+        return Inertia::render('MenuBook/Customer/Index', [
+            'outlets' => $outlets,
+        ]);
+    }
+
+    // List menu books untuk outlet tertentu
+    public function customerOutlet($outletId)
+    {
+        $outlet = \DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->where('status', 'A')
+            ->first();
+
+        if (!$outlet) {
+            abort(404, 'Outlet not found');
+        }
+
+        $menuBooks = MenuBook::where('status', 'active')
+            ->whereHas('outlets', function($q) use ($outletId) {
+                $q->where('id_outlet', $outletId);
+            })
+            ->whereHas('pages')
+            ->withCount('pages')
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('MenuBook/Customer/Outlet', [
+            'outlet' => $outlet,
+            'menuBooks' => $menuBooks,
+        ]);
+    }
+
+    // Show menu book pages untuk customer (public view)
+    public function customerShow(Request $request, MenuBook $menuBook)
+    {
+        // Only show active menu books
+        if ($menuBook->status !== 'active') {
+            abort(404, 'Menu book not found');
+        }
+
+        $query = $menuBook->pages()
+            ->where('status', 'active')
+            ->with(['items', 'categories'])
+            ->orderBy('page_order', 'asc');
+
+        $pages = $query->get();
+
+        if ($pages->isEmpty()) {
+            abort(404, 'No pages found');
+        }
+
+        // Get outlet info
+        $outlet = $menuBook->outlets()->first();
+
+        return Inertia::render('MenuBook/Customer/Show', [
+            'menuBook' => $menuBook,
+            'pages' => $pages,
+            'outlet' => $outlet,
+        ]);
+    }
 }
 

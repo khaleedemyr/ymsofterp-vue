@@ -2008,6 +2008,11 @@ Route::prefix('admin/job-vacancy')->middleware(['auth'])->group(function () {
 Route::get('/job-vacancies', fn() => inertia('Landing/JobVacancyList'));
 Route::get('/api/job-vacancies', [\App\Http\Controllers\JobVacancyController::class, 'publicList']);
 
+// Menu Book Public Routes (Customer View - No Auth Required)
+Route::get('/menu', [MenuBookController::class, 'customerIndex'])->name('menu.customer.index');
+Route::get('/menu/outlet/{outlet}', [MenuBookController::class, 'customerOutlet'])->name('menu.customer.outlet');
+Route::get('/menu/book/{menuBook}', [MenuBookController::class, 'customerShow'])->name('menu.customer.show');
+
 Route::get('/payroll/master', [PayrollController::class, 'index'])->name('payroll.master');
 Route::post('/payroll/master', [PayrollController::class, 'store'])->name('payroll.master.store');
 Route::get('/payroll/master/template', [PayrollController::class, 'downloadTemplate'])->name('payroll.master.template');
