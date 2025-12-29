@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class AIAnalyticsController extends Controller
@@ -71,11 +72,14 @@ class AIAnalyticsController extends Controller
                 ], 400);
             }
             
-            // Get chat history untuk context
-            $chatHistory = $this->getChatHistoryForContext($sessionId, 10); // Ambil 10 chat terakhir
+            // Get chat history untuk context (dikurangi untuk performa)
+            $chatHistory = $this->getChatHistoryForContext($sessionId, 3); // Ambil 3 chat terakhir saja untuk performa lebih cepat
             
-            // Get dashboard data
-            $dashboardData = $this->dashboardController->getDashboardDataPublic($dateFrom, $dateTo, 'daily');
+            // Get dashboard data dengan cache untuk performa lebih cepat (cache 5 menit)
+            $cacheKey = 'dashboard_data_ai_' . md5($dateFrom . '_' . $dateTo);
+            $dashboardData = Cache::remember($cacheKey, 300, function() use ($dateFrom, $dateTo) {
+                return $this->dashboardController->getDashboardDataPublic($dateFrom, $dateTo, 'daily');
+            });
             
             // Get answer dengan akses database dinamis dan chat history
             $answer = $this->aiService->answerQuestion($question, $dashboardData, $dateFrom, $dateTo, $chatHistory);

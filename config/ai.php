@@ -20,7 +20,7 @@ return [
     // Anthropic Claude sebagai alternatif
     'claude' => [
         'api_key' => env('ANTHROPIC_API_KEY', null),
-        'model' => env('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929'), // Claude Sonnet 4.5 (latest) untuk analisis terbaik
+        'model' => env('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'), // Claude Haiku 4.5 (fastest) untuk performa lebih cepat, atau claude-sonnet-4-5-20250929 untuk analisis lebih dalam
         'temperature' => 0.7,
         'max_tokens' => 8192, // Increased untuk analisis yang lebih lengkap (Claude Sonnet 4.5 max output: 8192 tokens)
         'budget_limit' => env('CLAUDE_BUDGET_LIMIT', 2000000), // Default Rp 2 juta per bulan

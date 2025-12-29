@@ -112,7 +112,7 @@ class AIAnalyticsService
                     ];
                     
                     // Setup HTTP client untuk Claude dengan timeout lebih lama (120 detik untuk prompt panjang)
-                    $httpClient = Http::timeout(120)
+                    $httpClient = Http::timeout(180)
                         ->withHeaders([
                             'Content-Type' => 'application/json',
                             'x-api-key' => $this->claudeKey,
@@ -805,8 +805,8 @@ class AIAnalyticsService
                     ]
                 ];
                 
-                // Setup HTTP client untuk Claude dengan timeout lebih lama (120 detik untuk prompt panjang)
-                $httpClient = Http::timeout(120)
+                // Setup HTTP client untuk Claude dengan timeout lebih lama (180 detik untuk prompt panjang dan analisis kompleks)
+                $httpClient = Http::timeout(180)
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                         'x-api-key' => $this->claudeKey,
@@ -819,18 +819,30 @@ class AIAnalyticsService
                 }
                 
                 // Try multiple models if first one fails
-                $modelsToTry = [$model];
-                // Add fallback models
+                // Prioritaskan model yang lebih cepat untuk performa optimal
+                // Untuk Q&A, gunakan Haiku dulu (lebih cepat), Sonnet hanya untuk analisis kompleks
+                $modelsToTry = [
+                    'claude-haiku-4-5-20251001',     // Fastest, cheapest - SELALU coba dulu untuk performa optimal
+                ];
+                
+                // Tambahkan model utama hanya jika berbeda dari Haiku
+                if ($model !== 'claude-haiku-4-5-20251001') {
+                    $modelsToTry[] = $model;
+                }
+                
+                // Add fallback models (prioritaskan yang cepat)
                 $fallbackModels = [
-                    'claude-haiku-4-5-20251001',     // Fastest, cheapest
-                    'claude-3-5-haiku-20241022',     // Older version fallback
-                    'claude-3-sonnet-20240229',      // Older version fallback
+                    'claude-3-5-haiku-20241022',     // Older version fallback (cepat)
+                    'claude-3-sonnet-20240229',      // Older version fallback (jika haiku gagal)
                 ];
                 foreach ($fallbackModels as $fallback) {
                     if (!in_array($fallback, $modelsToTry)) {
                         $modelsToTry[] = $fallback;
                     }
                 }
+                // Remove duplicates
+                $modelsToTry = array_unique($modelsToTry);
+                $modelsToTry = array_values($modelsToTry);
                 
                 $lastError = null;
                 $maxRetries = 2; // Retry maksimal 2 kali per model
@@ -1133,15 +1145,22 @@ class AIAnalyticsService
         $prompt .= "JANGAN katakan bahwa data tidak tersedia - data SETAHUN TERSEDIA di database.\n";
         $prompt .= "Jika user meminta analisis periode panjang, sarankan untuk menggunakan filter tanggal yang lebih panjang.\n\n";
         
-        // Tambahkan chat history sebagai context jika ada
+        // Tambahkan chat history sebagai context jika ada (dibatasi untuk performa)
         if (!empty($chatHistory) && is_array($chatHistory)) {
             $prompt .= "=== CONTEXT: PERCAKAPAN SEBELUMNYA ===\n";
-            $prompt .= "Berikut adalah percakapan sebelumnya untuk memberikan konteks:\n\n";
-            foreach ($chatHistory as $index => $chat) {
+            $prompt .= "Berikut adalah percakapan sebelumnya untuk memberikan konteks (maksimal 3 percakapan terakhir):\n\n";
+            // Batasi hanya 3 chat terakhir untuk performa
+            $recentChats = array_slice($chatHistory, -3);
+            foreach ($recentChats as $index => $chat) {
                 $chatNum = $index + 1;
+                // Batasi panjang answer yang dikirim (maksimal 500 karakter per answer)
+                $answer = $chat['answer'] ?? 'N/A';
+                if (strlen($answer) > 500) {
+                    $answer = substr($answer, 0, 500) . '... (truncated)';
+                }
                 $prompt .= "Percakapan #{$chatNum}:\n";
                 $prompt .= "User: " . ($chat['question'] ?? 'N/A') . "\n";
-                $prompt .= "AI: " . ($chat['answer'] ?? 'N/A') . "\n\n";
+                $prompt .= "AI: " . $answer . "\n\n";
             }
             $prompt .= "Gunakan context percakapan sebelumnya untuk memberikan jawaban yang lebih relevan dan konsisten.\n";
             $prompt .= "Jika pertanyaan user mengacu pada percakapan sebelumnya, gunakan informasi dari percakapan tersebut.\n\n";
@@ -1208,27 +1227,52 @@ class AIAnalyticsService
             }
         }
         
-        // Sales trend per hari (DAILY SALES DATA) - PENTING untuk analisis per tanggal
+        // Sales trend per hari (DAILY SALES DATA) - Dibatasi untuk performa
         if (!empty($salesTrend)) {
             $prompt .= "\n=== SALES TREND PER HARI (DAILY SALES DATA) ===\n";
-            $prompt .= "Data penjualan harian lengkap untuk analisis trend, perbandingan tanggal, dan identifikasi anomali:\n";
-            foreach ($salesTrend as $day) {
-                $day = $this->toArray($day);
-                $date = $day['period'] ?? 'N/A';
-                $orders = $day['orders'] ?? 0;
-                $revenue = $day['revenue'] ?? 0;
-                $customers = $day['customers'] ?? 0;
-                $avgOrderValue = $day['avg_order_value'] ?? 0;
-                $prompt .= "Tanggal: {$date} - Orders: {$orders}, Revenue: Rp " . number_format($revenue, 0, ',', '.') . ", Customers: {$customers}, Avg Order Value: Rp " . number_format($avgOrderValue, 0, ',', '.') . "\n";
+            $prompt .= "Data penjualan harian (dibatasi untuk performa, jika perlu detail lebih bisa request data spesifik):\n";
+            
+            // Batasi data yang dikirim: maksimal 30 hari atau summary jika lebih dari 30 hari
+            $salesTrendCount = count($salesTrend);
+            if ($salesTrendCount > 30) {
+                // Jika lebih dari 30 hari, kirim summary + beberapa hari terakhir
+                $prompt .= "Total hari: {$salesTrendCount} hari\n";
+                
+                // Summary statistik
+                $totalRevenue = array_sum(array_column($salesTrend, 'revenue'));
+                $totalOrders = array_sum(array_column($salesTrend, 'orders'));
+                $avgDailyRevenue = $totalRevenue / $salesTrendCount;
+                $prompt .= "Summary: Total Revenue: Rp " . number_format($totalRevenue, 0, ',', '.') . ", Total Orders: {$totalOrders}, Average Daily Revenue: Rp " . number_format($avgDailyRevenue, 0, ',', '.') . "\n\n";
+                
+                // Tampilkan 7 hari terakhir
+                $prompt .= "7 Hari Terakhir:\n";
+                foreach (array_slice($salesTrend, -7) as $day) {
+                    $day = $this->toArray($day);
+                    $date = $day['period'] ?? 'N/A';
+                    $orders = $day['orders'] ?? 0;
+                    $revenue = $day['revenue'] ?? 0;
+                    $prompt .= "Tanggal: {$date} - Orders: {$orders}, Revenue: Rp " . number_format($revenue, 0, ',', '.') . "\n";
+                }
+            } else {
+                // Jika <= 30 hari, kirim semua
+                foreach ($salesTrend as $day) {
+                    $day = $this->toArray($day);
+                    $date = $day['period'] ?? 'N/A';
+                    $orders = $day['orders'] ?? 0;
+                    $revenue = $day['revenue'] ?? 0;
+                    $customers = $day['customers'] ?? 0;
+                    $avgOrderValue = $day['avg_order_value'] ?? 0;
+                    $prompt .= "Tanggal: {$date} - Orders: {$orders}, Revenue: Rp " . number_format($revenue, 0, ',', '.') . ", Customers: {$customers}, Avg Order Value: Rp " . number_format($avgOrderValue, 0, ',', '.') . "\n";
+                }
             }
             $prompt .= "\nCATATAN: Gunakan data ini untuk menjawab pertanyaan tentang perbandingan revenue antar tanggal, trend harian, atau analisis spesifik per tanggal.\n";
         }
         
-        // Revenue per outlet - PENTING untuk analisis per outlet
+        // Revenue per outlet - Dibatasi untuk performa
         $revenuePerOutlet = $data['revenuePerOutlet'] ?? [];
         if (!empty($revenuePerOutlet)) {
             $prompt .= "\n=== REVENUE PER OUTLET ===\n";
-            $prompt .= "Data penjualan per outlet lengkap untuk analisis performa outlet dan perbandingan antar outlet:\n";
+            $prompt .= "Data penjualan per outlet (summary untuk performa lebih cepat):\n";
             foreach ($revenuePerOutlet as $regionName => $regionData) {
                 $regionData = $this->toArray($regionData);
                 $prompt .= "\nRegion: {$regionName} (Code: " . ($regionData['region_code'] ?? 'N/A') . ")\n";
@@ -1236,10 +1280,15 @@ class AIAnalyticsService
                 $prompt .= "  Total Orders: " . ($regionData['total_orders'] ?? 0) . "\n";
                 $prompt .= "  Total Customers: " . ($regionData['total_pax'] ?? 0) . "\n";
                 if (isset($regionData['outlets']) && is_array($regionData['outlets'])) {
-                    foreach ($regionData['outlets'] as $outlet) {
+                    // Batasi outlet yang ditampilkan: top 5 per region untuk performa
+                    $outlets = array_slice($regionData['outlets'], 0, 5);
+                    foreach ($outlets as $outlet) {
                         $outlet = $this->toArray($outlet);
                         $prompt .= "  - Outlet: " . ($outlet['outlet_name'] ?? 'N/A') . " (Code: " . ($outlet['outlet_code'] ?? 'N/A') . ")\n";
                         $prompt .= "    Revenue: Rp " . number_format($outlet['total_revenue'] ?? 0, 0, ',', '.') . ", Orders: " . ($outlet['order_count'] ?? 0) . ", Customers: " . ($outlet['total_pax'] ?? 0) . ", Avg Order Value: Rp " . number_format($outlet['avg_order_value'] ?? 0, 0, ',', '.') . "\n";
+                    }
+                    if (count($regionData['outlets']) > 5) {
+                        $prompt .= "  ... dan " . (count($regionData['outlets']) - 5) . " outlet lainnya\n";
                     }
                 }
             }

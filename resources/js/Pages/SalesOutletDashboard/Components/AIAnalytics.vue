@@ -512,7 +512,9 @@ const askQuestion = async (event) => {
   
   try {
     // Pastikan menggunakan POST method secara eksplisit
-    const response = await axios({
+    // Di server, kadang ada masalah dengan axios.post() jadi gunakan axios() dengan method eksplisit
+    // Juga pastikan tidak ada interceptor yang mengubah method
+    const requestConfig = {
       method: 'POST',
       url: '/sales-outlet-dashboard/ai/ask',
       data: {
@@ -524,9 +526,24 @@ const askQuestion = async (event) => {
       withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      },
+      // Prevent redirect yang bisa menyebabkan GET request
+      maxRedirects: 0,
+      validateStatus: function (status) {
+        return status >= 200 && status < 300;
       }
+    };
+    
+    // Pastikan method tidak diubah oleh interceptor
+    Object.defineProperty(requestConfig, 'method', {
+      value: 'POST',
+      writable: false,
+      configurable: false
     });
+    
+    const response = await axios(requestConfig);
     
     if (response.data.success) {
       // Update session ID if returned
