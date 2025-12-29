@@ -1,10 +1,10 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+  <div class="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black relative overflow-hidden">
     <!-- Animated Background Elements -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div class="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-      <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
-      <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
+      <div class="absolute -top-40 -right-40 w-80 h-80 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-15 animate-blob"></div>
+      <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-400 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-blob animation-delay-2000"></div>
+      <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-yellow-600 rounded-full mix-blend-multiply filter blur-xl opacity-8 animate-blob animation-delay-4000"></div>
     </div>
 
     <!-- Header -->
@@ -30,7 +30,7 @@
           v-for="(outlet, index) in outlets"
           :key="outlet.id_outlet"
           @click="selectOutlet(outlet.id_outlet)"
-          class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 shadow-2xl cursor-pointer transform transition-all duration-500 hover:scale-105 hover:shadow-purple-500/50"
+          class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-xl border border-yellow-500/30 shadow-2xl cursor-pointer transform transition-all duration-500 hover:scale-105 hover:shadow-yellow-500/50 hover:border-yellow-400/60"
           :style="{ animationDelay: `${index * 100}ms` }"
         >
           <!-- Shine Effect -->
@@ -40,13 +40,13 @@
           <div class="relative p-8 h-full flex flex-col">
             <!-- Icon -->
             <div class="mb-6 flex justify-center">
-              <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg transform group-hover:rotate-12 transition-transform duration-300">
-                <i class="fa-solid fa-store text-3xl text-white"></i>
+              <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center shadow-lg shadow-yellow-500/30 transform group-hover:rotate-12 group-hover:shadow-yellow-500/50 transition-all duration-300">
+                <i class="fa-solid fa-store text-3xl text-black font-bold"></i>
               </div>
             </div>
 
             <!-- Outlet Name -->
-            <h3 class="text-2xl font-bold text-white mb-3 text-center group-hover:text-yellow-300 transition-colors duration-300">
+            <h3 class="text-2xl font-bold text-white mb-3 text-center group-hover:text-yellow-400 transition-colors duration-300">
               {{ outlet.nama_outlet }}
             </h3>
 
@@ -66,14 +66,14 @@
           </div>
 
           <!-- Decorative Corner -->
-          <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-400/20 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-500/30 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
         </div>
       </div>
 
       <!-- Empty State -->
       <div v-else class="text-center py-20">
-        <div class="bg-white/10 backdrop-blur-xl rounded-3xl p-12 border border-white/20 max-w-md mx-auto">
-          <i class="fa-solid fa-store-slash text-6xl text-gray-400 mb-4"></i>
+        <div class="bg-gray-800/90 backdrop-blur-xl rounded-3xl p-12 border border-yellow-500/30 max-w-md mx-auto shadow-2xl">
+          <i class="fa-solid fa-store-slash text-6xl text-yellow-500/50 mb-4"></i>
           <h3 class="text-2xl font-bold text-white mb-2">No Outlets Available</h3>
           <p class="text-gray-400">Menu books are not available at the moment.</p>
         </div>

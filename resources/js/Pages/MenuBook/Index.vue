@@ -81,7 +81,7 @@
             </div>
             
             <!-- Action Buttons -->
-            <div class="px-6 pb-6 flex gap-2">
+            <div class="px-6 pb-6 flex flex-wrap gap-2">
               <button
                 @click.stop="viewBook(book.id)"
                 class="flex-1 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300"
@@ -90,14 +90,24 @@
                 View
               </button>
               <button
+                @click.stop="openLandingPage"
+                class="px-4 py-2 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black rounded-lg transition-all duration-300 font-semibold shadow-md hover:shadow-lg"
+                title="View Customer Landing Page"
+              >
+                <i class="fa-solid fa-globe mr-1"></i>
+                <span class="hidden sm:inline">Landing</span>
+              </button>
+              <button
                 @click.stop="editBook(book)"
                 class="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-lg transition-all duration-300"
+                title="Edit Menu Book"
               >
                 <i class="fa-solid fa-edit"></i>
               </button>
               <button
                 @click.stop="deleteBook(book)"
                 class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-all duration-300"
+                title="Delete Menu Book"
               >
                 <i class="fa-solid fa-trash"></i>
               </button>
@@ -362,5 +372,10 @@ const deleteBook = (book) => {
       });
     }
   });
+};
+
+const openLandingPage = () => {
+  // Open landing page in new tab
+  window.open('/menu', '_blank');
 };
 </script>

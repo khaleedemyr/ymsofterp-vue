@@ -1,9 +1,9 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
+  <div class="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black relative overflow-hidden">
     <!-- Animated Background -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div class="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-      <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
+      <div class="absolute -top-40 -right-40 w-80 h-80 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-15 animate-blob"></div>
+      <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-400 rounded-full mix-blend-multiply filter blur-xl opacity-10 animate-blob animation-delay-2000"></div>
     </div>
 
     <!-- Header -->
@@ -12,7 +12,7 @@
         <!-- Back Button -->
         <button
           @click="goBack"
-          class="mb-6 text-white/80 hover:text-yellow-400 transition-colors duration-300 flex items-center gap-2 group"
+          class="mb-6 text-white/80 hover:text-yellow-500 transition-colors duration-300 flex items-center gap-2 group"
         >
           <i class="fa-solid fa-arrow-left transform group-hover:-translate-x-1 transition-transform duration-300"></i>
           <span>Back to Outlets</span>
@@ -21,15 +21,15 @@
         <!-- Outlet Info -->
         <div class="text-center mb-12">
           <div class="inline-block mb-4">
-            <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-2xl mx-auto mb-4">
-              <i class="fa-solid fa-store text-4xl text-white"></i>
+            <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center shadow-2xl shadow-yellow-500/30 mx-auto mb-4">
+              <i class="fa-solid fa-store text-4xl text-black font-bold"></i>
             </div>
           </div>
-          <h1 class="text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 mb-3">
+          <h1 class="text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400 mb-3">
             {{ outlet.nama_outlet }}
           </h1>
           <p v-if="outlet.lokasi" class="text-gray-300 text-lg flex items-center justify-center gap-2">
-            <i class="fa-solid fa-location-dot text-yellow-400"></i>
+            <i class="fa-solid fa-location-dot text-yellow-500"></i>
             {{ outlet.lokasi }}
           </p>
         </div>
@@ -43,7 +43,7 @@
           v-for="(book, index) in menuBooks"
           :key="book.id"
           @click="viewMenuBook(book.id)"
-          class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 shadow-2xl cursor-pointer transform transition-all duration-500 hover:scale-105 hover:shadow-yellow-500/50"
+          class="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-xl border border-yellow-500/30 shadow-2xl cursor-pointer transform transition-all duration-500 hover:scale-105 hover:shadow-yellow-500/50 hover:border-yellow-400/60"
           :style="{ animationDelay: `${index * 100}ms` }"
         >
           <!-- Shine Effect -->
@@ -53,13 +53,13 @@
           <div class="relative p-8 h-full flex flex-col">
             <!-- Book Icon -->
             <div class="mb-6 flex justify-center">
-              <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center shadow-lg transform group-hover:rotate-12 transition-transform duration-300">
-                <i class="fa-solid fa-book-open text-3xl text-white"></i>
+              <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center shadow-lg shadow-yellow-500/30 transform group-hover:rotate-12 group-hover:shadow-yellow-500/50 transition-all duration-300">
+                <i class="fa-solid fa-book-open text-3xl text-black font-bold"></i>
               </div>
             </div>
 
             <!-- Book Name -->
-            <h3 class="text-2xl font-bold text-white mb-3 text-center group-hover:text-yellow-300 transition-colors duration-300">
+            <h3 class="text-2xl font-bold text-white mb-3 text-center group-hover:text-yellow-400 transition-colors duration-300">
               {{ book.name }}
             </h3>
 
@@ -69,32 +69,32 @@
             </p>
 
             <!-- Pages Count -->
-            <div class="mt-auto flex items-center justify-center gap-2 text-yellow-400 mb-4">
+            <div class="mt-auto flex items-center justify-center gap-2 text-yellow-500 mb-4">
               <i class="fa-solid fa-file-lines"></i>
               <span class="text-sm font-medium">{{ book.pages_count }} Pages</span>
             </div>
 
             <!-- View Button -->
-            <div class="flex items-center justify-center gap-2 text-yellow-400 font-semibold group-hover:gap-4 transition-all duration-300">
+            <div class="flex items-center justify-center gap-2 text-yellow-500 font-semibold group-hover:gap-4 transition-all duration-300">
               <span>Explore Menu</span>
               <i class="fa-solid fa-arrow-right transform group-hover:translate-x-2 transition-transform duration-300"></i>
             </div>
           </div>
 
           <!-- Decorative Corner -->
-          <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-400/20 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-500/30 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
         </div>
       </div>
 
       <!-- Empty State -->
       <div v-else class="text-center py-20">
-        <div class="bg-white/10 backdrop-blur-xl rounded-3xl p-12 border border-white/20 max-w-md mx-auto">
-          <i class="fa-solid fa-book-open text-6xl text-gray-400 mb-4"></i>
+        <div class="bg-gray-800/90 backdrop-blur-xl rounded-3xl p-12 border border-yellow-500/30 max-w-md mx-auto shadow-2xl">
+          <i class="fa-solid fa-book-open text-6xl text-yellow-500/50 mb-4"></i>
           <h3 class="text-2xl font-bold text-white mb-2">No Menu Books Available</h3>
           <p class="text-gray-400 mb-6">This outlet doesn't have any menu books yet.</p>
           <button
             @click="goBack"
-            class="px-6 py-3 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300"
+            class="px-6 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black rounded-xl font-semibold hover:shadow-lg hover:shadow-yellow-500/50 transform hover:scale-105 transition-all duration-300"
           >
             Back to Outlets
           </button>
