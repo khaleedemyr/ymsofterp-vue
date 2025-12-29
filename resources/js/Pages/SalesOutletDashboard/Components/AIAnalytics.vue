@@ -169,12 +169,13 @@
       
       <!-- Modern Question Input -->
       <div class="p-5 bg-gradient-to-r from-white via-purple-50/30 to-white border-t border-purple-100/50 backdrop-blur-sm">
-        <div class="flex gap-3">
+        <form @submit.prevent="askQuestion" class="flex gap-3">
           <div class="flex-1 relative">
             <div class="absolute inset-0 bg-gradient-to-r from-purple-100/50 to-indigo-100/50 rounded-2xl blur-sm"></div>
             <input
               v-model="question"
-              @keyup.enter="askQuestion"
+              @keyup.enter.prevent="askQuestion"
+              @keydown.enter.prevent
               type="text"
               placeholder="Tanyakan sesuatu tentang dashboard..."
               class="relative w-full px-5 py-3.5 bg-white border-2 border-purple-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-purple-300/50 focus:border-purple-400 transition-all duration-300 text-sm shadow-lg hover:shadow-xl"
@@ -182,7 +183,7 @@
             />
           </div>
           <button
-            @click="askQuestion"
+            type="submit"
             :disabled="qaLoading || !question || question.trim() === ''"
             class="relative px-6 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl hover:from-purple-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center gap-2 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none group"
           >
@@ -190,7 +191,7 @@
             <i class="fa-solid fa-paper-plane relative z-10" :class="{ 'fa-spin': qaLoading }"></i>
             <span class="relative z-10 hidden sm:inline">{{ qaLoading ? 'Mengirim...' : 'Kirim' }}</span>
           </button>
-        </div>
+        </form>
         <div class="flex items-center justify-between mt-3">
           <p class="text-xs text-gray-500 flex items-center gap-1.5">
             <i class="fa-solid fa-lightbulb text-yellow-500"></i>
