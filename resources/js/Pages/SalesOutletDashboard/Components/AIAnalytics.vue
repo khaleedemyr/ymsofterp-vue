@@ -63,7 +63,7 @@
           class="space-y-4 animate-fade-in"
         >
           <!-- User Question -->
-          <div class="flex justify-end">
+          <div class="flex justify-end" :data-chat-id="chat.id">
             <div class="max-w-[85%] bg-gradient-to-br from-purple-600 to-indigo-600 text-white rounded-2xl rounded-tr-sm px-5 py-4 shadow-xl transform hover:scale-[1.02] transition-transform duration-200">
               <div class="flex items-center gap-2 mb-2">
                 <div class="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
@@ -421,10 +421,36 @@ const scrollToBottom = () => {
   });
 };
 
-// Watch chat history untuk auto scroll
-watch(chatHistory, () => {
-  scrollToBottom();
-}, { deep: true });
+// Scroll to specific question (scroll ke pertanyaan user, bukan ke bawah)
+const scrollToQuestion = (chatId) => {
+  nextTick(() => {
+    if (chatContainer.value && chatId) {
+      // Cari element pertanyaan user berdasarkan chatId
+      const questionElement = chatContainer.value.querySelector(`[data-chat-id="${chatId}"]`);
+      if (questionElement) {
+        // Scroll ke pertanyaan user dengan offset ke atas agar user bisa baca dari awal
+        questionElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+          inline: 'nearest'
+        });
+        
+        // Tambahkan sedikit offset ke atas setelah scroll
+        setTimeout(() => {
+          if (chatContainer.value) {
+            chatContainer.value.scrollTop = Math.max(0, chatContainer.value.scrollTop - 30);
+          }
+        }, 300);
+      }
+      // Jika element tidak ditemukan, tidak perlu scroll (biarkan user di posisi sekarang)
+    }
+  });
+};
+
+// Watch chat history untuk auto scroll - DISABLED
+// watch(chatHistory, () => {
+//   scrollToBottom();
+// }, { deep: true });
 
 const loadInsight = async () => {
   loading.value = true;
@@ -510,7 +536,7 @@ const askQuestion = async (event) => {
       }
       
       // Add to chat history
-      chatHistory.value.push({
+      const newChat = {
         id: response.data.chat_id,
         question: currentQuestion,
         answer: response.data.answer,
@@ -524,10 +550,14 @@ const askQuestion = async (event) => {
           hour: '2-digit',
           minute: '2-digit'
         })
-      });
+      };
       
-      // Reload chat history untuk memastikan sync dengan database
-      await loadChatHistory();
+      chatHistory.value.push(newChat);
+      
+      // Scroll ke posisi pertanyaan user (bukan ke paling bawah)
+      // Biarkan user baca jawaban dari awal tanpa harus scroll ke atas
+      await nextTick();
+      scrollToQuestion(newChat.id);
     } else {
       qaError.value = response.data.message || 'Gagal mendapatkan jawaban';
     }
