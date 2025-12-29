@@ -145,18 +145,50 @@
                 </p>
               </div>
               
-              <!-- For other modes: Show category dropdown -->
-              <select
-                v-else
-                v-model="form.category_id"
-                @change="onCategoryChange"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Category</option>
-                <option v-for="category in categories" :key="category.id" :value="category.id">
-                  [{{ category.division }}] {{ category.name }}
-                </option>
-              </select>
+              <!-- For other modes: Show category dropdown with integrated search -->
+              <div v-else class="relative category-dropdown-container">
+                <div
+                  @click.stop="showCategoryDropdown = !showCategoryDropdown"
+                  class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer bg-white flex items-center justify-between"
+                  :class="{ 'ring-2 ring-blue-500': showCategoryDropdown }"
+                >
+                  <span v-if="form.category_id" class="text-gray-700">
+                    {{ getCategoryDisplayName(form.category_id) }}
+                  </span>
+                  <span v-else class="text-gray-400">Select Category</span>
+                  <i class="fa fa-chevron-down text-gray-400" :class="{ 'transform rotate-180': showCategoryDropdown }"></i>
+                </div>
+                <div
+                  v-if="showCategoryDropdown"
+                  class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg"
+                  @click.stop
+                >
+                  <input
+                    v-model="categorySearch"
+                    type="text"
+                    placeholder="Cari category..."
+                    class="w-full px-3 py-2 border-b border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    @click.stop
+                  />
+                  <div class="max-h-60 overflow-auto">
+                    <div
+                      v-if="filteredCategories.length === 0"
+                      class="px-3 py-2 text-sm text-gray-500"
+                    >
+                      Tidak ada category yang ditemukan
+                    </div>
+                    <div
+                      v-for="category in filteredCategories"
+                      :key="category.id"
+                      @click.stop="form.category_id = category.id; onCategoryChange(); showCategoryDropdown = false; categorySearch = ''"
+                      class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                      :class="{ 'bg-blue-100': form.category_id == category.id }"
+                    >
+                      [{{ category.division }}] {{ category.name }}
+                    </div>
+                  </div>
+                </div>
+              </div>
               
               <!-- Category Details & Budget Info for travel_application -->
               <div v-if="form.mode === 'travel_application' && selectedCategoryDetails" class="mt-3">
@@ -477,17 +509,49 @@
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex-1">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                        <select
-                          v-model="category.category_id"
-                          required
-                          @change="loadBudgetInfoForCategory(outletIdx, categoryIdx, outlet.outlet_id, category.category_id)"
-                          class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select Category</option>
-                          <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-                            [{{ cat.division }}] {{ cat.name }}
-                          </option>
-                        </select>
+                        <div class="relative category-dropdown-container">
+                          <div
+                            @click.stop="showCategoryDropdown = !showCategoryDropdown"
+                            class="w-full md:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer bg-white flex items-center justify-between"
+                            :class="{ 'ring-2 ring-blue-500': showCategoryDropdown }"
+                          >
+                            <span v-if="category.category_id" class="text-gray-700">
+                              {{ getCategoryDisplayName(category.category_id) }}
+                            </span>
+                            <span v-else class="text-gray-400">Select Category</span>
+                            <i class="fa fa-chevron-down text-gray-400" :class="{ 'transform rotate-180': showCategoryDropdown }"></i>
+                          </div>
+                          <div
+                            v-if="showCategoryDropdown"
+                            class="absolute z-10 w-full md:w-64 mt-1 bg-white border border-gray-300 rounded-md shadow-lg"
+                            @click.stop
+                          >
+                            <input
+                              v-model="categorySearch"
+                              type="text"
+                              placeholder="Cari category..."
+                              class="w-full px-3 py-2 border-b border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              @click.stop
+                            />
+                            <div class="max-h-60 overflow-auto">
+                              <div
+                                v-if="filteredCategories.length === 0"
+                                class="px-3 py-2 text-sm text-gray-500"
+                              >
+                                Tidak ada category yang ditemukan
+                              </div>
+                              <div
+                                v-for="cat in filteredCategories"
+                                :key="cat.id"
+                                @click.stop="category.category_id = cat.id; loadBudgetInfoForCategory(outletIdx, categoryIdx, outlet.outlet_id, cat.id); showCategoryDropdown = false; categorySearch = ''"
+                                class="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                                :class="{ 'bg-blue-100': category.category_id == cat.id }"
+                              >
+                                [{{ cat.division }}] {{ cat.name }}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                       <div class="flex items-center gap-2">
                         <span class="text-sm font-semibold text-green-800">
@@ -2400,7 +2464,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
@@ -2412,6 +2476,10 @@ const props = defineProps({
   tickets: Array,
   divisions: Array,
 })
+
+// Search query for category
+const categorySearch = ref('')
+const showCategoryDropdown = ref(false)
 
 // Get current user info
 const page = usePage()
@@ -2511,6 +2579,69 @@ const form = reactive({
   approvers: [],
   mode: 'pr_ops'
 })
+
+// Filtered categories based on mode and search (must be after form declaration)
+const filteredCategories = computed(() => {
+  let categories = props.categories
+  
+  // Untuk mode pr_ops dan purchase_payment, hilangkan category "Transport & akomodasi" dan "kasbon"
+  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+    categories = categories.filter(cat => {
+      const categoryName = (cat.name || '').toLowerCase()
+      // Hilangkan category yang mengandung "transport", "akomodasi", atau "kasbon"
+      return !categoryName.includes('transport') && 
+             !categoryName.includes('akomodasi') && 
+             !categoryName.includes('kasbon')
+    })
+  }
+  
+  // Filter berdasarkan search query jika ada
+  if (categorySearch.value.trim()) {
+    const searchTerm = categorySearch.value.toLowerCase().trim()
+    categories = categories.filter(cat => {
+      const categoryName = (cat.name || '').toLowerCase()
+      const divisionName = (cat.division || '').toLowerCase()
+      return categoryName.includes(searchTerm) || divisionName.includes(searchTerm)
+    })
+  }
+  
+  return categories
+})
+
+// Watch mode changes to reset search (must be after form declaration)
+watch(() => form.mode, () => {
+  categorySearch.value = ''
+  showCategoryDropdown.value = false
+})
+
+// Close dropdown when clicking outside
+let clickOutsideHandler = null
+
+onMounted(() => {
+  clickOutsideHandler = (event) => {
+    const target = event.target
+    // Check if click is outside all category dropdown containers
+    if (!target.closest('.category-dropdown-container')) {
+      showCategoryDropdown.value = false
+    }
+  }
+  
+  // Use setTimeout to ensure this runs after Vue has mounted
+  setTimeout(() => {
+    document.addEventListener('click', clickOutsideHandler)
+  }, 100)
+})
+
+onUnmounted(() => {
+  if (clickOutsideHandler) {
+    document.removeEventListener('click', clickOutsideHandler)
+  }
+})
+
+const getCategoryDisplayName = (categoryId) => {
+  const category = props.categories.find(cat => cat.id == categoryId)
+  return category ? `[${category.division}] ${category.name}` : ''
+}
 
 // Calculate total amount based on mode
 const totalAmount = computed(() => {
