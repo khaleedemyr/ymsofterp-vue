@@ -174,8 +174,9 @@
             <div class="absolute inset-0 bg-gradient-to-r from-purple-100/50 to-indigo-100/50 rounded-2xl blur-sm"></div>
             <input
               v-model="question"
-              @keyup.enter="askQuestion"
+              @keyup.enter.prevent="askQuestion"
               @keydown.enter.prevent
+              @submit.prevent
               type="text"
               placeholder="Tanyakan sesuatu tentang dashboard..."
               class="relative w-full px-5 py-3.5 bg-white border-2 border-purple-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-purple-300/50 focus:border-purple-400 transition-all duration-300 text-sm shadow-lg hover:shadow-xl"
@@ -467,6 +468,7 @@ const askQuestion = async (event) => {
   if (event) {
     event.preventDefault();
     event.stopPropagation();
+    event.stopImmediatePropagation();
   }
   
   if (!question.value || question.value.trim() === '') {
@@ -483,13 +485,21 @@ const askQuestion = async (event) => {
   qaError.value = null;
   
   try {
-    const response = await axios.post('/sales-outlet-dashboard/ai/ask', {
-      question: currentQuestion,
-      date_from: props.filters.date_from,
-      date_to: props.filters.date_to,
-      session_id: currentSessionId
-    }, {
-      withCredentials: true
+    // Pastikan menggunakan POST method secara eksplisit
+    const response = await axios({
+      method: 'POST',
+      url: '/sales-outlet-dashboard/ai/ask',
+      data: {
+        question: currentQuestion,
+        date_from: props.filters.date_from,
+        date_to: props.filters.date_to,
+        session_id: currentSessionId
+      },
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
     });
     
     if (response.data.success) {
