@@ -1502,6 +1502,10 @@ Route::get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions'
 Route::get('/sales-outlet-dashboard/promo-usage-by-outlet', [App\Http\Controllers\SalesOutletDashboardController::class, 'getPromoUsageByOutlet'])->name('sales-outlet-dashboard.promo-usage-by-outlet');
 Route::get('/sales-outlet-dashboard/ai/insight', [App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('sales-outlet-dashboard.ai.insight');
 Route::post('/sales-outlet-dashboard/ai/ask', [App\Http\Controllers\AIAnalyticsController::class, 'askQuestion'])->name('sales-outlet-dashboard.ai.ask');
+Route::get('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'getChatHistory'])->name('sales-outlet-dashboard.ai.chat-history');
+Route::get('/sales-outlet-dashboard/ai/all-chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'getAllChatHistory'])->name('sales-outlet-dashboard.ai.all-chat-history');
+Route::delete('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'clearChatHistory'])->name('sales-outlet-dashboard.ai.clear-chat-history');
+Route::get('/sales-outlet-dashboard/ai/usage-statistics', [App\Http\Controllers\AIAnalyticsController::class, 'getUsageStatistics'])->name('sales-outlet-dashboard.ai.usage-statistics');
 Route::delete('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'destroy'])->name('retail-warehouse-sale.destroy');
 Route::post('/retail-warehouse-sale/search-items', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems'])->name('retail-warehouse-sale.search-items');
 Route::post('/retail-warehouse-sale/search-items-by-name', [App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName'])->name('retail-warehouse-sale.search-items-by-name');

@@ -20,10 +20,18 @@ return [
     // Anthropic Claude sebagai alternatif
     'claude' => [
         'api_key' => env('ANTHROPIC_API_KEY', null),
-        'model' => env('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'), // Claude 3.5 Sonnet untuk analisis terbaik
+        'model' => env('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929'), // Claude Sonnet 4.5 (latest) untuk analisis terbaik
         'temperature' => 0.7,
-        'max_tokens' => 4000,
+        'max_tokens' => 8192, // Increased untuk analisis yang lebih lengkap (Claude Sonnet 4.5 max output: 8192 tokens)
+        'budget_limit' => env('CLAUDE_BUDGET_LIMIT', 2000000), // Default Rp 2 juta per bulan
+        'pricing' => [
+            'input' => 3.00, // USD per 1M tokens
+            'output' => 15.00, // USD per 1M tokens
+        ],
     ],
+    
+    // USD to Rupiah rate (untuk konversi biaya)
+    'usd_to_rupiah_rate' => env('USD_TO_RUPIAH_RATE', 15000),
     
     // Provider yang digunakan (gemini, openai, atau claude)
     'provider' => env('AI_PROVIDER', 'gemini'),
