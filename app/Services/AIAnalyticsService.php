@@ -15,18 +15,32 @@ class AIAnalyticsService
     private $apiUrl;
     private $dbHelper;
     
+    private $provider;
+    private $openaiKey;
+    private $claudeKey;
+    
     public function __construct(AIDatabaseHelper $dbHelper)
     {
+        $this->provider = config('ai.provider', 'gemini');
         $this->apiKey = config('ai.gemini.api_key');
-        $this->model = config('ai.gemini.model', 'gemini-2.5-flash');
+        $this->openaiKey = config('ai.openai.api_key');
+        $this->claudeKey = config('ai.claude.api_key');
+        $this->model = config('ai.gemini.model', 'gemini-1.5-pro');
         $this->dbHelper = $dbHelper;
         
-        if (!$this->apiKey) {
+        // Validate API key based on provider
+        if ($this->provider === 'gemini' && !$this->apiKey) {
             throw new \Exception('Google Gemini API key not configured');
+        } elseif ($this->provider === 'openai' && !$this->openaiKey) {
+            throw new \Exception('OpenAI API key not configured');
+        } elseif ($this->provider === 'claude' && !$this->claudeKey) {
+            throw new \Exception('Anthropic Claude API key not configured');
         }
         
-        // Build API URL - use v1beta with gemini-2.5-flash
-        $this->apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' . $this->model . ':generateContent';
+        // Build API URL based on provider
+        if ($this->provider === 'gemini') {
+            $this->apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' . $this->model . ':generateContent';
+        }
     }
     
     /**
@@ -46,19 +60,28 @@ class AIAnalyticsService
                 $model = config('ai.gemini.model', 'gemini-2.5-flash');
                 $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
                 
+                // Enhanced prompt dengan context eksternal
+                $enhancedPrompt = $this->enhancePromptWithExternalContext($prompt, $dashboardData);
+                
                 $requestBody = [
                     'contents' => [
                         [
                             'parts' => [
                                 [
-                                    'text' => $prompt
+                                    'text' => $enhancedPrompt
                                 ]
                             ]
                         ]
                     ],
                     'generationConfig' => [
                         'temperature' => 0.7,
-                        'maxOutputTokens' => 1000,
+                        'maxOutputTokens' => config('ai.gemini.max_tokens', 4000),
+                    ],
+                    // Enable function calling untuk akses data dinamis
+                    'tools' => [
+                        [
+                            'function_declarations' => $this->getFunctionDeclarations()
+                        ]
                     ]
                 ];
                 
@@ -212,6 +235,177 @@ class AIAnalyticsService
     }
     
     /**
+     * Enhance prompt dengan context eksternal (cuaca, event, tren pasar)
+     */
+    private function enhancePromptWithExternalContext($prompt, $dashboardData)
+    {
+        if (!config('ai.external_data.enabled', true)) {
+            return $prompt;
+        }
+        
+        $externalContext = "\n\n=== CONTEXT EKSTERNAL (untuk analisis yang lebih mendalam) ===\n";
+        
+        // Ambil data cuaca jika relevan
+        $weatherData = $this->getWeatherContext($dashboardData);
+        if ($weatherData) {
+            $externalContext .= "\n--- DATA CUACA ---\n";
+            $externalContext .= $weatherData . "\n";
+        }
+        
+        // Ambil data event/holiday jika relevan
+        $eventData = $this->getEventContext($dashboardData);
+        if ($eventData) {
+            $externalContext .= "\n--- EVENT/HOLIDAY ---\n";
+            $externalContext .= $eventData . "\n";
+        }
+        
+        // Tambahkan tren pasar umum
+        $externalContext .= "\n--- INSTRUKSI ANALISIS EKSTERNAL ---\n";
+        $externalContext .= "- Gunakan data eksternal untuk memberikan konteks yang lebih kaya\n";
+        $externalContext .= "- Analisis bagaimana faktor eksternal (cuaca, event, tren) mempengaruhi penjualan\n";
+        $externalContext .= "- Berikan rekomendasi strategis berdasarkan analisis internal + eksternal\n";
+        $externalContext .= "- Sertakan prediksi dan forecasting jika relevan\n";
+        
+        return $prompt . $externalContext;
+    }
+    
+    /**
+     * Get weather context untuk analisis
+     */
+    private function getWeatherContext($dashboardData)
+    {
+        try {
+            $apiKey = config('ai.external_data.weather_api_key');
+            if (!$apiKey) {
+                return null;
+            }
+            
+            // Ambil lokasi outlet dari data (asumsi ada di dashboardData)
+            // Untuk sekarang, kita bisa hardcode atau ambil dari config
+            $city = 'Jakarta'; // Default, bisa diambil dari outlet data
+            
+            $url = "https://api.openweathermap.org/data/2.5/weather?q={$city}&appid={$apiKey}&units=metric&lang=id";
+            
+            $response = Http::timeout(10)->get($url);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                $weather = $data['weather'][0]['description'] ?? 'tidak tersedia';
+                $temp = $data['main']['temp'] ?? 'N/A';
+                $humidity = $data['main']['humidity'] ?? 'N/A';
+                
+                return "Cuaca saat ini: {$weather}, Suhu: {$temp}°C, Kelembaban: {$humidity}%. " .
+                       "Cuaca dapat mempengaruhi penjualan - cuaca buruk biasanya mengurangi kunjungan pelanggan.";
+            }
+        } catch (\Exception $e) {
+            Log::warning('Weather API Error: ' . $e->getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get event/holiday context
+     */
+    private function getEventContext($dashboardData)
+    {
+        try {
+            $dateFrom = $dashboardData['date_from'] ?? Carbon::now()->format('Y-m-d');
+            $dateTo = $dashboardData['date_to'] ?? Carbon::now()->format('Y-m-d');
+            
+            $events = [];
+            
+            // Check if there are holidays in the period
+            $startDate = Carbon::parse($dateFrom);
+            $endDate = Carbon::parse($dateTo);
+            
+            // Indonesian holidays (simplified - bisa diambil dari API)
+            $holidays = [
+                '01-01' => 'Tahun Baru',
+                '17-08' => 'Hari Kemerdekaan',
+                '25-12' => 'Natal',
+            ];
+            
+            $currentDate = $startDate->copy();
+            while ($currentDate <= $endDate) {
+                $dateKey = $currentDate->format('m-d');
+                if (isset($holidays[$dateKey])) {
+                    $events[] = $currentDate->format('Y-m-d') . ': ' . $holidays[$dateKey];
+                }
+                $currentDate->addDay();
+            }
+            
+            if (!empty($events)) {
+                return "Event/Holiday dalam periode ini:\n" . implode("\n", $events) . 
+                       "\n\nEvent dan holiday biasanya meningkatkan penjualan karena lebih banyak orang berlibur atau merayakan.";
+            }
+            
+            return "Tidak ada event/holiday khusus dalam periode ini. " .
+                   "Periode normal biasanya menunjukkan pola penjualan yang stabil.";
+        } catch (\Exception $e) {
+            Log::warning('Event Context Error: ' . $e->getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get function declarations untuk function calling
+     */
+    private function getFunctionDeclarations()
+    {
+        return [
+            [
+                'name' => 'get_market_trends',
+                'description' => 'Mendapatkan tren pasar dan analisis kompetitor untuk industri F&B',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'industry' => [
+                            'type' => 'string',
+                            'description' => 'Industri yang dianalisis (default: F&B/Restaurant)'
+                        ],
+                        'region' => [
+                            'type' => 'string',
+                            'description' => 'Region/lokasi untuk analisis tren'
+                        ]
+                    ]
+                ]
+            ],
+            [
+                'name' => 'get_advanced_analytics',
+                'description' => 'Mendapatkan analisis lanjutan seperti forecasting, prediksi, dan pattern recognition',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'metric' => [
+                            'type' => 'string',
+                            'description' => 'Metric yang dianalisis (revenue, orders, customers, etc)'
+                        ],
+                        'period' => [
+                            'type' => 'string',
+                            'description' => 'Periode untuk forecasting (7d, 30d, 90d)'
+                        ]
+                    ]
+                ]
+            ],
+            [
+                'name' => 'get_customer_insights',
+                'description' => 'Mendapatkan insight tentang perilaku customer, segmentasi, dan lifetime value',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'segment' => [
+                            'type' => 'string',
+                            'description' => 'Segment customer yang dianalisis'
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+    
+    /**
      * Q&A tentang dashboard data dengan akses database dinamis
      */
     public function answerQuestion($question, $dashboardData, $dateFrom = null, $dateTo = null)
@@ -222,26 +416,70 @@ class AIAnalyticsService
             
             $prompt = $this->buildQAPrompt($question, $dashboardData, $additionalData);
             
-            // Call Google Gemini API via HTTP
-            // Use gemini-2.5-flash (available model from API)
-            $model = config('ai.gemini.model', 'gemini-2.5-flash');
-            $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
+            // Enhanced prompt dengan context eksternal dan analisis kompleks
+            $enhancedPrompt = $this->enhancePromptWithExternalContext($prompt, array_merge($dashboardData, [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo
+            ]));
             
-            $requestBody = [
-                'contents' => [
-                    [
-                        'parts' => [
-                            [
-                                'text' => $prompt
+            // Enhanced prompt dengan instruksi analisis kompleks
+            $enhancedPrompt .= "\n\n=== INSTRUKSI ANALISIS KOMPLEKS ===\n";
+            $enhancedPrompt .= "- Lakukan analisis mendalam dengan mempertimbangkan multiple faktor\n";
+            $enhancedPrompt .= "- Gunakan teknik analisis seperti:\n";
+            $enhancedPrompt .= "  * Trend Analysis: Identifikasi pola jangka panjang\n";
+            $enhancedPrompt .= "  * Comparative Analysis: Bandingkan dengan periode sebelumnya\n";
+            $enhancedPrompt .= "  * Correlation Analysis: Cari korelasi antar variabel\n";
+            $enhancedPrompt .= "  * Predictive Analysis: Berikan prediksi berdasarkan pola historis\n";
+            $enhancedPrompt .= "  * Root Cause Analysis: Identifikasi penyebab mendalam dari tren\n";
+            $enhancedPrompt .= "- Sertakan rekomendasi strategis yang actionable\n";
+            $enhancedPrompt .= "- Berikan insight yang tidak hanya deskriptif tapi juga preskriptif\n";
+            
+            // Call API berdasarkan provider
+            if ($this->provider === 'gemini') {
+                $model = config('ai.gemini.model', 'gemini-1.5-pro');
+                $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
+                
+                $requestBody = [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                [
+                                    'text' => $enhancedPrompt
+                                ]
                             ]
                         ]
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.7,
+                        'maxOutputTokens' => config('ai.gemini.max_tokens', 4000),
+                    ],
+                    'tools' => [
+                        [
+                            'function_declarations' => $this->getFunctionDeclarations()
+                        ]
                     ]
-                ],
-                'generationConfig' => [
-                    'temperature' => 0.7,
-                    'maxOutputTokens' => 2000, // Lebih banyak untuk jawaban detail
-                ]
-            ];
+                ];
+            } else {
+                // Fallback ke implementasi lama jika provider lain belum diimplementasi
+                $model = config('ai.gemini.model', 'gemini-1.5-pro');
+                $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
+                
+                $requestBody = [
+                    'contents' => [
+                        [
+                            'parts' => [
+                                [
+                                    'text' => $enhancedPrompt
+                                ]
+                            ]
+                        ]
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.7,
+                        'maxOutputTokens' => config('ai.gemini.max_tokens', 4000),
+                    ]
+                ];
+            }
             
             // Setup HTTP client
             $httpClient = Http::timeout(30)
