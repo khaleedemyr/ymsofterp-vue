@@ -14,6 +14,7 @@ use App\Models\Outlet;
 use App\Models\Item;
 use App\Models\User;
 use App\Services\NotificationService;
+use Maatwebsite\Excel\Facades\Excel;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
@@ -1230,5 +1231,444 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 'description' => 'Outlet Stock Adjustment',
             ]);
         }
+    }
+
+    /**
+     * Universal report for outlet stock adjustment (with filter type, warehouse, date, outlet)
+     */
+    public function reportUniversal(Request $request)
+    {
+        $user = auth()->user();
+        $type = $request->input('type'); // 'in' or 'out'
+        $warehouse_outlet_id = $request->input('warehouse_outlet_id');
+        $from = $request->input('from');
+        $to = $request->input('to');
+        $selected_outlet_id = $request->input('outlet_id');
+
+        // Jika belum ada filter, return view kosong dengan filter saja
+        if (!$from || !$to) {
+            $types = [
+                ['value' => '', 'label' => 'Semua'],
+                ['value' => 'in', 'label' => 'Stock In'],
+                ['value' => 'out', 'label' => 'Stock Out'],
+            ];
+            
+            // Filter warehouse outlets based on user outlet
+            $warehouse_outlets_query = DB::table('warehouse_outlets')->where('status', 'active');
+            if ($user->id_outlet != 1) {
+                $warehouse_outlets_query->where('outlet_id', $user->id_outlet);
+            }
+            $warehouse_outlets = $warehouse_outlets_query->select('id', 'name', 'outlet_id')->orderBy('name')->get();
+            
+            // Filter outlets: jika user bukan admin, hanya tampilkan outlet mereka sendiri
+            $outlets_query = DB::table('tbl_data_outlet');
+            if ($user->id_outlet != 1) {
+                $outlets_query->where('id_outlet', $user->id_outlet);
+            }
+            $outlets = $outlets_query->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+            
+            // Set default outlet_id untuk non-admin
+            $filters = $request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']);
+            if ($user->id_outlet != 1) {
+                $filters['outlet_id'] = $user->id_outlet;
+            }
+
+            return inertia('OutletFoodInventoryAdjustment/ReportUniversal', [
+                'data' => [],
+                'types' => $types,
+                'warehouse_outlets' => $warehouse_outlets,
+                'outlets' => $outlets,
+                'filters' => $filters,
+                'total_per_type' => [],
+                'user_outlet_id' => $user->id_outlet,
+            ]);
+        }
+
+        // Validasi: Maksimal range 3 bulan untuk mencegah timeout
+        $fromDate = \Carbon\Carbon::parse($from);
+        $toDate = \Carbon\Carbon::parse($to);
+        $diffMonths = $fromDate->diffInMonths($toDate);
+        
+        if ($diffMonths > 3) {
+            return redirect()->route('outlet-food-inventory-adjustment.report-universal')
+                ->with('error', 'Range tanggal maksimal 3 bulan. Silakan pilih range yang lebih kecil.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+
+        // Validasi outlet: jika user bukan admin, gunakan outlet user
+        if ($user->id_outlet != 1) {
+            $selected_outlet_id = $user->id_outlet;
+        }
+
+        $query = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'adj.created_by', '=', 'u.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name'
+            );
+            
+        if ($user->id_outlet != 1) {
+            $query->where('adj.id_outlet', $user->id_outlet);
+        } else if ($request->filled('outlet_id')) {
+            $query->where('adj.id_outlet', $request->input('outlet_id'));
+        }
+        
+        if ($type) {
+            $query->where('adj.type', $type);
+        }
+        
+        if ($warehouse_outlet_id) {
+            $query->where('adj.warehouse_outlet_id', $warehouse_outlet_id);
+        }
+        
+        // Filter date wajib
+        $query->where('adj.date', '>=', $from);
+        $query->where('adj.date', '<=', $to);
+        
+        // Hanya ambil yang sudah approved (status = 'approved')
+        $query->where('adj.status', 'approved');
+        
+        $data = $query->orderByDesc('adj.date')->orderByDesc('adj.id')->get();
+
+        // Hitung total per type dan hitung MAC untuk setiap item
+        $headerIds = $data->pluck('id')->all();
+        $totalPerType = [];
+        $subtotalPerHeader = [];
+        
+        if ($headerIds && count($headerIds) > 0) {
+            // Batch query untuk details
+            $details = DB::table('outlet_food_inventory_adjustment_items as i')
+                ->join('outlet_food_inventory_adjustments as adj', 'i.adjustment_id', '=', 'adj.id')
+                ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+                ->leftJoin('outlet_food_inventory_items as fi', 'it.id', '=', 'fi.item_id')
+                ->leftJoin('units as u_small', 'it.small_unit_id', '=', 'u_small.id')
+                ->leftJoin('units as u_medium', 'it.medium_unit_id', '=', 'u_medium.id')
+                ->leftJoin('units as u_large', 'it.large_unit_id', '=', 'u_large.id')
+                ->select(
+                    'i.*',
+                    'adj.type as adjustment_type',
+                    'adj.date as adjustment_date',
+                    'adj.id_outlet',
+                    'adj.warehouse_outlet_id',
+                    'it.small_unit_id',
+                    'it.medium_unit_id',
+                    'it.large_unit_id',
+                    'it.small_conversion_qty',
+                    'it.medium_conversion_qty',
+                    'u_small.name as small_unit_name',
+                    'u_medium.name as medium_unit_name',
+                    'u_large.name as large_unit_name',
+                    'fi.id as inventory_item_id'
+                )
+                ->whereIn('i.adjustment_id', $headerIds)
+                ->get();
+            
+            // Batch query untuk inventory items
+            $itemIds = $details->pluck('item_id')->unique()->all();
+            $inventoryItems = [];
+            if (count($itemIds) > 0) {
+                $inventoryItemsData = DB::table('outlet_food_inventory_items')
+                    ->whereIn('item_id', $itemIds)
+                    ->get()
+                    ->keyBy('item_id');
+                $inventoryItems = $inventoryItemsData->toArray();
+            }
+            
+            // Batch query untuk MAC histories
+            $inventoryItemIds = collect($inventoryItems)->pluck('id')->unique()->all();
+            $macHistories = [];
+            if (count($inventoryItemIds) > 0 && count($headerIds) > 0) {
+                $headerData = $data->keyBy('id');
+                $macQueryConditions = [];
+                foreach ($details as $detail) {
+                    $header = $headerData->get($detail->adjustment_id);
+                    if ($header && isset($inventoryItems[$detail->item_id])) {
+                        $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+                        $key = "{$inventoryItemId}_{$header->id_outlet}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (!isset($macQueryConditions[$key])) {
+                            $macQueryConditions[$key] = [
+                                'inventory_item_id' => $inventoryItemId,
+                                'id_outlet' => $header->id_outlet,
+                                'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                                'date' => $header->date
+                            ];
+                        }
+                    }
+                }
+                
+                // Batch query MAC histories
+                foreach ($macQueryConditions as $condition) {
+                    $macRow = DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $condition['inventory_item_id'])
+                        ->where('id_outlet', $condition['id_outlet'])
+                        ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
+                        ->where('date', '<=', $condition['date'])
+                        ->orderByDesc('date')
+                        ->orderByDesc('id')
+                        ->first();
+                    if ($macRow) {
+                        $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
+                        $macHistories[$macKey] = $macRow->mac;
+                    }
+                }
+            }
+            
+            // Calculate totals per type
+            foreach ($details as $item) {
+                $mac = null;
+                if (isset($inventoryItems[$item->item_id])) {
+                    $inventoryItem = $inventoryItems[$item->item_id];
+                    $header = $data->firstWhere('id', $item->adjustment_id);
+                    if ($header) {
+                        $macKey = "{$inventoryItem->id}_{$header->id_outlet}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (isset($macHistories[$macKey])) {
+                            $mac = $macHistories[$macKey];
+                        }
+                    }
+                }
+                
+                // Convert qty to small unit for MAC calculation
+                $qty_small = $item->qty;
+                // Compare unit name with item's unit names
+                if ($item->unit == $item->medium_unit_name && $item->small_conversion_qty > 0) {
+                    $qty_small = $item->qty * $item->small_conversion_qty;
+                } elseif ($item->unit == $item->large_unit_name && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
+                    $qty_small = $item->qty * $item->small_conversion_qty * $item->medium_conversion_qty;
+                }
+                // If unit is small unit, qty_small remains as is
+                
+                $subtotal_mac = ($mac !== null) ? ($mac * $qty_small) : 0;
+                $adjType = $item->adjustment_type;
+                if (!isset($totalPerType[$adjType])) $totalPerType[$adjType] = 0;
+                $totalPerType[$adjType] += $subtotal_mac;
+            }
+            
+            // Calculate subtotal MAC per header
+            foreach ($details as $item) {
+                $mac = null;
+                if (isset($inventoryItems[$item->item_id])) {
+                    $inventoryItem = $inventoryItems[$item->item_id];
+                    $header = $data->firstWhere('id', $item->adjustment_id);
+                    if ($header) {
+                        $macKey = "{$inventoryItem->id}_{$header->id_outlet}_{$header->warehouse_outlet_id}_{$header->date}";
+                        if (isset($macHistories[$macKey])) {
+                            $mac = $macHistories[$macKey];
+                        }
+                    }
+                }
+                
+                // Convert qty to small unit for MAC calculation
+                $qty_small = $item->qty;
+                // Compare unit name with item's unit names
+                if ($item->unit == $item->medium_unit_name && $item->small_conversion_qty > 0) {
+                    $qty_small = $item->qty * $item->small_conversion_qty;
+                } elseif ($item->unit == $item->large_unit_name && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
+                    $qty_small = $item->qty * $item->small_conversion_qty * $item->medium_conversion_qty;
+                }
+                // If unit is small unit, qty_small remains as is
+                
+                $subtotal_mac = ($mac !== null) ? ($mac * $qty_small) : 0;
+                
+                if (!isset($subtotalPerHeader[$item->adjustment_id])) {
+                    $subtotalPerHeader[$item->adjustment_id] = 0;
+                }
+                $subtotalPerHeader[$item->adjustment_id] += $subtotal_mac;
+            }
+            
+            // Add subtotal_mac to each header row
+            $data = collect($data)->map(function($row) use ($subtotalPerHeader) {
+                $row->subtotal_mac = $subtotalPerHeader[$row->id] ?? 0;
+                return $row;
+            });
+        } else {
+            // If no details, set subtotal_mac to 0 for all rows
+            $data = collect($data)->map(function($row) {
+                $row->subtotal_mac = 0;
+                return $row;
+            });
+        }
+
+        $types = [
+            ['value' => '', 'label' => 'Semua'],
+            ['value' => 'in', 'label' => 'Stock In'],
+            ['value' => 'out', 'label' => 'Stock Out'],
+        ];
+        
+        // Filter warehouse outlets based on selected outlet or user's outlet
+        $warehouse_outlets_query = DB::table('warehouse_outlets')->where('status', 'active');
+        if ($user->id_outlet == 1) {
+            // For superuser, filter by selected outlet if any
+            if ($selected_outlet_id) {
+                $warehouse_outlets_query->where('outlet_id', $selected_outlet_id);
+            }
+        } else {
+            // For regular user, only show warehouse outlets for their outlet
+            $warehouse_outlets_query->where('outlet_id', $user->id_outlet);
+        }
+        $warehouse_outlets = $warehouse_outlets_query->select('id', 'name', 'outlet_id')->orderBy('name')->get();
+        
+        // Filter outlets: jika user bukan admin, hanya tampilkan outlet mereka sendiri
+        $outlets_query = DB::table('tbl_data_outlet');
+        if ($user->id_outlet != 1) {
+            $outlets_query->where('id_outlet', $user->id_outlet);
+        }
+        $outlets = $outlets_query->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+
+        return inertia('OutletFoodInventoryAdjustment/ReportUniversal', [
+            'data' => $data,
+            'types' => $types,
+            'warehouse_outlets' => $warehouse_outlets,
+            'outlets' => $outlets,
+            'filters' => $request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']),
+            'total_per_type' => $totalPerType,
+            'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * Export Outlet Stock Adjustment Report to Excel
+     */
+    public function exportReportUniversal(Request $request)
+    {
+        $user = auth()->user();
+        $type = $request->input('type');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $outletId = $request->input('outlet_id');
+        $from = $request->input('from');
+        $to = $request->input('to');
+        
+        // Validasi tanggal wajib
+        if (!$from || !$to) {
+            return redirect()->route('outlet-food-inventory-adjustment.report-universal')
+                ->with('error', 'Filter tanggal (Dari dan Sampai) wajib diisi untuk export.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+        
+        // Validasi: Maksimal range 3 bulan
+        $fromDate = \Carbon\Carbon::parse($from);
+        $toDate = \Carbon\Carbon::parse($to);
+        $diffMonths = $fromDate->diffInMonths($toDate);
+        
+        if ($diffMonths > 3) {
+            return redirect()->route('outlet-food-inventory-adjustment.report-universal')
+                ->with('error', 'Range tanggal maksimal 3 bulan. Silakan pilih range yang lebih kecil.')
+                ->withInput($request->only(['type', 'warehouse_outlet_id', 'from', 'to', 'outlet_id']));
+        }
+        
+        // Validasi outlet: jika user bukan admin, gunakan outlet user
+        if ($user->id_outlet != 1) {
+            $outletId = $user->id_outlet;
+        }
+        
+        $export = new \App\Exports\OutletStockAdjustmentReportExport(
+            $type,
+            $warehouseOutletId,
+            $outletId,
+            $from,
+            $to,
+            $user->id_outlet
+        );
+        
+        $fileName = 'Outlet_Stock_Adjustment_Report_' . $from . '_' . $to . '.xlsx';
+        
+        return Excel::download($export, $fileName);
+    }
+
+    /**
+     * Get adjustment details with MAC calculation for report
+     */
+    public function getAdjustmentDetailsForReport($id)
+    {
+        $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name'
+            )
+            ->where('adj.id', $id)
+            ->first();
+        
+        if (!$adjustment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Adjustment not found'
+            ], 404);
+        }
+        
+        // Get items with MAC calculation
+        $items = DB::table('outlet_food_inventory_adjustment_items as i')
+            ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+            ->leftJoin('outlet_food_inventory_items as fi', 'it.id', '=', 'fi.item_id')
+            ->leftJoin('units as u_small', 'it.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'it.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'it.large_unit_id', '=', 'u_large.id')
+            ->select(
+                'i.*',
+                'it.name as item_name',
+                'it.small_unit_id',
+                'it.medium_unit_id',
+                'it.large_unit_id',
+                'it.small_conversion_qty',
+                'it.medium_conversion_qty',
+                'u_small.name as small_unit_name',
+                'u_medium.name as medium_unit_name',
+                'u_large.name as large_unit_name',
+                'fi.id as inventory_item_id'
+            )
+            ->where('i.adjustment_id', $id)
+            ->get();
+        
+        // Get MAC for each item
+        $itemsWithMac = [];
+        foreach ($items as $item) {
+            $mac = null;
+            if ($item->inventory_item_id) {
+                $macRow = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $item->inventory_item_id)
+                    ->where('id_outlet', $adjustment->id_outlet)
+                    ->where('warehouse_outlet_id', $adjustment->warehouse_outlet_id)
+                    ->where('date', '<=', $adjustment->date)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
+                if ($macRow) {
+                    $mac = $macRow->mac;
+                }
+            }
+            
+            // Convert qty to small unit for MAC calculation
+            $qty_small = $item->qty;
+            // Compare unit name with item's unit names
+            if ($item->unit == $item->medium_unit_name && $item->small_conversion_qty > 0) {
+                $qty_small = $item->qty * $item->small_conversion_qty;
+            } elseif ($item->unit == $item->large_unit_name && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
+                $qty_small = $item->qty * $item->small_conversion_qty * $item->medium_conversion_qty;
+            }
+            // If unit is small unit, qty_small remains as is
+            
+            $subtotal_mac = ($mac !== null) ? ($mac * $qty_small) : 0;
+            
+            $itemsWithMac[] = [
+                'id' => $item->id,
+                'item_id' => $item->item_id,
+                'item_name' => $item->item_name,
+                'qty' => $item->qty,
+                'unit' => $item->unit,
+                'note' => $item->note,
+                'mac' => $mac,
+                'subtotal_mac' => $subtotal_mac
+            ];
+        }
+        
+        return response()->json([
+            'success' => true,
+            'details' => $itemsWithMac
+        ]);
     }
 } 

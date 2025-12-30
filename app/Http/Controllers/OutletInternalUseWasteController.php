@@ -1734,6 +1734,9 @@ class OutletInternalUseWasteController extends Controller
             $selected_outlet_id = $user->id_outlet;
         }
 
+        // Type yang memerlukan approval: hanya yang sudah approved yang masuk ke report
+        $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
+        
         $query = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
@@ -1751,6 +1754,21 @@ class OutletInternalUseWasteController extends Controller
         }
         if ($type) {
             $query->where('h.type', $type);
+            // Jika type memerlukan approval, hanya ambil yang sudah approved
+            if (in_array($type, $typesRequiringApproval)) {
+                $query->where('h.status', 'APPROVED');
+            }
+        } else {
+            // Jika tidak ada filter type, untuk type yang memerlukan approval hanya ambil yang sudah approved
+            $query->where(function($q) use ($typesRequiringApproval) {
+                // Type yang tidak memerlukan approval: semua status
+                $q->whereNotIn('h.type', $typesRequiringApproval)
+                  // Type yang memerlukan approval: hanya yang sudah approved
+                  ->orWhere(function($subQ) use ($typesRequiringApproval) {
+                      $subQ->whereIn('h.type', $typesRequiringApproval)
+                           ->where('h.status', 'APPROVED');
+                  });
+            });
         }
         if ($warehouse_outlet_id) {
             $query->where('h.warehouse_outlet_id', $warehouse_outlet_id);

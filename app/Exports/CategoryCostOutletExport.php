@@ -33,6 +33,9 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
 
     public function collection()
     {
+        // Type yang memerlukan approval: hanya yang sudah approved yang masuk ke report
+        $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
+        
         // Query sama dengan controller reportUniversal
         $query = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
@@ -53,6 +56,21 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
         
         if ($this->type) {
             $query->where('h.type', $this->type);
+            // Jika type memerlukan approval, hanya ambil yang sudah approved
+            if (in_array($this->type, $typesRequiringApproval)) {
+                $query->where('h.status', 'APPROVED');
+            }
+        } else {
+            // Jika tidak ada filter type, untuk type yang memerlukan approval hanya ambil yang sudah approved
+            $query->where(function($q) use ($typesRequiringApproval) {
+                // Type yang tidak memerlukan approval: semua status
+                $q->whereNotIn('h.type', $typesRequiringApproval)
+                  // Type yang memerlukan approval: hanya yang sudah approved
+                  ->orWhere(function($subQ) use ($typesRequiringApproval) {
+                      $subQ->whereIn('h.type', $typesRequiringApproval)
+                           ->where('h.status', 'APPROVED');
+                  });
+            });
         }
         
         if ($this->warehouseOutletId) {

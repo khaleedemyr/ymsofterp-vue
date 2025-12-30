@@ -2,99 +2,186 @@
   <Head title="Outlet Stock Adjustment" />
 
   <AppLayout>
-    <div class="w-full py-8 px-0">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-store text-blue-500"></i> Outlet Stock Adjustment
-        </h1>
-        <Link
-          :href="route('outlet-food-inventory-adjustment.create')"
-          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
-        >
-          + Create New
-        </Link>
-      </div>
-      <div class="flex flex-wrap gap-3 mb-4 items-center">
-        <input
-          v-model="search"
-          type="text"
-          placeholder="Search by number, outlet, or item..."
-          class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        />
-        <input type="date" v-model="filters.from" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="From date" />
-        <span>-</span>
-        <input type="date" v-model="filters.to" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="To date" />
+    <div class="w-full py-8 px-4 md:px-6">
+      <!-- Header Section -->
+      <div class="mb-8">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <div class="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+                <i class="fa-solid fa-store text-white text-xl"></i>
+              </div>
+              <span>Outlet Stock Adjustment</span>
+            </h1>
+            <p class="text-gray-600 mt-2 ml-14">Kelola penyesuaian stok outlet dengan mudah</p>
+          </div>
+          <div class="flex gap-3">
+            <Link
+              :href="route('outlet-food-inventory-adjustment.report-universal')"
+              class="group relative px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold flex items-center gap-2 overflow-hidden"
+            >
+              <span class="absolute inset-0 bg-gradient-to-r from-emerald-600 to-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+              <i class="fa fa-chart-bar relative z-10"></i>
+              <span class="relative z-10">Report</span>
+            </Link>
+            <Link
+              :href="route('outlet-food-inventory-adjustment.create')"
+              class="group relative px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold flex items-center gap-2 overflow-hidden"
+            >
+              <span class="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+              <i class="fa fa-plus relative z-10"></i>
+              <span class="relative z-10">Create New</span>
+            </Link>
+          </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div class="flex flex-col md:flex-row md:items-end gap-4">
+            <div class="flex-1">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">
+                <i class="fa fa-search text-gray-400 mr-2"></i>Search
+              </label>
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Search by number, outlet, or item..."
+                class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md"
+              />
+            </div>
+            <div class="flex-1">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">
+                <i class="fa fa-calendar text-gray-400 mr-2"></i>From Date
+              </label>
+              <input 
+                type="date" 
+                v-model="filters.from" 
+                class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md"
+              />
+            </div>
+            <div class="flex-1">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">
+                <i class="fa fa-calendar text-gray-400 mr-2"></i>To Date
+              </label>
+              <input 
+                type="date" 
+                v-model="filters.to" 
+                class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="bg-white rounded-xl shadow overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Number</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Warehouse Outlet</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-if="adjustments.data.length === 0">
-              <td colspan="7" class="text-center py-10 text-blue-300">No outlet stock adjustment data.</td>
-            </tr>
-            <tr v-for="adjustment in adjustments.data" :key="adjustment.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ adjustment.number }}</td>
-              <td class="px-6 py-3">{{ formatDate(adjustment.date) }}</td>
-              <td class="px-6 py-3">{{ adjustment.outlet?.nama_outlet }}</td>
-              <td class="px-6 py-3">{{ adjustment.warehouse_outlet_name || '-' }}</td>
-              <td class="px-6 py-3">
-                <span :class="[
-                  'px-2 py-1 rounded-full text-xs font-semibold',
-                  adjustment.type === 'in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                ]">
-                  {{ adjustment.type === 'in' ? 'Stock In' : 'Stock Out' }}
-                </span>
-              </td>
-              <td class="px-6 py-3">{{ adjustment.creator?.nama_lengkap }}</td>
-              <td class="px-6 py-3">
-                <span :class="[
-                  'px-2 py-1 rounded-full text-xs font-semibold',
-                  statusClass(adjustment.status)
-                ]">
-                  {{ statusLabel(adjustment.status) }}
-                </span>
-              </td>
-              <td class="px-6 py-3">
-                <div class="flex items-center gap-2">
-                  <Link
-                    :href="route('outlet-food-inventory-adjustment.show', adjustment.id)"
-                    class="text-blue-600 hover:text-blue-800"
-                    title="View Details"
-                  >
-                    <i class="fa fa-eye"></i>
-                  </Link>
-                  <button
-                    v-if="canDelete(adjustment)"
-                    @click="confirmDelete(adjustment.id)"
-                    :disabled="!canDelete(adjustment)"
-                    :class="[
-                      'text-red-600 hover:text-red-800',
-                      !canDelete(adjustment) ? 'opacity-50 cursor-not-allowed' : ''
-                    ]"
-                    :title="canDelete(adjustment) ? 'Delete' : getDeleteTooltip(adjustment)"
-                  >
-                    <i class="fa fa-trash"></i>
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Data Table Section -->
+      <div class="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
+              <tr>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Number</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Date</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Type</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Created By</th>
+                <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-if="adjustments.data.length === 0" class="hover:bg-gray-50">
+                <td colspan="8" class="px-6 py-16 text-center">
+                  <div class="flex flex-col items-center justify-center">
+                    <div class="p-4 bg-gray-100 rounded-full mb-4">
+                      <i class="fa fa-inbox text-4xl text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 text-lg font-medium">No outlet stock adjustment data found</p>
+                    <p class="text-gray-400 text-sm mt-2">Try adjusting your search or filters</p>
+                  </div>
+                </td>
+              </tr>
+              <tr 
+                v-for="adjustment in adjustments.data" 
+                :key="adjustment.id" 
+                class="hover:bg-gradient-to-r hover:from-blue-50 hover:to-transparent transition-all duration-200 group"
+              >
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center">
+                    <div class="flex-shrink-0 h-10 w-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mr-3 shadow-md">
+                      <i class="fa fa-file-alt text-white text-sm"></i>
+                    </div>
+                    <span class="font-mono font-bold text-blue-700">{{ adjustment.number }}</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-medium text-gray-900">{{ formatDate(adjustment.date) }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-900">{{ adjustment.outlet?.nama_outlet || '-' }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-600">{{ adjustment.warehouse_outlet_name || '-' }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="[
+                    'px-3 py-1.5 rounded-full text-xs font-bold shadow-sm',
+                    adjustment.type === 'in' 
+                      ? 'bg-gradient-to-r from-green-100 to-green-50 text-green-800 border border-green-200' 
+                      : 'bg-gradient-to-r from-red-100 to-red-50 text-red-800 border border-red-200'
+                  ]">
+                    <i :class="adjustment.type === 'in' ? 'fa fa-arrow-down' : 'fa fa-arrow-up'" class="mr-1"></i>
+                    {{ adjustment.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-900">{{ adjustment.creator?.nama_lengkap || '-' }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span :class="[
+                    'px-3 py-1.5 rounded-full text-xs font-bold shadow-sm',
+                    statusClass(adjustment.status)
+                  ]">
+                    {{ statusLabel(adjustment.status) }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center justify-center gap-2">
+                    <Link
+                      :href="route('outlet-food-inventory-adjustment.show', adjustment.id)"
+                      class="group relative p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
+                      title="View Details"
+                    >
+                      <i class="fa fa-eye"></i>
+                      <span class="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                        View Details
+                      </span>
+                    </Link>
+                    <button
+                      v-if="canDelete(adjustment)"
+                      @click="confirmDelete(adjustment.id)"
+                      :disabled="!canDelete(adjustment)"
+                      :class="[
+                        'group relative p-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md',
+                        !canDelete(adjustment) ? 'opacity-50 cursor-not-allowed' : ''
+                      ]"
+                      :title="canDelete(adjustment) ? 'Delete' : getDeleteTooltip(adjustment)"
+                    >
+                      <i class="fa fa-trash"></i>
+                      <span v-if="canDelete(adjustment)" class="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                        Delete
+                      </span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="mt-4">
+      <!-- Pagination -->
+      <div class="mt-6">
         <Pagination :links="adjustments.links" />
       </div>
     </div>
@@ -148,21 +235,25 @@ const formatDate = (date) => {
   if (!date) return '-';
   const d = new Date(date);
   if (isNaN(d)) return '-';
-  return d.toLocaleDateString('id-ID');
+  return d.toLocaleDateString('id-ID', { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric' 
+  });
 }
 
 const statusClass = (status) => {
   switch (status) {
     case 'waiting_approval':
-      return 'bg-yellow-100 text-yellow-800'
+      return 'bg-gradient-to-r from-yellow-100 to-yellow-50 text-yellow-800 border border-yellow-200'
     case 'waiting_cost_control':
-      return 'bg-blue-100 text-blue-800'
+      return 'bg-gradient-to-r from-blue-100 to-blue-50 text-blue-800 border border-blue-200'
     case 'approved':
-      return 'bg-green-100 text-green-800'
+      return 'bg-gradient-to-r from-green-100 to-green-50 text-green-800 border border-green-200'
     case 'rejected':
-      return 'bg-red-100 text-red-800'
+      return 'bg-gradient-to-r from-red-100 to-red-50 text-red-800 border border-red-200'
     default:
-      return 'bg-gray-100 text-gray-800'
+      return 'bg-gradient-to-r from-gray-100 to-gray-50 text-gray-800 border border-gray-200'
   }
 }
 
@@ -184,11 +275,9 @@ const statusLabel = (status) => {
 const loadingDelete = ref(false)
 
 function canDelete(adjustment) {
-  // Allow delete for waiting_approval and waiting_cost_control status
   const deletableStatuses = ['waiting_approval', 'waiting_cost_control'];
   const isDeletableStatus = deletableStatuses.includes(adjustment.status);
   
-  // Allow delete for approved status if user has special role
   const isApprovedStatus = adjustment.status === 'approved';
   const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
   
@@ -255,4 +344,12 @@ function confirmDelete(id) {
     allowOutsideClick: () => !Swal.isLoading()
   })
 }
-</script> 
+</script>
+
+<style scoped>
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+</style>
