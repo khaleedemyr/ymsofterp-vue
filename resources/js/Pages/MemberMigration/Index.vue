@@ -55,6 +55,15 @@
           </div>
           <div class="flex gap-2">
             <button
+              @click="exportCsv"
+              :disabled="loading || stats.ready === 0"
+              class="px-6 py-2 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-purple-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Export CSV untuk import langsung ke Navicat"
+            >
+              <i class="fa fa-file-csv"></i>
+              Export CSV ({{ stats.ready }})
+            </button>
+            <button
               v-if="selectedCustomers.length > 0"
               @click="migrateSelected"
               :disabled="loading"
@@ -485,6 +494,36 @@ async function migrateCurrentPage() {
   } finally {
     loading.value = false;
   }
+}
+
+function exportCsv() {
+  if (props.stats.ready === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tidak Ada Data',
+      text: 'Tidak ada customer yang siap untuk di-export'
+    });
+    return;
+  }
+  
+  Swal.fire({
+    title: 'Export CSV?',
+    html: `
+      <p>Yakin ingin export <strong>${props.stats.ready} customer</strong> yang belum migrasi ke CSV?</p>
+      <p class="text-sm text-gray-600 mt-2">File CSV ini bisa langsung diimport ke Navicat ke table <strong>member_apps_members</strong></p>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Ya, Export',
+    cancelButtonText: 'Batal'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      // Trigger download
+      window.location.href = '/member-migration/export-csv';
+    }
+  });
 }
 </script>
 

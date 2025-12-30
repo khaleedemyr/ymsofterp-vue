@@ -479,5 +479,162 @@ class MemberMigrationController extends Controller
             'errors' => array_slice($errors, 0, 100) // Limit errors to first 100 to avoid large response
         ]);
     }
+    
+    /**
+     * Export ready customers to CSV for direct import to Navicat
+     */
+    public function exportCsv(Request $request)
+    {
+        // Get existing emails from member_apps_members
+        $existingEmails = MemberAppsMember::whereNotNull('email')
+            ->where('email', '!=', '')
+            ->pluck('email')
+            ->toArray();
+        
+        // Get all ready customers (have email and not migrated)
+        // Filter juga yang punya mobile_phone karena mobile_phone adalah NOT NULL dan UNIQUE
+        $customers = Customer::where('status_aktif', '1')
+            ->whereNotNull('email')
+            ->where('email', '!=', '')
+            ->whereNotIn('email', $existingEmails)
+            ->whereNotNull('telepon')
+            ->where('telepon', '!=', '')
+            ->orderBy('created_at', 'desc')
+            ->get();
+        
+        // Get all occupations for mapping
+        $occupations = MemberAppsOccupation::where('is_active', true)->get()->keyBy('name');
+        
+        // Prepare CSV data
+        $csvData = [];
+        
+        // CSV Header (sesuai dengan kolom table member_apps_members)
+        $headers = [
+            'member_id',
+            'photo',
+            'email',
+            'nama_lengkap',
+            'mobile_phone',
+            'tanggal_lahir',
+            'jenis_kelamin',
+            'pekerjaan_id',
+            'pin',
+            'password',
+            'is_exclusive_member',
+            'member_level',
+            'total_spending',
+            'just_points',
+            'point_remainder',
+            'is_active',
+            'allow_notification',
+            'email_verified_at',
+            'mobile_verified_at',
+            'last_login_at',
+            'created_at',
+            'updated_at'
+        ];
+        
+        $csvData[] = $headers;
+        
+        // Process customers in chunks to avoid memory issues
+        foreach ($customers as $customer) {
+            // Map jenis kelamin: 1 -> 'L', 2 -> 'P'
+            $jenisKelamin = null;
+            if ($customer->jenis_kelamin == '1' || $customer->jenis_kelamin === 1) {
+                $jenisKelamin = 'L';
+            } elseif ($customer->jenis_kelamin == '2' || $customer->jenis_kelamin === 2) {
+                $jenisKelamin = 'P';
+            }
+            
+            // Map is_exclusive_member: 'Y' -> 1, 'N' -> 0
+            $isExclusiveMember = ($customer->exclusive_member === 'Y') ? 1 : 0;
+            
+            // Map pekerjaan_id
+            $pekerjaanId = $this->mapPekerjaanId($customer->pekerjaan);
+            
+            // Encrypt PIN if not already encrypted
+            $pin = $customer->pin;
+            if (!empty($pin) && !preg_match('/^\$2[ayb]\$.{56}$/', $pin)) {
+                $pin = bcrypt($pin);
+            } else {
+                $pin = $pin ?: '';
+            }
+            
+            // Encrypt password
+            $password = $customer->android_password;
+            $password = $password ? bcrypt($password) : bcrypt('default123');
+            
+            // Format dates
+            $tanggalLahir = $customer->tanggal_lahir ? date('Y-m-d', strtotime($customer->tanggal_lahir)) : '1970-01-01'; // Default date jika kosong (NOT NULL)
+            $lastLogin = $customer->last_logged ? date('Y-m-d H:i:s', strtotime($customer->last_logged)) : null;
+            $now = date('Y-m-d H:i:s');
+            
+            // Pastikan jenis_kelamin tidak kosong (NOT NULL, enum('L', 'P'))
+            if (empty($jenisKelamin)) {
+                $jenisKelamin = 'L'; // Default ke Laki-laki jika kosong
+            }
+            
+            // Pastikan mobile_phone tidak kosong (NOT NULL, UNIQUE)
+            // Jika telepon kosong, skip customer ini (seharusnya sudah di-filter di query)
+            if (empty($customer->telepon)) {
+                continue; // Skip customer tanpa telepon
+            }
+            $mobilePhone = $customer->telepon;
+            
+            // Pastikan pekerjaan_id adalah NULL jika tidak ada (bukan empty string)
+            $pekerjaanIdValue = $pekerjaanId ?: null;
+            
+            $row = [
+                $customer->costumers_id ?: '', // member_id (nullable)
+                '', // photo (nullable)
+                $customer->email, // email (NOT NULL, UNIQUE)
+                $customer->name ?: 'Member', // nama_lengkap (NOT NULL)
+                $mobilePhone, // mobile_phone (NOT NULL, UNIQUE)
+                $tanggalLahir, // tanggal_lahir (NOT NULL)
+                $jenisKelamin, // jenis_kelamin (NOT NULL, enum('L', 'P'))
+                $pekerjaanIdValue !== null ? $pekerjaanIdValue : '', // pekerjaan_id (nullable)
+                $pin, // pin (NOT NULL)
+                $password, // password (NOT NULL)
+                $isExclusiveMember, // is_exclusive_member (default 0)
+                'Silver', // member_level (NOT NULL, enum - harus 'Silver' bukan 'silver')
+                '0.00', // total_spending (default 0.00)
+                '0', // just_points (default 0)
+                '0.00', // point_remainder (default 0.00)
+                '1', // is_active (default 1)
+                '1', // allow_notification (default 1)
+                $now, // email_verified_at (nullable)
+                '', // mobile_verified_at (nullable)
+                $lastLogin ?: '', // last_login_at (nullable)
+                $now, // created_at (nullable)
+                $now  // updated_at (nullable)
+            ];
+            
+            $csvData[] = $row;
+        }
+        
+        // Generate CSV content
+        $output = fopen('php://temp', 'r+');
+        
+        // Add BOM for UTF-8 (untuk Excel/Navicat)
+        fprintf($output, "\xEF\xBB\xBF");
+        
+        foreach ($csvData as $row) {
+            fputcsv($output, $row, ',', '"');
+        }
+        
+        rewind($output);
+        $csvContent = stream_get_contents($output);
+        fclose($output);
+        
+        // Generate filename
+        $filename = 'member_migration_' . date('Y-m-d_His') . '.csv';
+        
+        // Return CSV download
+        return response($csvContent, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Transfer-Encoding' => 'binary',
+        ]);
+    }
 }
 
