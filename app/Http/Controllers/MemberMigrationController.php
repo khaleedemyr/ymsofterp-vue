@@ -65,37 +65,24 @@ class MemberMigrationController extends Controller
             : true;
         
         // Get existing emails from default connection first (untuk filter)
+        // Load dengan chunking untuk menghindari memory issue dan "too many placeholders"
         $existingEmailsForFilter = [];
         if ($filterNotMigrated) {
-            $existingEmailsForFilter = MemberAppsMember::whereNotNull('email')
+            MemberAppsMember::whereNotNull('email')
                 ->where('email', '!=', '')
-                ->pluck('email')
-                ->toArray();
+                ->chunk(1000, function($members) use (&$existingEmailsForFilter) {
+                    foreach ($members as $member) {
+                        $existingEmailsForFilter[$member->email] = true;
+                    }
+                });
         }
         
         // Get all customers from database second that are active
-        $query = Customer::where('status_aktif', '1');
-        
-        // Filter hanya yang belum migrasi jika filter_not_migrated = true
-        if ($filterNotMigrated) {
-            // Get existing emails from member_apps_members
-            $existingEmailsForFilter = MemberAppsMember::whereNotNull('email')
-                ->where('email', '!=', '')
-                ->pluck('email')
-                ->toArray();
-            
-            if (count($existingEmailsForFilter) > 0) {
-                $query->where(function($q) use ($existingEmailsForFilter) {
-                    $q->whereNotNull('email')
-                      ->where('email', '!=', '')
-                      ->whereNotIn('email', $existingEmailsForFilter);
-                });
-            } else {
-                // Jika belum ada yang migrasi, tampilkan semua yang punya email
-                $query->whereNotNull('email')
-                      ->where('email', '!=', '');
-            }
-        }
+        // Query tanpa filter whereNotIn untuk menghindari "too many placeholders"
+        // Filter akan dilakukan di collection setelah paginate
+        $query = Customer::where('status_aktif', '1')
+            ->whereNotNull('email')
+            ->where('email', '!=', '');
         
         // Apply search filter
         if ($search) {
@@ -107,8 +94,24 @@ class MemberMigrationController extends Controller
             });
         }
         
-        // Get customers - 500 per page for better migration efficiency
+        // Get customers - 500 per page
+        // Note: Pagination count mungkin tidak akurat jika filter_not_migrated aktif
+        // karena filter dilakukan di collection, bukan di query
         $customers = $query->orderBy('created_at', 'desc')->paginate(500)->withQueryString();
+        
+        // Filter di collection level: skip yang sudah migrasi jika filter_not_migrated = true
+        if ($filterNotMigrated && !empty($existingEmailsForFilter)) {
+            $customers->getCollection()->transform(function($customer) use ($existingEmailsForFilter) {
+                // Mark untuk dihapus jika sudah migrasi
+                if (isset($existingEmailsForFilter[$customer->email])) {
+                    return null; // Akan di-filter di bawah
+                }
+                return $customer;
+            });
+            
+            // Hapus null values (yang sudah migrasi)
+            $customers->setCollection($customers->getCollection()->filter());
+        }
         
         // Get existing emails as a Set for faster lookup (only emails from current page customers)
         $currentPageEmails = $customers->getCollection()->pluck('email')->filter()->toArray();
