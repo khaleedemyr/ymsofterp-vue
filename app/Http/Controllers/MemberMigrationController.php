@@ -575,34 +575,14 @@ class MemberMigrationController extends Controller
             
             do {
                 // Get customers in chunks
-                // Filter menggunakan whereNotIn dengan chunking (500 per batch) untuk menghindari "too many placeholders"
-                // Load existing emails/phones sudah dilakukan di awal dengan chunking
+                // Query tanpa filter whereNotIn untuk menghindari "too many placeholders"
+                // Filter akan dilakukan di PHP level menggunakan array lookup (O(1))
                 try {
                     $query = Customer::where('status_aktif', '1')
                         ->whereNotNull('email')
                         ->where('email', '!=', '')
                         ->whereNotNull('telepon')
                         ->where('telepon', '!=', '');
-                    
-                    // Filter email dengan chunking whereNotIn (500 per batch)
-                    if (!empty($existingEmails)) {
-                        $emailChunks = array_chunk(array_keys($existingEmails), 500);
-                        $query->where(function($q) use ($emailChunks) {
-                            foreach ($emailChunks as $chunk) {
-                                $q->whereNotIn('email', $chunk);
-                            }
-                        });
-                    }
-                    
-                    // Filter phone dengan chunking whereNotIn (500 per batch)
-                    if (!empty($existingPhones)) {
-                        $phoneChunks = array_chunk(array_keys($existingPhones), 500);
-                        $query->where(function($q) use ($phoneChunks) {
-                            foreach ($phoneChunks as $chunk) {
-                                $q->whereNotIn('telepon', $chunk);
-                            }
-                        });
-                    }
                     
                     $customers = $query->orderBy('created_at', 'desc')
                         ->offset($offset)
@@ -620,9 +600,15 @@ class MemberMigrationController extends Controller
                 }
                 
                 foreach ($customers as $customer) {
+                    // Filter di PHP level: skip jika email atau telepon sudah ada di existingEmails/existingPhones
+                    // Array lookup adalah O(1), lebih efisien daripada query dengan banyak whereNotIn
+                    if (isset($existingEmails[$customer->email]) || isset($existingPhones[$customer->telepon])) {
+                        continue; // Skip jika sudah ada di member_apps_members
+                    }
+                    
                     // Skip jika email atau telepon duplicate dalam batch ini
                     if (isset($processedEmails[$customer->email]) || isset($processedPhones[$customer->telepon])) {
-                        continue; // Skip duplicate
+                        continue; // Skip duplicate dalam batch
                     }
                     
                     // Track processed
