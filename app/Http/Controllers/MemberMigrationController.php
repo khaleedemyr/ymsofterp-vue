@@ -680,8 +680,8 @@ class MemberMigrationController extends Controller
                     if (!empty($rawTanggalLahir) && 
                         $rawTanggalLahir !== '0000-00-00' && 
                         $rawTanggalLahir !== '0000/00/00' &&
-                        !preg_match('/^0000[-/]/', $rawTanggalLahir) && // Tahun dimulai dengan 0000
-                        !preg_match('/[-/]0000[-/]/', $rawTanggalLahir) && // Ada 0000 di tengah
+                        !preg_match('/^0000[\/-]/', $rawTanggalLahir) && // Tahun dimulai dengan 0000 (- di akhir tidak perlu escape)
+                        !preg_match('/[\/-]0000[\/-]/', $rawTanggalLahir) && // Ada 0000 di tengah (- di akhir tidak perlu escape)
                         strpos($rawTanggalLahir, '0000-00-00') === false &&
                         strpos($rawTanggalLahir, '0000/00/00') === false) {
                             
