@@ -664,7 +664,7 @@ class InventoryDataService
     public function calculateCostFromStockCut($dateFrom, $dateTo, $outletCode = null)
     {
         // Ambil order_items yang sudah stock_cut = 1 dan agregasi per menu item
-        // Gunakan subquery untuk menghitung cost dari stock_cut_details
+        // Hitung cost dari stock_cut_details secara terpisah untuk menghindari masalah GROUP BY dengan subquery
         $query = "
             SELECT 
                 menu_item.id as item_id,
@@ -673,19 +673,10 @@ class InventoryDataService
                 outlet.qr_code as kode_outlet,
                 outlet.id_outlet,
                 outlet.nama_outlet,
+                DATE(o.created_at) as order_date,
                 SUM(oi.qty) as total_qty_sold,
                 SUM(oi.subtotal) as total_revenue,
-                AVG(oi.price) as avg_selling_price,
-                (
-                    SELECT SUM(scd.value_out)
-                    FROM stock_cut_details scd
-                    INNER JOIN stock_cut_logs scl ON scd.stock_cut_log_id = scl.id
-                    INNER JOIN item_bom bom ON scd.item_id = bom.material_item_id
-                    WHERE scl.outlet_id = outlet.id_outlet
-                        AND DATE(scl.tanggal) = DATE(o.created_at)
-                        AND scl.status = 'success'
-                        AND bom.item_id = menu_item.id
-                ) as total_cost
+                AVG(oi.price) as avg_selling_price
             FROM order_items oi
             INNER JOIN orders o ON oi.order_id = o.id
             INNER JOIN items menu_item ON oi.item_id = menu_item.id
@@ -705,15 +696,14 @@ class InventoryDataService
 
         $query .= " 
             GROUP BY menu_item.id, menu_item.name, menu_item.type, outlet.qr_code, outlet.id_outlet, outlet.nama_outlet, DATE(o.created_at)
-            HAVING total_cost > 0
-            ORDER BY total_qty_sold DESC
+            ORDER BY menu_item.id, outlet.id_outlet, DATE(o.created_at)
         ";
 
-        $costData = DB::select($query, $params);
+        $salesData = DB::select($query, $params);
 
-        // Agregasi ulang per menu item (karena bisa ada beberapa tanggal)
+        // Hitung cost dari stock_cut_details untuk setiap kombinasi item + outlet + tanggal
         $aggregated = [];
-        foreach ($costData as $data) {
+        foreach ($salesData as $data) {
             $key = $data->item_id . '_' . $data->id_outlet;
             
             if (!isset($aggregated[$key])) {
@@ -732,9 +722,23 @@ class InventoryDataService
                 ];
             }
             
+            // Hitung cost untuk tanggal spesifik ini dari stock_cut_details
+            $costForDate = DB::select("
+                SELECT SUM(scd.value_out) as total_cost
+                FROM stock_cut_details scd
+                INNER JOIN stock_cut_logs scl ON scd.stock_cut_log_id = scl.id
+                INNER JOIN item_bom bom ON scd.item_id = bom.material_item_id
+                WHERE scl.outlet_id = ?
+                    AND DATE(scl.tanggal) = ?
+                    AND scl.status = 'success'
+                    AND bom.item_id = ?
+            ", [$data->id_outlet, $data->order_date, $data->item_id]);
+            
+            $cost = $costForDate[0]->total_cost ?? 0;
+            
             $aggregated[$key]['total_qty_sold'] += $data->total_qty_sold;
             $aggregated[$key]['total_revenue'] += $data->total_revenue;
-            $aggregated[$key]['total_cost'] += ($data->total_cost ?? 0);
+            $aggregated[$key]['total_cost'] += $cost;
             $aggregated[$key]['price_sum'] += ($data->avg_selling_price ?? 0) * $data->total_qty_sold;
             $aggregated[$key]['price_count'] += $data->total_qty_sold;
         }
