@@ -41,6 +41,18 @@
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Filter</label>
+            <label class="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="checkbox"
+                v-model="filterNotMigrated"
+                @change="onFilterChange"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span class="text-sm text-gray-700">Hanya Belum Migrasi</span>
+            </label>
+          </div>
           <div class="flex gap-2">
             <button
               v-if="selectedCustomers.length > 0"
@@ -201,6 +213,8 @@ const props = defineProps({
 });
 
 const search = ref(props.filters?.search || '');
+// Default filter_not_migrated = true (hanya tampilkan yang belum migrasi)
+const filterNotMigrated = ref(props.filters?.filter_not_migrated !== undefined ? props.filters.filter_not_migrated : true);
 const loading = ref(false);
 const selectedCustomers = ref([]);
 
@@ -230,12 +244,20 @@ function toggleSelectAll() {
 
 const debouncedSearch = debounce(() => {
   router.get('/member-migration', {
-    search: search.value
+    search: search.value,
+    filter_not_migrated: filterNotMigrated.value ? '1' : '0'
   }, { preserveState: true, replace: true });
 }, 400);
 
 function onSearchInput() {
   debouncedSearch();
+}
+
+function onFilterChange() {
+  router.get('/member-migration', {
+    search: search.value,
+    filter_not_migrated: filterNotMigrated.value ? '1' : '0'
+  }, { preserveState: true, replace: true });
 }
 
 function goToPage(url) {

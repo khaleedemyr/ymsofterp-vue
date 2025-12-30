@@ -59,9 +59,43 @@ class MemberMigrationController extends Controller
     public function index(Request $request)
     {
         $search = $request->get('search', '');
+        // Default filter_not_migrated = true (hanya tampilkan yang belum migrasi)
+        $filterNotMigrated = $request->has('filter_not_migrated') 
+            ? ($request->get('filter_not_migrated') === '1' || $request->get('filter_not_migrated') === true) 
+            : true;
+        
+        // Get existing emails from default connection first (untuk filter)
+        $existingEmailsForFilter = [];
+        if ($filterNotMigrated) {
+            $existingEmailsForFilter = MemberAppsMember::whereNotNull('email')
+                ->where('email', '!=', '')
+                ->pluck('email')
+                ->toArray();
+        }
         
         // Get all customers from database second that are active
         $query = Customer::where('status_aktif', '1');
+        
+        // Filter hanya yang belum migrasi jika filter_not_migrated = true
+        if ($filterNotMigrated) {
+            // Get existing emails from member_apps_members
+            $existingEmailsForFilter = MemberAppsMember::whereNotNull('email')
+                ->where('email', '!=', '')
+                ->pluck('email')
+                ->toArray();
+            
+            if (count($existingEmailsForFilter) > 0) {
+                $query->where(function($q) use ($existingEmailsForFilter) {
+                    $q->whereNotNull('email')
+                      ->where('email', '!=', '')
+                      ->whereNotIn('email', $existingEmailsForFilter);
+                });
+            } else {
+                // Jika belum ada yang migrasi, tampilkan semua yang punya email
+                $query->whereNotNull('email')
+                      ->where('email', '!=', '');
+            }
+        }
         
         // Apply search filter
         if ($search) {
@@ -145,7 +179,8 @@ class MemberMigrationController extends Controller
         return Inertia::render('MemberMigration/Index', [
             'customers' => $customers,
             'filters' => [
-                'search' => $search
+                'search' => $search,
+                'filter_not_migrated' => $filterNotMigrated
             ],
             'stats' => [
                 'total' => $totalCount,
