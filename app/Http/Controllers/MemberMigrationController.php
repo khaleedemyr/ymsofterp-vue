@@ -65,7 +65,8 @@ class MemberMigrationController extends Controller
             : true;
         
         // Get existing emails from default connection first (untuk filter)
-        // Load dengan chunking untuk menghindari memory issue dan "too many placeholders"
+        // Load dengan chunking untuk menghindari memory issue
+        // Gunakan associative array untuk lookup O(1)
         $existingEmailsForFilter = [];
         if ($filterNotMigrated) {
             MemberAppsMember::whereNotNull('email')
@@ -78,7 +79,7 @@ class MemberMigrationController extends Controller
         }
         
         // Get all customers from database second that are active
-        // Query tanpa filter whereNotIn untuk menghindari "too many placeholders"
+        // Query tanpa filter whereNotIn untuk menghindari "too many placeholders" dan permission issue
         // Filter akan dilakukan di collection setelah paginate
         $query = Customer::where('status_aktif', '1')
             ->whereNotNull('email')
@@ -94,23 +95,75 @@ class MemberMigrationController extends Controller
             });
         }
         
-        // Get customers - 500 per page
-        // Note: Pagination count mungkin tidak akurat jika filter_not_migrated aktif
-        // karena filter dilakukan di collection, bukan di query
-        $customers = $query->orderBy('created_at', 'desc')->paginate(500)->withQueryString();
+        // Get customers dengan pendekatan berbeda berdasarkan filter
+        $perPage = 500;
         
-        // Filter di collection level: skip yang sudah migrasi jika filter_not_migrated = true
-        if ($filterNotMigrated && !empty($existingEmailsForFilter)) {
-            $customers->getCollection()->transform(function($customer) use ($existingEmailsForFilter) {
-                // Mark untuk dihapus jika sudah migrasi
-                if (isset($existingEmailsForFilter[$customer->email])) {
-                    return null; // Akan di-filter di bawah
-                }
-                return $customer;
-            });
+        if ($filterNotMigrated) {
+            // Jika filter aktif, query dalam batch kecil dan accumulate sampai cukup untuk pagination
+            // Query 5,000 records per batch untuk menghindari memory issue
+            $batchSize = 5000;
+            $allCustomers = collect();
+            $offset = 0;
+            $maxBatches = 10; // Maksimal 10 batch (50,000 records) untuk menghindari timeout
             
-            // Hapus null values (yang sudah migrasi)
-            $customers->setCollection($customers->getCollection()->filter());
+            // Query dalam batch sampai dapat cukup data untuk current page + beberapa page berikutnya
+            $currentPage = (int) $request->get('page', 1);
+            $neededCount = ($currentPage + 2) * $perPage; // Query sedikit lebih banyak untuk buffer
+            
+            while ($allCustomers->count() < $neededCount && $offset < ($maxBatches * $batchSize)) {
+                $batch = $query->orderBy('created_at', 'desc')
+                    ->offset($offset)
+                    ->limit($batchSize)
+                    ->get();
+                
+                if ($batch->isEmpty()) {
+                    break; // Tidak ada data lagi
+                }
+                
+                // Filter di PHP level: skip yang sudah migrasi
+                if (!empty($existingEmailsForFilter)) {
+                    $batch = $batch->filter(function($customer) use ($existingEmailsForFilter) {
+                        return !isset($existingEmailsForFilter[$customer->email]);
+                    });
+                }
+                
+                $allCustomers = $allCustomers->merge($batch);
+                $offset += $batchSize;
+                
+                // Jika sudah dapat cukup data, break
+                if ($allCustomers->count() >= $neededCount) {
+                    break;
+                }
+            }
+            
+            // Reset keys
+            $allCustomers = $allCustomers->values();
+            
+            // Paginate manual
+            $paginatedCustomers = $allCustomers->slice(($currentPage - 1) * $perPage, $perPage)->values();
+            
+            // Untuk total count, kita akan gunakan readyCount dari stats (akan dihitung nanti)
+            // Untuk sementara, gunakan count dari $allCustomers sebagai estimate
+            // Total akan di-update nanti setelah readyCount dihitung
+            $tempTotal = $allCustomers->count();
+            
+            // Create paginator manually
+            $customers = new \Illuminate\Pagination\LengthAwarePaginator(
+                $paginatedCustomers,
+                $tempTotal, // Temporary total, akan di-update nanti dengan readyCount
+                $perPage,
+                $currentPage,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query()
+                ]
+            );
+            
+            // Pastikan collection valid
+            $customers->setCollection($paginatedCustomers);
+        } else {
+            // Jika tidak ada filter, gunakan pagination biasa (lebih efisien)
+            $customers = $query->orderBy('created_at', 'desc')->paginate($perPage)->withQueryString();
         }
         
         // Get existing emails as a Set for faster lookup (only emails from current page customers)
@@ -144,21 +197,22 @@ class MemberMigrationController extends Controller
             return $customer;
         });
         
-        // Calculate stats efficiently using database queries
+        // Calculate stats efficiently
         $totalCount = Customer::where('status_aktif', '1')->count();
         
-        // Get existing emails from default connection first dengan chunking
-        // Gunakan associative array untuk lookup O(1)
-        $existingEmailsForStats = [];
-        MemberAppsMember::whereNotNull('email')
-            ->where('email', '!=', '')
-            ->chunk(1000, function($members) use (&$existingEmailsForStats) {
-                foreach ($members as $member) {
-                    $existingEmailsForStats[$member->email] = true;
-                }
-            });
+        // Get existing emails untuk stats (gunakan yang sudah di-load sebelumnya jika ada, atau load baru)
+        $existingEmailsForStats = $existingEmailsForFilter; // Reuse jika sudah di-load
+        if (empty($existingEmailsForStats)) {
+            MemberAppsMember::whereNotNull('email')
+                ->where('email', '!=', '')
+                ->chunk(1000, function($members) use (&$existingEmailsForStats) {
+                    foreach ($members as $member) {
+                        $existingEmailsForStats[$member->email] = true;
+                    }
+                });
+        }
         
-        // Query semua customers yang punya email (tanpa whereNotIn/whereIn untuk menghindari "too many placeholders")
+        // Query semua customers yang punya email (tanpa filter untuk menghindari permission issue)
         $customersWithEmail = Customer::where('status_aktif', '1')
             ->whereNotNull('email')
             ->where('email', '!=', '')
@@ -181,6 +235,21 @@ class MemberMigrationController extends Controller
                   ->orWhere('email', '=', '');
             })
             ->count();
+        
+        // Update total count di paginator jika filter aktif (gunakan readyCount yang lebih akurat)
+        if ($filterNotMigrated && isset($customers) && $customers instanceof \Illuminate\Pagination\LengthAwarePaginator) {
+            // Buat paginator baru dengan total yang benar menggunakan readyCount
+            $customers = new \Illuminate\Pagination\LengthAwarePaginator(
+                $customers->items(),
+                $readyCount, // Gunakan readyCount yang lebih akurat
+                $customers->perPage(),
+                $customers->currentPage(),
+                [
+                    'path' => $customers->path(),
+                    'query' => $request->query() // Gunakan $request->query() bukan $customers->query()
+                ]
+            );
+        }
         
         return Inertia::render('MemberMigration/Index', [
             'customers' => $customers,
