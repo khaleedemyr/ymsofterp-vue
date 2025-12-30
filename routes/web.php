@@ -1637,15 +1637,20 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
         
         // Jika body data ada, buat request baru dengan method POST
         if ($bodyData && is_array($bodyData) && isset($bodyData['question'])) {
+            // Pastikan bodyContent adalah JSON string yang valid
+            if (empty($bodyContent) || !json_decode($bodyContent, true)) {
+                $bodyContent = json_encode($bodyData);
+            }
+            
             // Buat request baru dengan method POST dan data dari body
             $newRequest = \Illuminate\Http\Request::create(
                 $request->url(),
                 'POST',
-                $bodyData, // parameters
+                $bodyData, // parameters - ini akan masuk ke request->request
                 $request->cookies->all(),
                 $request->files->all(),
                 $request->server->all(),
-                $bodyContent // content (raw body)
+                $bodyContent // content (raw body) - ini untuk JSON parsing
             );
             
             // Copy headers penting
@@ -1655,11 +1660,20 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
             // Set method secara eksplisit
             $newRequest->setMethod('POST');
             
+            // Pastikan data juga di-set ke request->request secara eksplisit
+            foreach ($bodyData as $key => $value) {
+                $newRequest->request->set($key, $value);
+                $newRequest->merge([$key => $value]);
+            }
+            
             \Illuminate\Support\Facades\Log::info('AI Analytics: Created new POST request', [
                 'method' => $newRequest->method(),
                 'has_question' => $newRequest->has('question'),
-                'question_preview' => $newRequest->has('question') ? substr($newRequest->get('question'), 0, 50) : 'NOT_FOUND',
-                'all_keys' => array_keys($newRequest->all())
+                'question_value' => $newRequest->get('question', 'NOT_FOUND'),
+                'question_in_request' => $newRequest->request->has('question') ? substr($newRequest->request->get('question'), 0, 50) : 'NOT_IN_REQUEST',
+                'all_keys' => array_keys($newRequest->all()),
+                'request_keys' => array_keys($newRequest->request->all()),
+                'body_content_preview' => substr($bodyContent, 0, 200)
             ]);
             
             // Forward ke controller dengan request baru

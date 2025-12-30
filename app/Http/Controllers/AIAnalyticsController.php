@@ -105,44 +105,96 @@ class AIAnalyticsController extends Controller
                 'question_value' => $request->get('question', 'NOT_FOUND'),
                 'all_request_data' => $request->all(),
                 'request_keys' => array_keys($request->all()),
+                'request_request' => $request->request->all(), // POST data
                 'content_type' => $request->header('content-type'),
                 'is_json' => $request->isJson(),
-                'json_all' => $request->json()->all() ?? 'NOT_JSON'
+                'json_all' => $request->json() ? $request->json()->all() : 'NOT_JSON',
+                'getContent' => substr($request->getContent(), 0, 200)
             ]);
             
-            // Coba ambil question dari berbagai sumber
-            $question = $request->get('question');
+            // Coba ambil question dari berbagai sumber (dalam urutan prioritas)
+            $question = null;
             
-            // Jika tidak ada, coba dari JSON
-            if (empty($question) && $request->isJson()) {
-                $jsonData = $request->json()->all();
-                $question = $jsonData['question'] ?? null;
+            // 1. Coba dari request->request (POST data)
+            if ($request->request->has('question')) {
+                $question = $request->request->get('question');
+                Log::info('AI Analytics: Question found in request->request', ['question_preview' => substr($question, 0, 50)]);
             }
             
-            // Jika masih tidak ada, coba dari input
+            // 2. Coba dari request->get() atau request->input()
             if (empty($question)) {
-                $question = $request->input('question');
+                $question = $request->get('question') ?: $request->input('question');
+                if ($question) {
+                    Log::info('AI Analytics: Question found in request->get/input', ['question_preview' => substr($question, 0, 50)]);
+                }
+            }
+            
+            // 3. Coba dari JSON body
+            if (empty($question)) {
+                try {
+                    if ($request->isJson() && $request->json()) {
+                        $jsonData = $request->json()->all();
+                        $question = $jsonData['question'] ?? null;
+                        if ($question) {
+                            Log::info('AI Analytics: Question found in JSON body', ['question_preview' => substr($question, 0, 50)]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('AI Analytics: Error reading JSON', ['error' => $e->getMessage()]);
+                }
+            }
+            
+            // 4. Coba dari request->all() sebagai last resort
+            if (empty($question)) {
+                $allData = $request->all();
+                $question = $allData['question'] ?? null;
+                if ($question) {
+                    Log::info('AI Analytics: Question found in request->all()', ['question_preview' => substr($question, 0, 50)]);
+                }
+            }
+            
+            // 5. Coba parse dari raw content jika masih kosong
+            if (empty($question)) {
+                $rawContent = $request->getContent();
+                if (!empty($rawContent)) {
+                    $parsedContent = json_decode($rawContent, true);
+                    if (json_last_error() === JSON_ERROR_NONE && isset($parsedContent['question'])) {
+                        $question = $parsedContent['question'];
+                        Log::info('AI Analytics: Question found in raw content', ['question_preview' => substr($question, 0, 50)]);
+                    }
+                }
             }
             
             $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
             $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
             $sessionId = $request->get('session_id', $this->getOrCreateSessionId($request));
             
+            // Normalize question - trim whitespace
+            if ($question) {
+                $question = trim($question);
+            }
+            
             Log::info('AI Analytics: Question extracted', [
                 'question' => $question ? substr($question, 0, 50) : 'EMPTY',
                 'question_length' => $question ? strlen($question) : 0,
+                'question_raw' => $question, // Log full question untuk debugging
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'session_id' => $sessionId
             ]);
             
-            if (!$question || trim($question) === '') {
-                Log::error('AI Analytics: Question is empty!', [
+            // Validasi question - cek apakah kosong atau hanya whitespace
+            if (empty($question) || trim($question) === '') {
+                Log::error('AI Analytics: Question is empty after extraction!', [
                     'request_all' => $request->all(),
-                    'request_json' => $request->json()->all() ?? 'NOT_JSON',
+                    'request_request' => $request->request->all(),
+                    'request_json' => $request->json() ? $request->json()->all() : 'NOT_JSON',
                     'request_input' => $request->input(),
                     'request_get' => $request->get('question', 'NOT_FOUND'),
-                    'method' => $request->method()
+                    'request_has_question' => $request->has('question'),
+                    'method' => $request->method(),
+                    'content_type' => $request->header('content-type'),
+                    'raw_content' => substr($request->getContent(), 0, 500)
                 ]);
                 
                 return response()->json([
