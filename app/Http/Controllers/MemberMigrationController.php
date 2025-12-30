@@ -508,11 +508,16 @@ class MemberMigrationController extends Controller
                 });
             
             // Load phones dengan chunking
+            // Sanitasi mobile_phone (hanya angka) untuk konsistensi dengan data yang akan di-export
             MemberAppsMember::whereNotNull('mobile_phone')
                 ->where('mobile_phone', '!=', '')
                 ->chunk(1000, function($members) use (&$existingPhones) {
                     foreach ($members as $member) {
-                        $existingPhones[$member->mobile_phone] = true;
+                        // Sanitasi: hanya ambil angka (untuk konsistensi dengan data yang akan di-export)
+                        $sanitizedPhone = preg_replace('/[^0-9]/', '', $member->mobile_phone);
+                        if (!empty($sanitizedPhone) && strlen($sanitizedPhone) >= 8 && strlen($sanitizedPhone) <= 20) {
+                            $existingPhones[$sanitizedPhone] = true;
+                        }
                     }
                 });
             
@@ -600,20 +605,35 @@ class MemberMigrationController extends Controller
                 }
                 
                 foreach ($customers as $customer) {
-                    // Filter di PHP level: skip jika email atau telepon sudah ada di existingEmails/existingPhones
+                    // Validasi dan sanitasi mobile_phone terlebih dahulu
+                    // mobile_phone adalah VARCHAR(20) NOT NULL, jadi harus valid
+                    // Hanya ambil angka dari telepon (hapus karakter non-numeric)
+                    $rawTelepon = is_string($customer->telepon) ? trim($customer->telepon) : (string)$customer->telepon;
+                    $mobilePhone = preg_replace('/[^0-9]/', '', $rawTelepon); // Hanya ambil angka
+                    
+                    // Validasi: mobile_phone harus minimal 8 digit dan maksimal 20 karakter
+                    // Jika tidak valid, skip record ini
+                    if (empty($mobilePhone) || strlen($mobilePhone) < 8 || strlen($mobilePhone) > 20) {
+                        continue; // Skip record dengan mobile_phone tidak valid
+                    }
+                    
+                    // Filter di PHP level: skip jika email atau mobile_phone sudah ada di existingEmails/existingPhones
                     // Array lookup adalah O(1), lebih efisien daripada query dengan banyak whereNotIn
-                    if (isset($existingEmails[$customer->email]) || isset($existingPhones[$customer->telepon])) {
+                    // Gunakan mobile_phone yang sudah disanitasi untuk konsistensi
+                    if (isset($existingEmails[$customer->email]) || isset($existingPhones[$mobilePhone])) {
                         continue; // Skip jika sudah ada di member_apps_members
                     }
                     
-                    // Skip jika email atau telepon duplicate dalam batch ini
-                    if (isset($processedEmails[$customer->email]) || isset($processedPhones[$customer->telepon])) {
+                    // Skip jika email atau mobile_phone duplicate dalam batch ini
+                    // Gunakan mobile_phone yang sudah disanitasi untuk konsistensi
+                    if (isset($processedEmails[$customer->email]) || isset($processedPhones[$mobilePhone])) {
                         continue; // Skip duplicate dalam batch
                     }
                     
-                    // Track processed
+                    // Track processed email dan mobile_phone (sudah disanitasi)
                     $processedEmails[$customer->email] = true;
-                    $processedPhones[$customer->telepon] = true;
+                    $processedPhones[$mobilePhone] = true;
+                    
                     // Map jenis kelamin: 1 -> 'L', 2 -> 'P'
                     $jenisKelamin = null;
                     if ($customer->jenis_kelamin == '1' || $customer->jenis_kelamin === 1) {
@@ -708,7 +728,7 @@ class MemberMigrationController extends Controller
                         '', // photo (nullable) - empty string
                         $customer->email, // email (NOT NULL, UNIQUE)
                         $customer->name ?: 'Member', // nama_lengkap (NOT NULL)
-                        $customer->telepon, // mobile_phone (NOT NULL, UNIQUE)
+                        $mobilePhone, // mobile_phone (NOT NULL, UNIQUE) - sudah disanitasi (hanya angka, max 20 char)
                         $tanggalLahir, // tanggal_lahir (NOT NULL)
                         $jenisKelamin, // jenis_kelamin (NOT NULL, enum('L', 'P'))
                         $pekerjaanIdValue, // pekerjaan_id (nullable) - empty string jika NULL (akan jadi NULL di Navicat)
