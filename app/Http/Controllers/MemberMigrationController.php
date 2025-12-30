@@ -704,7 +704,6 @@ class MemberMigrationController extends Controller
                                     }
                                 }
                             }
-                        }
                     }
                     
                     // Last login: nullable, pastikan tidak ada 0000-00-00
@@ -795,17 +794,17 @@ class MemberMigrationController extends Controller
             } while (true);
             
             fclose($output);
-                } catch (\Exception $e) {
-                    // Log error jika ada
-                    \Log::error('Export CSV Error: ' . $e->getMessage(), [
-                        'trace' => $e->getTraceAsString()
-                    ]);
-                    // Output error message jika output stream masih terbuka
-                    if (isset($output) && is_resource($output)) {
-                        fwrite($output, "Error: " . $e->getMessage());
-                        fclose($output);
-                    }
+            } catch (\Exception $e) {
+                // Log error jika ada
+                \Log::error('Export CSV Error: ' . $e->getMessage(), [
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Output error message jika output stream masih terbuka
+                if (isset($output) && is_resource($output)) {
+                    fwrite($output, "Error: " . $e->getMessage());
+                    fclose($output);
                 }
+            }
             }, 200, [
                 'Content-Type' => 'text/csv; charset=UTF-8',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
