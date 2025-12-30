@@ -670,24 +670,38 @@ class MemberMigrationController extends Controller
                     // Format dates
                     // Tanggal lahir: pastikan tidak ada 0000-00-00 (invalid date untuk MySQL)
                     $tanggalLahir = '1970-01-01'; // Default date
-                    if (!empty($customer->tanggal_lahir)) {
-                        // Cek jika tanggal_lahir berisi 0000-00-00
-                        $rawTanggalLahir = is_string($customer->tanggal_lahir) ? trim($customer->tanggal_lahir) : (string)$customer->tanggal_lahir;
-                        if ($rawTanggalLahir && 
-                            $rawTanggalLahir !== '0000-00-00' && 
-                            strpos($rawTanggalLahir, '0000-00-00') === false &&
-                            strpos($rawTanggalLahir, '0000') === false) {
+                    
+                    // Convert ke string dan trim
+                    $rawTanggalLahir = !empty($customer->tanggal_lahir) 
+                        ? (is_string($customer->tanggal_lahir) ? trim($customer->tanggal_lahir) : (string)$customer->tanggal_lahir)
+                        : '';
+                    
+                    // Cek eksplisit: skip jika kosong atau berisi 0000-00-00
+                    if (!empty($rawTanggalLahir) && 
+                        $rawTanggalLahir !== '0000-00-00' && 
+                        $rawTanggalLahir !== '0000/00/00' &&
+                        !preg_match('/^0000[-/]/', $rawTanggalLahir) && // Tahun dimulai dengan 0000
+                        !preg_match('/[-/]0000[-/]/', $rawTanggalLahir) && // Ada 0000 di tengah
+                        strpos($rawTanggalLahir, '0000-00-00') === false &&
+                        strpos($rawTanggalLahir, '0000/00/00') === false) {
+                            
                             // Parse tanggal
                             $timestamp = @strtotime($rawTanggalLahir);
                             if ($timestamp !== false && $timestamp > 0) {
                                 $parsedDate = date('Y-m-d', $timestamp);
-                                // Validasi hasil parsing
+                                
+                                // Validasi hasil parsing: pastikan tidak ada 0000 di tahun
                                 if ($parsedDate && 
-                                    $parsedDate !== '1970-01-01' && 
-                                    $parsedDate !== '0000-00-00' && 
-                                    strpos($parsedDate, '0000') === false &&
-                                    preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsedDate)) {
-                                    $tanggalLahir = $parsedDate;
+                                    preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsedDate) &&
+                                    !preg_match('/^0000-/', $parsedDate) && // Tahun tidak dimulai dengan 0000
+                                    $parsedDate !== '1970-01-01' && // Bukan default date (kecuali memang 1970-01-01)
+                                    $parsedDate !== '0000-00-00') {
+                                    
+                                    // Cek tahun valid (1900-2100)
+                                    $year = (int)substr($parsedDate, 0, 4);
+                                    if ($year >= 1900 && $year <= 2100) {
+                                        $tanggalLahir = $parsedDate;
+                                    }
                                 }
                             }
                         }
@@ -716,6 +730,14 @@ class MemberMigrationController extends Controller
                     
                     $now = date('Y-m-d H:i:s');
                     
+                    // Validasi final: pastikan tanggal_lahir tidak pernah 0000-00-00
+                    // Jika masih 0000-00-00 setelah semua validasi, gunakan default
+                    if ($tanggalLahir === '0000-00-00' || 
+                        preg_match('/^0000-/', $tanggalLahir) || 
+                        strpos($tanggalLahir, '0000-00-00') !== false) {
+                        $tanggalLahir = '1970-01-01'; // Force default jika masih invalid
+                    }
+                    
                     // Format data untuk Navicat
                     // Untuk foreign key (pekerjaan_id), jika NULL harus benar-benar empty (tidak bisa 0 atau empty string yang tidak valid)
                     $memberId = $customer->costumers_id ?: '';
@@ -729,7 +751,7 @@ class MemberMigrationController extends Controller
                         $customer->email, // email (NOT NULL, UNIQUE)
                         $customer->name ?: 'Member', // nama_lengkap (NOT NULL)
                         $mobilePhone, // mobile_phone (NOT NULL, UNIQUE) - sudah disanitasi (hanya angka, max 20 char)
-                        $tanggalLahir, // tanggal_lahir (NOT NULL)
+                        $tanggalLahir, // tanggal_lahir (NOT NULL) - sudah divalidasi, tidak akan pernah 0000-00-00
                         $jenisKelamin, // jenis_kelamin (NOT NULL, enum('L', 'P'))
                         $pekerjaanIdValue, // pekerjaan_id (nullable) - empty string jika NULL (akan jadi NULL di Navicat)
                         $pin, // pin (NOT NULL) - default hash
