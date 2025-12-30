@@ -1511,10 +1511,41 @@ Route::delete('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\A
 // Hanya handle jika benar-benar GET request ke /ai/ask (bukan /ai/chat-history)
 Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $request) {
     // Cek apakah ini sebenarnya POST request yang di-redirect menjadi GET
-    $hasBody = $request->has('question') || $request->getContent() !== '';
     $hasPostHeaders = $request->header('content-type') === 'application/json' || 
                       $request->header('x-csrf-token') !== null ||
-                      $request->header('content-length') !== null;
+                      ($request->header('content-length') !== null && (int)$request->header('content-length') > 0);
+    
+    // Untuk GET request, Laravel tidak membaca body secara default
+    // Kita perlu membaca dari php://input secara manual
+    // Tapi hati-hati: php://input hanya bisa dibaca sekali!
+    $bodyContent = '';
+    $contentLength = (int)$request->header('content-length', 0);
+    
+    if ($contentLength > 0) {
+        // Coba beberapa cara untuk membaca body
+        // 1. Coba dari request->getContent() dulu (untuk POST yang di-redirect)
+        $bodyContent = $request->getContent();
+        
+        // 2. Jika kosong, coba dari php://input
+        if (empty($bodyContent)) {
+            $bodyContent = file_get_contents('php://input');
+        }
+        
+        // 3. Jika masih kosong, coba dari $_POST (jika ada)
+        if (empty($bodyContent) && !empty($_POST)) {
+            $bodyContent = json_encode($_POST);
+        }
+        
+        \Illuminate\Support\Facades\Log::info('AI Analytics: Body reading attempt', [
+            'content_length_header' => $contentLength,
+            'getContent_length' => strlen($request->getContent()),
+            'php_input_length' => strlen(file_get_contents('php://input')),
+            'final_body_length' => strlen($bodyContent),
+            'has_POST' => !empty($_POST)
+        ]);
+    }
+    
+    $hasBody = !empty($bodyContent) || $request->has('question');
     
     \Illuminate\Support\Facades\Log::warning('AI Analytics: GET request detected to /ai/ask', [
         'url' => $request->fullUrl(),
@@ -1524,12 +1555,13 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
         'has_post_headers' => $hasPostHeaders,
         'content_type' => $request->header('content-type'),
         'content_length' => $request->header('content-length'),
+        'body_length' => strlen($bodyContent),
         'has_csrf_token' => $request->header('x-csrf-token') !== null,
         'referer' => $request->header('referer'),
         'ip' => $request->ip(),
         'user_agent' => $request->userAgent(),
         'query_params' => $request->query(),
-        'request_body' => $request->getContent()
+        'body_preview' => substr($bodyContent, 0, 100)
     ]);
     
     // WORKAROUND: Jika ada body atau POST headers, kemungkinan ini POST yang di-redirect
@@ -1538,23 +1570,66 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
         \Illuminate\Support\Facades\Log::warning('AI Analytics: POST request was redirected to GET - Forwarding to POST handler', [
             'original_method' => 'POST (detected from headers)',
             'received_method' => 'GET',
-            'body_content' => $request->getContent()
+            'body_length' => strlen($bodyContent),
+            'body_content' => $bodyContent
         ]);
         
         // Parse body jika ada
-        $bodyContent = $request->getContent();
-        if ($bodyContent) {
+        $bodyData = null;
+        if (!empty($bodyContent)) {
             $bodyData = json_decode($bodyContent, true);
-            if ($bodyData) {
-                // Merge body data ke request
-                $request->merge($bodyData);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Illuminate\Support\Facades\Log::error('AI Analytics: Failed to parse JSON body', [
+                    'json_error' => json_last_error_msg(),
+                    'body_preview' => substr($bodyContent, 0, 200)
+                ]);
             }
+        }
+        
+        // Jika body data berhasil di-parse, merge ke request
+        if ($bodyData && is_array($bodyData)) {
+            // Merge body data ke request menggunakan merge() dan juga set langsung
+            foreach ($bodyData as $key => $value) {
+                $request->merge([$key => $value]);
+                // Juga set langsung ke request untuk memastikan
+                $request->request->set($key, $value);
+            }
+            
+            \Illuminate\Support\Facades\Log::info('AI Analytics: Parsed and merged body data', [
+                'keys' => array_keys($bodyData),
+                'has_question' => isset($bodyData['question']),
+                'question_preview' => isset($bodyData['question']) ? substr($bodyData['question'], 0, 50) : null,
+                'request_has_question' => $request->has('question'),
+                'request_get_question' => $request->get('question', 'NOT_FOUND')
+            ]);
+        } else {
+            \Illuminate\Support\Facades\Log::warning('AI Analytics: Body data is empty or invalid', [
+                'body_length' => strlen($bodyContent),
+                'body_preview' => substr($bodyContent, 0, 200),
+                'parsed_data' => $bodyData,
+                'content_length_header' => $request->header('content-length')
+            ]);
         }
         
         // Forward ke controller POST
         $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
         // Override method untuk POST
         $request->setMethod('POST');
+        
+        // Pastikan question ada di request - cek semua kemungkinan
+        if (!$request->has('question')) {
+            if (isset($bodyData['question'])) {
+                $request->merge(['question' => $bodyData['question']]);
+                $request->request->set('question', $bodyData['question']);
+            } else {
+                \Illuminate\Support\Facades\Log::error('AI Analytics: Question not found in request or body!', [
+                    'request_all' => $request->all(),
+                    'body_data' => $bodyData,
+                    'request_has_question' => $request->has('question')
+                ]);
+            }
+        }
+        
         return $controller->askQuestion($request);
     }
     
