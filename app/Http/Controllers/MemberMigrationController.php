@@ -486,24 +486,47 @@ class MemberMigrationController extends Controller
      */
     public function exportCsv(Request $request)
     {
-        // Set execution time limit
-        set_time_limit(600); // 10 minutes
-        
-        // Get existing emails from member_apps_members (cached)
-        $existingEmails = MemberAppsMember::whereNotNull('email')
-            ->where('email', '!=', '')
-            ->pluck('email')
-            ->toArray();
-        
-        // Get all occupations for mapping (cache once)
-        $occupations = MemberAppsOccupation::where('is_active', true)->get()->keyBy('name');
-        
-        // Generate filename
-        $filename = 'member_migration_' . date('Y-m-d_His') . '.csv';
-        
-        // Use streaming response untuk handle large data
-        return response()->stream(function() use ($existingEmails, $occupations) {
-            $output = fopen('php://output', 'w');
+        try {
+            // Set execution time limit
+            set_time_limit(600); // 10 minutes
+            
+            // Get all occupations for mapping (cache once)
+            $occupations = MemberAppsOccupation::where('is_active', true)->get()->keyBy('name');
+            
+            // Load existing emails dan phones dengan chunking untuk menghindari memory issue
+            // Gunakan connection default (mysql) untuk member_apps_members
+            $existingEmails = [];
+            $existingPhones = [];
+            
+            // Load emails dengan chunking
+            MemberAppsMember::whereNotNull('email')
+                ->where('email', '!=', '')
+                ->chunk(1000, function($members) use (&$existingEmails) {
+                    foreach ($members as $member) {
+                        $existingEmails[$member->email] = true;
+                    }
+                });
+            
+            // Load phones dengan chunking
+            MemberAppsMember::whereNotNull('mobile_phone')
+                ->where('mobile_phone', '!=', '')
+                ->chunk(1000, function($members) use (&$existingPhones) {
+                    foreach ($members as $member) {
+                        $existingPhones[$member->mobile_phone] = true;
+                    }
+                });
+            
+            // Generate filename
+            $filename = 'member_migration_' . date('Y-m-d_His') . '.csv';
+            
+            // Use streaming response untuk handle large data
+            return response()->stream(function() use ($occupations, $existingEmails, $existingPhones) {
+                try {
+                    $output = fopen('php://output', 'w');
+                    
+                    if (!$output) {
+                        throw new \Exception('Failed to open output stream');
+                    }
             
             // Add BOM for UTF-8 (untuk Excel/Navicat)
             fprintf($output, "\xEF\xBB\xBF");
@@ -550,26 +573,47 @@ class MemberMigrationController extends Controller
             $processedEmails = [];
             $processedPhones = [];
             
-            // Get existing mobile_phones dari member_apps_members untuk filter
-            $existingPhones = MemberAppsMember::whereNotNull('mobile_phone')
-                ->where('mobile_phone', '!=', '')
-                ->pluck('mobile_phone')
-                ->toArray();
-            
             do {
                 // Get customers in chunks
-                // Filter juga mobile_phone yang sudah ada di member_apps_members
-                $customers = Customer::where('status_aktif', '1')
-                    ->whereNotNull('email')
-                    ->where('email', '!=', '')
-                    ->whereNotIn('email', $existingEmails)
-                    ->whereNotNull('telepon')
-                    ->where('telepon', '!=', '')
-                    ->whereNotIn('telepon', $existingPhones)
-                    ->orderBy('created_at', 'desc')
-                    ->offset($offset)
-                    ->limit($chunkSize)
-                    ->get();
+                // Filter menggunakan whereNotIn dengan chunking (500 per batch) untuk menghindari "too many placeholders"
+                // Load existing emails/phones sudah dilakukan di awal dengan chunking
+                try {
+                    $query = Customer::where('status_aktif', '1')
+                        ->whereNotNull('email')
+                        ->where('email', '!=', '')
+                        ->whereNotNull('telepon')
+                        ->where('telepon', '!=', '');
+                    
+                    // Filter email dengan chunking whereNotIn (500 per batch)
+                    if (!empty($existingEmails)) {
+                        $emailChunks = array_chunk(array_keys($existingEmails), 500);
+                        $query->where(function($q) use ($emailChunks) {
+                            foreach ($emailChunks as $chunk) {
+                                $q->whereNotIn('email', $chunk);
+                            }
+                        });
+                    }
+                    
+                    // Filter phone dengan chunking whereNotIn (500 per batch)
+                    if (!empty($existingPhones)) {
+                        $phoneChunks = array_chunk(array_keys($existingPhones), 500);
+                        $query->where(function($q) use ($phoneChunks) {
+                            foreach ($phoneChunks as $chunk) {
+                                $q->whereNotIn('telepon', $chunk);
+                            }
+                        });
+                    }
+                    
+                    $customers = $query->orderBy('created_at', 'desc')
+                        ->offset($offset)
+                        ->limit($chunkSize)
+                        ->get();
+                } catch (\Exception $queryError) {
+                    \Log::error('Query Error in Export CSV: ' . $queryError->getMessage(), [
+                        'trace' => $queryError->getTraceAsString()
+                    ]);
+                    break; // Break loop jika query error
+                }
                 
                 if ($customers->isEmpty()) {
                     break;
@@ -620,15 +664,15 @@ class MemberMigrationController extends Controller
                     // Format dates
                     // Tanggal lahir: pastikan tidak ada 0000-00-00 (invalid date untuk MySQL)
                     $tanggalLahir = '1970-01-01'; // Default date
-                    if ($customer->tanggal_lahir) {
+                    if (!empty($customer->tanggal_lahir)) {
                         // Cek jika tanggal_lahir berisi 0000-00-00
-                        $rawTanggalLahir = trim($customer->tanggal_lahir);
+                        $rawTanggalLahir = is_string($customer->tanggal_lahir) ? trim($customer->tanggal_lahir) : (string)$customer->tanggal_lahir;
                         if ($rawTanggalLahir && 
                             $rawTanggalLahir !== '0000-00-00' && 
                             strpos($rawTanggalLahir, '0000-00-00') === false &&
                             strpos($rawTanggalLahir, '0000') === false) {
                             // Parse tanggal
-                            $timestamp = strtotime($rawTanggalLahir);
+                            $timestamp = @strtotime($rawTanggalLahir);
                             if ($timestamp !== false && $timestamp > 0) {
                                 $parsedDate = date('Y-m-d', $timestamp);
                                 // Validasi hasil parsing
@@ -645,13 +689,13 @@ class MemberMigrationController extends Controller
                     
                     // Last login: nullable, pastikan tidak ada 0000-00-00
                     $lastLogin = null;
-                    if ($customer->last_logged) {
-                        $rawLastLogin = trim($customer->last_logged);
+                    if (!empty($customer->last_logged)) {
+                        $rawLastLogin = is_string($customer->last_logged) ? trim($customer->last_logged) : (string)$customer->last_logged;
                         if ($rawLastLogin && 
                             $rawLastLogin !== '0000-00-00 00:00:00' && 
                             strpos($rawLastLogin, '0000-00-00') === false &&
                             strpos($rawLastLogin, '0000') === false) {
-                            $timestamp = strtotime($rawLastLogin);
+                            $timestamp = @strtotime($rawLastLogin);
                             if ($timestamp !== false && $timestamp > 0) {
                                 $parsedLastLogin = date('Y-m-d H:i:s', $timestamp);
                                 if ($parsedLastLogin && 
@@ -723,11 +767,30 @@ class MemberMigrationController extends Controller
             } while (true);
             
             fclose($output);
-        }, 200, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-            'Content-Transfer-Encoding' => 'binary',
-        ]);
+                } catch (\Exception $e) {
+                    // Log error jika ada
+                    \Log::error('Export CSV Error: ' . $e->getMessage(), [
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // Output error message jika output stream masih terbuka
+                    if (isset($output) && is_resource($output)) {
+                        fwrite($output, "Error: " . $e->getMessage());
+                        fclose($output);
+                    }
+                }
+            }, 200, [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Content-Transfer-Encoding' => 'binary',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Export CSV Initialization Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'error' => 'Failed to export CSV: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
 
