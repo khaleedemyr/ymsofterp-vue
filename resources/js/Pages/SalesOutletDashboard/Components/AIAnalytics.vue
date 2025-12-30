@@ -543,6 +543,14 @@ const askQuestion = async (event) => {
       configurable: false
     });
     
+    // Log request config untuk debugging
+    console.log('AI Q&A Request Config:', {
+      method: requestConfig.method,
+      url: requestConfig.url,
+      hasData: !!requestConfig.data,
+      headers: requestConfig.headers
+    });
+    
     const response = await axios(requestConfig);
     
     if (response.data.success) {
@@ -580,8 +588,22 @@ const askQuestion = async (event) => {
     }
   } catch (err) {
     console.error('AI Q&A Error:', err);
+    console.error('Error details:', {
+      message: err.message,
+      response: err.response,
+      request: err.config,
+      status: err.response?.status,
+      statusText: err.response?.statusText
+    });
+    
     if (err.response && err.response.data && err.response.data.message) {
       qaError.value = err.response.data.message;
+      
+      // Jika error 405 (Method Not Allowed), beri pesan yang lebih jelas
+      if (err.response.status === 405) {
+        qaError.value = 'Error: Request menggunakan method yang salah. Silakan refresh halaman dan coba lagi.';
+        console.error('Method error detected - request config:', err.config);
+      }
     } else {
       qaError.value = 'Gagal mendapatkan jawaban. Silakan coba lagi nanti.';
     }

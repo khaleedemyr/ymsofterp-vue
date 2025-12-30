@@ -61,16 +61,20 @@ class AIAnalyticsController extends Controller
     {
         // Log method untuk debugging
         if ($request->method() !== 'POST') {
-            Log::warning('AI Analytics: Invalid method', [
+            Log::warning('AI Analytics: Invalid method in controller', [
                 'method' => $request->method(),
+                'intended_method' => $request->header('X-HTTP-Method-Override'),
                 'url' => $request->fullUrl(),
+                'referer' => $request->header('referer'),
                 'ip' => $request->ip(),
-                'user_agent' => $request->userAgent()
+                'user_agent' => $request->userAgent(),
+                'content_type' => $request->header('content-type'),
+                'all_headers' => $request->headers->all()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Method ' . $request->method() . ' tidak didukung. Silakan gunakan POST method untuk mengirim pertanyaan.'
+                'message' => 'Method ' . $request->method() . ' tidak didukung. Silakan gunakan POST method untuk mengirim pertanyaan. Pastikan request menggunakan method POST.'
             ], 405);
         }
         
@@ -111,6 +115,14 @@ class AIAnalyticsController extends Controller
             $answer = (string) $answer;
             
             // Save chat history dengan tracking user
+            // Log untuk debugging race condition
+            Log::info('AI Analytics: Saving chat history', [
+                'session_id' => $sessionId,
+                'question_length' => strlen($question),
+                'answer_length' => strlen($answer),
+                'method' => $request->method()
+            ]);
+            
             $user = auth()->user();
             $userId = $user ? $user->id : null;
             
@@ -125,24 +137,39 @@ class AIAnalyticsController extends Controller
                 ];
             }
             
-            $chatId = DB::table('ai_chat_history')->insertGetId([
-                'user_id' => $userId,
-                'session_id' => $sessionId,
-                'question' => $question,
-                'answer' => $answer,
-                'date_from' => $dateFrom,
-                'date_to' => $dateTo,
-                'metadata' => json_encode([
-                    'provider' => config('ai.provider', 'gemini'),
-                    'context_type' => $contextType,
-                    'user_info' => $userInfo,
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'created_at' => Carbon::now()->toDateTimeString()
-                ]),
-                'created_at' => Carbon::now(),
-                'updated_at' => Carbon::now()
-            ]);
+            try {
+                $chatId = DB::table('ai_chat_history')->insertGetId([
+                    'user_id' => $userId,
+                    'session_id' => $sessionId,
+                    'question' => $question,
+                    'answer' => $answer,
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                    'metadata' => json_encode([
+                        'provider' => config('ai.provider', 'gemini'),
+                        'context_type' => $contextType,
+                        'user_info' => $userInfo,
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'created_at' => Carbon::now()->toDateTimeString()
+                    ]),
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now()
+                ]);
+                
+                Log::info('AI Analytics: Chat history saved successfully', [
+                    'chat_id' => $chatId,
+                    'session_id' => $sessionId
+                ]);
+            } catch (\Exception $e) {
+                Log::error('AI Analytics: Failed to save chat history', [
+                    'error' => $e->getMessage(),
+                    'session_id' => $sessionId,
+                    'question_length' => strlen($question)
+                ]);
+                // Continue anyway - jangan gagalkan response karena error save history
+                $chatId = null;
+            }
             
             return response()->json([
                 'success' => true,
@@ -168,6 +195,14 @@ class AIAnalyticsController extends Controller
      */
     public function getChatHistory(Request $request)
     {
+        // Log untuk debugging race condition
+        Log::info('AI Analytics: getChatHistory called', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'path' => $request->path(),
+            'session_id_param' => $request->get('session_id')
+        ]);
+        
         try {
             $user = auth()->user();
             $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
