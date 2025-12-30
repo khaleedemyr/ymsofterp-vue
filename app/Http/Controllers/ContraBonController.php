@@ -714,8 +714,6 @@ class ContraBonController extends Controller
                 // Prepare data for contra bon item
                 $contraBonItemData = [
                     'contra_bon_id' => $contraBon->id,
-                    'item_id' => $itemId,
-                    'unit_id' => $unitId,
                     'quantity' => $item['quantity'],
                     'price' => $item['price'],
                     'discount_percent' => $discountPercent,
@@ -723,6 +721,11 @@ class ContraBonController extends Controller
                     'total' => $itemTotal,
                     'notes' => $item['notes'] ?? null
                 ];
+                
+                // Untuk retail_non_food, item_id dan unit_id boleh null (free text)
+                // Set null jika retail_non_food, atau set nilai jika ada
+                $contraBonItemData['item_id'] = $itemId; // Bisa null untuk retail_non_food
+                $contraBonItemData['unit_id'] = $unitId; // Bisa null untuk retail_non_food
                 
                 // Only include optional fields if they are not null
                 $poItemId = $item['po_item_id'] ?? null;
