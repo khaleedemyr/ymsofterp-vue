@@ -903,6 +903,11 @@ async function onSubmit() {
       fd.append('gr_id', '');
       fd.append('source_type', 'warehouse_retail_food');
       fd.append('source_id', sourceId || '');
+    } else if (sourceType === 'retail_non_food') {
+      fd.append('po_id', '');
+      fd.append('gr_id', '');
+      fd.append('source_type', 'retail_non_food');
+      fd.append('source_id', sourceId || '');
     }
   };
   
@@ -922,6 +927,11 @@ async function onSubmit() {
       form.po_id = '';
       form.gr_id = '';
       form.source_type = 'warehouse_retail_food';
+      form.source_id = sourceId || '';
+    } else if (sourceType === 'retail_non_food') {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_type = 'retail_non_food';
       form.source_id = sourceId || '';
     }
   };
@@ -963,6 +973,7 @@ async function onSubmit() {
           fd.append(`sources[${index}][po_id]`, source.po_id || '');
           fd.append(`sources[${index}][gr_id]`, source.gr_id || '');
         } else {
+          // Untuk retail_food, warehouse_retail_food, dan retail_non_food: po_id dan gr_id harus kosong
           fd.append(`sources[${index}][po_id]`, '');
           fd.append(`sources[${index}][gr_id]`, '');
         }
@@ -982,6 +993,7 @@ async function onSubmit() {
         fd.append(`sources[0][po_id]`, itemPoId || '');
         fd.append(`sources[0][gr_id]`, itemGrId || '');
       } else {
+        // Untuk retail_food, warehouse_retail_food, dan retail_non_food: po_id dan gr_id harus kosong
         fd.append(`sources[0][po_id]`, '');
         fd.append(`sources[0][gr_id]`, '');
       }

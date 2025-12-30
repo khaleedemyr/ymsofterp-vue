@@ -317,9 +317,13 @@ class ContraBonController extends Controller
             $rules['items.*.gr_item_id'] = 'nullable|exists:food_good_receive_items,id';
         } else {
             // For retail_food, warehouse_retail_food, and retail_non_food:
-            // - po_id dan gr_id tidak required
+            // - po_id dan gr_id TIDAK required dan harus null/empty
             // - source_id required
             // - item_id dan unit_id tidak required jika ada item_name dan unit_name
+            
+            // Pastikan po_id dan gr_id tidak ada atau null untuk non-purchase_order
+            // (Tidak perlu validasi required karena akan diabaikan)
+            
             $rules['source_id'] = 'required';
             // Item_id dan unit_id tidak required, bisa dicari dari item_name dan unit_name
             // Tapi jika item_id/unit_id ada, harus valid
@@ -338,6 +342,15 @@ class ContraBonController extends Controller
                 }
             }
         }
+        
+        // Logging untuk debugging validasi
+        \Log::info('Contra Bon validation rules', [
+            'source_type' => $sourceType,
+            'has_po_id_rule' => isset($rules['po_id']),
+            'has_gr_id_rule' => isset($rules['gr_id']),
+            'has_source_id_rule' => isset($rules['source_id']),
+            'rules_keys' => array_keys($rules)
+        ]);
         
         try {
             $request->validate($rules);
