@@ -1510,6 +1510,21 @@ Route::delete('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\A
 // Handle GET request untuk route ask (HARUS di bawah route chat-history untuk menghindari konflik)
 // Hanya handle jika benar-benar GET request ke /ai/ask (bukan /ai/chat-history)
 Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $request) {
+    // Log untuk investigasi root cause redirect
+    \Illuminate\Support\Facades\Log::warning('AI Analytics: GET route handler called - Investigating POST to GET redirect', [
+        'request_method' => $request->method(),
+        'server_request_method' => $_SERVER['REQUEST_METHOD'] ?? 'NOT_SET',
+        'http_method_override' => $request->header('X-HTTP-Method-Override'),
+        'all_headers' => $request->headers->all(),
+        'server_vars' => [
+            'REQUEST_URI' => $_SERVER['REQUEST_URI'] ?? null,
+            'REQUEST_METHOD' => $_SERVER['REQUEST_METHOD'] ?? null,
+            'HTTP_X_HTTP_METHOD_OVERRIDE' => $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ?? null,
+            'REDIRECT_STATUS' => $_SERVER['REDIRECT_STATUS'] ?? null,
+            'REDIRECT_URL' => $_SERVER['REDIRECT_URL'] ?? null,
+        ]
+    ]);
+    
     // Cek apakah ini sebenarnya POST request yang di-redirect menjadi GET
     $hasPostHeaders = $request->header('content-type') === 'application/json' || 
                       $request->header('x-csrf-token') !== null ||
@@ -1517,18 +1532,25 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
     
     // Untuk GET request, Laravel tidak membaca body secara default
     // Kita perlu membaca dari php://input secara manual
-    // Tapi hati-hati: php://input hanya bisa dibaca sekali!
+    // PENTING: php://input hanya bisa dibaca sekali! Baca sekali dan simpan.
     $bodyContent = '';
     $contentLength = (int)$request->header('content-length', 0);
+    
+    // Baca php://input SEKALI dan simpan (jangan baca lagi untuk logging!)
+    $phpInputContent = '';
+    if ($contentLength > 0) {
+        // Baca php://input sekali saja
+        $phpInputContent = file_get_contents('php://input');
+    }
     
     if ($contentLength > 0) {
         // Coba beberapa cara untuk membaca body
         // 1. Coba dari request->getContent() dulu (untuk POST yang di-redirect)
         $bodyContent = $request->getContent();
         
-        // 2. Jika kosong, coba dari php://input
-        if (empty($bodyContent)) {
-            $bodyContent = file_get_contents('php://input');
+        // 2. Jika kosong, gunakan php://input yang sudah dibaca
+        if (empty($bodyContent) && !empty($phpInputContent)) {
+            $bodyContent = $phpInputContent;
         }
         
         // 3. Jika masih kosong, coba dari $_POST (jika ada)
@@ -1536,12 +1558,14 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
             $bodyContent = json_encode($_POST);
         }
         
+        // Log menggunakan nilai yang sudah disimpan (jangan baca php://input lagi!)
         \Illuminate\Support\Facades\Log::info('AI Analytics: Body reading attempt', [
             'content_length_header' => $contentLength,
             'getContent_length' => strlen($request->getContent()),
-            'php_input_length' => strlen(file_get_contents('php://input')),
+            'php_input_length' => strlen($phpInputContent),
             'final_body_length' => strlen($bodyContent),
-            'has_POST' => !empty($_POST)
+            'has_POST' => !empty($_POST),
+            'body_preview' => substr($bodyContent, 0, 200)
         ]);
     }
     
@@ -1642,22 +1666,45 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
             $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
             return $controller->askQuestion($newRequest);
         } else {
-            // Fallback: coba dengan request yang ada
-            \Illuminate\Support\Facades\Log::warning('AI Analytics: Body data invalid, trying with original request', [
+            // Body data tidak bisa dibaca - kemungkinan body hilang saat redirect
+            \Illuminate\Support\Facades\Log::error('AI Analytics: Body data invalid or empty - Cannot read request body', [
                 'body_data' => $bodyData,
                 'has_question_in_body' => isset($bodyData['question']),
-                'body_content_length' => strlen($bodyContent)
+                'body_content_length' => strlen($bodyContent),
+                'content_length_header' => $contentLength,
+                'php_input_available' => !empty($phpInputContent),
+                'possible_cause' => 'POST request was redirected to GET and body was lost. Check middleware or server configuration.',
+                'query_params' => $request->query(),
+                'all_request_data' => $request->all()
             ]);
             
-            // Pastikan question ada di request
-            if (isset($bodyData['question'])) {
-                $request->merge(['question' => $bodyData['question']]);
-                $request->request->set('question', $bodyData['question']);
+            // Coba ambil dari query parameters sebagai last resort (tidak ideal tapi bisa membantu debug)
+            $questionFromQuery = $request->query('question');
+            
+            if ($questionFromQuery) {
+                \Illuminate\Support\Facades\Log::warning('AI Analytics: Using question from query parameters (fallback)', [
+                    'question_preview' => substr($questionFromQuery, 0, 50)
+                ]);
+                
+                $request->merge(['question' => $questionFromQuery]);
+                $request->request->set('question', $questionFromQuery);
+                
+                $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
+                $request->setMethod('POST');
+                return $controller->askQuestion($request);
             }
             
-            $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
-            $request->setMethod('POST');
-            return $controller->askQuestion($request);
+            // Jika tidak ada data sama sekali, return error yang jelas
+            return response()->json([
+                'success' => false,
+                'message' => 'Request body tidak dapat dibaca. POST request mungkin di-redirect menjadi GET dan body hilang. Silakan coba lagi atau hubungi administrator.',
+                'debug_info' => [
+                    'received_method' => $request->method(),
+                    'content_length_header' => $contentLength,
+                    'body_length' => strlen($bodyContent),
+                    'has_post_headers' => $hasPostHeaders
+                ]
+            ], 400);
         }
     }
     
