@@ -5,8 +5,12 @@ namespace App\Services;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use App\Services\AIDatabaseHelper;
 use App\Services\AIBudgetService;
+use App\Services\InventoryDataService;
+use App\Services\SalesInventoryCorrelationService;
+use App\Services\AICacheService;
 use Carbon\Carbon;
 
 class AIAnalyticsService
@@ -20,9 +24,17 @@ class AIAnalyticsService
     private $openaiKey;
     private $claudeKey;
     private $budgetService;
+    private $inventoryService;
+    private $correlationService;
+    private $cacheService;
     
-    public function __construct(AIDatabaseHelper $dbHelper, AIBudgetService $budgetService)
-    {
+    public function __construct(
+        AIDatabaseHelper $dbHelper, 
+        AIBudgetService $budgetService,
+        InventoryDataService $inventoryService = null,
+        SalesInventoryCorrelationService $correlationService = null,
+        AICacheService $cacheService = null
+    ) {
         $this->provider = config('ai.provider', 'gemini');
         $this->apiKey = config('ai.gemini.api_key');
         $this->openaiKey = config('ai.openai.api_key');
@@ -30,6 +42,9 @@ class AIAnalyticsService
         $this->model = config('ai.gemini.model', 'gemini-1.5-pro');
         $this->dbHelper = $dbHelper;
         $this->budgetService = $budgetService;
+        $this->inventoryService = $inventoryService ?? app(InventoryDataService::class);
+        $this->correlationService = $correlationService ?? app(SalesInventoryCorrelationService::class);
+        $this->cacheService = $cacheService ?? app(AICacheService::class);
         
         // Validate API key based on provider
         if ($this->provider === 'gemini' && !$this->apiKey) {
@@ -771,8 +786,9 @@ class AIAnalyticsService
             $enhancedPrompt .= "  * Root Cause Analysis: Identifikasi penyebab mendalam dari tren\n";
             $enhancedPrompt .= "- Sertakan rekomendasi strategis yang actionable\n";
             $enhancedPrompt .= "- Berikan insight yang tidak hanya deskriptif tapi juga preskriptif\n";
+            $enhancedPrompt .= "- Jika ada data inventory/BOM, gunakan untuk analisis yang lebih komprehensif\n";
             
-            // Call API berdasarkan provider
+            // Call API berdasarkan provider (hanya Claude, tidak ada Gemini)
             if ($this->provider === 'claude') {
                 // Claude API implementation
                 // Try multiple model names in order of preference
@@ -985,67 +1001,12 @@ class AIAnalyticsService
                 
                 return "Maaf, terjadi kesalahan saat memanggil Claude API. " . $errorMsg . 
                        " Silakan cek API key di Anthropic console atau hubungi administrator.";
-            } elseif ($this->provider === 'gemini') {
-                // Gemini API implementation
-                $model = config('ai.gemini.model', 'gemini-1.5-pro');
-                $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
-                
-                $requestBody = [
-                    'contents' => [
-                        [
-                            'parts' => [
-                                [
-                                    'text' => $enhancedPrompt
-                                ]
-                            ]
-                        ]
-                    ],
-                    'generationConfig' => [
-                        'temperature' => 0.7,
-                        'maxOutputTokens' => config('ai.gemini.max_tokens', 4000),
-                    ],
-                    'tools' => [
-                        [
-                            'function_declarations' => $this->getFunctionDeclarations()
-                        ]
-                    ]
-                ];
-                
-                // Setup HTTP client
-                $httpClient = Http::timeout(30)
-                    ->withHeaders([
-                        'Content-Type' => 'application/json',
-                    ]);
-                
-                // Disable SSL verification hanya untuk development
-                if (config('app.env') === 'local' || config('app.debug')) {
-                    $httpClient = $httpClient->withoutVerifying();
-                }
-                
-                $response = $httpClient->post($url, $requestBody);
-                
-                if ($response->successful()) {
-                    $data = $response->json();
-                    
-                    // Extract text from response
-                    if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-                        $text = $data['candidates'][0]['content']['parts'][0]['text'];
-                        return trim($text);
-                    } else {
-                        Log::error('AI Q&A Response format unexpected', ['response' => $data]);
-                        return "Maaf, format response tidak sesuai. Silakan coba lagi.";
-                    }
-                } else {
-                    $errorBody = $response->json() ?? $response->body();
-                    Log::error('AI Q&A API Error', [
-                        'status' => $response->status(),
-                        'body' => $errorBody,
-                    ]);
-                    $errorMsg = is_array($errorBody) && isset($errorBody['error']['message']) 
-                        ? $errorBody['error']['message'] 
-                        : 'API Error: ' . $response->status();
-                    return "Maaf, terjadi kesalahan saat memanggil AI. " . $errorMsg;
-                }
+            } else {
+                // Fallback jika provider tidak dikenali (hanya Claude yang didukung)
+                Log::error('AI Q&A Error: Unknown or unsupported provider', [
+                    'provider' => $this->provider
+                ]);
+                return "Maaf, konfigurasi AI provider tidak valid. Hanya Claude yang didukung. Silakan hubungi administrator.";
             }
         } catch (\Exception $e) {
             Log::error('AI Q&A Error: ' . $e->getMessage(), [
@@ -1118,6 +1079,69 @@ class AIAnalyticsService
             }
         }
         
+        // Jika pertanyaan tentang inventory/stock
+        if (preg_match('/(inventory|stock|stok|persediaan|gudang|warehouse|bahan baku|material)/i', $question)) {
+            if ($dateFrom && $dateTo) {
+                $additionalData['inventory'] = $this->getInventoryDataForContext($dateFrom, $dateTo);
+            }
+        }
+        
+        // Jika pertanyaan tentang BOM
+        if (preg_match('/(bom|bill of materials|bahan baku|material|composed|produksi|production)/i', $question)) {
+            $additionalData['bom'] = $this->getBomDataForContext();
+        }
+        
+        // Jika pertanyaan tentang correlation (sales + inventory)
+        if (preg_match('/(korelasi|correlation|hubungan|dampak|impact|stock.*sales|sales.*stock|overstock|stockout|habis)/i', $question)) {
+            if ($dateFrom && $dateTo) {
+                $additionalData['correlation'] = $this->getCorrelationDataForContext($dateFrom, $dateTo);
+            }
+        }
+        
+        // Jika pertanyaan tentang cost/COGS/food cost
+        if (preg_match('/(cost|biaya|harga pokok|COGS|food cost|menu cost|cost.*menu|biaya.*menu|hitung.*cost|kalkulasi.*cost|margin|profit|profitabilitas)/i', $question)) {
+            // Extract outlet code jika disebutkan (case insensitive, lebih fleksibel)
+            $outletCode = null;
+            $questionLower = strtolower($question);
+            
+            // Cari nama outlet di pertanyaan
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet', 'qr_code')
+                ->get();
+            
+            foreach ($outlets as $outlet) {
+                $outletNameLower = strtolower($outlet->nama_outlet);
+                $outletCodeLower = strtolower($outlet->qr_code);
+                
+                // Check jika nama outlet atau code disebutkan di pertanyaan
+                if (strpos($questionLower, $outletNameLower) !== false || 
+                    strpos($questionLower, $outletCodeLower) !== false) {
+                    $outletCode = $outlet->qr_code;
+                    break;
+                }
+            }
+            
+            // Jika tidak ketemu, coba pattern matching
+            if (!$outletCode) {
+                if (preg_match('/(dago|outlet\s+([^?]+)|restoran\s+([^?]+))/i', $question, $matches)) {
+                    $outletName = trim($matches[1] ?? $matches[2] ?? '');
+                    if ($outletName) {
+                        $outlet = DB::table('tbl_data_outlet')
+                            ->where('nama_outlet', 'like', '%' . $outletName . '%')
+                            ->orWhere('qr_code', 'like', '%' . strtoupper($outletName) . '%')
+                            ->first();
+                        if ($outlet) {
+                            $outletCode = $outlet->qr_code;
+                        }
+                    }
+                }
+            }
+            
+            // Always fetch cost data jika pertanyaan tentang cost (tidak perlu cek dateFrom/dateTo karena sudah ada default)
+            $additionalData['cost_analysis'] = $this->getCostDataForContext($dateFrom, $dateTo, $outletCode);
+        }
+        
         return $additionalData;
     }
     
@@ -1137,7 +1161,32 @@ class AIAnalyticsService
         $recentOrders = $data['recentOrders'] ?? [];
         $peakHours = $data['peakHours'] ?? [];
         
+        // Deteksi apakah pertanyaan tentang cost
+        $questionLower = strtolower($question);
+        $isCostQuestion = preg_match('/(cost|biaya|harga pokok|COGS|food cost|menu cost|margin|profit|profitabilitas)/i', $question);
+        
         $prompt = "Anda adalah asisten AI yang membantu menganalisa data dashboard penjualan outlet.\n\n";
+        
+        // Jika pertanyaan tentang cost, letakkan peringatan di AWAL sekali
+        if ($isCostQuestion) {
+            $prompt .= "╔════════════════════════════════════════════════════════════════╗\n";
+            $prompt .= "║  ⚠️⚠️⚠️ PERINGATAN PENTING - PERTANYAAN TENTANG COST ⚠️⚠️⚠️  ║\n";
+            $prompt .= "╚════════════════════════════════════════════════════════════════╝\n\n";
+            $prompt .= "🚨 JANGAN PERNAH KATAKAN DATA COST TIDAK TERSEDIA! 🚨\n\n";
+            $prompt .= "DATA COST TERSEDIA DAN SUDAH DIHITUNG!\n";
+            $prompt .= "Data cost dihitung dari:\n";
+            $prompt .= "1. BOM (Bill of Materials) - daftar bahan baku per menu\n";
+            $prompt .= "2. Material cost terbaru dari inventory (last_cost_small/medium/large)\n";
+            $prompt .= "3. Sales data untuk qty terjual\n\n";
+            $prompt .= "DATA COST ADA DI BAGIAN 'COST ANALYSIS DATA' DI BAWAH!\n";
+            $prompt .= "GUNAKAN data cost_from_sales untuk menjawab pertanyaan cost!\n";
+            $prompt .= "JIKA data cost_from_sales kosong, itu berarti:\n";
+            $prompt .= "- Item yang terjual tidak punya BOM (composition_type != 'composed')\n";
+            $prompt .= "- ATAU material cost belum diisi di inventory\n";
+            $prompt .= "TAPI JANGAN bilang 'data cost tidak tersedia di database'!\n\n";
+            $prompt .= "════════════════════════════════════════════════════════════════\n\n";
+        }
+        
         $prompt .= "=== PENTING: AKSES DATA ===\n";
         $prompt .= "Database memiliki data penjualan LENGKAP untuk SETAHUN TERAKHIR atau lebih.\n";
         $prompt .= "Jika user meminta analisis untuk periode yang lebih panjang (3 bulan, 6 bulan, setahun), ";
@@ -1545,6 +1594,189 @@ class AIAnalyticsService
                     $prompt .= "   - Qty: " . ($item['total_qty'] ?? 0) . ", Revenue: Rp " . number_format($item['total_revenue'] ?? 0, 0, ',', '.') . "\n";
                 }
             }
+            
+            // INVENTORY DATA
+            if (isset($additionalData['inventory']) && !empty($additionalData['inventory'])) {
+                $inventory = $additionalData['inventory'];
+                $prompt .= "\n--- INVENTORY DATA ---\n";
+                
+                if (isset($inventory['summary']['stock'])) {
+                    $stock = $inventory['summary']['stock'];
+                    $prompt .= "Total Outlets: " . ($stock->total_outlets ?? 0) . ", Total Items: " . ($stock->total_items ?? 0) . 
+                               ", Total Stock Value: Rp " . number_format($stock->total_stock_value ?? 0, 0, ',', '.') . "\n";
+                }
+                
+                if (isset($inventory['reorder_alerts']) && !empty($inventory['reorder_alerts'])) {
+                    $prompt .= "\nREORDER ALERTS (Items Below Min Stock - Top 10):\n";
+                    foreach (array_slice($inventory['reorder_alerts'], 0, 10) as $index => $alert) {
+                        $alert = (array)$alert;
+                        $prompt .= ($index + 1) . ". " . ($alert['item_name'] ?? 'N/A') . " - Outlet: " . ($alert['nama_outlet'] ?? 'N/A') . 
+                                   " - Current: " . ($alert['qty_small'] ?? 0) . ", Min: " . ($alert['min_stock'] ?? 0) . 
+                                   ", Need: " . ($alert['reorder_qty'] ?? 0) . "\n";
+                    }
+                }
+                
+                if (isset($inventory['stock_turnover']) && !empty($inventory['stock_turnover'])) {
+                    $prompt .= "\nSTOCK TURNOVER (Top 10):\n";
+                    foreach (array_slice($inventory['stock_turnover'], 0, 10) as $index => $turnover) {
+                        $turnover = (array)$turnover;
+                        $prompt .= ($index + 1) . ". " . ($turnover['item_name'] ?? 'N/A') . " - Outlet: " . ($turnover['nama_outlet'] ?? 'N/A') . 
+                                   " - Turnover Rate: " . number_format($turnover['turnover_rate_small'] ?? 0, 2) . 
+                                   ", Days with Movement: " . ($turnover['days_with_movement'] ?? 0) . "\n";
+                    }
+                }
+            }
+            
+            // BOM DATA
+            if (isset($additionalData['bom']) && !empty($additionalData['bom'])) {
+                $bom = $additionalData['bom'];
+                $prompt .= "\n--- BOM (BILL OF MATERIALS) DATA ---\n";
+                
+                if (isset($bom['items_with_bom']) && !empty($bom['items_with_bom'])) {
+                    $prompt .= "Items dengan BOM (Composed Items - Top 10):\n";
+                    foreach (array_slice($bom['items_with_bom'], 0, 10) as $index => $item) {
+                        $item = (array)$item;
+                        $prompt .= ($index + 1) . ". " . ($item['item_name'] ?? 'N/A') . " - " . ($item['bom_material_count'] ?? 0) . " bahan baku\n";
+                    }
+                }
+                
+                if (isset($bom['bom_details']) && !empty($bom['bom_details'])) {
+                    $prompt .= "\nBOM DETAILS:\n";
+                    foreach ($bom['bom_details'] as $itemId => $materials) {
+                        $prompt .= "Item ID {$itemId} BOM:\n";
+                        foreach ($materials as $material) {
+                            $material = (array)$material;
+                            $prompt .= "  - " . ($material['material_name'] ?? 'N/A') . " - Qty: " . ($material['required_qty'] ?? 0) . 
+                                       " " . ($material['unit_name'] ?? '') . "\n";
+                        }
+                    }
+                }
+            }
+            
+            // CORRELATION DATA (Sales + Inventory)
+            if (isset($additionalData['correlation']) && !empty($additionalData['correlation'])) {
+                $correlation = $additionalData['correlation'];
+                $prompt .= "\n--- SALES + INVENTORY CORRELATION ---\n";
+                
+                if (isset($correlation['sales_inventory_correlation']) && !empty($correlation['sales_inventory_correlation'])) {
+                    $prompt .= "Sales vs Stock Correlation (Top 10):\n";
+                    foreach (array_slice($correlation['sales_inventory_correlation'], 0, 10) as $index => $corr) {
+                        $corr = (array)$corr;
+                        $prompt .= ($index + 1) . ". " . ($corr['item_name'] ?? 'N/A') . " - Outlet: " . ($corr['nama_outlet'] ?? 'N/A') . 
+                                   " - Qty Sold: " . ($corr['total_qty_sold'] ?? 0) . ", Revenue: Rp " . number_format($corr['total_revenue'] ?? 0, 0, ',', '.') . 
+                                   ", Stock: " . ($corr['current_stock_small'] ?? 0) . ", Ratio: " . number_format($corr['stock_to_sales_ratio'] ?? 0, 2) . "\n";
+                    }
+                }
+                
+                if (isset($correlation['high_risk_items']) && !empty($correlation['high_risk_items'])) {
+                    $prompt .= "\nHIGH RISK ITEMS (Low Stock, High Sales - Top 10):\n";
+                    foreach (array_slice($correlation['high_risk_items'], 0, 10) as $index => $risk) {
+                        $risk = (array)$risk;
+                        $prompt .= ($index + 1) . ". " . ($risk['item_name'] ?? 'N/A') . " - Outlet: " . ($risk['nama_outlet'] ?? 'N/A') . 
+                                   " - Risk: " . ($risk['risk_level'] ?? 'N/A') . ", Days Until Stockout: " . number_format($risk['days_until_stockout'] ?? 0, 1) . 
+                                   ", Current Stock: " . ($risk['current_stock_small'] ?? 0) . ", Min Stock: " . ($risk['min_stock'] ?? 0) . "\n";
+                    }
+                }
+            }
+            
+            // COST DATA (jika ada di additionalData) - PRIORITAS TINGGI
+            if (isset($additionalData['cost_analysis']) && !empty($additionalData['cost_analysis'])) {
+                $costData = $additionalData['cost_analysis'];
+                $prompt .= "\n";
+                $prompt .= "╔════════════════════════════════════════════════════════════════╗\n";
+                $prompt .= "║  📊 COST ANALYSIS DATA - GUNAKAN DATA INI UNTUK JAWAB COST!  ║\n";
+                $prompt .= "╚════════════════════════════════════════════════════════════════╝\n\n";
+                $prompt .= "✅ DATA COST TERSEDIA DAN SUDAH DIHITUNG!\n";
+                $prompt .= "✅ Data cost dihitung dari BOM (Bill of Materials) + material cost terbaru!\n";
+                $prompt .= "✅ GUNAKAN data di bawah ini untuk menjawab pertanyaan cost!\n";
+                $prompt .= "🚨 JANGAN katakan data cost tidak tersedia - data cost ADA di sini! 🚨\n\n";
+                
+                if (isset($costData['cost_from_sales']) && !empty($costData['cost_from_sales'])) {
+                    $prompt .= "📊 COST CALCULATION DARI SALES (Top 30 Menu Items):\n";
+                    $prompt .= "Data ini menunjukkan cost per menu item berdasarkan BOM (Bill of Materials) + material cost terbaru:\n\n";
+                    
+                    // Filter by outlet jika ada
+                    $filteredItems = $costData['cost_from_sales'];
+                    if (isset($costData['outlet_code']) && $costData['outlet_code']) {
+                        $filteredItems = array_filter($filteredItems, function($item) use ($costData) {
+                            return (isset($item['outlet_code']) && $item['outlet_code'] === $costData['outlet_code']);
+                        });
+                        if (!empty($filteredItems)) {
+                            $prompt .= "Outlet: " . $costData['outlet_code'] . "\n\n";
+                        }
+                    }
+                    
+                    $itemsToShow = array_slice($filteredItems, 0, 30);
+                    
+                    if (empty($itemsToShow) && !empty($costData['cost_from_sales'])) {
+                        // Jika filter outlet tidak ada hasil, tampilkan semua
+                        $itemsToShow = array_slice($costData['cost_from_sales'], 0, 30);
+                        $prompt .= "CATATAN: Data untuk semua outlet (jika ada filter outlet spesifik, mungkin tidak ada data untuk outlet tersebut)\n\n";
+                    }
+                    
+                    foreach ($itemsToShow as $index => $item) {
+                        $item = (array)$item;
+                        $prompt .= ($index + 1) . ". " . ($item['item_name'] ?? 'N/A') . 
+                                   " - Outlet: " . ($item['outlet_code'] ?? 'N/A') . "\n";
+                        $prompt .= "   Qty Sold: " . ($item['qty_sold'] ?? 0) . 
+                                   ", Revenue: Rp " . number_format($item['total_revenue'] ?? 0, 0, ',', '.') . 
+                                   ", Total Cost: Rp " . number_format($item['total_cost'] ?? 0, 0, ',', '.') . 
+                                   ", Gross Profit: Rp " . number_format($item['gross_profit'] ?? 0, 0, ',', '.') . "\n";
+                        $prompt .= "   Cost per Unit: Rp " . number_format($item['cost_per_unit'] ?? 0, 0, ',', '.') . 
+                                   ", Selling Price: Rp " . number_format($item['avg_selling_price'] ?? 0, 0, ',', '.') . 
+                                   ", Cost %: " . number_format($item['cost_percentage'] ?? 0, 2) . "%" . 
+                                   ", Gross Margin: " . number_format($item['gross_margin_percent'] ?? 0, 2) . "%\n\n";
+                    }
+                    
+                    // Summary statistics
+                    if (!empty($itemsToShow)) {
+                        $totalRevenue = array_sum(array_column($itemsToShow, 'total_revenue'));
+                        $totalCost = array_sum(array_column($itemsToShow, 'total_cost'));
+                        $totalProfit = array_sum(array_column($itemsToShow, 'gross_profit'));
+                        $avgCostPercentage = $totalRevenue > 0 ? ($totalCost / $totalRevenue) * 100 : 0;
+                        $avgMargin = $totalRevenue > 0 ? ($totalProfit / $totalRevenue) * 100 : 0;
+                        
+                        $prompt .= "📈 SUMMARY COST ANALYSIS:\n";
+                        $prompt .= "Total Revenue: Rp " . number_format($totalRevenue, 0, ',', '.') . "\n";
+                        $prompt .= "Total Cost: Rp " . number_format($totalCost, 0, ',', '.') . "\n";
+                        $prompt .= "Total Gross Profit: Rp " . number_format($totalProfit, 0, ',', '.') . "\n";
+                        $prompt .= "Average Cost %: " . number_format($avgCostPercentage, 2) . "%\n";
+                        $prompt .= "Average Gross Margin: " . number_format($avgMargin, 2) . "%\n";
+                        $prompt .= "Industry Standard Cost %: 28-35% (F&B)\n\n";
+                    }
+                } else {
+                    $prompt .= "⚠️ CATATAN: Data cost_from_sales kosong untuk periode ini.\n";
+                    $prompt .= "Kemungkinan penyebab:\n";
+                    $prompt .= "1. Tidak ada item dengan BOM (composition_type='composed') yang terjual di periode ini\n";
+                    $prompt .= "2. Item yang terjual tidak memiliki BOM di database\n";
+                    $prompt .= "3. Material cost belum diisi di inventory (last_cost_small/medium/large = 0 atau NULL)\n\n";
+                    $prompt .= "🚨 PENTING: JANGAN bilang 'data cost tidak tersedia di database'!\n";
+                    $prompt .= "Katakan bahwa untuk periode ini, tidak ada item dengan BOM yang terjual.\n";
+                    $prompt .= "Atau material cost belum diisi untuk item-item tersebut.\n";
+                    $prompt .= "Jelaskan bahwa cost bisa dihitung jika item punya BOM dan material cost terisi.\n\n";
+                }
+                
+                if (isset($costData['current_material_costs']) && !empty($costData['current_material_costs'])) {
+                    $prompt .= "\nCURRENT MATERIAL COSTS (Top 20):\n";
+                    foreach (array_slice($costData['current_material_costs'], 0, 20) as $index => $cost) {
+                        $cost = (array)$cost;
+                        $prompt .= ($index + 1) . ". " . ($cost['item_name'] ?? 'N/A') . 
+                                   " - Outlet: " . ($cost['nama_outlet'] ?? 'N/A') . 
+                                   " - Cost Small: Rp " . number_format($cost['last_cost_small'] ?? 0, 0, ',', '.') . 
+                                   ", Cost Medium: Rp " . number_format($cost['last_cost_medium'] ?? 0, 0, ',', '.') . 
+                                   ", Cost Large: Rp " . number_format($cost['last_cost_large'] ?? 0, 0, ',', '.') . "\n";
+                    }
+                }
+                
+                $prompt .= "\nCATATAN PENTING:\n";
+                $prompt .= "- Cost dihitung dari BOM (Bill of Materials) + material cost terbaru\n";
+                $prompt .= "- Cost per unit = jumlah (material cost × required qty dari BOM)\n";
+                $prompt .= "- Total cost = cost per unit × qty sold\n";
+                $prompt .= "- Gross profit = revenue - total cost\n";
+                $prompt .= "- Cost percentage = (total cost / revenue) × 100%\n";
+                $prompt .= "- Gross margin = (gross profit / revenue) × 100%\n";
+                $prompt .= "- Jika item tidak punya BOM, cost tidak bisa dihitung\n";
+            }
         }
         
         $prompt .= "\n=== INSTRUKSI ANALISIS YANG SANGAT PINTAR ===\n";
@@ -1594,6 +1826,40 @@ class AIAnalyticsService
         $prompt .= "   - Jika data tidak tersedia untuk menjawab pertanyaan, jelaskan dengan sopan dan sarankan data apa yang diperlukan\n";
         $prompt .= "   - PRIORITASKAN data tambahan dari database jika tersedia\n\n";
         
+        $prompt .= "7. COST ANALYSIS (SANGAT PENTING - BACA INI DENGAN HATI-HATI!):\n";
+        $prompt .= "   ════════════════════════════════════════════════════════════════\n";
+        $prompt .= "   ⚠️⚠️⚠️ JIKA USER BERTANYA TENTANG COST/BIaya menu: ⚠️⚠️⚠️\n";
+        $prompt .= "   ════════════════════════════════════════════════════════════════\n";
+        $prompt .= "   🚨 ATURAN MUTLAK - JANGAN PERNAH MELANGGAR: 🚨\n";
+        $prompt .= "   1. DATA COST TERSEDIA di bagian 'COST ANALYSIS DATA' di atas!\n";
+        $prompt .= "   2. JANGAN PERNAH katakan:\n";
+        $prompt .= "      ❌ 'data cost tidak tersedia'\n";
+        $prompt .= "      ❌ 'database tidak memiliki data cost'\n";
+        $prompt .= "      ❌ 'saya tidak memiliki akses ke data cost'\n";
+        $prompt .= "      ❌ 'data cost tidak ada di dashboard ini'\n";
+        $prompt .= "   3. GUNAKAN data cost_from_sales yang sudah disediakan!\n";
+        $prompt .= "   4. Data cost SUDAH DIHITUNG dari BOM + material cost terbaru!\n";
+        $prompt .= "   5. Jika ada data cost_from_sales, berarti cost BISA DIHITUNG dan TERSEDIA!\n";
+        $prompt .= "   ════════════════════════════════════════════════════════════════\n";
+        $prompt .= "   CARA MENJAWAB PERTANYAAN COST:\n";
+        $prompt .= "   - Jika user tanya cost untuk outlet spesifik (misal: Dago), filter data berdasarkan outlet_code\n";
+        $prompt .= "   - Jika user tanya cost untuk tanggal spesifik, gunakan data dari periode tersebut\n";
+        $prompt .= "   - Hitung dan tampilkan dari data cost_from_sales:\n";
+        $prompt .= "     * Cost per unit per menu item (dari cost_per_unit)\n";
+        $prompt .= "     * Total cost untuk periode tertentu (dari total_cost)\n";
+        $prompt .= "     * Gross profit (dari gross_profit)\n";
+        $prompt .= "     * Cost percentage (dari cost_percentage)\n";
+        $prompt .= "     * Gross margin (dari gross_margin_percent)\n";
+        $prompt .= "   - Bandingkan cost percentage dengan industry standard (F&B biasanya 28-35%)\n";
+        $prompt .= "   - Berikan insight tentang menu mana yang profitable dan mana yang perlu dioptimasi\n";
+        $prompt .= "   ════════════════════════════════════════════════════════════════\n";
+        $prompt .= "   JIKA data cost_from_sales KOSONG:\n";
+        $prompt .= "   - JANGAN bilang 'data cost tidak tersedia di database'!\n";
+        $prompt .= "   - Katakan: 'Untuk periode ini, tidak ada item dengan BOM yang terjual'\n";
+        $prompt .= "   - ATAU: 'Material cost belum diisi untuk item-item yang terjual'\n";
+        $prompt .= "   - Jelaskan bahwa cost bisa dihitung jika item punya BOM dan material cost terisi\n";
+        $prompt .= "   ════════════════════════════════════════════════════════════════\n\n";
+        
         $prompt .= "7. CONTOH ANALISIS YANG BAIK:\n";
         $prompt .= "   - 'Revenue tanggal 26 adalah Rp X, turun Y% dari tanggal 25 (Rp Z). Analisis menunjukkan:\n";
         $prompt .= "     * Jumlah orders turun dari A ke B (penurunan C%)\n";
@@ -1603,5 +1869,229 @@ class AIAnalyticsService
         $prompt .= "     * Rekomendasi: [spesifik dan actionable]'\n";
         
         return $prompt;
+    }
+
+    /**
+     * Detect query complexity to determine which AI model to use
+     * 
+     * @param string $question User question
+     * @return string 'simple' or 'complex'
+     */
+    private function detectQueryComplexity($question)
+    {
+        $questionLower = strtolower($question);
+        
+        // Simple query keywords (use Gemini - cheaper)
+        $simpleKeywords = [
+            'berapa', 'berapa banyak', 'berapa total', 'berapa jumlah',
+            'apa', 'siapa', 'kapan', 'dimana',
+            'list', 'daftar', 'tampilkan', 'show',
+            'stock', 'stok', 'inventory', 'persediaan',
+            'current', 'sekarang', 'saat ini'
+        ];
+        
+        // Complex query keywords (use Claude - smarter)
+        $complexKeywords = [
+            'mengapa', 'kenapa', 'why', 'how',
+            'analisis', 'analysis', 'analisa',
+            'prediksi', 'prediction', 'forecast', 'ramalan',
+            'korelasi', 'correlation', 'hubungan',
+            'rekomendasi', 'recommendation', 'saran',
+            'optimasi', 'optimization', 'optimal',
+            'trend', 'tren', 'pattern', 'pola',
+            'perbandingan', 'comparison', 'banding',
+            'impact', 'dampak', 'pengaruh',
+            'root cause', 'penyebab', 'faktor',
+            'strategi', 'strategy', 'rencana',
+            'bom', 'bill of materials', 'bahan baku',
+            'production', 'produksi', 'manufacturing'
+        ];
+        
+        // Check for complex keywords first
+        foreach ($complexKeywords as $keyword) {
+            if (strpos($questionLower, $keyword) !== false) {
+                return 'complex';
+            }
+        }
+        
+        // Check for simple keywords
+        foreach ($simpleKeywords as $keyword) {
+            if (strpos($questionLower, $keyword) !== false) {
+                return 'simple';
+            }
+        }
+        
+        // Default to complex for safety (better analysis)
+        return 'complex';
+    }
+
+    /**
+     * Get inventory data for AI context
+     * 
+     * @param string|null $dateFrom Start date
+     * @param string|null $dateTo End date
+     * @param array|null $outletIds Filter by outlet IDs
+     * @return array
+     */
+    private function getInventoryDataForContext($dateFrom = null, $dateTo = null, $outletIds = null)
+    {
+        if (!$dateFrom) {
+            $dateFrom = date('Y-m-d', strtotime('-30 days'));
+        }
+        if (!$dateTo) {
+            $dateTo = date('Y-m-d');
+        }
+
+        try {
+            // Get inventory summary
+            $inventorySummary = $this->inventoryService->getInventorySummary($outletIds, $dateFrom, $dateTo);
+            
+            // Get reorder points (items below min stock)
+            $reorderPoints = $this->inventoryService->getReorderPoints($outletIds);
+            
+            // Get stock turnover (top 10)
+            $stockTurnover = array_slice($this->inventoryService->getStockTurnover($dateFrom, $dateTo, $outletIds), 0, 10);
+            
+            return [
+                'summary' => $inventorySummary,
+                'reorder_alerts' => array_slice($reorderPoints, 0, 20), // Top 20 items
+                'stock_turnover' => $stockTurnover
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error getting inventory data for AI context: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get BOM data for AI context
+     * 
+     * @param array|null $itemIds Filter by item IDs
+     * @return array
+     */
+    private function getBomDataForContext($itemIds = null)
+    {
+        try {
+            // Get items with BOM
+            $itemsWithBom = $this->inventoryService->getItemsWithBom(true);
+            
+            // If specific items requested, get their BOM details
+            $bomDetails = [];
+            if ($itemIds && !empty($itemIds)) {
+                foreach ($itemIds as $itemId) {
+                    $bom = $this->inventoryService->getItemBom($itemId);
+                    if (!empty($bom)) {
+                        $bomDetails[$itemId] = $bom;
+                    }
+                }
+            }
+            
+            return [
+                'items_with_bom' => array_slice($itemsWithBom, 0, 20), // Top 20 items
+                'bom_details' => $bomDetails
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error getting BOM data for AI context: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get correlation data (Sales + Inventory)
+     * 
+     * @param string|null $dateFrom Start date
+     * @param string|null $dateTo End date
+     * @param int|null $outletId Filter by outlet ID
+     * @return array
+     */
+    private function getCorrelationDataForContext($dateFrom = null, $dateTo = null, $outletId = null)
+    {
+        if (!$dateFrom) {
+            $dateFrom = date('Y-m-d', strtotime('-30 days'));
+        }
+        if (!$dateTo) {
+            $dateTo = date('Y-m-d');
+        }
+
+        try {
+            // Get sales-inventory correlation
+            $correlation = array_slice(
+                $this->correlationService->correlateSalesInventory($outletId, $dateFrom, $dateTo),
+                0, 20
+            );
+            
+            // Get high-risk items (low stock, high sales)
+            $highRiskItems = array_slice(
+                $this->correlationService->getHighRiskItems($outletId, 30),
+                0, 20
+            );
+            
+            return [
+                'sales_inventory_correlation' => $correlation,
+                'high_risk_items' => $highRiskItems
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error getting correlation data for AI context: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get cost data for AI context
+     * 
+     * @param string $dateFrom Start date
+     * @param string $dateTo End date
+     * @param string|null $outletCode Outlet code (optional)
+     * @return array
+     */
+    private function getCostDataForContext($dateFrom, $dateTo, $outletCode = null)
+    {
+        try {
+            // Get cost calculation dari sales
+            $costFromSales = $this->inventoryService->calculateCostFromSales($dateFrom, $dateTo, $outletCode);
+            
+            // Get current costs untuk materials
+            $outletIds = null;
+            if ($outletCode) {
+                $outlet = DB::table('tbl_data_outlet')
+                    ->where('qr_code', $outletCode)
+                    ->first();
+                if ($outlet) {
+                    $outletIds = [$outlet->id_outlet];
+                }
+            }
+            
+            $currentCosts = array_slice($this->inventoryService->getCurrentCosts($outletIds), 0, 50);
+            
+            // Convert objects to arrays untuk konsistensi
+            $costFromSalesArray = [];
+            foreach ($costFromSales as $item) {
+                $costFromSalesArray[] = (array)$item;
+            }
+            
+            $currentCostsArray = [];
+            foreach ($currentCosts as $cost) {
+                $currentCostsArray[] = (array)$cost;
+            }
+            
+            return [
+                'cost_from_sales' => array_slice($costFromSalesArray, 0, 30), // Top 30 items
+                'current_material_costs' => $currentCostsArray,
+                'outlet_code' => $outletCode,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'has_data' => !empty($costFromSalesArray)
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error getting cost data for AI context: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return [
+                'cost_from_sales' => [],
+                'current_material_costs' => [],
+                'outlet_code' => $outletCode,
+                'has_data' => false,
+                'error' => $e->getMessage()
+            ];
+        }
     }
 }

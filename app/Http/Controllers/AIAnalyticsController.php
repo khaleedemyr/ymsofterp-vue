@@ -81,8 +81,19 @@ class AIAnalyticsController extends Controller
                 return $this->dashboardController->getDashboardDataPublic($dateFrom, $dateTo, 'daily');
             });
             
+            // Detect context type dari pertanyaan untuk tracking
+            $contextType = $this->detectContextType($question);
+            
             // Get answer dengan akses database dinamis dan chat history
             $answer = $this->aiService->answerQuestion($question, $dashboardData, $dateFrom, $dateTo, $chatHistory);
+            
+            // Validate answer - pastikan tidak null atau empty
+            if (empty($answer) || trim($answer) === '') {
+                $answer = "Maaf, tidak dapat menjawab pertanyaan saat ini. Silakan coba lagi atau hubungi administrator jika masalah berlanjut.";
+            }
+            
+            // Ensure answer is a string
+            $answer = (string) $answer;
             
             // Save chat history dengan tracking user
             $user = auth()->user();
@@ -108,6 +119,7 @@ class AIAnalyticsController extends Controller
                 'date_to' => $dateTo,
                 'metadata' => json_encode([
                     'provider' => config('ai.provider', 'gemini'),
+                    'context_type' => $contextType,
                     'user_info' => $userInfo,
                     'ip_address' => $request->ip(),
                     'user_agent' => $request->userAgent(),
@@ -486,6 +498,39 @@ class AIAnalyticsController extends Controller
                 ];
             })
             ->toArray();
+    }
+    
+    /**
+     * Detect context type dari pertanyaan untuk tracking
+     * 
+     * @param string $question
+     * @return string
+     */
+    private function detectContextType($question)
+    {
+        $questionLower = strtolower($question);
+        
+        // Check for BOM queries
+        if (preg_match('/(bom|bill of materials|bahan baku|material|composed|produksi|production)/i', $question)) {
+            return 'bom';
+        }
+        
+        // Check for inventory queries
+        if (preg_match('/(inventory|stock|stok|persediaan|gudang|warehouse)/i', $question)) {
+            // Check if also mentions sales
+            if (preg_match('/(sales|penjualan|revenue|order)/i', $question)) {
+                return 'cross';
+            }
+            return 'inventory';
+        }
+        
+        // Check for correlation queries
+        if (preg_match('/(korelasi|correlation|hubungan|dampak|impact|stock.*sales|sales.*stock|overstock|stockout|habis)/i', $question)) {
+            return 'cross';
+        }
+        
+        // Default to sales
+        return 'sales';
     }
 }
 
