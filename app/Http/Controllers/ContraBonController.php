@@ -619,8 +619,11 @@ class ContraBonController extends Controller
                 }
                 
                 // Jika tidak ada item_id tapi ada item_name, WAJIB cari berdasarkan item_name
-                // Ini berlaku untuk semua source type yang menggunakan item_name
-                if (!$itemId && isset($item['item_name']) && !empty(trim($item['item_name']))) {
+                // KECUALI untuk retail_non_food (free text, tidak perlu cari di master items)
+                $itemSourceType = $item['source_type'] ?? $sourceType;
+                $isRetailNonFood = ($itemSourceType === 'retail_non_food' || $sourceType === 'retail_non_food' || isset($item['retail_non_food_item_id']));
+                
+                if (!$itemId && isset($item['item_name']) && !empty(trim($item['item_name'])) && !$isRetailNonFood) {
                     $itemName = trim($item['item_name']);
                     
                     // Try exact match first
@@ -646,9 +649,15 @@ class ContraBonController extends Controller
                     }
                 }
                 
+                // Untuk retail_non_food, item_id dan unit_id boleh null (free text)
+                if ($isRetailNonFood) {
+                    $itemId = null;
+                    // Unit ID juga boleh null untuk retail_non_food
+                }
+                
                 // Jika tidak ada unit_id tapi ada unit_name, WAJIB cari berdasarkan unit_name
-                // Ini berlaku untuk semua source type yang menggunakan unit_name
-                if (!$unitId && isset($item['unit_name']) && !empty(trim($item['unit_name']))) {
+                // KECUALI untuk retail_non_food (free text, tidak perlu cari di master units)
+                if (!$unitId && isset($item['unit_name']) && !empty(trim($item['unit_name'])) && !$isRetailNonFood) {
                     $unitName = trim($item['unit_name']);
                     
                     // Try exact match first
@@ -675,11 +684,14 @@ class ContraBonController extends Controller
                 }
                 
                 // Validasi: item_id dan unit_id HARUS terisi
-                if (!$itemId) {
-                    throw new \Exception("Item ID tidak boleh kosong. Pastikan item_name terisi dan item sudah terdaftar di master item.");
-                }
-                if (!$unitId) {
-                    throw new \Exception("Unit ID tidak boleh kosong. Pastikan unit_name terisi dan unit sudah terdaftar di master unit.");
+                // KECUALI untuk retail_non_food (free text, item_id dan unit_id boleh null)
+                if (!$isRetailNonFood) {
+                    if (!$itemId) {
+                        throw new \Exception("Item ID tidak boleh kosong. Pastikan item_name terisi dan item sudah terdaftar di master item.");
+                    }
+                    if (!$unitId) {
+                        throw new \Exception("Unit ID tidak boleh kosong. Pastikan unit_name terisi dan unit sudah terdaftar di master unit.");
+                    }
                 }
                 
                 // Calculate item total with discount
@@ -731,6 +743,11 @@ class ContraBonController extends Controller
                 $warehouseRetailFoodItemId = $item['warehouse_retail_food_item_id'] ?? null;
                 if ($warehouseRetailFoodItemId !== null && $warehouseRetailFoodItemId !== 'null' && $warehouseRetailFoodItemId !== '') {
                     $contraBonItemData['warehouse_retail_food_item_id'] = is_numeric($warehouseRetailFoodItemId) ? (int)$warehouseRetailFoodItemId : $warehouseRetailFoodItemId;
+                }
+                
+                $retailNonFoodItemId = $item['retail_non_food_item_id'] ?? null;
+                if ($retailNonFoodItemId !== null && $retailNonFoodItemId !== 'null' && $retailNonFoodItemId !== '') {
+                    $contraBonItemData['retail_non_food_item_id'] = is_numeric($retailNonFoodItemId) ? (int)$retailNonFoodItemId : $retailNonFoodItemId;
                 }
                 
                 // Create contra bon item
