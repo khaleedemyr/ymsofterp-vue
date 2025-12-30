@@ -512,46 +512,55 @@ const askQuestion = async (event) => {
   
   try {
     // Pastikan menggunakan POST method secara eksplisit
-    // Di server, kadang ada masalah dengan axios.post() jadi gunakan axios() dengan method eksplisit
-    // Juga pastikan tidak ada interceptor yang mengubah method
-    const requestConfig = {
-      method: 'POST',
-      url: '/sales-outlet-dashboard/ai/ask',
-      data: {
-        question: currentQuestion,
-        date_from: props.filters.date_from,
-        date_to: props.filters.date_to,
-        session_id: currentSessionId
-      },
-      withCredentials: true,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Accept': 'application/json'
-      },
-      // Prevent redirect yang bisa menyebabkan GET request
-      maxRedirects: 0,
-      validateStatus: function (status) {
-        return status >= 200 && status < 300;
-      }
+    // Ambil CSRF token dari meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json'
     };
     
-    // Pastikan method tidak diubah oleh interceptor
-    Object.defineProperty(requestConfig, 'method', {
-      value: 'POST',
-      writable: false,
-      configurable: false
-    });
+    // Tambahkan CSRF token jika ada
+    if (csrfToken) {
+      requestHeaders['X-CSRF-TOKEN'] = csrfToken;
+    }
+    
+    const requestData = {
+      question: currentQuestion,
+      date_from: props.filters.date_from,
+      date_to: props.filters.date_to,
+      session_id: currentSessionId
+    };
     
     // Log request config untuk debugging
-    console.log('AI Q&A Request Config:', {
-      method: requestConfig.method,
-      url: requestConfig.url,
-      hasData: !!requestConfig.data,
-      headers: requestConfig.headers
+    console.log('🔵 AI Q&A Request Config (Before Axios):', {
+      method: 'POST',
+      url: '/sales-outlet-dashboard/ai/ask',
+      hasData: !!requestData,
+      dataKeys: Object.keys(requestData),
+      hasCsrfToken: !!csrfToken,
+      headers: requestHeaders
     });
     
-    const response = await axios(requestConfig);
+    // Gunakan axios.post() langsung untuk memastikan method POST
+    const response = await axios.post(
+      '/sales-outlet-dashboard/ai/ask',
+      requestData,
+      {
+        headers: requestHeaders,
+        withCredentials: true,
+        maxRedirects: 0,
+        validateStatus: function (status) {
+          return status >= 200 && status < 300;
+        }
+      }
+    );
+    
+    console.log('🟢 AI Q&A Response received:', {
+      status: response.status,
+      success: response.data?.success
+    });
     
     if (response.data.success) {
       // Update session ID if returned
