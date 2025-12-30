@@ -98,12 +98,53 @@ class AIAnalyticsController extends Controller
         }
         
         try {
+            // Log request data untuk debugging
+            Log::info('AI Analytics: askQuestion called', [
+                'method' => $request->method(),
+                'has_question' => $request->has('question'),
+                'question_value' => $request->get('question', 'NOT_FOUND'),
+                'all_request_data' => $request->all(),
+                'request_keys' => array_keys($request->all()),
+                'content_type' => $request->header('content-type'),
+                'is_json' => $request->isJson(),
+                'json_all' => $request->json()->all() ?? 'NOT_JSON'
+            ]);
+            
+            // Coba ambil question dari berbagai sumber
             $question = $request->get('question');
+            
+            // Jika tidak ada, coba dari JSON
+            if (empty($question) && $request->isJson()) {
+                $jsonData = $request->json()->all();
+                $question = $jsonData['question'] ?? null;
+            }
+            
+            // Jika masih tidak ada, coba dari input
+            if (empty($question)) {
+                $question = $request->input('question');
+            }
+            
             $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
             $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
             $sessionId = $request->get('session_id', $this->getOrCreateSessionId($request));
             
+            Log::info('AI Analytics: Question extracted', [
+                'question' => $question ? substr($question, 0, 50) : 'EMPTY',
+                'question_length' => $question ? strlen($question) : 0,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'session_id' => $sessionId
+            ]);
+            
             if (!$question || trim($question) === '') {
+                Log::error('AI Analytics: Question is empty!', [
+                    'request_all' => $request->all(),
+                    'request_json' => $request->json()->all() ?? 'NOT_JSON',
+                    'request_input' => $request->input(),
+                    'request_get' => $request->get('question', 'NOT_FOUND'),
+                    'method' => $request->method()
+                ]);
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'Pertanyaan tidak boleh kosong'

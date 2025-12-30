@@ -1611,26 +1611,54 @@ Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $
             ]);
         }
         
-        // Forward ke controller POST
-        $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
-        // Override method untuk POST
-        $request->setMethod('POST');
-        
-        // Pastikan question ada di request - cek semua kemungkinan
-        if (!$request->has('question')) {
+        // Jika body data ada, buat request baru dengan method POST
+        if ($bodyData && is_array($bodyData) && isset($bodyData['question'])) {
+            // Buat request baru dengan method POST dan data dari body
+            $newRequest = \Illuminate\Http\Request::create(
+                $request->url(),
+                'POST',
+                $bodyData, // parameters
+                $request->cookies->all(),
+                $request->files->all(),
+                $request->server->all(),
+                $bodyContent // content (raw body)
+            );
+            
+            // Copy headers penting
+            $newRequest->headers->replace($request->headers->all());
+            $newRequest->headers->set('Content-Type', 'application/json');
+            
+            // Set method secara eksplisit
+            $newRequest->setMethod('POST');
+            
+            \Illuminate\Support\Facades\Log::info('AI Analytics: Created new POST request', [
+                'method' => $newRequest->method(),
+                'has_question' => $newRequest->has('question'),
+                'question_preview' => $newRequest->has('question') ? substr($newRequest->get('question'), 0, 50) : 'NOT_FOUND',
+                'all_keys' => array_keys($newRequest->all())
+            ]);
+            
+            // Forward ke controller dengan request baru
+            $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
+            return $controller->askQuestion($newRequest);
+        } else {
+            // Fallback: coba dengan request yang ada
+            \Illuminate\Support\Facades\Log::warning('AI Analytics: Body data invalid, trying with original request', [
+                'body_data' => $bodyData,
+                'has_question_in_body' => isset($bodyData['question']),
+                'body_content_length' => strlen($bodyContent)
+            ]);
+            
+            // Pastikan question ada di request
             if (isset($bodyData['question'])) {
                 $request->merge(['question' => $bodyData['question']]);
                 $request->request->set('question', $bodyData['question']);
-            } else {
-                \Illuminate\Support\Facades\Log::error('AI Analytics: Question not found in request or body!', [
-                    'request_all' => $request->all(),
-                    'body_data' => $bodyData,
-                    'request_has_question' => $request->has('question')
-                ]);
             }
+            
+            $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
+            $request->setMethod('POST');
+            return $controller->askQuestion($request);
         }
-        
-        return $controller->askQuestion($request);
     }
     
     return response()->json([
