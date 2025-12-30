@@ -63,6 +63,9 @@
               <i class="fa fa-file-csv"></i>
               Export CSV ({{ stats.ready }})
             </button>
+            <div class="text-xs text-gray-500 mt-1">
+              <i class="fa fa-info-circle"></i> Pastikan setting Navicat: "Replace NULL with" dikosongkan
+            </div>
             <button
               v-if="selectedCustomers.length > 0"
               @click="migrateSelected"
@@ -509,15 +512,27 @@ function exportCsv() {
   Swal.fire({
     title: 'Export CSV?',
     html: `
-      <p>Yakin ingin export <strong>${props.stats.ready} customer</strong> yang belum migrasi ke CSV?</p>
-      <p class="text-sm text-gray-600 mt-2">File CSV ini bisa langsung diimport ke Navicat ke table <strong>member_apps_members</strong></p>
+      <div class="text-left">
+        <p>Yakin ingin export <strong>${props.stats.ready} customer</strong> yang belum migrasi ke CSV?</p>
+        <p class="text-sm text-gray-600 mt-2">File CSV ini bisa langsung diimport ke Navicat ke table <strong>member_apps_members</strong></p>
+        <div class="mt-4 p-3 bg-blue-50 rounded-lg text-sm">
+          <p class="font-semibold mb-2">Penting saat Import di Navicat:</p>
+          <ul class="list-disc list-inside space-y-1 text-xs">
+            <li>Setting "Replace NULL with" harus <strong>DIKOSONGKAN</strong></li>
+            <li>Field "id" TIDAK perlu di-map (AUTO_INCREMENT)</li>
+            <li>Jika ada error duplicate, skip record tersebut</li>
+            <li>Password default: <strong>default123</strong> (sudah di-hash)</li>
+          </ul>
+        </div>
+      </div>
     `,
     icon: 'question',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
     cancelButtonColor: '#6c757d',
     confirmButtonText: 'Ya, Export',
-    cancelButtonText: 'Batal'
+    cancelButtonText: 'Batal',
+    width: '600px'
   }).then((result) => {
     if (result.isConfirmed) {
       // Trigger download

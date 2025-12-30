@@ -509,6 +509,8 @@ class MemberMigrationController extends Controller
             fprintf($output, "\xEF\xBB\xBF");
             
             // CSV Header (sesuai dengan kolom table member_apps_members)
+            // TIDAK include 'id' karena AUTO_INCREMENT
+            // Urutan harus sesuai dengan urutan kolom di table
             $headers = [
                 'member_id',
                 'photo',
@@ -544,14 +546,26 @@ class MemberMigrationController extends Controller
             // Atau bisa skip hash dan biar user set manual di Navicat
             $defaultPasswordHash = bcrypt('default123'); // Generate sekali saja
             
+            // Track processed emails dan mobile_phones untuk cek duplicate dalam batch
+            $processedEmails = [];
+            $processedPhones = [];
+            
+            // Get existing mobile_phones dari member_apps_members untuk filter
+            $existingPhones = MemberAppsMember::whereNotNull('mobile_phone')
+                ->where('mobile_phone', '!=', '')
+                ->pluck('mobile_phone')
+                ->toArray();
+            
             do {
                 // Get customers in chunks
+                // Filter juga mobile_phone yang sudah ada di member_apps_members
                 $customers = Customer::where('status_aktif', '1')
                     ->whereNotNull('email')
                     ->where('email', '!=', '')
                     ->whereNotIn('email', $existingEmails)
                     ->whereNotNull('telepon')
                     ->where('telepon', '!=', '')
+                    ->whereNotIn('telepon', $existingPhones)
                     ->orderBy('created_at', 'desc')
                     ->offset($offset)
                     ->limit($chunkSize)
@@ -562,6 +576,14 @@ class MemberMigrationController extends Controller
                 }
                 
                 foreach ($customers as $customer) {
+                    // Skip jika email atau telepon duplicate dalam batch ini
+                    if (isset($processedEmails[$customer->email]) || isset($processedPhones[$customer->telepon])) {
+                        continue; // Skip duplicate
+                    }
+                    
+                    // Track processed
+                    $processedEmails[$customer->email] = true;
+                    $processedPhones[$customer->telepon] = true;
                     // Map jenis kelamin: 1 -> 'L', 2 -> 'P'
                     $jenisKelamin = null;
                     if ($customer->jenis_kelamin == '1' || $customer->jenis_kelamin === 1) {
@@ -580,52 +602,104 @@ class MemberMigrationController extends Controller
                     
                     // Map pekerjaan_id (cached occupations)
                     $pekerjaanId = $this->mapPekerjaanId($customer->pekerjaan);
-                    $pekerjaanIdValue = $pekerjaanId ?: null;
+                    
+                    // Validasi pekerjaan_id - jika tidak valid atau tidak ada, set NULL
+                    // Foreign key constraint akan error jika pekerjaan_id tidak ada di member_apps_occupations
+                    if ($pekerjaanId) {
+                        // Cek apakah pekerjaan_id valid (ada di table dan aktif)
+                        $occupationExists = MemberAppsOccupation::where('id', $pekerjaanId)->where('is_active', true)->exists();
+                        if (!$occupationExists) {
+                            $pekerjaanId = null; // Set NULL jika pekerjaan tidak valid (akan jadi empty string di CSV)
+                        }
+                    }
                     
                     // Untuk export CSV, gunakan default password hash (lebih cepat)
-                    // User bisa update password manual di Navicat setelah import
-                    // Atau bisa set password berdasarkan android_password jika perlu
                     $pin = $defaultPasswordHash; // Default PIN hash
                     $password = $defaultPasswordHash; // Default password hash
                     
-                    // Jika ingin gunakan password asli (tapi lebih lambat), uncomment ini:
-                    // if (!empty($customer->pin) && !preg_match('/^\$2[ayb]\$.{56}$/', $customer->pin)) {
-                    //     $pin = bcrypt($customer->pin);
-                    // } else {
-                    //     $pin = $customer->pin ?: $defaultPasswordHash;
-                    // }
-                    // $password = $customer->android_password ? bcrypt($customer->android_password) : $defaultPasswordHash;
-                    
                     // Format dates
-                    $tanggalLahir = $customer->tanggal_lahir ? date('Y-m-d', strtotime($customer->tanggal_lahir)) : '1970-01-01';
-                    $lastLogin = $customer->last_logged ? date('Y-m-d H:i:s', strtotime($customer->last_logged)) : null;
+                    // Tanggal lahir: pastikan tidak ada 0000-00-00 (invalid date untuk MySQL)
+                    $tanggalLahir = '1970-01-01'; // Default date
+                    if ($customer->tanggal_lahir) {
+                        // Cek jika tanggal_lahir berisi 0000-00-00
+                        $rawTanggalLahir = trim($customer->tanggal_lahir);
+                        if ($rawTanggalLahir && 
+                            $rawTanggalLahir !== '0000-00-00' && 
+                            strpos($rawTanggalLahir, '0000-00-00') === false &&
+                            strpos($rawTanggalLahir, '0000') === false) {
+                            // Parse tanggal
+                            $timestamp = strtotime($rawTanggalLahir);
+                            if ($timestamp !== false && $timestamp > 0) {
+                                $parsedDate = date('Y-m-d', $timestamp);
+                                // Validasi hasil parsing
+                                if ($parsedDate && 
+                                    $parsedDate !== '1970-01-01' && 
+                                    $parsedDate !== '0000-00-00' && 
+                                    strpos($parsedDate, '0000') === false &&
+                                    preg_match('/^\d{4}-\d{2}-\d{2}$/', $parsedDate)) {
+                                    $tanggalLahir = $parsedDate;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Last login: nullable, pastikan tidak ada 0000-00-00
+                    $lastLogin = null;
+                    if ($customer->last_logged) {
+                        $rawLastLogin = trim($customer->last_logged);
+                        if ($rawLastLogin && 
+                            $rawLastLogin !== '0000-00-00 00:00:00' && 
+                            strpos($rawLastLogin, '0000-00-00') === false &&
+                            strpos($rawLastLogin, '0000') === false) {
+                            $timestamp = strtotime($rawLastLogin);
+                            if ($timestamp !== false && $timestamp > 0) {
+                                $parsedLastLogin = date('Y-m-d H:i:s', $timestamp);
+                                if ($parsedLastLogin && 
+                                    strpos($parsedLastLogin, '1970-01-01') === false && 
+                                    strpos($parsedLastLogin, '0000-00-00') === false &&
+                                    preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $parsedLastLogin)) {
+                                    $lastLogin = $parsedLastLogin;
+                                }
+                            }
+                        }
+                    }
+                    
                     $now = date('Y-m-d H:i:s');
                     
+                    // Format data untuk Navicat
+                    // Untuk foreign key (pekerjaan_id), jika NULL harus benar-benar empty (tidak bisa 0 atau empty string yang tidak valid)
+                    $memberId = $customer->costumers_id ?: '';
+                    // pekerjaan_id: hanya set jika valid dan > 0, jika tidak set empty string
+                    // Pastikan pekerjaan_id valid atau NULL (empty string akan jadi NULL di Navicat)
+                    $pekerjaanIdValue = ($pekerjaanId !== null && $pekerjaanId !== '' && $pekerjaanId > 0) ? (int)$pekerjaanId : '';
+                    
                     $row = [
-                        $customer->costumers_id ?: '', // member_id (nullable)
-                        '', // photo (nullable)
+                        $memberId, // member_id (nullable) - empty string jika NULL
+                        '', // photo (nullable) - empty string
                         $customer->email, // email (NOT NULL, UNIQUE)
                         $customer->name ?: 'Member', // nama_lengkap (NOT NULL)
                         $customer->telepon, // mobile_phone (NOT NULL, UNIQUE)
                         $tanggalLahir, // tanggal_lahir (NOT NULL)
                         $jenisKelamin, // jenis_kelamin (NOT NULL, enum('L', 'P'))
-                        $pekerjaanIdValue !== null ? $pekerjaanIdValue : '', // pekerjaan_id (nullable)
+                        $pekerjaanIdValue, // pekerjaan_id (nullable) - empty string jika NULL (akan jadi NULL di Navicat)
                         $pin, // pin (NOT NULL) - default hash
                         $password, // password (NOT NULL) - default hash
                         $isExclusiveMember, // is_exclusive_member (default 0)
-                        'Silver', // member_level (NOT NULL, enum)
+                        'Silver', // member_level (NOT NULL, enum) - harus 'Silver' (case sensitive)
                         '0.00', // total_spending (default 0.00)
                         '0', // just_points (default 0)
                         '0.00', // point_remainder (default 0.00)
                         '1', // is_active (default 1)
                         '1', // allow_notification (default 1)
-                        $now, // email_verified_at (nullable)
-                        '', // mobile_verified_at (nullable)
-                        $lastLogin ?: '', // last_login_at (nullable)
-                        $now, // created_at (nullable)
-                        $now  // updated_at (nullable)
+                        $now, // email_verified_at (nullable) - set timestamp
+                        '', // mobile_verified_at (nullable) - empty string untuk NULL
+                        $lastLogin ?: '', // last_login_at (nullable) - empty string jika NULL
+                        $now, // created_at (nullable) - set timestamp
+                        $now  // updated_at (nullable) - set timestamp
                     ];
                     
+                    // Use fputcsv untuk format yang benar
+                    // Navicat akan convert empty string ke NULL jika setting "Replace NULL with" dikosongkan
                     fputcsv($output, $row, ',', '"');
                 }
                 
@@ -639,6 +713,12 @@ class MemberMigrationController extends Controller
                 
                 // Clear memory
                 unset($customers);
+                
+                // Reset processed arrays setiap beberapa chunk untuk menghindari memory issue
+                if ($offset % 5000 == 0) {
+                    $processedEmails = [];
+                    $processedPhones = [];
+                }
                 
             } while (true);
             
