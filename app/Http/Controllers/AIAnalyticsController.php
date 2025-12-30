@@ -61,20 +61,39 @@ class AIAnalyticsController extends Controller
     {
         // Log method untuk debugging
         if ($request->method() !== 'POST') {
-            Log::warning('AI Analytics: Invalid method in controller', [
+            // Cek apakah ini sebenarnya POST yang di-redirect
+            $hasBody = $request->has('question') || $request->getContent() !== '';
+            $hasPostHeaders = $request->header('content-type') === 'application/json' || 
+                              $request->header('x-csrf-token') !== null;
+            
+            Log::error('AI Analytics: Invalid method in controller - Possible redirect issue!', [
                 'method' => $request->method(),
                 'intended_method' => $request->header('X-HTTP-Method-Override'),
+                'has_body' => $hasBody,
+                'has_post_headers' => $hasPostHeaders,
+                'content_type' => $request->header('content-type'),
+                'content_length' => $request->header('content-length'),
+                'has_csrf_token' => $request->header('x-csrf-token') !== null,
                 'url' => $request->fullUrl(),
                 'referer' => $request->header('referer'),
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
-                'content_type' => $request->header('content-type'),
+                'request_body' => $request->getContent(),
                 'all_headers' => $request->headers->all()
             ]);
             
+            // Jika ada body atau POST headers, ini kemungkinan POST yang di-redirect
+            if ($hasBody || $hasPostHeaders) {
+                Log::critical('AI Analytics: POST request was redirected to GET by middleware or server!', [
+                    'original_method' => 'POST (detected from headers/body)',
+                    'received_method' => $request->method(),
+                    'possible_cause' => 'Middleware redirect, CSRF validation redirect, or server configuration'
+                ]);
+            }
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Method ' . $request->method() . ' tidak didukung. Silakan gunakan POST method untuk mengirim pertanyaan. Pastikan request menggunakan method POST.'
+                'message' => 'Method ' . $request->method() . ' tidak didukung. Request terdeteksi sebagai POST (dari headers/body) tapi diterima sebagai ' . $request->method() . '. Kemungkinan ada redirect yang mengubah method. Silakan cek middleware atau server configuration.'
             ], 405);
         }
         

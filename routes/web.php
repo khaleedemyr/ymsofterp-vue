@@ -1510,19 +1510,63 @@ Route::delete('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\A
 // Handle GET request untuk route ask (HARUS di bawah route chat-history untuk menghindari konflik)
 // Hanya handle jika benar-benar GET request ke /ai/ask (bukan /ai/chat-history)
 Route::get('/sales-outlet-dashboard/ai/ask', function(\Illuminate\Http\Request $request) {
+    // Cek apakah ini sebenarnya POST request yang di-redirect menjadi GET
+    $hasBody = $request->has('question') || $request->getContent() !== '';
+    $hasPostHeaders = $request->header('content-type') === 'application/json' || 
+                      $request->header('x-csrf-token') !== null ||
+                      $request->header('content-length') !== null;
+    
     \Illuminate\Support\Facades\Log::warning('AI Analytics: GET request detected to /ai/ask', [
         'url' => $request->fullUrl(),
         'path' => $request->path(),
+        'method' => $request->method(),
+        'has_body' => $hasBody,
+        'has_post_headers' => $hasPostHeaders,
+        'content_type' => $request->header('content-type'),
+        'content_length' => $request->header('content-length'),
+        'has_csrf_token' => $request->header('x-csrf-token') !== null,
         'referer' => $request->header('referer'),
         'ip' => $request->ip(),
         'user_agent' => $request->userAgent(),
         'query_params' => $request->query(),
-        'all_headers' => $request->headers->all()
+        'request_body' => $request->getContent()
     ]);
+    
+    // WORKAROUND: Jika ada body atau POST headers, kemungkinan ini POST yang di-redirect
+    // Forward ke controller POST sebagai workaround
+    if ($hasBody || $hasPostHeaders) {
+        \Illuminate\Support\Facades\Log::warning('AI Analytics: POST request was redirected to GET - Forwarding to POST handler', [
+            'original_method' => 'POST (detected from headers)',
+            'received_method' => 'GET',
+            'body_content' => $request->getContent()
+        ]);
+        
+        // Parse body jika ada
+        $bodyContent = $request->getContent();
+        if ($bodyContent) {
+            $bodyData = json_decode($bodyContent, true);
+            if ($bodyData) {
+                // Merge body data ke request
+                $request->merge($bodyData);
+            }
+        }
+        
+        // Forward ke controller POST
+        $controller = app(\App\Http\Controllers\AIAnalyticsController::class);
+        // Override method untuk POST
+        $request->setMethod('POST');
+        return $controller->askQuestion($request);
+    }
     
     return response()->json([
         'success' => false,
-        'message' => 'Method GET tidak didukung untuk endpoint ini. Silakan gunakan POST method untuk mengirim pertanyaan. Pastikan request menggunakan method POST.'
+        'message' => 'Method GET tidak didukung untuk endpoint ini. Silakan gunakan POST method untuk mengirim pertanyaan. Pastikan request menggunakan method POST. Jika Anda menggunakan POST, kemungkinan ada redirect yang mengubah method menjadi GET.',
+        'debug_info' => [
+            'received_method' => $request->method(),
+            'has_body' => $hasBody,
+            'has_post_headers' => $hasPostHeaders,
+            'content_type' => $request->header('content-type')
+        ]
     ], 405);
 })->name('sales-outlet-dashboard.ai.ask.get');
 Route::get('/sales-outlet-dashboard/ai/usage-statistics', [App\Http\Controllers\AIAnalyticsController::class, 'getUsageStatistics'])->name('sales-outlet-dashboard.ai.usage-statistics');
