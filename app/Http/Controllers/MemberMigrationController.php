@@ -804,6 +804,15 @@ class MemberMigrationController extends Controller
                     
                     $now = date('Y-m-d H:i:s');
                     
+                    // Validasi final: pastikan $now tidak pernah 0000-00-00
+                    // Pastikan format datetime valid
+                    if (empty($now) || 
+                        $now === '0000-00-00 00:00:00' || 
+                        strpos($now, '0000-00-00') !== false ||
+                        !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $now)) {
+                        $now = date('Y-m-d H:i:s'); // Re-generate jika invalid
+                    }
+                    
                     // Validasi final: pastikan tanggal_lahir tidak pernah 0000-00-00
                     // Jika masih 0000-00-00 setelah semua validasi, gunakan default
                     if ($tanggalLahir === '0000-00-00' || 
@@ -818,6 +827,36 @@ class MemberMigrationController extends Controller
                     // pekerjaan_id: hanya set jika valid dan > 0, jika tidak set empty string
                     // Pastikan pekerjaan_id valid atau NULL (empty string akan jadi NULL di Navicat)
                     $pekerjaanIdValue = ($pekerjaanId !== null && $pekerjaanId !== '' && $pekerjaanId > 0) ? (int)$pekerjaanId : '';
+                    
+                    // Validasi final untuk semua datetime fields
+                    // Pastikan tidak ada 0000-00-00 di semua datetime
+                    $emailVerifiedAt = $now;
+                    if (empty($emailVerifiedAt) || 
+                        strpos($emailVerifiedAt, '0000-00-00') !== false ||
+                        !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $emailVerifiedAt)) {
+                        $emailVerifiedAt = date('Y-m-d H:i:s'); // Re-generate jika invalid
+                    }
+                    
+                    $createdAt = $now;
+                    if (empty($createdAt) || 
+                        strpos($createdAt, '0000-00-00') !== false ||
+                        !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $createdAt)) {
+                        $createdAt = date('Y-m-d H:i:s'); // Re-generate jika invalid
+                    }
+                    
+                    $updatedAt = $now;
+                    if (empty($updatedAt) || 
+                        strpos($updatedAt, '0000-00-00') !== false ||
+                        !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $updatedAt)) {
+                        $updatedAt = date('Y-m-d H:i:s'); // Re-generate jika invalid
+                    }
+                    
+                    // Validasi lastLogin juga
+                    if (!empty($lastLogin) && 
+                        (strpos($lastLogin, '0000-00-00') !== false ||
+                         !preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $lastLogin))) {
+                        $lastLogin = ''; // Set empty jika invalid
+                    }
                     
                     $row = [
                         $memberId, // member_id (nullable) - empty string jika NULL
@@ -837,11 +876,11 @@ class MemberMigrationController extends Controller
                         '0.00', // point_remainder (default 0.00)
                         '1', // is_active (default 1)
                         '1', // allow_notification (default 1)
-                        $now, // email_verified_at (nullable) - set timestamp
+                        $emailVerifiedAt, // email_verified_at (nullable) - sudah divalidasi, tidak akan pernah 0000-00-00
                         '', // mobile_verified_at (nullable) - empty string untuk NULL
-                        $lastLogin ?: '', // last_login_at (nullable) - empty string jika NULL
-                        $now, // created_at (nullable) - set timestamp
-                        $now  // updated_at (nullable) - set timestamp
+                        $lastLogin ?: '', // last_login_at (nullable) - empty string jika NULL atau invalid
+                        $createdAt, // created_at (nullable) - sudah divalidasi, tidak akan pernah 0000-00-00
+                        $updatedAt  // updated_at (nullable) - sudah divalidasi, tidak akan pernah 0000-00-00
                     ];
                     
                     // Use fputcsv untuk format yang benar
