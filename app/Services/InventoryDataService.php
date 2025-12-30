@@ -648,8 +648,132 @@ class InventoryDataService
     }
 
     /**
+     * Calculate cost dari stock_cut_details (OPTIMIZED - menggunakan data yang sudah dihitung)
+     * Ini jauh lebih cepat karena menggunakan data cost yang sudah dihitung oleh Stock Cut
+     * 
+     * Pendekatan: 
+     * 1. Ambil order_items yang sudah stock_cut = 1 (sudah dipotong stock) - ini sudah diagregasi
+     * 2. Untuk setiap menu item, ambil cost dari stock_cut_details melalui BOM menggunakan subquery
+     * 3. Agregasi cost per menu item
+     * 
+     * @param string $dateFrom Start date
+     * @param string $dateTo End date
+     * @param string|null $outletCode Outlet code (optional) - menggunakan kode_outlet
+     * @return array
+     */
+    public function calculateCostFromStockCut($dateFrom, $dateTo, $outletCode = null)
+    {
+        // Ambil order_items yang sudah stock_cut = 1 dan agregasi per menu item
+        // Gunakan subquery untuk menghitung cost dari stock_cut_details
+        $query = "
+            SELECT 
+                menu_item.id as item_id,
+                menu_item.name as item_name,
+                menu_item.type as item_type,
+                outlet.qr_code as kode_outlet,
+                outlet.id_outlet,
+                outlet.nama_outlet,
+                SUM(oi.qty) as total_qty_sold,
+                SUM(oi.subtotal) as total_revenue,
+                AVG(oi.price) as avg_selling_price,
+                (
+                    SELECT SUM(scd.value_out)
+                    FROM stock_cut_details scd
+                    INNER JOIN stock_cut_logs scl ON scd.stock_cut_log_id = scl.id
+                    INNER JOIN item_bom bom ON scd.item_id = bom.material_item_id
+                    WHERE scl.outlet_id = outlet.id_outlet
+                        AND DATE(scl.tanggal) = DATE(o.created_at)
+                        AND scl.status = 'success'
+                        AND bom.item_id = menu_item.id
+                ) as total_cost
+            FROM order_items oi
+            INNER JOIN orders o ON oi.order_id = o.id
+            INNER JOIN items menu_item ON oi.item_id = menu_item.id
+            INNER JOIN item_bom bom ON menu_item.id = bom.item_id
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            WHERE DATE(o.created_at) BETWEEN ? AND ?
+                AND oi.stock_cut = 1
+        ";
+
+        $params = [$dateFrom, $dateTo];
+
+        // Filter menggunakan kode_outlet
+        if ($outletCode) {
+            $query .= " AND o.kode_outlet = ?";
+            $params[] = $outletCode;
+        }
+
+        $query .= " 
+            GROUP BY menu_item.id, menu_item.name, menu_item.type, outlet.qr_code, outlet.id_outlet, outlet.nama_outlet, DATE(o.created_at)
+            HAVING total_cost > 0
+            ORDER BY total_qty_sold DESC
+        ";
+
+        $costData = DB::select($query, $params);
+
+        // Agregasi ulang per menu item (karena bisa ada beberapa tanggal)
+        $aggregated = [];
+        foreach ($costData as $data) {
+            $key = $data->item_id . '_' . $data->id_outlet;
+            
+            if (!isset($aggregated[$key])) {
+                $aggregated[$key] = [
+                    'item_id' => $data->item_id,
+                    'item_name' => $data->item_name,
+                    'item_type' => $data->item_type,
+                    'kode_outlet' => $data->kode_outlet,
+                    'id_outlet' => $data->id_outlet,
+                    'nama_outlet' => $data->nama_outlet,
+                    'total_qty_sold' => 0,
+                    'total_revenue' => 0,
+                    'total_cost' => 0,
+                    'price_sum' => 0,
+                    'price_count' => 0
+                ];
+            }
+            
+            $aggregated[$key]['total_qty_sold'] += $data->total_qty_sold;
+            $aggregated[$key]['total_revenue'] += $data->total_revenue;
+            $aggregated[$key]['total_cost'] += ($data->total_cost ?? 0);
+            $aggregated[$key]['price_sum'] += ($data->avg_selling_price ?? 0) * $data->total_qty_sold;
+            $aggregated[$key]['price_count'] += $data->total_qty_sold;
+        }
+
+        $results = [];
+        foreach ($aggregated as $data) {
+            if ($data['total_cost'] > 0 && $data['total_qty_sold'] > 0) {
+                $costPerUnit = $data['total_cost'] / $data['total_qty_sold'];
+                $totalRevenue = $data['total_revenue'];
+                $totalCost = $data['total_cost'];
+                $grossProfit = $totalRevenue - $totalCost;
+                $grossMargin = $totalRevenue > 0 ? ($grossProfit / $totalRevenue) * 100 : 0;
+                $costPercentage = $totalRevenue > 0 ? ($totalCost / $totalRevenue) * 100 : 0;
+                $avgPrice = $data['price_count'] > 0 ? $data['price_sum'] / $data['price_count'] : 0;
+
+                $results[] = [
+                    'item_id' => $data['item_id'],
+                    'item_name' => $data['item_name'],
+                    'outlet_code' => $data['kode_outlet'],
+                    'outlet_id' => $data['id_outlet'],
+                    'outlet_name' => $data['nama_outlet'] ?? null,
+                    'qty_sold' => $data['total_qty_sold'],
+                    'total_revenue' => $totalRevenue,
+                    'cost_per_unit' => $costPerUnit,
+                    'total_cost' => $totalCost,
+                    'gross_profit' => $grossProfit,
+                    'gross_margin_percent' => $grossMargin,
+                    'cost_percentage' => $costPercentage,
+                    'avg_selling_price' => $avgPrice
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Calculate cost untuk multiple items dari sales
-     * Mengikuti logika StockCutController untuk konsistensi
+     * OPTIMIZED: Menggunakan stock_cut_details jika tersedia, fallback ke perhitungan manual
      * 
      * @param string $dateFrom Start date
      * @param string $dateTo End date
@@ -658,11 +782,30 @@ class InventoryDataService
      */
     public function calculateCostFromSales($dateFrom, $dateTo, $outletCode = null)
     {
+        // Cek apakah ada data stock cut untuk periode ini
+        $stockCutQuery = DB::table('stock_cut_logs as scl')
+            ->join('tbl_data_outlet as outlet', 'scl.outlet_id', '=', 'outlet.id_outlet')
+            ->whereBetween('scl.tanggal', [$dateFrom, $dateTo])
+            ->where('scl.status', 'success');
+        
+        if ($outletCode) {
+            $stockCutQuery->where('outlet.qr_code', $outletCode);
+        }
+        
+        $hasStockCutData = $stockCutQuery->exists();
+
+        // Jika ada data stock cut, gunakan method yang dioptimalkan
+        if ($hasStockCutData) {
+            return $this->calculateCostFromStockCut($dateFrom, $dateTo, $outletCode);
+        }
+
+        // Fallback: Hitung manual (untuk data yang belum di-stock cut)
         // Get sales data untuk items dengan BOM
         // PENTING: Mengikuti logika StockCutController
         // 1. Gunakan kode_outlet (qr_code) bukan id_outlet untuk filter
         // 2. Ambil semua item yang punya BOM, bukan hanya composition_type = 'composed'
         // 3. Join dengan tbl_data_outlet untuk mendapatkan id_outlet yang benar
+        // 4. Hanya ambil order_items yang sudah stock_cut = 1 (sudah dipotong stock)
         $query = "
             SELECT 
                 oi.item_id,
@@ -681,6 +824,7 @@ class InventoryDataService
             LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
             INNER JOIN item_bom bom ON i.id = bom.item_id
             WHERE DATE(o.created_at) BETWEEN ? AND ?
+                AND oi.stock_cut = 1
         ";
 
         $params = [$dateFrom, $dateTo];

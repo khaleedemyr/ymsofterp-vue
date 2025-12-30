@@ -1502,6 +1502,13 @@ Route::get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions'
 Route::get('/sales-outlet-dashboard/promo-usage-by-outlet', [App\Http\Controllers\SalesOutletDashboardController::class, 'getPromoUsageByOutlet'])->name('sales-outlet-dashboard.promo-usage-by-outlet');
 Route::get('/sales-outlet-dashboard/ai/insight', [App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('sales-outlet-dashboard.ai.insight');
 Route::post('/sales-outlet-dashboard/ai/ask', [App\Http\Controllers\AIAnalyticsController::class, 'askQuestion'])->name('sales-outlet-dashboard.ai.ask');
+// Handle GET request untuk route ask (jika ada yang akses langsung via URL)
+Route::get('/sales-outlet-dashboard/ai/ask', function() {
+    return response()->json([
+        'success' => false,
+        'message' => 'Method GET tidak didukung. Silakan gunakan POST method untuk mengirim pertanyaan.'
+    ], 405);
+})->name('sales-outlet-dashboard.ai.ask.get');
 Route::get('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'getChatHistory'])->name('sales-outlet-dashboard.ai.chat-history');
 Route::get('/sales-outlet-dashboard/ai/all-chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'getAllChatHistory'])->name('sales-outlet-dashboard.ai.all-chat-history');
 Route::delete('/sales-outlet-dashboard/ai/chat-history', [App\Http\Controllers\AIAnalyticsController::class, 'clearChatHistory'])->name('sales-outlet-dashboard.ai.clear-chat-history');

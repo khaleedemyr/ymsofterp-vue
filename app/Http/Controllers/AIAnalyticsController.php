@@ -59,6 +59,21 @@ class AIAnalyticsController extends Controller
      */
     public function askQuestion(Request $request)
     {
+        // Log method untuk debugging
+        if ($request->method() !== 'POST') {
+            Log::warning('AI Analytics: Invalid method', [
+                'method' => $request->method(),
+                'url' => $request->fullUrl(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Method ' . $request->method() . ' tidak didukung. Silakan gunakan POST method untuk mengirim pertanyaan.'
+            ], 405);
+        }
+        
         try {
             $question = $request->get('question');
             $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
