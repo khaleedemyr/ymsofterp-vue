@@ -874,10 +874,39 @@ async function onSubmit() {
   const firstItem = selectedItems[0];
   
   // PRIORITAS: Ambil source_type dari item, bukan dari selectedSources
-  const itemSourceType = firstItem?.source_type || 'purchase_order';
-  const itemPoId = firstItem?.po_id || null;
-  const itemGrId = firstItem?.gr_id || null;
-  const itemSourceId = firstItem?.source_id || null;
+  // Pastikan source_type diambil dengan benar - cek dari item atau dari selectedSources
+  let itemSourceType = firstItem?.source_type || null;
+  let itemPoId = firstItem?.po_id || null;
+  let itemGrId = firstItem?.gr_id || null;
+  let itemSourceId = firstItem?.source_id || null;
+  
+  // Jika source_type tidak ada di item, coba ambil dari selectedSources
+  if (!itemSourceType && selectedSources.value.length > 0) {
+    const firstSource = selectedSources.value[0];
+    itemSourceType = firstSource?.type || null;
+    if (firstSource?.type === 'purchase_order') {
+      itemPoId = firstSource?.po_id || null;
+      itemGrId = firstSource?.gr_id || null;
+    } else {
+      itemSourceId = firstSource?.source_id || null;
+    }
+  }
+  
+  // Fallback ke purchase_order hanya jika benar-benar tidak ada source_type
+  if (!itemSourceType) {
+    itemSourceType = 'purchase_order';
+  }
+  
+  // Debug logging
+  console.log('Contra Bon Submit - Source Detection:', {
+    firstItem: firstItem,
+    itemSourceType,
+    itemPoId,
+    itemGrId,
+    itemSourceId,
+    selectedSources: selectedSources.value,
+    selectedItemsCount: selectedItems.length
+  });
 
   const loadingSwal = Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
@@ -946,9 +975,29 @@ async function onSubmit() {
       itemSourceType,
       itemPoId,
       itemGrId,
-      itemSourceId
+      itemSourceId,
+      firstItem: firstItem,
+      selectedSources: selectedSources.value
     });
+    
+    // Pastikan source_type sudah benar sebelum set ke FormData
+    if (!itemSourceType || itemSourceType === 'purchase_order') {
+      // Cek lagi dari selectedSources jika itemSourceType tidak jelas
+      if (selectedSources.value.length > 0) {
+        const firstSource = selectedSources.value[0];
+        if (firstSource?.type && firstSource.type !== 'purchase_order') {
+          itemSourceType = firstSource.type;
+          if (firstSource.type !== 'purchase_order') {
+            itemSourceId = firstSource.source_id || itemSourceId;
+          }
+        }
+      }
+    }
+    
     setSourceInfo(fd, itemSourceType, itemPoId, itemGrId, itemSourceId);
+    
+    // Debug: Verifikasi source_type yang di-set ke FormData
+    console.log('FormData source_type set to:', itemSourceType);
     
     // Send all sources as array for multiple source support
     // Jika selectedSources kosong, buat source dari item pertama
@@ -1117,6 +1166,34 @@ async function onSubmit() {
   // REFACTORED: Selalu gunakan source info dari item pertama yang dipilih
   setFormSourceInfo(itemSourceType, itemPoId, itemGrId, itemSourceId);
   
+  // Debug: Pastikan form.source_type sudah di-set dengan benar
+  console.log('Contra Bon Submit - After setFormSourceInfo:', {
+    formSourceType: form.source_type,
+    formPoId: form.po_id,
+    formGrId: form.gr_id,
+    formSourceId: form.source_id,
+    itemSourceType,
+    expectedSourceType: itemSourceType
+  });
+  
+  // Pastikan form.source_type sesuai dengan itemSourceType
+  if (form.source_type !== itemSourceType) {
+    console.warn('Contra Bon Submit - source_type mismatch! Setting manually...', {
+      formSourceType: form.source_type,
+      itemSourceType
+    });
+    form.source_type = itemSourceType;
+    // Juga set po_id dan gr_id sesuai source_type
+    if (itemSourceType === 'purchase_order') {
+      form.po_id = itemPoId || '';
+      form.gr_id = itemGrId || '';
+    } else {
+      form.po_id = '';
+      form.gr_id = '';
+      form.source_id = itemSourceId || '';
+    }
+  }
+  
   // Set all sources for multiple source support
   if (selectedSources.value.length > 0) {
     form.sources = selectedSources.value.map(source => {
@@ -1164,6 +1241,27 @@ async function onSubmit() {
     return itemData;
   });
   form.items = itemsToSubmit;
+  
+  // FINAL CHECK: Pastikan form.source_type sesuai dengan itemSourceType sebelum submit
+  // Ini penting karena Inertia mungkin tidak update form.source_type dengan benar
+  form.source_type = itemSourceType;
+  if (itemSourceType === 'purchase_order') {
+    form.po_id = itemPoId || '';
+    form.gr_id = itemGrId || '';
+  } else {
+    form.po_id = '';
+    form.gr_id = '';
+    form.source_id = itemSourceId || '';
+  }
+  
+  console.log('Contra Bon Submit - Final check before submit:', {
+    formSourceType: form.source_type,
+    formPoId: form.po_id,
+    formGrId: form.gr_id,
+    formSourceId: form.source_id,
+    itemSourceType,
+    sources: form.sources
+  });
   
   // Pastikan source info sudah ter-update sebelum submit
   if (isEdit.value) {
