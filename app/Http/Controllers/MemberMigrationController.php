@@ -147,30 +147,33 @@ class MemberMigrationController extends Controller
         // Calculate stats efficiently using database queries
         $totalCount = Customer::where('status_aktif', '1')->count();
         
-        // Get existing emails from default connection first
-        $existingEmailsForStats = MemberAppsMember::whereNotNull('email')
+        // Get existing emails from default connection first dengan chunking
+        // Gunakan associative array untuk lookup O(1)
+        $existingEmailsForStats = [];
+        MemberAppsMember::whereNotNull('email')
             ->where('email', '!=', '')
-            ->pluck('email')
-            ->toArray();
+            ->chunk(1000, function($members) use (&$existingEmailsForStats) {
+                foreach ($members as $member) {
+                    $existingEmailsForStats[$member->email] = true;
+                }
+            });
         
-        // Use raw query for better performance on large datasets
-        // Count ready customers (have email and not in existing emails)
-        $readyCount = DB::connection('mysql_second')
-            ->table('costumers')
-            ->where('status_aktif', '1')
+        // Query semua customers yang punya email (tanpa whereNotIn/whereIn untuk menghindari "too many placeholders")
+        $customersWithEmail = Customer::where('status_aktif', '1')
             ->whereNotNull('email')
             ->where('email', '!=', '')
-            ->whereNotIn('email', $existingEmailsForStats)
-            ->count();
-            
-        // Count migrated customers (have email and in existing emails)
-        $migratedCount = DB::connection('mysql_second')
-            ->table('costumers')
-            ->where('status_aktif', '1')
-            ->whereNotNull('email')
-            ->where('email', '!=', '')
-            ->whereIn('email', $existingEmailsForStats)
-            ->count();
+            ->get(['email']);
+        
+        // Hitung di PHP level menggunakan array lookup (O(1))
+        $readyCount = 0;
+        $migratedCount = 0;
+        foreach ($customersWithEmail as $customer) {
+            if (isset($existingEmailsForStats[$customer->email])) {
+                $migratedCount++;
+            } else {
+                $readyCount++;
+            }
+        }
             
         $noEmailCount = Customer::where('status_aktif', '1')
             ->where(function($q) {
