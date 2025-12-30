@@ -436,7 +436,8 @@ async function selectRetailNonFoodFromModal(rnf) {
           discount_amount: 0,
           notes: '',
           item_name: item.item_name,
-          unit_name: item.unit_name,
+          // API mengembalikan 'unit', bukan 'unit_name', jadi gunakan 'unit' sebagai 'unit_name'
+          unit_name: item.unit_name || item.unit || '-',
           retail_non_food_item_id: item.id,
           selected: false,
           // Source info
@@ -1056,6 +1057,16 @@ async function onSubmit() {
     
     // Hanya kirim item yang dicentang
     selectedItems.forEach((item, idx) => {
+      // Pastikan unit_name dan item_name ada untuk retail_non_food, retail_food, dan warehouse_retail_food
+      if (itemSourceType === 'retail_non_food' || itemSourceType === 'retail_food' || itemSourceType === 'warehouse_retail_food') {
+        if (!item.unit_name || item.unit_name === '' || item.unit_name === null || item.unit_name === undefined) {
+          item.unit_name = item.unit || '-';
+        }
+        if (!item.item_name || item.item_name === '' || item.item_name === null || item.item_name === undefined) {
+          item.item_name = '-';
+        }
+      }
+      
       Object.keys(item).forEach(key => {
         // Jangan kirim field selected dan _rowKey
         if (key !== 'selected' && key !== '_rowKey') {
@@ -1238,6 +1249,20 @@ async function onSubmit() {
     // Pastikan item_id dan unit_id dikirim dengan benar
     // Jika null/undefined, tetap kirim null (bukan string kosong)
     // Inertia akan handle null dengan benar
+    
+    // Pastikan unit_name selalu ada untuk retail_non_food, retail_food, dan warehouse_retail_food
+    // Jika unit_name tidak ada atau kosong, gunakan default atau dari unit
+    if ((itemSourceType === 'retail_non_food' || itemSourceType === 'retail_food' || itemSourceType === 'warehouse_retail_food') 
+        && (!itemData.unit_name || itemData.unit_name === '' || itemData.unit_name === null || itemData.unit_name === undefined)) {
+      // Coba ambil dari unit jika ada
+      itemData.unit_name = itemData.unit || item.unit || '-';
+    }
+    
+    // Pastikan item_name juga ada
+    if (!itemData.item_name || itemData.item_name === '' || itemData.item_name === null || itemData.item_name === undefined) {
+      itemData.item_name = item.item_name || '-';
+    }
+    
     return itemData;
   });
   form.items = itemsToSubmit;
