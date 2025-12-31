@@ -2077,6 +2077,11 @@ Route::middleware(['auth'])->group(function () {
     // Web Profile Routes
     Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);
     
+    // Web Profile Pages Routes
+    Route::prefix('web-profile/pages')->name('web-profile.pages.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'pagesIndex'])->name('index');
+    });
+    
     // Web Profile Banners Routes
     Route::prefix('web-profile/banners')->name('web-profile.banners.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'bannersIndex'])->name('index');
@@ -2085,6 +2090,16 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'bannersEdit'])->name('edit');
         Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'bannersUpdate'])->name('update');
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'bannersDestroy'])->name('destroy');
+    });
+
+    // Web Profile Brands Routes
+    Route::prefix('web-profile/brands')->name('web-profile.brands.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'brandsIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'brandsCreate'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'brandsStore'])->name('store');
+        Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'brandsEdit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'brandsUpdate'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'brandsDestroy'])->name('destroy');
     });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');

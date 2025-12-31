@@ -9,6 +9,7 @@ use App\Models\WebProfileGallery;
 use App\Models\WebProfileSetting;
 use App\Models\WebProfileContact;
 use App\Models\WebProfileBanner;
+use App\Models\WebProfileBrand;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
@@ -19,9 +20,17 @@ use Illuminate\Support\Facades\Log;
 class WebProfileController extends Controller
 {
     /**
-     * Display admin panel - list pages
+     * Display admin dashboard
      */
-    public function index(Request $request)
+    public function index()
+    {
+        return Inertia::render('WebProfile/Index');
+    }
+
+    /**
+     * Display pages list
+     */
+    public function pagesIndex(Request $request)
     {
         $pages = WebProfilePage::orderBy('order')
             ->when($request->search, function ($query, $search) {
@@ -30,7 +39,7 @@ class WebProfileController extends Controller
             })
             ->paginate(15);
 
-        return Inertia::render('WebProfile/Index', [
+        return Inertia::render('WebProfile/Pages/Index', [
             'pages' => $pages
         ]);
     }
@@ -457,6 +466,326 @@ class WebProfileController extends Controller
             });
 
         return response()->json($banners);
+    }
+
+    // ========== BRAND MANAGEMENT ==========
+
+    /**
+     * Display brands list (Admin)
+     */
+    public function brandsIndex(Request $request)
+    {
+        $brands = WebProfileBrand::orderBy('title')
+            ->when($request->search, function ($query, $search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->paginate(15);
+
+        // Transform paginated results
+        $brands->through(function ($brand) {
+            return [
+                'id' => $brand->id,
+                'title' => $brand->title,
+                'slug' => $brand->slug,
+                'link_menu' => $brand->link_menu,
+                'menu_pdf' => $brand->menu_pdf,
+                'menu_pdf_url' => $brand->menu_pdf_url,
+                'thumbnail' => $brand->thumbnail,
+                'thumbnail_url' => $brand->thumbnail_url,
+                'image' => $brand->image,
+                'image_url' => $brand->image_url,
+                'content' => $brand->content,
+                'created_at' => $brand->created_at,
+                'updated_at' => $brand->updated_at,
+            ];
+        });
+
+        return Inertia::render('WebProfile/Brands/Index', [
+            'brands' => $brands
+        ]);
+    }
+
+    /**
+     * Show create brand form
+     */
+    public function brandsCreate()
+    {
+        return Inertia::render('WebProfile/Brands/Create');
+    }
+
+    /**
+     * Store new brand
+     */
+    public function brandsStore(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'title' => 'required|string|max:255',
+                'slug' => 'nullable|string|max:255|unique:web_profile_brands,slug',
+                'link_menu' => 'nullable|url|max:255',
+                'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
+                'thumbnail' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'content' => 'nullable|string',
+            ], [
+                'thumbnail.required' => 'Thumbnail image is required',
+                'thumbnail.image' => 'Thumbnail must be an image file',
+                'menu_pdf.file' => 'Menu PDF must be a file',
+                'menu_pdf.mimes' => 'Menu PDF must be a PDF file',
+            ]);
+
+            return DB::transaction(function () use ($request, $validated) {
+                $uploadedFiles = [];
+
+                // Generate slug if not provided
+                if (empty($validated['slug'])) {
+                    $validated['slug'] = Str::slug($validated['title']);
+                }
+
+                // Upload thumbnail
+                if ($request->hasFile('thumbnail')) {
+                    $file = $request->file('thumbnail');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_thumb.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload thumbnail');
+                    }
+                    
+                    $validated['thumbnail'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Upload image
+                if ($request->hasFile('image')) {
+                    $file = $request->file('image');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_img.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload image');
+                    }
+                    
+                    $validated['image'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Upload menu PDF
+                if ($request->hasFile('menu_pdf')) {
+                    $file = $request->file('menu_pdf');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_menu.pdf';
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload menu PDF');
+                    }
+                    
+                    $validated['menu_pdf'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Set created_by
+                $validated['created_by'] = auth()->user()->name ?? 'System';
+
+                // Create brand record
+                $brand = WebProfileBrand::create($validated);
+
+                if (!$brand || !$brand->id) {
+                    foreach ($uploadedFiles as $filePath) {
+                        Storage::disk('public')->delete($filePath);
+                    }
+                    throw new \Exception('Failed to create brand record');
+                }
+
+                return redirect()->route('web-profile.brands.index')
+                    ->with('success', 'Brand created successfully');
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return redirect()->back()
+                ->withErrors($e->errors())
+                ->withInput();
+        } catch (\Exception $e) {
+            Log::error('Brand creation failed: ' . $e->getMessage(), [
+                'request' => $request->except(['thumbnail', 'image', 'menu_pdf']),
+                'trace' => $e->getMessage()
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Failed to create brand: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+
+    /**
+     * Show edit brand form
+     */
+    public function brandsEdit($id)
+    {
+        $brand = WebProfileBrand::findOrFail($id);
+
+        return Inertia::render('WebProfile/Brands/Edit', [
+            'brand' => [
+                'id' => $brand->id,
+                'title' => $brand->title,
+                'slug' => $brand->slug,
+                'link_menu' => $brand->link_menu,
+                'menu_pdf' => $brand->menu_pdf,
+                'menu_pdf_url' => $brand->menu_pdf_url,
+                'thumbnail' => $brand->thumbnail,
+                'thumbnail_url' => $brand->thumbnail_url,
+                'image' => $brand->image,
+                'image_url' => $brand->image_url,
+                'content' => $brand->content,
+            ]
+        ]);
+    }
+
+    /**
+     * Update brand
+     */
+    public function brandsUpdate(Request $request, $id)
+    {
+        $brand = WebProfileBrand::findOrFail($id);
+
+        try {
+            $validated = $request->validate([
+                'title' => 'required|string|max:255',
+                'slug' => 'required|string|max:255|unique:web_profile_brands,slug,' . $id,
+                'link_menu' => 'nullable|url|max:255',
+                'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
+                'thumbnail' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'content' => 'nullable|string',
+            ]);
+
+            return DB::transaction(function () use ($request, $validated, $brand) {
+                $uploadedFiles = [];
+
+                // Upload new thumbnail if provided
+                if ($request->hasFile('thumbnail')) {
+                    if ($brand->thumbnail) {
+                        Storage::disk('public')->delete($brand->thumbnail);
+                    }
+
+                    $file = $request->file('thumbnail');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_thumb.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload thumbnail');
+                    }
+                    
+                    $validated['thumbnail'] = $path;
+                    $uploadedFiles[] = $path;
+                } else {
+                    unset($validated['thumbnail']);
+                }
+
+                // Upload new image if provided
+                if ($request->hasFile('image')) {
+                    if ($brand->image) {
+                        Storage::disk('public')->delete($brand->image);
+                    }
+
+                    $file = $request->file('image');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_img.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload image');
+                    }
+                    
+                    $validated['image'] = $path;
+                    $uploadedFiles[] = $path;
+                } else {
+                    unset($validated['image']);
+                }
+
+                // Upload new menu PDF if provided
+                if ($request->hasFile('menu_pdf')) {
+                    if ($brand->menu_pdf) {
+                        Storage::disk('public')->delete($brand->menu_pdf);
+                    }
+
+                    $file = $request->file('menu_pdf');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_menu.pdf';
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload menu PDF');
+                    }
+                    
+                    $validated['menu_pdf'] = $path;
+                    $uploadedFiles[] = $path;
+                } else {
+                    unset($validated['menu_pdf']);
+                }
+
+                // Set updated_by
+                $validated['updated_by'] = auth()->user()->name ?? 'System';
+
+                $brand->update($validated);
+
+                return redirect()->back()->with('success', 'Brand updated successfully');
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return redirect()->back()
+                ->withErrors($e->errors())
+                ->withInput();
+        } catch (\Exception $e) {
+            Log::error('Brand update failed: ' . $e->getMessage());
+
+            return redirect()->back()
+                ->with('error', 'Failed to update brand: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+
+    /**
+     * Delete brand
+     */
+    public function brandsDestroy($id)
+    {
+        $brand = WebProfileBrand::findOrFail($id);
+
+        // Delete files
+        if ($brand->thumbnail) {
+            Storage::disk('public')->delete($brand->thumbnail);
+        }
+        if ($brand->image) {
+            Storage::disk('public')->delete($brand->image);
+        }
+        if ($brand->menu_pdf) {
+            Storage::disk('public')->delete($brand->menu_pdf);
+        }
+
+        $brand->delete();
+
+        return redirect()->route('web-profile.brands.index')
+            ->with('success', 'Brand deleted successfully');
+    }
+
+    /**
+     * API: Get all brands
+     */
+    public function apiBrands()
+    {
+        $brands = WebProfileBrand::orderBy('title')
+            ->get()
+            ->map(function ($brand) {
+                return [
+                    'id' => $brand->id,
+                    'title' => $brand->title,
+                    'slug' => $brand->slug,
+                    'link_menu' => $brand->link_menu,
+                    'menu_pdf_url' => $brand->menu_pdf_url,
+                    'thumbnail_url' => $brand->thumbnail_url,
+                    'image_url' => $brand->image_url,
+                    'content' => $brand->content,
+                ];
+            });
+
+        return response()->json($brands);
     }
 }
 

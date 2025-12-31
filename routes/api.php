@@ -828,6 +828,7 @@ Route::prefix('web-profile')->group(function () {
     Route::get('/menu', [\App\Http\Controllers\WebProfileController::class, 'apiMenu'])->name('api.web-profile.menu');
     Route::get('/gallery', [\App\Http\Controllers\WebProfileController::class, 'apiGallery'])->name('api.web-profile.gallery');
     Route::get('/banners', [\App\Http\Controllers\WebProfileController::class, 'apiBanners'])->name('api.web-profile.banners');
+    Route::get('/brands', [\App\Http\Controllers\WebProfileController::class, 'apiBrands'])->name('api.web-profile.brands');
     Route::get('/settings', [\App\Http\Controllers\WebProfileController::class, 'apiSettings'])->name('api.web-profile.settings');
     Route::post('/contact', [\App\Http\Controllers\WebProfileController::class, 'apiContact'])->name('api.web-profile.contact');
 });
