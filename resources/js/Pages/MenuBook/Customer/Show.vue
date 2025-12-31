@@ -35,44 +35,9 @@
     <!-- Book Viewer Container -->
     <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
       <div v-if="pages.length > 0" class="flex flex-col items-center">
-        <!-- Zoom Controls -->
-        <div 
-          class="fixed z-50 select-none"
-          :style="{ top: controlsPosition.top + 'px', left: controlsPosition.left + 'px', transform: 'translate(-50%, 0)' }"
-          @mousedown="startDrag"
-          @touchstart="startDrag"
-        >
-          <div 
-            class="bg-gray-800/90 backdrop-blur-xl rounded-full shadow-2xl p-3 flex items-center gap-4 border border-yellow-500/30"
-            :class="{ 'cursor-grabbing': isDragging, 'cursor-grab': !isDragging }"
-          >
-            <button
-              @click="zoomOut"
-              class="w-12 h-12 rounded-full bg-gray-700/80 hover:bg-gray-600/80 text-white flex items-center justify-center transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="zoomLevel <= 0.5"
-            >
-              <i class="fa-solid fa-minus"></i>
-            </button>
-            <span class="text-white font-semibold min-w-[70px] text-center text-lg">{{ Math.round(zoomLevel * 100) }}%</span>
-            <button
-              @click="zoomIn"
-              class="w-12 h-12 rounded-full bg-gray-700/80 hover:bg-gray-600/80 text-white flex items-center justify-center transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="zoomLevel >= 2"
-            >
-              <i class="fa-solid fa-plus"></i>
-            </button>
-            <button
-              @click="resetZoom"
-              class="w-12 h-12 rounded-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-black flex items-center justify-center transition-all duration-300 hover:scale-110 ml-2 shadow-lg shadow-yellow-500/30"
-            >
-              <i class="fa-solid fa-arrows-rotate"></i>
-            </button>
-          </div>
-        </div>
-
         <!-- Book Pages Viewer -->
         <div class="flex justify-center items-center min-h-[600px] mt-24">
-          <div class="relative" :style="{ transform: `scale(${zoomLevel})`, transformOrigin: 'center', transition: 'transform 0.3s ease' }">
+          <div class="relative">
             <!-- Desktop: 2 pages view -->
             <div v-if="!isMobile" class="book-container relative" style="perspective: 3000px;">
               <div class="flex gap-6 items-center relative">
@@ -185,35 +150,6 @@
             <i class="fa-solid fa-chevron-right text-2xl"></i>
           </button>
         </div>
-
-        <!-- Page Thumbnails -->
-        <div class="mt-12 bg-gray-800/90 backdrop-blur-xl rounded-3xl shadow-2xl p-6 border border-yellow-500/30 w-full max-w-6xl">
-          <h3 class="text-xl font-bold text-white mb-6 text-center">Page Navigation</h3>
-          <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-            <div
-              v-for="(page, index) in pages"
-              :key="page.id"
-              class="relative group"
-              :class="{ 'ring-4 ring-yellow-500 rounded-xl': index === currentPageIndex || (index === currentPageIndex + 1 && !isMobile) }"
-            >
-              <div
-                @click="goToPage(index)"
-                class="aspect-[3/4] rounded-xl overflow-hidden shadow-lg group-hover:shadow-2xl transition-all duration-300 transform group-hover:scale-110 bg-white cursor-pointer border-2 border-transparent group-hover:border-yellow-500"
-              >
-                <img
-                  v-if="getImageUrl(page.image)"
-                  :src="getImageUrl(page.image)"
-                  :alt="`Page ${page.page_order}`"
-                  class="w-full h-full object-cover"
-                  @error="(e) => { e.target.style.display = 'none'; }"
-                />
-              </div>
-              <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent text-white text-xs text-center py-2 rounded-b-xl">
-                {{ page.page_order }}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- Empty State -->
@@ -244,19 +180,14 @@ const props = defineProps({
   outlet: Object,
 });
 
-const zoomLevel = ref(1);
 const currentPageIndex = ref(0);
 const isFlipping = ref(false);
 const flipDirection = ref('');
 const isMobile = ref(false);
 
-// Draggable controls
-const isDragging = ref(false);
-const dragStart = ref({ x: 0, y: 0 });
-const controlsPosition = ref({ top: 80, left: window.innerWidth / 2 });
-
 const totalPages = computed(() => {
-  return Math.ceil(props.pages.length / 2);
+  // Mobile: 1 page per view, Desktop: 2 pages per view
+  return isMobile.value ? props.pages.length : Math.ceil(props.pages.length / 2);
 });
 
 const currentLeftPage = computed(() => {
@@ -274,23 +205,21 @@ const currentPage = computed(() => {
 });
 
 const checkMobile = () => {
+  const wasMobile = isMobile.value;
   isMobile.value = window.innerWidth < 768;
-};
-
-const zoomIn = () => {
-  if (zoomLevel.value < 2) {
-    zoomLevel.value = Math.min(zoomLevel.value + 0.1, 2);
+  
+  // Adjust currentPageIndex when switching between mobile and desktop
+  if (wasMobile !== isMobile.value) {
+    if (isMobile.value) {
+      // Switching to mobile: convert from desktop index (pairs) to mobile index (single pages)
+      // Desktop index 0 = pages 0-1, so show page 0 (first page of the pair)
+      currentPageIndex.value = currentPageIndex.value * 2;
+    } else {
+      // Switching to desktop: convert from mobile index (single pages) to desktop index (pairs)
+      // Mobile index 5 = page 5, so show pair starting at index 2 (pages 4-5)
+      currentPageIndex.value = Math.floor(currentPageIndex.value / 2);
+    }
   }
-};
-
-const zoomOut = () => {
-  if (zoomLevel.value > 0.5) {
-    zoomLevel.value = Math.max(zoomLevel.value - 0.1, 0.5);
-  }
-};
-
-const resetZoom = () => {
-  zoomLevel.value = 1;
 };
 
 const nextPage = () => {
@@ -358,30 +287,20 @@ const goBack = () => {
 const handleKeyPress = (e) => {
   if (e.key === 'ArrowLeft') previousPage();
   if (e.key === 'ArrowRight') nextPage();
-  if (e.key === '+' || e.key === '=') zoomIn();
-  if (e.key === '-') zoomOut();
 };
 
-// Touch/swipe for mobile (only for page navigation, not controls)
+// Touch/swipe for mobile
 let touchStartX = 0;
 let touchEndX = 0;
 let touchStartY = 0;
 let touchEndY = 0;
 
 const handleTouchStart = (e) => {
-  // Don't handle swipe if touching controls
-  if (e.target.closest('.cursor-move')) {
-    return;
-  }
   touchStartX = e.changedTouches[0].screenX;
   touchStartY = e.changedTouches[0].screenY;
 };
 
 const handleTouchEnd = (e) => {
-  // Don't handle swipe if touching controls
-  if (e.target.closest('.cursor-move')) {
-    return;
-  }
   touchEndX = e.changedTouches[0].screenX;
   touchEndY = e.changedTouches[0].screenY;
   handleSwipe();
@@ -402,120 +321,17 @@ const handleSwipe = () => {
   }
 };
 
-// Draggable controls functions
-const startDrag = (e) => {
-  // Don't start drag if clicking on a button or its icon
-  if (e.target.closest('button') || e.target.tagName === 'I' || e.target.tagName === 'SPAN') {
-    return;
-  }
-  
-  isDragging.value = true;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  
-  // Since we use translate(-50%, 0), the actual left position is centered
-  // So we just need to track the offset from the click point
-  dragStart.value = {
-    x: clientX - controlsPosition.value.left,
-    y: clientY - controlsPosition.value.top
-  };
-  
-  e.preventDefault();
-  e.stopPropagation();
-};
-
-const onDrag = (e) => {
-  if (!isDragging.value) return;
-  
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  
-  // Calculate new position (accounting for translate -50%)
-  let newLeft = clientX;
-  let newTop = clientY - dragStart.value.y;
-  
-  // Constrain to viewport (accounting for controls width ~250px)
-  const controlsWidth = 250;
-  const controlsHeight = 80;
-  const maxLeft = window.innerWidth - (controlsWidth / 2);
-  const minLeft = controlsWidth / 2;
-  const maxTop = window.innerHeight - controlsHeight;
-  
-  newLeft = Math.max(minLeft, Math.min(newLeft, maxLeft));
-  newTop = Math.max(20, Math.min(newTop, maxTop));
-  
-  controlsPosition.value = {
-    top: newTop,
-    left: newLeft
-  };
-  
-  e.preventDefault();
-};
-
-const stopDrag = () => {
-  if (isDragging.value) {
-    isDragging.value = false;
-    // Save to localStorage when drag ends
-    localStorage.setItem('menuBookControlsPosition', JSON.stringify(controlsPosition.value));
-  }
-};
-
 onMounted(() => {
   checkMobile();
   
-  // Load saved controls position
-  const savedPosition = localStorage.getItem('menuBookControlsPosition');
-  if (savedPosition) {
-    try {
-      const pos = JSON.parse(savedPosition);
-      // Validate position is still within viewport
-      const controlsWidth = 250;
-      const minLeft = controlsWidth / 2;
-      const maxLeft = window.innerWidth - (controlsWidth / 2);
-      if (pos.top >= 20 && pos.top <= window.innerHeight - 80 && 
-          pos.left >= minLeft && pos.left <= maxLeft) {
-        controlsPosition.value = pos;
-      } else {
-        // Reset to default if saved position is invalid
-        controlsPosition.value = {
-          top: 80,
-          left: window.innerWidth / 2
-        };
-      }
-    } catch (e) {
-      console.error('Error loading controls position:', e);
-      controlsPosition.value = {
-        top: 80,
-        left: window.innerWidth / 2
-      };
-    }
-  } else {
-    // Default position: center top
-    controlsPosition.value = {
-      top: 80,
-      left: window.innerWidth / 2
-    };
-  }
-  
   const handleResize = () => {
     checkMobile();
-    // Adjust position on resize
-    const controlsWidth = 250;
-    const minLeft = controlsWidth / 2;
-    const maxLeft = window.innerWidth - (controlsWidth / 2);
-    const maxTop = window.innerHeight - 80;
-    controlsPosition.value.left = Math.max(minLeft, Math.min(controlsPosition.value.left, maxLeft));
-    controlsPosition.value.top = Math.max(20, Math.min(controlsPosition.value.top, maxTop));
   };
   
   window.addEventListener('resize', handleResize);
   window.addEventListener('keydown', handleKeyPress);
   window.addEventListener('touchstart', handleTouchStart);
   window.addEventListener('touchend', handleTouchEnd);
-  window.addEventListener('mousemove', onDrag);
-  window.addEventListener('touchmove', onDrag);
-  window.addEventListener('mouseup', stopDrag);
-  window.addEventListener('touchend', stopDrag);
 });
 
 onUnmounted(() => {
@@ -523,9 +339,6 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyPress);
   window.removeEventListener('touchstart', handleTouchStart);
   window.removeEventListener('touchend', handleTouchEnd);
-  window.removeEventListener('mousemove', onDrag);
-  window.removeEventListener('touchmove', onDrag);
-  window.removeEventListener('mouseup', stopDrag);
 });
 </script>
 
