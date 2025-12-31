@@ -1695,6 +1695,7 @@ class OutletInternalUseWasteController extends Controller
                 ['value' => 'marketing', 'label' => 'Marketing'],
                 ['value' => 'non_commodity', 'label' => 'Non Commodity'],
                 ['value' => 'guest_supplies', 'label' => 'Guest Supplies'],
+                ['value' => 'wrong_maker', 'label' => 'Wrong Maker'],
                 ['value' => 'training', 'label' => 'Training'],
             ];
             
@@ -1926,6 +1927,8 @@ class OutletInternalUseWasteController extends Controller
             ['value' => 'marketing', 'label' => 'Marketing'],
             ['value' => 'non_commodity', 'label' => 'Non Commodity'],
             ['value' => 'guest_supplies', 'label' => 'Guest Supplies'],
+            ['value' => 'wrong_maker', 'label' => 'Wrong Maker'],
+            ['value' => 'training', 'label' => 'Training'],
         ];
         
         // Filter warehouse outlets based on selected outlet or user's outlet
