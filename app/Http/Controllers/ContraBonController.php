@@ -1763,9 +1763,14 @@ class ContraBonController extends Controller
                 'sample_ids' => array_slice($usedGRItemIds, 0, 10)
             ]);
 
-            // Get all PO with GR in one query
+            // Pagination parameters
+            $perPage = $request->get('per_page', 50); // Default 50 items per page
+            $page = $request->get('page', 1);
+            $search = $request->get('search', '');
+
+            // Get all PO with GR in one query with pagination
             // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
-            $poWithGR = \DB::table('purchase_order_foods as po')
+            $poWithGRQuery = \DB::table('purchase_order_foods as po')
                 ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
                 ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
                 ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
@@ -1786,9 +1791,49 @@ class ContraBonController extends Controller
                     'gr_receiver.nama_lengkap as gr_receiver_name',
                     's.id as supplier_id',
                     's.name as supplier_name'
-                )
-                ->orderByDesc('gr.receive_date')
-                ->limit(500)
+                );
+            
+            // Apply search filter if provided
+            if (!empty($search)) {
+                $searchTerm = '%' . $search . '%';
+                
+                // Get PO IDs that match search criteria (including outlet names)
+                $matchingPoIds = \DB::table('purchase_order_foods as po')
+                    ->leftJoin('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
+                    ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
+                    ->leftJoin('purchase_order_food_items as poi', 'po.id', '=', 'poi.purchase_order_food_id')
+                    ->leftJoin('food_floor_orders as fo', function($join) {
+                        $join->on('poi.ro_id', '=', 'fo.id')
+                             ->where('po.source_type', '=', 'ro_supplier');
+                    })
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->where(function($query) use ($searchTerm) {
+                        $query->where('po.number', 'like', $searchTerm)
+                              ->orWhere('gr.gr_number', 'like', $searchTerm)
+                              ->orWhere('s.name', 'like', $searchTerm)
+                              ->orWhere('o.nama_outlet', 'like', $searchTerm);
+                    })
+                    ->distinct()
+                    ->pluck('po.id')
+                    ->toArray();
+                
+                if (!empty($matchingPoIds)) {
+                    $poWithGRQuery->whereIn('po.id', $matchingPoIds);
+                } else {
+                    // No matches found, return empty result
+                    $poWithGRQuery->whereRaw('1 = 0');
+                }
+            }
+            
+            $poWithGRQuery->orderByDesc('gr.receive_date');
+            
+            // Get total count for pagination
+            $total = $poWithGRQuery->count();
+            
+            // Apply pagination
+            $poWithGR = $poWithGRQuery
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage)
                 ->get();
 
             if ($poWithGR->isEmpty()) {
@@ -1965,7 +2010,18 @@ class ContraBonController extends Controller
                 ];
             }
             
-            return response()->json($result);
+            // Return with pagination metadata
+            return response()->json([
+                'data' => $result,
+                'pagination' => [
+                    'current_page' => (int)$page,
+                    'per_page' => (int)$perPage,
+                    'total' => $total,
+                    'last_page' => (int)ceil($total / $perPage),
+                    'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                    'to' => min($page * $perPage, $total),
+                ]
+            ]);
         } catch (\Exception $e) {
             \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());

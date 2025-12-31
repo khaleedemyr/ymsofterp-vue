@@ -16,6 +16,15 @@ const isEdit = computed(() => !!props.contraBon);
 
 const poWithGRList = ref([]);
 const loadingPOGR = ref(false);
+const loadingMorePOGR = ref(false);
+const poGRPagination = ref({
+  current_page: 1,
+  per_page: 50,
+  total: 0,
+  last_page: 1,
+  from: 0,
+  to: 0,
+});
 const supplierDetail = ref(null);
 const fileImage = ref(null);
 const fileImagePreview = ref(null);
@@ -233,20 +242,26 @@ onMounted(async () => {
   }
 });
 
-// Filter functions for modal search
+// Filter functions for modal search - now searches on backend
+let searchTimeout = null;
 function filterPOList() {
-  if (!poSearchQuery.value.trim()) {
-    filteredPOList.value = poWithGRList.value;
-    return;
+  // Clear previous timeout
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
   }
   
-  const query = poSearchQuery.value.toLowerCase();
-  filteredPOList.value = poWithGRList.value.filter(p => 
-    p.po_number.toLowerCase().includes(query) ||
-    p.gr_number.toLowerCase().includes(query) ||
-    p.supplier_name.toLowerCase().includes(query) ||
-    (p.outlet_names && p.outlet_names.some(outlet => outlet.toLowerCase().includes(query)))
-  );
+  // Show loading immediately if there's a query
+  if (poSearchQuery.value.trim()) {
+    loadingPOGR.value = true;
+  }
+  
+  // Debounce search - wait 500ms after user stops typing
+  searchTimeout = setTimeout(async () => {
+    const query = poSearchQuery.value.trim();
+    
+    // Reset to page 1 when searching
+    await loadPOGRList(1, false, query);
+  }, 500);
 }
 
 function filterRetailFoodList() {
@@ -284,22 +299,63 @@ async function openPOListModal() {
   showPOListModal.value = true;
   poSearchQuery.value = '';
   
-  // Lazy load: hanya load data jika belum pernah di-load
-  if (poWithGRList.value.length === 0) {
+  // Reset and load first page
+  await loadPOGRList(1, false, '');
+}
+
+async function loadPOGRList(page = 1, append = false, searchQuery = '') {
+  if (append) {
+    loadingMorePOGR.value = true;
+  } else {
     loadingPOGR.value = true;
-    try {
-      const response = await axios.get('/api/contra-bon/po-with-approved-gr');
-      poWithGRList.value = response.data || [];
-      filteredPOList.value = poWithGRList.value;
-    } catch (e) {
-      Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + (e.response?.data?.error || e.message), 'error');
+  }
+  
+  try {
+    const params = {
+      page: page,
+      per_page: 50,
+    };
+    
+    // Add search parameter if provided
+    if (searchQuery && searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+    
+    const response = await axios.get('/api/contra-bon/po-with-approved-gr', { params });
+    
+    const data = response.data?.data || response.data || [];
+    const pagination = response.data?.pagination || null;
+    
+    if (append && !searchQuery) {
+      // Append to existing list only if not searching
+      poWithGRList.value = [...poWithGRList.value, ...data];
+    } else {
+      // Replace list (new search or first load)
+      poWithGRList.value = data;
+    }
+    
+    filteredPOList.value = poWithGRList.value;
+    
+    // Update pagination info
+    if (pagination) {
+      poGRPagination.value = pagination;
+    }
+  } catch (e) {
+    Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + (e.response?.data?.error || e.message), 'error');
+    if (!append) {
       poWithGRList.value = [];
       filteredPOList.value = [];
-    } finally {
-      loadingPOGR.value = false;
     }
-  } else {
-    filteredPOList.value = poWithGRList.value;
+  } finally {
+    loadingPOGR.value = false;
+    loadingMorePOGR.value = false;
+  }
+}
+
+async function loadMorePOGR() {
+  if (poGRPagination.value.current_page < poGRPagination.value.last_page) {
+    // Pass current search query when loading more
+    await loadPOGRList(poGRPagination.value.current_page + 1, true, poSearchQuery.value.trim());
   }
 }
 
@@ -1820,6 +1876,25 @@ function getUnitName(item) {
                 </div>
               </div>
             </div>
+          </div>
+          <!-- Load More Button -->
+          <div v-if="!loadingPOGR && poGRPagination.current_page < poGRPagination.last_page" class="p-4 border-t text-center">
+            <button 
+              @click="loadMorePOGR" 
+              :disabled="loadingMorePOGR"
+              class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span v-if="loadingMorePOGR">
+                <i class="fa fa-spinner fa-spin mr-2"></i>Memuat...
+              </span>
+              <span v-else>
+                Muat Lebih Banyak ({{ poGRPagination.current_page }} / {{ poGRPagination.last_page }})
+              </span>
+            </button>
+            <p class="text-sm text-gray-500 mt-2">
+              Menampilkan {{ poGRPagination.from }}-{{ poGRPagination.to }} dari {{ poGRPagination.total }} data
+              <span v-if="poSearchQuery.trim()" class="text-blue-600">(hasil pencarian)</span>
+            </p>
           </div>
         </div>
       </div>
