@@ -820,3 +820,15 @@ Route::middleware(['auth'])->group(function () {
 //     Route::get('/insight', [\App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('api.ai.insight');
 // });
 
+// Web Profile API Routes (Public - for frontend website)
+Route::prefix('web-profile')->group(function () {
+    Route::get('/pages', [\App\Http\Controllers\WebProfileController::class, 'apiPages'])->name('api.web-profile.pages');
+    Route::get('/pages/{slug}', [\App\Http\Controllers\WebProfileController::class, 'apiPage'])->name('api.web-profile.page');
+    Route::get('/pages/{id}/sections', [\App\Http\Controllers\WebProfileController::class, 'apiPageSections'])->name('api.web-profile.page-sections');
+    Route::get('/menu', [\App\Http\Controllers\WebProfileController::class, 'apiMenu'])->name('api.web-profile.menu');
+    Route::get('/gallery', [\App\Http\Controllers\WebProfileController::class, 'apiGallery'])->name('api.web-profile.gallery');
+    Route::get('/banners', [\App\Http\Controllers\WebProfileController::class, 'apiBanners'])->name('api.web-profile.banners');
+    Route::get('/settings', [\App\Http\Controllers\WebProfileController::class, 'apiSettings'])->name('api.web-profile.settings');
+    Route::post('/contact', [\App\Http\Controllers\WebProfileController::class, 'apiContact'])->name('api.web-profile.contact');
+});
+

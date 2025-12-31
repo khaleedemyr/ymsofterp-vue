@@ -2073,6 +2073,19 @@ Route::middleware(['auth'])->group(function () {
     Route::get('manual-point/search-members', [\App\Http\Controllers\ManualPointController::class, 'searchMembers'])->name('manual-point.search-members');
     Route::post('manual-point', [\App\Http\Controllers\ManualPointController::class, 'store'])->name('manual-point.store');
     Route::get('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'show'])->name('manual-point.show');
+    
+    // Web Profile Routes
+    Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);
+    
+    // Web Profile Banners Routes
+    Route::prefix('web-profile/banners')->name('web-profile.banners.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'bannersIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'bannersCreate'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'bannersStore'])->name('store');
+        Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'bannersEdit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'bannersUpdate'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'bannersDestroy'])->name('destroy');
+    });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');
