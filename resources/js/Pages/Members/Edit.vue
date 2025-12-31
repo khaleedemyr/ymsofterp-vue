@@ -5,44 +5,56 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   member: Object,
+  occupations: {
+    type: Array,
+    default: () => []
+  }
 });
 
 const form = ref({
-  costumers_id: '',
-  nik: '',
-  name: '',
-  nama_panggilan: '',
+  member_id: '',
+  nama_lengkap: '',
   email: '',
-  alamat: '',
-  telepon: '',
+  mobile_phone: '',
   tanggal_lahir: '',
   jenis_kelamin: '',
-  pekerjaan: '',
-  valid_until: '',
-  password2: '',
-  android_password: '',
+  pekerjaan_id: '',
+  password: '',
   pin: '',
-  exclusive_member: 'N',
 });
 
 const errors = ref({});
 const isSubmitting = ref(false);
 
 onMounted(() => {
-  // Populate form with member data
-  Object.keys(form.value).forEach(key => {
-    if (props.member[key] !== null && props.member[key] !== undefined) {
-      if (key.includes('tanggal') || key.includes('_at')) {
-        // Handle date fields
-        const date = new Date(props.member[key]);
-        if (!isNaN(date.getTime())) {
-          form.value[key] = date.toISOString().split('T')[0];
-        }
+  // Populate form with member data - map old field names to new ones
+  if (props.member) {
+    form.value.member_id = props.member.member_id || props.member.costumers_id || '';
+    form.value.nama_lengkap = props.member.nama_lengkap || props.member.name || '';
+    form.value.email = props.member.email || '';
+    form.value.mobile_phone = props.member.mobile_phone || props.member.telepon || '';
+    form.value.pekerjaan_id = props.member.pekerjaan_id || '';
+    form.value.pin = props.member.pin || '';
+    
+    // Handle jenis_kelamin - convert from old format (1,2) to new format (L,P)
+    if (props.member.jenis_kelamin) {
+      if (props.member.jenis_kelamin === '1' || props.member.jenis_kelamin === 'L') {
+        form.value.jenis_kelamin = 'L';
+      } else if (props.member.jenis_kelamin === '2' || props.member.jenis_kelamin === 'P') {
+        form.value.jenis_kelamin = 'P';
       } else {
-        form.value[key] = props.member[key];
+        form.value.jenis_kelamin = props.member.jenis_kelamin;
       }
     }
-  });
+    
+    // Handle tanggal_lahir
+    if (props.member.tanggal_lahir) {
+      const date = new Date(props.member.tanggal_lahir);
+      if (!isNaN(date.getTime())) {
+        form.value.tanggal_lahir = date.toISOString().split('T')[0];
+      }
+    }
+  }
 });
 
 function submit() {
@@ -87,25 +99,13 @@ function cancel() {
                 ID Member <span class="text-red-500">*</span>
               </label>
               <input
-                v-model="form.costumers_id"
+                v-model="form.member_id"
                 type="text"
                 class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                :class="{ 'border-red-500': errors.costumers_id }"
+                :class="{ 'border-red-500': errors.member_id }"
                 placeholder="Masukkan ID Member"
               />
-              <p v-if="errors.costumers_id" class="text-red-500 text-sm mt-1">{{ errors.costumers_id }}</p>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                NIK
-              </label>
-              <input
-                v-model="form.nik"
-                type="text"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                placeholder="Masukkan NIK (opsional)"
-              />
+              <p v-if="errors.member_id" class="text-red-500 text-sm mt-1">{{ errors.member_id }}</p>
             </div>
 
             <div>
@@ -113,25 +113,13 @@ function cancel() {
                 Nama Lengkap <span class="text-red-500">*</span>
               </label>
               <input
-                v-model="form.name"
+                v-model="form.nama_lengkap"
                 type="text"
                 class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                :class="{ 'border-red-500': errors.name }"
+                :class="{ 'border-red-500': errors.nama_lengkap }"
                 placeholder="Masukkan nama lengkap"
               />
-              <p v-if="errors.name" class="text-red-500 text-sm mt-1">{{ errors.name }}</p>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Nama Panggilan
-              </label>
-              <input
-                v-model="form.nama_panggilan"
-                type="text"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                placeholder="Masukkan nama panggilan"
-              />
+              <p v-if="errors.nama_lengkap" class="text-red-500 text-sm mt-1">{{ errors.nama_lengkap }}</p>
             </div>
 
             <div>
@@ -150,14 +138,16 @@ function cancel() {
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">
-                Telepon
+                Nomor Telepon
               </label>
               <input
-                v-model="form.telepon"
+                v-model="form.mobile_phone"
                 type="text"
                 class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
+                :class="{ 'border-red-500': errors.mobile_phone }"
                 placeholder="Masukkan nomor telepon"
               />
+              <p v-if="errors.mobile_phone" class="text-red-500 text-sm mt-1">{{ errors.mobile_phone }}</p>
             </div>
 
             <div>
@@ -180,8 +170,8 @@ function cancel() {
                 class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
               >
                 <option value="">Pilih Jenis Kelamin</option>
-                <option value="1">Laki-laki</option>
-                <option value="2">Perempuan</option>
+                <option value="L">Laki-laki</option>
+                <option value="P">Perempuan</option>
               </select>
             </div>
 
@@ -189,36 +179,17 @@ function cancel() {
               <label class="block text-sm font-medium text-gray-700 mb-2">
                 Pekerjaan
               </label>
-              <input
-                v-model="form.pekerjaan"
-                type="text"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                placeholder="Masukkan pekerjaan"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Valid Until
-              </label>
-              <input
-                v-model="form.valid_until"
-                type="date"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Member Eksklusif
-              </label>
               <select
-                v-model="form.exclusive_member"
+                v-model="form.pekerjaan_id"
                 class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
+                :class="{ 'border-red-500': errors.pekerjaan_id }"
               >
-                <option value="N">Tidak</option>
-                <option value="Y">Ya</option>
+                <option value="">Pilih Pekerjaan (opsional)</option>
+                <option v-for="occupation in occupations" :key="occupation.id" :value="occupation.id">
+                  {{ occupation.name }}
+                </option>
               </select>
+              <p v-if="errors.pekerjaan_id" class="text-red-500 text-sm mt-1">{{ errors.pekerjaan_id }}</p>
             </div>
           </div>
 
@@ -231,23 +202,12 @@ function cancel() {
                   Password
                 </label>
                 <input
-                  v-model="form.password2"
+                  v-model="form.password"
                   type="password"
                   class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                  placeholder="Masukkan password"
+                  placeholder="Kosongkan jika tidak ingin mengubah password"
                 />
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                  Android Password
-                </label>
-                <input
-                  v-model="form.android_password"
-                  type="password"
-                  class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                  placeholder="Masukkan android password"
-                />
+                <p class="text-xs text-gray-500 mt-1">Kosongkan jika tidak ingin mengubah password</p>
               </div>
 
               <div>
@@ -262,24 +222,6 @@ function cancel() {
                   placeholder="Masukkan PIN"
                 />
               </div>
-
-
-            </div>
-          </div>
-
-          <!-- Address -->
-          <div class="border-t pt-6">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Alamat</h3>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
-                Alamat Lengkap
-              </label>
-              <textarea
-                v-model="form.alamat"
-                rows="3"
-                class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
-                placeholder="Masukkan alamat lengkap"
-              ></textarea>
             </div>
           </div>
 

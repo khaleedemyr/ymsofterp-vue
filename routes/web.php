@@ -2042,6 +2042,11 @@ Route::middleware(['auth'])->group(function () {
 
 // Member Routes
 Route::middleware(['auth'])->group(function () {
+    // Bind member parameter to MemberAppsMember model
+    Route::bind('member', function ($value) {
+        return \App\Models\MemberAppsMember::findOrFail($value);
+    });
+    
     Route::resource('members', MemberController::class);
     Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
                     Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
@@ -2070,6 +2075,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'show'])->name('manual-point.show');
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
+                Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');
     
     // Push Notification Routes
     Route::get('push-notification', [\App\Http\Controllers\PushNotificationController::class, 'index'])->name('push-notification.index');

@@ -100,18 +100,37 @@ function getGrowthColor(growthRate) {
       </div>
     </div>
 
-    <!-- Exclusive Members -->
-    <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-pink-500">
-      <div class="flex items-center justify-between">
+    <!-- Tier Breakdown -->
+    <div class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-indigo-500">
+      <div class="flex items-center justify-between mb-3">
         <div>
-          <p class="text-sm font-medium text-gray-600">Member Eksklusif</p>
-          <p class="text-2xl font-bold text-gray-900">{{ formatNumber(stats.exclusiveMembers) }}</p>
-          <p class="text-xs text-gray-500 mt-1">
-            {{ stats.totalMembers > 0 ? Math.round((stats.exclusiveMembers / stats.totalMembers) * 100) : 0 }}% dari total
-          </p>
+          <p class="text-sm font-medium text-gray-600">Breakdown Tier</p>
         </div>
-        <div class="bg-pink-100 p-3 rounded-lg">
-          <i class="fa-solid fa-crown text-pink-600 text-xl"></i>
+        <div class="bg-indigo-100 p-3 rounded-lg">
+          <i class="fa-solid fa-layer-group text-indigo-600 text-xl"></i>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-purple-500"></div>
+            <span class="text-sm text-gray-700">Elite</span>
+          </div>
+          <span class="text-sm font-bold text-gray-900">{{ formatNumber(stats.tierBreakdown?.elite || 0) }}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+            <span class="text-sm text-gray-700">Loyal</span>
+          </div>
+          <span class="text-sm font-bold text-gray-900">{{ formatNumber(stats.tierBreakdown?.loyal || 0) }}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-gray-400"></div>
+            <span class="text-sm text-gray-700">Silver</span>
+          </div>
+          <span class="text-sm font-bold text-gray-900">{{ formatNumber(stats.tierBreakdown?.silver || 0) }}</span>
         </div>
       </div>
     </div>

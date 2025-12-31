@@ -45,6 +45,17 @@ const preferencesSummary = ref({
 const loadingPreferences = ref(false);
 const expandedPreferences = ref(new Set()); // Track which preferences are expanded
 
+// Voucher timeline modal state
+const showVoucherTimelineModal = ref(false);
+const voucherTimeline = ref([]);
+const voucherTimelineSummary = ref({
+  total_owned: 0,
+  total_active: 0,
+  total_used: 0,
+  total_purchased: 0
+});
+const loadingVoucherTimeline = ref(false);
+
 
 
 const debouncedSearch = debounce(() => {
@@ -79,10 +90,12 @@ function openShow(member) {
 
 
 async function toggleStatus(member) {
-  const action = member.status_aktif === 'Y' ? 'nonaktifkan' : 'aktifkan';
+  // Support both old format (status_aktif: '1'/'0') and new format (is_active: true/false)
+  const isActive = member.status_aktif === '1' || member.status_aktif === 1 || member.is_active === true;
+  const action = isActive ? 'nonaktifkan' : 'aktifkan';
   const result = await Swal.fire({
     title: `${action.charAt(0).toUpperCase() + action.slice(1)} Member?`,
-    text: `Yakin ingin ${action} member "${member.name}"?`,
+    text: `Yakin ingin ${action} member "${member.name || member.nama_lengkap}"?`,
     icon: 'question',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
@@ -217,6 +230,45 @@ function isTransactionExpanded(transactionId) {
   return expandedTransactions.value.has(transactionId);
 }
 
+async function viewVoucherTimeline(member) {
+  selectedMember.value = member;
+  showVoucherTimelineModal.value = true;
+  loadingVoucherTimeline.value = true;
+  
+  try {
+    const response = await axios.get(`/api/members/${member.id}/voucher-timeline`);
+    
+    if (response.data.status === 'success') {
+      voucherTimeline.value = response.data.timeline || [];
+      voucherTimelineSummary.value = response.data.summary || {
+        total_owned: 0,
+        total_active: 0,
+        total_used: 0,
+        total_purchased: 0
+      };
+    } else {
+      Swal.fire('Error', response.data.message || 'Gagal mengambil data voucher timeline', 'error');
+    }
+  } catch (error) {
+    console.error('Error fetching voucher timeline:', error);
+    Swal.fire('Error', 'Gagal mengambil data voucher timeline', 'error');
+  } finally {
+    loadingVoucherTimeline.value = false;
+  }
+}
+
+function closeVoucherTimelineModal() {
+  showVoucherTimelineModal.value = false;
+  selectedMember.value = null;
+  voucherTimeline.value = [];
+  voucherTimelineSummary.value = {
+    total_owned: 0,
+    total_active: 0,
+    total_used: 0,
+    total_purchased: 0
+  };
+}
+
 async function viewPreferences(member) {
   selectedMember.value = member;
   showPreferencesModal.value = true;
@@ -305,7 +357,7 @@ function formatDate(dateString) {
 
 <template>
   <AppLayout title="Data Member">
-    <div class="max-w-7xl w-full mx-auto py-8 px-2">
+    <div class="w-full py-2 px-2">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-users text-purple-500"></i> Data Member
@@ -446,29 +498,56 @@ function formatDate(dateString) {
        </div>
 
       <!-- Table -->
-      <div class="bg-white rounded-2xl shadow-lg overflow-x-auto">
-        <table class="min-w-full divide-y divide-purple-200">
+      <div class="bg-white rounded-2xl shadow-lg overflow-x-auto w-full">
+        <table class="w-full divide-y divide-purple-200">
           <thead class="bg-purple-600 text-white">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">ID Member</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Email</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Telepon</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer" @click="changeSort('point_balance')">
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('member_id')">
+                ID Member
+                <i v-if="filters.sort === 'member_id'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('name')">
+                Nama
+                <i v-if="filters.sort === 'name'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('email')">
+                Email
+                <i v-if="filters.sort === 'email'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('mobile_phone')">
+                Telepon
+                <i v-if="filters.sort === 'mobile_phone'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('point_balance')">
                 Saldo Point
                 <i v-if="filters.sort === 'point_balance'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
-                <i v-else class="fa-solid fa-sort ml-1 text-gray-400"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Status</th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Eksklusif</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('spending_last_year')">
+                Spending Setahun Terakhir
+                <i v-if="filters.sort === 'spending_last_year'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('tier')">
+                Tier
+                <i v-if="filters.sort === 'tier'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('status_aktif')">
+                Status
+                <i v-if="filters.sort === 'status_aktif'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="member in members.data" :key="member.id" class="hover:bg-purple-50 transition">
               <td class="px-4 py-2 whitespace-nowrap font-mono text-sm">{{ member.costumers_id }}</td>
-              <td class="px-4 py-2 whitespace-nowrap">{{ member.nik }}</td>
               <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ member.name }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ member.email || '-' }}</td>
               <td class="px-4 py-2 whitespace-nowrap">{{ member.telepon || '-' }}</td>
@@ -485,6 +564,25 @@ function formatDate(dateString) {
                 </span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
+                <span class="font-semibold text-sm text-blue-700">
+                  {{ member.spending_last_year_formatted || 'Rp 0' }}
+                </span>
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap">
+                <span :class="[
+                  'font-semibold text-xs px-2 py-1 rounded-full uppercase',
+                  member.tier === 'platinum' 
+                    ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                    : member.tier === 'gold'
+                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                    : member.tier === 'silver'
+                    ? 'bg-gray-100 text-gray-800 border border-gray-300'
+                    : 'bg-blue-100 text-blue-800 border border-blue-300'
+                ]">
+                  {{ member.tier_formatted || 'Silver' }}
+                </span>
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap">
                 <div class="flex items-center">
                   <div :class="[
                     'w-3 h-3 rounded-full mr-2',
@@ -495,20 +593,6 @@ function formatDate(dateString) {
                     member.status_aktif === '1' ? 'text-green-700' : 'text-orange-700'
                   ]">
                     {{ member.status_aktif === '1' ? 'Aktif' : 'Nonaktif' }}
-                  </span>
-                </div>
-              </td>
-              <td class="px-4 py-2 whitespace-nowrap">
-                <div class="flex items-center">
-                  <div :class="[
-                    'w-3 h-3 rounded-full mr-2',
-                    member.exclusive_member === 'Y' ? 'bg-purple-500' : 'bg-gray-400'
-                  ]"></div>
-                  <span :class="[
-                    'text-sm font-medium',
-                    member.exclusive_member === 'Y' ? 'text-purple-700' : 'text-gray-600'
-                  ]">
-                    {{ member.exclusive_member === 'Y' ? 'Ya' : 'Tidak' }}
                   </span>
                 </div>
               </td>
@@ -524,6 +608,9 @@ function formatDate(dateString) {
                  </button>
                  <button @click="viewPreferences(member)" class="px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition" title="Menu Favorit">
                    <i class="fa-solid fa-heart"></i>
+                 </button>
+                 <button @click="viewVoucherTimeline(member)" class="px-2 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition" title="Voucher Timeline">
+                   <i class="fa-solid fa-ticket"></i>
                  </button>
                 <button @click="toggleStatus(member)" :class="[
                   'px-2 py-1 rounded transition',
@@ -978,6 +1065,313 @@ function formatDate(dateString) {
            <!-- Footer -->
            <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
              <button @click="closePreferencesModal" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition">
+               Tutup
+             </button>
+           </div>
+         </div>
+       </div>
+
+       <!-- Modal Voucher Timeline -->
+       <div v-if="showVoucherTimelineModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+         <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+           <!-- Header -->
+           <div class="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white p-6 rounded-t-2xl">
+             <div class="flex justify-between items-center">
+               <div>
+                 <h2 class="text-xl font-bold">Voucher Timeline</h2>
+                 <p class="text-indigo-200">{{ selectedMember?.name }} ({{ selectedMember?.costumers_id }})</p>
+               </div>
+               <button @click="closeVoucherTimelineModal" class="text-white hover:text-indigo-200 transition">
+                 <i class="fa-solid fa-times text-xl"></i>
+               </button>
+             </div>
+           </div>
+
+           <!-- Content -->
+           <div class="p-6">
+             <!-- Summary Cards -->
+             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+               <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-blue-100 rounded-lg">
+                     <i class="fa-solid fa-ticket text-blue-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-blue-600">Total Dimiliki</p>
+                     <p class="text-lg font-bold text-blue-800">{{ voucherTimelineSummary.total_owned }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-green-100 rounded-lg">
+                     <i class="fa-solid fa-check-circle text-green-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-green-600">Aktif</p>
+                     <p class="text-lg font-bold text-green-800">{{ voucherTimelineSummary.total_active }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-orange-100 rounded-lg">
+                     <i class="fa-solid fa-check-double text-orange-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-orange-600">Digunakan</p>
+                     <p class="text-lg font-bold text-orange-800">{{ voucherTimelineSummary.total_used }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-purple-50 rounded-xl p-4 border border-purple-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-purple-100 rounded-lg">
+                     <i class="fa-solid fa-shopping-cart text-purple-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-purple-600">Dibeli</p>
+                     <p class="text-lg font-bold text-purple-800">{{ voucherTimelineSummary.total_purchased }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Challenge & Reward Summary -->
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+               <div class="bg-teal-50 rounded-xl p-4 border border-teal-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-teal-100 rounded-lg">
+                     <i class="fa-solid fa-flag text-teal-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-teal-600">Challenge Dimulai</p>
+                     <p class="text-lg font-bold text-teal-800">{{ voucherTimelineSummary.total_challenges_started || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-emerald-100 rounded-lg">
+                     <i class="fa-solid fa-trophy text-emerald-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-emerald-600">Challenge Selesai</p>
+                     <p class="text-lg font-bold text-emerald-800">{{ voucherTimelineSummary.total_challenges_completed || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-amber-100 rounded-lg">
+                     <i class="fa-solid fa-gift text-amber-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-amber-600">Reward Diredeem</p>
+                     <p class="text-lg font-bold text-amber-800">{{ voucherTimelineSummary.total_rewards_redeemed || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-cyan-100 rounded-lg">
+                     <i class="fa-solid fa-chart-line text-cyan-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-cyan-600">Perubahan Tier</p>
+                     <p class="text-lg font-bold text-cyan-800">{{ voucherTimelineSummary.total_tier_changes || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Timeline -->
+             <div class="bg-gray-50 rounded-xl p-4">
+               <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                 <i class="fa-solid fa-clock-rotate-left text-indigo-600"></i>
+                 Timeline Voucher
+               </h3>
+               
+               <div v-if="loadingVoucherTimeline" class="text-center py-8">
+                 <i class="fa-solid fa-spinner fa-spin text-2xl text-indigo-600 mb-2"></i>
+                 <p class="text-gray-600">Memuat data voucher timeline...</p>
+               </div>
+
+               <div v-else-if="voucherTimeline.length === 0" class="text-center py-8">
+                 <i class="fa-solid fa-ticket text-4xl text-gray-400 mb-2"></i>
+                 <p class="text-gray-600">Belum ada data voucher</p>
+               </div>
+
+               <div v-else class="relative">
+                 <!-- Timeline Line -->
+                 <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-indigo-200"></div>
+                 
+                 <!-- Timeline Items -->
+                 <div class="space-y-6">
+                   <div v-for="(item, index) in voucherTimeline" :key="index" class="relative flex items-start gap-4">
+                     <!-- Timeline Dot -->
+                     <div :class="[
+                       'absolute left-6 w-4 h-4 rounded-full border-2 border-white z-10',
+                       item.type === 'owned' ? 'bg-blue-500' :
+                       item.type === 'purchased' ? 'bg-purple-500' :
+                       item.type === 'redeemed' ? 'bg-green-500' :
+                       item.type === 'challenge_start' ? 'bg-teal-500' :
+                       item.type === 'challenge_complete' ? 'bg-emerald-500' :
+                       item.type === 'challenge_claim' ? 'bg-yellow-500' :
+                       item.type === 'challenge_redeem' ? 'bg-orange-500' :
+                       item.type === 'reward_redeem' ? 'bg-amber-500' :
+                       item.type === 'tier_upgrade' ? 'bg-cyan-500' :
+                       item.type === 'tier_downgrade' ? 'bg-red-500' :
+                       'bg-gray-500'
+                     ]"></div>
+                     
+                     <!-- Content -->
+                     <div class="ml-12 flex-1 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                       <div class="p-4">
+                         <!-- Header -->
+                         <div class="flex items-start justify-between mb-2">
+                           <div class="flex-1">
+                             <div class="flex items-center gap-2 mb-1">
+                               <span :class="[
+                                 'px-2 py-1 rounded-full text-xs font-semibold',
+                                 item.type === 'owned' ? 'bg-blue-100 text-blue-800' :
+                                 item.type === 'purchased' ? 'bg-purple-100 text-purple-800' :
+                                 item.type === 'redeemed' ? 'bg-green-100 text-green-800' :
+                                 item.type === 'challenge_start' ? 'bg-teal-100 text-teal-800' :
+                                 item.type === 'challenge_complete' ? 'bg-emerald-100 text-emerald-800' :
+                                 item.type === 'challenge_claim' ? 'bg-yellow-100 text-yellow-800' :
+                                 item.type === 'challenge_redeem' ? 'bg-orange-100 text-orange-800' :
+                                 item.type === 'reward_redeem' ? 'bg-amber-100 text-amber-800' :
+                                 item.type === 'tier_upgrade' ? 'bg-cyan-100 text-cyan-800' :
+                                 item.type === 'tier_downgrade' ? 'bg-red-100 text-red-800' :
+                                 'bg-gray-100 text-gray-800'
+                               ]">
+                                 {{ item.title }}
+                               </span>
+                               <span v-if="item.status" :class="[
+                                 'px-2 py-1 rounded-full text-xs font-semibold',
+                                 item.status === 'active' ? 'bg-green-100 text-green-800' :
+                                 item.status === 'used' ? 'bg-gray-100 text-gray-800' :
+                                 item.status === 'started' ? 'bg-teal-100 text-teal-800' :
+                                 item.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                                 item.status === 'claimed' ? 'bg-yellow-100 text-yellow-800' :
+                                 item.status === 'redeemed' ? 'bg-orange-100 text-orange-800' :
+                                 'bg-yellow-100 text-yellow-800'
+                               ]">
+                                 {{ item.status === 'active' ? 'Aktif' : 
+                                    item.status === 'used' ? 'Digunakan' : 
+                                    item.status === 'started' ? 'Dimulai' :
+                                    item.status === 'completed' ? 'Selesai' :
+                                    item.status === 'claimed' ? 'Diklaim' :
+                                    item.status === 'redeemed' ? 'Diredeem' :
+                                    'Dibeli' }}
+                               </span>
+                               <span v-if="item.tier_change" :class="[
+                                 'px-2 py-1 rounded-full text-xs font-semibold',
+                                 item.type === 'tier_upgrade' ? 'bg-cyan-100 text-cyan-800' :
+                                 'bg-red-100 text-red-800'
+                               ]">
+                                 {{ item.tier_change }}
+                               </span>
+                             </div>
+                             <h4 class="text-lg font-bold text-gray-800">
+                               {{ item.voucher_name || item.challenge_name || item.reward_name || item.title }}
+                             </h4>
+                             <p class="text-sm text-gray-500 mt-1">{{ item.date_formatted }}</p>
+                           </div>
+                         </div>
+                         
+                         <!-- Info -->
+                         <div class="mt-3 space-y-2">
+                           <!-- Description -->
+                           <div v-if="item.description || item.challenge_description || item.reward_description" class="text-sm text-gray-600">
+                             {{ item.description || item.challenge_description || item.reward_description }}
+                           </div>
+                           
+                           <!-- Voucher Discount Info -->
+                           <div v-if="item.discount_info" class="flex flex-wrap gap-2 mt-2">
+                             <span class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs font-medium">
+                               {{ item.discount_info.type }}: {{ item.discount_info.value }}
+                             </span>
+                             <span v-if="item.discount_info.max" class="px-2 py-1 bg-gray-50 text-gray-700 rounded text-xs">
+                               {{ item.discount_info.max }}
+                             </span>
+                             <span v-if="item.discount_info.min_purchase" class="px-2 py-1 bg-gray-50 text-gray-700 rounded text-xs">
+                               {{ item.discount_info.min_purchase }}
+                             </span>
+                           </div>
+                           
+                           <!-- Challenge Reward Info -->
+                           <div v-if="item.reward_info" class="flex flex-wrap gap-2 mt-2">
+                             <span class="px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium">
+                               Reward: {{ item.reward_info.type }} - {{ item.reward_info.value }}
+                             </span>
+                           </div>
+                           
+                           <!-- Points Spent -->
+                           <div v-if="item.points_spent" class="flex items-center gap-2 text-sm text-purple-600 mt-2">
+                             <i class="fa-solid fa-coins"></i>
+                             <span>Menggunakan {{ item.points_spent_formatted }} point</span>
+                           </div>
+                           
+                           <!-- Points Required -->
+                           <div v-if="item.points_required" class="flex items-center gap-2 text-sm text-amber-600 mt-2">
+                             <i class="fa-solid fa-coins"></i>
+                             <span>Point yang dibutuhkan: {{ formatNumber(item.points_required) }}</span>
+                           </div>
+                           
+                           <!-- Serial Code -->
+                           <div v-if="item.serial_code" class="flex items-center gap-2 text-sm text-gray-600 mt-2">
+                             <i class="fa-solid fa-barcode"></i>
+                             <span class="font-mono">{{ item.serial_code }}</span>
+                           </div>
+                           
+                           <!-- Used/Redeemed Outlet -->
+                           <div v-if="item.used_outlet || item.redeemed_outlet" class="flex items-center gap-2 text-sm text-green-600 mt-2">
+                             <i class="fa-solid fa-store"></i>
+                             <span>Digunakan di: {{ item.used_outlet || item.redeemed_outlet }}</span>
+                           </div>
+                           
+                           <!-- Challenge Type -->
+                           <div v-if="item.challenge_type" class="flex items-center gap-2 text-sm text-teal-600 mt-2">
+                             <i class="fa-solid fa-tasks"></i>
+                             <span>Tipe Challenge: {{ item.challenge_type }}</span>
+                           </div>
+                           
+                           <!-- Tier Change Info -->
+                           <div v-if="item.tier_change" class="mt-3 space-y-2">
+                             <div class="flex items-center gap-2 text-sm">
+                               <i :class="[
+                                 'fa-solid',
+                                 item.type === 'tier_upgrade' ? 'fa-arrow-up text-cyan-600' : 'fa-arrow-down text-red-600'
+                               ]"></i>
+                               <span class="font-semibold">{{ item.tier_change }}</span>
+                             </div>
+                             <div v-if="item.total_spending" class="flex items-center gap-2 text-sm text-gray-600">
+                               <i class="fa-solid fa-money-bill-wave"></i>
+                               <span>Total Spending: {{ item.total_spending_formatted }}</span>
+                             </div>
+                             <div v-if="item.spending_period_start && item.spending_period_end" class="flex items-center gap-2 text-sm text-gray-600">
+                               <i class="fa-solid fa-calendar"></i>
+                               <span>Periode: {{ formatDate(item.spending_period_start) }} - {{ formatDate(item.spending_period_end) }}</span>
+                             </div>
+                             <div v-if="item.change_reason" class="flex items-center gap-2 text-sm text-gray-600">
+                               <i class="fa-solid fa-info-circle"></i>
+                               <span>Alasan: {{ item.change_reason }}</span>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+
+           <!-- Footer -->
+           <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+             <button @click="closeVoucherTimelineModal" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition">
                Tutup
              </button>
            </div>

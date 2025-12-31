@@ -20,9 +20,6 @@ function getStatusBadgeClass(status) {
   return 'bg-gray-100 text-gray-800';
 }
 
-function getExclusiveBadgeClass(exclusive) {
-  return exclusive === 'Ya' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800';
-}
 
 function getGenderBadgeClass(gender) {
   return gender === 'Laki-laki' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800';
@@ -51,12 +48,12 @@ function getGenderBadgeClass(gender) {
         <div class="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6">
           <div class="flex items-center justify-between">
             <div>
-              <h2 class="text-2xl font-bold">{{ member.name }}</h2>
-              <p class="text-purple-200">{{ member.costumers_id }}</p>
+              <h2 class="text-2xl font-bold">{{ member.nama_lengkap || member.name }}</h2>
+              <p class="text-purple-200">{{ member.member_id || member.costumers_id }}</p>
             </div>
             <div class="text-right">
-              <span :class="['px-3 py-1 rounded-full text-sm font-medium', getStatusBadgeClass(member.status_lengkap)]">
-                {{ member.status_lengkap }}
+              <span :class="['px-3 py-1 rounded-full text-sm font-medium', member.is_active ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800']">
+                {{ member.is_active ? 'Aktif' : 'Tidak Aktif' }}
               </span>
             </div>
           </div>
@@ -74,45 +71,52 @@ function getGenderBadgeClass(gender) {
               <div class="space-y-3">
                 <div class="flex justify-between">
                   <span class="text-gray-600">ID Member:</span>
-                  <span class="font-mono font-semibold">{{ member.costumers_id }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">NIK:</span>
-                  <span class="font-semibold">{{ member.nik }}</span>
+                  <span class="font-mono font-semibold">{{ member.member_id || member.costumers_id }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Nama Lengkap:</span>
-                  <span class="font-semibold">{{ member.name }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Nama Panggilan:</span>
-                  <span class="font-semibold">{{ member.nama_panggilan || '-' }}</span>
+                  <span class="font-semibold">{{ member.nama_lengkap || member.name }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Email:</span>
                   <span class="font-semibold">{{ member.email || '-' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Telepon:</span>
-                  <span class="font-semibold">{{ member.telepon || '-' }}</span>
+                  <span class="text-gray-600">Nomor Telepon:</span>
+                  <span class="font-semibold">{{ member.mobile_phone || member.telepon || '-' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Tanggal Lahir:</span>
-                  <span class="font-semibold">{{ member.tanggal_lahir_text }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Usia:</span>
-                  <span class="font-semibold">{{ member.usia ? `${member.usia} tahun` : '-' }}</span>
+                  <span class="font-semibold">{{ member.tanggal_lahir ? new Date(member.tanggal_lahir).toLocaleDateString('id-ID') : '-' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Jenis Kelamin:</span>
-                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', getGenderBadgeClass(member.jenis_kelamin_text)]">
-                    {{ member.jenis_kelamin_text || '-' }}
+                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', getGenderBadgeClass(member.jenis_kelamin_text || (member.jenis_kelamin === 'L' ? 'Laki-laki' : member.jenis_kelamin === 'P' ? 'Perempuan' : '-'))]">
+                    {{ member.jenis_kelamin_text || (member.jenis_kelamin === 'L' ? 'Laki-laki' : member.jenis_kelamin === 'P' ? 'Perempuan' : '-') }}
                   </span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Pekerjaan:</span>
-                  <span class="font-semibold">{{ member.pekerjaan || '-' }}</span>
+                  <span class="font-semibold">{{ member.pekerjaan_name || member.occupation?.name || '-' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-600">Saldo Point:</span>
+                  <span class="font-semibold text-green-600">{{ member.just_points ? new Intl.NumberFormat('id-ID').format(member.just_points) : '0' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-600">Tier:</span>
+                  <span :class="[
+                    'px-2 py-1 rounded-full text-xs font-medium uppercase',
+                    member.member_level === 'platinum' 
+                      ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                      : member.member_level === 'gold'
+                      ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                      : member.member_level === 'silver'
+                      ? 'bg-gray-100 text-gray-800 border border-gray-300'
+                      : 'bg-blue-100 text-blue-800 border border-blue-300'
+                  ]">
+                    {{ member.member_level || 'Silver' }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -125,41 +129,35 @@ function getGenderBadgeClass(gender) {
               <div class="space-y-3">
                 <div class="flex justify-between">
                   <span class="text-gray-600">Status Aktif:</span>
-                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', getStatusBadgeClass(member.status_aktif_text)]">
-                    {{ member.status_aktif_text }}
+                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', member.is_active ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800']">
+                    {{ member.is_active ? 'Aktif' : 'Tidak Aktif' }}
                   </span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Status Block:</span>
-                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', getStatusBadgeClass(member.status_block_text)]">
-                    {{ member.status_block_text }}
-                  </span>
+                  <span class="text-gray-600">Total Spending:</span>
+                  <span class="font-semibold text-blue-600">{{ member.total_spending ? 'Rp ' + new Intl.NumberFormat('id-ID').format(member.total_spending) : 'Rp 0' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Member Eksklusif:</span>
-                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', getExclusiveBadgeClass(member.exclusive_member_text)]">
-                    {{ member.exclusive_member_text }}
-                  </span>
+                  <span class="text-gray-600">Point Remainder:</span>
+                  <span class="font-semibold">{{ member.point_remainder ? new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(member.point_remainder) : '0.00' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Valid Until:</span>
-                  <span class="font-semibold">{{ member.valid_until_text }}</span>
+                  <span class="text-gray-600">Email Verified:</span>
+                  <span class="font-semibold">{{ member.email_verified_at ? new Date(member.email_verified_at).toLocaleString('id-ID') : 'Belum diverifikasi' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Tanggal Aktif:</span>
-                  <span class="font-semibold">{{ member.tanggal_aktif_text }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Tanggal Register:</span>
-                  <span class="font-semibold">{{ member.tanggal_register_text }}</span>
+                  <span class="text-gray-600">Mobile Verified:</span>
+                  <span class="font-semibold">{{ member.mobile_verified_at ? new Date(member.mobile_verified_at).toLocaleString('id-ID') : 'Belum diverifikasi' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">Last Login:</span>
-                  <span class="font-semibold">{{ member.last_logged ? new Date(member.last_logged).toLocaleString('id-ID') : '-' }}</span>
+                  <span class="font-semibold">{{ member.last_login_at ? new Date(member.last_login_at).toLocaleString('id-ID') : '-' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-gray-600">Device:</span>
-                  <span class="font-semibold">{{ member.device || '-' }}</span>
+                  <span class="text-gray-600">Allow Notification:</span>
+                  <span :class="['px-2 py-1 rounded-full text-xs font-medium', member.allow_notification ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800']">
+                    {{ member.allow_notification ? 'Ya' : 'Tidak' }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -175,40 +173,16 @@ function getGenderBadgeClass(gender) {
               <div class="space-y-3">
                 <div class="flex justify-between">
                   <span class="text-gray-600">Password:</span>
-                  <span class="font-mono">{{ member.password2 ? '••••••••' : '-' }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Android Password:</span>
-                  <span class="font-mono">{{ member.android_password ? '••••••••' : '-' }}</span>
+                  <span class="font-mono">{{ member.password ? '••••••••' : '-' }}</span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-gray-600">PIN:</span>
                   <span class="font-mono">{{ member.pin ? '••••' : '-' }}</span>
                 </div>
               </div>
-              <div class="space-y-3">
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Hint:</span>
-                  <span class="font-semibold">{{ member.hint || '-' }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-gray-600">Barcode:</span>
-                  <span class="font-mono text-sm">{{ member.barcode || '-' }}</span>
-                </div>
-              </div>
             </div>
           </div>
 
-          <!-- Address -->
-          <div class="border-t pt-6">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <i class="fa-solid fa-map-marker-alt text-purple-500"></i>
-              Alamat
-            </h3>
-            <div class="bg-gray-50 rounded-xl p-4">
-              <p class="text-gray-800">{{ member.alamat || 'Alamat tidak tersedia' }}</p>
-            </div>
-          </div>
 
           <!-- Timestamps -->
           <div class="border-t pt-6 mt-8">

@@ -101,19 +101,47 @@ const ageGroupDescriptions = {
       </div>
     </div>
 
+    <!-- Occupation Distribution -->
+    <div class="mt-6 pt-6 border-t border-gray-200">
+      <h4 class="text-sm font-semibold text-gray-700 mb-3">Distribusi Pekerjaan</h4>
+      <div class="space-y-3">
+        <div v-for="(count, occupation) in (data.occupation || {})" :key="occupation" class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-4 h-4 rounded-full bg-indigo-500"></div>
+            <span class="text-sm text-gray-700">{{ occupation }}</span>
+          </div>
+          <div class="text-right">
+            <span class="text-sm font-semibold text-gray-900">{{ formatNumber(count) }}</span>
+            <span class="text-xs text-gray-500 ml-1">
+              ({{ Object.values(data.occupation || {}).reduce((a, b) => a + b, 0) > 0 ? Math.round((count / Object.values(data.occupation || {}).reduce((a, b) => a + b, 0)) * 100) : 0 }}%)
+            </span>
+          </div>
+        </div>
+        <div v-if="!data.occupation || Object.keys(data.occupation).length === 0" class="text-center py-4 text-gray-500 text-sm">
+          Tidak ada data pekerjaan
+        </div>
+      </div>
+    </div>
+
     <!-- Summary -->
     <div class="mt-6 pt-4 border-t border-gray-200">
-      <div class="grid grid-cols-2 gap-4 text-center">
+      <div class="grid grid-cols-3 gap-4 text-center">
         <div class="bg-blue-50 rounded-lg p-3">
           <p class="text-sm text-blue-600 font-medium">Total Data Gender</p>
           <p class="text-lg font-bold text-blue-800">
-            {{ Object.values(data.gender).reduce((a, b) => a + b, 0).toLocaleString('id-ID') }}
+            {{ Object.values(data.gender || {}).reduce((a, b) => a + b, 0).toLocaleString('id-ID') }}
           </p>
         </div>
         <div class="bg-green-50 rounded-lg p-3">
           <p class="text-sm text-green-600 font-medium">Total Data Usia</p>
           <p class="text-lg font-bold text-green-800">
-            {{ Object.values(data.age).reduce((a, b) => a + b, 0).toLocaleString('id-ID') }}
+            {{ Object.values(data.age || {}).reduce((a, b) => a + b, 0).toLocaleString('id-ID') }}
+          </p>
+        </div>
+        <div class="bg-indigo-50 rounded-lg p-3">
+          <p class="text-sm text-indigo-600 font-medium">Total Data Pekerjaan</p>
+          <p class="text-lg font-bold text-indigo-800">
+            {{ Object.values(data.occupation || {}).reduce((a, b) => a + b, 0).toLocaleString('id-ID') }}
           </p>
         </div>
       </div>

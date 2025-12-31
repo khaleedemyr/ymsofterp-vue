@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Customer;
-use App\Models\Point;
-use App\Models\Cabang;
+use App\Models\MemberAppsMember;
+use App\Models\MemberAppsPointTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -59,45 +58,60 @@ class CrmDashboardController extends Controller
         $lastMonth = Carbon::now()->subMonth()->startOfMonth();
 
         // Total members
-        $totalMembers = Customer::count();
+        $totalMembers = MemberAppsMember::count();
 
         // New members today
-        $newMembersToday = Customer::whereDate('tanggal_register', $today)->count();
+        $newMembersToday = MemberAppsMember::whereDate('created_at', $today)->count();
 
         // New members this month
-        $newMembersThisMonth = Customer::whereBetween('tanggal_register', [$thisMonth, Carbon::now()])->count();
+        $newMembersThisMonth = MemberAppsMember::whereBetween('created_at', [$thisMonth, Carbon::now()])->count();
 
         // Active members
-        $activeMembers = Customer::where('status_aktif', '1')->count();
+        $activeMembers = MemberAppsMember::where('is_active', true)->count();
 
         // Inactive members
-        $inactiveMembers = Customer::where('status_aktif', '0')->count();
+        $inactiveMembers = MemberAppsMember::where('is_active', false)->count();
 
-        // Exclusive members
-        $exclusiveMembers = Customer::where('exclusive_member', 'Y')->count();
+        // Tier breakdown
+        $tierBreakdown = [
+            'elite' => MemberAppsMember::where('member_level', 'elite')->count(),
+            'loyal' => MemberAppsMember::where('member_level', 'loyal')->count(),
+            'silver' => MemberAppsMember::where(function($query) {
+                $query->where('member_level', 'silver')
+                      ->orWhereNull('member_level')
+                      ->orWhere('member_level', '');
+            })->count(),
+        ];
 
         // Growth rate (compared to last month)
-        $lastMonthMembers = Customer::whereBetween('tanggal_register', [$lastMonth, $thisMonth])->count();
+        $lastMonthMembers = MemberAppsMember::whereBetween('created_at', [$lastMonth, $thisMonth])->count();
         $growthRate = $lastMonthMembers > 0 ? (($newMembersThisMonth - $lastMonthMembers) / $lastMonthMembers) * 100 : 0;
 
-        // Get member demographics by region (based on first transaction)
-        $memberDemographics = DB::connection('mysql_second')
-            ->table('costumers as c')
+        // Get member demographics by region (based on first transaction from orders)
+        // Simplified query - limit to recent data and top 20 outlets for performance
+        $memberDemographics = DB::connection('db_justus')
+            ->table(DB::raw('orders as o'))
             ->select(
-                'cb.region',
-                DB::raw('COUNT(DISTINCT c.id) as member_count')
+                DB::raw('COALESCE(outlet.nama_outlet, o.kode_outlet, "Tidak Diketahui") as region'),
+                DB::raw('COUNT(DISTINCT o.member_id) as member_count')
             )
-            ->join(DB::raw('(SELECT costumer_id, MIN(created_at) as first_transaction FROM point GROUP BY costumer_id) as ft'), 'c.id', '=', 'ft.costumer_id')
-            ->join('point as p', function($join) {
-                $join->on('c.id', '=', 'p.costumer_id')
-                     ->on('ft.first_transaction', '=', 'p.created_at');
+            ->join(DB::raw('(
+                SELECT member_id, MIN(created_at) as first_transaction
+                FROM orders
+                WHERE member_id IS NOT NULL 
+                AND member_id != ""
+                AND created_at >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
+                GROUP BY member_id
+            ) as ft'), function($join) {
+                $join->on('o.member_id', '=', 'ft.member_id')
+                     ->whereRaw('o.created_at = ft.first_transaction');
             })
-            ->join('cabangs as cb', 'p.cabang_id', '=', 'cb.id')
-            ->where('c.status_aktif', '1')
-            ->whereNotNull('cb.region')
-            ->where('cb.region', '!=', '')
-            ->groupBy('cb.region')
+            ->leftJoin(DB::raw('tbl_data_outlet as outlet'), 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->where('o.member_id', '!=', '')
+            ->whereNotNull('o.member_id')
+            ->groupBy(DB::raw('COALESCE(outlet.nama_outlet, o.kode_outlet, "Tidak Diketahui")'))
             ->orderBy('member_count', 'desc')
+            ->limit(20)
             ->get();
 
         return [
@@ -106,7 +120,7 @@ class CrmDashboardController extends Controller
             'newMembersThisMonth' => $newMembersThisMonth,
             'activeMembers' => $activeMembers,
             'inactiveMembers' => $inactiveMembers,
-            'exclusiveMembers' => $exclusiveMembers,
+            'tierBreakdown' => $tierBreakdown,
             'growthRate' => round($growthRate, 2),
             'memberDemographics' => $memberDemographics,
         ];
@@ -123,8 +137,8 @@ class CrmDashboardController extends Controller
             $startOfMonth = $date->copy()->startOfMonth();
             $endOfMonth = $date->copy()->endOfMonth();
 
-            $newMembers = Customer::whereBetween('tanggal_register', [$startOfMonth, $endOfMonth])->count();
-            $totalMembers = Customer::where('tanggal_register', '<=', $endOfMonth)->count();
+            $newMembers = MemberAppsMember::whereBetween('created_at', [$startOfMonth, $endOfMonth])->count();
+            $totalMembers = MemberAppsMember::where('created_at', '<=', $endOfMonth)->count();
 
             $data[] = [
                 'month' => $date->format('M Y'),
@@ -142,16 +156,16 @@ class CrmDashboardController extends Controller
     private function getMemberDemographics()
     {
         // Gender distribution
-        $genderDistribution = Customer::selectRaw('jenis_kelamin, COUNT(*) as count')
+        $genderDistribution = MemberAppsMember::selectRaw('jenis_kelamin, COUNT(*) as count')
             ->groupBy('jenis_kelamin')
             ->get()
             ->mapWithKeys(function ($item) {
-                $label = $item->jenis_kelamin === '1' ? 'Laki-laki' : ($item->jenis_kelamin === '2' ? 'Perempuan' : 'Tidak Diketahui');
+                $label = $item->jenis_kelamin === 'L' ? 'Laki-laki' : ($item->jenis_kelamin === 'P' ? 'Perempuan' : 'Tidak Diketahui');
                 return [$label => $item->count];
             });
 
         // Age distribution with new demographic categories
-        $ageDistribution = Customer::selectRaw('
+        $ageDistribution = MemberAppsMember::selectRaw('
             CASE 
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN "Remaja"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN "Dewasa Muda"
@@ -170,9 +184,23 @@ class CrmDashboardController extends Controller
             return [$item->age_group => $item->count];
         });
 
+        // Occupation distribution
+        $occupationDistribution = MemberAppsMember::selectRaw('
+            COALESCE(o.name, "Tidak Diketahui") as occupation_name,
+            COUNT(*) as count
+        ')
+        ->leftJoin('member_apps_occupations as o', 'member_apps_members.pekerjaan_id', '=', 'o.id')
+        ->groupBy('o.name')
+        ->orderBy('count', 'desc')
+        ->get()
+        ->mapWithKeys(function ($item) {
+            return [$item->occupation_name => $item->count];
+        });
+
         return [
             'gender' => $genderDistribution,
             'age' => $ageDistribution,
+            'occupation' => $occupationDistribution,
         ];
     }
 
@@ -181,45 +209,56 @@ class CrmDashboardController extends Controller
      */
     private function getPurchasingPowerByAge($startDate = null, $endDate = null)
     {
-        // Build the query
-        $query = Customer::selectRaw('
-            CASE 
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN "Remaja"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN "Dewasa Muda"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN "Dewasa Produktif"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN "Dewasa Matang"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) >= 60 THEN "Usia Tua"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 13 THEN "Anak-anak"
-                ELSE "Tidak Diketahui"
-            END as age_group,
-            COUNT(DISTINCT c.id) as total_customers,
-            COALESCE(SUM(p.jml_trans), 0) as total_spending,
-            COALESCE(AVG(p.jml_trans), 0) as avg_transaction_value,
-            COALESCE(COUNT(p.id), 0) as total_transactions
-        ')
-        ->from('costumers as c')
-        ->leftJoin('point as p', 'c.id', '=', 'p.costumer_id')
-        ->whereNotNull('c.tanggal_lahir')
-        ->where('c.status_aktif', '1');
-
-        // Apply date filter if provided
+        // Optimize: Use simpler SQL query with date limit to improve performance
+        $dateFilter = '';
         if ($startDate && $endDate) {
-            $query->whereBetween('p.created_at', [$startDate, $endDate]);
+            $startDateEscaped = DB::connection()->getPdo()->quote($startDate);
+            $endDateEscaped = DB::connection()->getPdo()->quote($endDate);
+            $dateFilter = "AND o.created_at BETWEEN {$startDateEscaped} AND {$endDateEscaped}";
+        } else {
+            // Default to last 2 years if no date filter for performance
+            $twoYearsAgo = DB::connection()->getPdo()->quote(Carbon::now()->subYears(2)->format('Y-m-d'));
+            $dateFilter = "AND o.created_at >= {$twoYearsAgo}";
         }
+        
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        
+        $sql = "
+            SELECT 
+                CASE 
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN 'Remaja'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN 'Dewasa Muda'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN 'Dewasa Produktif'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN 'Dewasa Matang'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) >= 60 THEN 'Usia Tua'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) < 13 THEN 'Anak-anak'
+                    ELSE 'Tidak Diketahui'
+                END as age_group,
+                COUNT(DISTINCT m.id) as total_customers,
+                COALESCE(SUM(o.grand_total), 0) as total_spending,
+                COALESCE(AVG(o.grand_total), 0) as avg_transaction_value,
+                COALESCE(COUNT(o.id), 0) as total_transactions
+            FROM member_apps_members m
+            LEFT JOIN {$dbJustusName}.orders o ON m.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
+                AND o.member_id != '' 
+                AND o.member_id IS NOT NULL
+                {$dateFilter}
+            WHERE m.tanggal_lahir IS NOT NULL 
+            AND m.is_active = 1
+            GROUP BY age_group
+            ORDER BY 
+                CASE age_group
+                    WHEN 'Anak-anak' THEN 1
+                    WHEN 'Remaja' THEN 2
+                    WHEN 'Dewasa Muda' THEN 3
+                    WHEN 'Dewasa Produktif' THEN 4
+                    WHEN 'Dewasa Matang' THEN 5
+                    WHEN 'Usia Tua' THEN 6
+                    ELSE 7
+                END
+        ";
 
-        $purchasingPower = $query->groupBy('age_group')
-        ->orderByRaw('
-            CASE age_group
-                WHEN "Anak-anak" THEN 1
-                WHEN "Remaja" THEN 2
-                WHEN "Dewasa Muda" THEN 3
-                WHEN "Dewasa Produktif" THEN 4
-                WHEN "Dewasa Matang" THEN 5
-                WHEN "Usia Tua" THEN 6
-                ELSE 7
-            END
-        ')
-        ->get()
+        $purchasingPower = collect(DB::select($sql))
         ->map(function ($item) {
             return [
                 'age_group' => $item->age_group,
@@ -244,33 +283,32 @@ class CrmDashboardController extends Controller
      */
     private function getLatestMembers()
     {
-        return Customer::select([
+        return MemberAppsMember::select([
             'id',
-            'costumers_id',
-            'name',
+            'member_id',
+            'nama_lengkap',
             'email',
-            'telepon',
+            'mobile_phone',
             'jenis_kelamin',
-            'status_aktif',
-            'exclusive_member',
-            'tanggal_register',
-            'valid_until',
+            'is_active',
+            'is_exclusive_member',
+            'created_at',
         ])
-        ->orderBy('tanggal_register', 'desc')
+        ->orderBy('created_at', 'desc')
         ->limit(10)
         ->get()
         ->map(function ($member) {
             return [
                 'id' => $member->id,
-                'costumers_id' => $member->costumers_id,
-                'name' => $member->name,
+                'costumers_id' => $member->member_id,
+                'name' => $member->nama_lengkap,
                 'email' => $member->email,
-                'telepon' => $member->telepon,
-                'jenis_kelamin_text' => $member->jenis_kelamin_text,
-                'status_aktif_text' => $member->status_aktif_text,
-                'exclusive_member_text' => $member->exclusive_member_text,
-                'tanggal_register_text' => $member->tanggal_register_text,
-                'valid_until_text' => $member->valid_until_text,
+                'telepon' => $member->mobile_phone,
+                'jenis_kelamin_text' => $member->jenis_kelamin === 'L' ? 'Laki-laki' : ($member->jenis_kelamin === 'P' ? 'Perempuan' : 'Tidak Diketahui'),
+                'status_aktif_text' => $member->is_active ? 'Aktif' : 'Tidak Aktif',
+                'exclusive_member_text' => $member->is_exclusive_member ? 'Ya' : 'Tidak',
+                'tanggal_register_text' => $member->created_at ? $member->created_at->format('d/m/Y') : '-',
+                'valid_until_text' => '-', // Not available in new structure
             ];
         });
     }
@@ -283,79 +321,109 @@ class CrmDashboardController extends Controller
         $activities = collect();
 
         // Get recent member registrations
-        $recentRegistrations = Customer::where('tanggal_register', '>=', Carbon::now()->subDays(30))
-            ->orderBy('tanggal_register', 'desc')
+        $recentRegistrations = MemberAppsMember::where('created_at', '>=', Carbon::now()->subDays(30))
+            ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(function ($member) {
                 return [
                     'id' => $member->id,
-                    'name' => $member->name,
+                    'name' => $member->nama_lengkap,
                     'activity' => 'Member baru mendaftar',
                     'icon' => 'fa-solid fa-user-plus',
                     'color' => 'text-green-600',
                     'bg_color' => 'bg-green-100',
-                    'created_at' => $member->tanggal_register,
+                    'created_at' => $member->created_at,
                     'type' => 'registration',
-                    'member_id' => $member->costumers_id,
+                    'member_id' => $member->member_id,
                 ];
             });
 
         $activities = $activities->concat($recentRegistrations);
 
-        // Get recent top up transactions
-        $recentTopUps = Point::with(['customer', 'cabang'])
-            ->topUp()
+        // Get recent top up transactions (point_amount > 0) - optimize with batch loading
+        $recentTopUps = MemberAppsPointTransaction::where('point_amount', '>', 0)
             ->orderBy('created_at', 'desc')
             ->limit(5)
+            ->get();
+        
+        // Batch load members and outlets
+        $memberIds = $recentTopUps->pluck('member_id')->unique()->filter()->toArray();
+        $outletIds = $recentTopUps->pluck('outlet_id')->unique()->filter()->toArray();
+        
+        $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
+        $outlets = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $outletIds)
+            ->select('id_outlet', 'nama_outlet')
             ->get()
-            ->map(function ($point) {
-                return [
-                    'id' => $point->id,
-                    'name' => $point->customer->name ?? 'Member Tidak Diketahui',
-                    'activity' => 'Top up ' . $point->point_formatted . ' point',
-                    'sub_activity' => $point->cabang->name ?? 'Cabang Tidak Diketahui',
-                    'icon' => 'fa-solid fa-plus-circle',
-                    'color' => 'text-blue-600',
-                    'bg_color' => 'bg-blue-100',
-                    'created_at' => $point->created_at,
-                    'type' => 'topup',
-                    'point' => $point->point,
-                    'point_formatted' => $point->point_formatted,
-                    'jml_trans' => $point->jml_trans,
-                    'jml_trans_formatted' => $point->jml_trans_formatted,
-                    'cabang_name' => $point->cabang->name ?? 'Cabang Tidak Diketahui',
-                    'member_id' => $point->customer->costumers_id ?? '-',
-                ];
-            });
+            ->keyBy('id_outlet');
+        
+        $recentTopUps = $recentTopUps->map(function ($pt) use ($members, $outlets) {
+            $member = $members->get($pt->member_id);
+            $outlet = $outlets->get($pt->outlet_id);
+            $outletName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
+            
+            return [
+                'id' => $pt->id,
+                'name' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'activity' => 'Top up ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point',
+                'sub_activity' => $outletName,
+                'icon' => 'fa-solid fa-plus-circle',
+                'color' => 'text-blue-600',
+                'bg_color' => 'bg-blue-100',
+                'created_at' => $pt->created_at,
+                'type' => 'topup',
+                'point' => abs($pt->point_amount),
+                'point_formatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
+                'jml_trans' => $pt->transaction_amount ?? 0,
+                'jml_trans_formatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                'cabang_name' => $outletName,
+                'member_id' => $member->member_id ?? '-',
+            ];
+        });
 
         $activities = $activities->concat($recentTopUps);
 
-        // Get recent redeem transactions
-        $recentRedeems = Point::with(['customer', 'cabang'])
-            ->redeem()
+        // Get recent redeem transactions (point_amount < 0) - optimize with batch loading
+        $recentRedeems = MemberAppsPointTransaction::where('point_amount', '<', 0)
             ->orderBy('created_at', 'desc')
             ->limit(5)
+            ->get();
+        
+        // Batch load members and outlets for redeems
+        $memberIdsRedeem = $recentRedeems->pluck('member_id')->unique()->filter()->toArray();
+        $outletIdsRedeem = $recentRedeems->pluck('outlet_id')->unique()->filter()->toArray();
+        
+        $membersRedeem = MemberAppsMember::whereIn('id', $memberIdsRedeem)->get()->keyBy('id');
+        $outletsRedeem = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $outletIdsRedeem)
+            ->select('id_outlet', 'nama_outlet')
             ->get()
-            ->map(function ($point) {
-                return [
-                    'id' => $point->id,
-                    'name' => $point->customer->name ?? 'Member Tidak Diketahui',
-                    'activity' => 'Redeem ' . $point->point_formatted . ' point',
-                    'sub_activity' => $point->cabang->name ?? 'Cabang Tidak Diketahui',
-                    'icon' => 'fa-solid fa-minus-circle',
-                    'color' => 'text-orange-600',
-                    'bg_color' => 'bg-orange-100',
-                    'created_at' => $point->created_at,
-                    'type' => 'redeem',
-                    'point' => $point->point,
-                    'point_formatted' => $point->point_formatted,
-                    'jml_trans' => $point->jml_trans,
-                    'jml_trans_formatted' => $point->jml_trans_formatted,
-                    'cabang_name' => $point->cabang->name ?? 'Cabang Tidak Diketahui',
-                    'member_id' => $point->customer->costumers_id ?? '-',
-                ];
-            });
+            ->keyBy('id_outlet');
+        
+        $recentRedeems = $recentRedeems->map(function ($pt) use ($membersRedeem, $outletsRedeem) {
+            $member = $membersRedeem->get($pt->member_id);
+            $outlet = $outletsRedeem->get($pt->outlet_id);
+            $outletName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
+            
+            return [
+                'id' => $pt->id,
+                'name' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'activity' => 'Redeem ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point',
+                'sub_activity' => $outletName,
+                'icon' => 'fa-solid fa-minus-circle',
+                'color' => 'text-orange-600',
+                'bg_color' => 'bg-orange-100',
+                'created_at' => $pt->created_at,
+                'type' => 'redeem',
+                'point' => abs($pt->point_amount),
+                'point_formatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
+                'jml_trans' => $pt->transaction_amount ?? 0,
+                'jml_trans_formatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                'cabang_name' => $outletName,
+                'member_id' => $member->member_id ?? '-',
+            ];
+        });
 
         $activities = $activities->concat($recentRedeems);
 
@@ -396,10 +464,10 @@ class CrmDashboardController extends Controller
         $lastMonth = Carbon::now()->subMonth()->startOfMonth();
 
         // Base query
-        $baseQuery = Point::query();
-        $todayQuery = Point::query();
-        $thisMonthQuery = Point::query();
-        $lastMonthQuery = Point::query();
+        $baseQuery = MemberAppsPointTransaction::query();
+        $todayQuery = MemberAppsPointTransaction::query();
+        $thisMonthQuery = MemberAppsPointTransaction::query();
+        $lastMonthQuery = MemberAppsPointTransaction::query();
 
         // Apply date filter if provided
         if ($startDate && $endDate) {
@@ -415,26 +483,26 @@ class CrmDashboardController extends Controller
         // Point transactions today (if no date filter, use today)
         $transactionsToday = $startDate && $endDate ? 
             $todayQuery->whereDate('created_at', $today)->count() : 
-            Point::whereDate('created_at', $today)->count();
+            MemberAppsPointTransaction::whereDate('created_at', $today)->count();
 
         // Point transactions this month (if no date filter, use this month)
         $transactionsThisMonth = $startDate && $endDate ? 
             $thisMonthQuery->whereBetween('created_at', [$thisMonth, Carbon::now()])->count() : 
-            Point::whereBetween('created_at', [$thisMonth, Carbon::now()])->count();
+            MemberAppsPointTransaction::whereBetween('created_at', [$thisMonth, Carbon::now()])->count();
 
-        // Total point earned (top up)
-        $totalPointEarned = $baseQuery->clone()->topUp()->sum('point');
+        // Total point earned (point_amount > 0)
+        $totalPointEarned = (clone $baseQuery)->where('point_amount', '>', 0)->sum('point_amount');
 
-        // Total point redeemed
-        $totalPointRedeemed = $baseQuery->clone()->redeem()->sum('point');
+        // Total point redeemed (point_amount < 0, use absolute value)
+        $totalPointRedeemed = abs((clone $baseQuery)->where('point_amount', '<', 0)->sum('point_amount'));
 
         // Total transaction value
-        $totalTransactionValue = $baseQuery->clone()->sum('jml_trans');
+        $totalTransactionValue = (clone $baseQuery)->sum('transaction_amount');
 
         // Growth rate (compared to last month)
         $lastMonthTransactions = $startDate && $endDate ? 
             $lastMonthQuery->whereBetween('created_at', [$lastMonth, $thisMonth])->count() : 
-            Point::whereBetween('created_at', [$lastMonth, $thisMonth])->count();
+            MemberAppsPointTransaction::whereBetween('created_at', [$lastMonth, $thisMonth])->count();
         $growthRate = $lastMonthTransactions > 0 ? (($transactionsThisMonth - $lastMonthTransactions) / $lastMonthTransactions) * 100 : 0;
 
         return [
@@ -442,9 +510,9 @@ class CrmDashboardController extends Controller
             'transactionsToday' => $transactionsToday,
             'transactionsThisMonth' => $transactionsThisMonth,
             'totalPointEarned' => $totalPointEarned,
-            'totalPointEarnedFormatted' => 'Rp ' . number_format($totalPointEarned, 0, ',', '.'),
+            'totalPointEarnedFormatted' => number_format($totalPointEarned, 0, ',', '.'),
             'totalPointRedeemed' => $totalPointRedeemed,
-            'totalPointRedeemedFormatted' => 'Rp ' . number_format($totalPointRedeemed, 0, ',', '.'),
+            'totalPointRedeemedFormatted' => number_format($totalPointRedeemed, 0, ',', '.'),
             'totalTransactionValue' => $totalTransactionValue,
             'totalTransactionValueFormatted' => 'Rp ' . number_format($totalTransactionValue, 0, ',', '.'),
             'growthRate' => round($growthRate, 2),
@@ -456,29 +524,48 @@ class CrmDashboardController extends Controller
      */
     private function getLatestPointTransactions()
     {
-        return Point::with(['customer', 'cabang'])
-            ->orderBy('created_at', 'desc')
+        $transactions = MemberAppsPointTransaction::orderBy('created_at', 'desc')
             ->limit(10)
+            ->get();
+        
+        // Batch load members and outlets
+        $memberIds = $transactions->pluck('member_id')->unique()->filter()->toArray();
+        $outletIds = $transactions->pluck('outlet_id')->unique()->filter()->toArray();
+        
+        $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
+        $outlets = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $outletIds)
+            ->select('id_outlet', 'nama_outlet')
             ->get()
-            ->map(function ($point) {
-                return [
-                    'id' => $point->id,
-                    'bill_number' => $point->bill_number,
-                    'customer_name' => $point->customer->name ?? 'Member Tidak Diketahui',
-                    'customer_id' => $point->customer->costumers_id ?? '-',
-                    'cabang_name' => $point->cabang->name ?? 'Cabang Tidak Diketahui',
-                    'point' => $point->point,
-                    'point_formatted' => $point->point_formatted,
-                    'jml_trans' => $point->jml_trans,
-                    'jml_trans_formatted' => $point->jml_trans_formatted,
-                    'type' => $point->type,
-                    'type_text' => $point->type_text,
-                    'created_at' => $point->created_at_text,
-                    'status' => $point->status,
-                    'icon' => $point->icon,
-                    'color' => $point->color,
-                ];
-            });
+            ->keyBy('id_outlet');
+        
+        return $transactions->map(function ($pt) use ($members, $outlets) {
+            $member = $members->get($pt->member_id);
+            $outlet = $outlets->get($pt->outlet_id);
+            $outletName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
+            
+            $isEarned = $pt->point_amount > 0;
+            $type = $isEarned ? '1' : '2';
+            $typeText = $isEarned ? 'EARNED' : 'REDEEMED';
+            
+            return [
+                'id' => $pt->id,
+                'bill_number' => $pt->serial_code ?? $pt->reference_number ?? '-',
+                'customer_name' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'customer_id' => $member->member_id ?? '-',
+                'cabang_name' => $outletName,
+                'point' => abs($pt->point_amount),
+                'point_formatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
+                'jml_trans' => $pt->transaction_amount ?? 0,
+                'jml_trans_formatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                'type' => $type,
+                'type_text' => $typeText,
+                'created_at' => $pt->created_at ? $pt->created_at->format('d/m/Y H:i') : '-',
+                'status' => 'completed',
+                'icon' => $isEarned ? 'fa-solid fa-plus-circle text-green-600' : 'fa-solid fa-minus-circle text-orange-600',
+                'color' => $isEarned ? 'text-green-600' : 'text-orange-600',
+            ];
+        });
     }
 
     /**
@@ -486,10 +573,9 @@ class CrmDashboardController extends Controller
      */
     private function getPointByCabang($startDate = null, $endDate = null)
     {
-        $query = Point::with('cabang')
-            ->excludeResetPoint()
-            ->selectRaw('cabang_id, COUNT(*) as total_transactions, SUM(point) as total_points, SUM(jml_trans) as total_value')
-            ->groupBy('cabang_id');
+        $query = MemberAppsPointTransaction::selectRaw('outlet_id, COUNT(*) as total_transactions, SUM(point_amount) as total_points, SUM(transaction_amount) as total_value')
+            ->whereNotNull('outlet_id')
+            ->groupBy('outlet_id');
 
         // Filter by date range if provided
         if ($startDate && $endDate) {
@@ -501,26 +587,30 @@ class CrmDashboardController extends Controller
             ->get();
 
         return $results->map(function ($item) use ($startDate, $endDate) {
-            // Get redeem data for this cabang
-            $redeemQuery = Point::where('cabang_id', $item->cabang_id)
-                ->redeem();
+            // Get outlet name
+            $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $item->outlet_id)->first();
+            $outletName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
+            
+            // Get redeem data for this outlet (point_amount < 0)
+            $redeemQuery = MemberAppsPointTransaction::where('outlet_id', $item->outlet_id)
+                ->where('point_amount', '<', 0);
 
             // Apply same date filter if provided
             if ($startDate && $endDate) {
                 $redeemQuery->whereBetween('created_at', [$startDate, $endDate]);
             }
 
-            $redeemData = $redeemQuery->selectRaw('COUNT(*) as total_redeem, SUM(point) as total_redeem_points, SUM(jml_trans) as total_redeem_value')
+            $redeemData = $redeemQuery->selectRaw('COUNT(*) as total_redeem, SUM(ABS(point_amount)) as total_redeem_points, SUM(transaction_amount) as total_redeem_value')
                 ->first();
 
             return [
-                'cabang_id' => $item->cabang_id,
-                'cabang_name' => $item->cabang->name ?? 'Cabang Tidak Diketahui',
+                'cabang_id' => $item->outlet_id,
+                'cabang_name' => $outletName,
                 'total_transactions' => $item->total_transactions,
-                'total_points' => $item->total_points,
-                'total_points_formatted' => number_format($item->total_points, 0, ',', '.'),
-                'total_value' => $item->total_value,
-                'total_value_formatted' => 'Rp ' . number_format($item->total_value, 0, ',', '.'),
+                'total_points' => abs($item->total_points ?? 0),
+                'total_points_formatted' => number_format(abs($item->total_points ?? 0), 0, ',', '.'),
+                'total_value' => $item->total_value ?? 0,
+                'total_value_formatted' => 'Rp ' . number_format($item->total_value ?? 0, 0, ',', '.'),
                 'total_redeem' => $redeemData->total_redeem ?? 0,
                 'total_redeem_points' => $redeemData->total_redeem_points ?? 0,
                 'total_redeem_points_formatted' => number_format($redeemData->total_redeem_points ?? 0, 0, ',', '.'),
@@ -539,9 +629,8 @@ class CrmDashboardController extends Controller
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
 
-        $query = Point::with(['customer', 'cabang'])
-            ->where('cabang_id', $cabangId)
-            ->redeem();
+        $query = MemberAppsPointTransaction::where('outlet_id', $cabangId)
+            ->where('point_amount', '<', 0);
 
         // Filter by date range if provided
         if ($startDate && $endDate) {
@@ -552,25 +641,23 @@ class CrmDashboardController extends Controller
             ->limit(50)  // Limit to 50 records to prevent too much data
             ->get();
 
-        // Get cabang name from first record
-        $cabangName = 'Cabang Tidak Diketahui';
-        if ($redeemDetails->count() > 0) {
-            $firstRecord = $redeemDetails->first();
-            $cabangName = $firstRecord->cabang->name ?? 'Cabang Tidak Diketahui';
-        }
+        // Get outlet name
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $cabangId)->first();
+        $cabangName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
 
-        $mappedDetails = $redeemDetails->map(function ($point) {
+        $mappedDetails = $redeemDetails->map(function ($pt) {
+            $member = MemberAppsMember::find($pt->member_id);
             return [
-                'id' => $point->id,
-                'customer_name' => $point->customer->name ?? 'Member Tidak Diketahui',
-                'customer_id' => $point->customer->costumers_id ?? '-',
-                'point' => $point->point,
-                'point_formatted' => $point->point_formatted,
-                'jml_trans' => $point->jml_trans,
-                'jml_trans_formatted' => $point->jml_trans_formatted,
-                'bill_number' => $point->bill_number,
-                'created_at' => $point->created_at_text,
-                'created_at_full' => $point->created_at ? $point->created_at->format('d/m/Y H:i:s') : '-',
+                'id' => $pt->id,
+                'customer_name' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'customer_id' => $member->member_id ?? '-',
+                'point' => abs($pt->point_amount),
+                'point_formatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
+                'jml_trans' => $pt->transaction_amount ?? 0,
+                'jml_trans_formatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                'bill_number' => $pt->serial_code ?? $pt->reference_number ?? '-',
+                'created_at' => $pt->created_at ? $pt->created_at->format('d/m/Y H:i') : '-',
+                'created_at_full' => $pt->created_at ? $pt->created_at->format('d/m/Y H:i:s') : '-',
             ];
         });
 
