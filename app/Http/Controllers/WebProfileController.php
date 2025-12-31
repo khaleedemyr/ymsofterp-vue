@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class WebProfileController extends Controller
 {
@@ -266,34 +268,87 @@ class WebProfileController extends Controller
      */
     public function bannersStore(Request $request)
     {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'subtitle' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'background_image' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=1920,min_height=1080',
-            'content_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=800,min_height=600',
-            'order' => 'integer|min:0',
-            'is_active' => 'boolean'
-        ]);
+        try {
+            $validated = $request->validate([
+                'title' => 'required|string|max:255',
+                'subtitle' => 'nullable|string|max:255',
+                'description' => 'nullable|string',
+                'background_image' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=1920,min_height=1080',
+                'content_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=800,min_height=600',
+                'order' => 'integer|min:0',
+                'is_active' => 'boolean'
+            ], [
+                'background_image.required' => 'Background image is required',
+                'background_image.image' => 'Background must be an image file',
+                'background_image.mimes' => 'Background image must be JPG, PNG, or WEBP',
+                'background_image.max' => 'Background image must not exceed 5MB',
+                'background_image.dimensions' => 'Background image must be at least 1920x1080 pixels',
+                'content_image.image' => 'Content must be an image file',
+                'content_image.mimes' => 'Content image must be JPG, PNG, or WEBP',
+                'content_image.max' => 'Content image must not exceed 5MB',
+                'content_image.dimensions' => 'Content image must be at least 800x600 pixels',
+            ]);
 
-        // Upload background image
-        if ($request->hasFile('background_image')) {
-            $file = $request->file('background_image');
-            $fileName = time() . '_' . Str::slug($validated['title']) . '_bg.' . $file->getClientOriginalExtension();
-            $validated['background_image'] = $file->storeAs('web-profile/banners', $fileName, 'public');
+            // Use database transaction to ensure atomicity
+            return DB::transaction(function () use ($request, $validated) {
+                $uploadedFiles = [];
+
+                // Upload background image
+                if ($request->hasFile('background_image')) {
+                    $file = $request->file('background_image');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_bg.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/banners', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload background image');
+                    }
+                    
+                    $validated['background_image'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Upload content image
+                if ($request->hasFile('content_image')) {
+                    $file = $request->file('content_image');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_content.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/banners', $fileName, 'public');
+                    
+                    if (!$path) {
+                        throw new \Exception('Failed to upload content image');
+                    }
+                    
+                    $validated['content_image'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Create banner record
+                $banner = WebProfileBanner::create($validated);
+
+                if (!$banner || !$banner->id) {
+                    // Rollback: Delete uploaded files if database insert failed
+                    foreach ($uploadedFiles as $filePath) {
+                        Storage::disk('public')->delete($filePath);
+                    }
+                    throw new \Exception('Failed to create banner record');
+                }
+
+                return redirect()->route('web-profile.banners.index')
+                    ->with('success', 'Banner created successfully');
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return redirect()->back()
+                ->withErrors($e->errors())
+                ->withInput();
+        } catch (\Exception $e) {
+            Log::error('Banner creation failed: ' . $e->getMessage(), [
+                'request' => $request->except(['background_image', 'content_image']), // Exclude files from log
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Failed to create banner: ' . $e->getMessage())
+                ->withInput();
         }
-
-        // Upload content image
-        if ($request->hasFile('content_image')) {
-            $file = $request->file('content_image');
-            $fileName = time() . '_' . Str::slug($validated['title']) . '_content.' . $file->getClientOriginalExtension();
-            $validated['content_image'] = $file->storeAs('web-profile/banners', $fileName, 'public');
-        }
-
-        $banner = WebProfileBanner::create($validated);
-
-        return redirect()->route('web-profile.banners.index')
-            ->with('success', 'Banner created successfully');
     }
 
     /**

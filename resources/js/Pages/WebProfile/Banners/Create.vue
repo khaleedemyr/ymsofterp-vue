@@ -72,10 +72,22 @@ function submit() {
       Swal.fire('Berhasil!', 'Banner berhasil dibuat.', 'success');
       // Redirect handled by controller
     },
-    onError: (validationErrors) => {
-      errors.value = validationErrors;
+    onError: (page) => {
+      // Handle validation errors
+      if (page.props.errors) {
+        errors.value = page.props.errors;
+        const errorMessages = Object.values(page.props.errors).flat().join('<br>');
+        Swal.fire({
+          icon: 'error',
+          title: 'Error!',
+          html: 'Gagal membuat banner:<br>' + errorMessages,
+        });
+      } else if (page.props.flash?.error) {
+        Swal.fire('Error!', page.props.flash.error, 'error');
+      } else {
+        Swal.fire('Error!', 'Gagal membuat banner. Silakan periksa form yang diisi.', 'error');
+      }
       isSubmitting.value = false;
-      Swal.fire('Error!', 'Gagal membuat banner. Silakan periksa form yang diisi.', 'error');
     },
     onFinish: () => {
       isSubmitting.value = false;
