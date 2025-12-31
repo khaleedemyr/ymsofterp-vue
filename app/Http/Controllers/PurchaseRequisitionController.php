@@ -471,7 +471,12 @@ class PurchaseRequisitionController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        // Determine if mode is kasbon to adjust validation rules
+        $mode = $request->input('mode');
+        $isKasbon = $mode === 'kasbon';
+        
+        // Build validation rules conditionally
+        $rules = [
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'division_id' => 'required|exists:tbl_data_divisi,id',
@@ -481,18 +486,6 @@ class PurchaseRequisitionController extends Controller
             'amount' => 'required|numeric|min:0',
             'currency' => 'string|in:IDR,USD',
             'priority' => 'string|in:LOW,MEDIUM,HIGH,URGENT',
-            'items' => 'required|array|min:1',
-            'items.*.item_name' => 'required|string|max:255',
-            'items.*.qty' => 'required|numeric|min:0.01',
-            'items.*.unit' => 'required|string|max:50',
-            'items.*.unit_price' => 'required|numeric|min:0',
-            'items.*.subtotal' => 'required|numeric|min:0',
-            'items.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet', // For pr_ops mode
-            'items.*.category_id' => 'nullable|exists:purchase_requisition_categories,id', // For pr_ops mode
-            'items.*.item_type' => 'nullable|in:transport,allowance,others', // For travel_application mode
-            'items.*.allowance_recipient_name' => 'nullable|string|max:255', // For allowance type
-            'items.*.allowance_account_number' => 'nullable|string|max:100', // For allowance type
-            'items.*.others_notes' => 'nullable|string', // For others type
             'travel_outlet_ids' => 'nullable|array', // For travel_application mode
             'travel_outlet_ids.*' => 'nullable|exists:tbl_data_outlet,id_outlet',
             'travel_agenda' => 'nullable|string', // For travel_application mode
@@ -500,7 +493,30 @@ class PurchaseRequisitionController extends Controller
             'approvers' => 'nullable|array',
             'approvers.*' => 'required|exists:users,id',
             'mode' => 'required|in:pr_ops,purchase_payment,travel_application,kasbon',
-        ]);
+        ];
+        
+        // For kasbon mode, items are not required (will be auto-generated)
+        // For other modes, items are required
+        if ($isKasbon) {
+            $rules['kasbon_amount'] = 'required|numeric|min:0.01';
+            $rules['kasbon_reason'] = 'required|string';
+            $rules['items'] = 'nullable|array'; // Optional for kasbon
+        } else {
+            $rules['items'] = 'required|array|min:1';
+            $rules['items.*.item_name'] = 'required|string|max:255';
+            $rules['items.*.qty'] = 'required|numeric|min:0.01';
+            $rules['items.*.unit'] = 'required|string|max:50';
+            $rules['items.*.unit_price'] = 'required|numeric|min:0';
+            $rules['items.*.subtotal'] = 'required|numeric|min:0';
+            $rules['items.*.outlet_id'] = 'nullable|exists:tbl_data_outlet,id_outlet'; // For pr_ops mode
+            $rules['items.*.category_id'] = 'nullable|exists:purchase_requisition_categories,id'; // For pr_ops mode
+            $rules['items.*.item_type'] = 'nullable|in:transport,allowance,others'; // For travel_application mode
+            $rules['items.*.allowance_recipient_name'] = 'nullable|string|max:255'; // For allowance type
+            $rules['items.*.allowance_account_number'] = 'nullable|string|max:100'; // For allowance type
+            $rules['items.*.others_notes'] = 'nullable|string'; // For others type
+        }
+        
+        $validated = $request->validate($rules);
 
         // Check budget limit before saving
         // For pr_ops and purchase_payment mode, check budget per outlet/category from items
@@ -588,6 +604,11 @@ class PurchaseRequisitionController extends Controller
             // User id_outlet = 1: skip validasi duplikasi, bisa multi user
         }
 
+        // For kasbon mode, ensure amount is set from kasbon_amount
+        if ($validated['mode'] === 'kasbon' && isset($validated['kasbon_amount'])) {
+            $validated['amount'] = $validated['kasbon_amount'];
+        }
+        
         // Generate PR number
         $validated['pr_number'] = $this->generateRequisitionNumber();
         $validated['date'] = now()->toDateString();
@@ -605,22 +626,45 @@ class PurchaseRequisitionController extends Controller
             // Create purchase requisition
             $purchaseRequisition = PurchaseRequisition::create($validated);
             
-            // Create items
-            foreach ($validated['items'] as $itemData) {
+            // For kasbon mode, create item automatically from kasbon_amount and kasbon_reason
+            if ($validated['mode'] === 'kasbon') {
+                $kasbonAmount = $validated['kasbon_amount'] ?? $validated['amount'];
+                $kasbonReason = $validated['kasbon_reason'] ?? $validated['description'] ?? 'Kasbon';
+                
                 PurchaseRequisitionItem::create([
                     'purchase_requisition_id' => $purchaseRequisition->id,
-                    'outlet_id' => $itemData['outlet_id'] ?? null, // For pr_ops mode
-                    'category_id' => $itemData['category_id'] ?? null, // For pr_ops mode
-                    'item_type' => $itemData['item_type'] ?? null, // For travel_application mode
-                    'item_name' => $itemData['item_name'],
-                    'qty' => $itemData['qty'],
-                    'unit' => $itemData['unit'],
-                    'unit_price' => $itemData['unit_price'],
-                    'subtotal' => $itemData['subtotal'],
-                    'allowance_recipient_name' => $itemData['allowance_recipient_name'] ?? null, // For allowance type
-                    'allowance_account_number' => $itemData['allowance_account_number'] ?? null, // For allowance type
-                    'others_notes' => $itemData['others_notes'] ?? null, // For others type
+                    'outlet_id' => null,
+                    'category_id' => null,
+                    'item_type' => null,
+                    'item_name' => 'Kasbon - ' . $kasbonReason,
+                    'qty' => 1,
+                    'unit' => 'Pcs',
+                    'unit_price' => $kasbonAmount,
+                    'subtotal' => $kasbonAmount,
+                    'allowance_recipient_name' => null,
+                    'allowance_account_number' => null,
+                    'others_notes' => $kasbonReason,
                 ]);
+            } else {
+                // Create items for other modes
+                if (!empty($validated['items'])) {
+                    foreach ($validated['items'] as $itemData) {
+                        PurchaseRequisitionItem::create([
+                            'purchase_requisition_id' => $purchaseRequisition->id,
+                            'outlet_id' => $itemData['outlet_id'] ?? null, // For pr_ops mode
+                            'category_id' => $itemData['category_id'] ?? null, // For pr_ops mode
+                            'item_type' => $itemData['item_type'] ?? null, // For travel_application mode
+                            'item_name' => $itemData['item_name'],
+                            'qty' => $itemData['qty'],
+                            'unit' => $itemData['unit'],
+                            'unit_price' => $itemData['unit_price'],
+                            'subtotal' => $itemData['subtotal'],
+                            'allowance_recipient_name' => $itemData['allowance_recipient_name'] ?? null, // For allowance type
+                            'allowance_account_number' => $itemData['allowance_account_number'] ?? null, // For allowance type
+                            'others_notes' => $itemData['others_notes'] ?? null, // For others type
+                        ]);
+                    }
+                }
             }
 
             // For travel_application mode, store travel outlet IDs in notes or create a separate table
