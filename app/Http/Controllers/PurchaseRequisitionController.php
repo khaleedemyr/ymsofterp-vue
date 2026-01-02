@@ -558,23 +558,31 @@ class PurchaseRequisitionController extends Controller
 
         // Validate kasbon period
         // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-        // Tanggal 11-19 tidak bisa input (di luar periode)
+        // Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+        // Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
         if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
             $user = auth()->user();
             $now = now();
             $currentYear = $now->year;
             $currentMonth = $now->month;
+            $currentDay = $now->day;
             
-            // Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-            // Tidak ada pengecualian untuk tanggal < 20, periode selalu 20 bulan ini - 10 bulan selanjutnya
-            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            // Tentukan periode berdasarkan tanggal sekarang
+            if ($currentDay < 20) {
+                // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
+                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
+            } else {
+                // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
+                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            }
             
-            // Check if current date is within input period (20 bulan ini - 10 bulan selanjutnya)
+            // Check if current date is within input period
             if ($now->lt($startDate) || $now->gt($endDate)) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 return back()->withErrors([
-                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode input kasbon: {$periodText}"
+                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}"
                 ]);
             }
             
@@ -1137,23 +1145,31 @@ class PurchaseRequisitionController extends Controller
 
         // Validate kasbon period
         // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-        // Tanggal 11-19 tidak bisa input (di luar periode)
+        // Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+        // Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
         if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
             $user = auth()->user();
             $now = now();
             $currentYear = $now->year;
             $currentMonth = $now->month;
+            $currentDay = $now->day;
             
-            // Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-            // Tidak ada pengecualian untuk tanggal < 20, periode selalu 20 bulan ini - 10 bulan selanjutnya
-            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            // Tentukan periode berdasarkan tanggal sekarang
+            if ($currentDay < 20) {
+                // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
+                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
+            } else {
+                // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
+                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
+            }
             
-            // Check if current date is within input period (20 bulan ini - 10 bulan selanjutnya)
+            // Check if current date is within input period
             if ($now->lt($startDate) || $now->gt($endDate)) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 return back()->withErrors([
-                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode input kasbon: {$periodText}"
+                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}"
                 ]);
             }
             

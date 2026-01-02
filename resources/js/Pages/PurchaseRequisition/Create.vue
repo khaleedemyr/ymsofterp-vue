@@ -3129,34 +3129,52 @@ const getKasbonPeriod = () => {
   const now = new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() // 0-11
+  const currentDay = now.getDate()
   
-  // Periode kasbon: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-  // Tidak ada pengecualian untuk tanggal < 20, periode selalu 20 bulan ini - 10 bulan selanjutnya
-  const startDate = new Date(currentYear, currentMonth, 20)
-  const endDate = new Date(currentYear, currentMonth + 1, 10)
+  let startDate, endDate
+  
+  // Tentukan periode berdasarkan tanggal sekarang
+  if (currentDay < 20) {
+    // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+    startDate = new Date(currentYear, currentMonth - 1, 20)
+    endDate = new Date(currentYear, currentMonth, 10)
+  } else {
+    // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+    startDate = new Date(currentYear, currentMonth, 20)
+    endDate = new Date(currentYear, currentMonth + 1, 10)
+  }
   
   return { startDate, endDate }
 }
 
 // Check if current date is within kasbon period
-// Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-// Tanggal 11-19 tidak bisa input (di luar periode)
+// Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+// Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
 const isWithinKasbonPeriod = () => {
   const now = new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() // 0-11
   const currentDay = now.getDate()
   
-  // Periode input: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-  const startDate = new Date(currentYear, currentMonth, 20)
-  const endDate = new Date(currentYear, currentMonth + 1, 10)
+  let startDate, endDate
+  
+  // Tentukan periode berdasarkan tanggal sekarang
+  if (currentDay < 20) {
+    // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
+    startDate = new Date(currentYear, currentMonth - 1, 20)
+    endDate = new Date(currentYear, currentMonth, 10)
+  } else {
+    // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+    startDate = new Date(currentYear, currentMonth, 20)
+    endDate = new Date(currentYear, currentMonth + 1, 10)
+  }
   
   // Set time to 00:00:00 for accurate date comparison
   const nowDate = new Date(currentYear, currentMonth, currentDay)
   const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
   const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
   
-  // Bisa input hanya jika tanggal >= 20 bulan ini atau tanggal <= 10 bulan selanjutnya
+  // Check if current date is within the period
   return nowDate >= start && nowDate <= end
 }
 
