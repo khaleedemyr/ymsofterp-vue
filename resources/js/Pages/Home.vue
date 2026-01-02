@@ -2499,6 +2499,43 @@ function getPrUsagePercentage() {
 }
 
 // Helper functions for PO Ops budget calculations
+// Get category display for PO Ops approval (similar to Show.vue getCategoryDisplay)
+function getPoOpsCategoryDisplay(po) {
+  if (!po) return null;
+  
+  const pr = po.source_pr || po.purchase_requisition;
+  if (!pr) return null;
+  
+  // Try to get category from PR items first (new structure for PR Ops mode)
+  if (pr.items && pr.items.length > 0) {
+    const itemWithCategory = pr.items.find(item => item.category_id && item.category);
+    if (itemWithCategory && itemWithCategory.category) {
+      const category = itemWithCategory.category;
+      // division is a string field, not a relationship
+      const divisionName = category.division || '';
+      const categoryName = category.name || '';
+      const display = divisionName && categoryName 
+        ? `[${divisionName}] ${categoryName}` 
+        : categoryName || divisionName || null;
+      return display;
+    }
+  }
+  
+  // Fallback to PR level category (old structure for other modes)
+  if (pr.category) {
+    const category = pr.category;
+    // division is a string field, not a relationship
+    const divisionName = category.division || '';
+    const categoryName = category.name || '';
+    const display = divisionName && categoryName 
+      ? `[${divisionName}] ${categoryName}` 
+      : categoryName || divisionName || null;
+    return display;
+  }
+  
+  return null;
+}
+
 // Get Purchase Requisition ID for comment section
 function getPurchaseRequisitionIdForComment() {
   if (!selectedPoOpsApproval.value) {
@@ -7361,9 +7398,8 @@ watch(locale, () => {
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Category</label>
                                 <p class="text-gray-900 dark:text-white">
-                                    <span v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category">
-                                        <span v-if="(selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.division">[{{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.division }}] </span>
-                                        {{ (selectedPoOpsApproval.source_pr || selectedPoOpsApproval.purchase_requisition)?.category?.name }}
+                                    <span v-if="getPoOpsCategoryDisplay(selectedPoOpsApproval)">
+                                        {{ getPoOpsCategoryDisplay(selectedPoOpsApproval) }}
                                     </span>
                                     <span v-else>-</span>
                                 </p>
