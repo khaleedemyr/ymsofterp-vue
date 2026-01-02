@@ -1106,13 +1106,15 @@ class AuthController extends Controller
                 
                 // If rate limit error from SMTP, delete the token so user can retry immediately
                 // This allows user to request again without waiting, since the email wasn't sent anyway
+                // The token will be recreated on next request, and email will be sent when SMTP rate limit resets
                 if ($isRateLimitError) {
                     DB::table('password_reset_tokens')->where('email', $member->email)->delete();
                     
                     Log::warning('SMTP rate limit exceeded - token deleted to allow retry', [
                         'email' => $member->email,
                         'member_id' => $member->id,
-                        'action' => 'Token deleted. User can request again immediately.'
+                        'action' => 'Token deleted. User can request again immediately. Email will be sent when SMTP rate limit resets.',
+                        'suggestion' => 'Consider setting up queue (QUEUE_CONNECTION=database) and queue worker for better email handling during rate limits.'
                     ]);
                 }
                 // Continue - if not rate limit, token is still saved for user to use later
