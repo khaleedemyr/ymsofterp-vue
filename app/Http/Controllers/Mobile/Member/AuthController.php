@@ -1078,12 +1078,21 @@ class AuthController extends Controller
                 // Add small delay to avoid rate limiting (0.5 seconds)
                 usleep(500000);
                 
-                // Send email - Laravel will automatically use queue if queue is configured
-                Mail::raw('', function ($message) use ($member, $resetUrl, $emailBody) {
-                    $message->to($member->email)
-                        ->subject('Reset Password - JUSTUS GROUP')
-                        ->html($emailBody);
-                });
+                // Send email directly (force sync, not queued) to ensure immediate delivery
+                // Temporarily set queue connection to sync for this email
+                $originalQueueConnection = config('queue.default');
+                config(['queue.default' => 'sync']);
+                
+                try {
+                    Mail::raw('', function ($message) use ($member, $resetUrl, $emailBody) {
+                        $message->to($member->email)
+                            ->subject('Reset Password - JUSTUS GROUP')
+                            ->html($emailBody);
+                    });
+                } finally {
+                    // Restore original queue connection
+                    config(['queue.default' => $originalQueueConnection]);
+                }
                 
                 Log::info('Password reset email sent', [
                     'email' => $member->email,
