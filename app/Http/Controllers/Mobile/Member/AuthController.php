@@ -1007,15 +1007,24 @@ class AuthController extends Controller
             // Delete old token first if exists
             DB::table('password_reset_tokens')->where('email', $member->email)->delete();
             
-            // Insert new token
+            // Insert new token with explicit timestamp
+            $createdAt = now();
             DB::table('password_reset_tokens')->insert([
                 'email' => $member->email,
                 'token' => Hash::make($token),
-                'created_at' => now()
+                'created_at' => $createdAt
             ]);
 
-            // Send email with reset link
-            $resetUrl = url('/reset-password?token=' . $token . '&email=' . urlencode($member->email));
+            // Send email with reset link (URL encode token to handle special characters)
+            $resetUrl = url('/reset-password?token=' . urlencode($token) . '&email=' . urlencode($member->email));
+            
+            Log::info('Password reset token created', [
+                'email' => $member->email,
+                'member_id' => $member->id,
+                'created_at' => $createdAt->toDateTimeString(),
+                'expires_at' => $createdAt->copy()->addMinutes(60)->toDateTimeString(),
+                'token_length' => strlen($token)
+            ]);
             
             // Try to send email, but don't fail if email sending fails (for security, still return success)
             try {
@@ -1112,14 +1121,28 @@ class AuthController extends Controller
                 ->first();
 
             if (!$passwordReset) {
+                Log::warning('Password reset token not found', [
+                    'email' => $request->email
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid or expired reset token'
                 ], 400);
             }
 
+            // Parse created_at to Carbon instance for accurate time comparison
+            $createdAt = \Carbon\Carbon::parse($passwordReset->created_at);
+            $expiresAt = $createdAt->copy()->addMinutes(60);
+            
             // Check if token is expired (60 minutes)
-            if (now()->diffInMinutes($passwordReset->created_at) > 60) {
+            if (now()->isAfter($expiresAt)) {
+                Log::warning('Password reset token expired', [
+                    'email' => $request->email,
+                    'created_at' => $createdAt->toDateTimeString(),
+                    'expires_at' => $expiresAt->toDateTimeString(),
+                    'now' => now()->toDateTimeString(),
+                    'minutes_elapsed' => now()->diffInMinutes($createdAt)
+                ]);
                 DB::table('password_reset_tokens')->where('email', $request->email)->delete();
                 return response()->json([
                     'success' => false,
@@ -1129,6 +1152,11 @@ class AuthController extends Controller
 
             // Verify token
             if (!Hash::check($request->token, $passwordReset->token)) {
+                Log::warning('Password reset token mismatch', [
+                    'email' => $request->email,
+                    'token_provided_length' => strlen($request->token),
+                    'token_stored_length' => strlen($passwordReset->token)
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid reset token'

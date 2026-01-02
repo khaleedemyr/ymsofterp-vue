@@ -210,8 +210,17 @@
         
         // Check if token and email are present
         const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token') || document.getElementById('token').value;
-        const email = urlParams.get('email') || document.getElementById('email').value;
+        // URLSearchParams automatically decodes URL-encoded values
+        let token = urlParams.get('token') || document.getElementById('token').value;
+        let email = urlParams.get('email') || document.getElementById('email').value;
+        
+        // Decode if still encoded (double decode protection)
+        if (token && token.includes('%')) {
+            token = decodeURIComponent(token);
+        }
+        if (email && email.includes('%')) {
+            email = decodeURIComponent(email);
+        }
         
         if (!token || !email) {
             showMessage('Invalid reset link. Please request a new password reset.', 'error');
