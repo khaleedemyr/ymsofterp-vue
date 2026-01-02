@@ -1000,6 +1000,25 @@ class AuthController extends Controller
                 ]);
             }
 
+            // Rate limiting: Check if there's a recent token request (within last 5 minutes)
+            $recentToken = DB::table('password_reset_tokens')
+                ->where('email', $member->email)
+                ->where('created_at', '>=', now()->subMinutes(5))
+                ->first();
+
+            if ($recentToken) {
+                Log::warning('Password reset rate limit exceeded', [
+                    'email' => $member->email,
+                    'member_id' => $member->id,
+                    'last_request' => $recentToken->created_at
+                ]);
+                // Still return success for security, but don't create new token
+                return response()->json([
+                    'success' => true,
+                    'message' => 'If the email exists, a password reset link has been sent. Please check your email or wait a few minutes before requesting again.'
+                ]);
+            }
+
             // Generate reset token (shorter token to fit in string column)
             $token = Str::random(60);
             
@@ -1026,7 +1045,7 @@ class AuthController extends Controller
                 'token_length' => strlen($token)
             ]);
             
-            // Try to send email, but don't fail if email sending fails (for security, still return success)
+            // Try to send email with rate limit protection
             try {
                 $emailBody = "
                     <html>
@@ -1044,6 +1063,10 @@ class AuthController extends Controller
                     </html>
                 ";
                 
+                // Add small delay to avoid rate limiting (0.5 seconds)
+                usleep(500000);
+                
+                // Send email - Laravel will automatically use queue if queue is configured
                 Mail::raw('', function ($message) use ($member, $resetUrl, $emailBody) {
                     $message->to($member->email)
                         ->subject('Reset Password - JUSTUS GROUP')
@@ -1052,15 +1075,31 @@ class AuthController extends Controller
                 
                 Log::info('Password reset email sent', [
                     'email' => $member->email,
-                    'member_id' => $member->id
+                    'member_id' => $member->id,
+                    'queue_connection' => config('queue.default', 'sync')
                 ]);
             } catch (\Exception $mailException) {
+                // Check if it's a rate limit error
+                $isRateLimitError = strpos($mailException->getMessage(), 'Ratelimit') !== false 
+                    || strpos($mailException->getMessage(), '451') !== false
+                    || strpos($mailException->getMessage(), 'rate limit') !== false;
+                
                 // Log email error but don't fail the request (for security)
                 Log::error('Failed to send password reset email: ' . $mailException->getMessage(), [
                     'email' => $member->email,
                     'member_id' => $member->id,
+                    'is_rate_limit' => $isRateLimitError,
                     'trace' => $mailException->getTraceAsString()
                 ]);
+                
+                // If rate limit error, log warning for admin
+                if ($isRateLimitError) {
+                    Log::warning('SMTP rate limit exceeded - email not sent', [
+                        'email' => $member->email,
+                        'member_id' => $member->id,
+                        'suggestion' => 'Token is saved. User can request again after rate limit period, or admin can manually send email.'
+                    ]);
+                }
                 // Continue - token is still saved, user can request again if needed
             }
 
