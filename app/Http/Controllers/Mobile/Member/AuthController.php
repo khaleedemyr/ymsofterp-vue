@@ -1000,22 +1000,30 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Rate limiting: Check if there's a recent token request (within last 5 minutes)
+            // Rate limiting: Check if there's a recent token request (within last 2 minutes)
+            // Reduced from 5 minutes to 2 minutes to be more user-friendly
+            // This prevents spam while allowing legitimate retries if email fails
             $recentToken = DB::table('password_reset_tokens')
                 ->where('email', $member->email)
-                ->where('created_at', '>=', now()->subMinutes(5))
+                ->where('created_at', '>=', now()->subMinutes(2))
                 ->first();
 
             if ($recentToken) {
+                $minutesSinceLastRequest = now()->diffInMinutes(\Carbon\Carbon::parse($recentToken->created_at));
+                $remainingMinutes = max(0, 2 - $minutesSinceLastRequest);
+                
                 Log::warning('Password reset rate limit exceeded', [
                     'email' => $member->email,
                     'member_id' => $member->id,
-                    'last_request' => $recentToken->created_at
+                    'last_request' => $recentToken->created_at,
+                    'minutes_since_last_request' => $minutesSinceLastRequest,
+                    'remaining_minutes' => $remainingMinutes
                 ]);
+                
                 // Still return success for security, but don't create new token
                 return response()->json([
                     'success' => true,
-                    'message' => 'If the email exists, a password reset link has been sent. Please check your email or wait a few minutes before requesting again.'
+                    'message' => 'If the email exists, a password reset link has been sent. Please check your email or wait ' . $remainingMinutes . ' minute(s) before requesting again.'
                 ]);
             }
 
@@ -1023,7 +1031,7 @@ class AuthController extends Controller
             $token = Str::random(60);
             
             // Store token in password_reset_tokens table
-            // Delete old token first if exists
+            // Delete old token first if exists (this allows new request if previous one failed)
             DB::table('password_reset_tokens')->where('email', $member->email)->delete();
             
             // Insert new token with explicit timestamp
