@@ -247,6 +247,15 @@
             submitBtn.innerHTML = '<span class="loading"></span> Resetting Password...';
             
             try {
+                // Ensure token is fully decoded before sending
+                let decodedToken = token;
+                while (decodedToken.includes('%')) {
+                    const previousToken = decodedToken;
+                    decodedToken = decodeURIComponent(decodedToken);
+                    // Prevent infinite loop
+                    if (previousToken === decodedToken) break;
+                }
+                
                 const response = await fetch('https://ymsofterp.com/api/mobile/member/auth/reset-password', {
                     method: 'POST',
                     headers: {
@@ -254,7 +263,7 @@
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        token: token,
+                        token: decodedToken,
                         email: email,
                         password: password,
                         password_confirmation: passwordConfirmation

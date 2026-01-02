@@ -1171,6 +1171,14 @@ class AuthController extends Controller
                 ], 404);
             }
 
+            // Log incoming request for debugging
+            Log::info('Password reset attempt', [
+                'email' => $request->email,
+                'token_length' => strlen($request->token),
+                'token_preview' => substr($request->token, 0, 20) . '...',
+                'token_has_percent' => strpos($request->token, '%') !== false
+            ]);
+
             // Check if token exists and is valid
             $passwordReset = DB::table('password_reset_tokens')
                 ->where('email', $request->email)
@@ -1206,17 +1214,30 @@ class AuthController extends Controller
                 ], 400);
             }
 
+            // Decode token if it's URL encoded (handle double encoding)
+            $tokenToVerify = $request->token;
+            if (strpos($tokenToVerify, '%') !== false) {
+                $tokenToVerify = urldecode($tokenToVerify);
+            }
+            
             // Verify token
-            if (!Hash::check($request->token, $passwordReset->token)) {
-                Log::warning('Password reset token mismatch', [
-                    'email' => $request->email,
-                    'token_provided_length' => strlen($request->token),
-                    'token_stored_length' => strlen($passwordReset->token)
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid reset token'
-                ], 400);
+            if (!Hash::check($tokenToVerify, $passwordReset->token)) {
+                // Try with original token as well (in case it wasn't encoded)
+                if ($tokenToVerify !== $request->token && !Hash::check($request->token, $passwordReset->token)) {
+                    Log::warning('Password reset token mismatch', [
+                        'email' => $request->email,
+                        'token_provided' => substr($request->token, 0, 20) . '...',
+                        'token_provided_length' => strlen($request->token),
+                        'token_decoded_length' => strlen($tokenToVerify),
+                        'token_stored_length' => strlen($passwordReset->token),
+                        'token_has_percent' => strpos($request->token, '%') !== false,
+                        'created_at' => $createdAt->toDateTimeString()
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid reset token'
+                    ], 400);
+                }
             }
 
             // Update password
