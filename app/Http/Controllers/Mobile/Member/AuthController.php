@@ -8,6 +8,7 @@ use App\Models\MemberAppsOccupation;
 use App\Services\MemberTierService;
 use App\Services\FCMService;
 use App\Mail\MemberEmailVerification;
+use App\Mail\MemberPasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -1034,17 +1035,16 @@ class AuthController extends Controller
             // Generate reset token (shorter token to fit in string column)
             $token = Str::random(60);
             
-            // Store token in password_reset_tokens table
-            // Delete old token first if exists (this allows new request if previous one failed)
-            DB::table('password_reset_tokens')->where('email', $member->email)->delete();
-            
-            // Insert new token with explicit timestamp
+            // Store token in password_reset_tokens table using updateOrInsert to avoid race condition
+            // This ensures atomic operation: delete old and insert new in one query
             $createdAt = now();
-            DB::table('password_reset_tokens')->insert([
-                'email' => $member->email,
-                'token' => Hash::make($token),
-                'created_at' => $createdAt
-            ]);
+            DB::table('password_reset_tokens')->updateOrInsert(
+                ['email' => $member->email],
+                [
+                    'token' => Hash::make($token),
+                    'created_at' => $createdAt
+                ]
+            );
 
             // Send email with reset link (URL encode token to handle special characters)
             $resetUrl = url('/reset-password?token=' . urlencode($token) . '&email=' . urlencode($member->email));
@@ -1078,26 +1078,13 @@ class AuthController extends Controller
                 // Add small delay to avoid rate limiting (0.5 seconds)
                 usleep(500000);
                 
-                // Send email directly (force sync, not queued) to ensure immediate delivery
-                // Temporarily set queue connection to sync for this email
-                $originalQueueConnection = config('queue.default');
-                config(['queue.default' => 'sync']);
+                // Send email using Mailable class that forces sync (no queue)
+                Mail::to($member->email)->send(new MemberPasswordReset($member, $resetUrl));
                 
-                try {
-                    Mail::raw('', function ($message) use ($member, $resetUrl, $emailBody) {
-                        $message->to($member->email)
-                            ->subject('Reset Password - JUSTUS GROUP')
-                            ->html($emailBody);
-                    });
-                } finally {
-                    // Restore original queue connection
-                    config(['queue.default' => $originalQueueConnection]);
-                }
-                
-                Log::info('Password reset email sent', [
+                Log::info('Password reset email sent (direct, not queued)', [
                     'email' => $member->email,
                     'member_id' => $member->id,
-                    'queue_connection' => config('queue.default', 'sync')
+                    'sent_directly' => true
                 ]);
             } catch (\Exception $mailException) {
                 // Check if it's a rate limit error from SMTP
