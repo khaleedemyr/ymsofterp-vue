@@ -1000,30 +1000,34 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Rate limiting: Check if there's a recent token request (within last 2 minutes)
-            // Reduced from 5 minutes to 2 minutes to be more user-friendly
+            // Rate limiting: Check if there's a recent token request (within last 1 minute)
+            // Reduced to 1 minute to be more user-friendly, especially when SMTP rate limit occurs
             // This prevents spam while allowing legitimate retries if email fails
             $recentToken = DB::table('password_reset_tokens')
                 ->where('email', $member->email)
-                ->where('created_at', '>=', now()->subMinutes(2))
+                ->where('created_at', '>=', now()->subMinute())
                 ->first();
 
             if ($recentToken) {
-                $minutesSinceLastRequest = now()->diffInMinutes(\Carbon\Carbon::parse($recentToken->created_at));
-                $remainingMinutes = max(0, 2 - $minutesSinceLastRequest);
+                $secondsSinceLastRequest = now()->diffInSeconds(\Carbon\Carbon::parse($recentToken->created_at));
+                $remainingSeconds = max(0, 60 - $secondsSinceLastRequest);
                 
                 Log::warning('Password reset rate limit exceeded', [
                     'email' => $member->email,
                     'member_id' => $member->id,
                     'last_request' => $recentToken->created_at,
-                    'minutes_since_last_request' => $minutesSinceLastRequest,
-                    'remaining_minutes' => $remainingMinutes
+                    'seconds_since_last_request' => $secondsSinceLastRequest,
+                    'remaining_seconds' => $remainingSeconds
                 ]);
                 
                 // Still return success for security, but don't create new token
+                $remainingMessage = $remainingSeconds > 0 
+                    ? 'Please wait ' . ceil($remainingSeconds) . ' second(s) before requesting again.'
+                    : 'Please wait a moment before requesting again.';
+                    
                 return response()->json([
                     'success' => true,
-                    'message' => 'If the email exists, a password reset link has been sent. Please check your email or wait ' . $remainingMinutes . ' minute(s) before requesting again.'
+                    'message' => 'If the email exists, a password reset link has been sent. ' . $remainingMessage
                 ]);
             }
 
@@ -1087,7 +1091,7 @@ class AuthController extends Controller
                     'queue_connection' => config('queue.default', 'sync')
                 ]);
             } catch (\Exception $mailException) {
-                // Check if it's a rate limit error
+                // Check if it's a rate limit error from SMTP
                 $isRateLimitError = strpos($mailException->getMessage(), 'Ratelimit') !== false 
                     || strpos($mailException->getMessage(), '451') !== false
                     || strpos($mailException->getMessage(), 'rate limit') !== false;
@@ -1100,15 +1104,18 @@ class AuthController extends Controller
                     'trace' => $mailException->getTraceAsString()
                 ]);
                 
-                // If rate limit error, log warning for admin
+                // If rate limit error from SMTP, delete the token so user can retry immediately
+                // This allows user to request again without waiting, since the email wasn't sent anyway
                 if ($isRateLimitError) {
-                    Log::warning('SMTP rate limit exceeded - email not sent', [
+                    DB::table('password_reset_tokens')->where('email', $member->email)->delete();
+                    
+                    Log::warning('SMTP rate limit exceeded - token deleted to allow retry', [
                         'email' => $member->email,
                         'member_id' => $member->id,
-                        'suggestion' => 'Token is saved. User can request again after rate limit period, or admin can manually send email.'
+                        'action' => 'Token deleted. User can request again immediately.'
                     ]);
                 }
-                // Continue - token is still saved, user can request again if needed
+                // Continue - if not rate limit, token is still saved for user to use later
             }
 
             Log::info('Password reset requested', [
