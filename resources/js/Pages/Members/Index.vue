@@ -45,14 +45,24 @@ const preferencesSummary = ref({
 const loadingPreferences = ref(false);
 const expandedPreferences = ref(new Set()); // Track which preferences are expanded
 
-// Voucher timeline modal state
+// Activity timeline modal state
 const showVoucherTimelineModal = ref(false);
 const voucherTimeline = ref([]);
 const voucherTimelineSummary = ref({
+  total_activities: 0,
+  total_point_earned: 0,
+  total_point_earned_formatted: '0',
+  total_point_used: 0,
+  total_point_used_formatted: '0',
+  total_point_transactions: 0,
   total_owned: 0,
   total_active: 0,
   total_used: 0,
-  total_purchased: 0
+  total_purchased: 0,
+  total_challenges_started: 0,
+  total_challenges_completed: 0,
+  total_rewards_redeemed: 0,
+  total_tier_changes: 0
 });
 const loadingVoucherTimeline = ref(false);
 
@@ -158,6 +168,133 @@ function formatNumber(number) {
   return number.toLocaleString('id-ID');
 }
 
+async function changePassword(member) {
+  try {
+    const { value: formValues } = await Swal.fire({
+      title: 'Ubah Password Member',
+      html: `
+        <div class="text-left">
+          <p class="mb-4 text-sm text-gray-600">Member: <strong>${member.name}</strong><br><small>${member.email}</small></p>
+          <div class="mb-3">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Password Baru</label>
+            <input id="swal-password" type="password" class="swal2-input" placeholder="Masukkan password baru" minlength="6" required>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Konfirmasi Password</label>
+            <input id="swal-password-confirm" type="password" class="swal2-input" placeholder="Konfirmasi password baru" minlength="6" required>
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonColor: '#f97316',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Ubah Password',
+      cancelButtonText: 'Batal',
+      preConfirm: () => {
+        const password = document.getElementById('swal-password').value;
+        const passwordConfirm = document.getElementById('swal-password-confirm').value;
+        
+        if (!password || password.length < 6) {
+          Swal.showValidationMessage('Password minimal 6 karakter');
+          return false;
+        }
+        
+        if (password !== passwordConfirm) {
+          Swal.showValidationMessage('Konfirmasi password tidak cocok');
+          return false;
+        }
+        
+        return { password, password_confirmation: passwordConfirm };
+      }
+    });
+    
+    if (formValues) {
+      const response = await axios.patch(`/members/${member.id}/change-password`, {
+        password: formValues.password,
+        password_confirmation: formValues.password_confirmation
+      });
+      
+      if (response.data.success) {
+        Swal.fire({
+          title: 'Berhasil!',
+          text: response.data.message || 'Password berhasil diubah',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } else {
+        Swal.fire({
+          title: 'Gagal',
+          text: response.data.message || 'Gagal mengubah password',
+          icon: 'error'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error changing password:', error);
+    let errorMessage = 'Terjadi kesalahan saat mengubah password';
+    
+    if (error.response?.data?.errors) {
+      const errors = error.response.data.errors;
+      errorMessage = Object.values(errors).flat().join(', ');
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    }
+    
+    Swal.fire({
+      title: 'Error',
+      text: errorMessage,
+      icon: 'error'
+    });
+  }
+}
+
+async function verifyEmail(member) {
+  try {
+    const result = await Swal.fire({
+      title: 'Verifikasi Email Manual',
+      html: `Apakah Anda yakin ingin memverifikasi email untuk member:<br><strong>${member.name}</strong><br><small>${member.email}</small>?<br><br><span class="text-sm text-gray-600">Ini akan langsung memverifikasi email tanpa perlu token verifikasi.</span>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Ya, Verifikasi',
+      cancelButtonText: 'Batal'
+    });
+    
+    if (result.isConfirmed) {
+      const response = await axios.patch(`/members/${member.id}/verify-email`);
+      
+      if (response.data.success) {
+        Swal.fire({
+          title: 'Berhasil!',
+          text: response.data.message || 'Email berhasil diverifikasi',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        
+        // Reload data to reflect changes
+        router.reload({ only: ['members'] });
+      } else {
+        Swal.fire({
+          title: 'Gagal',
+          text: response.data.message || 'Gagal memverifikasi email',
+          icon: 'error'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error verifying email:', error);
+    Swal.fire({
+      title: 'Error',
+      text: error.response?.data?.message || 'Terjadi kesalahan saat memverifikasi email',
+      icon: 'error'
+    });
+  }
+}
+
 async function viewTransactions(member) {
   selectedMember.value = member;
   showTransactionModal.value = true;
@@ -247,11 +384,11 @@ async function viewVoucherTimeline(member) {
         total_purchased: 0
       };
     } else {
-      Swal.fire('Error', response.data.message || 'Gagal mengambil data voucher timeline', 'error');
+      Swal.fire('Error', response.data.message || 'Gagal mengambil data timeline aktivitas', 'error');
     }
   } catch (error) {
-    console.error('Error fetching voucher timeline:', error);
-    Swal.fire('Error', 'Gagal mengambil data voucher timeline', 'error');
+    console.error('Error fetching activity timeline:', error);
+    Swal.fire('Error', 'Gagal mengambil data timeline aktivitas', 'error');
   } finally {
     loadingVoucherTimeline.value = false;
   }
@@ -335,6 +472,41 @@ function togglePreferenceExpansion(index) {
 
 function isPreferenceExpanded(index) {
   return expandedPreferences.value.has(index);
+}
+
+function getTimelineIcon(type) {
+  const iconMap = {
+    // Voucher activities
+    'owned': 'fa-solid fa-ticket',
+    'purchased': 'fa-solid fa-shopping-cart',
+    'redeemed': 'fa-solid fa-check-circle',
+    
+    // Challenge activities
+    'challenge_start': 'fa-solid fa-flag',
+    'challenge_complete': 'fa-solid fa-trophy',
+    'challenge_claim': 'fa-solid fa-gift',
+    'challenge_redeem': 'fa-solid fa-hand-holding-heart',
+    
+    // Reward activities
+    'reward_redeem': 'fa-solid fa-gift',
+    
+    // Tier changes
+    'tier_upgrade': 'fa-solid fa-arrow-trend-up',
+    'tier_downgrade': 'fa-solid fa-arrow-trend-down',
+    
+    // Point activities
+    'point_earned_purchase': 'fa-solid fa-coins',
+    'point_earned_registration': 'fa-solid fa-user-plus',
+    'point_earned_bonus': 'fa-solid fa-star',
+    'point_earned_referral': 'fa-solid fa-users',
+    'point_adjustment': 'fa-solid fa-sliders',
+    'point_transaction': 'fa-solid fa-exchange-alt',
+    
+    // Default
+    'default': 'fa-solid fa-circle'
+  };
+  
+  return iconMap[type] || iconMap['default'];
 }
 
 function formatDate(dateString) {
@@ -508,23 +680,18 @@ function formatDate(dateString) {
                 <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('name')">
-                Nama
+                Informasi Member
                 <i v-if="filters.sort === 'name'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
                 <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('email')">
-                Email
-                <i v-if="filters.sort === 'email'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
-                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
-              </th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('mobile_phone')">
-                Telepon
-                <i v-if="filters.sort === 'mobile_phone'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
-                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
-              </th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('point_balance')">
-                Saldo Point
+                Point & Tier
                 <i v-if="filters.sort === 'point_balance'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+                <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('total_spending')">
+                Total Spending
+                <i v-if="filters.sort === 'total_spending'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
                 <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('spending_last_year')">
@@ -532,9 +699,9 @@ function formatDate(dateString) {
                 <i v-if="filters.sort === 'spending_last_year'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
                 <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
-              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('tier')">
-                Tier
-                <i v-if="filters.sort === 'tier'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('last_spending')">
+                Last Spending
+                <i v-if="filters.sort === 'last_spending'" :class="filters.direction === 'desc' ? 'fa-solid fa-sort-down' : 'fa-solid fa-sort-up'" class="ml-1"></i>
                 <i v-else class="fa-solid fa-sort ml-1 text-purple-300"></i>
               </th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-purple-700 transition" @click="changeSort('status_aktif')">
@@ -548,39 +715,73 @@ function formatDate(dateString) {
           <tbody>
             <tr v-for="member in members.data" :key="member.id" class="hover:bg-purple-50 transition">
               <td class="px-4 py-2 whitespace-nowrap font-mono text-sm">{{ member.costumers_id }}</td>
-              <td class="px-4 py-2 whitespace-nowrap font-semibold">{{ member.name }}</td>
-              <td class="px-4 py-2 whitespace-nowrap">{{ member.email || '-' }}</td>
-              <td class="px-4 py-2 whitespace-nowrap">{{ member.telepon || '-' }}</td>
-              <td class="px-4 py-2 whitespace-nowrap">
-                <span :class="[
-                  'font-mono font-semibold text-sm px-2 py-1 rounded-full',
-                  member.point_balance > 0 
-                    ? 'bg-green-100 text-green-800' 
-                    : member.point_balance < 0 
-                    ? 'bg-red-100 text-red-800'
-                    : 'bg-gray-100 text-gray-800'
-                ]">
-                  {{ member.point_balance_formatted }}
-                </span>
+              <td class="px-4 py-2">
+                <div class="space-y-1">
+                  <div class="font-semibold text-gray-900">{{ member.name }}</div>
+                  <div class="text-sm text-gray-600 flex items-center gap-1">
+                    <i class="fa-solid fa-envelope text-gray-400 text-xs"></i>
+                    <span>{{ member.email || '-' }}</span>
+                  </div>
+                  <div class="text-sm text-gray-600 flex items-center gap-1">
+                    <i class="fa-solid fa-phone text-gray-400 text-xs"></i>
+                    <span>{{ member.telepon || '-' }}</span>
+                  </div>
+                </div>
+              </td>
+              <td class="px-4 py-2">
+                <div class="space-y-2">
+                  <div>
+                    <span :class="[
+                      'font-mono font-semibold text-sm px-2 py-1 rounded-full inline-block',
+                      member.point_balance > 0 
+                        ? 'bg-green-100 text-green-800' 
+                        : member.point_balance < 0 
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-gray-100 text-gray-800'
+                    ]">
+                      {{ member.point_balance_formatted }}
+                    </span>
+                  </div>
+                  <div>
+                    <span :class="[
+                      'font-semibold text-xs px-2 py-1 rounded-full uppercase inline-block',
+                      member.tier === 'platinum' 
+                        ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                        : member.tier === 'gold'
+                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                        : member.tier === 'silver'
+                        ? 'bg-gray-100 text-gray-800 border border-gray-300'
+                        : 'bg-blue-100 text-blue-800 border border-blue-300'
+                    ]">
+                      {{ member.tier_formatted || 'Silver' }}
+                    </span>
+                  </div>
+                </div>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
                 <span class="font-semibold text-sm text-blue-700">
-                  {{ member.spending_last_year_formatted || 'Rp 0' }}
+                  {{ member.total_spending_formatted || 'Rp 0' }}
                 </span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
-                <span :class="[
-                  'font-semibold text-xs px-2 py-1 rounded-full uppercase',
-                  member.tier === 'platinum' 
-                    ? 'bg-purple-100 text-purple-800 border border-purple-300'
-                    : member.tier === 'gold'
-                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                    : member.tier === 'silver'
-                    ? 'bg-gray-100 text-gray-800 border border-gray-300'
-                    : 'bg-blue-100 text-blue-800 border border-blue-300'
-                ]">
-                  {{ member.tier_formatted || 'Silver' }}
+                <span class="font-semibold text-sm text-green-700">
+                  {{ member.spending_last_year_formatted || 'Rp 0' }}
                 </span>
+              </td>
+              <td class="px-4 py-2">
+                <div class="space-y-1">
+                  <div class="font-semibold text-sm text-indigo-700">
+                    {{ member.last_spending_formatted || 'Rp 0' }}
+                  </div>
+                  <div v-if="member.last_spending_outlet" class="text-xs text-gray-600 flex items-center gap-1">
+                    <i class="fa-solid fa-store text-gray-400"></i>
+                    <span>{{ member.last_spending_outlet }}</span>
+                  </div>
+                  <div v-if="member.last_spending_date_formatted && member.last_spending_date_formatted !== '-'" class="text-xs text-gray-500 flex items-center gap-1">
+                    <i class="fa-solid fa-calendar text-gray-400"></i>
+                    <span>{{ member.last_spending_date_formatted }}</span>
+                  </div>
+                </div>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
                 <div class="flex items-center">
@@ -606,11 +807,17 @@ function formatDate(dateString) {
                                  <button @click="viewTransactions(member)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Transaksi & Point">
                    <i class="fa-solid fa-coins"></i>
                  </button>
+                 <button @click="verifyEmail(member)" class="px-2 py-1 rounded bg-teal-100 text-teal-700 hover:bg-teal-200 transition" title="Verifikasi Email Manual" v-if="!member.email_verified_at">
+                   <i class="fa-solid fa-envelope-circle-check"></i>
+                 </button>
+                 <button @click="changePassword(member)" class="px-2 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 transition" title="Ubah Password">
+                   <i class="fa-solid fa-key"></i>
+                 </button>
                  <button @click="viewPreferences(member)" class="px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition" title="Menu Favorit">
                    <i class="fa-solid fa-heart"></i>
                  </button>
-                 <button @click="viewVoucherTimeline(member)" class="px-2 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition" title="Voucher Timeline">
-                   <i class="fa-solid fa-ticket"></i>
+                 <button @click="viewVoucherTimeline(member)" class="px-2 py-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition" title="Timeline Aktivitas">
+                   <i class="fa-solid fa-clock-rotate-left"></i>
                  </button>
                 <button @click="toggleStatus(member)" :class="[
                   'px-2 py-1 rounded transition',
@@ -1071,14 +1278,14 @@ function formatDate(dateString) {
          </div>
        </div>
 
-       <!-- Modal Voucher Timeline -->
+       <!-- Modal Activity Timeline -->
        <div v-if="showVoucherTimelineModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
          <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
            <!-- Header -->
            <div class="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white p-6 rounded-t-2xl">
              <div class="flex justify-between items-center">
                <div>
-                 <h2 class="text-xl font-bold">Voucher Timeline</h2>
+                 <h2 class="text-xl font-bold">Timeline Aktivitas Member</h2>
                  <p class="text-indigo-200">{{ selectedMember?.name }} ({{ selectedMember?.costumers_id }})</p>
                </div>
                <button @click="closeVoucherTimelineModal" class="text-white hover:text-indigo-200 transition">
@@ -1089,7 +1296,44 @@ function formatDate(dateString) {
 
            <!-- Content -->
            <div class="p-6">
-             <!-- Summary Cards -->
+             <!-- Summary Cards - Point Transactions -->
+             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+               <div class="bg-green-50 rounded-xl p-4 border border-green-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-green-100 rounded-lg">
+                     <i class="fa-solid fa-arrow-up text-green-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-green-600">Point Diperoleh</p>
+                     <p class="text-lg font-bold text-green-800">{{ voucherTimelineSummary.total_point_earned_formatted || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-red-50 rounded-xl p-4 border border-red-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-red-100 rounded-lg">
+                     <i class="fa-solid fa-arrow-down text-red-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-red-600">Point Digunakan</p>
+                     <p class="text-lg font-bold text-red-800">{{ voucherTimelineSummary.total_point_used_formatted || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                 <div class="flex items-center">
+                   <div class="p-2 bg-blue-100 rounded-lg">
+                     <i class="fa-solid fa-list text-blue-600"></i>
+                   </div>
+                   <div class="ml-3">
+                     <p class="text-sm text-blue-600">Total Aktivitas</p>
+                     <p class="text-lg font-bold text-blue-800">{{ voucherTimelineSummary.total_activities || 0 }}</p>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <!-- Summary Cards - Vouchers -->
              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
                  <div class="flex items-center">
@@ -1097,8 +1341,8 @@ function formatDate(dateString) {
                      <i class="fa-solid fa-ticket text-blue-600"></i>
                    </div>
                    <div class="ml-3">
-                     <p class="text-sm text-blue-600">Total Dimiliki</p>
-                     <p class="text-lg font-bold text-blue-800">{{ voucherTimelineSummary.total_owned }}</p>
+                     <p class="text-sm text-blue-600">Voucher Dimiliki</p>
+                     <p class="text-lg font-bold text-blue-800">{{ voucherTimelineSummary.total_owned || 0 }}</p>
                    </div>
                  </div>
                </div>
@@ -1108,8 +1352,8 @@ function formatDate(dateString) {
                      <i class="fa-solid fa-check-circle text-green-600"></i>
                    </div>
                    <div class="ml-3">
-                     <p class="text-sm text-green-600">Aktif</p>
-                     <p class="text-lg font-bold text-green-800">{{ voucherTimelineSummary.total_active }}</p>
+                     <p class="text-sm text-green-600">Voucher Aktif</p>
+                     <p class="text-lg font-bold text-green-800">{{ voucherTimelineSummary.total_active || 0 }}</p>
                    </div>
                  </div>
                </div>
@@ -1119,8 +1363,8 @@ function formatDate(dateString) {
                      <i class="fa-solid fa-check-double text-orange-600"></i>
                    </div>
                    <div class="ml-3">
-                     <p class="text-sm text-orange-600">Digunakan</p>
-                     <p class="text-lg font-bold text-orange-800">{{ voucherTimelineSummary.total_used }}</p>
+                     <p class="text-sm text-orange-600">Voucher Digunakan</p>
+                     <p class="text-lg font-bold text-orange-800">{{ voucherTimelineSummary.total_used || 0 }}</p>
                    </div>
                  </div>
                </div>
@@ -1130,15 +1374,15 @@ function formatDate(dateString) {
                      <i class="fa-solid fa-shopping-cart text-purple-600"></i>
                    </div>
                    <div class="ml-3">
-                     <p class="text-sm text-purple-600">Dibeli</p>
-                     <p class="text-lg font-bold text-purple-800">{{ voucherTimelineSummary.total_purchased }}</p>
+                     <p class="text-sm text-purple-600">Voucher Dibeli</p>
+                     <p class="text-lg font-bold text-purple-800">{{ voucherTimelineSummary.total_purchased || 0 }}</p>
                    </div>
                  </div>
                </div>
              </div>
 
              <!-- Challenge & Reward Summary -->
-             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                <div class="bg-teal-50 rounded-xl p-4 border border-teal-200">
                  <div class="flex items-center">
                    <div class="p-2 bg-teal-100 rounded-lg">
@@ -1189,29 +1433,29 @@ function formatDate(dateString) {
              <div class="bg-gray-50 rounded-xl p-4">
                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                  <i class="fa-solid fa-clock-rotate-left text-indigo-600"></i>
-                 Timeline Voucher
+                 Timeline Aktivitas
                </h3>
                
                <div v-if="loadingVoucherTimeline" class="text-center py-8">
                  <i class="fa-solid fa-spinner fa-spin text-2xl text-indigo-600 mb-2"></i>
-                 <p class="text-gray-600">Memuat data voucher timeline...</p>
+                 <p class="text-gray-600">Memuat data timeline aktivitas...</p>
                </div>
 
                <div v-else-if="voucherTimeline.length === 0" class="text-center py-8">
-                 <i class="fa-solid fa-ticket text-4xl text-gray-400 mb-2"></i>
-                 <p class="text-gray-600">Belum ada data voucher</p>
+                 <i class="fa-solid fa-history text-4xl text-gray-400 mb-2"></i>
+                 <p class="text-gray-600">Belum ada aktivitas</p>
                </div>
 
                <div v-else class="relative">
                  <!-- Timeline Line -->
-                 <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-indigo-200"></div>
+                 <div class="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-300 via-indigo-200 to-indigo-300"></div>
                  
                  <!-- Timeline Items -->
                  <div class="space-y-6">
                    <div v-for="(item, index) in voucherTimeline" :key="index" class="relative flex items-start gap-4">
-                     <!-- Timeline Dot -->
+                     <!-- Timeline Icon -->
                      <div :class="[
-                       'absolute left-6 w-4 h-4 rounded-full border-2 border-white z-10',
+                       'absolute left-4 w-8 h-8 rounded-full border-2 border-white z-10 flex items-center justify-center shadow-lg',
                        item.type === 'owned' ? 'bg-blue-500' :
                        item.type === 'purchased' ? 'bg-purple-500' :
                        item.type === 'redeemed' ? 'bg-green-500' :
@@ -1222,11 +1466,15 @@ function formatDate(dateString) {
                        item.type === 'reward_redeem' ? 'bg-amber-500' :
                        item.type === 'tier_upgrade' ? 'bg-cyan-500' :
                        item.type === 'tier_downgrade' ? 'bg-red-500' :
+                       item.type === 'point_earned_purchase' || item.type === 'point_earned_registration' || item.type === 'point_earned_bonus' || item.type === 'point_earned_referral' ? 'bg-green-500' :
+                       item.type === 'point_adjustment' ? 'bg-yellow-500' :
                        'bg-gray-500'
-                     ]"></div>
+                     ]">
+                       <i :class="getTimelineIcon(item.type)" class="text-white text-sm"></i>
+                     </div>
                      
                      <!-- Content -->
-                     <div class="ml-12 flex-1 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                     <div class="ml-16 flex-1 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                        <div class="p-4">
                          <!-- Header -->
                          <div class="flex items-start justify-between mb-2">
@@ -1244,6 +1492,8 @@ function formatDate(dateString) {
                                  item.type === 'reward_redeem' ? 'bg-amber-100 text-amber-800' :
                                  item.type === 'tier_upgrade' ? 'bg-cyan-100 text-cyan-800' :
                                  item.type === 'tier_downgrade' ? 'bg-red-100 text-red-800' :
+                                 item.type === 'point_earned_purchase' || item.type === 'point_earned_registration' || item.type === 'point_earned_bonus' || item.type === 'point_earned_referral' ? 'bg-green-100 text-green-800' :
+                                 item.type === 'point_adjustment' ? 'bg-yellow-100 text-yellow-800' :
                                  'bg-gray-100 text-gray-800'
                                ]">
                                  {{ item.title }}
@@ -1275,7 +1525,7 @@ function formatDate(dateString) {
                                </span>
                              </div>
                              <h4 class="text-lg font-bold text-gray-800">
-                               {{ item.voucher_name || item.challenge_name || item.reward_name || item.title }}
+                               {{ item.voucher_name || item.challenge_name || item.reward_name || (item.point_amount_formatted ? item.point_amount_formatted : item.title) }}
                              </h4>
                              <p class="text-sm text-gray-500 mt-1">{{ item.date_formatted }}</p>
                            </div>
@@ -1306,6 +1556,30 @@ function formatDate(dateString) {
                              <span class="px-2 py-1 bg-yellow-50 text-yellow-700 rounded text-xs font-medium">
                                Reward: {{ item.reward_info.type }} - {{ item.reward_info.value }}
                              </span>
+                           </div>
+                           
+                           <!-- Point Amount (for point transactions) -->
+                           <div v-if="item.point_amount_formatted && !item.points_spent" class="flex items-center gap-2 text-sm mt-2" :class="item.is_earned ? 'text-green-600' : 'text-red-600'">
+                             <i :class="item.is_earned ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+                             <span class="font-semibold">{{ item.is_earned ? '+' : '-' }}{{ item.point_amount_formatted }}</span>
+                           </div>
+                           
+                           <!-- Transaction Amount -->
+                           <div v-if="item.transaction_amount_formatted" class="flex items-center gap-2 text-sm text-gray-600 mt-2">
+                             <i class="fa-solid fa-money-bill-wave"></i>
+                             <span>Nilai Transaksi: {{ item.transaction_amount_formatted }}</span>
+                           </div>
+                           
+                           <!-- Transaction ID -->
+                           <div v-if="item.transaction_id" class="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                             <i class="fa-solid fa-hashtag"></i>
+                             <span>Transaksi #{{ item.transaction_id }}</span>
+                           </div>
+                           
+                           <!-- Outlet Name (for point transactions) -->
+                           <div v-if="item.outlet_name && !item.used_outlet && !item.redeemed_outlet" class="flex items-center gap-2 text-sm text-blue-600 mt-2">
+                             <i class="fa-solid fa-store"></i>
+                             <span>Outlet: {{ item.outlet_name }}</span>
                            </div>
                            
                            <!-- Points Spent -->

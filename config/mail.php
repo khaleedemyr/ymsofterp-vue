@@ -46,7 +46,8 @@ return [
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => 30,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            // Use server hostname instead of domain to ensure proper relay
+            'local_domain' => env('MAIL_EHLO_DOMAIN', gethostname() ?: parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
             'verify_peer' => env('MAIL_VERIFY_PEER', false),
             'verify_peer_name' => env('MAIL_VERIFY_PEER_NAME', false),
             'allow_self_signed' => env('MAIL_ALLOW_SELF_SIGNED', true),
@@ -78,7 +79,7 @@ return [
 
         'sendmail' => [
             'transport' => 'sendmail',
-            'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs -i'),
+            'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -t -i'),
         ],
 
         'log' => [

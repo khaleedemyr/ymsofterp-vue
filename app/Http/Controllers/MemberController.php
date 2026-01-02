@@ -6,6 +6,8 @@ use App\Models\MemberAppsMember;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class MemberController extends Controller
 {
@@ -65,7 +67,7 @@ class MemberController extends Controller
         ];
         
         // Handle special sorting cases
-        if ($sort === 'point_balance' || $sort === 'spending_last_year') {
+        if ($sort === 'point_balance' || $sort === 'spending_last_year' || $sort === 'total_spending' || $sort === 'last_spending') {
             // For calculated fields, we'll sort after calculation
             $query->orderBy('created_at', $direction);
         } else {
@@ -77,14 +79,18 @@ class MemberController extends Controller
         $perPage = $request->get('per_page', 15);
         $members = $query->paginate($perPage)->withQueryString();
 
-        // Optimize: Calculate spending setahun terakhir directly from orders
+        // Optimize: Calculate spending setahun terakhir, total spending, and last spending directly from orders
         $memberIds = $members->getCollection()->pluck('member_id')->filter()->toArray();
         $oneYearAgo = now()->subYear();
         
         // Get all spending directly from orders using member_id
         $spendingByMemberId = [];
+        $totalSpendingByMemberId = [];
+        $lastSpendingByMemberId = [];
+        
         if (!empty($memberIds)) {
-            $orders = DB::connection('db_justus')
+            // Get spending setahun terakhir
+            $ordersLastYear = DB::connection('db_justus')
                 ->table('orders')
                 ->whereIn('member_id', $memberIds)
                 ->where('created_at', '>=', $oneYearAgo)
@@ -92,25 +98,72 @@ class MemberController extends Controller
                 ->select('member_id', 'grand_total')
                 ->get();
             
-            foreach ($orders as $order) {
+            foreach ($ordersLastYear as $order) {
                 if (!isset($spendingByMemberId[$order->member_id])) {
                     $spendingByMemberId[$order->member_id] = 0;
                 }
                 $spendingByMemberId[$order->member_id] += $order->grand_total;
             }
+            
+            // Get total spending (all time) and last spending with details
+            $allOrders = DB::connection('db_justus')
+                ->table('orders')
+                ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                ->whereIn('orders.member_id', $memberIds)
+                ->where('orders.status', 'paid') // Only paid orders
+                ->select('orders.member_id', 'orders.grand_total', 'orders.created_at', 'orders.kode_outlet', 'o.nama_outlet')
+                ->orderBy('orders.created_at', 'desc')
+                ->get();
+            
+            foreach ($allOrders as $order) {
+                // Total spending (sum all orders)
+                if (!isset($totalSpendingByMemberId[$order->member_id])) {
+                    $totalSpendingByMemberId[$order->member_id] = 0;
+                }
+                $totalSpendingByMemberId[$order->member_id] += $order->grand_total;
+                
+                // Last spending (most recent order details - only set once per member)
+                if (!isset($lastSpendingByMemberId[$order->member_id])) {
+                    $lastSpendingByMemberId[$order->member_id] = [
+                        'amount' => $order->grand_total,
+                        'outlet_name' => $order->nama_outlet ?? 'Outlet Tidak Diketahui',
+                        'created_at' => $order->created_at
+                    ];
+                }
+            }
         }
         
         // Calculate point balance and spending for each member
-        $members->getCollection()->transform(function ($member) use ($spendingByMemberId) {
+        $members->getCollection()->transform(function ($member) use ($spendingByMemberId, $totalSpendingByMemberId, $lastSpendingByMemberId) {
             // Use just_points from member_apps_members table
             $member->point_balance = $member->just_points ?? 0;
             $member->point_balance_formatted = number_format($member->point_balance, 0, ',', '.');
             
             // Calculate spending setahun terakhir directly from orders
             $spending = $spendingByMemberId[$member->member_id] ?? 0;
-            
             $member->spending_last_year = $spending;
             $member->spending_last_year_formatted = 'Rp ' . number_format($spending, 0, ',', '.');
+            
+            // Calculate total spending (all time)
+            $totalSpending = $totalSpendingByMemberId[$member->member_id] ?? 0;
+            $member->total_spending = $totalSpending;
+            $member->total_spending_formatted = 'Rp ' . number_format($totalSpending, 0, ',', '.');
+            
+            // Calculate last spending (most recent order details)
+            $lastSpendingData = $lastSpendingByMemberId[$member->member_id] ?? null;
+            if ($lastSpendingData) {
+                $member->last_spending = $lastSpendingData['amount'];
+                $member->last_spending_formatted = 'Rp ' . number_format($lastSpendingData['amount'], 0, ',', '.');
+                $member->last_spending_outlet = $lastSpendingData['outlet_name'];
+                $member->last_spending_date = $lastSpendingData['created_at'];
+                $member->last_spending_date_formatted = \Carbon\Carbon::parse($lastSpendingData['created_at'])->format('d M Y, H:i');
+            } else {
+                $member->last_spending = 0;
+                $member->last_spending_formatted = 'Rp 0';
+                $member->last_spending_outlet = null;
+                $member->last_spending_date = null;
+                $member->last_spending_date_formatted = '-';
+            }
             
             // Get tier/member_level
             $member->tier = $member->member_level ?? 'silver';
@@ -123,6 +176,7 @@ class MemberController extends Controller
             $member->status_aktif = $member->is_active ? '1' : '0';
             $member->exclusive_member = $member->is_exclusive_member ? 'Y' : 'N';
             $member->status_block = 'N'; // Not available in new table, default to 'N'
+            $member->email_verified_at = $member->email_verified_at; // Include email verification status
             
             return $member;
         });
@@ -135,6 +189,14 @@ class MemberController extends Controller
         } elseif ($sort === 'spending_last_year') {
             $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
                 return $direction === 'desc' ? -$member->spending_last_year : $member->spending_last_year;
+            })->values());
+        } elseif ($sort === 'total_spending') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->total_spending : $member->total_spending;
+            })->values());
+        } elseif ($sort === 'last_spending') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->last_spending : $member->last_spending;
             })->values());
         } elseif ($sort === 'tier') {
             $tierOrder = ['silver' => 1, 'gold' => 2, 'platinum' => 3];
@@ -467,6 +529,107 @@ class MemberController extends Controller
      * Toggle status block member
      * Note: status_block tidak ada di member_apps_members, jadi kita bisa skip atau set is_active = false
      */
+    /**
+     * Manually change member password (for admin use when member has password reset issues)
+     */
+    public function changePasswordManual(Request $request, MemberAppsMember $member)
+    {
+        try {
+            $request->validate([
+                'password' => 'required|string|min:6|confirmed',
+            ], [
+                'password.required' => 'Password baru harus diisi',
+                'password.min' => 'Password minimal 6 karakter',
+                'password.confirmed' => 'Konfirmasi password tidak cocok'
+            ]);
+            
+            // Update password
+            $member->update([
+                'password' => Hash::make($request->password)
+            ]);
+            
+            Log::info('Password changed manually by admin', [
+                'member_id' => $member->id,
+                'email' => $member->email,
+                'changed_by' => auth()->user()->id ?? null
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Password berhasil diubah',
+                'member' => [
+                    'id' => $member->id,
+                    'email' => $member->email
+                ]
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Manual password change error', [
+                'member_id' => $member->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengubah password: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Manually verify member email (for admin use when member has email verification issues)
+     */
+    public function verifyEmailManual(MemberAppsMember $member)
+    {
+        try {
+            // Check if already verified
+            if ($member->email_verified_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email sudah terverifikasi sebelumnya'
+                ], 400);
+            }
+            
+            // Mark email as verified
+            $member->update([
+                'email_verified_at' => now()
+            ]);
+            
+            \Log::info('Email verified manually by admin', [
+                'member_id' => $member->id,
+                'email' => $member->email,
+                'verified_by' => auth()->user()->id ?? null
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Email berhasil diverifikasi secara manual',
+                'member' => [
+                    'id' => $member->id,
+                    'email' => $member->email,
+                    'email_verified_at' => $member->email_verified_at
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Manual email verification error', [
+                'member_id' => $member->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memverifikasi email: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
     public function toggleBlock(MemberAppsMember $member)
     {
         try {
@@ -555,42 +718,95 @@ class MemberController extends Controller
                 ->limit(50)
                 ->get();
             
+            // Get member_id (string) for order lookup
+            $memberIdString = $member->member_id ?? null;
+            
             // Calculate total earned and redeemed from point transactions
-            $totalEarned = $pointTransactions->where('point_amount', '>', 0)->sum('point_amount');
-            $totalRedeemed = abs($pointTransactions->where('point_amount', '<', 0)->sum('point_amount'));
+            $totalEarned = $pointTransactions->filter(function($pt) {
+                return isset($pt->point_amount) && $pt->point_amount > 0;
+            })->sum(function($pt) {
+                return $pt->point_amount ?? 0;
+            });
+            $totalRedeemed = abs($pointTransactions->filter(function($pt) {
+                return isset($pt->point_amount) && $pt->point_amount < 0;
+            })->sum(function($pt) {
+                return $pt->point_amount ?? 0;
+            }));
             
             // Transform point transactions to display format
-            $transactions = $pointTransactions->map(function ($pt) {
+            $transactions = $pointTransactions->map(function ($pt) use ($memberIdString) {
                 $orderDetails = collect([]);
+                $orderId = null;
+                $outletName = 'Outlet Tidak Diketahui';
                 
                 // Get order details if transaction is related to order
-                // Check metadata for order_id or try to match by paid_number/reference_number
-                $orderId = null;
-                $paidNumber = $pt->reference_number ?? $pt->serial_code ?? null;
-                
-                if ($pt->metadata) {
+                // Check metadata for order_id
+                if (isset($pt->metadata) && $pt->metadata) {
                     $metadata = json_decode($pt->metadata ?? '{}', true);
                     $orderId = $metadata['order_id'] ?? null;
                 }
                 
-                // If no order_id in metadata, try to find by paid_number
-                if (!$orderId && $paidNumber) {
-                    // Get member_id (string) from member_apps_members using member.id
-                    $memberData = DB::table('member_apps_members')
-                        ->where('id', $pt->member_id)
-                        ->select('member_id')
-                        ->first();
+                // Try to get order_id from reference_id or transaction_id
+                if (!$orderId) {
+                    $referenceId = isset($pt->reference_id) ? $pt->reference_id : null;
+                    $transactionId = isset($pt->transaction_id) ? $pt->transaction_id : null;
+                    $paidNumber = (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null;
                     
-                    if ($memberData && $memberData->member_id) {
+                    // Try reference_id first (usually contains order_id)
+                    if ($referenceId && $memberIdString) {
                         $order = DB::connection('db_justus')
                             ->table('orders')
-                            ->where('paid_number', $paidNumber)
-                            ->where('member_id', $memberData->member_id)
+                            ->where('id', $referenceId)
+                            ->where('member_id', $memberIdString)
                             ->first();
                         
                         if ($order) {
                             $orderId = $order->id;
                         }
+                    }
+                    
+                    // Try transaction_id
+                    if (!$orderId && $transactionId && $memberIdString) {
+                        $order = DB::connection('db_justus')
+                            ->table('orders')
+                            ->where('id', $transactionId)
+                            ->where('member_id', $memberIdString)
+                            ->first();
+                        
+                        if ($order) {
+                            $orderId = $order->id;
+                        }
+                    }
+                    
+                    // Try paid_number as last resort
+                    if (!$orderId && $paidNumber && $memberIdString) {
+                        $order = DB::connection('db_justus')
+                            ->table('orders')
+                            ->where('paid_number', $paidNumber)
+                            ->where('member_id', $memberIdString)
+                            ->first();
+                        
+                        if ($order) {
+                            $orderId = $order->id;
+                        }
+                    }
+                }
+                
+                // Get outlet name from order via kode_outlet -> qr_code join
+                if ($orderId && $memberIdString) {
+                    $orderWithOutlet = DB::connection('db_justus')
+                        ->table('orders')
+                        ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                        ->where('orders.id', $orderId)
+                        ->where('orders.member_id', $memberIdString)
+                        ->select([
+                            'orders.*',
+                            'o.nama_outlet'
+                        ])
+                        ->first();
+                    
+                    if ($orderWithOutlet && isset($orderWithOutlet->nama_outlet) && $orderWithOutlet->nama_outlet) {
+                        $outletName = $orderWithOutlet->nama_outlet;
                     }
                 }
                 
@@ -609,7 +825,7 @@ class MemberController extends Controller
                         ->get()
                         ->map(function ($item) {
                             $modifiers = [];
-                            if ($item->modifiers) {
+                            if (isset($item->modifiers) && $item->modifiers) {
                                 try {
                                     $modifiers = json_decode($item->modifiers, true) ?: [];
                                 } catch (\Exception $e) {
@@ -617,66 +833,62 @@ class MemberController extends Controller
                                 }
                             }
 
+                            $qty = isset($item->qty) ? $item->qty : 0;
+                            $price = isset($item->price) ? $item->price : 0;
+                            $totalPrice = $qty * $price;
+
                             return [
-                                'item_name' => $item->item_name,
-                                'qty' => $item->qty,
-                                'price' => $item->price,
-                                'price_formatted' => 'Rp ' . number_format($item->price, 0, ',', '.'),
-                                'total_price' => $item->qty * $item->price,
-                                'total_price_formatted' => 'Rp ' . number_format($item->qty * $item->price, 0, ',', '.'),
+                                'item_name' => $item->item_name ?? '-',
+                                'qty' => $qty,
+                                'price' => $price,
+                                'price_formatted' => 'Rp ' . number_format($price, 0, ',', '.'),
+                                'total_price' => $totalPrice,
+                                'total_price_formatted' => 'Rp ' . number_format($totalPrice, 0, ',', '.'),
                                 'modifiers' => $modifiers,
                                 'modifiers_formatted' => $this->formatModifiers($modifiers),
-                                'notes' => $item->notes
+                                'notes' => $item->notes ?? null
                             ];
                         });
                     
                     $orderDetails = $orderItems;
                 }
                 
-                // Get outlet info
-                $outletName = 'Outlet Tidak Diketahui';
-                $outletAlamat = '';
-                if ($pt->outlet_id) {
-                    $outlet = DB::table('tbl_data_outlet')
-                        ->where('id_outlet', $pt->outlet_id)
-                        ->first();
-                    
-                    if ($outlet) {
-                        $outletName = $outlet->nama_outlet ?? 'Outlet Tidak Diketahui';
-                        $outletAlamat = $outlet->alamat_outlet ?? '';
-                    }
-                }
+                // Outlet name already retrieved from order join above
                 
                 // Determine transaction type
-                $isEarned = $pt->point_amount > 0;
+                $pointAmount = isset($pt->point_amount) ? $pt->point_amount : 0;
+                $isEarned = $pointAmount > 0;
                 $type = $isEarned ? '1' : '2';
                 $typeText = $isEarned ? 'EARNED' : 'REDEEMED';
                 
                 // Get description based on transaction type
                 $description = $isEarned ? 'Top Up Point dari Transaksi' : 'Redeem Point untuk Transaksi';
-                if ($pt->transaction_type === 'manual') {
+                $transactionType = isset($pt->transaction_type) ? $pt->transaction_type : null;
+                if ($transactionType === 'manual') {
                     $description = 'Point Manual';
-                } elseif ($pt->transaction_type === 'reward_redemption') {
+                } elseif ($transactionType === 'reward_redemption') {
                     $description = 'Redeem Reward';
-                } elseif ($pt->transaction_type === 'voucher_purchase') {
+                } elseif ($transactionType === 'voucher_purchase') {
                     $description = 'Beli Voucher';
-                } elseif ($pt->transaction_type === 'order') {
+                } elseif ($transactionType === 'order') {
                     $description = 'Top Up Point dari Transaksi';
                 }
                 
                 return [
-                    'id' => $pt->id,
-                    'point' => abs($pt->point_amount),
-                    'jml_trans' => $pt->transaction_amount ?? 0,
-                    'jml_trans_formatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                    'id' => $pt->id ?? null,
+                    'point' => abs($pointAmount),
+                    'jml_trans' => isset($pt->transaction_amount) ? $pt->transaction_amount : 0,
+                    'jml_trans_formatted' => (isset($pt->transaction_amount) && $pt->transaction_amount) ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
                     'type' => $type,
                     'type_text' => $typeText,
-                    'no_bill' => $paidNumber,
+                    'no_bill' => $paidNumber ?? (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null,
+                    'transaction_id' => isset($pt->transaction_id) ? $pt->transaction_id : (isset($pt->reference_id) ? $pt->reference_id : null),
                     'outlet_name' => $outletName,
-                    'outlet_alamat' => $outletAlamat,
-                    'created_at' => $pt->created_at,
+                    'created_at' => $pt->created_at ?? null,
                     'description' => $description,
-                    'order_details' => $orderDetails
+                    'order_details' => $orderDetails,
+                    'order_id' => $orderId,
+                    'has_order_details' => $orderDetails->isNotEmpty()
                 ];
             });
 
@@ -916,7 +1128,7 @@ class MemberController extends Controller
     }
 
     /**
-     * Get member voucher timeline (owned, purchased, redeemed)
+     * Get member activity timeline (all activities: points, vouchers, challenges, redeems, etc)
      */
     public function getVoucherTimeline($id)
     {
@@ -1206,16 +1418,126 @@ class MemberController extends Controller
                 ];
             }
             
+            // Get all point transactions for complete activity timeline
+            $allPointTransactions = DB::table('member_apps_point_transactions')
+                ->where('member_id', $member->id)
+                ->orderBy('created_at', 'desc')
+                ->get();
+            
+            foreach ($allPointTransactions as $pt) {
+                $metadata = json_decode($pt->metadata ?? '{}', true);
+                $pointAmount = isset($pt->point_amount) ? abs($pt->point_amount) : 0;
+                $isEarned = isset($pt->point_amount) && $pt->point_amount > 0;
+                
+                // Get outlet info if available
+                $outletName = null;
+                if (isset($pt->outlet_id) && $pt->outlet_id) {
+                    $outlet = DB::table('tbl_data_outlet')
+                        ->where('id_outlet', $pt->outlet_id)
+                        ->first();
+                    if ($outlet) {
+                        $outletName = $outlet->nama_outlet ?? null;
+                    }
+                }
+                
+                // Determine activity type and title based on transaction_type
+                $activityType = 'point_transaction';
+                $title = 'Transaksi Point';
+                $description = '';
+                
+                switch ($pt->transaction_type) {
+                    case 'order':
+                        $activityType = 'point_earned_purchase';
+                        $title = $isEarned ? 'Mendapat Point dari Pembelian' : 'Menggunakan Point untuk Pembelian';
+                        $description = 'Transaksi #' . ($pt->transaction_id ?? '-');
+                        if (isset($pt->transaction_amount) && $pt->transaction_amount) {
+                            $description .= ' - ' . 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.');
+                        }
+                        break;
+                    case 'registration':
+                        $activityType = 'point_earned_registration';
+                        $title = 'Mendapat Point Bonus Registrasi';
+                        $description = 'Bonus registrasi member baru';
+                        break;
+                    case 'bonus':
+                        $activityType = 'point_earned_bonus';
+                        $title = 'Mendapat Point Bonus';
+                        $description = $metadata['bonus_type'] ?? 'Bonus point';
+                        break;
+                    case 'referral':
+                        $activityType = 'point_earned_referral';
+                        $title = 'Mendapat Point Referral';
+                        $description = 'Referral member: ' . ($metadata['referred_member_id'] ?? '-');
+                        break;
+                    case 'manual':
+                        $activityType = 'point_adjustment';
+                        $title = $isEarned ? 'Penyesuaian Point (Tambah)' : 'Penyesuaian Point (Kurang)';
+                        $description = $metadata['reason'] ?? 'Penyesuaian manual';
+                        break;
+                    case 'adjustment':
+                        $activityType = 'point_adjustment';
+                        $title = $isEarned ? 'Penyesuaian Point (Tambah)' : 'Penyesuaian Point (Kurang)';
+                        $description = $metadata['reason'] ?? 'Penyesuaian point';
+                        break;
+                    case 'voucher_purchase':
+                        // Already handled above, skip to avoid duplicate
+                        continue 2;
+                    case 'reward_redemption':
+                        // Already handled above, skip to avoid duplicate
+                        continue 2;
+                    default:
+                        $title = $isEarned ? 'Mendapat Point' : 'Menggunakan Point';
+                        $description = ucfirst(str_replace('_', ' ', $pt->transaction_type));
+                }
+                
+                $timeline[] = [
+                    'type' => $activityType,
+                    'title' => $title,
+                    'point_amount' => $pointAmount,
+                    'point_amount_formatted' => number_format($pointAmount, 0, ',', '.') . ' point',
+                    'is_earned' => $isEarned,
+                    'transaction_type' => $pt->transaction_type ?? null,
+                    'transaction_id' => $pt->transaction_id ?? null,
+                    'transaction_amount' => $pt->transaction_amount ?? null,
+                    'transaction_amount_formatted' => isset($pt->transaction_amount) && $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : null,
+                    'outlet_name' => $outletName,
+                    'description' => $description,
+                    'serial_code' => $pt->serial_code ?? null,
+                    'metadata' => $metadata,
+                    'date' => $pt->created_at,
+                    'date_formatted' => \Carbon\Carbon::parse($pt->created_at)->format('d F Y, H:i'),
+                ];
+            }
+            
             // Sort timeline by date (newest first)
             usort($timeline, function($a, $b) {
                 return strtotime($b['date']) - strtotime($a['date']);
             });
+            
+            // Calculate summary statistics
+            $pointEarned = $allPointTransactions->filter(function($pt) {
+                return isset($pt->point_amount) && $pt->point_amount > 0;
+            })->sum(function($pt) {
+                return $pt->point_amount ?? 0;
+            });
+            $pointUsed = abs($allPointTransactions->filter(function($pt) {
+                return isset($pt->point_amount) && $pt->point_amount < 0;
+            })->sum(function($pt) {
+                return $pt->point_amount ?? 0;
+            }));
+            $pointTransactions = $allPointTransactions->count();
             
             return response()->json([
                 'status' => 'success',
                 'member' => $member,
                 'timeline' => $timeline,
                 'summary' => [
+                    'total_activities' => count($timeline),
+                    'total_point_earned' => $pointEarned,
+                    'total_point_earned_formatted' => number_format($pointEarned, 0, ',', '.'),
+                    'total_point_used' => $pointUsed,
+                    'total_point_used_formatted' => number_format($pointUsed, 0, ',', '.'),
+                    'total_point_transactions' => $pointTransactions,
                     'total_owned' => $memberVouchers->count(),
                     'total_active' => $memberVouchers->where('status', 'active')->count(),
                     'total_used' => $memberVouchers->where('status', 'used')->count(),

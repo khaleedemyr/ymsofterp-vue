@@ -1078,14 +1078,37 @@ class AuthController extends Controller
                 // Add small delay to avoid rate limiting (0.5 seconds)
                 usleep(500000);
                 
-                // Send email using Mailable class that forces sync (no queue)
-                Mail::to($member->email)->send(new MemberPasswordReset($member, $resetUrl));
-                
-                Log::info('Password reset email sent (direct, not queued)', [
-                    'email' => $member->email,
-                    'member_id' => $member->id,
-                    'sent_directly' => true
+                // Log mail configuration for debugging
+                Log::info('Mail configuration check', [
+                    'mailer' => config('mail.default'),
+                    'mail_host' => config('mail.mailers.smtp.host'),
+                    'mail_port' => config('mail.mailers.smtp.port'),
+                    'mail_username' => config('mail.mailers.smtp.username'),
+                    'mail_username_length' => strlen(config('mail.mailers.smtp.username', '')),
+                    'mail_encryption' => config('mail.mailers.smtp.encryption'),
+                    'from_address' => config('mail.from.address'),
+                    'from_name' => config('mail.from.name')
                 ]);
+                
+                // Send email using Mailable class that forces sync (no queue)
+                try {
+                    Mail::to($member->email)->send(new MemberPasswordReset($member, $resetUrl));
+                    
+                    Log::info('Password reset email sent (direct, not queued)', [
+                        'email' => $member->email,
+                        'member_id' => $member->id,
+                        'sent_directly' => true
+                    ]);
+                } catch (\Exception $sendException) {
+                    // Log any exception during sending (but don't fail the request)
+                    Log::error('Exception during email send (but may have succeeded)', [
+                        'email' => $member->email,
+                        'member_id' => $member->id,
+                        'error' => $sendException->getMessage(),
+                        'trace' => $sendException->getTraceAsString()
+                    ]);
+                    // Continue - email might still be sent
+                }
             } catch (\Exception $mailException) {
                 // Check if it's a rate limit error from SMTP
                 $isRateLimitError = strpos($mailException->getMessage(), 'Ratelimit') !== false 

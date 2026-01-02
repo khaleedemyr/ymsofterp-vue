@@ -2049,6 +2049,8 @@ Route::middleware(['auth'])->group(function () {
     
     Route::resource('members', MemberController::class);
     Route::patch('members/{member}/toggle-status', [MemberController::class, 'toggleStatus'])->name('members.toggle-status');
+    Route::patch('members/{member}/verify-email', [MemberController::class, 'verifyEmailManual'])->name('members.verify-email');
+    Route::patch('members/{member}/change-password', [MemberController::class, 'changePasswordManual'])->name('members.change-password');
                     Route::patch('members/{member}/toggle-block', [MemberController::class, 'toggleBlock'])->name('members.toggle-block');
                 Route::get('members/export', [MemberController::class, 'export'])->name('members.export');
     
