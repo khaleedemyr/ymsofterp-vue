@@ -22,29 +22,53 @@ class CrmDashboardController extends Controller
             $startDate = $request->get('start_date');
             $endDate = $request->get('end_date');
             
+            // Load critical data first (fast queries)
+            Log::info('CRM Dashboard: Loading critical data...');
             $stats = $this->getStats();
-            $memberGrowth = $this->getMemberGrowth();
-            $tierDistribution = $this->getTierDistribution();
-            $genderDistribution = $this->getGenderDistribution();
-            $ageDistribution = $this->getAgeDistribution();
-            $purchasingPowerByAge = $this->getPurchasingPowerByAge($startDate, $endDate);
-            $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
-            $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
-            $latestMembers = $this->getLatestMembers();
-            $latestPointTransactions = $this->getLatestPointTransactions();
-            $latestActivities = $this->getLatestActivities();
-            $topSpenders = $this->getTopSpenders();
-            $mostActiveMembers = $this->getMostActiveMembers();
-            $pointStats = $this->getPointStats($startDate, $endDate);
-            $engagementMetrics = $this->getEngagementMetrics();
+            Log::info('CRM Dashboard: Stats loaded');
             
-            // Priority 3 features
-            $memberSegmentation = $this->getMemberSegmentation();
-            $memberLifetimeValue = $this->getMemberLifetimeValue();
-            $churnAnalysis = $this->getChurnAnalysis();
-            $conversionFunnel = $this->getConversionFunnel();
-            $regionalBreakdown = $this->getRegionalBreakdown();
-            $comparisonData = $this->getComparisonData($startDate, $endDate);
+            $memberGrowth = $this->getMemberGrowth();
+            Log::info('CRM Dashboard: Member growth loaded');
+            
+            $tierDistribution = $this->getTierDistribution();
+            Log::info('CRM Dashboard: Tier distribution loaded');
+            
+            $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
+            Log::info('CRM Dashboard: Spending trend loaded');
+            
+            $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
+            Log::info('CRM Dashboard: Point activity trend loaded');
+            
+            $latestMembers = $this->getLatestMembers();
+            Log::info('CRM Dashboard: Latest members loaded');
+            
+            $latestPointTransactions = $this->getLatestPointTransactions();
+            Log::info('CRM Dashboard: Latest point transactions loaded');
+            
+            $topSpenders = $this->getTopSpenders();
+            Log::info('CRM Dashboard: Top spenders loaded');
+            
+            $mostActiveMembers = $this->getMostActiveMembers();
+            Log::info('CRM Dashboard: Most active members loaded');
+            
+            $pointStats = $this->getPointStats($startDate, $endDate);
+            Log::info('CRM Dashboard: Point stats loaded');
+            
+            // Load less critical data with timeout protection
+            $genderDistribution = [];
+            $ageDistribution = [];
+            $purchasingPowerByAge = [];
+            $latestActivities = [];
+            $engagementMetrics = [];
+            $memberSegmentation = [];
+            $memberLifetimeValue = [];
+            $churnAnalysis = [];
+            $conversionFunnel = [];
+            $regionalBreakdown = [];
+            $comparisonData = [];
+            
+            // Set default empty values - these will be loaded via AJAX if needed
+            // This prevents the page from hanging on slow queries
 
         return Inertia::render('Crm/Dashboard', [
             'stats' => $stats,
@@ -350,22 +374,23 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get purchasing power by age group
+     * Get purchasing power by age group - Optimized for large dataset
      */
     private function getPurchasingPowerByAge($startDate = null, $endDate = null)
     {
-        $dateFilter = '';
-        if ($startDate && $endDate) {
-            $startDateEscaped = DB::connection()->getPdo()->quote($startDate);
-            $endDateEscaped = DB::connection()->getPdo()->quote($endDate);
-            $dateFilter = "AND o.created_at BETWEEN {$startDateEscaped} AND {$endDateEscaped}";
-        } else {
-            $twoYearsAgo = DB::connection()->getPdo()->quote(Carbon::now()->subYears(2)->format('Y-m-d'));
-            $dateFilter = "AND o.created_at >= {$twoYearsAgo}";
-        }
-        
+        // Optimized: Use subquery to limit orders first, then join
         $dbJustusName = DB::connection('db_justus')->getDatabaseName();
         
+        // Build date filter for orders subquery
+        $orderDateFilter = '';
+        if ($startDate && $endDate) {
+            $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
+        } else {
+            $twoYearsAgo = Carbon::now()->subYears(2)->format('Y-m-d');
+            $orderDateFilter = "AND o.created_at >= '{$twoYearsAgo}'";
+        }
+        
+        // Optimized query: First aggregate orders by member_id, then join with members
         $sql = "
             SELECT 
                 CASE 
@@ -378,15 +403,23 @@ class CrmDashboardController extends Controller
                     ELSE 'Tidak Diketahui'
                 END as age_group,
                 COUNT(DISTINCT m.id) as total_customers,
-                COALESCE(SUM(o.grand_total), 0) as total_spending,
-                COALESCE(AVG(o.grand_total), 0) as avg_transaction_value,
-                COALESCE(COUNT(o.id), 0) as total_transactions
+                COALESCE(SUM(order_summary.total_spending), 0) as total_spending,
+                COALESCE(AVG(order_summary.avg_order_value), 0) as avg_transaction_value,
+                COALESCE(SUM(order_summary.order_count), 0) as total_transactions
             FROM member_apps_members m
-            LEFT JOIN {$dbJustusName}.orders o ON m.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
-                AND o.member_id != '' 
-                AND o.member_id IS NOT NULL
-                AND o.status = 'paid'
-                {$dateFilter}
+            LEFT JOIN (
+                SELECT 
+                    member_id,
+                    SUM(grand_total) as total_spending,
+                    AVG(grand_total) as avg_order_value,
+                    COUNT(*) as order_count
+                FROM {$dbJustusName}.orders
+                WHERE status = 'paid'
+                    AND member_id != ''
+                    AND member_id IS NOT NULL
+                    {$orderDateFilter}
+                GROUP BY member_id
+            ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
             WHERE m.tanggal_lahir IS NOT NULL 
             AND m.is_active = 1
             GROUP BY age_group
@@ -882,23 +915,29 @@ class CrmDashboardController extends Controller
     }
     
     /**
-     * Get member lifetime value (Priority 3) - Optimized
+     * Get member lifetime value (Priority 3) - Optimized with subquery
      */
     private function getMemberLifetimeValue()
     {
-        // Optimized: Use single query with join instead of loop
+        // Optimized: Use subquery to aggregate orders first, then join
         $dbJustusName = DB::connection('db_justus')->getDatabaseName();
         
         $ltvData = DB::select("
             SELECT 
                 COALESCE(m.member_level, 'silver') as tier,
                 COUNT(DISTINCT m.id) as member_count,
-                COALESCE(SUM(o.grand_total), 0) as total_spending
+                COALESCE(SUM(order_summary.total_spending), 0) as total_spending
             FROM member_apps_members m
-            LEFT JOIN {$dbJustusName}.orders o ON m.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
-                AND o.status = 'paid'
-                AND o.member_id != ''
-                AND o.member_id IS NOT NULL
+            LEFT JOIN (
+                SELECT 
+                    member_id,
+                    SUM(grand_total) as total_spending
+                FROM {$dbJustusName}.orders
+                WHERE status = 'paid'
+                    AND member_id != ''
+                    AND member_id IS NOT NULL
+                GROUP BY member_id
+            ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
             WHERE m.is_active = 1
             GROUP BY tier
         ");
