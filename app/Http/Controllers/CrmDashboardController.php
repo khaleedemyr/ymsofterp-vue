@@ -70,13 +70,39 @@ class CrmDashboardController extends Controller
                 Log::error('CRM Dashboard: Failed to load point stats: ' . $e->getMessage());
             }
             
-            // Skip slow queries for now - load only critical data
-            // These can be loaded via AJAX later if needed
-            Log::info('CRM Dashboard: Skipping slow queries, using empty defaults');
+            // Load lightweight queries with caching
             $genderDistribution = [];
+            try {
+                $genderDistribution = Cache::remember('crm_gender_distribution', 300, function () {
+                    return $this->getGenderDistribution();
+                });
+                Log::info('CRM Dashboard: Gender distribution loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load gender distribution: ' . $e->getMessage());
+            }
+            
             $ageDistribution = [];
-            $purchasingPowerByAge = [];
+            try {
+                $ageDistribution = Cache::remember('crm_age_distribution', 300, function () {
+                    return $this->getAgeDistribution();
+                });
+                Log::info('CRM Dashboard: Age distribution loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load age distribution: ' . $e->getMessage());
+            }
+            
             $latestActivities = [];
+            try {
+                $latestActivities = $this->getLatestActivities();
+                Log::info('CRM Dashboard: Latest activities loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load latest activities: ' . $e->getMessage());
+            }
+            
+            // Skip heavy queries for now - load only critical data
+            // These can be loaded via AJAX later if needed
+            Log::info('CRM Dashboard: Skipping heavy queries, using empty defaults');
+            $purchasingPowerByAge = [];
             $engagementMetrics = [];
             $memberSegmentation = [];
             $memberLifetimeValue = [];
@@ -369,14 +395,15 @@ class CrmDashboardController extends Controller
      */
     private function getGenderDistribution()
     {
-        $distribution = MemberAppsMember::selectRaw('jenis_kelamin, COUNT(*) as count')
+        // Optimized: Simple COUNT query with GROUP BY - very fast with index on jenis_kelamin
+        $distribution = MemberAppsMember::selectRaw('COALESCE(jenis_kelamin, "Tidak Diketahui") as jenis_kelamin, COUNT(*) as count')
             ->groupBy('jenis_kelamin')
             ->get()
             ->map(function ($item) {
                 $label = $item->jenis_kelamin === 'L' ? 'Laki-laki' : ($item->jenis_kelamin === 'P' ? 'Perempuan' : 'Tidak Diketahui');
                 return [
                     'gender' => $label,
-                    'count' => $item->count,
+                    'count' => (int) $item->count,
                     'color' => $item->jenis_kelamin === 'L' ? '#3b82f6' : ($item->jenis_kelamin === 'P' ? '#ec4899' : '#6b7280'),
                 ];
             });
@@ -389,23 +416,24 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get age distribution
+     * Get age distribution - Optimized for performance
      */
     private function getAgeDistribution()
     {
+        // Optimized: Simple CASE WHEN with COUNT and GROUP BY - fast with index on tanggal_lahir
         $distribution = MemberAppsMember::selectRaw('
             CASE 
+                WHEN tanggal_lahir IS NULL THEN "Tidak Diketahui"
+                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 13 THEN "Anak-anak"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN "Remaja"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN "Dewasa Muda"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN "Dewasa Produktif"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN "Dewasa Matang"
                 WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) >= 60 THEN "Usia Tua"
-                WHEN TIMESTAMPDIFF(YEAR, tanggal_lahir, CURDATE()) < 13 THEN "Anak-anak"
                 ELSE "Tidak Diketahui"
             END as age_group,
             COUNT(*) as count
         ')
-        ->whereNotNull('tanggal_lahir')
         ->groupBy('age_group')
         ->get()
         ->map(function ($item) {
@@ -421,7 +449,7 @@ class CrmDashboardController extends Controller
             
             return [
                 'age_group' => $item->age_group,
-                'count' => $item->count,
+                'count' => (int) $item->count,
                 'color' => $colors[$item->age_group] ?? '#9ca3af',
             ];
         });
@@ -759,65 +787,106 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get latest activities (combining all activity types)
+     * Get latest activities (combining all activity types) - Optimized for performance
      */
     private function getLatestActivities()
     {
+        // Optimized: Use UNION query to get both registrations and transactions in one query, then sort
+        // But for simplicity and to avoid complex UNION, we'll use a simpler approach with limits
+        
         $activities = collect();
 
-        // Recent registrations
-        $recentRegistrations = MemberAppsMember::where('created_at', '>=', Carbon::now()->subDays(30))
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get()
-            ->map(function ($member) {
-                return [
-                    'id' => $member->id,
-                    'type' => 'registration',
-                    'memberName' => $member->nama_lengkap,
-                    'memberId' => $member->member_id,
-                    'description' => 'Member baru mendaftar',
-                    'icon' => 'fa-user-plus',
-                    'color' => 'text-emerald-500',
-                    'bgColor' => 'bg-emerald-50',
-                    'createdAt' => $member->created_at,
-                ];
-            });
+        // Recent registrations - limit to last 7 days and only 3 records
+        try {
+            $recentRegistrations = MemberAppsMember::where('created_at', '>=', Carbon::now()->subDays(7))
+                ->orderBy('created_at', 'desc')
+                ->limit(3)
+                ->select(['id', 'nama_lengkap', 'member_id', 'created_at'])
+                ->get()
+                ->map(function ($member) {
+                    return [
+                        'id' => $member->id,
+                        'type' => 'registration',
+                        'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                        'memberId' => $member->member_id ?? '-',
+                        'description' => 'Member baru mendaftar',
+                        'icon' => 'fa-user-plus',
+                        'color' => 'text-emerald-500',
+                        'bgColor' => 'bg-emerald-50',
+                        'createdAt' => $member->created_at,
+                    ];
+                });
 
-        $activities = $activities->concat($recentRegistrations);
+            $activities = $activities->concat($recentRegistrations);
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Failed to load recent registrations: ' . $e->getMessage());
+        }
 
-        // Recent point transactions
-        $recentPointTransactions = MemberAppsPointTransaction::orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get();
-        
-        $memberIds = $recentPointTransactions->pluck('member_id')->unique()->filter()->toArray();
-        $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
-        
-        $recentPointTransactions = $recentPointTransactions->map(function ($pt) use ($members) {
-            $member = $members->get($pt->member_id);
-            $isEarned = $pt->point_amount > 0;
+        // Recent point transactions - limit to 7 records
+        try {
+            $recentPointTransactions = MemberAppsPointTransaction::orderBy('created_at', 'desc')
+                ->limit(7)
+                ->select(['id', 'member_id', 'point_amount', 'transaction_type', 'created_at'])
+                ->get();
             
-            return [
-                'id' => $pt->id,
-                'type' => $isEarned ? 'point_earned' : 'point_redeemed',
-                'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
-                'memberId' => $member->member_id ?? '-',
-                'description' => ($isEarned ? 'Memperoleh' : 'Menukar') . ' ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point',
-                'icon' => $isEarned ? 'fa-plus-circle' : 'fa-minus-circle',
-                'color' => $isEarned ? 'text-blue-500' : 'text-orange-500',
-                'bgColor' => $isEarned ? 'bg-blue-50' : 'bg-orange-50',
-                'pointAmount' => abs($pt->point_amount),
-                'createdAt' => $pt->created_at,
-            ];
-        });
+            if ($recentPointTransactions->isNotEmpty()) {
+                $memberIds = $recentPointTransactions->pluck('member_id')->unique()->filter()->toArray();
+                $members = MemberAppsMember::whereIn('id', $memberIds)
+                    ->select(['id', 'nama_lengkap', 'member_id'])
+                    ->get()
+                    ->keyBy('id');
+                
+                $recentPointTransactions = $recentPointTransactions->map(function ($pt) use ($members) {
+                    $member = $members->get($pt->member_id);
+                    $isEarned = $pt->point_amount > 0;
+                    
+                    // Determine description based on transaction_type
+                    $transactionType = $pt->transaction_type ?? null;
+                    $description = '';
+                    if ($isEarned) {
+                        $description = 'Memperoleh ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point';
+                    } else {
+                        if ($transactionType === 'voucher_purchase') {
+                            $description = 'Beli voucher dengan ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point';
+                        } elseif ($transactionType === 'reward_redemption' || $transactionType === 'redeem') {
+                            $description = 'Redeem reward dengan ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point';
+                        } else {
+                            $description = 'Menukar ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point';
+                        }
+                    }
+                    
+                    return [
+                        'id' => $pt->id,
+                        'type' => $isEarned ? 'point_earned' : 'point_redeemed',
+                        'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                        'memberId' => $member->member_id ?? '-',
+                        'description' => $description,
+                        'icon' => $isEarned ? 'fa-plus-circle' : ($transactionType === 'voucher_purchase' ? 'fa-ticket' : ($transactionType === 'reward_redemption' || $transactionType === 'redeem' ? 'fa-gift' : 'fa-minus-circle')),
+                        'color' => $isEarned ? 'text-blue-500' : 'text-orange-500',
+                        'bgColor' => $isEarned ? 'bg-blue-50' : 'bg-orange-50',
+                        'pointAmount' => abs($pt->point_amount),
+                        'createdAt' => $pt->created_at,
+                    ];
+                });
 
-        $activities = $activities->concat($recentPointTransactions);
+                $activities = $activities->concat($recentPointTransactions);
+            }
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Failed to load recent point transactions: ' . $e->getMessage());
+        }
 
         // Sort and take latest 10
-        return $activities->sortByDesc('createdAt')
+        return $activities->sortByDesc(function ($activity) {
+            return $activity['createdAt'] instanceof \Carbon\Carbon 
+                ? $activity['createdAt']->timestamp 
+                : strtotime($activity['createdAt']);
+        })
             ->take(10)
             ->map(function ($activity) {
+                $createdAt = $activity['createdAt'] instanceof \Carbon\Carbon 
+                    ? $activity['createdAt'] 
+                    : \Carbon\Carbon::parse($activity['createdAt']);
+                    
                 return [
                     'id' => $activity['id'],
                     'type' => $activity['type'],
@@ -828,8 +897,8 @@ class CrmDashboardController extends Controller
                     'color' => $activity['color'],
                     'bgColor' => $activity['bgColor'],
                     'pointAmount' => $activity['pointAmount'] ?? null,
-                    'createdAt' => $activity['createdAt']->format('d M Y, H:i'),
-                    'createdAtFull' => $activity['createdAt']->format('Y-m-d H:i:s'),
+                    'createdAt' => $createdAt->format('d M Y, H:i'),
+                    'createdAtFull' => $createdAt->format('Y-m-d H:i:s'),
                 ];
             })
             ->values();

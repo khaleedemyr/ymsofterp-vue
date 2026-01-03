@@ -1190,6 +1190,10 @@ function getTierIcon(tier) {
                   </div>
                 </div>
               </div>
+              <div v-if="!latestActivities || latestActivities.length === 0" class="text-center py-8 text-gray-500">
+                <i class="fa-solid fa-clock text-4xl mb-2"></i>
+                <p>Tidak ada aktivitas terbaru</p>
+              </div>
             </div>
           </div>
         </div>
@@ -1243,15 +1247,21 @@ function getTierIcon(tier) {
               />
             </div>
             <div class="mt-4 space-y-2 max-h-48 overflow-y-auto">
-              <div v-for="item in ageDistribution" :key="item.age_group" class="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 hover:border-blue-200 transition-all duration-300">
-                <div class="flex items-center gap-3">
-                  <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
-                  <span class="font-medium text-gray-700">{{ item.age_group }}</span>
+              <div v-if="ageDistribution && ageDistribution.length > 0">
+                <div v-for="item in ageDistribution" :key="item.age_group" class="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 hover:border-blue-200 transition-all duration-300">
+                  <div class="flex items-center gap-3">
+                    <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
+                    <span class="font-medium text-gray-700">{{ item.age_group }}</span>
+                  </div>
+                  <div class="text-right">
+                    <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
+                    <div class="text-xs text-gray-500">{{ item.percentage }}%</div>
+                  </div>
                 </div>
-                <div class="text-right">
-                  <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
-                  <div class="text-xs text-gray-500">{{ item.percentage }}%</div>
-                </div>
+              </div>
+              <div v-else class="text-center py-8 text-gray-500">
+                <i class="fa-solid fa-birthday-cake text-4xl mb-2"></i>
+                <p>Data tidak tersedia</p>
               </div>
             </div>
           </div>
