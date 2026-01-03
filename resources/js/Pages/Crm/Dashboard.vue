@@ -632,18 +632,21 @@ const funnelChartOptions = computed(() => ({
   },
 }));
 
-const funnelChartSeries = computed(() => [
-  {
-    name: 'Members',
-    data: [
-      conversionFunnel?.registered || 0,
-      conversionFunnel?.emailVerified || 0,
-      conversionFunnel?.firstLogin || 0,
-      conversionFunnel?.firstTransaction || 0,
-      conversionFunnel?.repeatCustomers || 0,
-    ],
-  },
-]);
+const funnelChartSeries = computed(() => {
+  const funnel = props.conversionFunnel || {};
+  return [
+    {
+      name: 'Members',
+      data: [
+        funnel.registered || 0,
+        funnel.emailVerified || 0,
+        funnel.firstLogin || 0,
+        funnel.firstTransaction || 0,
+        funnel.repeatCustomers || 0,
+      ],
+    },
+  ];
+});
 
 function formatNumber(num) {
   return new Intl.NumberFormat('id-ID').format(num);
@@ -1326,15 +1329,15 @@ function getTierIcon(tier) {
             <div class="space-y-4">
               <div class="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl border-2 border-emerald-200">
                 <div class="text-sm font-medium text-emerald-700 mb-1">Average LTV</div>
-                <div class="text-3xl font-bold text-emerald-800">{{ memberLifetimeValue?.averageFormatted || 'Rp 0' }}</div>
+                <div class="text-3xl font-bold text-emerald-800">{{ props.memberLifetimeValue?.averageFormatted || 'Rp 0' }}</div>
               </div>
               <div class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200">
                 <div class="text-sm font-medium text-blue-700 mb-1">Total LTV</div>
-                <div class="text-2xl font-bold text-blue-800">{{ memberLifetimeValue?.totalFormatted || 'Rp 0' }}</div>
+                <div class="text-2xl font-bold text-blue-800">{{ props.memberLifetimeValue?.totalFormatted || 'Rp 0' }}</div>
               </div>
               <div class="space-y-2">
                 <div class="text-sm font-semibold text-gray-700 mb-2">LTV by Tier:</div>
-                <div v-for="(tierData, tier) in memberLifetimeValue?.byTier" :key="tier" class="p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100">
+                <div v-for="(tierData, tier) in props.memberLifetimeValue?.byTier" :key="tier" class="p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100">
                   <div class="flex justify-between items-center">
                     <span class="font-medium text-gray-700 capitalize">{{ tier }}</span>
                     <div class="text-right">
@@ -1396,23 +1399,23 @@ function getTierIcon(tier) {
             <div class="space-y-2">
               <div class="flex justify-between items-center p-2 bg-blue-50 rounded">
                 <span class="text-sm font-medium text-gray-700">Registered</span>
-                <span class="font-bold text-blue-600">{{ formatNumber(conversionFunnel?.registered || 0) }}</span>
+                <span class="font-bold text-blue-600">{{ formatNumber(props.conversionFunnel?.registered || 0) }}</span>
               </div>
               <div class="flex justify-between items-center p-2 bg-green-50 rounded">
                 <span class="text-sm font-medium text-gray-700">Email Verified</span>
-                <span class="font-bold text-green-600">{{ formatNumber(conversionFunnel?.emailVerified || 0) }} ({{ conversionFunnel?.emailVerificationRate || 0 }}%)</span>
+                <span class="font-bold text-green-600">{{ formatNumber(props.conversionFunnel?.emailVerified || 0) }} ({{ props.conversionFunnel?.emailVerificationRate || 0 }}%)</span>
               </div>
               <div class="flex justify-between items-center p-2 bg-purple-50 rounded">
                 <span class="text-sm font-medium text-gray-700">First Login</span>
-                <span class="font-bold text-purple-600">{{ formatNumber(conversionFunnel?.firstLogin || 0) }} ({{ conversionFunnel?.loginRate || 0 }}%)</span>
+                <span class="font-bold text-purple-600">{{ formatNumber(props.conversionFunnel?.firstLogin || 0) }} ({{ props.conversionFunnel?.loginRate || 0 }}%)</span>
               </div>
               <div class="flex justify-between items-center p-2 bg-orange-50 rounded">
                 <span class="text-sm font-medium text-gray-700">First Transaction</span>
-                <span class="font-bold text-orange-600">{{ formatNumber(conversionFunnel?.firstTransaction || 0) }} ({{ conversionFunnel?.transactionRate || 0 }}%)</span>
+                <span class="font-bold text-orange-600">{{ formatNumber(props.conversionFunnel?.firstTransaction || 0) }} ({{ props.conversionFunnel?.transactionRate || 0 }}%)</span>
               </div>
               <div class="flex justify-between items-center p-2 bg-emerald-50 rounded">
                 <span class="text-sm font-medium text-gray-700">Repeat Customers</span>
-                <span class="font-bold text-emerald-600">{{ formatNumber(conversionFunnel?.repeatCustomers || 0) }} ({{ conversionFunnel?.repeatRate || 0 }}%)</span>
+                <span class="font-bold text-emerald-600">{{ formatNumber(props.conversionFunnel?.repeatCustomers || 0) }} ({{ props.conversionFunnel?.repeatRate || 0 }}%)</span>
               </div>
             </div>
           </div>
@@ -1439,24 +1442,24 @@ function getTierIcon(tier) {
                   <div>
                     <div class="text-sm text-blue-700 mb-1">New Members</div>
                     <div class="flex items-center justify-between">
-                      <span class="text-lg font-bold text-blue-900">{{ formatNumber(comparisonData?.monthOverMonth?.members?.current || 0) }}</span>
-                      <span :class="['text-sm font-semibold', comparisonData?.monthOverMonth?.members?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
-                        <i :class="['fa-solid', comparisonData?.monthOverMonth?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
-                        {{ Math.abs(comparisonData?.monthOverMonth?.members?.growth || 0) }}%
+                      <span class="text-lg font-bold text-blue-900">{{ formatNumber(props.comparisonData?.monthOverMonth?.members?.current || 0) }}</span>
+                      <span :class="['text-sm font-semibold', props.comparisonData?.monthOverMonth?.members?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
+                        <i :class="['fa-solid', props.comparisonData?.monthOverMonth?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
+                        {{ Math.abs(props.comparisonData?.monthOverMonth?.members?.growth || 0) }}%
                       </span>
                     </div>
-                    <div class="text-xs text-blue-600 mt-1">vs {{ formatNumber(comparisonData?.monthOverMonth?.members?.previous || 0) }} last month</div>
+                    <div class="text-xs text-blue-600 mt-1">vs {{ formatNumber(props.comparisonData?.monthOverMonth?.members?.previous || 0) }} last month</div>
                   </div>
                   <div>
                     <div class="text-sm text-blue-700 mb-1">Total Spending</div>
                     <div class="flex items-center justify-between">
-                      <span class="text-lg font-bold text-blue-900">{{ comparisonData?.monthOverMonth?.spending?.currentFormatted || 'Rp 0' }}</span>
-                      <span :class="['text-sm font-semibold', comparisonData?.monthOverMonth?.spending?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
-                        <i :class="['fa-solid', comparisonData?.monthOverMonth?.spending?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
-                        {{ Math.abs(comparisonData?.monthOverMonth?.spending?.growth || 0) }}%
+                      <span class="text-lg font-bold text-blue-900">{{ props.comparisonData?.monthOverMonth?.spending?.currentFormatted || 'Rp 0' }}</span>
+                      <span :class="['text-sm font-semibold', props.comparisonData?.monthOverMonth?.spending?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
+                        <i :class="['fa-solid', props.comparisonData?.monthOverMonth?.spending?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
+                        {{ Math.abs(props.comparisonData?.monthOverMonth?.spending?.growth || 0) }}%
                       </span>
                     </div>
-                    <div class="text-xs text-blue-600 mt-1">vs {{ comparisonData?.monthOverMonth?.spending?.previousFormatted || 'Rp 0' }} last month</div>
+                    <div class="text-xs text-blue-600 mt-1">vs {{ props.comparisonData?.monthOverMonth?.spending?.previousFormatted || 'Rp 0' }} last month</div>
                   </div>
                 </div>
               </div>
@@ -1468,24 +1471,24 @@ function getTierIcon(tier) {
                   <div>
                     <div class="text-sm text-purple-700 mb-1">New Members</div>
                     <div class="flex items-center justify-between">
-                      <span class="text-lg font-bold text-purple-900">{{ formatNumber(comparisonData?.yearOverYear?.members?.current || 0) }}</span>
-                      <span :class="['text-sm font-semibold', comparisonData?.yearOverYear?.members?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
-                        <i :class="['fa-solid', comparisonData?.yearOverYear?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
-                        {{ Math.abs(comparisonData?.yearOverYear?.members?.growth || 0) }}%
+                      <span class="text-lg font-bold text-purple-900">{{ formatNumber(props.comparisonData?.yearOverYear?.members?.current || 0) }}</span>
+                      <span :class="['text-sm font-semibold', props.comparisonData?.yearOverYear?.members?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
+                        <i :class="['fa-solid', props.comparisonData?.yearOverYear?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
+                        {{ Math.abs(props.comparisonData?.yearOverYear?.members?.growth || 0) }}%
                       </span>
                     </div>
-                    <div class="text-xs text-purple-600 mt-1">vs {{ formatNumber(comparisonData?.yearOverYear?.members?.previous || 0) }} last year</div>
+                    <div class="text-xs text-purple-600 mt-1">vs {{ formatNumber(props.comparisonData?.yearOverYear?.members?.previous || 0) }} last year</div>
                   </div>
                   <div>
                     <div class="text-sm text-purple-700 mb-1">Total Spending</div>
                     <div class="flex items-center justify-between">
-                      <span class="text-lg font-bold text-purple-900">{{ comparisonData?.yearOverYear?.spending?.currentFormatted || 'Rp 0' }}</span>
-                      <span :class="['text-sm font-semibold', comparisonData?.yearOverYear?.spending?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
-                        <i :class="['fa-solid', comparisonData?.yearOverYear?.spending?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
-                        {{ Math.abs(comparisonData?.yearOverYear?.spending?.growth || 0) }}%
+                      <span class="text-lg font-bold text-purple-900">{{ props.comparisonData?.yearOverYear?.spending?.currentFormatted || 'Rp 0' }}</span>
+                      <span :class="['text-sm font-semibold', props.comparisonData?.yearOverYear?.spending?.growth >= 0 ? 'text-green-600' : 'text-red-600']">
+                        <i :class="['fa-solid', props.comparisonData?.yearOverYear?.spending?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
+                        {{ Math.abs(props.comparisonData?.yearOverYear?.spending?.growth || 0) }}%
                       </span>
                     </div>
-                    <div class="text-xs text-purple-600 mt-1">vs {{ comparisonData?.yearOverYear?.spending?.previousFormatted || 'Rp 0' }} last year</div>
+                    <div class="text-xs text-purple-600 mt-1">vs {{ props.comparisonData?.yearOverYear?.spending?.previousFormatted || 'Rp 0' }} last year</div>
                   </div>
                 </div>
               </div>
@@ -1502,7 +1505,7 @@ function getTierIcon(tier) {
                 Breakdown per Outlet/Region
               </h3>
             </div>
-            <div v-if="regionalBreakdown.length === 0" class="text-center py-8 text-gray-500">
+            <div v-if="props.regionalBreakdown.length === 0" class="text-center py-8 text-gray-500">
               <i class="fa-solid fa-map text-4xl mb-2"></i>
               <p>Tidak ada data regional</p>
             </div>
@@ -1519,7 +1522,7 @@ function getTierIcon(tier) {
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
-                  <tr v-for="(item, index) in regionalBreakdown" :key="index" class="hover:bg-gray-50 transition">
+                  <tr v-for="(item, index) in props.regionalBreakdown" :key="index" class="hover:bg-gray-50 transition">
                     <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.outlet_name }}</td>
                     <td class="px-4 py-3 text-sm text-gray-600">{{ item.region }}</td>
                     <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatNumber(item.total_members) }}</td>
