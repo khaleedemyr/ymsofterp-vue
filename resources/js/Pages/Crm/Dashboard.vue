@@ -394,6 +394,13 @@ const ageChartOptions = computed(() => ({
     fontFamily: 'Inter, sans-serif',
   },
   colors: props.ageDistribution?.map(a => a.color) || [],
+  plotOptions: {
+    bar: {
+      distributed: true, // Enable different colors for each bar
+      borderRadius: 4,
+      columnWidth: '60%',
+    },
+  },
   dataLabels: {
     enabled: true,
     formatter: function(val) {
@@ -401,7 +408,7 @@ const ageChartOptions = computed(() => ({
     },
   },
   xaxis: {
-    categories: props.ageDistribution?.map(a => a.age_group) || [],
+    categories: props.ageDistribution?.map(a => a.age_group_label || a.age_group) || [],
     labels: { 
       style: { fontSize: '11px', colors: '#6b7280' },
       rotate: -45,
@@ -428,6 +435,9 @@ const ageChartOptions = computed(() => ({
       },
     },
   },
+  legend: {
+    show: false, // Hide legend since we have the list below
+  },
 }));
 
 const ageChartSeries = computed(() => [
@@ -451,7 +461,7 @@ const purchasingPowerChartOptions = computed(() => ({
     enabled: false,
   },
   xaxis: {
-    categories: props.purchasingPowerByAge?.map(p => p.age_group) || [],
+    categories: props.purchasingPowerByAge?.map(p => p.age_group_label || p.age_group) || [],
     labels: {
       style: { fontSize: '11px', colors: '#6b7280' },
       rotate: -45,
@@ -809,10 +819,14 @@ function getTierIcon(tier) {
                 <i class="fa-solid fa-calendar"></i>
                 <span>{{ stats?.spendingLastYearFormatted || 'Rp 0' }} setahun</span>
               </div>
-              <div v-if="stats?.spendingLastYearLastDate && stats?.spendingLastYearLastDate !== '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
-                <i class="fa-solid fa-clock"></i>
-                <span>Last data: {{ stats?.spendingLastYearLastDate }}</span>
-              </div>
+          <div v-if="stats?.spendingLastYearLastDate && stats?.spendingLastYearLastDate !== '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
+            <i class="fa-solid fa-clock"></i>
+            <span>Last data: {{ stats?.spendingLastYearLastDate }}</span>
+          </div>
+          <div v-else-if="stats?.spendingLastYearLastDate === '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
+            <i class="fa-solid fa-clock"></i>
+            <span>Last data: Tidak ada data</span>
+          </div>
             </div>
           </div>
 
@@ -928,6 +942,61 @@ function getTierIcon(tier) {
                   <div class="text-2xl font-bold text-purple-600">{{ stats?.spendingThisYearFormatted || 'Rp 0' }}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Member Contribution to Revenue Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-chart-line text-blue-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Kontribusi Member Hari Ini</div>
+                  <div class="text-2xl font-bold text-blue-600">{{ stats?.memberContributionTodayFormatted || '0%' }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 mt-2 space-y-1">
+              <div>Member: {{ stats?.memberRevenueTodayFormatted || 'Rp 0' }}</div>
+              <div>Total Revenue: {{ stats?.totalRevenueTodayFormatted || 'Rp 0' }}</div>
+            </div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-chart-area text-green-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Kontribusi Member Bulan Ini</div>
+                  <div class="text-2xl font-bold text-green-600">{{ stats?.memberContributionThisMonthFormatted || '0%' }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 mt-2 space-y-1">
+              <div>Member: {{ stats?.memberRevenueThisMonthFormatted || 'Rp 0' }}</div>
+              <div>Total Revenue: {{ stats?.totalRevenueThisMonthFormatted || 'Rp 0' }}</div>
+            </div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-chart-pie text-purple-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Kontribusi Member Tahun Ini</div>
+                  <div class="text-2xl font-bold text-purple-600">{{ stats?.memberContributionThisYearFormatted || '0%' }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 mt-2 space-y-1">
+              <div>Member: {{ stats?.memberRevenueThisYearFormatted || 'Rp 0' }}</div>
+              <div>Total Revenue: {{ stats?.totalRevenueThisYearFormatted || 'Rp 0' }}</div>
             </div>
           </div>
         </div>
@@ -1251,7 +1320,7 @@ function getTierIcon(tier) {
                 <div v-for="item in ageDistribution" :key="item.age_group" class="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 hover:border-blue-200 transition-all duration-300">
                   <div class="flex items-center gap-3">
                     <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
-                    <span class="font-medium text-gray-700">{{ item.age_group }}</span>
+                    <span class="font-medium text-gray-700">{{ item.age_group_label || item.age_group }}</span>
                   </div>
                   <div class="text-right">
                     <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
@@ -1285,8 +1354,9 @@ function getTierIcon(tier) {
               />
             </div>
             <div class="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div v-for="item in purchasingPowerByAge" :key="item.age_group" class="p-4 bg-gradient-to-r from-emerald-50 to-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition-all duration-300">
-                <div class="font-semibold text-gray-900 mb-2">{{ item.age_group }}</div>
+              <div v-if="purchasingPowerByAge && purchasingPowerByAge.length > 0">
+                <div v-for="item in purchasingPowerByAge" :key="item.age_group" class="p-4 bg-gradient-to-r from-emerald-50 to-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition-all duration-300">
+                  <div class="font-semibold text-gray-900 mb-2">{{ item.age_group_label || item.age_group }}</div>
                 <div class="space-y-1 text-sm">
                   <div class="flex justify-between">
                     <span class="text-gray-600">Total Spending:</span>
@@ -1305,6 +1375,11 @@ function getTierIcon(tier) {
                     <span class="font-semibold text-gray-800">{{ formatNumber(item.total_customers) }}</span>
                   </div>
                 </div>
+              </div>
+              </div>
+              <div v-else class="text-center py-8 text-gray-500 col-span-full">
+                <i class="fa-solid fa-dollar-sign text-4xl mb-2"></i>
+                <p>Data tidak tersedia</p>
               </div>
             </div>
           </div>

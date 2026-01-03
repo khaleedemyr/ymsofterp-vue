@@ -99,10 +99,20 @@ class CrmDashboardController extends Controller
                 Log::error('CRM Dashboard: Failed to load latest activities: ' . $e->getMessage());
             }
             
+            // Load purchasing power by age with caching
+            $purchasingPowerByAge = [];
+            try {
+                $purchasingPowerByAge = Cache::remember('crm_purchasing_power_by_age', 300, function () use ($startDate, $endDate) {
+                    return $this->getPurchasingPowerByAge($startDate, $endDate);
+                });
+                Log::info('CRM Dashboard: Purchasing power by age loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load purchasing power by age: ' . $e->getMessage());
+            }
+            
             // Skip heavy queries for now - load only critical data
             // These can be loaded via AJAX later if needed
             Log::info('CRM Dashboard: Skipping heavy queries, using empty defaults');
-            $purchasingPowerByAge = [];
             $engagementMetrics = [];
             $memberSegmentation = [];
             $memberLifetimeValue = [];
@@ -245,9 +255,16 @@ class CrmDashboardController extends Controller
         
         $spendingLastYear = $spendingLastYearQuery->sum('grand_total');
         
-        // Get last transaction date in last year
-        $lastTransactionDate = $spendingLastYearQuery->orderBy('created_at', 'desc')->value('created_at');
-        $lastTransactionDateFormatted = $lastTransactionDate ? Carbon::parse($lastTransactionDate)->format('d M Y') : '-';
+        // Get last transaction date in last year (the actual last date of data, not today)
+        $lastTransactionDate = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->where('created_at', '>=', Carbon::now()->subYear())
+            ->orderBy('created_at', 'desc')
+            ->value('created_at');
+        $lastTransactionDateFormatted = $lastTransactionDate ? Carbon::parse($lastTransactionDate)->format('d M Y, H:i') : '-';
 
         $spendingThisMonth = DB::connection('db_justus')
             ->table('orders')
@@ -272,6 +289,37 @@ class CrmDashboardController extends Controller
             ->where('member_id', '!=', '')
             ->whereYear('created_at', Carbon::now()->year)
             ->sum('grand_total');
+
+        // Member contribution to revenue (hari ini, bulan ini, tahun ini)
+        // Total revenue (all orders, including non-member)
+        $totalRevenueToday = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereDate('created_at', $today)
+            ->sum('grand_total');
+        
+        $totalRevenueThisMonth = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereBetween('created_at', [$thisMonth, Carbon::now()])
+            ->sum('grand_total');
+        
+        $thisYear = Carbon::now()->startOfYear();
+        $totalRevenueThisYear = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('grand_total');
+        
+        // Member revenue (orders with member_id)
+        $memberRevenueToday = $spendingToday;
+        $memberRevenueThisMonth = $spendingThisMonth;
+        $memberRevenueThisYear = $spendingThisYear;
+        
+        // Calculate contribution percentage
+        $memberContributionToday = $totalRevenueToday > 0 ? round(($memberRevenueToday / $totalRevenueToday) * 100, 2) : 0;
+        $memberContributionThisMonth = $totalRevenueThisMonth > 0 ? round(($memberRevenueThisMonth / $totalRevenueThisMonth) * 100, 2) : 0;
+        $memberContributionThisYear = $totalRevenueThisYear > 0 ? round(($memberRevenueThisYear / $totalRevenueThisYear) * 100, 2) : 0;
 
         // Growth rate
         $lastMonthMembers = MemberAppsMember::whereBetween('created_at', [$lastMonth, $thisMonth])->count();
@@ -447,8 +495,24 @@ class CrmDashboardController extends Controller
                 'Tidak Diketahui' => '#9ca3af',
             ];
             
+            // Add age range to label
+            $ageRanges = [
+                'Anak-anak' => '< 13 tahun',
+                'Remaja' => '13-18 tahun',
+                'Dewasa Muda' => '19-30 tahun',
+                'Dewasa Produktif' => '31-45 tahun',
+                'Dewasa Matang' => '46-59 tahun',
+                'Usia Tua' => '≥ 60 tahun',
+                'Tidak Diketahui' => '-',
+            ];
+            
+            $ageRange = $ageRanges[$item->age_group] ?? '-';
+            $label = $item->age_group . ($ageRange !== '-' ? ' (' . $ageRange . ')' : '');
+            
             return [
                 'age_group' => $item->age_group,
+                'age_group_label' => $label,
+                'age_range' => $ageRange,
                 'count' => (int) $item->count,
                 'color' => $colors[$item->age_group] ?? '#9ca3af',
             ];
@@ -523,10 +587,26 @@ class CrmDashboardController extends Controller
                 END
         ";
 
+        // Age ranges mapping
+        $ageRanges = [
+            'Anak-anak' => '< 13 tahun',
+            'Remaja' => '13-18 tahun',
+            'Dewasa Muda' => '19-30 tahun',
+            'Dewasa Produktif' => '31-45 tahun',
+            'Dewasa Matang' => '46-59 tahun',
+            'Usia Tua' => '≥ 60 tahun',
+            'Tidak Diketahui' => '-',
+        ];
+        
         return collect(DB::select($sql))
-            ->map(function ($item) {
+            ->map(function ($item) use ($ageRanges) {
+                $ageRange = $ageRanges[$item->age_group] ?? '-';
+                $label = $item->age_group . ($ageRange !== '-' ? ' (' . $ageRange . ')' : '');
+                
                 return [
                     'age_group' => $item->age_group,
+                    'age_group_label' => $label,
+                    'age_range' => $ageRange,
                     'total_customers' => (int) $item->total_customers,
                     'total_spending' => (float) $item->total_spending,
                     'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
