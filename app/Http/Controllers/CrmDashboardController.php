@@ -19,55 +19,90 @@ class CrmDashboardController extends Controller
     public function index(Request $request)
     {
         try {
-            $startDate = $request->get('start_date');
-            $endDate = $request->get('end_date');
-            
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        
             // Load critical data first (fast queries)
-            Log::info('CRM Dashboard: Loading critical data...');
-            $stats = $this->getStats();
-            Log::info('CRM Dashboard: Stats loaded');
-            
-            $memberGrowth = $this->getMemberGrowth();
-            Log::info('CRM Dashboard: Member growth loaded');
-            
-            $tierDistribution = $this->getTierDistribution();
-            Log::info('CRM Dashboard: Tier distribution loaded');
-            
-            $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
-            Log::info('CRM Dashboard: Spending trend loaded');
-            
-            $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
-            Log::info('CRM Dashboard: Point activity trend loaded');
-            
-            $latestMembers = $this->getLatestMembers();
-            Log::info('CRM Dashboard: Latest members loaded');
-            
-            $latestPointTransactions = $this->getLatestPointTransactions();
-            Log::info('CRM Dashboard: Latest point transactions loaded');
+        $stats = $this->getStats();
+        $memberGrowth = $this->getMemberGrowth();
+        $tierDistribution = $this->getTierDistribution();
+        $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
+        $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
+        $latestMembers = $this->getLatestMembers();
+        $latestPointTransactions = $this->getLatestPointTransactions();
             
             // Load with timeout protection
             $topSpenders = [];
+            $topSpendersDateRange = null;
             try {
-                $topSpenders = $this->getTopSpenders();
-                Log::info('CRM Dashboard: Top spenders loaded');
+                $topSpendersResult = $this->getTopSpenders();
+                if (is_array($topSpendersResult) && isset($topSpendersResult['data'])) {
+                    $topSpenders = $topSpendersResult['data'];
+                    $topSpendersDateRange = $topSpendersResult['dateRange'] ?? null;
+                } elseif (is_object($topSpendersResult) && isset($topSpendersResult->data)) {
+                    $topSpenders = $topSpendersResult->data;
+                    $topSpendersDateRange = $topSpendersResult->dateRange ?? null;
+                } else {
+                    $topSpenders = $topSpendersResult;
+                }
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load top spenders: ' . $e->getMessage());
             }
             
             $mostActiveMembers = [];
+            $mostActiveMembersDateRange = null;
             try {
-                $mostActiveMembers = $this->getMostActiveMembers();
-                Log::info('CRM Dashboard: Most active members loaded');
+                $mostActiveMembersResult = $this->getMostActiveMembers();
+                if (is_array($mostActiveMembersResult) && isset($mostActiveMembersResult['data'])) {
+                    $mostActiveMembers = $mostActiveMembersResult['data'];
+                    $mostActiveMembersDateRange = $mostActiveMembersResult['dateRange'] ?? null;
+                } elseif (is_object($mostActiveMembersResult) && isset($mostActiveMembersResult->data)) {
+                    $mostActiveMembers = $mostActiveMembersResult->data;
+                    $mostActiveMembersDateRange = $mostActiveMembersResult->dateRange ?? null;
+                } else {
+                    $mostActiveMembers = $mostActiveMembersResult;
+                }
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load most active members: ' . $e->getMessage());
             }
             
             $pointStats = [];
             try {
-                $pointStats = $this->getPointStats($startDate, $endDate);
-                Log::info('CRM Dashboard: Point stats loaded');
+        $pointStats = $this->getPointStats($startDate, $endDate);
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load point stats: ' . $e->getMessage());
+            }
+            
+            $memberFavouritePicks = [];
+            try {
+                $memberFavouritePicks = $this->getMemberFavouritePicks();
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load member favourite picks: ' . $e->getMessage());
+            }
+            
+            $activeVouchers = [];
+            try {
+                $activeVouchers = $this->getActiveVouchers();
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load active vouchers: ' . $e->getMessage());
+            }
+            
+            $activeChallenges = [];
+            try {
+                $activeChallenges = Cache::remember('crm_active_challenges', 300, function () {
+                    return $this->getActiveChallenges();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load active challenges: ' . $e->getMessage());
+            }
+            
+            $activeRewards = [];
+            try {
+                $activeRewards = Cache::remember('crm_active_rewards', 300, function () {
+                    return $this->getActiveRewards();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load active rewards: ' . $e->getMessage());
             }
             
             // Load lightweight queries with caching
@@ -76,9 +111,17 @@ class CrmDashboardController extends Controller
                 $genderDistribution = Cache::remember('crm_gender_distribution', 300, function () {
                     return $this->getGenderDistribution();
                 });
-                Log::info('CRM Dashboard: Gender distribution loaded');
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load gender distribution: ' . $e->getMessage());
+            }
+            
+            $occupationDistribution = [];
+            try {
+                $occupationDistribution = Cache::remember('crm_occupation_distribution', 300, function () {
+                    return $this->getOccupationDistribution();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load occupation distribution: ' . $e->getMessage());
             }
             
             $ageDistribution = [];
@@ -86,7 +129,6 @@ class CrmDashboardController extends Controller
                 $ageDistribution = Cache::remember('crm_age_distribution', 300, function () {
                     return $this->getAgeDistribution();
                 });
-                Log::info('CRM Dashboard: Age distribution loaded');
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load age distribution: ' . $e->getMessage());
             }
@@ -94,66 +136,140 @@ class CrmDashboardController extends Controller
             $latestActivities = [];
             try {
                 $latestActivities = $this->getLatestActivities();
-                Log::info('CRM Dashboard: Latest activities loaded');
             } catch (\Exception $e) {
                 Log::error('CRM Dashboard: Failed to load latest activities: ' . $e->getMessage());
             }
             
-            // Skip purchasing power by age for now - too heavy, can be loaded via AJAX later
-            $purchasingPowerByAge = [];
-            Log::info('CRM Dashboard: Skipping purchasing power by age (too heavy)');
+            // Get purchasing power by age with caching (10 minutes) - Year to date
+            try {
+                $yearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
+                $yearEnd = Carbon::now()->format('Y-m-d 23:59:59');
+                $purchasingPowerByAge = Cache::remember('crm_purchasing_power_by_age_ytd', 600, function () use ($yearStart, $yearEnd) {
+                    $data = $this->getPurchasingPowerByAge($yearStart, $yearEnd);
+                    // Convert collection to array
+                    return is_object($data) && method_exists($data, 'toArray') ? $data->toArray() : (array) $data;
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Error loading purchasing power by age: ' . $e->getMessage());
+                $purchasingPowerByAge = [];
+            }
             
-            // Skip heavy queries for now - load only critical data
-            // These can be loaded via AJAX later if needed
-            Log::info('CRM Dashboard: Skipping heavy queries, using empty defaults');
-            $engagementMetrics = [];
+            // Get purchasing power by age for current month (daily breakdown) - for line chart
+            try {
+                $monthStart = Carbon::now()->startOfMonth()->format('Y-m-d 00:00:00');
+                $monthEnd = Carbon::now()->format('Y-m-d 23:59:59');
+                $purchasingPowerByAgeThisMonth = Cache::remember('crm_purchasing_power_by_age_month_' . Carbon::now()->format('Y-m'), 300, function () use ($monthStart, $monthEnd) {
+                    return $this->getPurchasingPowerByAgeThisMonth($monthStart, $monthEnd);
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Error loading purchasing power by age this month: ' . $e->getMessage());
+                $purchasingPowerByAgeThisMonth = [];
+            }
+            
+            // Load member segmentation
             $memberSegmentation = [];
-            $memberLifetimeValue = [];
-            $churnAnalysis = [];
-            $conversionFunnel = [];
-            $regionalBreakdown = [];
-            $comparisonData = [];
+            try {
+                $memberSegmentation = Cache::remember('crm_member_segmentation', 300, function () {
+                    return $this->getMemberSegmentation();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load member segmentation: ' . $e->getMessage());
+            }
             
-            Log::info('CRM Dashboard: All critical data loaded, preparing response...');
+            // Skip member lifetime value - too heavy for large dataset
+            $memberLifetimeValue = (object)[
+                'average' => 0,
+                'averageFormatted' => 'Rp 0',
+                'total' => 0,
+                'totalFormatted' => 'Rp 0',
+                'byTier' => (object)[],
+            ];
+            
+            // Load churn analysis
+            $churnAnalysis = [];
+            try {
+                $churnAnalysis = Cache::remember('crm_churn_analysis', 300, function () {
+                    return $this->getChurnAnalysis();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load churn analysis: ' . $e->getMessage());
+            }
+            
+            // Skip conversion funnel - too heavy
+            $conversionFunnel = (object)[
+                'registered' => 0,
+                'emailVerified' => 0,
+                'emailVerificationRate' => 0,
+                'firstLogin' => 0,
+                'loginRate' => 0,
+                'firstTransaction' => 0,
+                'transactionRate' => 0,
+                'repeatCustomers' => 0,
+                'repeatRate' => 0,
+            ];
+            
+            // Load comparison data (MoM & YoY)
+            $comparisonData = [];
+            try {
+                $comparisonData = Cache::remember('crm_comparison_data', 300, function () {
+                    return $this->getComparisonData();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load comparison data: ' . $e->getMessage());
+            }
+            
+            // Load regional breakdown
+            $regionalBreakdown = [];
+            try {
+                $regionalBreakdown = Cache::remember('crm_regional_breakdown', 300, function () {
+                    return $this->getRegionalBreakdown();
+                });
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load regional breakdown: ' . $e->getMessage());
+            }
+            
+            // Skip other heavy queries for now - load only critical data
+            // These can be loaded via AJAX later if needed
+            $engagementMetrics = [];
             
             // Convert all collections to arrays to reduce serialization overhead
-            Log::info('CRM Dashboard: Starting data conversion to arrays...');
             $responseData = [
                 'stats' => is_array($stats) ? $stats : (is_object($stats) ? (array) $stats : []),
                 'memberGrowth' => is_array($memberGrowth) ? $memberGrowth : $memberGrowth->toArray(),
                 'tierDistribution' => is_array($tierDistribution) ? $tierDistribution : $tierDistribution->toArray(),
                 'genderDistribution' => is_array($genderDistribution) ? $genderDistribution : (is_object($genderDistribution) ? $genderDistribution->toArray() : []),
+                'occupationDistribution' => is_array($occupationDistribution) ? $occupationDistribution : (is_object($occupationDistribution) ? $occupationDistribution->toArray() : []),
                 'ageDistribution' => is_array($ageDistribution) ? $ageDistribution : (is_object($ageDistribution) ? $ageDistribution->toArray() : []),
                 'purchasingPowerByAge' => is_array($purchasingPowerByAge) ? $purchasingPowerByAge : (is_object($purchasingPowerByAge) ? $purchasingPowerByAge->toArray() : []),
+                'purchasingPowerByAgeThisMonth' => is_array($purchasingPowerByAgeThisMonth) ? $purchasingPowerByAgeThisMonth : (is_object($purchasingPowerByAgeThisMonth) ? $purchasingPowerByAgeThisMonth->toArray() : []),
                 'spendingTrend' => is_array($spendingTrend) ? $spendingTrend : $spendingTrend->toArray(),
                 'pointActivityTrend' => is_array($pointActivityTrend) ? $pointActivityTrend : $pointActivityTrend->toArray(),
                 'latestMembers' => is_array($latestMembers) ? $latestMembers : $latestMembers->toArray(),
                 'latestPointTransactions' => is_array($latestPointTransactions) ? $latestPointTransactions : $latestPointTransactions->toArray(),
                 'latestActivities' => is_array($latestActivities) ? $latestActivities : (is_object($latestActivities) ? $latestActivities->toArray() : []),
                 'topSpenders' => is_array($topSpenders) ? $topSpenders : (is_object($topSpenders) ? $topSpenders->toArray() : []),
+                'topSpendersDateRange' => $topSpendersDateRange,
                 'mostActiveMembers' => is_array($mostActiveMembers) ? $mostActiveMembers : (is_object($mostActiveMembers) ? $mostActiveMembers->toArray() : []),
+                'mostActiveMembersDateRange' => $mostActiveMembersDateRange,
+                'memberFavouritePicks' => is_array($memberFavouritePicks) ? (object)$memberFavouritePicks : (is_object($memberFavouritePicks) ? $memberFavouritePicks : (object)['food' => [], 'beverages' => []]),
+                'activeVouchers' => is_array($activeVouchers) ? $activeVouchers : (is_object($activeVouchers) ? $activeVouchers->toArray() : []),
+                'activeChallenges' => is_array($activeChallenges) ? $activeChallenges : (is_object($activeChallenges) ? $activeChallenges->toArray() : []),
+                'activeRewards' => is_array($activeRewards) ? $activeRewards : (is_object($activeRewards) ? $activeRewards->toArray() : []),
                 'pointStats' => is_array($pointStats) ? $pointStats : (is_object($pointStats) ? (array) $pointStats : []),
                 'engagementMetrics' => is_array($engagementMetrics) ? $engagementMetrics : (is_object($engagementMetrics) ? (array) $engagementMetrics : []),
                 'memberSegmentation' => is_array($memberSegmentation) ? (object)$memberSegmentation : (is_object($memberSegmentation) ? $memberSegmentation : (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0]),
-                'memberLifetimeValue' => is_array($memberLifetimeValue) ? (object)$memberLifetimeValue : (is_object($memberLifetimeValue) ? $memberLifetimeValue : (object)[]),
+                'memberLifetimeValue' => is_array($memberLifetimeValue) ? (object)$memberLifetimeValue : (is_object($memberLifetimeValue) ? $memberLifetimeValue : (object)['average' => 0, 'averageFormatted' => 'Rp 0', 'total' => 0, 'totalFormatted' => 'Rp 0', 'byTier' => (object)[]]),
                 'churnAnalysis' => is_array($churnAnalysis) ? (object)$churnAnalysis : (is_object($churnAnalysis) ? $churnAnalysis : (object)[]),
                 'conversionFunnel' => is_array($conversionFunnel) ? (object)$conversionFunnel : (is_object($conversionFunnel) ? $conversionFunnel : (object)[]),
-                'regionalBreakdown' => is_array($regionalBreakdown) ? $regionalBreakdown : (is_object($regionalBreakdown) ? $regionalBreakdown->toArray() : []),
-                'comparisonData' => is_array($comparisonData) ? $comparisonData : (is_object($comparisonData) ? (array) $comparisonData : []),
-                'filters' => [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                ],
+                'regionalBreakdown' => is_array($regionalBreakdown) ? (object)$regionalBreakdown : (is_object($regionalBreakdown) ? $regionalBreakdown : (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']]),
+                'comparisonData' => is_array($comparisonData) ? (object)$comparisonData : (is_object($comparisonData) ? $comparisonData : (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]]),
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ],
             ];
             
-            Log::info('CRM Dashboard: Response data prepared, rendering page...');
-            Log::info('CRM Dashboard: About to call Inertia::render...');
-
-            $result = Inertia::render('Crm/Dashboard', $responseData);
-            
-            Log::info('CRM Dashboard: Inertia::render completed successfully');
-            
-            return $result;
+            return Inertia::render('Crm/Dashboard', $responseData);
         } catch (\Exception $e) {
             Log::error('CRM Dashboard Error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
@@ -167,15 +283,22 @@ class CrmDashboardController extends Controller
                 'memberGrowth' => [],
                 'tierDistribution' => [],
                 'genderDistribution' => [],
+                'occupationDistribution' => [],
                 'ageDistribution' => [],
                 'purchasingPowerByAge' => [],
+                'purchasingPowerByAgeThisMonth' => [],
                 'spendingTrend' => [],
                 'pointActivityTrend' => [],
                 'latestMembers' => [],
                 'latestPointTransactions' => [],
                 'latestActivities' => [],
                 'topSpenders' => [],
+                'topSpendersDateRange' => null,
                 'mostActiveMembers' => [],
+                'mostActiveMembersDateRange' => null,
+                'memberFavouritePicks' => (object)['food' => [], 'beverages' => []],
+                'activeVouchers' => [],
+                'activeRewards' => [],
                 'pointStats' => [],
                 'engagementMetrics' => [],
                 'memberSegmentation' => [],
@@ -187,8 +310,8 @@ class CrmDashboardController extends Controller
                 'filters' => [
                     'start_date' => $startDate ?? '',
                     'end_date' => $endDate ?? '',
-                ],
-            ]);
+            ],
+        ]);
         }
     }
 
@@ -198,16 +321,43 @@ class CrmDashboardController extends Controller
     private function getStats()
     {
         // Cache stats for 5 minutes to reduce database load
-        return Cache::remember('crm_dashboard_stats', 300, function () {
-            $today = Carbon::today();
-            $thisMonth = Carbon::now()->startOfMonth();
-            $lastMonth = Carbon::now()->subMonth()->startOfMonth();
+        // Use new cache key to force refresh with contribution data
+        return Cache::remember('crm_dashboard_stats_v2', 300, function () {
+        $today = Carbon::today();
+        $thisMonth = Carbon::now()->startOfMonth();
+        $lastMonth = Carbon::now()->subMonth()->startOfMonth();
 
         // Member statistics
         $totalMembers = MemberAppsMember::count();
         $newMembersToday = MemberAppsMember::whereDate('created_at', $today)->count();
         $newMembersThisMonth = MemberAppsMember::whereBetween('created_at', [$thisMonth, Carbon::now()])->count();
-        $activeMembers = MemberAppsMember::where('is_active', true)->count();
+
+        // Active Members: Members who have transactions in the last 90 days
+        $last90Days = Carbon::now()->subDays(90);
+        $activeMemberIds = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->where('created_at', '>=', $last90Days)
+            ->distinct()
+            ->pluck('member_id')
+            ->toArray();
+        $activeMembers = count($activeMemberIds);
+        
+        // Dormant Members: Members who have no activity (no login and no transaction) in the last 90 days
+        // Get member IDs who have login in last 90 days
+        $membersWithLogin = MemberAppsMember::whereNotNull('last_login_at')
+            ->where('last_login_at', '>=', $last90Days)
+            ->pluck('member_id')
+            ->toArray();
+        
+        // Combine member IDs with activity (transaction or login)
+        $membersWithActivity = array_unique(array_merge($activeMemberIds, $membersWithLogin));
+        
+        // Dormant = total members - members with activity
+        $dormantMembers = $totalMembers - count($membersWithActivity);
+        
         $inactiveMembers = MemberAppsMember::where('is_active', false)->count();
         $exclusiveMembers = MemberAppsMember::where('is_exclusive_member', true)->count();
         $emailVerified = MemberAppsMember::whereNotNull('email_verified_at')->count();
@@ -288,8 +438,7 @@ class CrmDashboardController extends Controller
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->where('created_at', '>=', $todayStart)
-            ->where('created_at', '<=', $todayEnd)
+            ->whereDate('created_at', $today)
             ->sum('grand_total');
 
         $spendingThisYear = DB::connection('db_justus')
@@ -302,11 +451,11 @@ class CrmDashboardController extends Controller
             ->sum('grand_total');
         
         // Total revenue (all orders, including non-member)
+        // Use whereDate for today to ensure it matches the date correctly
         $totalRevenueToday = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
-            ->where('created_at', '>=', $todayStart)
-            ->where('created_at', '<=', $todayEnd)
+            ->whereDate('created_at', $today)
             ->sum('grand_total');
         
         $totalRevenueThisMonth = DB::connection('db_justus')
@@ -329,6 +478,21 @@ class CrmDashboardController extends Controller
         $memberRevenueThisMonth = $spendingThisMonth;
         $memberRevenueThisYear = $spendingThisYear;
         
+        // Debug logging - check actual query results
+        $testTotalToday = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereDate('created_at', $today)
+            ->count();
+        
+        $testMemberToday = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->whereDate('created_at', $today)
+            ->count();
+        
         // Calculate contribution percentage
         $memberContributionToday = $totalRevenueToday > 0 ? round(($memberRevenueToday / $totalRevenueToday) * 100, 2) : 0;
         $memberContributionThisMonth = $totalRevenueThisMonth > 0 ? round(($memberRevenueThisMonth / $totalRevenueThisMonth) * 100, 2) : 0;
@@ -346,6 +510,9 @@ class CrmDashboardController extends Controller
             'newMembersToday' => $newMembersToday,
             'newMembersThisMonth' => $newMembersThisMonth,
             'activeMembers' => $activeMembers,
+            'activeMembersFormatted' => number_format($activeMembers, 0, ',', '.'),
+            'dormantMembers' => $dormantMembers,
+            'dormantMembersFormatted' => number_format($dormantMembers, 0, ',', '.'),
             'inactiveMembers' => $inactiveMembers,
             'exclusiveMembers' => $exclusiveMembers,
             'emailVerified' => $emailVerified,
@@ -371,6 +538,29 @@ class CrmDashboardController extends Controller
             'spendingTodayFormatted' => 'Rp ' . number_format($spendingToday, 0, ',', '.'),
             'spendingThisYear' => $spendingThisYear,
             'spendingThisYearFormatted' => 'Rp ' . number_format($spendingThisYear, 0, ',', '.'),
+            
+            // Member contribution to revenue
+            'memberContributionToday' => $memberContributionToday,
+            'memberContributionTodayFormatted' => number_format($memberContributionToday, 2, ',', '.') . '%',
+            'memberRevenueToday' => $memberRevenueToday,
+            'memberRevenueTodayFormatted' => 'Rp ' . number_format($memberRevenueToday, 0, ',', '.'),
+            'totalRevenueToday' => $totalRevenueToday,
+            'totalRevenueTodayFormatted' => 'Rp ' . number_format($totalRevenueToday, 0, ',', '.'),
+            
+            'memberContributionThisMonth' => $memberContributionThisMonth,
+            'memberContributionThisMonthFormatted' => number_format($memberContributionThisMonth, 2, ',', '.') . '%',
+            'memberRevenueThisMonth' => $memberRevenueThisMonth,
+            'memberRevenueThisMonthFormatted' => 'Rp ' . number_format($memberRevenueThisMonth, 0, ',', '.'),
+            'totalRevenueThisMonth' => $totalRevenueThisMonth,
+            'totalRevenueThisMonthFormatted' => 'Rp ' . number_format($totalRevenueThisMonth, 0, ',', '.'),
+            
+            'memberContributionThisYear' => $memberContributionThisYear,
+            'memberContributionThisYearFormatted' => number_format($memberContributionThisYear, 2, ',', '.') . '%',
+            'memberRevenueThisYear' => $memberRevenueThisYear,
+            'memberRevenueThisYearFormatted' => 'Rp ' . number_format($memberRevenueThisYear, 0, ',', '.'),
+            'totalRevenueThisYear' => $totalRevenueThisYear,
+            'totalRevenueThisYearFormatted' => 'Rp ' . number_format($totalRevenueThisYear, 0, ',', '.'),
+            
             'growthRate' => round($growthRate, 2),
         ];
         });
@@ -477,6 +667,45 @@ class CrmDashboardController extends Controller
     }
 
     /**
+     * Get occupation distribution - Optimized for performance
+     */
+    private function getOccupationDistribution()
+    {
+        // Optimized: JOIN with occupations table and COUNT with GROUP BY
+        $distribution = MemberAppsMember::selectRaw('
+                COALESCE(o.name, "Tidak Diketahui") as occupation_name,
+                COUNT(*) as count
+            ')
+            ->leftJoin('member_apps_occupations as o', 'member_apps_members.pekerjaan_id', '=', 'o.id')
+            ->groupBy('o.name', 'member_apps_members.pekerjaan_id')
+            ->get()
+            ->map(function ($item) {
+                // Generate color based on occupation name hash
+                $colors = [
+                    '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', 
+                    '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6',
+                    '#a855f7', '#ef4444', '#22c55e', '#eab308', '#3b82f6'
+                ];
+                $hash = crc32($item->occupation_name);
+                $colorIndex = abs($hash) % count($colors);
+                
+                return [
+                    'occupation' => $item->occupation_name,
+                    'count' => (int) $item->count,
+                    'color' => $colors[$colorIndex],
+                ];
+            })
+            ->sortByDesc('count')
+            ->values();
+
+        $total = $distribution->sum('count');
+        return $distribution->map(function ($item) use ($total) {
+            $item['percentage'] = $total > 0 ? round(($item['count'] / $total) * 100, 1) : 0;
+            return $item;
+        })->values();
+    }
+
+    /**
      * Get age distribution - Optimized for performance
      */
     private function getAgeDistribution()
@@ -521,8 +750,8 @@ class CrmDashboardController extends Controller
             
             $ageRange = $ageRanges[$item->age_group] ?? '-';
             $label = $item->age_group . ($ageRange !== '-' ? ' (' . $ageRange . ')' : '');
-            
-            return [
+
+        return [
                 'age_group' => $item->age_group,
                 'age_group_label' => $label,
                 'age_range' => $ageRange,
@@ -546,13 +775,15 @@ class CrmDashboardController extends Controller
         // Optimized: Use subquery to limit orders first, then join
         $dbJustusName = DB::connection('db_justus')->getDatabaseName();
         
-        // Build date filter for orders subquery
+        // Build date filter for orders subquery - Default to current year (year to date)
         $orderDateFilter = '';
         if ($startDate && $endDate) {
             $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
         } else {
-            $twoYearsAgo = Carbon::now()->subYears(2)->format('Y-m-d');
-            $orderDateFilter = "AND o.created_at >= '{$twoYearsAgo}'";
+            // Default to current year (year to date)
+            $yearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
+            $yearEnd = Carbon::now()->format('Y-m-d 23:59:59');
+            $orderDateFilter = "AND o.created_at BETWEEN '{$yearStart}' AND '{$yearEnd}'";
         }
         
         // Optimized query: First aggregate orders by member_id, then join with members
@@ -580,8 +811,8 @@ class CrmDashboardController extends Controller
                     COUNT(*) as order_count
                 FROM {$dbJustusName}.orders as o
                 WHERE o.status = 'paid'
-                    AND o.member_id != ''
-                    AND o.member_id IS NOT NULL
+                AND o.member_id != '' 
+                AND o.member_id IS NOT NULL
                     {$orderDateFilter}
                 GROUP BY o.member_id
             ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
@@ -616,20 +847,101 @@ class CrmDashboardController extends Controller
                 $ageRange = $ageRanges[$item->age_group] ?? '-';
                 $label = $item->age_group . ($ageRange !== '-' ? ' (' . $ageRange . ')' : '');
                 
-                return [
-                    'age_group' => $item->age_group,
+            return [
+                'age_group' => $item->age_group,
                     'age_group_label' => $label,
                     'age_range' => $ageRange,
-                    'total_customers' => (int) $item->total_customers,
-                    'total_spending' => (float) $item->total_spending,
-                    'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
-                    'avg_transaction_value' => (float) $item->avg_transaction_value,
-                    'avg_transaction_value_formatted' => 'Rp ' . number_format($item->avg_transaction_value, 0, ',', '.'),
-                    'total_transactions' => (int) $item->total_transactions,
-                    'avg_spending_per_customer' => $item->total_customers > 0 ? (float) ($item->total_spending / $item->total_customers) : 0,
-                    'avg_spending_per_customer_formatted' => $item->total_customers > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_customers, 0, ',', '.') : 'Rp 0',
-                ];
-            });
+                'total_customers' => (int) $item->total_customers,
+                'total_spending' => (float) $item->total_spending,
+                'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
+                'avg_transaction_value' => (float) $item->avg_transaction_value,
+                'avg_transaction_value_formatted' => 'Rp ' . number_format($item->avg_transaction_value, 0, ',', '.'),
+                'total_transactions' => (int) $item->total_transactions,
+                'avg_spending_per_customer' => $item->total_customers > 0 ? (float) ($item->total_spending / $item->total_customers) : 0,
+                'avg_spending_per_customer_formatted' => $item->total_customers > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_customers, 0, ',', '.') : 'Rp 0',
+            ];
+        });
+    }
+    
+    /**
+     * Get purchasing power by age group for current month (daily breakdown) - for line chart
+     */
+    private function getPurchasingPowerByAgeThisMonth($startDate, $endDate)
+    {
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        
+        // Get all days in current month
+        $daysInMonth = Carbon::now()->daysInMonth;
+        $monthStart = Carbon::now()->startOfMonth();
+        
+        // Build date filter
+        $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
+        
+        // Query to get daily spending by age group
+        $sql = "
+            SELECT 
+                DATE(o.created_at) as transaction_date,
+                CASE 
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 13 AND 18 THEN 'Remaja'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 19 AND 30 THEN 'Dewasa Muda'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 31 AND 45 THEN 'Dewasa Produktif'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) BETWEEN 46 AND 59 THEN 'Dewasa Matang'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) >= 60 THEN 'Usia Tua'
+                    WHEN TIMESTAMPDIFF(YEAR, m.tanggal_lahir, CURDATE()) < 13 THEN 'Anak-anak'
+                    ELSE 'Tidak Diketahui'
+                END as age_group,
+                SUM(o.grand_total) as total_spending,
+                COUNT(*) as total_transactions
+            FROM {$dbJustusName}.orders o
+            INNER JOIN member_apps_members m ON o.member_id COLLATE utf8mb4_unicode_ci = m.member_id COLLATE utf8mb4_unicode_ci
+            WHERE o.status = 'paid'
+                AND o.member_id != ''
+                AND o.member_id IS NOT NULL
+                AND m.tanggal_lahir IS NOT NULL
+                AND m.is_active = 1
+                {$orderDateFilter}
+            GROUP BY DATE(o.created_at), age_group
+            ORDER BY DATE(o.created_at), 
+                CASE age_group
+                    WHEN 'Anak-anak' THEN 1
+                    WHEN 'Remaja' THEN 2
+                    WHEN 'Dewasa Muda' THEN 3
+                    WHEN 'Dewasa Produktif' THEN 4
+                    WHEN 'Dewasa Matang' THEN 5
+                    WHEN 'Usia Tua' THEN 6
+                    ELSE 7
+                END
+        ";
+        
+        $results = DB::select($sql);
+        
+        // Create data structure for line chart
+        $ageGroups = ['Anak-anak', 'Remaja', 'Dewasa Muda', 'Dewasa Produktif', 'Dewasa Matang', 'Usia Tua'];
+        $chartData = [];
+        
+        // Initialize all days with zero values
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = $monthStart->copy()->addDays($day - 1);
+            $dateKey = $date->format('Y-m-d');
+            $chartData[$dateKey] = [
+                'date' => $dateKey,
+                'date_label' => $date->format('d M'),
+                'day' => $day,
+            ];
+            foreach ($ageGroups as $ageGroup) {
+                $chartData[$dateKey][$ageGroup] = 0;
+            }
+        }
+        
+        // Fill with actual data
+        foreach ($results as $row) {
+            $dateKey = Carbon::parse($row->transaction_date)->format('Y-m-d');
+            if (isset($chartData[$dateKey])) {
+                $chartData[$dateKey][$row->age_group] = (float) $row->total_spending;
+            }
+        }
+        
+        return array_values($chartData);
     }
 
     /**
@@ -756,7 +1068,7 @@ class CrmDashboardController extends Controller
             ->whereIn('member_id', $memberIds)
             ->where('status', 'paid')
             ->groupBy('member_id')
-            ->get()
+        ->get()
             ->keyBy('member_id');
         
         return $members->map(function ($member) use ($spendingData) {
@@ -892,14 +1204,14 @@ class CrmDashboardController extends Controller
         // Recent registrations - limit to last 7 days and only 3 records
         try {
             $recentRegistrations = MemberAppsMember::where('created_at', '>=', Carbon::now()->subDays(7))
-                ->orderBy('created_at', 'desc')
+            ->orderBy('created_at', 'desc')
                 ->limit(3)
                 ->select(['id', 'nama_lengkap', 'member_id', 'created_at'])
-                ->get()
-                ->map(function ($member) {
-                    return [
-                        'id' => $member->id,
-                        'type' => 'registration',
+            ->get()
+            ->map(function ($member) {
+                return [
+                    'id' => $member->id,
+                    'type' => 'registration',
                         'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
                         'memberId' => $member->member_id ?? '-',
                         'description' => 'Member baru mendaftar',
@@ -907,10 +1219,10 @@ class CrmDashboardController extends Controller
                         'color' => 'text-emerald-500',
                         'bgColor' => 'bg-emerald-50',
                         'createdAt' => $member->created_at,
-                    ];
-                });
+                ];
+            });
 
-            $activities = $activities->concat($recentRegistrations);
+        $activities = $activities->concat($recentRegistrations);
         } catch (\Exception $e) {
             Log::error('CRM Dashboard: Failed to load recent registrations: ' . $e->getMessage());
         }
@@ -920,17 +1232,17 @@ class CrmDashboardController extends Controller
             $recentPointTransactions = MemberAppsPointTransaction::orderBy('created_at', 'desc')
                 ->limit(7)
                 ->select(['id', 'member_id', 'point_amount', 'transaction_type', 'created_at'])
-                ->get();
-            
+            ->get();
+        
             if ($recentPointTransactions->isNotEmpty()) {
                 $memberIds = $recentPointTransactions->pluck('member_id')->unique()->filter()->toArray();
                 $members = MemberAppsMember::whereIn('id', $memberIds)
                     ->select(['id', 'nama_lengkap', 'member_id'])
-                    ->get()
+            ->get()
                     ->keyBy('id');
-                
+        
                 $recentPointTransactions = $recentPointTransactions->map(function ($pt) use ($members) {
-                    $member = $members->get($pt->member_id);
+            $member = $members->get($pt->member_id);
                     $isEarned = $pt->point_amount > 0;
                     
                     // Determine description based on transaction_type
@@ -947,9 +1259,9 @@ class CrmDashboardController extends Controller
                             $description = 'Menukar ' . number_format(abs($pt->point_amount), 0, ',', '.') . ' point';
                         }
                     }
-                    
-                    return [
-                        'id' => $pt->id,
+            
+            return [
+                'id' => $pt->id,
                         'type' => $isEarned ? 'point_earned' : 'point_redeemed',
                         'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
                         'memberId' => $member->member_id ?? '-',
@@ -959,8 +1271,8 @@ class CrmDashboardController extends Controller
                         'bgColor' => $isEarned ? 'bg-blue-50' : 'bg-orange-50',
                         'pointAmount' => abs($pt->point_amount),
                         'createdAt' => $pt->created_at,
-                    ];
-                });
+            ];
+        });
 
                 $activities = $activities->concat($recentPointTransactions);
             }
@@ -1002,7 +1314,11 @@ class CrmDashboardController extends Controller
      */
     private function getTopSpenders()
     {
-        // First, get top spenders without subquery (much faster)
+        // Date range: 90 days back from today
+        $endDate = Carbon::now()->endOfDay();
+        $startDate = Carbon::now()->subDays(90)->startOfDay();
+        
+        // First, get top spenders without subquery (much faster) - Last 90 days only
         $topSpenders = DB::connection('db_justus')
             ->table('orders')
             ->select(
@@ -1013,20 +1329,29 @@ class CrmDashboardController extends Controller
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('member_id')
             ->orderBy('total_spending', 'desc')
             ->limit(10)
             ->get();
-
+        
         if ($topSpenders->isEmpty()) {
-            return collect([]);
+            return [
+                'data' => collect([]),
+                'dateRange' => [
+                    'min_date' => $startDate->format('Y-m-d'),
+                    'max_date' => $endDate->format('Y-m-d'),
+                    'min_date_formatted' => $startDate->format('d M Y'),
+                    'max_date_formatted' => $endDate->format('d M Y'),
+                ],
+            ];
         }
 
         // Get member info
         $memberIds = $topSpenders->pluck('member_id')->toArray();
         $members = MemberAppsMember::whereIn('member_id', $memberIds)->get()->keyBy('member_id');
 
-        // Get last spending for each member in one query (batch)
+        // Get last spending for each member in one query (batch) - Last 90 days only
         $lastOrders = DB::connection('db_justus')
             ->table('orders')
             ->select('member_id', 'grand_total', 'created_at')
@@ -1034,6 +1359,7 @@ class CrmDashboardController extends Controller
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->orderBy('created_at', 'desc')
             ->get()
             ->groupBy('member_id')
@@ -1041,13 +1367,13 @@ class CrmDashboardController extends Controller
                 return $orders->first();
             });
 
-        return $topSpenders->map(function ($spender) use ($members, $lastOrders) {
+        $data = $topSpenders->map(function ($spender) use ($members, $lastOrders) {
             $member = $members->get($spender->member_id);
             $lastOrder = $lastOrders->get($spender->member_id);
             
             $lastSpending = $lastOrder ? (float) $lastOrder->grand_total : 0;
             $lastSpendingDate = $lastOrder ? Carbon::parse($lastOrder->created_at)->format('d M Y') : '-';
-
+            
             return [
                 'memberId' => $spender->member_id,
                 'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
@@ -1061,6 +1387,17 @@ class CrmDashboardController extends Controller
                 'lastSpendingDate' => $lastSpendingDate,
             ];
         });
+
+        // Format date range (90 days back from today)
+        return [
+            'data' => $data,
+            'dateRange' => [
+                'min_date' => $startDate->format('Y-m-d'),
+                'max_date' => $endDate->format('Y-m-d'),
+                'min_date_formatted' => $startDate->format('d M Y'),
+                'max_date_formatted' => $endDate->format('d M Y'),
+            ],
+        ];
     }
 
     /**
@@ -1068,31 +1405,37 @@ class CrmDashboardController extends Controller
      */
     private function getMostActiveMembers()
     {
+        // Date range: 90 days back from today
+        $endDate = Carbon::now()->endOfDay();
+        $startDate = Carbon::now()->subDays(90)->startOfDay();
+        
         $activeMembers = MemberAppsPointTransaction::select('member_id', DB::raw('COUNT(*) as transaction_count'), DB::raw('MAX(created_at) as last_transaction'))
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('member_id')
             ->orderBy('transaction_count', 'desc')
             ->limit(10)
             ->get();
-
+        
         $memberIds = $activeMembers->pluck('member_id')->toArray();
         $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
         
-        // Get order counts for all members in one query
+        // Get order counts for all members in one query - Last 90 days only
         $memberIdStrings = $members->pluck('member_id')->filter()->toArray();
         $orderCounts = DB::connection('db_justus')
             ->table('orders')
             ->select('member_id', DB::raw('COUNT(*) as order_count'))
             ->whereIn('member_id', $memberIdStrings)
             ->where('status', 'paid')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('member_id')
             ->get()
             ->keyBy('member_id');
 
-        return $activeMembers->map(function ($active) use ($members, $orderCounts) {
+        $data = $activeMembers->map(function ($active) use ($members, $orderCounts) {
             $member = $members->get($active->member_id);
             $orderCountData = $orderCounts->get($member->member_id ?? '');
             $orderCount = $orderCountData ? (int) $orderCountData->order_count : 0;
-
+            
             return [
                 'memberId' => $member->member_id ?? '-',
                 'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
@@ -1101,6 +1444,176 @@ class CrmDashboardController extends Controller
                 'pointBalance' => $member->just_points ?? 0,
                 'pointBalanceFormatted' => number_format($member->just_points ?? 0, 0, ',', '.'),
                 'lastTransactionDate' => Carbon::parse($active->last_transaction)->format('d M Y, H:i'),
+            ];
+        });
+
+        // Format date range (90 days back from today)
+        return [
+            'data' => $data,
+            'dateRange' => [
+                'min_date' => $startDate->format('Y-m-d'),
+                'max_date' => $endDate->format('Y-m-d'),
+                'min_date_formatted' => $startDate->format('d M Y'),
+                'max_date_formatted' => $endDate->format('d M Y'),
+            ],
+        ];
+    }
+
+    /**
+     * Get member favourite picks (top 10 most ordered items by members in last 90 days)
+     * Separated by Food and Beverages
+     */
+    private function getMemberFavouritePicks()
+    {
+        // Date range: 90 days back from today
+        $endDate = Carbon::now()->endOfDay();
+        $startDate = Carbon::now()->subDays(90)->startOfDay();
+        
+        $dbJustusName = config('database.connections.db_justus.database');
+        
+        // Get Food items (type: Food, Food Western, Food Asian)
+        $foodPicks = DB::connection('db_justus')
+            ->table('orders as o')
+            ->join('order_items as oi', 'o.id', '=', 'oi.order_id')
+            ->leftJoin('items as i', 'oi.item_id', '=', 'i.id')
+            ->where('o.status', 'paid')
+            ->whereNotNull('o.member_id')
+            ->where('o.member_id', '!=', '')
+            ->whereBetween('o.created_at', [$startDate, $endDate])
+            ->whereIn('i.type', ['Food', 'Food Western', 'Food Asian'])
+            ->select(
+                'oi.item_name',
+                'i.type as item_type',
+                DB::raw('SUM(oi.qty) as total_quantity'),
+                DB::raw('COUNT(DISTINCT o.id) as order_count'),
+                DB::raw('COUNT(DISTINCT o.member_id) as member_count'),
+                DB::raw('SUM(oi.subtotal) as total_revenue')
+            )
+            ->groupBy('oi.item_name', 'i.type')
+            ->havingRaw('SUM(oi.subtotal) > 0') // Filter out items with 0 revenue
+            ->orderBy('total_quantity', 'desc')
+            ->limit(10)
+            ->get();
+        
+        // Get Beverages items (type: Beverages)
+        $beveragePicks = DB::connection('db_justus')
+            ->table('orders as o')
+            ->join('order_items as oi', 'o.id', '=', 'oi.order_id')
+            ->leftJoin('items as i', 'oi.item_id', '=', 'i.id')
+            ->where('o.status', 'paid')
+            ->whereNotNull('o.member_id')
+            ->where('o.member_id', '!=', '')
+            ->whereBetween('o.created_at', [$startDate, $endDate])
+            ->where('i.type', 'Beverages')
+            ->select(
+                'oi.item_name',
+                'i.type as item_type',
+                DB::raw('SUM(oi.qty) as total_quantity'),
+                DB::raw('COUNT(DISTINCT o.id) as order_count'),
+                DB::raw('COUNT(DISTINCT o.member_id) as member_count'),
+                DB::raw('SUM(oi.subtotal) as total_revenue')
+            )
+            ->groupBy('oi.item_name', 'i.type')
+            ->havingRaw('SUM(oi.subtotal) > 0') // Filter out items with 0 revenue
+            ->orderBy('total_quantity', 'desc')
+            ->limit(10)
+            ->get();
+        
+        $formatItems = function ($items, $category) {
+            return $items->map(function ($item) use ($category) {
+                return [
+                    'item_name' => $item->item_name ?? '-',
+                    'item_type' => $item->item_type ?? $category,
+                    'category' => $category,
+                    'total_quantity' => (int) $item->total_quantity,
+                    'total_quantity_formatted' => number_format($item->total_quantity, 0, ',', '.'),
+                    'order_count' => (int) $item->order_count,
+                    'member_count' => (int) $item->member_count,
+                    'total_revenue' => (float) $item->total_revenue,
+                    'total_revenue_formatted' => 'Rp ' . number_format($item->total_revenue, 0, ',', '.'),
+                ];
+            });
+        };
+        
+        return [
+            'food' => $formatItems($foodPicks, 'Food'),
+            'beverages' => $formatItems($beveragePicks, 'Beverages'),
+        ];
+    }
+
+    /**
+     * Get active vouchers with member statistics
+     */
+    private function getActiveVouchers()
+    {
+        $today = Carbon::today();
+        
+        // Get active vouchers (is_active = 1 and not expired)
+        $vouchers = DB::table('member_apps_vouchers')
+            ->where('is_active', 1)
+            ->where(function ($query) use ($today) {
+                $query->whereNull('valid_until')
+                    ->orWhere('valid_until', '>=', $today->format('Y-m-d'));
+            })
+            ->select('id', 'name', 'description', 'points_required', 'discount_percentage', 'discount_amount', 'voucher_type', 'valid_until', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get();
+        
+        // Get statistics for each voucher
+        $voucherIds = $vouchers->pluck('id')->toArray();
+        
+        // Get member count who have the voucher (not used/redeemed)
+        // Voucher yang belum digunakan: used_at IS NULL atau used_in_transaction_id IS NULL
+        $memberVoucherCounts = DB::table('member_apps_member_vouchers')
+            ->whereIn('voucher_id', $voucherIds)
+            ->whereNull('used_at')
+            ->whereNull('used_in_transaction_id')
+            ->select('voucher_id', DB::raw('COUNT(DISTINCT member_id) as member_count'))
+            ->groupBy('voucher_id')
+            ->get()
+            ->keyBy('voucher_id');
+        
+        // Get member count who have redeemed/used the voucher
+        // Voucher yang sudah digunakan: used_at IS NOT NULL atau used_in_transaction_id IS NOT NULL
+        $redeemedCounts = DB::table('member_apps_member_vouchers')
+            ->whereIn('voucher_id', $voucherIds)
+            ->where(function ($query) {
+                $query->whereNotNull('used_at')
+                    ->orWhereNotNull('used_in_transaction_id');
+            })
+            ->select('voucher_id', DB::raw('COUNT(DISTINCT member_id) as redeemed_count'))
+            ->groupBy('voucher_id')
+            ->get()
+            ->keyBy('voucher_id');
+        
+        return $vouchers->map(function ($voucher) use ($memberVoucherCounts, $redeemedCounts) {
+            $memberCount = $memberVoucherCounts->get($voucher->id);
+            $redeemedCount = $redeemedCounts->get($voucher->id);
+            
+            // Determine discount display based on voucher_type
+            $discountDisplay = '-';
+            if ($voucher->voucher_type === 'percentage' && $voucher->discount_percentage) {
+                $discountDisplay = $voucher->discount_percentage . '%';
+            } elseif ($voucher->voucher_type === 'fixed' && $voucher->discount_amount) {
+                $discountDisplay = 'Rp ' . number_format($voucher->discount_amount, 0, ',', '.');
+            }
+            
+            return [
+                'id' => $voucher->id,
+                'name' => $voucher->name ?? '-',
+                'description' => $voucher->description ?? '-',
+                'point_cost' => (int) ($voucher->points_required ?? 0),
+                'point_cost_formatted' => number_format($voucher->points_required ?? 0, 0, ',', '.'),
+                'discount_type' => $voucher->voucher_type ?? '-',
+                'discount_value' => $voucher->voucher_type === 'percentage' 
+                    ? (float) ($voucher->discount_percentage ?? 0)
+                    : (float) ($voucher->discount_amount ?? 0),
+                'discount_display' => $discountDisplay,
+                'expired_at' => $voucher->valid_until ? Carbon::parse($voucher->valid_until)->format('d M Y') : 'Tidak ada batas waktu',
+                'member_count' => $memberCount ? (int) $memberCount->member_count : 0,
+                'member_count_formatted' => number_format($memberCount ? $memberCount->member_count : 0, 0, ',', '.'),
+                'redeemed_count' => $redeemedCount ? (int) $redeemedCount->redeemed_count : 0,
+                'redeemed_count_formatted' => number_format($redeemedCount ? $redeemedCount->redeemed_count : 0, 0, ',', '.'),
             ];
         });
     }
@@ -1167,8 +1680,8 @@ class CrmDashboardController extends Controller
         $activePointUsers = MemberAppsPointTransaction::where('created_at', '>=', $last30Days)
             ->distinct('member_id')
             ->count('member_id');
-
-        return [
+            
+            return [
             'activeLast30Days' => $activeLast30Days,
             'activeLast7Days' => $activeLast7Days,
             'dormantMembers' => $dormantMembers,
@@ -1223,13 +1736,15 @@ class CrmDashboardController extends Controller
     private function getMemberLifetimeValue()
     {
         // Optimized: Use subquery to aggregate orders first, then join
+        // Limit to active members only and use indexed columns
         $dbJustusName = DB::connection('db_justus')->getDatabaseName();
         
+        // Optimized: Use single query with JOIN to calculate LTV by tier
         $ltvData = DB::select("
             SELECT 
                 COALESCE(m.member_level, 'silver') as tier,
-                COUNT(DISTINCT m.id) as member_count,
-                COALESCE(SUM(order_summary.total_spending), 0) as total_spending
+                COUNT(DISTINCT CASE WHEN o.total_spending > 0 THEN m.id END) as member_count,
+                COALESCE(SUM(CASE WHEN o.total_spending > 0 THEN o.total_spending ELSE 0 END), 0) as total_spending
             FROM member_apps_members m
             LEFT JOIN (
                 SELECT 
@@ -1240,18 +1755,19 @@ class CrmDashboardController extends Controller
                     AND member_id != ''
                     AND member_id IS NOT NULL
                 GROUP BY member_id
-            ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
+            ) as o ON m.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
             WHERE m.is_active = 1
             GROUP BY tier
         ");
         
-        $totalLTV = 0;
-        $memberCount = 0;
         $ltvByTier = [
             'silver' => ['total' => 0, 'count' => 0],
-            'gold' => ['total' => 0, 'count' => 0],
-            'platinum' => ['total' => 0, 'count' => 0],
+            'loyal' => ['total' => 0, 'count' => 0],
+            'elite' => ['total' => 0, 'count' => 0],
         ];
+        
+        $totalLTV = 0;
+        $memberCount = 0;
         
         foreach ($ltvData as $row) {
             $tier = $row->tier;
@@ -1267,8 +1783,8 @@ class CrmDashboardController extends Controller
         }
         
         $avgLTV = $memberCount > 0 ? $totalLTV / $memberCount : 0;
-        
-        return [
+
+            return [
             'average' => $avgLTV,
             'averageFormatted' => 'Rp ' . number_format($avgLTV, 0, ',', '.'),
             'total' => $totalLTV,
@@ -1345,26 +1861,49 @@ class CrmDashboardController extends Controller
             ->whereNotNull('last_login_at')
             ->count();
         
-        // First Transaction
-        $firstTransaction = DB::connection('db_justus')
-            ->table('orders')
-            ->where('created_at', '>=', $last30Days)
+        // First Transaction: Members who registered in last 30 days and made at least one transaction
+        // Optimize: Get member_ids first, then query orders (faster than whereExists on large tables)
+        $newMemberIds = MemberAppsMember::where('created_at', '>=', $last30Days)
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->distinct('member_id')
-            ->count('member_id');
+            ->pluck('member_id')
+            ->unique()
+            ->values()
+            ->toArray();
         
-        // Repeat Customers (2+ transactions)
-        $repeatCustomers = DB::connection('db_justus')
-            ->table('orders')
-            ->where('created_at', '>=', $last30Days)
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->where('status', 'paid')
-            ->groupBy('member_id')
-            ->havingRaw('COUNT(*) >= 2')
-            ->get()
-            ->count();
+        $firstTransaction = 0;
+        if (!empty($newMemberIds)) {
+            // Use chunking if too many members to avoid "too many placeholders" error
+            if (count($newMemberIds) > 1000) {
+                // For large datasets, use a more efficient approach - limit to first 1000 for performance
+                $firstTransaction = DB::connection('db_justus')
+                    ->table('orders')
+                    ->whereIn('member_id', array_slice($newMemberIds, 0, 1000))
+                    ->where('status', 'paid')
+                    ->distinct('member_id')
+                    ->count('member_id');
+            } else {
+                $firstTransaction = DB::connection('db_justus')
+                    ->table('orders')
+                    ->whereIn('member_id', $newMemberIds)
+                    ->where('status', 'paid')
+                    ->distinct('member_id')
+                    ->count('member_id');
+            }
+        }
+        
+        // Repeat Customers: Members who registered in last 30 days and made 2+ transactions
+        $repeatCustomers = 0;
+        if (!empty($newMemberIds) && count($newMemberIds) <= 1000) {
+            $repeatCustomers = DB::connection('db_justus')
+                ->table('orders')
+                ->whereIn('member_id', $newMemberIds)
+                ->where('status', 'paid')
+                ->groupBy('member_id')
+                ->havingRaw('COUNT(*) >= 2')
+                ->get()
+                ->count();
+        }
         
         return [
             'registered' => $registered,
@@ -1384,35 +1923,95 @@ class CrmDashboardController extends Controller
      */
     private function getRegionalBreakdown()
     {
-        // Get orders grouped by outlet/region - Optimized: removed unnecessary member query
-        $ordersByOutlet = DB::connection('db_justus')
-            ->table('orders as o')
-            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
-            ->select(
-                'outlet.nama_outlet',
-                'outlet.region',
-                DB::raw('COUNT(DISTINCT o.member_id) as total_members'),
-                DB::raw('COUNT(o.id) as total_orders'),
-                DB::raw('SUM(o.grand_total) as total_spending')
-            )
-            ->where('o.status', 'paid')
-            ->whereNotNull('o.member_id')
-            ->where('o.member_id', '!=', '')
-            ->groupBy('outlet.nama_outlet', 'outlet.region')
-            ->get();
+        $now = Carbon::now();
+        $currentMonthStart = $now->copy()->startOfMonth();
+        $last60Days = $now->copy()->subDays(60);
+        $last90Days = $now->copy()->subDays(90);
         
-        return $ordersByOutlet->map(function($item) {
+        // Helper function to get data for a period
+        $getDataForPeriod = function($startDate, $endDate) {
+            $ordersByOutlet = DB::connection('db_justus')
+                ->table('orders as o')
+                ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+                ->leftJoin('regions as r', 'outlet.region_id', '=', 'r.id')
+                ->select(
+                    'outlet.nama_outlet',
+                    'r.name as region_name',
+                    'r.id as region_id',
+                    DB::raw('COUNT(DISTINCT o.member_id) as total_members'),
+                    DB::raw('COUNT(o.id) as total_orders'),
+                    DB::raw('SUM(o.grand_total) as total_spending')
+                )
+                ->where('o.status', 'paid')
+                ->whereNotNull('o.member_id')
+                ->where('o.member_id', '!=', '')
+                ->whereBetween('o.created_at', [$startDate, $endDate])
+                ->groupBy('outlet.nama_outlet', 'r.name', 'r.id')
+            ->get();
+
+            return $ordersByOutlet->map(function($item) {
+                return [
+                    'outlet_name' => $item->nama_outlet ?? 'Unknown',
+                    'region' => $item->region_name ?? '-',
+                    'region_id' => $item->region_id ?? null,
+                    'total_members' => (int) $item->total_members,
+                    'total_orders' => (int) $item->total_orders,
+                    'total_spending' => (float) $item->total_spending,
+                    'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
+                    'avg_order_value' => $item->total_orders > 0 ? (float) ($item->total_spending / $item->total_orders) : 0,
+                    'avg_order_value_formatted' => $item->total_orders > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_orders, 0, ',', '.') : 'Rp 0',
+                ];
+            })->values()->toArray();
+        };
+        
+        // Get data for each period
+        $currentMonthData = $getDataForPeriod($currentMonthStart, $now);
+        $last60DaysData = $getDataForPeriod($last60Days, $now);
+        $last90DaysData = $getDataForPeriod($last90Days, $now);
+        
+        // Aggregate by region for pie chart
+        $aggregateByRegion = function($data) {
+            $regionData = [];
+            foreach ($data as $item) {
+                $region = $item['region'] ?? 'Unknown';
+                if (!isset($regionData[$region])) {
+                    $regionData[$region] = [
+                        'region' => $region,
+                        'total_spending' => 0,
+                        'total_orders' => 0,
+                        'total_members' => 0,
+                    ];
+                }
+                $regionData[$region]['total_spending'] += $item['total_spending'];
+                $regionData[$region]['total_orders'] += $item['total_orders'];
+                $regionData[$region]['total_members'] += $item['total_members'];
+            }
+            return array_values($regionData);
+        };
+        
             return [
-                'outlet_name' => $item->nama_outlet ?? 'Unknown',
-                'region' => $item->region ?? 'Unknown',
-                'total_members' => (int) $item->total_members,
-                'total_orders' => (int) $item->total_orders,
-                'total_spending' => (float) $item->total_spending,
-                'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
-                'avg_order_value' => $item->total_orders > 0 ? (float) ($item->total_spending / $item->total_orders) : 0,
-                'avg_order_value_formatted' => $item->total_orders > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_orders, 0, ',', '.') : 'Rp 0',
-            ];
-        })->values();
+            'currentMonth' => [
+                'outlets' => $currentMonthData,
+                'regions' => $aggregateByRegion($currentMonthData),
+                'period' => 'Bulan Berjalan',
+                'startDate' => $currentMonthStart->format('Y-m-d'),
+                'endDate' => $now->format('Y-m-d'),
+            ],
+            'last60Days' => [
+                'outlets' => $last60DaysData,
+                'regions' => $aggregateByRegion($last60DaysData),
+                'period' => '60 Hari Terakhir',
+                'startDate' => $last60Days->format('Y-m-d'),
+                'endDate' => $now->format('Y-m-d'),
+            ],
+            'last90Days' => [
+                'outlets' => $last90DaysData,
+                'regions' => $aggregateByRegion($last90DaysData),
+                'period' => '90 Hari Terakhir',
+                'startDate' => $last90Days->format('Y-m-d'),
+                'endDate' => $now->format('Y-m-d'),
+            ],
+        ];
     }
     
     /**
@@ -1427,35 +2026,43 @@ class CrmDashboardController extends Controller
         $lastYear = Carbon::now()->subYear()->startOfYear();
         $lastYearEnd = Carbon::now()->subYear()->endOfYear();
         
-        // Current Month
+        // Current Month - Only member orders
         $currentMonthMembers = MemberAppsMember::whereBetween('created_at', [$currentMonth, Carbon::now()])->count();
         $currentMonthSpending = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
             ->whereBetween('created_at', [$currentMonth, Carbon::now()])
             ->sum('grand_total');
         
-        // Last Month
+        // Last Month - Only member orders
         $lastMonthMembers = MemberAppsMember::whereBetween('created_at', [$lastMonth, $lastMonthEnd])->count();
         $lastMonthSpending = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
             ->whereBetween('created_at', [$lastMonth, $lastMonthEnd])
             ->sum('grand_total');
         
-        // Current Year
+        // Current Year - Only member orders
         $currentYearMembers = MemberAppsMember::whereBetween('created_at', [$currentYear, Carbon::now()])->count();
         $currentYearSpending = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
             ->whereBetween('created_at', [$currentYear, Carbon::now()])
             ->sum('grand_total');
         
-        // Last Year
+        // Last Year - Only member orders
         $lastYearMembers = MemberAppsMember::whereBetween('created_at', [$lastYear, $lastYearEnd])->count();
         $lastYearSpending = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
             ->whereBetween('created_at', [$lastYear, $lastYearEnd])
             ->sum('grand_total');
         
@@ -1465,7 +2072,7 @@ class CrmDashboardController extends Controller
         $memberYoYGrowth = $lastYearMembers > 0 ? (($currentYearMembers - $lastYearMembers) / $lastYearMembers) * 100 : 0;
         $spendingYoYGrowth = $lastYearSpending > 0 ? (($currentYearSpending - $lastYearSpending) / $lastYearSpending) * 100 : 0;
         
-        return [
+            return [
             'monthOverMonth' => [
                 'members' => [
                     'current' => $currentMonthMembers,
@@ -1551,8 +2158,8 @@ class CrmDashboardController extends Controller
     public function getRedeemDetails(Request $request)
     {
         $cabangId = $request->get('cabang_id');
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
+                $startDate = $request->get('start_date');
+                $endDate = $request->get('end_date');
         
         // This method can be implemented later if needed
         return response()->json([
@@ -1561,5 +2168,507 @@ class CrmDashboardController extends Controller
             'start_date' => $startDate,
             'end_date' => $endDate,
         ]);
+    }
+    
+    /**
+     * Get member transactions (for modal)
+     */
+    public function getMemberTransactions(Request $request)
+    {
+        try {
+            $memberId = $request->get('member_id');
+            $type = $request->get('type', 'orders'); // 'orders' or 'points'
+            
+            if (!$memberId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Member ID is required',
+                ], 400);
+            }
+            
+            $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+            
+            if ($type === 'orders') {
+                // Get orders for this member
+                $orders = DB::connection('db_justus')
+                    ->table('orders as o')
+                    ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+                    ->where('o.member_id', $memberId)
+                    ->where('o.status', 'paid')
+                    ->select([
+                        'o.id',
+                        'o.paid_number',
+                        'o.grand_total',
+                        'o.created_at',
+                        'outlet.nama_outlet',
+                        'o.kode_outlet',
+                    ])
+                    ->orderBy('o.created_at', 'desc')
+                    ->limit(100)
+                    ->get();
+                
+                // Get order items for each order
+                $orderIds = $orders->pluck('id')->toArray();
+                $orderItems = DB::connection('db_justus')
+                    ->table('order_items')
+                    ->whereIn('order_id', $orderIds)
+                    ->select('order_id', 'item_name', 'qty', 'price', 'subtotal', 'modifiers', 'notes')
+                    ->get()
+                    ->groupBy('order_id');
+                
+                $transactions = $orders->map(function ($order) use ($orderItems) {
+                    $items = $orderItems->get($order->id) ?? collect([]);
+                    
+                    return [
+                        'id' => $order->id,
+                        'order_number' => $order->paid_number ?? $order->id ?? '-',
+                        'outlet_name' => $order->nama_outlet ?? 'Outlet Tidak Diketahui',
+                        'kode_outlet' => $order->kode_outlet ?? '-',
+                        'grand_total' => (float) $order->grand_total,
+                        'grand_total_formatted' => 'Rp ' . number_format($order->grand_total, 0, ',', '.'),
+                        'created_at' => Carbon::parse($order->created_at)->format('d M Y, H:i'),
+                        'created_at_full' => $order->created_at,
+                        'items' => $items->map(function ($item) {
+                            // Decode modifiers from JSON
+                            // Format: {"Potato":{"Mashed Potato":1},"Saus":{"Mushroom":1,"Blackpepper":1}}
+                            $modifiers = [];
+                            if (isset($item->modifiers) && $item->modifiers) {
+                                try {
+                                    $modifiersData = json_decode($item->modifiers, true);
+                                    if (is_array($modifiersData)) {
+                                        // Check if it's the flat key-value format (object with modifier names as keys)
+                                        // Format: {"Potato": {"Mashed Potato": 1}, "Saus": {"Mushroom": 1}}
+                                        $isFlatFormat = false;
+                                        foreach ($modifiersData as $key => $value) {
+                                            // If key is not numeric and value is an array, it's likely the flat format
+                                            if (!is_numeric($key) && is_array($value)) {
+                                                $isFlatFormat = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if ($isFlatFormat) {
+                                            // Handle flat format: {"Potato": {"Mashed Potato": 1}, "Saus": {"Mushroom": 1}}
+                                            foreach ($modifiersData as $modifierName => $options) {
+                                                if (is_array($options)) {
+                                                    $optionNames = [];
+                                                    foreach ($options as $optionName => $quantity) {
+                                                        // Option name is the key, quantity is the value
+                                                        $optionNames[] = $optionName;
+                                                    }
+                                                    if (!empty($optionNames)) {
+                                                        $modifiers[] = [
+                                                            'name' => $modifierName,
+                                                            'options' => implode(', ', $optionNames),
+                                                        ];
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            // Handle array format: [{"name": "Potato", "options": [...]}]
+                                            foreach ($modifiersData as $modifier) {
+                                                if (is_array($modifier)) {
+                                                    $modifierName = $modifier['name'] ?? $modifier['modifier_name'] ?? 'Modifier';
+                                                    $modifierOptions = [];
+                                                    
+                                                    // Handle different modifier option formats
+                                                    if (isset($modifier['options']) && is_array($modifier['options'])) {
+                                                        foreach ($modifier['options'] as $option) {
+                                                            if (is_array($option)) {
+                                                                $modifierOptions[] = $option['name'] ?? $option['option_name'] ?? (string) $option;
+                                                            } else {
+                                                                $modifierOptions[] = (string) $option;
+                                                            }
+                                                        }
+                                                    } elseif (isset($modifier['option'])) {
+                                                        $modifierOptions[] = is_array($modifier['option']) 
+                                                            ? ($modifier['option']['name'] ?? (string) $modifier['option'])
+                                                            : (string) $modifier['option'];
+                                                    }
+                                                    
+                                                    if (!empty($modifierOptions)) {
+                                                        $modifiers[] = [
+                                                            'name' => $modifierName,
+                                                            'options' => implode(', ', $modifierOptions),
+                                                        ];
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (\Exception $e) {
+                                    // If JSON decode fails, keep modifiers empty
+                                    Log::error('CRM Modifier Parse Error: ' . $e->getMessage(), [
+                                        'modifiers' => $item->modifiers,
+                                    ]);
+                                    $modifiers = [];
+                                }
+                            }
+                            
+                            return [
+                                'item_name' => $item->item_name ?? '-',
+                                'quantity' => (int) ($item->qty ?? 0),
+                                'price' => (float) $item->price,
+                                'price_formatted' => 'Rp ' . number_format($item->price, 0, ',', '.'),
+                                'subtotal' => (float) $item->subtotal,
+                                'subtotal_formatted' => 'Rp ' . number_format($item->subtotal, 0, ',', '.'),
+                                'modifiers' => $modifiers,
+                                'notes' => $item->notes ?? null,
+                            ];
+                        })->toArray(),
+                    ];
+                });
+            } else {
+                // Get point transactions for this member
+                $member = MemberAppsMember::where('member_id', $memberId)->first();
+                if (!$member) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Member not found',
+                    ], 404);
+                }
+                
+                $pointTransactions = MemberAppsPointTransaction::where('member_id', $member->id)
+                    ->orderBy('created_at', 'desc')
+                    ->limit(100)
+                    ->get();
+                
+                // Get outlet names from orders
+                $memberIdStrings = [$member->member_id];
+                $transactions = $pointTransactions->map(function ($pt) use ($dbJustusName, $memberIdStrings) {
+                    $isEarned = $pt->point_amount > 0;
+                    
+                    // Try to get outlet name from order
+                    $outletName = 'Outlet Tidak Diketahui';
+                    $transactionAmount = $pt->transaction_amount ?? 0;
+                    
+                    // Try to find order_id
+                    $orderId = null;
+                    if (isset($pt->metadata) && $pt->metadata) {
+                        $metadata = json_decode($pt->metadata ?? '{}', true);
+                        $orderId = $metadata['order_id'] ?? null;
+                    }
+                    
+                    if (!$orderId && isset($pt->reference_id)) {
+                        $orderId = $pt->reference_id;
+                    }
+                    
+                    if (!$orderId && isset($pt->transaction_id)) {
+                        $orderId = $pt->transaction_id;
+                    }
+                    
+                    // Get outlet name from order
+                    if ($orderId && $memberIdStrings[0]) {
+                        $orderWithOutlet = DB::connection('db_justus')
+                            ->table('orders')
+                            ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                            ->where('orders.id', $orderId)
+                            ->where('orders.member_id', $memberIdStrings[0])
+                            ->select(['orders.grand_total', 'o.nama_outlet'])
+                            ->first();
+                        
+                        if ($orderWithOutlet) {
+                            if (isset($orderWithOutlet->nama_outlet) && $orderWithOutlet->nama_outlet) {
+                                $outletName = $orderWithOutlet->nama_outlet;
+                            }
+                            if (isset($orderWithOutlet->grand_total) && $orderWithOutlet->grand_total && !$transactionAmount) {
+                                $transactionAmount = (float) $orderWithOutlet->grand_total;
+                            }
+                        }
+                    }
+                    
+                    // Determine transaction type and description
+                    $transactionType = isset($pt->transaction_type) ? $pt->transaction_type : null;
+                    $description = '';
+                    
+                    if ($isEarned) {
+                        $description = 'Top Up Point dari Transaksi';
+                    } else {
+                        if ($transactionType === 'voucher_purchase') {
+                            $description = 'Beli Voucher';
+                        } elseif ($transactionType === 'reward_redemption' || $transactionType === 'redeem') {
+                            $description = 'Redeem Reward';
+                        } else {
+                            $description = 'Redeem Point';
+                        }
+                    }
+                    
+                    return [
+                        'id' => $pt->id,
+                        'type' => $isEarned ? 'earned' : 'redeemed',
+                        'typeText' => $isEarned ? 'EARNED' : 'REDEEMED',
+                        'transactionType' => $transactionType,
+                        'description' => $description,
+                        'pointAmount' => abs($pt->point_amount),
+                        'pointAmountFormatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
+                        'transactionAmount' => $transactionAmount,
+                        'transactionAmountFormatted' => $transactionAmount > 0 ? 'Rp ' . number_format($transactionAmount, 0, ',', '.') : '-',
+                        'outletName' => $outletName,
+                        'created_at' => Carbon::parse($pt->created_at)->format('d M Y, H:i'),
+                        'created_at_full' => $pt->created_at,
+                    ];
+                });
+            }
+            
+            return response()->json([
+                'status' => 'success',
+                'type' => $type,
+                'member_id' => $memberId,
+                'data' => $transactions->toArray(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('CRM Get Member Transactions Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get contribution by outlet (for modal)
+     */
+    public function getContributionByOutlet(Request $request)
+    {
+        try {
+            $period = $request->get('period', 'today'); // today, month, year
+            $today = Carbon::today();
+            $thisMonth = Carbon::now()->startOfMonth();
+            $thisYear = Carbon::now()->startOfYear();
+            
+            // Determine date range based on period
+            if ($period === 'today') {
+                $startDate = $today->format('Y-m-d 00:00:00');
+                $endDate = $today->format('Y-m-d 23:59:59');
+            } elseif ($period === 'month') {
+                $startDate = $thisMonth->format('Y-m-d 00:00:00');
+                $endDate = Carbon::now()->format('Y-m-d 23:59:59');
+            } else { // year
+                $startDate = $thisYear->format('Y-m-d 00:00:00');
+                $endDate = Carbon::now()->format('Y-m-d 23:59:59');
+            }
+            
+            // Get total revenue per outlet (all orders)
+            $totalRevenueByOutlet = DB::connection('db_justus')
+                ->table('orders as o')
+                ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+                ->where('o.status', 'paid')
+                ->where('o.created_at', '>=', $startDate)
+                ->where('o.created_at', '<=', $endDate)
+                ->select([
+                    'outlet.nama_outlet',
+                    'o.kode_outlet',
+                    DB::raw('SUM(o.grand_total) as total_revenue'),
+                    DB::raw('COUNT(*) as total_orders')
+                ])
+                ->groupBy('outlet.nama_outlet', 'o.kode_outlet')
+                ->get();
+            
+            // Get member revenue per outlet (orders with member_id)
+            $memberRevenueByOutlet = DB::connection('db_justus')
+                ->table('orders as o')
+                ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+                ->where('o.status', 'paid')
+                ->whereNotNull('o.member_id')
+                ->where('o.member_id', '!=', '')
+                ->where('o.created_at', '>=', $startDate)
+                ->where('o.created_at', '<=', $endDate)
+                ->select([
+                    'outlet.nama_outlet',
+                    'o.kode_outlet',
+                    DB::raw('SUM(o.grand_total) as member_revenue'),
+                    DB::raw('COUNT(*) as member_orders')
+                ])
+                ->groupBy('outlet.nama_outlet', 'o.kode_outlet')
+                ->get()
+                ->keyBy('kode_outlet');
+            
+            // Combine data
+            $result = $totalRevenueByOutlet->map(function ($item) use ($memberRevenueByOutlet) {
+                $kodeOutlet = $item->kode_outlet;
+                $memberData = $memberRevenueByOutlet->get($kodeOutlet);
+                
+                $totalRevenue = (float) $item->total_revenue;
+                $memberRevenue = $memberData ? (float) $memberData->member_revenue : 0;
+                $contribution = $totalRevenue > 0 ? round(($memberRevenue / $totalRevenue) * 100, 2) : 0;
+                
+                return [
+                    'outlet_name' => $item->nama_outlet ?? 'Outlet Tidak Diketahui',
+                    'kode_outlet' => $kodeOutlet ?? '-',
+                    'total_revenue' => $totalRevenue,
+                    'total_revenue_formatted' => 'Rp ' . number_format($totalRevenue, 0, ',', '.'),
+                    'member_revenue' => $memberRevenue,
+                    'member_revenue_formatted' => 'Rp ' . number_format($memberRevenue, 0, ',', '.'),
+                    'contribution' => $contribution,
+                    'contribution_formatted' => number_format($contribution, 2, ',', '.') . '%',
+                    'total_orders' => (int) $item->total_orders,
+                    'member_orders' => $memberData ? (int) $memberData->member_orders : 0,
+                ];
+            })
+            ->sortByDesc('member_revenue')
+            ->values();
+            
+            return response()->json([
+                'status' => 'success',
+                'period' => $period,
+                'data' => $result,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('CRM Contribution by Outlet Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get active challenges with statistics
+     */
+    private function getActiveChallenges()
+    {
+        try {
+            $today = Carbon::today();
+            
+            // Get active challenges (is_active = true and not expired)
+            $challenges = DB::table('member_apps_challenges as c')
+                ->where('c.is_active', true)
+                ->where(function($query) use ($today) {
+                    $query->whereNull('c.end_date')
+                        ->orWhere('c.end_date', '>=', $today);
+                })
+                ->where(function($query) use ($today) {
+                    $query->whereNull('c.start_date')
+                        ->orWhere('c.start_date', '<=', $today);
+                })
+                ->select(
+                    'c.id',
+                    'c.title',
+                    'c.description',
+                    'c.image',
+                    'c.points_reward',
+                    'c.start_date',
+                    'c.end_date',
+                    'c.challenge_type_id',
+                    'c.created_at'
+                )
+                ->orderBy('c.created_at', 'desc')
+                ->get();
+            
+            // Get statistics for each challenge
+            $challengesWithStats = $challenges->map(function($challenge) {
+                // Count members in progress (started but not completed)
+                $inProgressCount = DB::table('member_apps_challenge_progress')
+                    ->where('challenge_id', $challenge->id)
+                    ->whereNotNull('started_at')
+                    ->where('is_completed', false)
+                    ->count();
+                
+                // Count members who completed
+                $completedCount = DB::table('member_apps_challenge_progress')
+                    ->where('challenge_id', $challenge->id)
+                    ->where('is_completed', true)
+                    ->count();
+                
+                // Count members who redeemed reward
+                $redeemedCount = DB::table('member_apps_challenge_progress')
+                    ->where('challenge_id', $challenge->id)
+                    ->whereNotNull('reward_redeemed_at')
+                    ->count();
+                
+                return [
+                    'id' => $challenge->id,
+                    'title' => $challenge->title,
+                    'description' => $challenge->description ?? '',
+                    'image' => $challenge->image,
+                    'points_reward' => $challenge->points_reward ?? 0,
+                    'start_date' => $challenge->start_date ? Carbon::parse($challenge->start_date)->format('Y-m-d') : null,
+                    'end_date' => $challenge->end_date ? Carbon::parse($challenge->end_date)->format('Y-m-d') : null,
+                    'challenge_type_id' => $challenge->challenge_type_id,
+                    'created_at' => $challenge->created_at ? Carbon::parse($challenge->created_at)->format('Y-m-d H:i:s') : null,
+                    'stats' => [
+                        'in_progress' => $inProgressCount,
+                        'completed' => $completedCount,
+                        'redeemed' => $redeemedCount,
+                    ],
+                ];
+            });
+            
+            return $challengesWithStats->toArray();
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Error loading active challenges: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return [];
+        }
+    }
+    
+    /**
+     * Get active rewards with redemption count
+     */
+    private function getActiveRewards()
+    {
+        try {
+            // Get all active rewards with item information
+            $rewards = DB::table('member_apps_rewards as r')
+                ->join('items as i', 'r.item_id', '=', 'i.id')
+                ->where('r.is_active', true)
+                ->select(
+                    'r.id as reward_id',
+                    'r.item_id',
+                    'r.points_required',
+                    'r.serial_code',
+                    'i.name as item_name',
+                    'i.type as item_type'
+                )
+                ->orderBy('r.id', 'asc')
+                ->get();
+            
+            // Get redemption count and image for each reward
+            $rewardsWithRedemption = $rewards->map(function($reward) {
+                // Count redemptions by matching description that contains item name
+                $redemptionCount = MemberAppsPointTransaction::where('transaction_type', 'redeem')
+                    ->where('point_amount', '<', 0) // Negative for redemption
+                    ->where('description', 'LIKE', '%Redeem reward: ' . $reward->item_name . '%')
+                    ->count();
+                
+                // Get first image from item_images table
+                $firstImage = DB::table('item_images')
+                    ->where('item_id', $reward->item_id)
+                    ->orderBy('id', 'asc')
+                    ->first();
+                
+                $itemImage = null;
+                if ($firstImage && isset($firstImage->path)) {
+                    $itemImage = 'https://ymsofterp.com/storage/' . $firstImage->path;
+                }
+                
+                return [
+                    'id' => $reward->reward_id,
+                    'item_id' => $reward->item_id,
+                    'item_name' => $reward->item_name,
+                    'item_image' => $itemImage,
+                    'item_type' => $reward->item_type,
+                    'points_required' => (int) $reward->points_required,
+                    'points_required_formatted' => number_format($reward->points_required, 0, ',', '.'),
+                    'serial_code' => $reward->serial_code,
+                    'redemption_count' => $redemptionCount,
+                    'redemption_count_formatted' => number_format($redemptionCount, 0, ',', '.'),
+                ];
+            })
+            ->sortByDesc('redemption_count')
+            ->values();
+            
+            return $rewardsWithRedemption->toArray();
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Error loading active rewards: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return [];
+        }
     }
 }

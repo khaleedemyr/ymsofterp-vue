@@ -2150,6 +2150,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crm/dashboard', [App\Http\Controllers\CrmDashboardController::class, 'index'])->name('crm.dashboard');
     Route::get('/api/crm/chart-data', [App\Http\Controllers\CrmDashboardController::class, 'getChartData'])->name('crm.chart-data');
     Route::get('/api/crm/redeem-details', [App\Http\Controllers\CrmDashboardController::class, 'getRedeemDetails'])->name('crm.redeem-details');
+    Route::get('/api/crm/contribution-by-outlet', [App\Http\Controllers\CrmDashboardController::class, 'getContributionByOutlet'])->name('crm.contribution-by-outlet');
+    Route::get('/api/crm/member-transactions', [App\Http\Controllers\CrmDashboardController::class, 'getMemberTransactions'])->name('crm.member-transactions');
     
     // Customer Analytics Routes
     Route::get('/crm/customer-analytics', [App\Http\Controllers\CustomerAnalyticsController::class, 'index'])->name('crm.customer-analytics');

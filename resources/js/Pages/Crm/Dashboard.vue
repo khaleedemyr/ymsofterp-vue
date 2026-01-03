@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
 
@@ -21,11 +22,19 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  occupationDistribution: {
+    type: Array,
+    default: () => []
+  },
   ageDistribution: {
     type: Array,
     default: () => []
   },
   purchasingPowerByAge: {
+    type: Array,
+    default: () => []
+  },
+  purchasingPowerByAgeThisMonth: {
     type: Array,
     default: () => []
   },
@@ -53,7 +62,31 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  topSpendersDateRange: {
+    type: Object,
+    default: () => null
+  },
   mostActiveMembers: {
+    type: Array,
+    default: () => []
+  },
+  mostActiveMembersDateRange: {
+    type: Object,
+    default: () => null
+  },
+  memberFavouritePicks: {
+    type: Object,
+    default: () => ({ food: [], beverages: [] })
+  },
+  activeVouchers: {
+    type: Array,
+    default: () => []
+  },
+  activeChallenges: {
+    type: Array,
+    default: () => []
+  },
+  activeRewards: {
     type: Array,
     default: () => []
   },
@@ -82,8 +115,12 @@ const props = defineProps({
     default: () => ({})
   },
   regionalBreakdown: {
-    type: Array,
-    default: () => []
+    type: Object,
+    default: () => ({
+      currentMonth: { outlets: [], regions: [], period: '', startDate: '', endDate: '' },
+      last60Days: { outlets: [], regions: [], period: '', startDate: '', endDate: '' },
+      last90Days: { outlets: [], regions: [], period: '', startDate: '', endDate: '' }
+    })
   },
   comparisonData: {
     type: Object,
@@ -103,6 +140,101 @@ const dateFilters = ref({
   start_date: props.filters?.start_date || '',
   end_date: props.filters?.end_date || '',
 });
+
+// Contribution by outlet modal
+const showContributionModal = ref(false);
+const contributionModalPeriod = ref('today');
+const contributionByOutlet = ref([]);
+const loadingContribution = ref(false);
+
+const openContributionModal = async (period) => {
+  contributionModalPeriod.value = period;
+  showContributionModal.value = true;
+  loadingContribution.value = true;
+  contributionByOutlet.value = [];
+  
+  try {
+    const response = await axios.get('/api/crm/contribution-by-outlet', {
+      params: { period }
+    });
+    
+    if (response.data.status === 'success') {
+      contributionByOutlet.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error fetching contribution by outlet:', error);
+  } finally {
+    loadingContribution.value = false;
+  }
+};
+
+const closeContributionModal = () => {
+  showContributionModal.value = false;
+  contributionByOutlet.value = [];
+};
+
+// Member transactions modal
+const showMemberTransactionsModal = ref(false);
+const regionalPeriod = ref('currentMonth'); // 'currentMonth', 'last60Days', 'last90Days'
+const memberTransactionsData = ref({
+  memberId: '',
+  memberName: '',
+  type: 'orders', // 'orders' or 'points'
+});
+const memberTransactions = ref([]);
+const loadingMemberTransactions = ref(false);
+const expandedTransactions = ref(new Set()); // Track which transactions are expanded
+
+const openMemberTransactionsModal = async (memberId, memberName, type = 'orders') => {
+  memberTransactionsData.value = {
+    memberId: memberId,
+    memberName: memberName,
+    type: type,
+  };
+  showMemberTransactionsModal.value = true;
+  loadingMemberTransactions.value = true;
+  memberTransactions.value = [];
+  
+  try {
+    const response = await axios.get('/api/crm/member-transactions', {
+      params: { 
+        member_id: memberId,
+        type: type
+      }
+    });
+    
+    if (response.data.status === 'success') {
+      memberTransactions.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error fetching member transactions:', error);
+  } finally {
+    loadingMemberTransactions.value = false;
+  }
+};
+
+const closeMemberTransactionsModal = () => {
+  showMemberTransactionsModal.value = false;
+  memberTransactions.value = [];
+  expandedTransactions.value.clear();
+  memberTransactionsData.value = {
+    memberId: '',
+    memberName: '',
+    type: 'orders',
+  };
+};
+
+const toggleTransactionDetails = (transactionId) => {
+  if (expandedTransactions.value.has(transactionId)) {
+    expandedTransactions.value.delete(transactionId);
+  } else {
+    expandedTransactions.value.add(transactionId);
+  }
+};
+
+const isTransactionExpanded = (transactionId) => {
+  return expandedTransactions.value.has(transactionId);
+};
 
 // ApexCharts configurations
 const memberGrowthChartOptions = computed(() => ({
@@ -385,6 +517,54 @@ const genderChartSeries = computed(() =>
   props.genderDistribution?.map(g => g.count) || []
 );
 
+// Occupation Distribution Chart
+const occupationChartOptions = computed(() => ({
+  chart: {
+    type: 'donut',
+    height: 300,
+    fontFamily: 'Inter, sans-serif',
+  },
+  colors: props.occupationDistribution?.map(o => o.color) || [],
+  labels: props.occupationDistribution?.map(o => o.occupation) || [],
+  legend: {
+    position: 'bottom',
+    fontSize: '12px',
+    fontWeight: 500,
+  },
+  plotOptions: {
+    pie: {
+      donut: {
+        size: '65%',
+        labels: {
+          show: true,
+          total: {
+            show: true,
+            label: 'Total',
+            fontSize: '14px',
+            fontWeight: 600,
+            formatter: function() {
+              return formatNumber(props.occupationDistribution?.reduce((sum, o) => sum + o.count, 0) || 0);
+            },
+          },
+        },
+      },
+    },
+  },
+  tooltip: {
+    theme: 'dark',
+    y: {
+      formatter: function(val, { seriesIndex }) {
+        const item = props.occupationDistribution?.[seriesIndex];
+        return `${formatNumber(val)} (${item?.percentage || 0}%)`;
+      },
+    },
+  },
+}));
+
+const occupationChartSeries = computed(() => 
+  props.occupationDistribution?.map(o => o.count) || []
+);
+
 // Age Distribution Chart (Priority 2)
 const ageChartOptions = computed(() => ({
   chart: {
@@ -448,95 +628,227 @@ const ageChartSeries = computed(() => [
 ]);
 
 // Purchasing Power by Age Chart (Priority 2)
-const purchasingPowerChartOptions = computed(() => ({
-  chart: {
-    type: 'bar',
-    height: 350,
-    toolbar: { show: false },
-    fontFamily: 'Inter, sans-serif',
-    stacked: false,
-  },
-  colors: ['#10b981', '#3b82f6', '#8b5cf6'],
-  dataLabels: {
-    enabled: false,
-  },
-  xaxis: {
-    categories: props.purchasingPowerByAge?.map(p => p.age_group_label || p.age_group) || [],
-    labels: {
-      style: { fontSize: '11px', colors: '#6b7280' },
-      rotate: -45,
+const purchasingPowerChartOptions = computed(() => {
+  // Define colors for each age group
+  const ageGroupColors = {
+    'Anak-anak': '#f59e0b', // amber
+    'Remaja': '#ef4444', // red
+    'Dewasa Muda': '#3b82f6', // blue
+    'Dewasa Produktif': '#10b981', // emerald
+    'Dewasa Matang': '#8b5cf6', // purple
+    'Usia Tua': '#6b7280', // gray
+    'Tidak Diketahui': '#9ca3af', // light gray
+  };
+  
+  const categories = props.purchasingPowerByAge?.map(p => p.age_group_label || p.age_group) || [];
+  const colors = props.purchasingPowerByAge?.map(p => {
+    const ageGroup = p.age_group || 'Tidak Diketahui';
+    return ageGroupColors[ageGroup] || '#9ca3af';
+  }) || [];
+  
+  return {
+    chart: {
+      type: 'bar',
+      height: 350,
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      stacked: false,
     },
-  },
-  yaxis: [
-    {
+    plotOptions: {
+      bar: {
+        distributed: true, // Different color for each bar
+        borderRadius: 6,
+        columnWidth: '60%',
+        dataLabels: {
+          position: 'top',
+        },
+      },
+    },
+    colors: colors,
+    dataLabels: {
+      enabled: true,
+      formatter: function(val) {
+        if (val >= 1000000000) {
+          return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+        } else if (val >= 1000000) {
+          return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+        } else if (val >= 1000) {
+          return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+        }
+        return 'Rp ' + formatNumber(val);
+      },
+      style: {
+        fontSize: '10px',
+        fontWeight: 600,
+        colors: ['#fff'],
+      },
+      offsetY: -5,
+    },
+    xaxis: {
+      categories: categories,
+      labels: {
+        style: { fontSize: '11px', colors: '#6b7280' },
+        rotate: -45,
+      },
+    },
+    yaxis: {
       title: {
         text: 'Total Spending (Rp)',
-        style: { color: '#10b981', fontSize: '12px' },
+        style: { color: '#6b7280', fontSize: '12px', fontWeight: 600 },
       },
       labels: {
-        style: { colors: '#10b981', fontSize: '11px' },
+        style: { colors: '#6b7280', fontSize: '11px' },
         formatter: function(val) {
-          if (val >= 1000000) {
-            return 'Rp ' + (val / 1000000).toFixed(1) + 'M';
+          if (val >= 1000000000) {
+            return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          } else if (val >= 1000000) {
+            return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
           } else if (val >= 1000) {
-            return 'Rp ' + (val / 1000).toFixed(0) + 'K';
+            return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
           }
           return 'Rp ' + formatNumber(val);
         },
       },
     },
-    {
-      opposite: true,
-      title: {
-        text: 'Avg Transaction Value (Rp)',
-        style: { color: '#3b82f6', fontSize: '12px' },
-      },
-      labels: {
-        style: { colors: '#3b82f6', fontSize: '11px' },
-        formatter: function(val) {
-          if (val >= 1000000) {
-            return 'Rp ' + (val / 1000000).toFixed(1) + 'M';
-          } else if (val >= 1000) {
-            return 'Rp ' + (val / 1000).toFixed(0) + 'K';
-          }
-          return 'Rp ' + formatNumber(val);
-        },
-      },
+    grid: {
+      borderColor: '#f3f4f6',
+      strokeDashArray: 3,
     },
-  ],
-  grid: {
-    borderColor: '#f3f4f6',
-    strokeDashArray: 3,
-  },
-  legend: {
-    position: 'top',
-    fontSize: '12px',
-    fontWeight: 500,
-  },
-  tooltip: {
-    theme: 'dark',
-    shared: true,
-    intersect: false,
-  },
-}));
+    legend: {
+      show: false, // Hide legend since we have distributed colors
+    },
+    tooltip: {
+      theme: 'dark',
+      shared: true,
+      intersect: false,
+    },
+  };
+});
 
-const purchasingPowerChartSeries = computed(() => [
-  {
-    name: 'Total Spending',
-    data: props.purchasingPowerByAge?.map(p => p.total_spending) || [],
-    type: 'column',
-  },
-  {
-    name: 'Avg Transaction Value',
-    data: props.purchasingPowerByAge?.map(p => p.avg_transaction_value) || [],
-    type: 'line',
-  },
-  {
-    name: 'Total Transactions',
-    data: props.purchasingPowerByAge?.map(p => p.total_transactions) || [],
-    type: 'column',
-  },
-]);
+const purchasingPowerChartSeries = computed(() => {
+  if (!props.purchasingPowerByAge || !Array.isArray(props.purchasingPowerByAge) || props.purchasingPowerByAge.length === 0) {
+    return [];
+  }
+  
+  try {
+    const data = props.purchasingPowerByAge.map(p => {
+      if (!p || typeof p !== 'object') return 0;
+      const spending = p.total_spending;
+      if (spending === null || spending === undefined) return 0;
+      const numValue = typeof spending === 'number' ? spending : parseFloat(spending);
+      return isNaN(numValue) ? 0 : numValue;
+    });
+    
+    if (data.length === 0 || data.every(val => val === 0)) {
+      return [];
+    }
+    
+    return [
+      {
+        name: 'Total Spending',
+        data: data,
+      },
+    ];
+  } catch (error) {
+    console.error('Error processing purchasing power chart series:', error);
+    return [];
+  }
+});
+
+// Line chart for current month
+const purchasingPowerLineChartOptions = computed(() => {
+  const ageGroupColors = {
+    'Anak-anak': '#f59e0b',
+    'Remaja': '#ef4444',
+    'Dewasa Muda': '#3b82f6',
+    'Dewasa Produktif': '#10b981',
+    'Dewasa Matang': '#8b5cf6',
+    'Usia Tua': '#6b7280',
+  };
+  
+  const categories = props.purchasingPowerByAgeThisMonth?.map(d => d.date_label || d.day) || [];
+  
+  return {
+    chart: {
+      type: 'line',
+      height: 350,
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      zoom: { enabled: false },
+    },
+    colors: Object.values(ageGroupColors),
+    stroke: {
+      width: 3,
+      curve: 'smooth',
+    },
+    markers: {
+      size: 4,
+      hover: {
+        size: 6,
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    xaxis: {
+      categories: categories,
+      labels: {
+        style: { fontSize: '11px', colors: '#6b7280' },
+        rotate: -45,
+      },
+    },
+    yaxis: {
+      title: {
+        text: 'Total Spending (Rp)',
+        style: { color: '#6b7280', fontSize: '12px', fontWeight: 600 },
+      },
+      labels: {
+        style: { colors: '#6b7280', fontSize: '11px' },
+        formatter: function(val) {
+          if (val >= 1000000000) {
+            return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          } else if (val >= 1000000) {
+            return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+          } else if (val >= 1000) {
+            return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+          }
+          return 'Rp ' + formatNumber(val);
+        },
+      },
+    },
+    grid: {
+      borderColor: '#f3f4f6',
+      strokeDashArray: 3,
+    },
+    legend: {
+      position: 'top',
+      fontSize: '12px',
+      fontWeight: 500,
+    },
+    tooltip: {
+      theme: 'dark',
+      shared: true,
+      intersect: false,
+    },
+  };
+});
+
+const purchasingPowerLineChartSeries = computed(() => {
+  const ageGroups = ['Anak-anak', 'Remaja', 'Dewasa Muda', 'Dewasa Produktif', 'Dewasa Matang', 'Usia Tua'];
+  const ageGroupLabels = {
+    'Anak-anak': 'Anak-anak (< 13 tahun)',
+    'Remaja': 'Remaja (13-18 tahun)',
+    'Dewasa Muda': 'Dewasa Muda (19-30 tahun)',
+    'Dewasa Produktif': 'Dewasa Produktif (31-45 tahun)',
+    'Dewasa Matang': 'Dewasa Matang (46-59 tahun)',
+    'Usia Tua': 'Usia Tua (≥ 60 tahun)',
+  };
+  
+  return ageGroups.map(ageGroup => ({
+    name: ageGroupLabels[ageGroup] || ageGroup,
+    data: props.purchasingPowerByAgeThisMonth?.map(d => d[ageGroup] || 0) || [],
+  }));
+});
 
 // Member Segmentation Chart (Priority 3)
 const segmentationChartOptions = computed(() => ({
@@ -596,6 +908,138 @@ const segmentationChartSeries = computed(() => {
     seg.atRisk || 0,
     seg.dormant || 0,
   ];
+});
+
+// Regional Breakdown - Current Data (must be declared first as it's used by chart options)
+const currentRegionalData = computed(() => {
+  const data = props.regionalBreakdown || {};
+  return data[regionalPeriod.value] || { outlets: [], regions: [], period: '', startDate: '', endDate: '' };
+});
+
+// Regional Breakdown - Get Color by Region
+const getRegionColor = (regionName) => {
+  const colors = {
+    'Jakarta-Tangerang': '#3b82f6', // Blue
+    'Bandung Prime': '#10b981', // Green
+    'Bandung Reguler': '#f59e0b', // Orange
+    'Tempayan': '#8b5cf6', // Purple
+    'Unknown': '#6b7280', // Gray
+  };
+  return colors[regionName] || '#6b7280';
+};
+
+// Regional Pie Chart Options
+const regionalPieChartOptions = computed(() => {
+  const regions = currentRegionalData.value?.regions || [];
+  const labels = regions.map(r => r.region);
+  const colors = regions.map(r => getRegionColor(r.region));
+  
+  return {
+    chart: {
+      type: 'pie',
+      height: 350,
+      fontFamily: 'Inter, sans-serif',
+    },
+    colors: colors,
+    labels: labels,
+    legend: {
+      position: 'bottom',
+      fontSize: '12px',
+      fontWeight: 500,
+    },
+    tooltip: {
+      y: {
+        formatter: function(val) {
+          return 'Rp ' + formatNumber(val);
+        }
+      }
+    },
+    dataLabels: {
+      enabled: true,
+      formatter: function(val, opts) {
+        const total = opts.w.globals.seriesTotals.reduce((a, b) => a + b, 0);
+        const percentage = total > 0 ? (val / total * 100).toFixed(1) : '0.0';
+        return percentage + '%';
+      }
+    },
+  };
+});
+
+// Regional Pie Chart Series
+const regionalPieChartSeries = computed(() => {
+  const regions = currentRegionalData.value?.regions || [];
+  return regions.map(r => r.total_spending);
+});
+
+// Regional Bar Chart Options
+const regionalBarChartOptions = computed(() => {
+  const outlets = currentRegionalData.value?.outlets || [];
+  const labels = outlets.map(o => o.outlet_name);
+  const colors = outlets.map(o => getRegionColor(o.region));
+  
+  return {
+    chart: {
+      type: 'bar',
+      height: 350,
+      fontFamily: 'Inter, sans-serif',
+      toolbar: { show: false },
+    },
+    colors: colors,
+    plotOptions: {
+      bar: {
+        horizontal: false,
+        columnWidth: '60%',
+        distributed: true,
+        borderRadius: 4,
+      },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    xaxis: {
+      categories: labels,
+      labels: {
+        rotate: -45,
+        rotateAlways: true,
+        style: {
+          fontSize: '11px',
+        },
+      },
+    },
+    yaxis: {
+      labels: {
+        formatter: function(val) {
+          if (val >= 1000000000) {
+            return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          } else if (val >= 1000000) {
+            return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+          } else if (val >= 1000) {
+            return 'Rp ' + (val / 1000).toFixed(1) + 'Rb';
+          }
+          return 'Rp ' + val;
+        }
+      }
+    },
+    tooltip: {
+      y: {
+        formatter: function(val) {
+          return 'Rp ' + formatNumber(val);
+        }
+      }
+    },
+    legend: {
+      show: false,
+    },
+  };
+});
+
+// Regional Bar Chart Series
+const regionalBarChartSeries = computed(() => {
+  const outlets = currentRegionalData.value?.outlets || [];
+  return [{
+    name: 'Total Spending',
+    data: outlets.map(o => o.total_spending),
+  }];
 });
 
 // Conversion Funnel Chart (Priority 3)
@@ -727,6 +1171,19 @@ function getTierIcon(tier) {
   };
   return icons[tier?.toLowerCase()] || 'fa-medal';
 }
+
+function getAgeGroupColor(ageGroup) {
+  const colors = {
+    'Anak-anak': '#f59e0b', // amber
+    'Remaja': '#ef4444', // red
+    'Dewasa Muda': '#3b82f6', // blue
+    'Dewasa Produktif': '#10b981', // emerald
+    'Dewasa Matang': '#8b5cf6', // purple
+    'Usia Tua': '#6b7280', // gray
+    'Tidak Diketahui': '#9ca3af', // light gray
+  };
+  return colors[ageGroup] || '#9ca3af';
+}
 </script>
 
 <template>
@@ -743,23 +1200,23 @@ function getTierIcon(tier) {
         <!-- Header Section -->
         <div class="mb-10">
           <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
+          <div>
               <h1 class="text-4xl font-bold bg-gradient-to-r from-purple-600 via-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
                 CRM Dashboard
               </h1>
               <p class="text-gray-600 text-lg">Overview dan analisis data member yang komprehensif</p>
-            </div>
-            <div class="flex gap-3">
-              <button
-                @click="goToMembers"
+          </div>
+          <div class="flex gap-3">
+            <button
+              @click="goToMembers"
                 class="group relative px-6 py-3 bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center gap-2 text-gray-700 font-medium"
-              >
+            >
                 <i class="fa-solid fa-users text-purple-500"></i>
-                Lihat Semua Member
-              </button>
-            </div>
+              Lihat Semua Member
+            </button>
           </div>
         </div>
+      </div>
 
         <!-- Statistics Cards Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -796,8 +1253,21 @@ function getTierIcon(tier) {
                   <div class="text-3xl font-bold">{{ formatNumber(stats?.activeMembers || 0) }}</div>
                 </div>
               </div>
-              <div class="flex items-center gap-2 text-sm opacity-90">
-                <span>{{ Math.round((stats?.activeMembers / stats?.totalMembers) * 100) || 0 }}% dari total</span>
+              <div class="space-y-2">
+                <div class="flex items-center gap-2 text-sm opacity-90">
+                  <i class="fa-solid fa-shopping-cart text-xs"></i>
+                  <span>Bertransaksi 90 hari terakhir</span>
+                </div>
+                <div class="flex items-center justify-between pt-2 border-t border-white/20">
+                  <div class="flex items-center gap-2 text-sm opacity-90">
+                    <i class="fa-solid fa-user-slash text-xs"></i>
+                    <span>Dormant:</span>
+                  </div>
+                  <div class="text-lg font-semibold">{{ formatNumber(stats?.dormantMembers || 0) }}</div>
+                </div>
+                <div class="text-xs opacity-75 mt-1">
+                  Tidak ada aktivitas & login 90 hari terakhir
+                </div>
               </div>
             </div>
           </div>
@@ -920,7 +1390,7 @@ function getTierIcon(tier) {
 
         <!-- Member Contribution to Revenue Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+          <div @click="openContributionModal('today')" class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-105">
             <div class="flex items-center justify-between mb-4">
               <div class="flex items-center gap-3">
                 <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
@@ -931,13 +1401,14 @@ function getTierIcon(tier) {
                   <div class="text-2xl font-bold text-blue-600">{{ stats?.memberContributionTodayFormatted || '0%' }}</div>
                 </div>
               </div>
+              <i class="fa-solid fa-chevron-right text-gray-400"></i>
             </div>
             <div class="text-xs text-gray-500 mt-2 space-y-1">
               <div>Member: {{ stats?.memberRevenueTodayFormatted || 'Rp 0' }}</div>
               <div>Total Revenue: {{ stats?.totalRevenueTodayFormatted || 'Rp 0' }}</div>
             </div>
           </div>
-          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+          <div @click="openContributionModal('month')" class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-105">
             <div class="flex items-center justify-between mb-4">
               <div class="flex items-center gap-3">
                 <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
@@ -948,13 +1419,14 @@ function getTierIcon(tier) {
                   <div class="text-2xl font-bold text-green-600">{{ stats?.memberContributionThisMonthFormatted || '0%' }}</div>
                 </div>
               </div>
+              <i class="fa-solid fa-chevron-right text-gray-400"></i>
             </div>
             <div class="text-xs text-gray-500 mt-2 space-y-1">
               <div>Member: {{ stats?.memberRevenueThisMonthFormatted || 'Rp 0' }}</div>
               <div>Total Revenue: {{ stats?.totalRevenueThisMonthFormatted || 'Rp 0' }}</div>
             </div>
           </div>
-          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+          <div @click="openContributionModal('year')" class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-105">
             <div class="flex items-center justify-between mb-4">
               <div class="flex items-center gap-3">
                 <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -965,6 +1437,7 @@ function getTierIcon(tier) {
                   <div class="text-2xl font-bold text-purple-600">{{ stats?.memberContributionThisYearFormatted || '0%' }}</div>
                 </div>
               </div>
+              <i class="fa-solid fa-chevron-right text-gray-400"></i>
             </div>
             <div class="text-xs text-gray-500 mt-2 space-y-1">
               <div>Member: {{ stats?.memberRevenueThisYearFormatted || 'Rp 0' }}</div>
@@ -1007,17 +1480,17 @@ function getTierIcon(tier) {
               Total point yang digunakan untuk membeli voucher di voucher store
             </div>
           </div>
-        </div>
+      </div>
 
-        <!-- Charts Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <!-- Member Growth Chart -->
+      <!-- Charts Section -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- Member Growth Chart -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-chart-line text-purple-500"></i>
+            <i class="fa-solid fa-chart-line text-purple-500"></i>
                 Pertumbuhan Member
-              </h3>
+          </h3>
             </div>
             <div class="h-64">
               <VueApexCharts
@@ -1027,15 +1500,15 @@ function getTierIcon(tier) {
                 :series="memberGrowthChartSeries"
               />
             </div>
-          </div>
+        </div>
 
           <!-- Tier Distribution Chart -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-chart-pie text-blue-500"></i>
+            <i class="fa-solid fa-chart-pie text-blue-500"></i>
                 Distribusi Tier
-              </h3>
+          </h3>
             </div>
             <div class="h-64">
               <VueApexCharts
@@ -1057,8 +1530,8 @@ function getTierIcon(tier) {
                 </div>
               </div>
             </div>
-          </div>
         </div>
+      </div>
 
         <!-- Spending & Point Activity Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -1078,7 +1551,7 @@ function getTierIcon(tier) {
                 :series="spendingTrendChartSeries"
               />
             </div>
-          </div>
+      </div>
 
           <!-- Point Activity Trend Chart -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
@@ -1097,7 +1570,7 @@ function getTierIcon(tier) {
               />
             </div>
           </div>
-        </div>
+      </div>
 
         <!-- Latest Members & Latest Point Transactions -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -1206,7 +1679,7 @@ function getTierIcon(tier) {
         </div>
 
         <!-- Latest Activities -->
-        <div class="mb-8">
+      <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
@@ -1240,7 +1713,7 @@ function getTierIcon(tier) {
         </div>
 
         <!-- Gender & Age Distribution Charts (Priority 2) -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <!-- Gender Distribution Chart -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
@@ -1262,6 +1735,43 @@ function getTierIcon(tier) {
                 <div class="flex items-center gap-3">
                   <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
                   <span class="font-medium text-gray-700">{{ item.gender }}</span>
+                </div>
+                <div class="text-right">
+                  <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
+                  <div class="text-xs text-gray-500">{{ item.percentage }}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Occupation Distribution Chart -->
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fa-solid fa-briefcase text-indigo-500"></i>
+                Distribusi Pekerjaan
+              </h3>
+            </div>
+            <div class="h-64">
+              <VueApexCharts
+                v-if="occupationChartSeries && occupationChartSeries.length > 0 && occupationChartSeries.some(s => s > 0)"
+                type="donut"
+                height="300"
+                :options="occupationChartOptions"
+                :series="occupationChartSeries"
+              />
+              <div v-else class="flex items-center justify-center h-full text-gray-400">
+                <div class="text-center">
+                  <i class="fa-solid fa-briefcase text-4xl mb-2"></i>
+                  <p>Tidak ada data</p>
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 space-y-2 max-h-48 overflow-y-auto">
+              <div v-for="item in props.occupationDistribution" :key="item.occupation" class="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 hover:border-indigo-200 transition-all duration-300">
+                <div class="flex items-center gap-3">
+                  <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
+                  <span class="font-medium text-gray-700 text-sm">{{ item.occupation }}</span>
                 </div>
                 <div class="text-right">
                   <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
@@ -1293,20 +1803,20 @@ function getTierIcon(tier) {
                   <div class="flex items-center gap-3">
                     <div class="w-4 h-4 rounded-full shadow-sm" :style="{ backgroundColor: item.color }"></div>
                     <span class="font-medium text-gray-700">{{ item.age_group_label || item.age_group }}</span>
-                  </div>
+            </div>
                   <div class="text-right">
                     <div class="font-bold text-gray-900">{{ formatNumber(item.count) }}</div>
                     <div class="text-xs text-gray-500">{{ item.percentage }}%</div>
-                  </div>
-                </div>
+          </div>
+        </div>
               </div>
               <div v-else class="text-center py-8 text-gray-500">
                 <i class="fa-solid fa-birthday-cake text-4xl mb-2"></i>
                 <p>Data tidak tersedia</p>
               </div>
+              </div>
             </div>
           </div>
-        </div>
 
         <!-- Purchasing Power by Age (Priority 2) -->
         <div class="mb-8">
@@ -1316,46 +1826,111 @@ function getTierIcon(tier) {
                 <i class="fa-solid fa-dollar-sign text-emerald-500"></i>
                 Daya Beli per Kelompok Usia
               </h3>
+              </div>
+            <div class="h-80">
+              <div v-if="!props.purchasingPowerByAge || props.purchasingPowerByAge.length === 0" class="flex items-center justify-center h-full">
+                <div class="text-center">
+                  <i class="fa-solid fa-dollar-sign text-6xl text-gray-300 mb-4"></i>
+                  <p class="text-gray-500">Data tidak tersedia</p>
+                </div>
+              </div>
+              <template v-else-if="purchasingPowerChartSeries && purchasingPowerChartSeries.length > 0">
+                <VueApexCharts
+                  type="bar"
+                  height="350"
+                  :options="purchasingPowerChartOptions"
+                  :series="purchasingPowerChartSeries"
+                />
+              </template>
+              <div v-else class="flex items-center justify-center h-full">
+                <div class="text-center">
+                  <i class="fa-solid fa-exclamation-triangle text-4xl text-yellow-400 mb-4"></i>
+                  <p class="text-gray-500">Data chart tidak valid</p>
+                </div>
+              </div>
+            </div>
+          
+          <!-- Line Chart for Current Month -->
+          <div class="mt-8">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                <i class="fa-solid fa-chart-line text-blue-500"></i>
+                Tren Bulan Ini (Harian)
+              </h4>
             </div>
             <div class="h-80">
+              <div v-if="!props.purchasingPowerByAgeThisMonth || props.purchasingPowerByAgeThisMonth.length === 0" class="flex items-center justify-center h-full">
+                <div class="text-center">
+                  <i class="fa-solid fa-chart-line text-6xl text-gray-300 mb-4"></i>
+                  <p class="text-gray-500">Data tidak tersedia</p>
+                </div>
+              </div>
               <VueApexCharts
-                type="bar"
+                v-else
+                type="line"
                 height="350"
-                :options="purchasingPowerChartOptions"
-                :series="purchasingPowerChartSeries"
+                :options="purchasingPowerLineChartOptions"
+                :series="purchasingPowerLineChartSeries"
               />
             </div>
-            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div v-if="purchasingPowerByAge && purchasingPowerByAge.length > 0">
-                <div v-for="item in purchasingPowerByAge" :key="item.age_group" class="p-4 bg-gradient-to-r from-emerald-50 to-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition-all duration-300">
-                  <div class="font-semibold text-gray-900 mb-2">{{ item.age_group_label || item.age_group }}</div>
-                <div class="space-y-1 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-gray-600">Total Spending:</span>
-                    <span class="font-bold text-emerald-600">{{ item.total_spending_formatted }}</span>
+          </div>
+          
+            <!-- Detail Cards Grid -->
+            <div v-if="props.purchasingPowerByAge && props.purchasingPowerByAge.length > 0" class="mt-8">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div
+                  v-for="item in props.purchasingPowerByAge"
+                  :key="item.age_group"
+                  class="bg-white rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-all duration-300 overflow-hidden"
+                >
+                  <!-- Card Header with Color Indicator -->
+                  <div class="px-6 py-4 border-b border-gray-100" :style="{ backgroundColor: getAgeGroupColor(item.age_group) + '15' }">
+                    <div class="flex items-center gap-3">
+                      <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: getAgeGroupColor(item.age_group) }"></div>
+                      <h4 class="font-bold text-gray-900 text-lg">{{ item.age_group_label || item.age_group }}</h4>
+                    </div>
                   </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-600">Avg/Transaksi:</span>
-                    <span class="font-semibold text-gray-800">{{ item.avg_transaction_value_formatted }}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-600">Total Transaksi:</span>
-                    <span class="font-semibold text-gray-800">{{ formatNumber(item.total_transactions) }}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-600">Total Customer:</span>
-                    <span class="font-semibold text-gray-800">{{ formatNumber(item.total_customers) }}</span>
+                  
+                  <!-- Card Body -->
+                  <div class="p-6 space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-money-bill-wave text-emerald-500"></i>
+                        <span class="text-sm text-gray-600">Total Spending</span>
+                      </div>
+                      <span class="font-bold text-emerald-600 text-lg">{{ item.total_spending_formatted }}</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Avg/Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ item.avg_transaction_value_formatted }}</div>
+                      </div>
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Total Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ formatNumber(item.total_transactions) }}</div>
+                      </div>
+                    </div>
+                    
+                    <div class="pt-3 border-t border-gray-100">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <i class="fa-solid fa-users text-blue-500"></i>
+                          <span class="text-sm text-gray-600">Total Customer</span>
+                        </div>
+                        <span class="font-bold text-blue-600">{{ formatNumber(item.total_customers) }}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-              </div>
-              <div v-else class="text-center py-8 text-gray-500 col-span-full">
-                <i class="fa-solid fa-dollar-sign text-4xl mb-2"></i>
-                <p>Data tidak tersedia</p>
-              </div>
+            </div>
+            <div v-else class="mt-8 text-center py-12 text-gray-500">
+              <i class="fa-solid fa-dollar-sign text-5xl mb-4 text-gray-300"></i>
+              <p class="text-lg">Data tidak tersedia</p>
+            </div>
             </div>
           </div>
-        </div>
 
         <!-- Email Verification Status (Priority 2) -->
         <div class="mb-8">
@@ -1369,45 +1944,49 @@ function getTierIcon(tier) {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200">
                 <div class="flex items-center justify-between mb-4">
-                  <div>
+              <div>
                     <div class="text-sm font-medium text-green-700 mb-1">Email Terverifikasi</div>
                     <div class="text-3xl font-bold text-green-800">{{ formatNumber(stats?.emailVerified || 0) }}</div>
-                  </div>
+              </div>
                   <div class="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center">
                     <i class="fa-solid fa-check text-white text-2xl"></i>
-                  </div>
-                </div>
+              </div>
+            </div>
                 <div class="text-sm text-green-700">
                   {{ stats?.totalMembers > 0 ? Math.round((stats?.emailVerified / stats?.totalMembers) * 100) : 0 }}% dari total member
-                </div>
+          </div>
               </div>
               <div class="p-6 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200">
                 <div class="flex items-center justify-between mb-4">
-                  <div>
+              <div>
                     <div class="text-sm font-medium text-orange-700 mb-1">Email Belum Terverifikasi</div>
                     <div class="text-3xl font-bold text-orange-800">{{ formatNumber((stats?.totalMembers || 0) - (stats?.emailVerified || 0)) }}</div>
-                  </div>
+              </div>
                   <div class="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center">
                     <i class="fa-solid fa-exclamation text-white text-2xl"></i>
                   </div>
                 </div>
                 <div class="text-sm text-orange-700">
                   {{ stats?.totalMembers > 0 ? Math.round(((stats?.totalMembers - stats?.emailVerified) / stats?.totalMembers) * 100) : 0 }}% dari total member
-                </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
         <!-- Top Spenders & Most Active -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <!-- Top Spenders -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
-            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
               <i class="fa-solid fa-trophy text-amber-500"></i>
               Top Spenders
             </h3>
-            <div class="space-y-3">
+            <div v-if="props.topSpendersDateRange" class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-calendar-alt"></i>
+              <span>Data dari {{ props.topSpendersDateRange.min_date_formatted }} sampai {{ props.topSpendersDateRange.max_date_formatted }}</span>
+            </div>
+          <div class="space-y-3">
               <div
                 v-for="(spender, index) in topSpenders"
                 :key="spender.memberId"
@@ -1419,7 +1998,12 @@ function getTierIcon(tier) {
                       {{ index + 1 }}
                     </div>
                     <div>
-                      <div class="font-semibold text-gray-900">{{ spender.memberName }}</div>
+                      <div 
+                        @click="openMemberTransactionsModal(spender.memberId, spender.memberName, 'orders')"
+                        class="font-semibold text-gray-900 cursor-pointer hover:text-amber-600 transition-colors"
+                      >
+                        {{ spender.memberName }}
+                      </div>
                       <div class="text-sm text-gray-500">{{ spender.orderCount }} transaksi</div>
                     </div>
                   </div>
@@ -1430,14 +2014,18 @@ function getTierIcon(tier) {
                 </div>
               </div>
             </div>
-          </div>
-
+            </div>
+            
           <!-- Most Active Members -->
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
-            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
               <i class="fa-solid fa-fire text-orange-500"></i>
               Most Active Members
             </h3>
+            <div v-if="props.mostActiveMembersDateRange" class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-calendar-alt"></i>
+              <span>Data dari {{ props.mostActiveMembersDateRange.min_date_formatted }} sampai {{ props.mostActiveMembersDateRange.max_date_formatted }}</span>
+            </div>
             <div class="space-y-3">
               <div
                 v-for="(active, index) in mostActiveMembers"
@@ -1450,7 +2038,12 @@ function getTierIcon(tier) {
                       {{ index + 1 }}
                     </div>
                     <div>
-                      <div class="font-semibold text-gray-900">{{ active.memberName }}</div>
+                      <div 
+                        @click="openMemberTransactionsModal(active.memberId, active.memberName, 'points')"
+                        class="font-semibold text-gray-900 cursor-pointer hover:text-orange-600 transition-colors"
+                      >
+                        {{ active.memberName }}
+                      </div>
                       <div class="text-sm text-gray-500">{{ active.transactionCount }} transaksi point</div>
                     </div>
                   </div>
@@ -1461,77 +2054,432 @@ function getTierIcon(tier) {
                 </div>
               </div>
             </div>
+                  </div>
+                </div>
+        
+        <!-- Member Favourite Picks -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-heart text-pink-500"></i>
+              Member Favourite Picks
+            </h3>
+            <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-calendar-alt"></i>
+              <span>Top 10 menu yang paling sering di-order member dalam 90 hari terakhir</span>
+            </div>
+            
+            <!-- Food and Beverages Side by Side -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <!-- Food Section -->
+              <div>
+                <div class="flex items-center gap-2 mb-4">
+                  <i class="fa-solid fa-utensils text-orange-500"></i>
+                  <h4 class="text-lg font-semibold text-gray-800">Food</h4>
+                  <span class="text-xs text-gray-500 bg-orange-100 px-2 py-1 rounded-full">Top 10</span>
+                </div>
+                <div v-if="props.memberFavouritePicks?.food && props.memberFavouritePicks.food.length > 0" class="space-y-3">
+                  <div
+                    v-for="(item, index) in props.memberFavouritePicks.food"
+                    :key="`food-${index}`"
+                    class="group p-4 bg-gradient-to-r from-orange-50 to-white rounded-xl border border-orange-100 hover:border-orange-200 hover:shadow-lg transition-all duration-300"
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3 flex-1">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-bold shadow-lg">
+                          {{ index + 1 }}
+                        </div>
+                        <div class="flex-1">
+                          <div class="font-semibold text-gray-900">{{ item.item_name }}</div>
+                          <div class="text-sm text-gray-500 flex items-center gap-4 mt-1">
+                            <span><i class="fa-solid fa-shopping-cart"></i> {{ item.total_quantity_formatted }}x</span>
+                            <span><i class="fa-solid fa-receipt"></i> {{ item.order_count }} orders</span>
+                            <span><i class="fa-solid fa-users"></i> {{ item.member_count }} members</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="text-right ml-4">
+                        <div class="text-lg font-bold text-orange-600">{{ item.total_revenue_formatted }}</div>
+                        <div class="text-xs text-gray-500">Total Revenue</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="text-center py-8 text-gray-500">
+                  <i class="fa-solid fa-utensils text-4xl mb-2 text-gray-300"></i>
+                  <p class="text-sm">Tidak ada data food</p>
+                </div>
+              </div>
+              
+              <!-- Beverages Section -->
+              <div>
+                <div class="flex items-center gap-2 mb-4">
+                  <i class="fa-solid fa-glass-water text-blue-500"></i>
+                  <h4 class="text-lg font-semibold text-gray-800">Beverages</h4>
+                  <span class="text-xs text-gray-500 bg-blue-100 px-2 py-1 rounded-full">Top 10</span>
+                </div>
+                <div v-if="props.memberFavouritePicks?.beverages && props.memberFavouritePicks.beverages.length > 0" class="space-y-3">
+                  <div
+                    v-for="(item, index) in props.memberFavouritePicks.beverages"
+                    :key="`beverage-${index}`"
+                    class="group p-4 bg-gradient-to-r from-blue-50 to-white rounded-xl border border-blue-100 hover:border-blue-200 hover:shadow-lg transition-all duration-300"
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3 flex-1">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg">
+                          {{ index + 1 }}
+                        </div>
+                        <div class="flex-1">
+                          <div class="font-semibold text-gray-900">{{ item.item_name }}</div>
+                          <div class="text-sm text-gray-500 flex items-center gap-4 mt-1">
+                            <span><i class="fa-solid fa-shopping-cart"></i> {{ item.total_quantity_formatted }}x</span>
+                            <span><i class="fa-solid fa-receipt"></i> {{ item.order_count }} orders</span>
+                            <span><i class="fa-solid fa-users"></i> {{ item.member_count }} members</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="text-right ml-4">
+                        <div class="text-lg font-bold text-blue-600">{{ item.total_revenue_formatted }}</div>
+                        <div class="text-xs text-gray-500">Total Revenue</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="text-center py-8 text-gray-500">
+                  <i class="fa-solid fa-glass-water text-4xl mb-2 text-gray-300"></i>
+                  <p class="text-sm">Tidak ada data beverages</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Active Vouchers -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-ticket text-purple-500"></i>
+              Voucher Aktif
+            </h3>
+            <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-info-circle"></i>
+              <span>Daftar voucher aktif beserta statistik member yang memiliki dan sudah me-redeem voucher</span>
+            </div>
+            <div v-if="props.activeVouchers && props.activeVouchers.length > 0" class="space-y-4">
+              <div
+                v-for="(voucher, index) in props.activeVouchers"
+                :key="voucher.id || index"
+                class="group p-5 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 hover:border-purple-200 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg">
+                        <i class="fa-solid fa-ticket"></i>
+                      </div>
+                      <div class="flex-1">
+                        <div class="font-semibold text-gray-900 text-lg">{{ voucher.name }}</div>
+                        <div class="text-sm text-gray-600 mt-1">{{ voucher.description }}</div>
+                      </div>
+                    </div>
+                    <div class="mt-3 flex items-center gap-6 text-sm">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-coins text-yellow-500"></i>
+                        <span class="text-gray-600">Point: <span class="font-semibold">{{ voucher.point_cost_formatted }}</span></span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-tag text-green-500"></i>
+                        <span class="text-gray-600">Diskon: <span class="font-semibold">{{ voucher.discount_display }}</span></span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-calendar-times text-red-500"></i>
+                        <span class="text-gray-600">Expired: <span class="font-semibold">{{ voucher.expired_at }}</span></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-purple-100 grid grid-cols-2 gap-4">
+                  <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div class="text-xs text-blue-600 mb-1 flex items-center gap-2">
+                      <i class="fa-solid fa-users"></i>
+                      <span>Member yang Memiliki</span>
+                    </div>
+                    <div class="text-xl font-bold text-blue-700">{{ voucher.member_count_formatted }}</div>
+                  </div>
+                  <div class="p-3 bg-green-50 rounded-lg border border-green-100">
+                    <div class="text-xs text-green-600 mb-1 flex items-center gap-2">
+                      <i class="fa-solid fa-check-circle"></i>
+                      <span>Member yang Sudah Redeem</span>
+                    </div>
+                    <div class="text-xl font-bold text-green-700">{{ voucher.redeemed_count_formatted }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center py-12 text-gray-500">
+              <i class="fa-solid fa-ticket text-5xl mb-4 text-gray-300"></i>
+              <p class="text-lg">Tidak ada voucher aktif</p>
+            </div>
           </div>
         </div>
 
-        <!-- Priority 3: Member Segmentation & Lifetime Value -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <!-- Member Segmentation (Priority 3) -->
-          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
-            <div class="flex items-center justify-between mb-6">
-              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-users-slash text-purple-500"></i>
-                Segmentasi Member
-              </h3>
+        <!-- Active Challenges -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-trophy text-yellow-500"></i>
+              Challenge Aktif
+            </h3>
+            <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-info-circle"></i>
+              <span>Daftar challenge yang sedang aktif dan statistik partisipasi member</span>
             </div>
-            <div class="h-64 mb-4">
-              <VueApexCharts
-                type="donut"
-                height="300"
-                :options="segmentationChartOptions"
-                :series="segmentationChartSeries"
-              />
+            <div v-if="props.activeChallenges && props.activeChallenges.length > 0" class="space-y-4">
+              <div
+                v-for="(challenge, index) in props.activeChallenges"
+                :key="challenge.id || index"
+                class="group p-5 bg-gradient-to-r from-yellow-50 to-white rounded-xl border border-yellow-100 hover:border-yellow-200 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-start gap-3 mb-3">
+                      <div v-if="challenge.image" class="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                        <img :src="challenge.image" :alt="challenge.title" class="w-full h-full object-cover">
+                      </div>
+                      <div v-else class="w-16 h-16 rounded-lg bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+                        <i class="fa-solid fa-trophy text-2xl"></i>
+                      </div>
+                      <div class="flex-1">
+                        <div class="font-semibold text-gray-900 text-lg mb-1">{{ challenge.title }}</div>
+                        <div class="text-sm text-gray-600 mb-2">{{ challenge.description || 'Tidak ada deskripsi' }}</div>
+                        <div class="flex items-center gap-4 text-xs text-gray-500">
+                          <div v-if="challenge.start_date" class="flex items-center gap-1">
+                            <i class="fa-solid fa-calendar-alt"></i>
+                            <span>Mulai: {{ challenge.start_date }}</span>
+                          </div>
+                          <div v-if="challenge.end_date" class="flex items-center gap-1">
+                            <i class="fa-solid fa-calendar-times"></i>
+                            <span>Selesai: {{ challenge.end_date }}</span>
+                          </div>
+                          <div v-if="challenge.points_reward > 0" class="flex items-center gap-1">
+                            <i class="fa-solid fa-coins text-yellow-500"></i>
+                            <span class="font-semibold">{{ formatNumber(challenge.points_reward) }} Point</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <!-- In Progress -->
+                      <div class="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                        <div class="flex items-center gap-2 mb-2">
+                          <i class="fa-solid fa-spinner text-blue-500"></i>
+                          <span class="text-sm font-medium text-gray-700">In Progress</span>
+                        </div>
+                        <div class="text-2xl font-bold text-blue-600">{{ formatNumber(challenge.stats?.in_progress || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Member sedang mengerjakan</div>
+                      </div>
+                      <!-- Completed -->
+                      <div class="bg-green-50 rounded-lg p-4 border border-green-100">
+                        <div class="flex items-center gap-2 mb-2">
+                          <i class="fa-solid fa-check-circle text-green-500"></i>
+                          <span class="text-sm font-medium text-gray-700">Selesai</span>
+                        </div>
+                        <div class="text-2xl font-bold text-green-600">{{ formatNumber(challenge.stats?.completed || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Member menyelesaikan</div>
+                      </div>
+                      <!-- Redeemed -->
+                      <div class="bg-purple-50 rounded-lg p-4 border border-purple-100">
+                        <div class="flex items-center gap-2 mb-2">
+                          <i class="fa-solid fa-gift text-purple-500"></i>
+                          <span class="text-sm font-medium text-gray-700">Redeem Reward</span>
+                        </div>
+                        <div class="text-2xl font-bold text-purple-600">{{ formatNumber(challenge.stats?.redeemed || 0) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Member redeem reward</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div class="p-3 bg-gradient-to-r from-purple-50 to-white rounded-lg border border-purple-100">
-                <div class="text-xs text-gray-600 mb-1">VIP</div>
-                <div class="text-lg font-bold text-purple-600">{{ formatNumber(props.memberSegmentation?.vip || 0) }}</div>
-              </div>
-              <div class="p-3 bg-gradient-to-r from-green-50 to-white rounded-lg border border-green-100">
-                <div class="text-xs text-gray-600 mb-1">Active</div>
-                <div class="text-lg font-bold text-green-600">{{ formatNumber(props.memberSegmentation?.active || 0) }}</div>
-              </div>
-              <div class="p-3 bg-gradient-to-r from-blue-50 to-white rounded-lg border border-blue-100">
-                <div class="text-xs text-gray-600 mb-1">New</div>
-                <div class="text-lg font-bold text-blue-600">{{ formatNumber(props.memberSegmentation?.new || 0) }}</div>
-              </div>
-              <div class="p-3 bg-gradient-to-r from-orange-50 to-white rounded-lg border border-orange-100">
-                <div class="text-xs text-gray-600 mb-1">At Risk</div>
-                <div class="text-lg font-bold text-orange-600">{{ formatNumber(props.memberSegmentation?.atRisk || 0) }}</div>
-              </div>
-              <div class="p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 col-span-2">
-                <div class="text-xs text-gray-600 mb-1">Dormant</div>
-                <div class="text-lg font-bold text-gray-600">{{ formatNumber(props.memberSegmentation?.dormant || 0) }}</div>
-              </div>
+            <div v-else class="text-center py-8 text-gray-500">
+              <i class="fa-solid fa-trophy text-4xl mb-2"></i>
+              <p>Tidak ada challenge aktif</p>
             </div>
           </div>
+        </div>
 
-          <!-- Member Lifetime Value (Priority 3) -->
-          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
-            <div class="flex items-center justify-between mb-6">
-              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-dollar-sign text-emerald-500"></i>
-                Member Lifetime Value (LTV)
-              </h3>
+        <!-- Active Rewards -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-gift text-purple-500"></i>
+              Reward Items Aktif
+            </h3>
+            <div class="text-xs text-gray-500 mb-6 flex items-center gap-2">
+              <i class="fa-solid fa-info-circle"></i>
+              <span>Daftar reward items yang sedang aktif dan jumlah redeem oleh member</span>
             </div>
-            <div class="space-y-4">
-              <div class="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl border-2 border-emerald-200">
-                <div class="text-sm font-medium text-emerald-700 mb-1">Average LTV</div>
-                <div class="text-3xl font-bold text-emerald-800">{{ props.memberLifetimeValue?.averageFormatted || 'Rp 0' }}</div>
-              </div>
-              <div class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200">
-                <div class="text-sm font-medium text-blue-700 mb-1">Total LTV</div>
-                <div class="text-2xl font-bold text-blue-800">{{ props.memberLifetimeValue?.totalFormatted || 'Rp 0' }}</div>
-              </div>
-              <div class="space-y-2">
-                <div class="text-sm font-semibold text-gray-700 mb-2">LTV by Tier:</div>
-                <div v-for="(tierData, tier) in props.memberLifetimeValue?.byTier" :key="tier" class="p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100">
-                  <div class="flex justify-between items-center">
-                    <span class="font-medium text-gray-700 capitalize">{{ tier }}</span>
-                    <div class="text-right">
-                      <div class="text-sm font-bold text-gray-900">{{ tierData.averageFormatted }}</div>
-                      <div class="text-xs text-gray-500">{{ formatNumber(tierData.count) }} members</div>
+            <div v-if="props.activeRewards && props.activeRewards.length > 0" class="space-y-4">
+              <div
+                v-for="(reward, index) in props.activeRewards"
+                :key="reward.id || index"
+                class="group p-5 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 hover:border-purple-200 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start gap-4">
+                  <div v-if="reward.item_image" class="w-20 h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                    <img :src="reward.item_image" :alt="reward.item_name" class="w-full h-full object-cover">
+                  </div>
+                  <div v-else class="w-20 h-20 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+                    <i class="fa-solid fa-gift text-3xl"></i>
+                  </div>
+                  <div class="flex-1">
+                    <div class="flex items-start justify-between mb-2">
+                      <div>
+                        <div class="font-semibold text-gray-900 text-lg mb-1">{{ reward.item_name }}</div>
+                        <div class="text-sm text-gray-600 mb-2">
+                          <span class="inline-flex items-center gap-1">
+                            <i class="fa-solid fa-tag text-purple-500"></i>
+                            <span>{{ reward.item_type || 'Item' }}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                      <!-- Points Required -->
+                      <div class="bg-blue-50 rounded-lg p-3 border border-blue-100">
+                        <div class="flex items-center gap-2 mb-1">
+                          <i class="fa-solid fa-coins text-blue-500"></i>
+                          <span class="text-sm font-medium text-gray-700">Point Required</span>
+                        </div>
+                        <div class="text-xl font-bold text-blue-600">{{ formatNumber(reward.points_required) }}</div>
+                      </div>
+                      <!-- Redemption Count -->
+                      <div class="bg-green-50 rounded-lg p-3 border border-green-100">
+                        <div class="flex items-center gap-2 mb-1">
+                          <i class="fa-solid fa-check-circle text-green-500"></i>
+                          <span class="text-sm font-medium text-gray-700">Total Redeem</span>
+                        </div>
+                        <div class="text-xl font-bold text-green-600">{{ formatNumber(reward.redemption_count) }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Kali di-redeem oleh member</div>
+                      </div>
+                    </div>
+                    <div v-if="reward.serial_code" class="mt-3 text-xs text-gray-500">
+                      <i class="fa-solid fa-barcode"></i>
+                      <span>Serial Code: {{ reward.serial_code }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center py-8 text-gray-500">
+              <i class="fa-solid fa-gift text-4xl mb-2"></i>
+              <p>Tidak ada reward aktif</p>
+            </div>
+          </div>
+        </div>
+                
+        <!-- Member Segmentation -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+              <i class="fa-solid fa-users-slash text-purple-500"></i>
+              Segmentasi Member
+            </h3>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <!-- Chart Section -->
+              <div>
+                <div class="h-64 mb-4">
+                  <VueApexCharts
+                    v-if="segmentationChartSeries && segmentationChartSeries.length > 0 && segmentationChartSeries.some(s => s > 0)"
+                    type="donut"
+                    height="300"
+                    :options="segmentationChartOptions"
+                    :series="segmentationChartSeries"
+                  />
+                  <div v-else class="flex items-center justify-center h-full text-gray-400">
+                    <div class="text-center">
+                      <i class="fa-solid fa-chart-pie text-4xl mb-2"></i>
+                      <p>Tidak ada data</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Cards Section -->
+              <div class="space-y-3">
+                <div class="p-4 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 hover:shadow-md transition-all">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center text-white">
+                      <i class="fa-solid fa-crown"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="text-xs text-gray-600 mb-1">VIP</div>
+                      <div class="text-xl font-bold text-purple-600">{{ formatNumber(props.memberSegmentation?.vip || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-purple-100">
+                    Member aktif dengan tier Loyal/Elite dan memiliki point > 1.000
+                  </div>
+                </div>
+                
+                <div class="p-4 bg-gradient-to-r from-green-50 to-white rounded-xl border border-green-100 hover:shadow-md transition-all">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center text-white">
+                      <i class="fa-solid fa-check-circle"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="text-xs text-gray-600 mb-1">Active</div>
+                      <div class="text-xl font-bold text-green-600">{{ formatNumber(props.memberSegmentation?.active || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-green-100">
+                    Member aktif yang melakukan transaksi point dalam 30 hari terakhir
+                  </div>
+                </div>
+                
+                <div class="p-4 bg-gradient-to-r from-blue-50 to-white rounded-xl border border-blue-100 hover:shadow-md transition-all">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center text-white">
+                      <i class="fa-solid fa-user-plus"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="text-xs text-gray-600 mb-1">New</div>
+                      <div class="text-xl font-bold text-blue-600">{{ formatNumber(props.memberSegmentation?.new || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-blue-100">
+                    Member yang baru mendaftar dalam 30 hari terakhir
+                  </div>
+                </div>
+                
+                <div class="p-4 bg-gradient-to-r from-orange-50 to-white rounded-xl border border-orange-100 hover:shadow-md transition-all">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-orange-500 flex items-center justify-center text-white">
+                      <i class="fa-solid fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="text-xs text-gray-600 mb-1">At Risk</div>
+                      <div class="text-xl font-bold text-orange-600">{{ formatNumber(props.memberSegmentation?.atRisk || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-orange-100">
+                    Member aktif dengan point ≤ 100 dan tidak login dalam 30 hari terakhir
+                  </div>
+                </div>
+                
+                <div class="p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:shadow-md transition-all">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-lg bg-gray-500 flex items-center justify-center text-white">
+                      <i class="fa-solid fa-moon"></i>
+                    </div>
+                    <div class="flex-1">
+                      <div class="text-xs text-gray-600 mb-1">Dormant</div>
+                      <div class="text-xl font-bold text-gray-600">{{ formatNumber(props.memberSegmentation?.dormant || 0) }}</div>
+                    </div>
+                  </div>
+                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                    Member aktif yang tidak login dalam 90 hari terakhir
                   </div>
                 </div>
               </div>
@@ -1539,9 +2487,8 @@ function getTierIcon(tier) {
           </div>
         </div>
 
-        <!-- Priority 3: Churn Analysis & Conversion Funnel -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <!-- Churn Analysis (Priority 3) -->
+        <!-- Churn Analysis -->
+        <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
@@ -1549,67 +2496,27 @@ function getTierIcon(tier) {
                 Churn Analysis
               </h3>
             </div>
-            <div class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div class="p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200">
                 <div class="text-sm font-medium text-red-700 mb-1">Churned Members</div>
-                <div class="text-3xl font-bold text-red-800">{{ formatNumber(churnAnalysis?.churned || 0) }}</div>
+                <div class="text-3xl font-bold text-red-800">{{ formatNumber(props.churnAnalysis?.churned || 0) }}</div>
                 <div class="text-xs text-red-600 mt-1">No activity in last 90 days</div>
               </div>
               <div class="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200">
                 <div class="text-sm font-medium text-orange-700 mb-1">At Risk of Churn</div>
-                <div class="text-2xl font-bold text-orange-800">{{ formatNumber(churnAnalysis?.atRiskChurn || 0) }}</div>
+                <div class="text-2xl font-bold text-orange-800">{{ formatNumber(props.churnAnalysis?.atRiskChurn || 0) }}</div>
                 <div class="text-xs text-orange-600 mt-1">No activity in last 30-60 days</div>
               </div>
               <div class="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200">
                 <div class="text-sm font-medium text-green-700 mb-1">Retention Rate</div>
-                <div class="text-3xl font-bold text-green-800">{{ churnAnalysis?.retentionRate || 0 }}%</div>
-                <div class="text-xs text-green-600 mt-1">{{ formatNumber(churnAnalysis?.activeLast30Days || 0) }} / {{ formatNumber(churnAnalysis?.totalActive || 0) }} active</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Conversion Funnel (Priority 3) -->
-          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
-            <div class="flex items-center justify-between mb-6">
-              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-filter text-indigo-500"></i>
-                Conversion Funnel (30 Days)
-              </h3>
-            </div>
-            <div class="h-64 mb-4">
-              <VueApexCharts
-                type="bar"
-                height="300"
-                :options="funnelChartOptions"
-                :series="funnelChartSeries"
-              />
-            </div>
-            <div class="space-y-2">
-              <div class="flex justify-between items-center p-2 bg-blue-50 rounded">
-                <span class="text-sm font-medium text-gray-700">Registered</span>
-                <span class="font-bold text-blue-600">{{ formatNumber(props.conversionFunnel?.registered || 0) }}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-green-50 rounded">
-                <span class="text-sm font-medium text-gray-700">Email Verified</span>
-                <span class="font-bold text-green-600">{{ formatNumber(props.conversionFunnel?.emailVerified || 0) }} ({{ props.conversionFunnel?.emailVerificationRate || 0 }}%)</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-purple-50 rounded">
-                <span class="text-sm font-medium text-gray-700">First Login</span>
-                <span class="font-bold text-purple-600">{{ formatNumber(props.conversionFunnel?.firstLogin || 0) }} ({{ props.conversionFunnel?.loginRate || 0 }}%)</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-orange-50 rounded">
-                <span class="text-sm font-medium text-gray-700">First Transaction</span>
-                <span class="font-bold text-orange-600">{{ formatNumber(props.conversionFunnel?.firstTransaction || 0) }} ({{ props.conversionFunnel?.transactionRate || 0 }}%)</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-emerald-50 rounded">
-                <span class="text-sm font-medium text-gray-700">Repeat Customers</span>
-                <span class="font-bold text-emerald-600">{{ formatNumber(props.conversionFunnel?.repeatCustomers || 0) }} ({{ props.conversionFunnel?.repeatRate || 0 }}%)</span>
+                <div class="text-3xl font-bold text-green-800">{{ props.churnAnalysis?.retentionRate || 0 }}%</div>
+                <div class="text-xs text-green-600 mt-1">{{ formatNumber(props.churnAnalysis?.activeLast30Days || 0) }} / {{ formatNumber(props.churnAnalysis?.totalActive || 0) }} active</div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- Priority 3: Comparison Data (MoM & YoY) -->
+          
+        <!-- Comparison Data (MoM & YoY) -->
         <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
@@ -1626,7 +2533,7 @@ function getTierIcon(tier) {
               <!-- Month over Month -->
               <div class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200">
                 <h4 class="font-bold text-blue-800 mb-4">Month over Month</h4>
-                <div class="space-y-3">
+          <div class="space-y-3">
                   <div>
                     <div class="text-sm text-blue-700 mb-1">New Members</div>
                     <div class="flex items-center justify-between">
@@ -1635,7 +2542,7 @@ function getTierIcon(tier) {
                         <i :class="['fa-solid', props.comparisonData?.monthOverMonth?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
                         {{ Math.abs(props.comparisonData?.monthOverMonth?.members?.growth || 0) }}%
                       </span>
-                    </div>
+            </div>
                     <div class="text-xs text-blue-600 mt-1">vs {{ formatNumber(props.comparisonData?.monthOverMonth?.members?.previous || 0) }} last month</div>
                   </div>
                   <div>
@@ -1646,11 +2553,11 @@ function getTierIcon(tier) {
                         <i :class="['fa-solid', props.comparisonData?.monthOverMonth?.spending?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
                         {{ Math.abs(props.comparisonData?.monthOverMonth?.spending?.growth || 0) }}%
                       </span>
-                    </div>
-                    <div class="text-xs text-blue-600 mt-1">vs {{ props.comparisonData?.monthOverMonth?.spending?.previousFormatted || 'Rp 0' }} last month</div>
                   </div>
+                    <div class="text-xs text-blue-600 mt-1">vs {{ props.comparisonData?.monthOverMonth?.spending?.previousFormatted || 'Rp 0' }} last month</div>
                 </div>
-              </div>
+                  </div>
+                    </div>
 
               <!-- Year over Year -->
               <div class="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border-2 border-purple-200">
@@ -1664,9 +2571,9 @@ function getTierIcon(tier) {
                         <i :class="['fa-solid', props.comparisonData?.yearOverYear?.members?.growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
                         {{ Math.abs(props.comparisonData?.yearOverYear?.members?.growth || 0) }}%
                       </span>
-                    </div>
-                    <div class="text-xs text-purple-600 mt-1">vs {{ formatNumber(props.comparisonData?.yearOverYear?.members?.previous || 0) }} last year</div>
                   </div>
+                    <div class="text-xs text-purple-600 mt-1">vs {{ formatNumber(props.comparisonData?.yearOverYear?.members?.previous || 0) }} last year</div>
+                </div>
                   <div>
                     <div class="text-sm text-purple-700 mb-1">Total Spending</div>
                     <div class="flex items-center justify-between">
@@ -1678,13 +2585,13 @@ function getTierIcon(tier) {
                     </div>
                     <div class="text-xs text-purple-600 mt-1">vs {{ props.comparisonData?.yearOverYear?.spending?.previousFormatted || 'Rp 0' }} last year</div>
                   </div>
-                </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Priority 3: Regional Breakdown -->
+        <!-- Regional Breakdown with Charts -->
         <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
             <div class="flex items-center justify-between mb-6">
@@ -1692,41 +2599,299 @@ function getTierIcon(tier) {
                 <i class="fa-solid fa-map-marker-alt text-green-500"></i>
                 Breakdown per Outlet/Region
               </h3>
+              <!-- Period Selector -->
+              <div class="flex gap-2">
+                <button
+                  @click="regionalPeriod = 'currentMonth'"
+                  :class="['px-4 py-2 rounded-lg transition-all text-sm font-medium', regionalPeriod === 'currentMonth' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200']"
+                >
+                  Bulan Berjalan
+                </button>
+                <button
+                  @click="regionalPeriod = 'last60Days'"
+                  :class="['px-4 py-2 rounded-lg transition-all text-sm font-medium', regionalPeriod === 'last60Days' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200']"
+                >
+                  60 Hari
+                </button>
+                <button
+                  @click="regionalPeriod = 'last90Days'"
+                  :class="['px-4 py-2 rounded-lg transition-all text-sm font-medium', regionalPeriod === 'last90Days' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200']"
+                >
+                  90 Hari
+                </button>
+              </div>
             </div>
-            <div v-if="props.regionalBreakdown.length === 0" class="text-center py-8 text-gray-500">
+            
+            <div v-if="!currentRegionalData || !currentRegionalData.regions || currentRegionalData.regions.length === 0" class="text-center py-8 text-gray-500">
               <i class="fa-solid fa-map text-4xl mb-2"></i>
               <p>Tidak ada data regional</p>
             </div>
-            <div v-else class="overflow-x-auto">
-              <table class="w-full">
-                <thead class="bg-gray-100">
-                  <tr>
-                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Outlet</th>
-                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Region</th>
-                    <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Members</th>
-                    <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Orders</th>
-                    <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Spending</th>
-                    <th class="px-4 py-3 text-right text-xs font-bold uppercase">Avg Order Value</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                  <tr v-for="(item, index) in props.regionalBreakdown" :key="index" class="hover:bg-gray-50 transition">
-                    <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.outlet_name }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600">{{ item.region }}</td>
-                    <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatNumber(item.total_members) }}</td>
-                    <td class="px-4 py-3 text-sm text-right text-gray-700">{{ formatNumber(item.total_orders) }}</td>
-                    <td class="px-4 py-3 text-sm text-right font-semibold text-blue-600">{{ item.total_spending_formatted }}</td>
-                    <td class="px-4 py-3 text-sm text-right text-gray-700">{{ item.avg_order_value_formatted }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-else>
+              <!-- Period Info -->
+              <div class="mb-4 text-sm text-gray-600 text-center">
+                <i class="fa-solid fa-calendar"></i>
+                {{ currentRegionalData.period }} ({{ currentRegionalData.startDate }} - {{ currentRegionalData.endDate }})
+              </div>
+              
+              <!-- Charts Grid -->
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Pie Chart - Region -->
+                <div>
+                  <h4 class="text-lg font-semibold text-gray-700 mb-4 text-center">Spending per Region</h4>
+                  <VueApexCharts
+                    v-if="regionalPieChartSeries && regionalPieChartSeries.length > 0"
+                    type="pie"
+                    height="350"
+                    :options="regionalPieChartOptions"
+                    :series="regionalPieChartSeries"
+                  />
+                  <div v-else class="flex items-center justify-center h-[350px] text-gray-400">
+                    <p>Tidak ada data</p>
+                  </div>
+                </div>
+                
+                <!-- Bar Chart - Outlet -->
+                <div>
+                  <h4 class="text-lg font-semibold text-gray-700 mb-4 text-center">Spending per Outlet</h4>
+                  <VueApexCharts
+                    v-if="regionalBarChartSeries && regionalBarChartSeries.length > 0 && regionalBarChartSeries[0].data.length > 0"
+                    type="bar"
+                    height="350"
+                    :options="regionalBarChartOptions"
+                    :series="regionalBarChartSeries"
+                  />
+                  <div v-else class="flex items-center justify-center h-[350px] text-gray-400">
+                    <p>Tidak ada data</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contribution by Outlet Modal -->
+    <div v-if="showContributionModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeContributionModal">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="bg-gradient-to-r from-purple-600 to-blue-600 p-6 text-white">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-2xl font-bold">Kontribusi Member per Outlet</h3>
+              <p class="text-sm opacity-90 mt-1">
+                {{ contributionModalPeriod === 'today' ? 'Hari Ini' : contributionModalPeriod === 'month' ? 'Bulan Ini' : 'Tahun Ini' }}
+              </p>
+            </div>
+            <button @click="closeContributionModal" class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6">
+          <div v-if="loadingContribution" class="text-center py-12">
+            <i class="fa-solid fa-spinner fa-spin text-4xl text-purple-500 mb-4"></i>
+            <p class="text-gray-600">Memuat data...</p>
+        </div>
+          
+          <div v-else-if="contributionByOutlet.length === 0" class="text-center py-12">
+            <i class="fa-solid fa-store text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-600">Tidak ada data</p>
+          </div>
+          
+          <div v-else class="space-y-3">
+            <div
+              v-for="(outlet, index) in contributionByOutlet"
+              :key="outlet.kode_outlet || index"
+              class="p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-300"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-store text-purple-600"></i>
+                  </div>
+                  <div>
+                    <div class="font-semibold text-gray-900">{{ outlet.outlet_name }}</div>
+                    <div class="text-xs text-gray-500">{{ outlet.kode_outlet }}</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-lg font-bold text-purple-600">{{ outlet.contribution_formatted }}</div>
+                  <div class="text-xs text-gray-500">Kontribusi</div>
+      </div>
+    </div>
+
+              <div class="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-gray-200">
+                <div>
+                  <div class="text-xs text-gray-500 mb-1">Total Revenue</div>
+                  <div class="font-semibold text-gray-900">{{ outlet.total_revenue_formatted }}</div>
+                  <div class="text-xs text-gray-400 mt-1">{{ outlet.total_orders }} transaksi</div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500 mb-1">Member Revenue</div>
+                  <div class="font-semibold text-green-600">{{ outlet.member_revenue_formatted }}</div>
+                  <div class="text-xs text-gray-400 mt-1">{{ outlet.member_orders }} transaksi</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Member Transactions Modal -->
+    <div v-if="showMemberTransactionsModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeMemberTransactionsModal">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-2xl font-bold">Detail Transaksi</h3>
+              <p class="text-sm opacity-90 mt-1">
+                {{ memberTransactionsData.memberName }}
+              </p>
+              <p class="text-xs opacity-75 mt-1">
+                {{ memberTransactionsData.type === 'orders' ? 'Riwayat Order' : 'Riwayat Point' }}
+              </p>
+            </div>
+            <button @click="closeMemberTransactionsModal" class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-6">
+          <div v-if="loadingMemberTransactions" class="text-center py-12">
+            <i class="fa-solid fa-spinner fa-spin text-4xl text-indigo-500 mb-4"></i>
+            <p class="text-gray-600">Memuat data transaksi...</p>
+          </div>
+          
+          <div v-else-if="memberTransactions.length === 0" class="text-center py-12">
+            <i class="fa-solid fa-receipt text-4xl text-gray-400 mb-4"></i>
+            <p class="text-gray-600">Tidak ada transaksi</p>
+          </div>
+          
+          <div v-else class="space-y-4">
+            <!-- Orders Type -->
+            <div v-if="memberTransactionsData.type === 'orders'">
+              <div
+                v-for="(transaction, index) in memberTransactions"
+                :key="transaction.id || index"
+                class="p-5 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <div class="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                        <i class="fa-solid fa-shopping-cart text-indigo-600"></i>
+                      </div>
+                      <div class="flex-1">
+                        <div class="font-semibold text-gray-900">{{ transaction.order_number }}</div>
+                        <div class="text-sm text-gray-500">{{ transaction.outlet_name }}</div>
+                      </div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-2">
+                      <i class="fa-solid fa-clock"></i> {{ transaction.created_at }}
+                    </div>
+                  </div>
+                  <div class="text-right ml-4">
+                    <div class="text-xl font-bold text-indigo-600">{{ transaction.grand_total_formatted }}</div>
+                    <button
+                      v-if="transaction.items && transaction.items.length > 0"
+                      @click="toggleTransactionDetails(transaction.id || index)"
+                      class="mt-2 text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 transition-colors"
+                    >
+                      <i :class="['fa-solid transition-transform', isTransactionExpanded(transaction.id || index) ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
+                      <span>{{ isTransactionExpanded(transaction.id || index) ? 'Sembunyikan' : 'Lihat Detail' }}</span>
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Order Items - Expandable -->
+                <div 
+                  v-if="transaction.items && transaction.items.length > 0"
+                  class="overflow-hidden transition-all duration-300"
+                  :class="isTransactionExpanded(transaction.id || index) ? 'max-h-[1000px] mt-4 pt-4 border-t border-gray-200' : 'max-h-0'"
+                >
+                  <div class="text-xs font-semibold text-gray-600 mb-2">Detail Item:</div>
+                  <div class="space-y-2">
+                    <div
+                      v-for="(item, itemIndex) in transaction.items"
+                      :key="itemIndex"
+                      class="text-sm bg-white rounded-lg p-3 border border-gray-100"
+                    >
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex-1">
+                          <div class="font-medium text-gray-700">{{ item.item_name }}</div>
+                          <div class="text-xs text-gray-500">{{ item.quantity }}x {{ item.price_formatted }}</div>
+                        </div>
+                        <div class="font-semibold text-gray-900">{{ item.subtotal_formatted }}</div>
+                      </div>
+                      
+                      <!-- Modifiers -->
+                      <div v-if="item.modifiers && item.modifiers.length > 0" class="mt-2 pt-2 border-t border-gray-100">
+                        <div class="text-xs font-semibold text-gray-600 mb-1">Modifier:</div>
+                        <div class="space-y-1">
+                          <div
+                            v-for="(modifier, modIndex) in item.modifiers"
+                            :key="modIndex"
+                            class="text-xs text-gray-600 pl-2"
+                          >
+                            <span class="font-medium">{{ modifier.name }}:</span>
+                            <span class="text-gray-500">{{ modifier.options }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Notes -->
+                      <div v-if="item.notes" class="mt-2 pt-2 border-t border-gray-100">
+                        <div class="text-xs font-semibold text-gray-600 mb-1">Catatan:</div>
+                        <div class="text-xs text-gray-600 pl-2 italic">{{ item.notes }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Points Type -->
+            <div v-else>
+              <div
+                v-for="(transaction, index) in memberTransactions"
+                :key="transaction.id || index"
+                class="p-5 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <div :class="['w-8 h-8 rounded-lg flex items-center justify-center', transaction.type === 'earned' ? 'bg-green-100' : 'bg-red-100']">
+                        <i :class="['fa-solid', transaction.type === 'earned' ? 'fa-arrow-up text-green-600' : 'fa-arrow-down text-red-600']"></i>
+                      </div>
+                      <div>
+                        <div class="font-semibold text-gray-900">{{ transaction.description }}</div>
+                        <div class="text-sm text-gray-500">{{ transaction.outletName }}</div>
+                      </div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-2">
+                      <i class="fa-solid fa-clock"></i> {{ transaction.created_at }}
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div :class="['text-xl font-bold', transaction.type === 'earned' ? 'text-green-600' : 'text-red-600']">
+                      {{ transaction.type === 'earned' ? '+' : '-' }}{{ transaction.pointAmountFormatted }} point
+                    </div>
+                    <div v-if="transaction.transactionAmountFormatted !== '-'" class="text-sm text-gray-500 mt-1">
+                      {{ transaction.transactionAmountFormatted }}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </AppLayout>
-</template>
+</template> 
 
 <style scoped>
   @keyframes blob {
