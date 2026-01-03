@@ -70,7 +70,9 @@ class CrmDashboardController extends Controller
                 Log::error('CRM Dashboard: Failed to load point stats: ' . $e->getMessage());
             }
             
-            // Load less critical data with timeout protection
+            // Skip slow queries for now - load only critical data
+            // These can be loaded via AJAX later if needed
+            Log::info('CRM Dashboard: Skipping slow queries, using empty defaults');
             $genderDistribution = [];
             $ageDistribution = [];
             $purchasingPowerByAge = [];
@@ -83,36 +85,40 @@ class CrmDashboardController extends Controller
             $regionalBreakdown = [];
             $comparisonData = [];
             
-            // Set default empty values - these will be loaded via AJAX if needed
-            // This prevents the page from hanging on slow queries
+            Log::info('CRM Dashboard: All critical data loaded, preparing response...');
+            
+            // Convert all collections to arrays to reduce serialization overhead
+            $responseData = [
+                'stats' => is_array($stats) ? $stats : (is_object($stats) ? (array) $stats : []),
+                'memberGrowth' => is_array($memberGrowth) ? $memberGrowth : $memberGrowth->toArray(),
+                'tierDistribution' => is_array($tierDistribution) ? $tierDistribution : $tierDistribution->toArray(),
+                'genderDistribution' => is_array($genderDistribution) ? $genderDistribution : (is_object($genderDistribution) ? $genderDistribution->toArray() : []),
+                'ageDistribution' => is_array($ageDistribution) ? $ageDistribution : (is_object($ageDistribution) ? $ageDistribution->toArray() : []),
+                'purchasingPowerByAge' => is_array($purchasingPowerByAge) ? $purchasingPowerByAge : (is_object($purchasingPowerByAge) ? $purchasingPowerByAge->toArray() : []),
+                'spendingTrend' => is_array($spendingTrend) ? $spendingTrend : $spendingTrend->toArray(),
+                'pointActivityTrend' => is_array($pointActivityTrend) ? $pointActivityTrend : $pointActivityTrend->toArray(),
+                'latestMembers' => is_array($latestMembers) ? $latestMembers : $latestMembers->toArray(),
+                'latestPointTransactions' => is_array($latestPointTransactions) ? $latestPointTransactions : $latestPointTransactions->toArray(),
+                'latestActivities' => is_array($latestActivities) ? $latestActivities : (is_object($latestActivities) ? $latestActivities->toArray() : []),
+                'topSpenders' => is_array($topSpenders) ? $topSpenders : (is_object($topSpenders) ? $topSpenders->toArray() : []),
+                'mostActiveMembers' => is_array($mostActiveMembers) ? $mostActiveMembers : (is_object($mostActiveMembers) ? $mostActiveMembers->toArray() : []),
+                'pointStats' => is_array($pointStats) ? $pointStats : (is_object($pointStats) ? (array) $pointStats : []),
+                'engagementMetrics' => is_array($engagementMetrics) ? $engagementMetrics : (is_object($engagementMetrics) ? (array) $engagementMetrics : []),
+                'memberSegmentation' => is_array($memberSegmentation) ? (object)$memberSegmentation : (is_object($memberSegmentation) ? $memberSegmentation : (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0]),
+                'memberLifetimeValue' => is_array($memberLifetimeValue) ? (object)$memberLifetimeValue : (is_object($memberLifetimeValue) ? $memberLifetimeValue : (object)[]),
+                'churnAnalysis' => is_array($churnAnalysis) ? (object)$churnAnalysis : (is_object($churnAnalysis) ? $churnAnalysis : (object)[]),
+                'conversionFunnel' => is_array($conversionFunnel) ? (object)$conversionFunnel : (is_object($conversionFunnel) ? $conversionFunnel : (object)[]),
+                'regionalBreakdown' => is_array($regionalBreakdown) ? $regionalBreakdown : (is_object($regionalBreakdown) ? $regionalBreakdown->toArray() : []),
+                'comparisonData' => is_array($comparisonData) ? $comparisonData : (is_object($comparisonData) ? (array) $comparisonData : []),
+                'filters' => [
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                ],
+            ];
+            
+            Log::info('CRM Dashboard: Response data prepared, rendering page...');
 
-        return Inertia::render('Crm/Dashboard', [
-            'stats' => $stats,
-            'memberGrowth' => $memberGrowth,
-            'tierDistribution' => $tierDistribution,
-            'genderDistribution' => $genderDistribution,
-            'ageDistribution' => $ageDistribution,
-            'purchasingPowerByAge' => $purchasingPowerByAge,
-            'spendingTrend' => $spendingTrend,
-            'pointActivityTrend' => $pointActivityTrend,
-            'latestMembers' => $latestMembers,
-            'latestPointTransactions' => $latestPointTransactions,
-            'latestActivities' => $latestActivities,
-            'topSpenders' => $topSpenders,
-            'mostActiveMembers' => $mostActiveMembers,
-            'pointStats' => $pointStats,
-            'engagementMetrics' => $engagementMetrics,
-            'memberSegmentation' => $memberSegmentation,
-            'memberLifetimeValue' => $memberLifetimeValue,
-            'churnAnalysis' => $churnAnalysis,
-            'conversionFunnel' => $conversionFunnel,
-            'regionalBreakdown' => $regionalBreakdown,
-            'comparisonData' => $comparisonData,
-            'filters' => [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
-            ],
-        ]);
+            return Inertia::render('Crm/Dashboard', $responseData);
         } catch (\Exception $e) {
             Log::error('CRM Dashboard Error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
