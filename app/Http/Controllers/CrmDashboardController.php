@@ -99,16 +99,9 @@ class CrmDashboardController extends Controller
                 Log::error('CRM Dashboard: Failed to load latest activities: ' . $e->getMessage());
             }
             
-            // Load purchasing power by age with caching
+            // Skip purchasing power by age for now - too heavy, can be loaded via AJAX later
             $purchasingPowerByAge = [];
-            try {
-                $purchasingPowerByAge = Cache::remember('crm_purchasing_power_by_age', 300, function () use ($startDate, $endDate) {
-                    return $this->getPurchasingPowerByAge($startDate, $endDate);
-                });
-                Log::info('CRM Dashboard: Purchasing power by age loaded');
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load purchasing power by age: ' . $e->getMessage());
-            }
+            Log::info('CRM Dashboard: Skipping purchasing power by age (too heavy)');
             
             // Skip heavy queries for now - load only critical data
             // These can be loaded via AJAX later if needed
@@ -124,6 +117,7 @@ class CrmDashboardController extends Controller
             Log::info('CRM Dashboard: All critical data loaded, preparing response...');
             
             // Convert all collections to arrays to reduce serialization overhead
+            Log::info('CRM Dashboard: Starting data conversion to arrays...');
             $responseData = [
                 'stats' => is_array($stats) ? $stats : (is_object($stats) ? (array) $stats : []),
                 'memberGrowth' => is_array($memberGrowth) ? $memberGrowth : $memberGrowth->toArray(),
@@ -153,8 +147,13 @@ class CrmDashboardController extends Controller
             ];
             
             Log::info('CRM Dashboard: Response data prepared, rendering page...');
+            Log::info('CRM Dashboard: About to call Inertia::render...');
 
-            return Inertia::render('Crm/Dashboard', $responseData);
+            $result = Inertia::render('Crm/Dashboard', $responseData);
+            
+            Log::info('CRM Dashboard: Inertia::render completed successfully');
+            
+            return $result;
         } catch (\Exception $e) {
             Log::error('CRM Dashboard Error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
