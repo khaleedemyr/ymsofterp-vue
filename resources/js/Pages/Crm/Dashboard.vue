@@ -1135,6 +1135,10 @@ function getTierIcon(tier) {
                     <div class="flex-1">
                       <div class="font-semibold text-gray-900">{{ transaction.memberName }}</div>
                       <div class="text-sm text-gray-500">{{ transaction.memberId }}</div>
+                      <div v-if="transaction.description" class="text-xs font-medium mt-1" :class="transaction.type === 'earned' ? 'text-green-600' : 'text-orange-600'">
+                        <i :class="['fa-solid mr-1', transaction.transactionType === 'voucher_purchase' ? 'fa-ticket' : transaction.transactionType === 'reward_redemption' || transaction.transactionType === 'redeem' ? 'fa-gift' : 'fa-coins']"></i>
+                        {{ transaction.description }}
+                      </div>
                       <div v-if="transaction.outletName" class="text-xs text-gray-400 mt-1 flex items-center gap-1">
                         <i class="fa-solid fa-store text-gray-400"></i>
                         <span>{{ transaction.outletName }}</span>

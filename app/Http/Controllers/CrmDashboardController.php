@@ -721,12 +721,31 @@ class CrmDashboardController extends Controller
                 }
             }
             
+            // Determine transaction type and description
+            $transactionType = isset($pt->transaction_type) ? $pt->transaction_type : null;
+            $description = '';
+            
+            if ($isEarned) {
+                $description = 'Top Up Point dari Transaksi';
+            } else {
+                // For redeemed transactions, check transaction_type
+                if ($transactionType === 'voucher_purchase') {
+                    $description = 'Beli Voucher';
+                } elseif ($transactionType === 'reward_redemption' || $transactionType === 'redeem') {
+                    $description = 'Redeem Reward';
+                } else {
+                    $description = 'Redeem Point';
+                }
+            }
+            
             return [
                 'id' => $pt->id,
                 'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
                 'memberId' => $member->member_id ?? '-',
                 'type' => $isEarned ? 'earned' : 'redeemed',
                 'typeText' => $isEarned ? 'EARNED' : 'REDEEMED',
+                'transactionType' => $transactionType,
+                'description' => $description,
                 'pointAmount' => abs($pt->point_amount),
                 'pointAmountFormatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
                 'transactionValue' => $pt->transaction_amount ?? 0,
