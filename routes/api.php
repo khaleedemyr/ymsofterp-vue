@@ -306,6 +306,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/approval/{id}', [\App\Http\Controllers\ApprovalController::class, 'getApprovalDetails']);
         Route::post('/approval/{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
         Route::post('/approval/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
+        Route::post('/approval/{id}/hrd-approve', [\App\Http\Controllers\ApprovalController::class, 'hrdApprove']);
+        Route::post('/approval/{id}/hrd-reject', [\App\Http\Controllers\ApprovalController::class, 'hrdReject']);
         
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);
