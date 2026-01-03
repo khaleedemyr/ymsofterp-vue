@@ -5,29 +5,98 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
 
 const props = defineProps({
-  stats: Object,
-  memberGrowth: Array,
-  tierDistribution: Array,
-  genderDistribution: Array,
-  ageDistribution: Array,
-  purchasingPowerByAge: Array,
-  spendingTrend: Array,
-  pointActivityTrend: Array,
-  latestMembers: Array,
-  latestPointTransactions: Array,
-  latestActivities: Array,
-  topSpenders: Array,
-  mostActiveMembers: Array,
-  pointStats: Object,
-  engagementMetrics: Object,
-  memberSegmentation: Object,
-  memberLifetimeValue: Object,
-  churnAnalysis: Object,
-  conversionFunnel: Object,
-  regionalBreakdown: Array,
-  comparisonData: Object,
-  filters: Object,
-  error: String,
+  stats: {
+    type: Object,
+    default: () => ({})
+  },
+  memberGrowth: {
+    type: Array,
+    default: () => []
+  },
+  tierDistribution: {
+    type: Array,
+    default: () => []
+  },
+  genderDistribution: {
+    type: Array,
+    default: () => []
+  },
+  ageDistribution: {
+    type: Array,
+    default: () => []
+  },
+  purchasingPowerByAge: {
+    type: Array,
+    default: () => []
+  },
+  spendingTrend: {
+    type: Array,
+    default: () => []
+  },
+  pointActivityTrend: {
+    type: Array,
+    default: () => []
+  },
+  latestMembers: {
+    type: Array,
+    default: () => []
+  },
+  latestPointTransactions: {
+    type: Array,
+    default: () => []
+  },
+  latestActivities: {
+    type: Array,
+    default: () => []
+  },
+  topSpenders: {
+    type: Array,
+    default: () => []
+  },
+  mostActiveMembers: {
+    type: Array,
+    default: () => []
+  },
+  pointStats: {
+    type: Object,
+    default: () => ({})
+  },
+  engagementMetrics: {
+    type: Object,
+    default: () => ({})
+  },
+  memberSegmentation: {
+    type: Object,
+    default: () => ({ vip: 0, active: 0, new: 0, atRisk: 0, dormant: 0 })
+  },
+  memberLifetimeValue: {
+    type: Object,
+    default: () => ({})
+  },
+  churnAnalysis: {
+    type: Object,
+    default: () => ({})
+  },
+  conversionFunnel: {
+    type: Object,
+    default: () => ({})
+  },
+  regionalBreakdown: {
+    type: Array,
+    default: () => []
+  },
+  comparisonData: {
+    type: Object,
+    default: () => ({})
+  },
+  filters: {
+    type: Object,
+    default: () => ({ start_date: '', end_date: '' })
+  },
+  error: {
+    type: String,
+    default: ''
+  },
 });
 
 const dateFilters = ref({
@@ -485,11 +554,12 @@ const segmentationChartOptions = computed(() => ({
             fontSize: '14px',
             fontWeight: 600,
             formatter: function() {
-              const total = (memberSegmentation?.vip || 0) + 
-                           (memberSegmentation?.active || 0) + 
-                           (memberSegmentation?.new || 0) + 
-                           (memberSegmentation?.atRisk || 0) + 
-                           (memberSegmentation?.dormant || 0);
+              const seg = props.memberSegmentation || {};
+              const total = (seg.vip || 0) + 
+                           (seg.active || 0) + 
+                           (seg.new || 0) + 
+                           (seg.atRisk || 0) + 
+                           (seg.dormant || 0);
               return formatNumber(total);
             },
           },
@@ -507,13 +577,16 @@ const segmentationChartOptions = computed(() => ({
   },
 }));
 
-const segmentationChartSeries = computed(() => [
-  memberSegmentation?.vip || 0,
-  memberSegmentation?.active || 0,
-  memberSegmentation?.new || 0,
-  memberSegmentation?.atRisk || 0,
-  memberSegmentation?.dormant || 0,
-]);
+const segmentationChartSeries = computed(() => {
+  const seg = props.memberSegmentation || {};
+  return [
+    seg.vip || 0,
+    seg.active || 0,
+    seg.new || 0,
+    seg.atRisk || 0,
+    seg.dormant || 0,
+  ];
+});
 
 // Conversion Funnel Chart (Priority 3)
 const funnelChartOptions = computed(() => ({
@@ -1221,23 +1294,23 @@ function getTierIcon(tier) {
             <div class="grid grid-cols-2 gap-3">
               <div class="p-3 bg-gradient-to-r from-purple-50 to-white rounded-lg border border-purple-100">
                 <div class="text-xs text-gray-600 mb-1">VIP</div>
-                <div class="text-lg font-bold text-purple-600">{{ formatNumber(memberSegmentation?.vip || 0) }}</div>
+                <div class="text-lg font-bold text-purple-600">{{ formatNumber(props.memberSegmentation?.vip || 0) }}</div>
               </div>
               <div class="p-3 bg-gradient-to-r from-green-50 to-white rounded-lg border border-green-100">
                 <div class="text-xs text-gray-600 mb-1">Active</div>
-                <div class="text-lg font-bold text-green-600">{{ formatNumber(memberSegmentation?.active || 0) }}</div>
+                <div class="text-lg font-bold text-green-600">{{ formatNumber(props.memberSegmentation?.active || 0) }}</div>
               </div>
               <div class="p-3 bg-gradient-to-r from-blue-50 to-white rounded-lg border border-blue-100">
                 <div class="text-xs text-gray-600 mb-1">New</div>
-                <div class="text-lg font-bold text-blue-600">{{ formatNumber(memberSegmentation?.new || 0) }}</div>
+                <div class="text-lg font-bold text-blue-600">{{ formatNumber(props.memberSegmentation?.new || 0) }}</div>
               </div>
               <div class="p-3 bg-gradient-to-r from-orange-50 to-white rounded-lg border border-orange-100">
                 <div class="text-xs text-gray-600 mb-1">At Risk</div>
-                <div class="text-lg font-bold text-orange-600">{{ formatNumber(memberSegmentation?.atRisk || 0) }}</div>
+                <div class="text-lg font-bold text-orange-600">{{ formatNumber(props.memberSegmentation?.atRisk || 0) }}</div>
               </div>
               <div class="p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 col-span-2">
                 <div class="text-xs text-gray-600 mb-1">Dormant</div>
-                <div class="text-lg font-bold text-gray-600">{{ formatNumber(memberSegmentation?.dormant || 0) }}</div>
+                <div class="text-lg font-bold text-gray-600">{{ formatNumber(props.memberSegmentation?.dormant || 0) }}</div>
               </div>
             </div>
           </div>
