@@ -218,6 +218,22 @@ class CrmDashboardController extends Controller
             ->whereBetween('created_at', [$thisMonth, Carbon::now()])
             ->sum('grand_total');
 
+        $spendingToday = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->whereDate('created_at', $today)
+            ->sum('grand_total');
+
+        $spendingThisYear = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->whereYear('created_at', Carbon::now()->year)
+            ->sum('grand_total');
+
         // Growth rate
         $lastMonthMembers = MemberAppsMember::whereBetween('created_at', [$lastMonth, $thisMonth])->count();
         $growthRate = $lastMonthMembers > 0 ? (($newMembersThisMonth - $lastMonthMembers) / $lastMonthMembers) * 100 : 0;
@@ -246,6 +262,10 @@ class CrmDashboardController extends Controller
             'spendingLastYearFormatted' => 'Rp ' . number_format($spendingLastYear, 0, ',', '.'),
             'spendingThisMonth' => $spendingThisMonth,
             'spendingThisMonthFormatted' => 'Rp ' . number_format($spendingThisMonth, 0, ',', '.'),
+            'spendingToday' => $spendingToday,
+            'spendingTodayFormatted' => 'Rp ' . number_format($spendingToday, 0, ',', '.'),
+            'spendingThisYear' => $spendingThisYear,
+            'spendingThisYearFormatted' => 'Rp ' . number_format($spendingThisYear, 0, ',', '.'),
             'growthRate' => round($growthRate, 2),
         ];
         });
@@ -625,7 +645,7 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get latest point transactions (10)
+     * Get latest point transactions (10) - With outlet and transaction amount
      */
     private function getLatestPointTransactions()
     {
@@ -636,9 +656,52 @@ class CrmDashboardController extends Controller
         $memberIds = $transactions->pluck('member_id')->unique()->filter()->toArray();
         $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
         
-        return $transactions->map(function ($pt) use ($members) {
+        // Get outlet names from orders if available
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        $memberIdStrings = $members->pluck('member_id')->filter()->toArray();
+        
+        return $transactions->map(function ($pt) use ($members, $dbJustusName, $memberIdStrings) {
             $member = $members->get($pt->member_id);
             $isEarned = $pt->point_amount > 0;
+            
+            // Try to get outlet name from order
+            $outletName = 'Outlet Tidak Diketahui';
+            $transactionAmount = $pt->transaction_amount ?? 0;
+            
+            // Try to find order_id from metadata, reference_id, or transaction_id
+            $orderId = null;
+            if (isset($pt->metadata) && $pt->metadata) {
+                $metadata = json_decode($pt->metadata ?? '{}', true);
+                $orderId = $metadata['order_id'] ?? null;
+            }
+            
+            if (!$orderId && isset($pt->reference_id)) {
+                $orderId = $pt->reference_id;
+            }
+            
+            if (!$orderId && isset($pt->transaction_id)) {
+                $orderId = $pt->transaction_id;
+            }
+            
+            // Get outlet name from order
+            if ($orderId && $member->member_id) {
+                $orderWithOutlet = DB::connection('db_justus')
+                    ->table('orders')
+                    ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                    ->where('orders.id', $orderId)
+                    ->where('orders.member_id', $member->member_id)
+                    ->select(['orders.grand_total', 'o.nama_outlet'])
+                    ->first();
+                
+                if ($orderWithOutlet) {
+                    if (isset($orderWithOutlet->nama_outlet) && $orderWithOutlet->nama_outlet) {
+                        $outletName = $orderWithOutlet->nama_outlet;
+                    }
+                    if (isset($orderWithOutlet->grand_total) && $orderWithOutlet->grand_total && !$transactionAmount) {
+                        $transactionAmount = (float) $orderWithOutlet->grand_total;
+                    }
+                }
+            }
             
             return [
                 'id' => $pt->id,
@@ -650,6 +713,9 @@ class CrmDashboardController extends Controller
                 'pointAmountFormatted' => number_format(abs($pt->point_amount), 0, ',', '.'),
                 'transactionValue' => $pt->transaction_amount ?? 0,
                 'transactionValueFormatted' => $pt->transaction_amount ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
+                'transactionAmount' => $transactionAmount,
+                'transactionAmountFormatted' => $transactionAmount > 0 ? 'Rp ' . number_format($transactionAmount, 0, ',', '.') : '-',
+                'outletName' => $outletName,
                 'createdAt' => $pt->created_at->format('d M Y, H:i'),
             ];
         });

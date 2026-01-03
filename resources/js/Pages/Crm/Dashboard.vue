@@ -833,30 +833,98 @@ function getTierIcon(tier) {
         </div>
 
         <!-- Secondary Stats Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">New Today</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-user-plus text-purple-500 text-lg"></i>
+              <div class="text-sm text-gray-600">New Today</div>
+            </div>
             <div class="text-2xl font-bold text-purple-600">{{ formatNumber(stats?.newMembersToday || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">Email Verified</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-calendar-plus text-indigo-500 text-lg"></i>
+              <div class="text-sm text-gray-600">New This Month</div>
+            </div>
+            <div class="text-2xl font-bold text-indigo-600">{{ formatNumber(stats?.newMembersThisMonth || 0) }}</div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-envelope-circle-check text-emerald-500 text-lg"></i>
+              <div class="text-sm text-gray-600">Email Verified</div>
+            </div>
             <div class="text-2xl font-bold text-emerald-600">{{ formatNumber(stats?.emailVerified || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">Exclusive</div>
-            <div class="text-2xl font-bold text-amber-600">{{ formatNumber(stats?.exclusiveMembers || 0) }}</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-envelope text-red-500 text-lg"></i>
+              <div class="text-sm text-gray-600">Email Unverified</div>
+            </div>
+            <div class="text-2xl font-bold text-red-600">{{ formatNumber(stats?.emailUnverified || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">Silver</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-medal text-gray-500 text-lg"></i>
+              <div class="text-sm text-gray-600">Silver</div>
+            </div>
             <div class="text-2xl font-bold text-gray-500">{{ formatNumber(stats?.tierBreakdown?.silver || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">Gold</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-trophy text-yellow-500 text-lg"></i>
+              <div class="text-sm text-gray-600">Gold</div>
+            </div>
             <div class="text-2xl font-bold text-yellow-500">{{ formatNumber(stats?.tierBreakdown?.gold || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-            <div class="text-sm text-gray-600 mb-1">Platinum</div>
+            <div class="flex items-center gap-2 mb-2">
+              <i class="fa-solid fa-crown text-purple-500 text-lg"></i>
+              <div class="text-sm text-gray-600">Platinum</div>
+            </div>
             <div class="text-2xl font-bold text-purple-500">{{ formatNumber(stats?.tierBreakdown?.platinum || 0) }}</div>
+          </div>
+        </div>
+
+        <!-- Spending Cards (Today, This Month, This Year) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-calendar-day text-blue-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Spending Hari Ini</div>
+                  <div class="text-2xl font-bold text-blue-600">{{ stats?.spendingTodayFormatted || 'Rp 0' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-calendar-alt text-green-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Spending Bulan Ini</div>
+                  <div class="text-2xl font-bold text-green-600">{{ stats?.spendingThisMonthFormatted || 'Rp 0' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-calendar-check text-purple-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Spending Tahun Ini</div>
+                  <div class="text-2xl font-bold text-purple-600">{{ stats?.spendingThisYearFormatted || 'Rp 0' }}</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -974,9 +1042,22 @@ function getTierIcon(tier) {
                     <div :class="['w-12 h-12 rounded-xl bg-gradient-to-br', getTierColor(member.tier), 'flex items-center justify-center text-white shadow-lg']">
                       <i :class="['fa-solid', getTierIcon(member.tier)]"></i>
                     </div>
-                    <div>
+                    <div class="flex-1">
                       <div class="font-semibold text-gray-900">{{ member.name }}</div>
-                      <div class="text-sm text-gray-500">{{ member.memberId }}</div>
+                      <div class="text-xs text-gray-500 mt-1">
+                        <div class="flex items-center gap-1">
+                          <i class="fa-solid fa-id-card text-gray-400 text-xs"></i>
+                          <span>{{ member.member_id || member.memberId }}</span>
+                        </div>
+                        <div v-if="member.email" class="flex items-center gap-1 mt-0.5">
+                          <i class="fa-solid fa-envelope text-gray-400 text-xs"></i>
+                          <span>{{ member.email }}</span>
+                        </div>
+                        <div v-if="member.phone || member.mobile_phone" class="flex items-center gap-1 mt-0.5">
+                          <i class="fa-solid fa-phone text-gray-400 text-xs"></i>
+                          <span>{{ member.phone || member.mobile_phone }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div class="text-right">
@@ -1011,9 +1092,13 @@ function getTierIcon(tier) {
                       transaction.type === 'earned' ? 'bg-green-500' : 'bg-orange-500']">
                       <i :class="['fa-solid text-white', transaction.type === 'earned' ? 'fa-arrow-up' : 'fa-arrow-down']"></i>
                     </div>
-                    <div>
+                    <div class="flex-1">
                       <div class="font-semibold text-gray-900">{{ transaction.memberName }}</div>
                       <div class="text-sm text-gray-500">{{ transaction.memberId }}</div>
+                      <div v-if="transaction.outletName" class="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                        <i class="fa-solid fa-store text-gray-400"></i>
+                        <span>{{ transaction.outletName }}</span>
+                      </div>
                       <div class="text-xs text-gray-400 mt-1">{{ transaction.createdAt }}</div>
                     </div>
                   </div>
@@ -1022,6 +1107,9 @@ function getTierIcon(tier) {
                       {{ transaction.type === 'earned' ? '+' : '-' }}{{ transaction.pointAmountFormatted }} point
                     </div>
                     <div class="text-xs text-gray-500">{{ transaction.transactionValueFormatted }}</div>
+                    <div v-if="transaction.transactionAmount" class="text-xs text-blue-600 mt-1">
+                      Transaksi: {{ transaction.transactionAmountFormatted || transaction.transactionValueFormatted }}
+                    </div>
                   </div>
                 </div>
               </div>
