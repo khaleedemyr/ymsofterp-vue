@@ -266,12 +266,22 @@ class CrmDashboardController extends Controller
             ->value('created_at');
         $lastTransactionDateFormatted = $lastTransactionDate ? Carbon::parse($lastTransactionDate)->format('d M Y, H:i') : '-';
 
+        // Member contribution to revenue (hari ini, bulan ini, tahun ini)
+        // Use explicit date format to ensure consistency - define dates first
+        $todayStart = $today->format('Y-m-d 00:00:00');
+        $todayEnd = $today->format('Y-m-d 23:59:59');
+        $thisMonthStart = $thisMonth->format('Y-m-d 00:00:00');
+        $thisMonthEnd = Carbon::now()->format('Y-m-d 23:59:59');
+        $thisYearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
+        $thisYearEnd = Carbon::now()->format('Y-m-d 23:59:59');
+        
         $spendingThisMonth = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->whereBetween('created_at', [$thisMonth, Carbon::now()])
+            ->where('created_at', '>=', $thisMonthStart)
+            ->where('created_at', '<=', $thisMonthEnd)
             ->sum('grand_total');
 
         $spendingToday = DB::connection('db_justus')
@@ -279,7 +289,8 @@ class CrmDashboardController extends Controller
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->whereDate('created_at', $today)
+            ->where('created_at', '>=', $todayStart)
+            ->where('created_at', '<=', $todayEnd)
             ->sum('grand_total');
 
         $spendingThisYear = DB::connection('db_justus')
@@ -287,17 +298,9 @@ class CrmDashboardController extends Controller
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->whereYear('created_at', Carbon::now()->year)
+            ->where('created_at', '>=', $thisYearStart)
+            ->where('created_at', '<=', $thisYearEnd)
             ->sum('grand_total');
-
-        // Member contribution to revenue (hari ini, bulan ini, tahun ini)
-        // Use explicit date format to ensure consistency
-        $todayStart = $today->format('Y-m-d 00:00:00');
-        $todayEnd = $today->format('Y-m-d 23:59:59');
-        $thisMonthStart = $thisMonth->format('Y-m-d 00:00:00');
-        $thisMonthEnd = Carbon::now()->format('Y-m-d 23:59:59');
-        $thisYearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
-        $thisYearEnd = Carbon::now()->format('Y-m-d 23:59:59');
         
         // Total revenue (all orders, including non-member)
         $totalRevenueToday = DB::connection('db_justus')
@@ -321,33 +324,11 @@ class CrmDashboardController extends Controller
             ->where('created_at', '<=', $thisYearEnd)
             ->sum('grand_total');
         
-        // Member revenue (orders with member_id) - use same date filters
-        $memberRevenueToday = DB::connection('db_justus')
-            ->table('orders')
-            ->where('status', 'paid')
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->where('created_at', '>=', $todayStart)
-            ->where('created_at', '<=', $todayEnd)
-            ->sum('grand_total');
-        
-        $memberRevenueThisMonth = DB::connection('db_justus')
-            ->table('orders')
-            ->where('status', 'paid')
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->where('created_at', '>=', $thisMonthStart)
-            ->where('created_at', '<=', $thisMonthEnd)
-            ->sum('grand_total');
-        
-        $memberRevenueThisYear = DB::connection('db_justus')
-            ->table('orders')
-            ->where('status', 'paid')
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->where('created_at', '>=', $thisYearStart)
-            ->where('created_at', '<=', $thisYearEnd)
-            ->sum('grand_total');
+        // Member revenue (orders with member_id) - use same values as spending
+        // Since spendingToday, spendingThisMonth, spendingThisYear already calculate member spending correctly
+        $memberRevenueToday = $spendingToday;
+        $memberRevenueThisMonth = $spendingThisMonth;
+        $memberRevenueThisYear = $spendingThisYear;
         
         // Calculate contribution percentage
         $memberContributionToday = $totalRevenueToday > 0 ? round(($memberRevenueToday / $totalRevenueToday) * 100, 2) : 0;
@@ -594,16 +575,16 @@ class CrmDashboardController extends Controller
             FROM member_apps_members m
             LEFT JOIN (
                 SELECT 
-                    member_id,
-                    SUM(grand_total) as total_spending,
-                    AVG(grand_total) as avg_order_value,
+                    o.member_id,
+                    SUM(o.grand_total) as total_spending,
+                    AVG(o.grand_total) as avg_order_value,
                     COUNT(*) as order_count
-                FROM {$dbJustusName}.orders
-                WHERE status = 'paid'
-                    AND member_id != ''
-                    AND member_id IS NOT NULL
+                FROM {$dbJustusName}.orders as o
+                WHERE o.status = 'paid'
+                    AND o.member_id != ''
+                    AND o.member_id IS NOT NULL
                     {$orderDateFilter}
-                GROUP BY member_id
+                GROUP BY o.member_id
             ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
             WHERE m.tanggal_lahir IS NOT NULL 
             AND m.is_active = 1
