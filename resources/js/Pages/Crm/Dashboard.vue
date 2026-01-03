@@ -27,6 +27,7 @@ const props = defineProps({
   regionalBreakdown: Array,
   comparisonData: Object,
   filters: Object,
+  error: String,
 });
 
 const dateFilters = ref({

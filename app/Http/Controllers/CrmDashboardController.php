@@ -6,6 +6,8 @@ use App\Models\MemberAppsMember;
 use App\Models\MemberAppsPointTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Inertia\Inertia;
 
@@ -16,32 +18,33 @@ class CrmDashboardController extends Controller
      */
     public function index(Request $request)
     {
-        $startDate = $request->get('start_date');
-        $endDate = $request->get('end_date');
-        
-        $stats = $this->getStats();
-        $memberGrowth = $this->getMemberGrowth();
-        $tierDistribution = $this->getTierDistribution();
-        $genderDistribution = $this->getGenderDistribution();
-        $ageDistribution = $this->getAgeDistribution();
-        $purchasingPowerByAge = $this->getPurchasingPowerByAge($startDate, $endDate);
-        $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
-        $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
-        $latestMembers = $this->getLatestMembers();
-        $latestPointTransactions = $this->getLatestPointTransactions();
-        $latestActivities = $this->getLatestActivities();
-        $topSpenders = $this->getTopSpenders();
-        $mostActiveMembers = $this->getMostActiveMembers();
-        $pointStats = $this->getPointStats($startDate, $endDate);
-        $engagementMetrics = $this->getEngagementMetrics();
-        
-        // Priority 3 features
-        $memberSegmentation = $this->getMemberSegmentation();
-        $memberLifetimeValue = $this->getMemberLifetimeValue();
-        $churnAnalysis = $this->getChurnAnalysis();
-        $conversionFunnel = $this->getConversionFunnel();
-        $regionalBreakdown = $this->getRegionalBreakdown();
-        $comparisonData = $this->getComparisonData($startDate, $endDate);
+        try {
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+            
+            $stats = $this->getStats();
+            $memberGrowth = $this->getMemberGrowth();
+            $tierDistribution = $this->getTierDistribution();
+            $genderDistribution = $this->getGenderDistribution();
+            $ageDistribution = $this->getAgeDistribution();
+            $purchasingPowerByAge = $this->getPurchasingPowerByAge($startDate, $endDate);
+            $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
+            $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
+            $latestMembers = $this->getLatestMembers();
+            $latestPointTransactions = $this->getLatestPointTransactions();
+            $latestActivities = $this->getLatestActivities();
+            $topSpenders = $this->getTopSpenders();
+            $mostActiveMembers = $this->getMostActiveMembers();
+            $pointStats = $this->getPointStats($startDate, $endDate);
+            $engagementMetrics = $this->getEngagementMetrics();
+            
+            // Priority 3 features
+            $memberSegmentation = $this->getMemberSegmentation();
+            $memberLifetimeValue = $this->getMemberLifetimeValue();
+            $churnAnalysis = $this->getChurnAnalysis();
+            $conversionFunnel = $this->getConversionFunnel();
+            $regionalBreakdown = $this->getRegionalBreakdown();
+            $comparisonData = $this->getComparisonData($startDate, $endDate);
 
         return Inertia::render('Crm/Dashboard', [
             'stats' => $stats,
@@ -70,16 +73,54 @@ class CrmDashboardController extends Controller
                 'end_date' => $endDate,
             ],
         ]);
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            
+            return Inertia::render('Crm/Dashboard', [
+                'error' => config('app.debug') ? $e->getMessage() : 'Terjadi kesalahan saat memuat dashboard. Silakan coba lagi atau hubungi administrator.',
+                'stats' => [],
+                'memberGrowth' => [],
+                'tierDistribution' => [],
+                'genderDistribution' => [],
+                'ageDistribution' => [],
+                'purchasingPowerByAge' => [],
+                'spendingTrend' => [],
+                'pointActivityTrend' => [],
+                'latestMembers' => [],
+                'latestPointTransactions' => [],
+                'latestActivities' => [],
+                'topSpenders' => [],
+                'mostActiveMembers' => [],
+                'pointStats' => [],
+                'engagementMetrics' => [],
+                'memberSegmentation' => [],
+                'memberLifetimeValue' => [],
+                'churnAnalysis' => [],
+                'conversionFunnel' => [],
+                'regionalBreakdown' => [],
+                'comparisonData' => [],
+                'filters' => [
+                    'start_date' => $startDate ?? '',
+                    'end_date' => $endDate ?? '',
+                ],
+            ]);
+        }
     }
 
     /**
-     * Get comprehensive dashboard statistics
+     * Get comprehensive dashboard statistics - Cached for performance
      */
     private function getStats()
     {
-        $today = Carbon::today();
-        $thisMonth = Carbon::now()->startOfMonth();
-        $lastMonth = Carbon::now()->subMonth()->startOfMonth();
+        // Cache stats for 5 minutes to reduce database load
+        return Cache::remember('crm_dashboard_stats', 300, function () {
+            $today = Carbon::today();
+            $thisMonth = Carbon::now()->startOfMonth();
+            $lastMonth = Carbon::now()->subMonth()->startOfMonth();
 
         // Member statistics
         $totalMembers = MemberAppsMember::count();
@@ -161,27 +202,42 @@ class CrmDashboardController extends Controller
             'spendingThisMonthFormatted' => 'Rp ' . number_format($spendingThisMonth, 0, ',', '.'),
             'growthRate' => round($growthRate, 2),
         ];
+        });
     }
 
     /**
-     * Get member growth trend (last 12 months)
+     * Get member growth trend (last 12 months) - Optimized with single query
      */
     private function getMemberGrowth()
     {
+        // Use single query with date grouping for better performance
+        $firstMonth = Carbon::now()->subMonths(11)->startOfMonth();
+        
+        // Get all new members in one query grouped by month
+        $newMembersData = DB::table('member_apps_members')
+            ->select(DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'), DB::raw('COUNT(*) as count'))
+            ->where('created_at', '>=', $firstMonth)
+            ->groupBy('month')
+            ->pluck('count', 'month')
+            ->toArray();
+        
+        // Get initial total before first month
+        $initialTotal = MemberAppsMember::where('created_at', '<', $firstMonth)->count();
+        
         $data = [];
+        $cumulativeTotal = $initialTotal;
+        
         for ($i = 11; $i >= 0; $i--) {
             $date = Carbon::now()->subMonths($i);
-            $startOfMonth = $date->copy()->startOfMonth();
-            $endOfMonth = $date->copy()->endOfMonth();
-
-            $newMembers = MemberAppsMember::whereBetween('created_at', [$startOfMonth, $endOfMonth])->count();
-            $totalMembers = MemberAppsMember::where('created_at', '<=', $endOfMonth)->count();
+            $monthKey = $date->format('Y-m');
+            $newMembers = $newMembersData[$monthKey] ?? 0;
+            $cumulativeTotal += $newMembers;
 
             $data[] = [
-                'month' => $date->format('M Y'),
-                'monthShort' => $date->format('M'),
+                'month' => $date->format('F Y'),
+                'monthShort' => $date->format('M Y'),
                 'newMembers' => $newMembers,
-                'totalMembers' => $totalMembers,
+                'totalMembers' => $cumulativeTotal,
             ];
         }
 
@@ -189,20 +245,33 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get tier distribution
+     * Get tier distribution - Optimized with single query
      */
     private function getTierDistribution()
     {
-        $silver = MemberAppsMember::where(function($query) {
-            $query->where('member_level', 'silver')
-                  ->orWhereNull('member_level')
-                  ->orWhere('member_level', '');
-        })->count();
+        // Use single query with CASE WHEN for better performance
+        $tierData = DB::select("
+            SELECT 
+                CASE 
+                    WHEN member_level = 'platinum' THEN 'Platinum'
+                    WHEN member_level = 'gold' THEN 'Gold'
+                    ELSE 'Silver'
+                END as tier,
+                COUNT(*) as count
+            FROM member_apps_members
+            GROUP BY tier
+        ");
         
-        $gold = MemberAppsMember::where('member_level', 'gold')->count();
-        $platinum = MemberAppsMember::where('member_level', 'platinum')->count();
+        $tierCounts = [];
+        $total = 0;
+        foreach ($tierData as $row) {
+            $tierCounts[$row->tier] = (int) $row->count;
+            $total += $row->count;
+        }
         
-        $total = $silver + $gold + $platinum;
+        $silver = $tierCounts['Silver'] ?? 0;
+        $gold = $tierCounts['Gold'] ?? 0;
+        $platinum = $tierCounts['Platinum'] ?? 0;
         
         return [
             ['tier' => 'Silver', 'count' => $silver, 'percentage' => $total > 0 ? round(($silver / $total) * 100, 1) : 0, 'color' => '#94a3b8'],
@@ -350,35 +419,47 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get spending trend (last 12 months)
+     * Get spending trend (last 12 months) - Optimized with single query
      */
     private function getSpendingTrend($startDate = null, $endDate = null)
     {
+        $firstMonth = Carbon::now()->subMonths(11)->startOfMonth();
+        $lastMonth = Carbon::now()->endOfMonth();
+        
+        $query = DB::connection('db_justus')
+            ->table('orders')
+            ->select(
+                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                DB::raw('SUM(grand_total) as total_spending'),
+                DB::raw('COUNT(*) as transaction_count')
+            )
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->whereBetween('created_at', [$firstMonth, $lastMonth])
+            ->groupBy('month')
+            ->orderBy('month');
+        
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+        
+        $spendingData = $query->get()->keyBy('month');
+        
         $data = [];
         for ($i = 11; $i >= 0; $i--) {
             $date = Carbon::now()->subMonths($i);
-            $startOfMonth = $date->copy()->startOfMonth();
-            $endOfMonth = $date->copy()->endOfMonth();
-
-            $query = DB::connection('db_justus')
-                ->table('orders')
-                ->where('status', 'paid')
-                ->whereNotNull('member_id')
-                ->where('member_id', '!=', '')
-                ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
-
-            if ($startDate && $endDate) {
-                $query->whereBetween('created_at', [max($startDate, $startOfMonth), min($endDate, $endOfMonth)]);
-            }
-
-            $totalSpending = $query->sum('grand_total');
-            $transactionCount = $query->count();
+            $monthKey = $date->format('Y-m');
+            $spending = $spendingData->get($monthKey);
+            
+            $totalSpending = $spending ? (float) $spending->total_spending : 0;
+            $transactionCount = $spending ? (int) $spending->transaction_count : 0;
             $avgSpending = $transactionCount > 0 ? $totalSpending / $transactionCount : 0;
 
             $data[] = [
                 'month' => $date->format('M Y'),
                 'monthShort' => $date->format('M'),
-                'totalSpending' => (float) $totalSpending,
+                'totalSpending' => $totalSpending,
                 'transactionCount' => $transactionCount,
                 'avgSpending' => (float) $avgSpending,
             ];
@@ -388,31 +469,44 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get point activity trend (last 12 months)
+     * Get point activity trend (last 12 months) - Optimized with single query
      */
     private function getPointActivityTrend($startDate = null, $endDate = null)
     {
+        $firstMonth = Carbon::now()->subMonths(11)->startOfMonth();
+        $lastMonth = Carbon::now()->endOfMonth();
+        
+        $query = DB::table('member_apps_point_transactions')
+            ->select(
+                DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                DB::raw('SUM(CASE WHEN point_amount > 0 THEN point_amount ELSE 0 END) as point_earned'),
+                DB::raw('ABS(SUM(CASE WHEN point_amount < 0 THEN point_amount ELSE 0 END)) as point_redeemed')
+            )
+            ->whereBetween('created_at', [$firstMonth, $lastMonth])
+            ->groupBy('month')
+            ->orderBy('month');
+        
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+        
+        $pointData = $query->get()->keyBy('month');
+        
         $data = [];
         for ($i = 11; $i >= 0; $i--) {
             $date = Carbon::now()->subMonths($i);
-            $startOfMonth = $date->copy()->startOfMonth();
-            $endOfMonth = $date->copy()->endOfMonth();
-
-            $query = MemberAppsPointTransaction::whereBetween('created_at', [$startOfMonth, $endOfMonth]);
+            $monthKey = $date->format('Y-m');
+            $point = $pointData->get($monthKey);
             
-            if ($startDate && $endDate) {
-                $query->whereBetween('created_at', [max($startDate, $startOfMonth), min($endDate, $endOfMonth)]);
-            }
-
-            $pointEarned = (clone $query)->where('point_amount', '>', 0)->sum('point_amount');
-            $pointRedeemed = abs((clone $query)->where('point_amount', '<', 0)->sum('point_amount'));
+            $pointEarned = $point ? (float) $point->point_earned : 0;
+            $pointRedeemed = $point ? (float) $point->point_redeemed : 0;
             $netPoint = $pointEarned - $pointRedeemed;
 
             $data[] = [
                 'month' => $date->format('M Y'),
                 'monthShort' => $date->format('M'),
-                'pointEarned' => (float) $pointEarned,
-                'pointRedeemed' => (float) $pointRedeemed,
+                'pointEarned' => $pointEarned,
+                'pointRedeemed' => $pointRedeemed,
                 'netPoint' => (float) $netPoint,
             ];
         }
@@ -421,24 +515,39 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get latest members (10)
+     * Get latest members (10) - Optimized for large dataset
      */
     private function getLatestMembers()
     {
-        return MemberAppsMember::select([
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        
+        // Get latest 10 members with spending in single query
+        $members = MemberAppsMember::select([
             'id', 'member_id', 'nama_lengkap', 'email', 'mobile_phone',
             'member_level', 'just_points', 'is_active', 'email_verified_at', 'created_at'
         ])
         ->orderBy('created_at', 'desc')
         ->limit(10)
-        ->get()
-        ->map(function ($member) {
-            // Get total spending
-            $totalSpending = DB::connection('db_justus')
-                ->table('orders')
-                ->where('member_id', $member->member_id)
-                ->where('status', 'paid')
-                ->sum('grand_total');
+        ->get();
+        
+        if ($members->isEmpty()) {
+            return collect([]);
+        }
+        
+        // Get spending for all members in one query
+        $memberIds = $members->pluck('member_id')->filter()->toArray();
+        $spendingData = DB::connection('db_justus')
+            ->table('orders')
+            ->select('member_id', DB::raw('SUM(grand_total) as total_spending'))
+            ->whereIn('member_id', $memberIds)
+            ->where('status', 'paid')
+            ->groupBy('member_id')
+            ->get()
+            ->keyBy('member_id');
+        
+        return $members->map(function ($member) use ($spendingData) {
+            $spending = $spendingData->get($member->member_id);
+            $totalSpending = $spending ? (float) $spending->total_spending : 0;
 
             return [
                 'id' => $member->id,
@@ -450,7 +559,7 @@ class CrmDashboardController extends Controller
                 'tierFormatted' => ucfirst($member->member_level ?? 'silver'),
                 'pointBalance' => $member->just_points ?? 0,
                 'pointBalanceFormatted' => number_format($member->just_points ?? 0, 0, ',', '.'),
-                'totalSpending' => (float) $totalSpending,
+                'totalSpending' => $totalSpending,
                 'totalSpendingFormatted' => 'Rp ' . number_format($totalSpending, 0, ',', '.'),
                 'isActive' => $member->is_active,
                 'emailVerified' => !is_null($member->email_verified_at),
@@ -569,34 +678,39 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get top spenders (10)
+     * Get top spenders (10) - Optimized for large dataset
      */
     private function getTopSpenders()
     {
+        // Get top spenders with last order in optimized query
         $topSpenders = DB::connection('db_justus')
-            ->table('orders')
-            ->select('member_id', DB::raw('SUM(grand_total) as total_spending'), DB::raw('COUNT(*) as order_count'))
-            ->where('status', 'paid')
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->groupBy('member_id')
+            ->table('orders as o1')
+            ->select(
+                'o1.member_id',
+                DB::raw('SUM(o1.grand_total) as total_spending'),
+                DB::raw('COUNT(*) as order_count'),
+                DB::raw('(SELECT grand_total FROM orders o2 WHERE o2.member_id = o1.member_id AND o2.status = "paid" ORDER BY o2.created_at DESC LIMIT 1) as last_spending'),
+                DB::raw('(SELECT created_at FROM orders o3 WHERE o3.member_id = o1.member_id AND o3.status = "paid" ORDER BY o3.created_at DESC LIMIT 1) as last_spending_date')
+            )
+            ->where('o1.status', 'paid')
+            ->whereNotNull('o1.member_id')
+            ->where('o1.member_id', '!=', '')
+            ->groupBy('o1.member_id')
             ->orderBy('total_spending', 'desc')
             ->limit(10)
             ->get();
+
+        if ($topSpenders->isEmpty()) {
+            return collect([]);
+        }
 
         $memberIds = $topSpenders->pluck('member_id')->toArray();
         $members = MemberAppsMember::whereIn('member_id', $memberIds)->get()->keyBy('member_id');
 
         return $topSpenders->map(function ($spender) use ($members) {
             $member = $members->get($spender->member_id);
-            
-            // Get last spending
-            $lastOrder = DB::connection('db_justus')
-                ->table('orders')
-                ->where('member_id', $spender->member_id)
-                ->where('status', 'paid')
-                ->orderBy('created_at', 'desc')
-                ->first();
+            $lastSpending = $spender->last_spending ? (float) $spender->last_spending : 0;
+            $lastSpendingDate = $spender->last_spending_date ? Carbon::parse($spender->last_spending_date)->format('d M Y') : '-';
 
             return [
                 'memberId' => $spender->member_id,
@@ -606,9 +720,9 @@ class CrmDashboardController extends Controller
                 'orderCount' => $spender->order_count,
                 'avgOrderValue' => $spender->order_count > 0 ? (float) ($spender->total_spending / $spender->order_count) : 0,
                 'avgOrderValueFormatted' => $spender->order_count > 0 ? 'Rp ' . number_format($spender->total_spending / $spender->order_count, 0, ',', '.') : 'Rp 0',
-                'lastSpending' => $lastOrder ? (float) $lastOrder->grand_total : 0,
-                'lastSpendingFormatted' => $lastOrder ? 'Rp ' . number_format($lastOrder->grand_total, 0, ',', '.') : 'Rp 0',
-                'lastSpendingDate' => $lastOrder ? Carbon::parse($lastOrder->created_at)->format('d M Y') : '-',
+                'lastSpending' => $lastSpending,
+                'lastSpendingFormatted' => $lastSpending > 0 ? 'Rp ' . number_format($lastSpending, 0, ',', '.') : 'Rp 0',
+                'lastSpendingDate' => $lastSpendingDate,
             ];
         });
     }
@@ -626,16 +740,22 @@ class CrmDashboardController extends Controller
 
         $memberIds = $activeMembers->pluck('member_id')->toArray();
         $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
+        
+        // Get order counts for all members in one query
+        $memberIdStrings = $members->pluck('member_id')->filter()->toArray();
+        $orderCounts = DB::connection('db_justus')
+            ->table('orders')
+            ->select('member_id', DB::raw('COUNT(*) as order_count'))
+            ->whereIn('member_id', $memberIdStrings)
+            ->where('status', 'paid')
+            ->groupBy('member_id')
+            ->get()
+            ->keyBy('member_id');
 
-        return $activeMembers->map(function ($active) use ($members) {
+        return $activeMembers->map(function ($active) use ($members, $orderCounts) {
             $member = $members->get($active->member_id);
-            
-            // Get order count
-            $orderCount = DB::connection('db_justus')
-                ->table('orders')
-                ->where('member_id', $member->member_id ?? '')
-                ->where('status', 'paid')
-                ->count();
+            $orderCountData = $orderCounts->get($member->member_id ?? '');
+            $orderCount = $orderCountData ? (int) $orderCountData->order_count : 0;
 
             return [
                 'memberId' => $member->member_id ?? '-',
@@ -722,64 +842,66 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get member segmentation (Priority 3)
+     * Get member segmentation (Priority 3) - Optimized for large dataset
      */
     private function getMemberSegmentation()
     {
         $last30Days = Carbon::now()->subDays(30);
         $last90Days = Carbon::now()->subDays(90);
         
-        // VIP Members: High spending, active, high tier
-        $vipMembers = MemberAppsMember::where('is_active', true)
-            ->where(function($query) {
-                $query->where('member_level', 'platinum')
-                      ->orWhere('member_level', 'gold');
+        // Use single query with CASE WHEN for better performance
+        $segmentation = DB::select("
+            SELECT 
+                COUNT(CASE WHEN is_active = 1 AND (member_level = 'platinum' OR member_level = 'gold') AND just_points > 1000 THEN 1 END) as vip,
+                COUNT(CASE WHEN created_at >= ? THEN 1 END) as new,
+                COUNT(CASE WHEN is_active = 1 AND (last_login_at IS NULL OR last_login_at < ?) THEN 1 END) as dormant,
+                COUNT(CASE WHEN is_active = 1 AND just_points <= 100 AND (last_login_at IS NULL OR last_login_at < ?) THEN 1 END) as at_risk
+            FROM member_apps_members
+        ", [$last30Days, $last90Days, $last30Days]);
+        
+        $result = $segmentation[0];
+        
+        // Active Members: Use subquery for better performance
+        $activeMembers = DB::table('member_apps_members as m')
+            ->whereExists(function($query) use ($last30Days) {
+                $query->select(DB::raw(1))
+                    ->from('member_apps_point_transactions')
+                    ->whereColumn('member_apps_point_transactions.member_id', 'm.id')
+                    ->where('member_apps_point_transactions.created_at', '>=', $last30Days);
             })
-            ->where('just_points', '>', 1000)
-            ->count();
-        
-        // Active Members: Regular transactions in last 30 days
-        $activeMemberIds = MemberAppsPointTransaction::where('created_at', '>=', $last30Days)
-            ->distinct('member_id')
-            ->pluck('member_id')
-            ->toArray();
-        $activeMembers = MemberAppsMember::whereIn('id', $activeMemberIds)
-            ->where('is_active', true)
-            ->count();
-        
-        // Dormant Members: No activity in last 90 days
-        $dormantMembers = MemberAppsMember::where(function($query) use ($last90Days) {
-            $query->whereNull('last_login_at')
-                  ->orWhere('last_login_at', '<', $last90Days);
-        })->where('is_active', true)->count();
-        
-        // New Members: Registered in last 30 days
-        $newMembers = MemberAppsMember::where('created_at', '>=', $last30Days)->count();
-        
-        // At Risk: Active but low engagement
-        $atRiskMembers = MemberAppsMember::where('is_active', true)
-            ->where('just_points', '<=', 100)
-            ->where(function($query) use ($last30Days) {
-                $query->whereNull('last_login_at')
-                      ->orWhere('last_login_at', '<', $last30Days);
-            })
+            ->where('m.is_active', true)
             ->count();
         
         return [
-            'vip' => $vipMembers,
+            'vip' => (int) $result->vip,
             'active' => $activeMembers,
-            'dormant' => $dormantMembers,
-            'new' => $newMembers,
-            'atRisk' => $atRiskMembers,
+            'dormant' => (int) $result->dormant,
+            'new' => (int) $result->new,
+            'atRisk' => (int) $result->at_risk,
         ];
     }
     
     /**
-     * Get member lifetime value (Priority 3)
+     * Get member lifetime value (Priority 3) - Optimized
      */
     private function getMemberLifetimeValue()
     {
-        $members = MemberAppsMember::where('is_active', true)->get();
+        // Optimized: Use single query with join instead of loop
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        
+        $ltvData = DB::select("
+            SELECT 
+                COALESCE(m.member_level, 'silver') as tier,
+                COUNT(DISTINCT m.id) as member_count,
+                COALESCE(SUM(o.grand_total), 0) as total_spending
+            FROM member_apps_members m
+            LEFT JOIN {$dbJustusName}.orders o ON m.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
+                AND o.status = 'paid'
+                AND o.member_id != ''
+                AND o.member_id IS NOT NULL
+            WHERE m.is_active = 1
+            GROUP BY tier
+        ");
         
         $totalLTV = 0;
         $memberCount = 0;
@@ -789,22 +911,16 @@ class CrmDashboardController extends Controller
             'platinum' => ['total' => 0, 'count' => 0],
         ];
         
-        foreach ($members as $member) {
-            $spending = DB::connection('db_justus')
-                ->table('orders')
-                ->where('member_id', $member->member_id)
-                ->where('status', 'paid')
-                ->sum('grand_total');
+        foreach ($ltvData as $row) {
+            $tier = $row->tier;
+            $spending = (float) $row->total_spending;
+            $count = (int) $row->member_count;
             
-            if ($spending > 0) {
+            if ($spending > 0 && isset($ltvByTier[$tier])) {
+                $ltvByTier[$tier]['total'] = $spending;
+                $ltvByTier[$tier]['count'] = $count;
                 $totalLTV += $spending;
-                $memberCount++;
-                
-                $tier = $member->member_level ?? 'silver';
-                if (isset($ltvByTier[$tier])) {
-                    $ltvByTier[$tier]['total'] += $spending;
-                    $ltvByTier[$tier]['count']++;
-                }
+                $memberCount += $count;
             }
         }
         
@@ -922,16 +1038,11 @@ class CrmDashboardController extends Controller
     }
     
     /**
-     * Get regional breakdown (Priority 3)
+     * Get regional breakdown (Priority 3) - Optimized
      */
     private function getRegionalBreakdown()
     {
-        // Get members with region data (assuming there's a region field or join with outlets)
-        $members = MemberAppsMember::select('id', 'member_id', 'is_active', 'member_level', 'just_points')
-            ->where('is_active', true)
-            ->get();
-        
-        // Get orders grouped by outlet/region
+        // Get orders grouped by outlet/region - Optimized: removed unnecessary member query
         $ordersByOutlet = DB::connection('db_justus')
             ->table('orders as o')
             ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
@@ -1090,5 +1201,23 @@ class CrmDashboardController extends Controller
             default:
                 return response()->json([]);
         }
+    }
+    
+    /**
+     * Get redeem details (for modal)
+     */
+    public function getRedeemDetails(Request $request)
+    {
+        $cabangId = $request->get('cabang_id');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        
+        // This method can be implemented later if needed
+        return response()->json([
+            'message' => 'Redeem details functionality will be implemented',
+            'cabang_id' => $cabangId,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+        ]);
     }
 }
