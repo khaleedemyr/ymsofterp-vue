@@ -2580,11 +2580,21 @@ class CrmDashboardController extends Controller
                     ->whereNotNull('reward_redeemed_at')
                     ->count();
                 
+                // Generate full URL for challenge image
+                $imageUrl = null;
+                if ($challenge->image) {
+                    if (str_starts_with($challenge->image, 'http://') || str_starts_with($challenge->image, 'https://')) {
+                        $imageUrl = $challenge->image;
+                    } else {
+                        $imageUrl = 'https://ymsofterp.com/storage/' . ltrim($challenge->image, '/');
+                    }
+                }
+                
                 return [
                     'id' => $challenge->id,
                     'title' => $challenge->title,
                     'description' => $challenge->description ?? '',
-                    'image' => $challenge->image,
+                    'image' => $imageUrl,
                     'points_reward' => $challenge->points_reward ?? 0,
                     'start_date' => $challenge->start_date ? Carbon::parse($challenge->start_date)->format('Y-m-d') : null,
                     'end_date' => $challenge->end_date ? Carbon::parse($challenge->end_date)->format('Y-m-d') : null,
