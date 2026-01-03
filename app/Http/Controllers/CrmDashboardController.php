@@ -291,30 +291,63 @@ class CrmDashboardController extends Controller
             ->sum('grand_total');
 
         // Member contribution to revenue (hari ini, bulan ini, tahun ini)
+        // Use explicit date format to ensure consistency
+        $todayStart = $today->format('Y-m-d 00:00:00');
+        $todayEnd = $today->format('Y-m-d 23:59:59');
+        $thisMonthStart = $thisMonth->format('Y-m-d 00:00:00');
+        $thisMonthEnd = Carbon::now()->format('Y-m-d 23:59:59');
+        $thisYearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
+        $thisYearEnd = Carbon::now()->format('Y-m-d 23:59:59');
+        
         // Total revenue (all orders, including non-member)
         $totalRevenueToday = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
-            ->whereDate('created_at', $today)
+            ->where('created_at', '>=', $todayStart)
+            ->where('created_at', '<=', $todayEnd)
             ->sum('grand_total');
         
         $totalRevenueThisMonth = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
-            ->whereBetween('created_at', [$thisMonth, Carbon::now()])
+            ->where('created_at', '>=', $thisMonthStart)
+            ->where('created_at', '<=', $thisMonthEnd)
             ->sum('grand_total');
         
-        $thisYear = Carbon::now()->startOfYear();
         $totalRevenueThisYear = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
-            ->whereYear('created_at', Carbon::now()->year)
+            ->where('created_at', '>=', $thisYearStart)
+            ->where('created_at', '<=', $thisYearEnd)
             ->sum('grand_total');
         
-        // Member revenue (orders with member_id)
-        $memberRevenueToday = $spendingToday;
-        $memberRevenueThisMonth = $spendingThisMonth;
-        $memberRevenueThisYear = $spendingThisYear;
+        // Member revenue (orders with member_id) - use same date filters
+        $memberRevenueToday = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->where('created_at', '>=', $todayStart)
+            ->where('created_at', '<=', $todayEnd)
+            ->sum('grand_total');
+        
+        $memberRevenueThisMonth = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->where('created_at', '>=', $thisMonthStart)
+            ->where('created_at', '<=', $thisMonthEnd)
+            ->sum('grand_total');
+        
+        $memberRevenueThisYear = DB::connection('db_justus')
+            ->table('orders')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->where('created_at', '>=', $thisYearStart)
+            ->where('created_at', '<=', $thisYearEnd)
+            ->sum('grand_total');
         
         // Calculate contribution percentage
         $memberContributionToday = $totalRevenueToday > 0 ? round(($memberRevenueToday / $totalRevenueToday) * 100, 2) : 0;

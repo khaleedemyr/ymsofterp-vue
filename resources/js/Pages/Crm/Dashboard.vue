@@ -802,34 +802,6 @@ function getTierIcon(tier) {
             </div>
           </div>
 
-          <!-- Total Spending Card -->
-          <div class="group relative overflow-hidden bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
-            <div class="absolute inset-0 bg-white/10 backdrop-blur-sm"></div>
-            <div class="relative p-6 text-white">
-              <div class="flex items-center justify-between mb-4">
-                <div class="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <i class="fa-solid fa-money-bill-wave text-2xl"></i>
-                </div>
-                <div class="text-right">
-                  <div class="text-sm opacity-90 font-medium">Total Spending</div>
-                  <div class="text-xl font-bold">{{ stats?.totalSpendingFormatted || 'Rp 0' }}</div>
-                </div>
-              </div>
-              <div class="flex items-center gap-2 text-sm opacity-90">
-                <i class="fa-solid fa-calendar"></i>
-                <span>{{ stats?.spendingLastYearFormatted || 'Rp 0' }} setahun</span>
-              </div>
-          <div v-if="stats?.spendingLastYearLastDate && stats?.spendingLastYearLastDate !== '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
-            <i class="fa-solid fa-clock"></i>
-            <span>Last data: {{ stats?.spendingLastYearLastDate }}</span>
-          </div>
-          <div v-else-if="stats?.spendingLastYearLastDate === '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
-            <i class="fa-solid fa-clock"></i>
-            <span>Last data: Tidak ada data</span>
-          </div>
-            </div>
-          </div>
-
           <!-- Point Balance Card -->
           <div class="group relative overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
             <div class="absolute inset-0 bg-white/10 backdrop-blur-sm"></div>
