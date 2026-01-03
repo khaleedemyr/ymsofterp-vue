@@ -178,21 +178,29 @@ class CrmDashboardController extends Controller
         $emailVerified = MemberAppsMember::whereNotNull('email_verified_at')->count();
         $emailUnverified = MemberAppsMember::whereNull('email_verified_at')->count();
 
-        // Tier breakdown (new structure: silver, gold, platinum)
+        // Tier breakdown (silver, loyal, elite)
         $tierBreakdown = [
             'silver' => MemberAppsMember::where(function($query) {
                 $query->where('member_level', 'silver')
                       ->orWhereNull('member_level')
                       ->orWhere('member_level', '');
             })->count(),
-            'gold' => MemberAppsMember::where('member_level', 'gold')->count(),
-            'platinum' => MemberAppsMember::where('member_level', 'platinum')->count(),
+            'loyal' => MemberAppsMember::where('member_level', 'loyal')->count(),
+            'elite' => MemberAppsMember::where('member_level', 'elite')->count(),
         ];
 
         // Point statistics
         $totalPointBalance = MemberAppsMember::sum('just_points');
         $membersWithPoints = MemberAppsMember::where('just_points', '>', 0)->count();
         $membersWithoutPoints = MemberAppsMember::where('just_points', '<=', 0)->count();
+        
+        // Total point redeemed (all negative point_amount)
+        $totalPointRedeemed = abs(MemberAppsPointTransaction::where('point_amount', '<', 0)->sum('point_amount'));
+        
+        // Total point used for voucher purchase
+        $totalPointVoucherPurchase = abs(MemberAppsPointTransaction::where('transaction_type', 'voucher_purchase')
+            ->where('point_amount', '<', 0)
+            ->sum('point_amount'));
 
         // Spending statistics
         $totalSpending = DB::connection('db_justus')
@@ -202,13 +210,18 @@ class CrmDashboardController extends Controller
             ->where('member_id', '!=', '')
             ->sum('grand_total');
 
-        $spendingLastYear = DB::connection('db_justus')
+        $spendingLastYearQuery = DB::connection('db_justus')
             ->table('orders')
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
-            ->where('created_at', '>=', Carbon::now()->subYear())
-            ->sum('grand_total');
+            ->where('created_at', '>=', Carbon::now()->subYear());
+        
+        $spendingLastYear = $spendingLastYearQuery->sum('grand_total');
+        
+        // Get last transaction date in last year
+        $lastTransactionDate = $spendingLastYearQuery->orderBy('created_at', 'desc')->value('created_at');
+        $lastTransactionDateFormatted = $lastTransactionDate ? Carbon::parse($lastTransactionDate)->format('d M Y') : '-';
 
         $spendingThisMonth = DB::connection('db_justus')
             ->table('orders')
@@ -256,10 +269,15 @@ class CrmDashboardController extends Controller
             'totalPointBalanceFormatted' => number_format($totalPointBalance, 0, ',', '.'),
             'membersWithPoints' => $membersWithPoints,
             'membersWithoutPoints' => $membersWithoutPoints,
+            'totalPointRedeemed' => $totalPointRedeemed,
+            'totalPointRedeemedFormatted' => number_format($totalPointRedeemed, 0, ',', '.'),
+            'totalPointVoucherPurchase' => $totalPointVoucherPurchase,
+            'totalPointVoucherPurchaseFormatted' => number_format($totalPointVoucherPurchase, 0, ',', '.'),
             'totalSpending' => $totalSpending,
             'totalSpendingFormatted' => 'Rp ' . number_format($totalSpending, 0, ',', '.'),
             'spendingLastYear' => $spendingLastYear,
             'spendingLastYearFormatted' => 'Rp ' . number_format($spendingLastYear, 0, ',', '.'),
+            'spendingLastYearLastDate' => $lastTransactionDateFormatted,
             'spendingThisMonth' => $spendingThisMonth,
             'spendingThisMonthFormatted' => 'Rp ' . number_format($spendingThisMonth, 0, ',', '.'),
             'spendingToday' => $spendingToday,
@@ -319,8 +337,8 @@ class CrmDashboardController extends Controller
         $tierData = DB::select("
             SELECT 
                 CASE 
-                    WHEN member_level = 'platinum' THEN 'Platinum'
-                    WHEN member_level = 'gold' THEN 'Gold'
+                    WHEN member_level = 'elite' THEN 'Elite'
+                    WHEN member_level = 'loyal' THEN 'Loyal'
                     ELSE 'Silver'
                 END as tier,
                 COUNT(*) as count
@@ -336,13 +354,13 @@ class CrmDashboardController extends Controller
         }
         
         $silver = $tierCounts['Silver'] ?? 0;
-        $gold = $tierCounts['Gold'] ?? 0;
-        $platinum = $tierCounts['Platinum'] ?? 0;
+        $loyal = $tierCounts['Loyal'] ?? 0;
+        $elite = $tierCounts['Elite'] ?? 0;
         
         return [
             ['tier' => 'Silver', 'count' => $silver, 'percentage' => $total > 0 ? round(($silver / $total) * 100, 1) : 0, 'color' => '#94a3b8'],
-            ['tier' => 'Gold', 'count' => $gold, 'percentage' => $total > 0 ? round(($gold / $total) * 100, 1) : 0, 'color' => '#fbbf24'],
-            ['tier' => 'Platinum', 'count' => $platinum, 'percentage' => $total > 0 ? round(($platinum / $total) * 100, 1) : 0, 'color' => '#a78bfa'],
+            ['tier' => 'Loyal', 'count' => $loyal, 'percentage' => $total > 0 ? round(($loyal / $total) * 100, 1) : 0, 'color' => '#fbbf24'],
+            ['tier' => 'Elite', 'count' => $elite, 'percentage' => $total > 0 ? round(($elite / $total) * 100, 1) : 0, 'color' => '#a78bfa'],
         ];
     }
 
@@ -989,7 +1007,7 @@ class CrmDashboardController extends Controller
         // Use single query with CASE WHEN for better performance
         $segmentation = DB::select("
             SELECT 
-                COUNT(CASE WHEN is_active = 1 AND (member_level = 'platinum' OR member_level = 'gold') AND just_points > 1000 THEN 1 END) as vip,
+                COUNT(CASE WHEN is_active = 1 AND (member_level = 'elite' OR member_level = 'loyal') AND just_points > 1000 THEN 1 END) as vip,
                 COUNT(CASE WHEN created_at >= ? THEN 1 END) as new,
                 COUNT(CASE WHEN is_active = 1 AND (last_login_at IS NULL OR last_login_at < ?) THEN 1 END) as dormant,
                 COUNT(CASE WHEN is_active = 1 AND just_points <= 100 AND (last_login_at IS NULL OR last_login_at < ?) THEN 1 END) as at_risk

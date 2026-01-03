@@ -703,8 +703,8 @@ function clearDateFilter() {
 function getTierColor(tier) {
   const colors = {
     silver: 'from-gray-400 to-gray-600',
-    gold: 'from-yellow-400 to-yellow-600',
-    platinum: 'from-purple-400 to-purple-600',
+    loyal: 'from-yellow-400 to-yellow-600',
+    elite: 'from-purple-400 to-purple-600',
   };
   return colors[tier?.toLowerCase()] || 'from-gray-400 to-gray-600';
 }
@@ -712,8 +712,8 @@ function getTierColor(tier) {
 function getTierIcon(tier) {
   const icons = {
     silver: 'fa-medal',
-    gold: 'fa-trophy',
-    platinum: 'fa-crown',
+    loyal: 'fa-trophy',
+    elite: 'fa-crown',
   };
   return icons[tier?.toLowerCase()] || 'fa-medal';
 }
@@ -809,6 +809,10 @@ function getTierIcon(tier) {
                 <i class="fa-solid fa-calendar"></i>
                 <span>{{ stats?.spendingLastYearFormatted || 'Rp 0' }} setahun</span>
               </div>
+              <div v-if="stats?.spendingLastYearLastDate && stats?.spendingLastYearLastDate !== '-'" class="flex items-center gap-2 text-xs opacity-75 mt-1">
+                <i class="fa-solid fa-clock"></i>
+                <span>Last data: {{ stats?.spendingLastYearLastDate }}</span>
+              </div>
             </div>
           </div>
 
@@ -872,16 +876,16 @@ function getTierIcon(tier) {
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
             <div class="flex items-center gap-2 mb-2">
               <i class="fa-solid fa-trophy text-yellow-500 text-lg"></i>
-              <div class="text-sm text-gray-600">Gold</div>
+              <div class="text-sm text-gray-600">Loyal</div>
             </div>
-            <div class="text-2xl font-bold text-yellow-500">{{ formatNumber(stats?.tierBreakdown?.gold || 0) }}</div>
+            <div class="text-2xl font-bold text-yellow-500">{{ formatNumber(stats?.tierBreakdown?.loyal || 0) }}</div>
           </div>
           <div class="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
             <div class="flex items-center gap-2 mb-2">
               <i class="fa-solid fa-crown text-purple-500 text-lg"></i>
-              <div class="text-sm text-gray-600">Platinum</div>
+              <div class="text-sm text-gray-600">Elite</div>
             </div>
-            <div class="text-2xl font-bold text-purple-500">{{ formatNumber(stats?.tierBreakdown?.platinum || 0) }}</div>
+            <div class="text-2xl font-bold text-purple-500">{{ formatNumber(stats?.tierBreakdown?.elite || 0) }}</div>
           </div>
         </div>
 
@@ -924,6 +928,42 @@ function getTierIcon(tier) {
                   <div class="text-2xl font-bold text-purple-600">{{ stats?.spendingThisYearFormatted || 'Rp 0' }}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Point Redeemed & Voucher Purchase Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-coins text-orange-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Total Point Redeemed</div>
+                  <div class="text-2xl font-bold text-orange-600">{{ formatNumber(stats?.totalPointRedeemed || 0) }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 mt-2">
+              Total point yang telah ditukar/digunakan
+            </div>
+          </div>
+          <div class="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
+                  <i class="fa-solid fa-ticket text-pink-600 text-xl"></i>
+                </div>
+                <div>
+                  <div class="text-sm text-gray-600">Point Beli Voucher</div>
+                  <div class="text-2xl font-bold text-pink-600">{{ formatNumber(stats?.totalPointVoucherPurchase || 0) }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 mt-2">
+              Total point yang digunakan untuk membeli voucher di voucher store
             </div>
           </div>
         </div>
@@ -1106,9 +1146,8 @@ function getTierIcon(tier) {
                     <div :class="['text-sm font-bold', transaction.type === 'earned' ? 'text-green-600' : 'text-orange-600']">
                       {{ transaction.type === 'earned' ? '+' : '-' }}{{ transaction.pointAmountFormatted }} point
                     </div>
-                    <div class="text-xs text-gray-500">{{ transaction.transactionValueFormatted }}</div>
-                    <div v-if="transaction.transactionAmount" class="text-xs text-blue-600 mt-1">
-                      Transaksi: {{ transaction.transactionAmountFormatted || transaction.transactionValueFormatted }}
+                    <div v-if="transaction.transactionAmount || transaction.transactionValue" class="text-xs text-gray-500 mt-1">
+                      {{ transaction.transactionAmountFormatted || transaction.transactionValueFormatted }}
                     </div>
                   </div>
                 </div>
