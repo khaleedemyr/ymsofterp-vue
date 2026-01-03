@@ -45,14 +45,30 @@ class CrmDashboardController extends Controller
             $latestPointTransactions = $this->getLatestPointTransactions();
             Log::info('CRM Dashboard: Latest point transactions loaded');
             
-            $topSpenders = $this->getTopSpenders();
-            Log::info('CRM Dashboard: Top spenders loaded');
+            // Load with timeout protection
+            $topSpenders = [];
+            try {
+                $topSpenders = $this->getTopSpenders();
+                Log::info('CRM Dashboard: Top spenders loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load top spenders: ' . $e->getMessage());
+            }
             
-            $mostActiveMembers = $this->getMostActiveMembers();
-            Log::info('CRM Dashboard: Most active members loaded');
+            $mostActiveMembers = [];
+            try {
+                $mostActiveMembers = $this->getMostActiveMembers();
+                Log::info('CRM Dashboard: Most active members loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load most active members: ' . $e->getMessage());
+            }
             
-            $pointStats = $this->getPointStats($startDate, $endDate);
-            Log::info('CRM Dashboard: Point stats loaded');
+            $pointStats = [];
+            try {
+                $pointStats = $this->getPointStats($startDate, $endDate);
+                Log::info('CRM Dashboard: Point stats loaded');
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load point stats: ' . $e->getMessage());
+            }
             
             // Load less critical data with timeout protection
             $genderDistribution = [];
@@ -711,24 +727,22 @@ class CrmDashboardController extends Controller
     }
 
     /**
-     * Get top spenders (10) - Optimized for large dataset
+     * Get top spenders (10) - Optimized: Remove subquery, get last spending separately
      */
     private function getTopSpenders()
     {
-        // Get top spenders with last order in optimized query
+        // First, get top spenders without subquery (much faster)
         $topSpenders = DB::connection('db_justus')
-            ->table('orders as o1')
+            ->table('orders')
             ->select(
-                'o1.member_id',
-                DB::raw('SUM(o1.grand_total) as total_spending'),
-                DB::raw('COUNT(*) as order_count'),
-                DB::raw('(SELECT grand_total FROM orders o2 WHERE o2.member_id = o1.member_id AND o2.status = "paid" ORDER BY o2.created_at DESC LIMIT 1) as last_spending'),
-                DB::raw('(SELECT created_at FROM orders o3 WHERE o3.member_id = o1.member_id AND o3.status = "paid" ORDER BY o3.created_at DESC LIMIT 1) as last_spending_date')
+                'member_id',
+                DB::raw('SUM(grand_total) as total_spending'),
+                DB::raw('COUNT(*) as order_count')
             )
-            ->where('o1.status', 'paid')
-            ->whereNotNull('o1.member_id')
-            ->where('o1.member_id', '!=', '')
-            ->groupBy('o1.member_id')
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->groupBy('member_id')
             ->orderBy('total_spending', 'desc')
             ->limit(10)
             ->get();
@@ -737,13 +751,31 @@ class CrmDashboardController extends Controller
             return collect([]);
         }
 
+        // Get member info
         $memberIds = $topSpenders->pluck('member_id')->toArray();
         $members = MemberAppsMember::whereIn('member_id', $memberIds)->get()->keyBy('member_id');
 
-        return $topSpenders->map(function ($spender) use ($members) {
+        // Get last spending for each member in one query (batch)
+        $lastOrders = DB::connection('db_justus')
+            ->table('orders')
+            ->select('member_id', 'grand_total', 'created_at')
+            ->whereIn('member_id', $memberIds)
+            ->where('status', 'paid')
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('member_id')
+            ->map(function ($orders) {
+                return $orders->first();
+            });
+
+        return $topSpenders->map(function ($spender) use ($members, $lastOrders) {
             $member = $members->get($spender->member_id);
-            $lastSpending = $spender->last_spending ? (float) $spender->last_spending : 0;
-            $lastSpendingDate = $spender->last_spending_date ? Carbon::parse($spender->last_spending_date)->format('d M Y') : '-';
+            $lastOrder = $lastOrders->get($spender->member_id);
+            
+            $lastSpending = $lastOrder ? (float) $lastOrder->grand_total : 0;
+            $lastSpendingDate = $lastOrder ? Carbon::parse($lastOrder->created_at)->format('d M Y') : '-';
 
             return [
                 'memberId' => $spender->member_id,
