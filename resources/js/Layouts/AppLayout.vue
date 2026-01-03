@@ -24,6 +24,7 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
             { name: () => 'Sales Outlet Dashboard', icon: 'fa-solid fa-chart-line', route: '/sales-outlet-dashboard', code: 'sales_outlet_dashboard' },
+            { name: () => 'Dashboard CRM', icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },
             { name: () => 'Cashflow Outlet Dashboard', icon: 'fa-solid fa-chart-pie', route: route('cashflow-outlet-dashboard.index'), code: 'cashflow_outlet_dashboard' },
             { name: () => 'My Attendance', icon: 'fa-solid fa-user-clock', route: '/attendance', code: 'my_attendance' },
             { name: () => 'Payment', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
