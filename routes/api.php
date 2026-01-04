@@ -429,6 +429,10 @@ Route::prefix('approval-app')->group(function () {
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');
         
+        // User Shift routes
+        Route::get('/user-shifts', [\App\Http\Controllers\UserShiftController::class, 'index'])->name('api.approval-app.user-shifts.index');
+        Route::post('/user-shifts', [\App\Http\Controllers\UserShiftController::class, 'store'])->name('api.approval-app.user-shifts.store');
+        
         // Notification routes
         Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.approval-app.notifications.index');
         Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('api.approval-app.notifications.mark-read');

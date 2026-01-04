@@ -102,6 +102,29 @@ class UserShiftController extends Controller
         \Log::info('USERSHIFT_INDEX_DATES', $dates);
         \Log::info('USERSHIFT_INDEX_HOLIDAYS', $holidays->toArray());
         \Log::info('USERSHIFT_INDEX_APPROVED_ABSENTS', $approvedAbsents->toArray());
+        
+        // For API requests (not Inertia), return JSON response
+        // Inertia requests have X-Inertia header, so we skip JSON for those
+        if (($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) && !$request->header('X-Inertia')) {
+            return response()->json([
+                'success' => true,
+                'outlets' => $outlets,
+                'divisions' => $divisions,
+                'users' => $users,
+                'shifts' => $shifts,
+                'dates' => $dates,
+                'userShifts' => $userShifts,
+                'holidays' => $holidays,
+                'approvedAbsents' => $approvedAbsents,
+                'filter' => [
+                    'outlet_id' => $outletId,
+                    'division_id' => $divisionId,
+                    'start_date' => $startDate,
+                ],
+            ]);
+        }
+        
+        // For web (Inertia) requests, return Inertia render as before
         return Inertia::render('UserShift/Index', [
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -142,49 +165,93 @@ class UserShiftController extends Controller
         for ($i = 0; $i < 7; $i++) {
             $dates[] = date('Y-m-d', strtotime("$start +$i day"));
         }
-        // Simpan per user per hari
-        foreach ($shiftsInput as $userId => $shiftPerDay) {
-            foreach ($dates as $tanggal) {
-                $shiftId = $shiftPerDay[$tanggal] ?? null;
-                // Cek sudah ada, update/insert
-                $existing = DB::table('user_shifts')
-                    ->where('user_id', $userId)
-                    ->where('tanggal', $tanggal)
-                    ->first();
-                if ($existing) {
-                    // If incoming value is OFF (null) but existing already has a shift, skip turning it OFF
-                    // unless explicitly forced by client for this cell
-                    $forcedOff = isset($explicitOff[$userId]) && array_key_exists($tanggal, (array) $explicitOff[$userId]);
-                    // Patch: parse value 'true' string as boolean
-                    $explicitVal = $forcedOff ? $explicitOff[$userId][$tanggal] : null;
-                    if ($explicitVal === 'true' || $explicitVal === 1 || $explicitVal === '1') $explicitVal = true;
-                    $forcedOff = $forcedOff && ($explicitVal === true);
-                    if (is_null($shiftId) && !is_null($existing->shift_id)) {
-                        \Log::info('USER_SHIFT_DEBUG', ['user_id' => $userId, 'tanggal' => $tanggal, 'forcedOff' => $forcedOff, 'explicitVal' => $explicitVal, 'explicit_off' => $explicitOff[$userId][$tanggal] ?? null]);
-                        if (!$forcedOff) {
-                            continue;
+        // Use transaction to prevent race condition when multiple users input simultaneously
+        // Lock rows to prevent concurrent updates for the same outlet + division + date range
+        DB::beginTransaction();
+        try {
+            // Lock rows for this outlet + division + date range to prevent concurrent updates
+            DB::table('user_shifts')
+                ->where('outlet_id', $outletId)
+                ->where('division_id', $divisionId)
+                ->whereIn('tanggal', $dates)
+                ->lockForUpdate()
+                ->get();
+            
+            // Simpan per user per hari
+            foreach ($shiftsInput as $userId => $shiftPerDay) {
+                foreach ($dates as $tanggal) {
+                    $shiftId = $shiftPerDay[$tanggal] ?? null;
+                    // Cek sudah ada, update/insert
+                    $existing = DB::table('user_shifts')
+                        ->where('user_id', $userId)
+                        ->where('tanggal', $tanggal)
+                        ->first();
+                    if ($existing) {
+                        // If incoming value is OFF (null) but existing already has a shift, skip turning it OFF
+                        // unless explicitly forced by client for this cell
+                        $forcedOff = isset($explicitOff[$userId]) && array_key_exists($tanggal, (array) $explicitOff[$userId]);
+                        // Patch: parse value 'true' string as boolean
+                        $explicitVal = $forcedOff ? $explicitOff[$userId][$tanggal] : null;
+                        if ($explicitVal === 'true' || $explicitVal === 1 || $explicitVal === '1') $explicitVal = true;
+                        $forcedOff = $forcedOff && ($explicitVal === true);
+                        if (is_null($shiftId) && !is_null($existing->shift_id)) {
+                            \Log::info('USER_SHIFT_DEBUG', ['user_id' => $userId, 'tanggal' => $tanggal, 'forcedOff' => $forcedOff, 'explicitVal' => $explicitVal, 'explicit_off' => $explicitOff[$userId][$tanggal] ?? null]);
+                            if (!$forcedOff) {
+                                continue;
+                            }
                         }
+                        DB::table('user_shifts')->where('id', $existing->id)->update([
+                            'shift_id' => $shiftId,
+                            'outlet_id' => $outletId,
+                            'division_id' => $divisionId,
+                            'updated_at' => now(),
+                        ]);
+                    } else {
+                        DB::table('user_shifts')->insert([
+                            'user_id' => $userId,
+                            'shift_id' => $shiftId,
+                            'outlet_id' => $outletId,
+                            'division_id' => $divisionId,
+                            'tanggal' => $tanggal,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
                     }
-                    DB::table('user_shifts')->where('id', $existing->id)->update([
-                        'shift_id' => $shiftId,
-                        'outlet_id' => $outletId,
-                        'division_id' => $divisionId,
-                        'updated_at' => now(),
-                    ]);
-                } else {
-                    DB::table('user_shifts')->insert([
-                        'user_id' => $userId,
-                        'shift_id' => $shiftId,
-                        'outlet_id' => $outletId,
-                        'division_id' => $divisionId,
-                        'tanggal' => $tanggal,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
                 }
             }
+            
+            DB::commit();
+            
+            // For API requests (not Inertia), return JSON response
+            // Inertia requests have X-Inertia header, so we skip JSON for those
+            if (($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Jadwal shift berhasil disimpan!',
+                ]);
+            }
+            
+            // For web (Inertia) requests, return redirect as before
+            return redirect()->back()->with('success', 'Jadwal shift berhasil disimpan!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('USER_SHIFT_STORE_ERROR', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            // For API requests (not Inertia), return JSON error response
+            // Inertia requests have X-Inertia header, so we skip JSON for those
+            if (($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan jadwal shift: ' . $e->getMessage(),
+                ], 500);
+            }
+            
+            // For web (Inertia) requests, return redirect with errors as before
+            return redirect()->back()->withErrors(['error' => 'Gagal menyimpan jadwal shift: ' . $e->getMessage()]);
         }
-        return redirect()->back()->with('success', 'Jadwal shift berhasil disimpan!');
     }
 
     // Kalender jadwal shift
