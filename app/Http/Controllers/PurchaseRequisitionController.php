@@ -546,10 +546,17 @@ class PurchaseRequisitionController extends Controller
                     ]);
                 }
             }
-        } else if ($validated['category_id']) {
+        } else if (isset($validated['category_id']) && $validated['category_id']) {
             // For other modes (kasbon, travel_application), use main category_id and outlet_id
+            // Only validate budget if category_id is provided
             $budgetValidation = $this->validateBudgetLimit($validated['category_id'], $validated['outlet_id'] ?? null, $validated['amount']);
             if (!$budgetValidation['valid']) {
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $budgetValidation['message']
+                    ], 400);
+                }
                 return back()->withErrors([
                     'budget_exceeded' => $budgetValidation['message']
                 ]);
@@ -1133,10 +1140,17 @@ class PurchaseRequisitionController extends Controller
                     ]);
                 }
             }
-        } else if ($validated['category_id']) {
+        } else if (isset($validated['category_id']) && $validated['category_id']) {
             // For other modes (kasbon, travel_application), use main category_id and outlet_id
+            // Only validate budget if category_id is provided
             $budgetValidation = $this->validateBudgetLimit($validated['category_id'], $validated['outlet_id'] ?? null, $validated['amount'], $purchaseRequisition->id);
             if (!$budgetValidation['valid']) {
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $budgetValidation['message']
+                    ], 400);
+                }
                 return back()->withErrors([
                     'budget_exceeded' => $budgetValidation['message']
                 ]);
