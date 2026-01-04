@@ -295,6 +295,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/purchase-requisitions/{id}/reject', [\App\Http\Controllers\PurchaseRequisitionController::class, 'reject']);
         Route::post('/purchase-requisitions/{id}/comments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'addComment']);
         Route::get('/purchase-requisitions/{id}/comments', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getComments']);
+        Route::delete('/purchase-requisitions/{id}/comments/{commentId}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'deleteComment']);
         
         Route::get('/po-ops/pending-approvals', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getPendingApprovals']);
         Route::get('/po-ops/{id}', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'show']);
