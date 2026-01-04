@@ -249,8 +249,21 @@ class EmployeeResignationController extends Controller
     /**
      * Display the specified employee resignation
      */
-    public function show(EmployeeResignation $employeeResignation)
+    public function show($id)
     {
+        // Find the resignation manually to handle errors better
+        $employeeResignation = EmployeeResignation::find($id);
+        
+        if (!$employeeResignation) {
+            if (request()->expectsJson() || request()->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee resignation not found'
+                ], 404);
+            }
+            abort(404);
+        }
+        
         $employeeResignation->load([
             'outlet',
             'employee.jabatan',
