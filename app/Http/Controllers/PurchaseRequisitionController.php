@@ -2044,24 +2044,49 @@ class PurchaseRequisitionController extends Controller
     /**
      * Delete comment
      */
-    public function deleteComment(PurchaseRequisition $purchaseRequisition, $commentId)
+    public function deleteComment(Request $request, $purchaseRequisition, $commentId)
     {
-        $comment = \App\Models\PurchaseRequisitionComment::findOrFail($commentId);
+        // Handle both route model binding (web) and ID parameter (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            // If it's a string ID from route model binding that failed
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        }
+
+        // Find comment by ID (not using route model binding to avoid conflicts)
+        $comment = \App\Models\PurchaseRequisitionComment::find($commentId);
+        
+        if (!$comment) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found',
+                ], 404);
+            }
+            return back()->withErrors(['error' => 'Comment not found']);
+        }
 
         // Check if comment belongs to this PR
         if ($comment->purchase_requisition_id !== $purchaseRequisition->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Comment not found for this purchase requisition',
-            ], 404);
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Comment not found for this purchase requisition',
+                ], 404);
+            }
+            return back()->withErrors(['error' => 'Comment not found for this purchase requisition']);
         }
 
         // Check if user can delete this comment (only the author)
         if ($comment->user_id !== auth()->id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You can only delete your own comments',
-            ], 403);
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only delete your own comments',
+                ], 403);
+            }
+            return back()->withErrors(['error' => 'You can only delete your own comments']);
         }
 
         try {
@@ -2075,16 +2100,25 @@ class PurchaseRequisitionController extends Controller
 
             $comment->delete();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Comment deleted successfully',
-            ]);
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Comment deleted successfully',
+                ]);
+            }
+
+            return back()->with('success', 'Comment deleted successfully');
         } catch (\Exception $e) {
             \Log::error('Delete comment error: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete comment: ' . $e->getMessage(),
-            ], 500);
+            
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to delete comment: ' . $e->getMessage(),
+                ], 500);
+            }
+            
+            return back()->withErrors(['error' => 'Failed to delete comment: ' . $e->getMessage()]);
         }
     }
 
