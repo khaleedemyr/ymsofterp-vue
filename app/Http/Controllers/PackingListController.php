@@ -829,6 +829,8 @@ class PackingListController extends Controller
         $result = $itemsToPack->map(function($foItem) use ($itemStocks) {
             $arr = $foItem->toArray();
             $arr['stock'] = $itemStocks[$foItem->id] ?? 0;
+            // Pastikan qty_order ada (sama dengan qty jika tidak ada field qty_order)
+            $arr['qty_order'] = $foItem->qty ?? 0;
             return $arr;
         });
         
