@@ -1289,8 +1289,16 @@ class PurchaseRequisitionController extends Controller
     /**
      * Remove the specified purchase requisition
      */
-    public function destroy(PurchaseRequisition $purchaseRequisition)
+    public function destroy(Request $request, $purchaseRequisition)
     {
+        // Handle both route model binding (web) and ID parameter (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            // If it's a string ID from route model binding that failed
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        }
+
         $user = auth()->user();
         $hasSpecialRole = $user && $user->id_role === '5af56935b011a';
         
@@ -1300,18 +1308,39 @@ class PurchaseRequisitionController extends Controller
         $isApprovedStatus = $purchaseRequisition->status === 'APPROVED';
         
         if (!in_array($purchaseRequisition->status, $deletableStatuses) && !($isApprovedStatus && $hasSpecialRole)) {
-            return back()->withErrors(['error' => 'Only draft and submitted (not yet approved) purchase requisitions can be deleted. Approved PRs can only be deleted by users with special role.']);
+            $errorMessage = 'Only draft and submitted (not yet approved) purchase requisitions can be deleted. Approved PRs can only be deleted by users with special role.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 400);
+            }
+            return back()->withErrors(['error' => $errorMessage]);
         }
 
         // For APPROVED status, only allow if user has special role
         if ($isApprovedStatus && !$hasSpecialRole) {
-            return back()->withErrors(['error' => 'Only users with special role can delete approved purchase requisitions.']);
+            $errorMessage = 'Only users with special role can delete approved purchase requisitions.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 403);
+            }
+            return back()->withErrors(['error' => $errorMessage]);
         }
 
         // For DRAFT and SUBMITTED, check if user is the creator
         // If user has special role (id_role='5af56935b011a'), allow delete all data without checking creator
         if (in_array($purchaseRequisition->status, $deletableStatuses) && !$hasSpecialRole && $purchaseRequisition->created_by !== auth()->id()) {
-            return back()->withErrors(['error' => 'You can only delete your own purchase requisitions.']);
+            $errorMessage = 'You can only delete your own purchase requisitions.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 403);
+            }
+            return back()->withErrors(['error' => $errorMessage]);
         }
 
         try {
@@ -1325,6 +1354,13 @@ class PurchaseRequisitionController extends Controller
             // Delete the main record
             $purchaseRequisition->delete();
             
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Purchase Requisition deleted successfully!'
+                ]);
+            }
+            
             return redirect()->route('purchase-requisitions.index')
                            ->with('success', 'Purchase Requisition deleted successfully!');
         } catch (\Exception $e) {
@@ -1334,7 +1370,14 @@ class PurchaseRequisitionController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return back()->withErrors(['error' => 'Failed to delete purchase requisition: ' . $e->getMessage()]);
+            $errorMessage = 'Failed to delete purchase requisition: ' . $e->getMessage();
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 500);
+            }
+            return back()->withErrors(['error' => $errorMessage]);
         }
     }
 
