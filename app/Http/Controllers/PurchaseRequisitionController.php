@@ -1778,16 +1778,31 @@ class PurchaseRequisitionController extends Controller
         
         $validated = $request->validate([
             'comment' => 'required|string|max:1000',
-            'is_internal' => 'boolean',
+            'is_internal' => 'nullable',
             'attachment' => 'nullable|file|max:10240', // Max 10MB
         ]);
 
         try {
+            // Handle boolean conversion from form data (can be string "1"/"0" or "true"/"false")
+            $isInternal = false;
+            if ($request->has('is_internal')) {
+                $isInternalValue = $request->input('is_internal');
+                if (is_bool($isInternalValue)) {
+                    $isInternal = $isInternalValue;
+                } elseif (is_string($isInternalValue)) {
+                    $isInternal = in_array(strtolower($isInternalValue), ['1', 'true', 'on', 'yes']);
+                } elseif (is_numeric($isInternalValue)) {
+                    $isInternal = (int)$isInternalValue === 1;
+                } else {
+                    $isInternal = (bool) $isInternalValue;
+                }
+            }
+
             $commentData = [
                 'purchase_requisition_id' => $purchaseRequisition->id,
                 'user_id' => auth()->id(),
                 'comment' => $validated['comment'],
-                'is_internal' => $validated['is_internal'] ?? false,
+                'is_internal' => $isInternal,
             ];
 
             // Handle attachment upload
