@@ -345,157 +345,157 @@ class PackingListController extends Controller
      */
     public function apiCreate(Request $request)
     {
-        try {
-            // OPTIMIZED: Gunakan raw query untuk performa maksimal
-            $query = "
-                SELECT DISTINCT fo.id
-                FROM food_floor_orders fo
-                JOIN food_floor_order_items foi ON fo.id = foi.floor_order_id
-                JOIN items i ON foi.item_id = i.id
-                LEFT JOIN food_packing_list_items pli ON foi.id = pli.food_floor_order_item_id
-                LEFT JOIN food_packing_lists pl ON pli.packing_list_id = pl.id 
-                    AND pl.food_floor_order_id = fo.id 
-                    AND pl.status = 'packing'
-                WHERE fo.status IN ('approved', 'packing')
-                AND fo.fo_mode != 'RO Supplier'
-            ";
+        // OPTIMIZED: Gunakan raw query untuk performa maksimal
+        // Query langsung di database untuk filter FO yang masih punya item belum di-packing
+        $query = "
+            SELECT DISTINCT fo.id
+            FROM food_floor_orders fo
+            JOIN food_floor_order_items foi ON fo.id = foi.floor_order_id
+            JOIN items i ON foi.item_id = i.id
+            LEFT JOIN food_packing_list_items pli ON foi.id = pli.food_floor_order_item_id
+            LEFT JOIN food_packing_lists pl ON pli.packing_list_id = pl.id 
+                AND pl.food_floor_order_id = fo.id 
+                AND pl.status = 'packing'
+            WHERE fo.status IN ('approved', 'packing')
+            AND fo.fo_mode != 'RO Supplier'
+        ";
+        
+        $params = [];
+        
+        // Filter berdasarkan tanggal kedatangan jika ada
+        if ($request->filled('arrival_date')) {
+            $query .= " AND DATE(food_floor_orders.arrival_date) = ?";
+            $params[] = $request->arrival_date;
+        }
+        
+        $query .= " AND pli.id IS NULL GROUP BY fo.id";
+
+        // Query untuk mendapatkan FO yang masih punya item belum di-packing
+        $floorOrderIds = \DB::select($query, $params);
+        $foIds = array_column($floorOrderIds, 'id');
+        
+        // Jika tidak ada FO yang perlu di-packing, return empty
+        if (empty($foIds)) {
+            $warehouseDivisions = \App\Models\WarehouseDivision::all();
+            return response()->json([
+                'success' => true,
+                'props' => [
+                    'floorOrders' => [],
+                    'warehouseDivisions' => $warehouseDivisions,
+                ],
+            ]);
+        }
+
+        // OPTIMIZED: Ambil hanya FO yang relevan dengan eager loading minimal
+        $query = FoodFloorOrder::whereIn('food_floor_orders.id', $foIds)
+            ->with([
+                'outlet:id_outlet,nama_outlet', 
+                'user:id,nama_lengkap', 
+                'items' => function($q) {
+                    $q->select('id', 'floor_order_id', 'item_id', 'qty', 'unit')
+                      ->with(['item:id,name,warehouse_division_id']);
+                },
+                'warehouseDivisions:id,name,warehouse_id', 
+                'warehouseOutlet:id,name'
+            ]);
+
+        $floorOrders = $query->orderBy('food_floor_orders.tanggal', 'desc')
+            ->get()
+            ->sortBy(function($fo) {
+                return $fo->outlet ? $fo->outlet->nama_outlet : '';
+            })
+            ->values();
+        
+        // OPTIMIZED: Batch query untuk cek packed items (lebih efisien)
+        $packedItems = $this->getPackedItemsBatchOptimized($foIds);
+
+        // Filter FO yang masih memiliki item yang belum di-packing untuk setiap warehouse division
+        // OPTIMIZED: Gunakan collection methods yang lebih efisien
+        $floorOrders = $floorOrders->filter(function($fo) use ($packedItems) {
+            $foDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
             
-            $params = [];
-            
-            // Filter berdasarkan tanggal kedatangan jika ada
-            if ($request->filled('arrival_date')) {
-                $query .= " AND DATE(food_floor_orders.arrival_date) = ?";
-                $params[] = $request->arrival_date;
+            foreach ($foDivisions as $divisionId) {
+                $itemsInDivision = $fo->items->filter(function($item) use ($divisionId) {
+                    return $item->item && $item->item->warehouse_division_id == $divisionId;
+                });
+                
+                if ($itemsInDivision->count() > 0) {
+                    // OPTIMIZED: Gunakan data yang sudah di-batch query
+                    $packedItemIds = $packedItems
+                        ->where('food_floor_order_id', $fo->id)
+                        ->where('warehouse_division_id', $divisionId)
+                        ->pluck('food_floor_order_item_id')
+                        ->toArray();
+                    
+                    if ($itemsInDivision->whereNotIn('id', $packedItemIds)->count() > 0) {
+                        return true;
+                    }
+                }
             }
             
-            $query .= " AND pli.id IS NULL GROUP BY fo.id";
+            return false;
+        })->values();
 
-            $floorOrderIds = \DB::select($query, $params);
-            $foIds = array_column($floorOrderIds, 'id');
-
-            // Jika tidak ada FO yang perlu di-packing, return empty
-            if (empty($foIds)) {
-                $warehouseDivisions = \App\Models\WarehouseDivision::all();
-                return response()->json([
-                    'success' => true,
-                    'props' => [
-                        'floorOrders' => [],
-                        'warehouseDivisions' => $warehouseDivisions->map(function($div) {
+        $warehouseDivisions = \App\Models\WarehouseDivision::all();
+        
+        // Serialize untuk JSON response (Inertia otomatis serialize, tapi untuk API perlu manual)
+        return response()->json([
+            'success' => true,
+            'props' => [
+                'floorOrders' => $floorOrders->map(function($fo) {
+                    return [
+                        'id' => $fo->id,
+                        'order_number' => $fo->order_number,
+                        'tanggal' => $fo->tanggal ? $fo->tanggal->format('Y-m-d H:i:s') : null,
+                        'arrival_date' => $fo->arrival_date ? $fo->arrival_date->format('Y-m-d') : null,
+                        'status' => $fo->status,
+                        'fo_mode' => $fo->fo_mode,
+                        'id_outlet' => $fo->id_outlet,
+                        'user_id' => $fo->user_id,
+                        'outlet' => $fo->outlet ? [
+                            'id_outlet' => $fo->outlet->id_outlet,
+                            'nama_outlet' => $fo->outlet->nama_outlet,
+                        ] : null,
+                        'user' => $fo->user ? [
+                            'id' => $fo->user->id,
+                            'nama_lengkap' => $fo->user->nama_lengkap,
+                        ] : null,
+                        'requester' => $fo->user ? [
+                            'id' => $fo->user->id,
+                            'nama_lengkap' => $fo->user->nama_lengkap,
+                        ] : null,
+                        'warehouseDivisions' => $fo->warehouseDivisions ? $fo->warehouseDivisions->map(function($div) {
                             return [
                                 'id' => $div->id,
                                 'name' => $div->name,
                                 'warehouse_id' => $div->warehouse_id,
                             ];
-                        }),
-                    ],
-                ]);
-            }
-
-            // OPTIMIZED: Ambil hanya FO yang relevan dengan eager loading minimal
-            $query = FoodFloorOrder::whereIn('food_floor_orders.id', $foIds)
-                ->with([
-                    'outlet:id_outlet,nama_outlet', 
-                    'user:id,nama_lengkap', 
-                    'items' => function($q) {
-                        $q->select('id', 'floor_order_id', 'item_id', 'qty', 'unit')
-                          ->with(['item:id,name,warehouse_division_id']);
-                    },
-                    'warehouseDivisions:id,name,warehouse_id', 
-                    'warehouseOutlet:id,name'
-                ]);
-
-            $floorOrders = $query->orderBy('food_floor_orders.tanggal', 'desc')
-                ->get()
-                ->sortBy(function($fo) {
-                    return $fo->outlet ? $fo->outlet->nama_outlet : '';
-                })
-                ->values();
-            
-            // OPTIMIZED: Batch query untuk cek packed items
-            $packedItems = $this->getPackedItemsBatchOptimized($foIds);
-
-            // Filter FO yang masih memiliki item yang belum di-packing
-            $floorOrders = $floorOrders->filter(function($fo) use ($packedItems) {
-                $foDivisions = $fo->warehouseDivisions->pluck('id')->toArray();
-                
-                foreach ($foDivisions as $divisionId) {
-                    $itemsInDivision = $fo->items->filter(function($item) use ($divisionId) {
-                        return $item->item && $item->item->warehouse_division_id == $divisionId;
-                    });
-                    
-                    if ($itemsInDivision->count() > 0) {
-                        $packedItemIds = $packedItems
-                            ->where('food_floor_order_id', $fo->id)
-                            ->where('warehouse_division_id', $divisionId)
-                            ->pluck('food_floor_order_item_id')
-                            ->toArray();
-                        
-                        if ($itemsInDivision->whereNotIn('id', $packedItemIds)->count() > 0) {
-                            return true;
-                        }
-                    }
-                }
-                
-                return false;
-            })->values();
-
-            $warehouseDivisions = \App\Models\WarehouseDivision::all();
-            
-            return response()->json([
-                'success' => true,
-                'props' => [
-                    'floorOrders' => $floorOrders->map(function($fo) {
-                        return [
-                            'id' => $fo->id,
-                            'order_number' => $fo->order_number,
-                            'tanggal' => $fo->tanggal,
-                            'arrival_date' => $fo->arrival_date,
-                            'status' => $fo->status,
-                            'outlet' => $fo->outlet ? [
-                                'id_outlet' => $fo->outlet->id_outlet,
-                                'nama_outlet' => $fo->outlet->nama_outlet,
-                            ] : null,
-                            'user' => $fo->user ? [
-                                'id' => $fo->user->id,
-                                'nama_lengkap' => $fo->user->nama_lengkap,
-                            ] : null,
-                            'warehouseDivisions' => $fo->warehouseDivisions->map(function($div) {
-                                return [
-                                    'id' => $div->id,
-                                    'name' => $div->name,
-                                    'warehouse_id' => $div->warehouse_id,
-                                ];
-                            }),
-                            'items' => $fo->items->map(function($item) {
-                                return [
-                                    'id' => $item->id,
-                                    'item_id' => $item->item_id,
-                                    'qty' => $item->qty,
-                                    'unit' => $item->unit,
-                                    'item' => $item->item ? [
-                                        'id' => $item->item->id,
-                                        'name' => $item->item->name,
-                                        'warehouse_division_id' => $item->item->warehouse_division_id,
-                                    ] : null,
-                                ];
-                            }),
-                        ];
-                    }),
-                    'warehouseDivisions' => $warehouseDivisions->map(function($div) {
-                        return [
-                            'id' => $div->id,
-                            'name' => $div->name,
-                            'warehouse_id' => $div->warehouse_id,
-                        ];
-                    }),
-                ],
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+                        })->values() : [],
+                        'items' => $fo->items ? $fo->items->map(function($item) {
+                            return [
+                                'id' => $item->id,
+                                'floor_order_id' => $item->floor_order_id,
+                                'item_id' => $item->item_id,
+                                'qty' => $item->qty,
+                                'unit' => $item->unit,
+                                'item' => $item->item ? [
+                                    'id' => $item->item->id,
+                                    'name' => $item->item->name,
+                                    'warehouse_division_id' => $item->item->warehouse_division_id,
+                                ] : null,
+                            ];
+                        })->values() : [],
+                    ];
+                })->values(),
+                'warehouseDivisions' => $warehouseDivisions->map(function($div) {
+                    return [
+                        'id' => $div->id,
+                        'name' => $div->name,
+                        'warehouse_id' => $div->warehouse_id,
+                    ];
+                })->values(),
+            ],
+        ]);
     }
 
     /**
