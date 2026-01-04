@@ -443,11 +443,25 @@ class PackingListController extends Controller
             'success' => true,
             'props' => [
                 'floorOrders' => $floorOrders->map(function($fo) {
+                    // Parse arrival_date jika masih string
+                    $arrivalDate = null;
+                    if ($fo->arrival_date) {
+                        if ($fo->arrival_date instanceof \DateTime || $fo->arrival_date instanceof \Carbon\Carbon) {
+                            $arrivalDate = $fo->arrival_date->format('Y-m-d');
+                        } else {
+                            try {
+                                $arrivalDate = \Carbon\Carbon::parse($fo->arrival_date)->format('Y-m-d');
+                            } catch (\Exception $e) {
+                                $arrivalDate = null;
+                            }
+                        }
+                    }
+                    
                     return [
                         'id' => $fo->id,
                         'order_number' => $fo->order_number,
-                        'tanggal' => $fo->tanggal ? $fo->tanggal->format('Y-m-d H:i:s') : null,
-                        'arrival_date' => $fo->arrival_date ? $fo->arrival_date->format('Y-m-d') : null,
+                        'tanggal' => $fo->tanggal ? ($fo->tanggal instanceof \DateTime || $fo->tanggal instanceof \Carbon\Carbon ? $fo->tanggal->format('Y-m-d H:i:s') : \Carbon\Carbon::parse($fo->tanggal)->format('Y-m-d H:i:s')) : null,
+                        'arrival_date' => $arrivalDate,
                         'status' => $fo->status,
                         'fo_mode' => $fo->fo_mode,
                         'id_outlet' => $fo->id_outlet,
