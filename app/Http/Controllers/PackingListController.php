@@ -148,6 +148,101 @@ class PackingListController extends Controller
         return redirect()->route('packing-list.index');
     }
 
+    /**
+     * API endpoint untuk mendapatkan list packing list (untuk mobile app)
+     */
+    public function apiIndex(Request $request)
+    {
+        try {
+            $search = $request->search ?? '';
+            $dateFrom = $request->date_from ?? '';
+            $dateTo = $request->date_to ?? '';
+            $status = $request->status ?? '';
+            $perPage = $request->per_page ?? 15;
+            $page = $request->page ?? 1;
+            
+            $query = FoodPackingList::with([
+                'warehouseDivision',
+                'floorOrder:id,order_number,id_outlet,user_id',
+                'creator:id,nama_lengkap',
+                'warehouseDivision:id,name',
+                'items',
+                'floorOrder.outlet:id_outlet,nama_outlet',
+                'floorOrder.requester:id,nama_lengkap',
+            ]);
+            
+            // Apply filters if provided
+            if (!empty($search)) {
+                $searchTerm = '%' . $search . '%';
+                $query->where(function($q) use ($searchTerm) {
+                    $q->where('packing_number', 'like', $searchTerm)
+                      ->orWhereHas('floorOrder', function($subQ) use ($searchTerm) {
+                          $subQ->where('order_number', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('creator', function($subQ) use ($searchTerm) {
+                          $subQ->where('nama_lengkap', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('warehouseDivision', function($subQ) use ($searchTerm) {
+                          $subQ->where('name', 'like', $searchTerm);
+                      })
+                      ->orWhereHas('floorOrder.outlet', function($subQ) use ($searchTerm) {
+                          $subQ->where('nama_outlet', 'like', $searchTerm);
+                      });
+                });
+            }
+            
+            if (!empty($dateFrom)) {
+                $query->whereDate('created_at', '>=', $dateFrom);
+            }
+            
+            if (!empty($dateTo)) {
+                $query->whereDate('created_at', '<=', $dateTo);
+            }
+            
+            if (!empty($status)) {
+                $query->where('status', $status);
+            }
+            
+            $packingLists = $query->orderByDesc('created_at')->paginate($perPage, ['*'], 'page', $page);
+            
+            return response()->json([
+                'success' => true,
+                'props' => [
+                    'packingLists' => [
+                        'data' => $packingLists->map(function($pl) {
+                            return [
+                                'id' => $pl->id,
+                                'packing_number' => $pl->packing_number,
+                                'created_at' => $pl->created_at,
+                                'created_at_format' => $pl->created_at ? $pl->created_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i') : null,
+                                'fo_number' => $pl->floorOrder?->order_number,
+                                'destination_outlet' => $pl->floorOrder?->outlet,
+                                'requester' => $pl->floorOrder?->requester,
+                                'warehouse_division' => $pl->warehouseDivision,
+                                'floor_order' => $pl->floorOrder,
+                                'creator' => $pl->creator,
+                                'status' => $pl->status,
+                                'items' => $pl->items,
+                            ];
+                        }),
+                        'current_page' => $packingLists->currentPage(),
+                        'last_page' => $packingLists->lastPage(),
+                        'per_page' => $packingLists->perPage(),
+                        'total' => $packingLists->total(),
+                        'from' => $packingLists->firstItem(),
+                        'to' => $packingLists->lastItem(),
+                        'links' => $packingLists->linkCollection(),
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function create(Request $request)
     {
         // OPTIMIZED: Gunakan raw query untuk performa maksimal

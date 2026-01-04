@@ -885,6 +885,9 @@ Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFlo
 
 Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
 
+// API route untuk mobile app
+Route::get('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'apiIndex']);
+
 Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
 Route::post('/api/packing-list/item-stocks', [\App\Http\Controllers\PackingListController::class, 'itemStocks']);
 Route::get('/api/packing-list/summary', [\App\Http\Controllers\PackingListController::class, 'summary']);
