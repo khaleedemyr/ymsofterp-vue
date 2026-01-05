@@ -355,14 +355,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/non-food-payment/{id}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve']);
         Route::post('/non-food-payment/{id}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject']);
         
-        // PR Food routes (CRUD and approval)
-        Route::get('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'index']);
-        Route::post('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'store']);
-        Route::get('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'show']);
-        Route::put('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'update']);
-        Route::delete('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'destroy']);
-        
-        // PR Food approval routes (multiple approval levels)
+        // PR Food approval routes (multiple approval levels) - keep inside approval-app prefix
         Route::get('/pr-food/pending-approvals', [\App\Http\Controllers\PrFoodController::class, 'getPendingApprovals']);
         Route::get('/pr-food/{id}', [\App\Http\Controllers\PrFoodController::class, 'getDetail']);
         Route::post('/pr-food/{id}/approve-assistant-ssd-manager', [\App\Http\Controllers\PrFoodController::class, 'approveAssistantSsdManager']);
@@ -536,6 +529,15 @@ Route::get('/outlet-inventory/stock', function (Request $request) {
 });
 
 Route::get('/items', [ItemController::class, 'apiIndex']);
+
+// PR Food routes (CRUD) - for mobile app
+Route::middleware(['approval.app.auth'])->group(function () {
+    Route::get('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'index']);
+    Route::post('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'store']);
+    Route::get('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'show']);
+    Route::put('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'update']);
+    Route::delete('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'destroy']);
+});
 
 Route::get('/delivery-order/{id}/struk', [\App\Http\Controllers\DeliveryOrderController::class, 'strukData']);
 Route::get('/food-good-receive/{id}/struk', [\App\Http\Controllers\FoodGoodReceiveController::class, 'strukData']);
