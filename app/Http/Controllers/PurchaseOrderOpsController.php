@@ -796,9 +796,29 @@ class PurchaseOrderOpsController extends Controller
                 $itemsBudgetInfo = (object)[];
             }
             
+            // Map approval flows to ensure status and dates are correctly formatted
+            // Use the relationship directly to ensure data is correctly loaded
+            $poData = $po->toArray();
+            if ($po->relationLoaded('approvalFlows') && $po->approvalFlows) {
+                $poData['approval_flows'] = $po->approvalFlows->map(function($flow) {
+                    return [
+                        'id' => $flow->id,
+                        'approval_level' => $flow->approval_level,
+                        'status' => $flow->status, // Status from database (APPROVED, PENDING, REJECTED)
+                        'approved_at' => $flow->approved_at ? $flow->approved_at->format('Y-m-d H:i:s') : null,
+                        'rejected_at' => $flow->rejected_at ? $flow->rejected_at->format('Y-m-d H:i:s') : null,
+                        'comments' => $flow->comments,
+                        'approver' => $flow->approver ? [
+                            'id' => $flow->approver->id,
+                            'nama_lengkap' => $flow->approver->nama_lengkap,
+                        ] : null,
+                    ];
+                })->toArray();
+            }
+            
             return response()->json([
                 'success' => true,
-                'po' => $po,
+                'po' => $poData,
                 'user' => $userData,
                 'budgetInfo' => $budgetInfo, // Use camelCase for consistency with Flutter
                 'itemsBudgetInfo' => $itemsBudgetInfo // Use camelCase for consistency with Flutter - always object, never array
@@ -1336,13 +1356,27 @@ class PurchaseOrderOpsController extends Controller
     public function approve(Request $request, $id)
     {
         $po = PurchaseOrderOps::findOrFail($id);
+        $currentApprover = Auth::user();
         $approverId = Auth::id();
 
-        // Find current approval flow for this approver
-        $approvalFlow = PurchaseOrderOpsApprovalFlow::where('purchase_order_ops_id', $po->id)
-            ->where('approver_id', $approverId)
-            ->where('status', 'PENDING')
-            ->first();
+        // Superadmin: user dengan id_role = '5af56935b011a' bisa approve semua level
+        $isSuperadmin = $currentApprover && $currentApprover->id_role === '5af56935b011a';
+
+        // Find current approval flow
+        $approvalFlow = null;
+        if ($isSuperadmin) {
+            // Superadmin can approve any pending level - approve the next pending level
+            $approvalFlow = PurchaseOrderOpsApprovalFlow::where('purchase_order_ops_id', $po->id)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+        } else {
+            // Regular users: only their own pending approval flow
+            $approvalFlow = PurchaseOrderOpsApprovalFlow::where('purchase_order_ops_id', $po->id)
+                ->where('approver_id', $approverId)
+                ->where('status', 'PENDING')
+                ->first();
+        }
 
         if (!$approvalFlow) {
             return response()->json([
@@ -1364,12 +1398,19 @@ class PurchaseOrderOpsController extends Controller
             $comments = $request->input('comments') ?? $request->input('comment');
 
             // Update approval flow
-            $approvalFlow->update([
+            // For superadmin, update approver_id to superadmin to track who actually approved
+            $updateData = [
                 'status' => $request->approved ? 'APPROVED' : 'REJECTED',
                 'approved_at' => $request->approved ? now() : null,
                 'rejected_at' => !$request->approved ? now() : null,
                 'comments' => $comments,
-            ]);
+            ];
+            
+            if ($isSuperadmin) {
+                $updateData['approver_id'] = $approverId; // Update approver_id to superadmin
+            }
+            
+            $approvalFlow->update($updateData);
 
             if ($request->approved) {
                 // Check if this is the last approval
