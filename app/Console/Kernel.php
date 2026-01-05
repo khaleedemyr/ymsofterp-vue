@@ -53,15 +53,15 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/employee-movements-execution.log'));
 
-            // Cuti bulanan - jalankan setiap tanggal 1 setiap bulan
-$schedule->command('leave:monthly-credit')
-->monthlyOn(1, '00:00')
-->description('Memberikan cuti bulanan ke semua karyawan aktif');
+        // Cuti bulanan - jalankan setiap tanggal 1 setiap bulan
+        $schedule->command('leave:monthly-credit')
+            ->monthlyOn(1, '00:00')
+            ->description('Memberikan cuti bulanan ke semua karyawan aktif');
 
-// Burning cuti tahun sebelumnya - jalankan setiap tanggal 1 Maret
-$schedule->command('leave:burn-previous-year')
-->yearlyOn(3, 1, '00:00')
-->description('Burning sisa cuti tahun sebelumnya');
+        // Burning cuti tahun sebelumnya - jalankan setiap tanggal 1 Maret
+        $schedule->command('leave:burn-previous-year')
+            ->yearlyOn(3, 1, '00:00')
+            ->description('Burning sisa cuti tahun sebelumnya');
 
         // Update member tiers based on rolling 12-month spending - run monthly on the 1st
         $schedule->command('members:update-tiers')
