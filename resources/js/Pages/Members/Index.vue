@@ -10,6 +10,7 @@ const props = defineProps({
   members: Object, // { data, links, meta }
   filters: Object,
   stats: Object,
+  unverifiedCount: Number,
 });
 
 const search = ref(props.filters?.search || '');
@@ -295,6 +296,70 @@ async function verifyEmail(member) {
   }
 }
 
+async function verifyAllUnverified() {
+  try {
+    // Show loading while checking count
+    Swal.fire({
+      title: 'Memproses...',
+      text: 'Sedang memeriksa member yang belum terverifikasi',
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    const result = await Swal.fire({
+      title: 'Verifikasi Semua Member',
+      html: `Apakah Anda yakin ingin memverifikasi semua member yang email_verification_at masih null?<br><br><span class="text-sm text-gray-600">Tindakan ini akan memverifikasi semua member yang belum terverifikasi sekaligus.</span>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Ya, Verifikasi Semua',
+      cancelButtonText: 'Batal'
+    });
+    
+    if (result.isConfirmed) {
+      Swal.fire({
+        title: 'Memproses...',
+        text: 'Sedang memverifikasi member',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      const response = await axios.post('/members/verify-all-unverified');
+      
+      if (response.data.success) {
+        Swal.fire({
+          title: 'Berhasil!',
+          html: `Berhasil memverifikasi <strong>${response.data.count}</strong> member`,
+          icon: 'success',
+          timer: 3000,
+          showConfirmButton: true
+        });
+        
+        // Reload all data to reflect changes including unverifiedCount
+        router.reload();
+      } else {
+        Swal.fire({
+          title: 'Gagal',
+          text: response.data.message || 'Gagal memverifikasi member',
+          icon: 'error'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error verifying all unverified:', error);
+    Swal.fire({
+      title: 'Error',
+      text: error.response?.data?.message || 'Terjadi kesalahan saat memverifikasi member',
+      icon: 'error'
+    });
+  }
+}
+
 async function viewTransactions(member) {
   selectedMember.value = member;
   showTransactionModal.value = true;
@@ -534,9 +599,27 @@ function formatDate(dateString) {
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-users text-purple-500"></i> Data Member
         </h1>
-        <button @click="openCreate" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Member Baru
-        </button>
+        <div class="flex gap-3">
+          <button 
+            @click="verifyAllUnverified" 
+            :class="[
+              'text-white px-4 py-2 rounded-xl shadow-lg transition-all font-semibold relative',
+              (unverifiedCount && unverifiedCount > 0) 
+                ? 'bg-gradient-to-r from-teal-500 to-teal-700 hover:shadow-2xl cursor-pointer' 
+                : 'bg-gray-400 cursor-not-allowed opacity-60'
+            ]"
+            :disabled="!unverifiedCount || unverifiedCount === 0"
+          >
+            <i class="fa-solid fa-envelope-circle-check mr-2"></i>
+            Verifikasi Semua Member
+            <span v-if="unverifiedCount > 0" class="ml-2 bg-white/30 px-2 py-0.5 rounded-full text-sm font-bold">
+              ({{ unverifiedCount }})
+            </span>
+          </button>
+          <button @click="openCreate" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Tambah Member Baru
+          </button>
+        </div>
       </div>
 
       <!-- Statistics Cards -->

@@ -265,10 +265,14 @@ class MemberController extends Controller
         $stats['total_point_redeemed_formatted'] = number_format($stats['total_point_redeemed'], 0, ',', '.');
         $stats['total_point_balance_formatted'] = number_format($stats['total_point_balance'], 0, ',', '.');
 
+        // Count unverified members (email_verified_at is null)
+        $unverifiedCount = MemberAppsMember::whereNull('email_verified_at')->count();
+
         return Inertia::render('Members/Index', [
             'members' => $members,
             'filters' => $request->only(['search', 'status', 'block_status', 'exclusive', 'sort', 'direction', 'per_page']),
             'stats' => $stats,
+            'unverifiedCount' => $unverifiedCount,
         ]);
     }
 
@@ -626,6 +630,52 @@ class MemberController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal memverifikasi email: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify all members with null email_verified_at
+     */
+    public function verifyAllUnverified()
+    {
+        try {
+            // Get count of unverified members
+            $unverifiedCount = MemberAppsMember::whereNull('email_verified_at')->count();
+            
+            if ($unverifiedCount === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada member yang belum terverifikasi',
+                    'count' => 0
+                ], 400);
+            }
+            
+            // Update all unverified members
+            $updated = MemberAppsMember::whereNull('email_verified_at')
+                ->update([
+                    'email_verified_at' => now()
+                ]);
+            
+            \Log::info('Bulk email verification by admin', [
+                'count' => $updated,
+                'verified_by' => auth()->user()->id ?? null
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil memverifikasi {$updated} member",
+                'count' => $updated
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Bulk email verification error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memverifikasi member: ' . $e->getMessage()
             ], 500);
         }
     }
