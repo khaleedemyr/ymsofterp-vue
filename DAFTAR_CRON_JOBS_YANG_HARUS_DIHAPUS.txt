@@ -1,0 +1,28 @@
+# DAFTAR CRON JOBS YANG HARUS DIHAPUS
+# Semua cron jobs ini sudah di-handle oleh schedule:run
+# Hapus satu per satu di cPanel → Cron Jobs
+
+1. attendance:process-holiday (06:00)
+2. attendance:process-holiday (23:00)
+3. extra-off:detect (07:00)
+4. extra-off:detect (23:30)
+5. employee-movements:execute (05:00)
+6. leave:monthly-credit (tanggal 1, 00:00)
+7. leave:burn-previous-year (1 Maret, 00:00)
+8. vouchers:distribute-birthday (01:00)
+9. attendance:cleanup-logs (Minggu, 02:00)
+10. members:update-tiers (tanggal 1, 00:00)
+11. points:expire (00:00 atau 01:00)
+12. member:notify-incomplete-profile (07:00 atau hourly)
+13. member:notify-incomplete-challenge (08:00 atau hourly)
+14. member:notify-inactive (10:00)
+15. member:notify-long-inactive (tanggal 11, 00:00)
+16. member:notify-expiring-points (tanggal 9, 00:00)
+17. member:notify-monthly-inactive (10:30)
+18. member:notify-expiring-vouchers (09:30)
+19. device-tokens:cleanup (02:00)
+
+# PERTAHANKAN HANYA:
+# - schedule:run (setiap menit) ← INI YANG PENTING
+# - queue:work (setelah diperbaiki sesuai solusi sebelumnya)
+

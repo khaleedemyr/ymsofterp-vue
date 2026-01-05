@@ -19,9 +19,9 @@ class PrFoodController extends Controller
     public function index(Request $request)
     {
         $query = PrFood::with([
-            'warehouse', 
-            'warehouseDivision', 
-            'requester',
+            'warehouse:id,code,name,location,status', 
+            'warehouseDivision:id,name,warehouse_id,status', 
+            'requester:id,nama_lengkap,email,no_hp',
             'assistantSsdManager:id,nama_lengkap',
             'ssdManager:id,nama_lengkap',
             'viceCoo:id,nama_lengkap'
@@ -604,7 +604,11 @@ class PrFoodController extends Controller
             $user = Auth::user();
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
-            $query = PrFood::with(['warehouse', 'requester', 'items'])
+            $query = PrFood::with([
+                'warehouse:id,code,name,location,status',
+                'requester:id,nama_lengkap,email',
+                'items:id,pr_food_id,item_id,qty,unit'
+            ])
                 ->where('status', 'draft')
                 ->orderByDesc('created_at');
             

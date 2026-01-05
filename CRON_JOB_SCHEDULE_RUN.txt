@@ -1,0 +1,16 @@
+# Cron Job untuk Schedule:Run
+# Copy-paste ini ke cPanel → Cron Jobs
+
+Minute: *
+Hour: *
+Day: *
+Month: *
+Weekday: *
+Command: cd /home/ymsuperadmin/public_html && /usr/bin/php artisan schedule:run >> /home/ymsuperadmin/public_html/storage/logs/schedule.log 2>&1
+
+# CATATAN PENTING:
+# 1. Ganti /usr/bin/php dengan path PHP yang benar (cek dengan: which php)
+# 2. Pastikan path aplikasi benar: /home/ymsuperadmin/public_html
+# 3. Setelah ini, HAPUS semua cron jobs individual lainnya
+# 4. PERTAHANKAN hanya ini dan queue:work (yang sudah diperbaiki)
+
