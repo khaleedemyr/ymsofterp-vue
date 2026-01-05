@@ -55,46 +55,67 @@ class PrFoodController extends Controller
 
     public function show($id)
     {
-        $prFood = PrFood::with([
-            'warehouse',
-            'requester',
-            'items.item.smallUnit',
-            'items.item.mediumUnit',
-            'items.item.largeUnit',
-            'assistantSsdManager:id,nama_lengkap',
-            'ssdManager:id,nama_lengkap',
-            'viceCoo:id,nama_lengkap'
-        ])->findOrFail($id);
+        try {
+            $prFood = PrFood::with([
+                'warehouse',
+                'warehouseDivision',
+                'requester',
+                'items.item.smallUnit',
+                'items.item.mediumUnit',
+                'items.item.largeUnit',
+                'assistantSsdManager:id,nama_lengkap',
+                'ssdManager:id,nama_lengkap',
+                'viceCoo:id,nama_lengkap'
+            ])->findOrFail($id);
 
-        // Ambil stok untuk setiap item di warehouse PR
-        $warehouseId = $prFood->warehouse_id;
-        foreach ($prFood->items as $item) {
-            $invItem = \App\Models\FoodInventoryItem::where('item_id', $item->item_id)->first();
-            if ($invItem) {
-                $stock = \App\Models\FoodInventoryStock::where('inventory_item_id', $invItem->id)
-                    ->where('warehouse_id', $warehouseId)
-                    ->first();
-                $item->stock_small = $stock ? $stock->qty_small : 0;
-                $item->stock_medium = $stock ? $stock->qty_medium : 0;
-                $item->stock_large = $stock ? $stock->qty_large : 0;
-                $item->unit_small = $invItem->smallUnit ? $invItem->smallUnit->name : null;
-                $item->unit_medium = $invItem->mediumUnit ? $invItem->mediumUnit->name : null;
-                $item->unit_large = $invItem->largeUnit ? $invItem->largeUnit->name : null;
-            } else {
-                $item->stock_small = $item->stock_medium = $item->stock_large = 0;
-                $item->unit_small = $item->unit_medium = $item->unit_large = null;
+            // Ambil stok untuk setiap item di warehouse PR
+            $warehouseId = $prFood->warehouse_id;
+            foreach ($prFood->items as $item) {
+                $invItem = \App\Models\FoodInventoryItem::where('item_id', $item->item_id)->first();
+                if ($invItem) {
+                    $stock = \App\Models\FoodInventoryStock::where('inventory_item_id', $invItem->id)
+                        ->where('warehouse_id', $warehouseId)
+                        ->first();
+                    $item->stock_small = $stock ? $stock->qty_small : 0;
+                    $item->stock_medium = $stock ? $stock->qty_medium : 0;
+                    $item->stock_large = $stock ? $stock->qty_large : 0;
+                    $item->unit_small = $invItem->smallUnit ? $invItem->smallUnit->name : null;
+                    $item->unit_medium = $invItem->mediumUnit ? $invItem->mediumUnit->name : null;
+                    $item->unit_large = $invItem->largeUnit ? $invItem->largeUnit->name : null;
+                } else {
+                    $item->stock_small = $item->stock_medium = $item->stock_large = 0;
+                    $item->unit_small = $item->unit_medium = $item->unit_large = null;
+                }
             }
-        }
 
-        // API response
-        if (request()->expectsJson() || request()->ajax()) {
-            return response()->json($prFood);
+            // API response
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json($prFood);
+            }
+            
+            // Web response
+            return Inertia::render('PrFoods/Show', [
+                'prFood' => $prFood,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting PR Food detail in show method', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'id' => $id
+            ]);
+            
+            // API response
+            if (request()->expectsJson() || request()->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to load PR Food detail'
+                ], 500);
+            }
+            
+            // Web response
+            return redirect()->route('pr-foods.index')
+                ->with('error', 'Gagal memuat detail PR Food');
         }
-        
-        // Web response
-        return Inertia::render('PrFoods/Show', [
-            'prFood' => $prFood,
-        ]);
     }
 
     public function create()

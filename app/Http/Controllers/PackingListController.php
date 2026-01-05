@@ -258,13 +258,14 @@ class PackingListController extends Controller
                 AND pl.status = 'packing'
             WHERE fo.status IN ('approved', 'packing')
             AND fo.fo_mode != 'RO Supplier'
+            AND (fo.arrival_date IS NULL OR fo.arrival_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY))
         ";
         
         $params = [];
         
         // Filter berdasarkan tanggal kedatangan jika ada
         if ($request->filled('arrival_date')) {
-            $query .= " AND DATE(food_floor_orders.arrival_date) = ?";
+            $query .= " AND DATE(fo.arrival_date) = ?";
             $params[] = $request->arrival_date;
         }
         
@@ -358,6 +359,7 @@ class PackingListController extends Controller
                 AND pl.status = 'packing'
             WHERE fo.status IN ('approved', 'packing')
             AND fo.fo_mode != 'RO Supplier'
+            AND (fo.arrival_date IS NULL OR fo.arrival_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY))
         ";
         
         $params = [];
