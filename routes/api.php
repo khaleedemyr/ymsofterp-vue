@@ -184,6 +184,7 @@ Route::get('items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsControll
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
+Route::get('/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::get('/warehouse-outlets/by-outlet', function (Request $request) {
     $outlet_id = $request->get('outlet_id');
     
@@ -354,7 +355,14 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/non-food-payment/{id}/approve', [\App\Http\Controllers\NonFoodPaymentController::class, 'approve']);
         Route::post('/non-food-payment/{id}/reject', [\App\Http\Controllers\NonFoodPaymentController::class, 'reject']);
         
-        // PR Food routes (multiple approval levels)
+        // PR Food routes (CRUD and approval)
+        Route::get('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'index']);
+        Route::post('/pr-foods', [\App\Http\Controllers\PrFoodController::class, 'store']);
+        Route::get('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'show']);
+        Route::put('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'update']);
+        Route::delete('/pr-foods/{id}', [\App\Http\Controllers\PrFoodController::class, 'destroy']);
+        
+        // PR Food approval routes (multiple approval levels)
         Route::get('/pr-food/pending-approvals', [\App\Http\Controllers\PrFoodController::class, 'getPendingApprovals']);
         Route::get('/pr-food/{id}', [\App\Http\Controllers\PrFoodController::class, 'getDetail']);
         Route::post('/pr-food/{id}/approve-assistant-ssd-manager', [\App\Http\Controllers\PrFoodController::class, 'approveAssistantSsdManager']);
@@ -370,6 +378,30 @@ Route::prefix('approval-app')->group(function () {
         
         // Inventory stock route for approval app
         Route::get('/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
+        
+        // Warehouses route for approval app
+        Route::get('/warehouses', function () {
+            $warehouses = \App\Models\Warehouse::where('status', 'active')
+                ->orderBy('name')
+                ->select('id', 'name', 'status')
+                ->get();
+            return response()->json($warehouses);
+        });
+        
+        // Warehouse divisions route for approval app
+        Route::get('/warehouse-divisions', function (Request $request) {
+            $query = \App\Models\WarehouseDivision::where('status', 'active');
+            
+            if ($request->has('warehouse_id')) {
+                $query->where('warehouse_id', $request->warehouse_id);
+            }
+            
+            $divisions = $query->orderBy('name')
+                ->select('id', 'name', 'warehouse_id', 'status')
+                ->get();
+            
+            return response()->json($divisions);
+        });
         
         // RO Khusus routes
         Route::get('/ro-khusus/pending-approvals', [\App\Http\Controllers\FoodFloorOrderController::class, 'getPendingROKhususApprovals']);

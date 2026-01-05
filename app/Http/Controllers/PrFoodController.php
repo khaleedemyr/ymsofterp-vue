@@ -38,7 +38,15 @@ class PrFoodController extends Controller
         if ($request->to) {
             $query->whereDate('tanggal', '<=', $request->to);
         }
-        $prFoods = $query->paginate(10)->withQueryString();
+        $perPage = $request->per_page ?? 10;
+        $prFoods = $query->paginate($perPage)->withQueryString();
+        
+        // API response
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json($prFoods);
+        }
+        
+        // Web response
         return Inertia::render('PrFoods/Index', [
             'prFoods' => $prFoods,
             'filters' => $request->only(['search', 'status', 'from', 'to']),
@@ -78,6 +86,12 @@ class PrFoodController extends Controller
             }
         }
 
+        // API response
+        if (request()->expectsJson() || request()->ajax()) {
+            return response()->json($prFood);
+        }
+        
+        // Web response
         return Inertia::render('PrFoods/Show', [
             'prFood' => $prFood,
         ]);
@@ -183,6 +197,16 @@ class PrFoodController extends Controller
             );
         }
         
+        // API response
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'PR Food created successfully',
+                'data' => $prFood->load(['warehouse', 'warehouseDivision', 'requester', 'items.item']),
+            ], 201);
+        }
+        
+        // Web response
         return redirect()->route('pr-foods.index');
     }
 
@@ -243,6 +267,17 @@ class PrFoodController extends Controller
             'new_data' => $prFood->fresh()->toArray(),
         ]);
         DB::commit();
+        
+        // API response
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'PR Food updated successfully',
+                'data' => $prFood->fresh()->load(['warehouse', 'warehouseDivision', 'requester', 'items.item']),
+            ]);
+        }
+        
+        // Web response
         return redirect()->route('pr-foods.index');
     }
 
@@ -261,6 +296,16 @@ class PrFoodController extends Controller
             'old_data' => $oldData,
             'new_data' => null,
         ]);
+        
+        // API response
+        if (request()->expectsJson() || request()->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'PR Food deleted successfully',
+            ]);
+        }
+        
+        // Web response
         return redirect()->route('pr-foods.index');
     }
 
