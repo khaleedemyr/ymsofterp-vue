@@ -1502,6 +1502,10 @@ class PurchaseRequisitionController extends Controller
             // Get comment from request (for API calls)
             $comment = $request->input('comment');
             
+            // Initialize variables for approval flow (needed for budget validation rollback)
+            $nextFlow = null;
+            $currentApprovalFlow = null;
+            
             if ($isSuperadmin) {
                 // Superadmin can approve any pending level - approve the next pending level
                 $pendingFlows = $purchaseRequisition->approvalFlows()
@@ -1563,7 +1567,95 @@ class PurchaseRequisitionController extends Controller
                 
                 $message = 'Purchase Requisition approved! Notification sent to next approver.';
             } else {
-                // All approvers have approved, update status to APPROVED
+                // All approvers have approved, validate budget before updating status to APPROVED
+                // Skip budget validation for kasbon mode
+                if ($purchaseRequisition->mode !== 'kasbon') {
+                    // For pr_ops and purchase_payment mode, check budget per outlet/category from items
+                    if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
+                        // Group items by outlet_id and category_id
+                        $budgetChecks = [];
+                        $items = $purchaseRequisition->items;
+                        
+                        foreach ($items as $item) {
+                            if (!empty($item->category_id)) {
+                                $key = ($item->outlet_id ?? 'null') . '_' . $item->category_id;
+                                if (!isset($budgetChecks[$key])) {
+                                    $budgetChecks[$key] = [
+                                        'outlet_id' => $item->outlet_id,
+                                        'category_id' => $item->category_id,
+                                        'amount' => 0
+                                    ];
+                                }
+                                $budgetChecks[$key]['amount'] += $item->subtotal ?? ($item->qty * $item->unit_price);
+                            }
+                        }
+                        
+                        // Validate each outlet/category combination
+                        foreach ($budgetChecks as $check) {
+                            $budgetValidation = $this->validateBudgetLimit($check['category_id'], $check['outlet_id'], $check['amount']);
+                            if (!$budgetValidation['valid']) {
+                                // Revert the approval flow that was just approved
+                                if ($isSuperadmin && $nextFlow) {
+                                    $nextFlow->update([
+                                        'status' => 'PENDING',
+                                        'approved_at' => null,
+                                        'approver_id' => null,
+                                        'comments' => null,
+                                    ]);
+                                } else if (!$isSuperadmin && $currentApprovalFlow) {
+                                    $currentApprovalFlow->update([
+                                        'status' => 'PENDING',
+                                        'approved_at' => null,
+                                        'comments' => null,
+                                    ]);
+                                }
+                                
+                                if ($request->expectsJson() || $request->wantsJson()) {
+                                    return response()->json([
+                                        'success' => false,
+                                        'message' => $budgetValidation['message']
+                                    ], 400);
+                                }
+                                return back()->withErrors([
+                                    'budget_exceeded' => $budgetValidation['message']
+                                ]);
+                            }
+                        }
+                    } else if ($purchaseRequisition->category_id) {
+                        // For other modes (non-pr_ops), use main category_id and outlet_id
+                        $amount = $purchaseRequisition->amount ?? 0;
+                        $budgetValidation = $this->validateBudgetLimit($purchaseRequisition->category_id, $purchaseRequisition->outlet_id, $amount);
+                        if (!$budgetValidation['valid']) {
+                            // Revert the approval flow that was just approved
+                            if ($isSuperadmin && $nextFlow) {
+                                $nextFlow->update([
+                                    'status' => 'PENDING',
+                                    'approved_at' => null,
+                                    'approver_id' => null,
+                                    'comments' => null,
+                                ]);
+                            } else if (!$isSuperadmin && $currentApprovalFlow) {
+                                $currentApprovalFlow->update([
+                                    'status' => 'PENDING',
+                                    'approved_at' => null,
+                                    'comments' => null,
+                                ]);
+                            }
+                            
+                            if ($request->expectsJson() || $request->wantsJson()) {
+                                return response()->json([
+                                    'success' => false,
+                                    'message' => $budgetValidation['message']
+                                ], 400);
+                            }
+                            return back()->withErrors([
+                                'budget_exceeded' => $budgetValidation['message']
+                            ]);
+                        }
+                    }
+                }
+                
+                // All approvers have approved and budget is valid, update status to APPROVED
                 $purchaseRequisition->update([
                     'status' => 'APPROVED',
                     'approved_ssd_by' => auth()->id(),
@@ -4310,11 +4402,73 @@ class PurchaseRequisitionController extends Controller
             */
             // END OF OLD CODE - DEPRECATED (PER_OUTLET budget calculation)
 
+            // For PR Ops and purchase_payment mode, calculate items_budget_info (per outlet+category)
+            $itemsBudgetInfo = [];
+            if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment']) && $budgetInfo) {
+                // Get unique outlet+category combinations from items
+                $outletCategoryCombos = [];
+                foreach ($purchaseRequisition->items as $item) {
+                    $outletId = $item->outlet_id;
+                    $categoryId = $item->category_id;
+                    
+                    if ($outletId && $categoryId) {
+                        $key = "{$outletId}_{$categoryId}";
+                        if (!isset($outletCategoryCombos[$key])) {
+                            $outletCategoryCombos[$key] = [
+                                'outlet_id' => $outletId,
+                                'category_id' => $categoryId,
+                            ];
+                        }
+                    }
+                }
+                
+                // Calculate budget info for each outlet+category combination
+                $budgetService = new BudgetCalculationService();
+                $currentMonth = now()->month;
+                $currentYear = now()->year;
+                $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+                $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+                
+                foreach ($outletCategoryCombos as $key => $combo) {
+                    try {
+                        // Calculate current amount for this outlet+category from PR items
+                        $currentAmount = 0;
+                        foreach ($purchaseRequisition->items as $item) {
+                            if ($item->outlet_id == $combo['outlet_id'] && 
+                                $item->category_id == $combo['category_id']) {
+                                $currentAmount += $item->subtotal ?? 0;
+                            }
+                        }
+                        
+                        // Get budget info for this outlet+category
+                        $itemBudgetInfoResult = $budgetService->getBudgetInfo(
+                            categoryId: $combo['category_id'],
+                            outletId: $combo['outlet_id'],
+                            dateFrom: $dateFrom,
+                            dateTo: $dateTo,
+                            currentAmount: $currentAmount
+                        );
+                        
+                        if ($itemBudgetInfoResult && $itemBudgetInfoResult['success']) {
+                            $itemBudgetInfo = $itemBudgetInfoResult;
+                            $itemsBudgetInfo[$key] = $itemBudgetInfo;
+                        }
+                    } catch (\Exception $e) {
+                        \Log::warning("Failed to get budget info for outlet {$combo['outlet_id']} category {$combo['category_id']}: " . $e->getMessage());
+                    }
+                }
+            }
+            
+            // Ensure itemsBudgetInfo is always an object (not array) for JSON response
+            if (is_array($itemsBudgetInfo) && empty($itemsBudgetInfo)) {
+                $itemsBudgetInfo = (object)[];
+            }
 
             return response()->json([
                 'success' => true,
                 'purchase_requisition' => $purchaseRequisition,
                 'budget_info' => $budgetInfo, // Can be null if kasbon mode or no category
+                'items_budget_info' => $itemsBudgetInfo, // Per outlet+category budget info for PR Ops
                 'mode_specific_data' => $modeSpecificData
             ], 200, [], JSON_UNESCAPED_UNICODE);
 

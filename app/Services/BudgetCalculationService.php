@@ -486,17 +486,23 @@ class BudgetCalculationService
 
     /**
      * Calculate PR Total Amount (all PR items for this category/outlet)
-     * PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
+     * PENTING: PR Total = semua PR items yang sudah dibuat, EXCLUDE REJECTED dan DELETED
      * Gunakan filter tanggal dari pri.created_at untuk konsistensi dengan query manual
      * dan hitung menggunakan qty*unit_price untuk konsistensi dengan query manual
      */
     private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month, string $dateFrom, string $dateTo): float
     {
-        // PR Total = semua PR items yang sudah dibuat (tidak peduli status)
-        // Hanya filter: category_id, outlet_id (jika per outlet), dan tanggal created_at
+        // PR Total = semua PR items yang sudah dibuat, EXCLUDE REJECTED
+        // Join ke purchase_requisitions untuk filter status dan is_held
+        // Note: Hard deleted PRs are automatically excluded because PR items will also be deleted
         $query = DB::table('purchase_requisition_items as pri')
+            ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->where('pri.category_id', $categoryId)
-            ->whereBetween(DB::raw('DATE(pri.created_at)'), [$dateFrom, $dateTo]);
+            ->whereBetween(DB::raw('DATE(pri.created_at)'), [$dateFrom, $dateTo])
+            // Exclude REJECTED status
+            ->where('pr.status', '!=', 'REJECTED')
+            // Exclude held PRs
+            ->where('pr.is_held', false);
 
         // Filter by outlet jika per outlet budget
         if ($outletId) {

@@ -74,6 +74,18 @@ const props = defineProps({
     type: Object,
     default: () => null
   },
+  top10Points: {
+    type: Array,
+    default: () => []
+  },
+  top10VoucherOwners: {
+    type: Array,
+    default: () => []
+  },
+  top10PointRedemptions: {
+    type: Array,
+    default: () => []
+  },
   memberFavouritePicks: {
     type: Object,
     default: () => ({ food: [], beverages: [] })
@@ -179,7 +191,7 @@ const regionalPeriod = ref('currentMonth'); // 'currentMonth', 'last60Days', 'la
 const memberTransactionsData = ref({
   memberId: '',
   memberName: '',
-  type: 'orders', // 'orders' or 'points'
+  type: 'orders', // 'orders', 'points', 'vouchers', 'redemptions'
 });
 const memberTransactions = ref([]);
 const loadingMemberTransactions = ref(false);
@@ -196,18 +208,35 @@ const openMemberTransactionsModal = async (memberId, memberName, type = 'orders'
   memberTransactions.value = [];
   
   try {
-    const response = await axios.get('/api/crm/member-transactions', {
-      params: { 
-        member_id: memberId,
-        type: type
-      }
-    });
+    let endpoint = '/api/crm/member-transactions';
+    let params = { 
+      member_id: memberId,
+      type: type
+    };
+    
+    // Use different endpoints for vouchers and redemptions
+    if (type === 'vouchers') {
+      endpoint = '/api/crm/member-vouchers';
+      params = { member_id: memberId };
+    } else if (type === 'redemptions') {
+      endpoint = '/api/crm/member-point-redemptions';
+      params = { member_id: memberId };
+    }
+    
+    const response = await axios.get(endpoint, { params });
     
     if (response.data.status === 'success') {
       memberTransactions.value = response.data.data || [];
+    } else {
+      console.error('Error response:', response.data);
+      memberTransactions.value = [];
     }
   } catch (error) {
-    console.error('Error fetching member transactions:', error);
+    console.error('Error fetching member data:', error);
+    if (error.response) {
+      console.error('Error response data:', error.response.data);
+    }
+    memberTransactions.value = [];
   } finally {
     loadingMemberTransactions.value = false;
   }
@@ -2005,6 +2034,12 @@ function getAgeGroupColor(ageGroup) {
                         {{ spender.memberName }}
                       </div>
                       <div class="text-sm text-gray-500">{{ spender.orderCount }} transaksi</div>
+                      <div class="text-xs text-gray-400 mt-1">
+                        <i class="fa-solid fa-envelope"></i> {{ spender.email }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        <i class="fa-solid fa-phone"></i> {{ spender.mobilePhone }}
+                      </div>
                     </div>
                   </div>
                   <div class="text-right">
@@ -2045,6 +2080,12 @@ function getAgeGroupColor(ageGroup) {
                         {{ active.memberName }}
                       </div>
                       <div class="text-sm text-gray-500">{{ active.transactionCount }} transaksi point</div>
+                      <div class="text-xs text-gray-400 mt-1">
+                        <i class="fa-solid fa-envelope"></i> {{ active.email }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        <i class="fa-solid fa-phone"></i> {{ active.mobilePhone }}
+                      </div>
                     </div>
                   </div>
                   <div class="text-right">
@@ -2052,11 +2093,140 @@ function getAgeGroupColor(ageGroup) {
                     <div class="text-xs text-gray-500">{{ active.orderCount }} orders</div>
                   </div>
                 </div>
-              </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+        <!-- Top 10 Points, Voucher Owners, and Point Redemptions -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <!-- Top 10 Points -->
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+              <i class="fa-solid fa-star text-yellow-500"></i>
+              Top 10 Most Points
+            </h3>
+            <div v-if="props.top10Points.length === 0" class="text-center py-8 text-gray-400">
+              <i class="fa-solid fa-star text-4xl mb-2"></i>
+              <p class="text-sm">Tidak ada data</p>
+            </div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="(member, index) in props.top10Points"
+                :key="member.memberId"
+                @click="openMemberTransactionsModal(member.memberId, member.memberName, 'points')"
+                class="group p-4 bg-gradient-to-r from-yellow-50 to-white rounded-xl border border-yellow-100 hover:border-yellow-200 hover:shadow-lg transition-all duration-300 cursor-pointer"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-white font-bold shadow-lg">
+                      {{ index + 1 }}
+                    </div>
+                    <div>
+                      <div class="font-semibold text-gray-900 group-hover:text-yellow-600 transition-colors">{{ member.memberName }}</div>
+                      <div class="text-xs text-gray-500">{{ member.memberId }}</div>
+                      <div class="text-xs text-gray-400 mt-1">
+                        <i class="fa-solid fa-envelope"></i> {{ member.email }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        <i class="fa-solid fa-phone"></i> {{ member.mobilePhone }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-lg font-bold text-yellow-600">{{ member.pointBalanceFormatted }}</div>
+                    <div class="text-xs text-gray-500">point</div>
                   </div>
                 </div>
-        
+              </div>
+            </div>
+          </div>
+
+          <!-- Top 10 Voucher Owners -->
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+              <i class="fa-solid fa-ticket-alt text-purple-500"></i>
+              Top 10 Voucher Owners
+            </h3>
+            <div v-if="props.top10VoucherOwners.length === 0" class="text-center py-8 text-gray-400">
+              <i class="fa-solid fa-ticket-alt text-4xl mb-2"></i>
+              <p class="text-sm">Tidak ada data</p>
+            </div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="(member, index) in props.top10VoucherOwners"
+                :key="member.memberId"
+                @click="openMemberTransactionsModal(member.memberId, member.memberName, 'vouchers')"
+                class="group p-4 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 hover:border-purple-200 hover:shadow-lg transition-all duration-300 cursor-pointer"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg">
+                      {{ index + 1 }}
+                    </div>
+                    <div>
+                      <div class="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">{{ member.memberName }}</div>
+                      <div class="text-xs text-gray-500">{{ member.memberId }}</div>
+                      <div class="text-xs text-gray-400 mt-1">
+                        <i class="fa-solid fa-envelope"></i> {{ member.email }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        <i class="fa-solid fa-phone"></i> {{ member.mobilePhone }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-lg font-bold text-purple-600">{{ member.voucherCountFormatted }}</div>
+                    <div class="text-xs text-gray-500">voucher</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top 10 Point Redemptions -->
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+              <i class="fa-solid fa-exchange-alt text-red-500"></i>
+              Top 10 Point Redemptions
+            </h3>
+            <div v-if="props.top10PointRedemptions.length === 0" class="text-center py-8 text-gray-400">
+              <i class="fa-solid fa-exchange-alt text-4xl mb-2"></i>
+              <p class="text-sm">Tidak ada data</p>
+            </div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="(member, index) in props.top10PointRedemptions"
+                :key="member.memberId"
+                @click="openMemberTransactionsModal(member.memberId, member.memberName, 'redemptions')"
+                class="group p-4 bg-gradient-to-r from-red-50 to-white rounded-xl border border-red-100 hover:border-red-200 hover:shadow-lg transition-all duration-300 cursor-pointer"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-bold shadow-lg">
+                      {{ index + 1 }}
+                    </div>
+                    <div>
+                      <div class="font-semibold text-gray-900 group-hover:text-red-600 transition-colors">{{ member.memberName }}</div>
+                      <div class="text-xs text-gray-500">{{ member.memberId }}</div>
+                      <div class="text-xs text-gray-400 mt-1">
+                        <i class="fa-solid fa-envelope"></i> {{ member.email }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        <i class="fa-solid fa-phone"></i> {{ member.mobilePhone }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-lg font-bold text-red-600">{{ member.totalRedeemedFormatted }}</div>
+                    <div class="text-xs text-gray-500">{{ member.redemptionCountFormatted }}x redeem</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Member Favourite Picks -->
         <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">
@@ -2750,7 +2920,11 @@ function getAgeGroupColor(ageGroup) {
                 {{ memberTransactionsData.memberName }}
               </p>
               <p class="text-xs opacity-75 mt-1">
-                {{ memberTransactionsData.type === 'orders' ? 'Riwayat Order' : 'Riwayat Point' }}
+                <span v-if="memberTransactionsData.type === 'orders'">Order History</span>
+                <span v-else-if="memberTransactionsData.type === 'points'">Point Transactions</span>
+                <span v-else-if="memberTransactionsData.type === 'vouchers'">Voucher List</span>
+                <span v-else-if="memberTransactionsData.type === 'redemptions'">Point Redemptions</span>
+                <span v-else>Transaction History</span>
               </p>
             </div>
             <button @click="closeMemberTransactionsModal" class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all">
@@ -2854,7 +3028,7 @@ function getAgeGroupColor(ageGroup) {
             </div>
             
             <!-- Points Type -->
-            <div v-else>
+            <div v-else-if="memberTransactionsData.type === 'points'">
               <div
                 v-for="(transaction, index) in memberTransactions"
                 :key="transaction.id || index"
@@ -2881,6 +3055,98 @@ function getAgeGroupColor(ageGroup) {
                     </div>
                     <div v-if="transaction.transactionAmountFormatted !== '-'" class="text-sm text-gray-500 mt-1">
                       {{ transaction.transactionAmountFormatted }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Vouchers Type -->
+            <div v-else-if="memberTransactionsData.type === 'vouchers'">
+              <div
+                v-for="(voucher, index) in memberTransactions"
+                :key="voucher.id || index"
+                class="p-5 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-200 hover:border-purple-300 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                        <i class="fa-solid fa-ticket-alt text-purple-600"></i>
+                      </div>
+                      <div class="flex-1">
+                        <div class="font-semibold text-gray-900">{{ voucher.voucherName }}</div>
+                        <div v-if="voucher.description" class="text-sm text-gray-500 mt-1">{{ voucher.description }}</div>
+                        <div class="flex items-center gap-4 mt-2 text-xs">
+                          <span class="text-gray-500">
+                            <i class="fa-solid fa-barcode"></i> {{ voucher.serialCode }}
+                          </span>
+                          <span :class="[
+                            'px-2 py-1 rounded-full text-xs font-medium',
+                            voucher.status === 'active' ? 'bg-green-100 text-green-700' :
+                            voucher.status === 'used' ? 'bg-gray-100 text-gray-700' :
+                            'bg-red-100 text-red-700'
+                          ]">
+                            {{ voucher.statusText }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-purple-100">
+                      <div>
+                        <div class="text-xs text-gray-500 mb-1">Discount</div>
+                        <div class="font-semibold text-purple-600">{{ voucher.discountFormatted }}</div>
+                      </div>
+                      <div>
+                        <div class="text-xs text-gray-500 mb-1">Min. Purchase</div>
+                        <div class="font-semibold text-gray-900">{{ voucher.minimumPurchaseFormatted }}</div>
+                      </div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-2">
+                      <i class="fa-solid fa-calendar"></i> 
+                      <span v-if="voucher.expiresAt !== '-'">Expires: {{ voucher.expiresAt }}</span>
+                      <span v-else>No expiration</span>
+                      <span v-if="voucher.usedAt !== '-'" class="ml-3">
+                        <i class="fa-solid fa-check-circle"></i> Used: {{ voucher.usedAt }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Redemptions Type -->
+            <div v-else-if="memberTransactionsData.type === 'redemptions'">
+              <div
+                v-for="(redemption, index) in memberTransactions"
+                :key="redemption.id || index"
+                class="p-5 bg-gradient-to-r from-red-50 to-white rounded-xl border border-red-200 hover:border-red-300 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                      <div class="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                        <i class="fa-solid fa-exchange-alt text-red-600"></i>
+                      </div>
+                      <div class="flex-1">
+                        <div class="font-semibold text-gray-900">{{ redemption.redemptionType }}</div>
+                        <div class="text-sm text-gray-500 mt-1">{{ redemption.redemptionDetail }}</div>
+                        <div class="text-sm text-gray-600 mt-2">
+                          <i class="fa-solid fa-store"></i> {{ redemption.outletName }}
+                          <span v-if="redemption.outletCode !== '-'" class="text-xs text-gray-400 ml-2">({{ redemption.outletCode }})</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-2">
+                      <i class="fa-solid fa-clock"></i> {{ redemption.createdAt }}
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-xl font-bold text-red-600">
+                      -{{ redemption.pointAmountFormatted }} point
+                    </div>
+                    <div v-if="redemption.transactionAmountFormatted !== '-'" class="text-sm text-gray-500 mt-1">
+                      {{ redemption.transactionAmountFormatted }}
                     </div>
                   </div>
                 </div>

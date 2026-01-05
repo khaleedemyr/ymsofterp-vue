@@ -2157,6 +2157,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/crm/redeem-details', [App\Http\Controllers\CrmDashboardController::class, 'getRedeemDetails'])->name('crm.redeem-details');
     Route::get('/api/crm/contribution-by-outlet', [App\Http\Controllers\CrmDashboardController::class, 'getContributionByOutlet'])->name('crm.contribution-by-outlet');
     Route::get('/api/crm/member-transactions', [App\Http\Controllers\CrmDashboardController::class, 'getMemberTransactions'])->name('crm.member-transactions');
+    Route::get('/api/crm/member-vouchers', [App\Http\Controllers\CrmDashboardController::class, 'getMemberVouchers'])->name('crm.member-vouchers');
+    Route::get('/api/crm/member-point-redemptions', [App\Http\Controllers\CrmDashboardController::class, 'getMemberPointRedemptions'])->name('crm.member-point-redemptions');
     
     // Customer Analytics Routes
     Route::get('/crm/customer-analytics', [App\Http\Controllers\CustomerAnalyticsController::class, 'index'])->name('crm.customer-analytics');

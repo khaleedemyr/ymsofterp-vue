@@ -66,6 +66,30 @@ class CrmDashboardController extends Controller
                 Log::error('CRM Dashboard: Failed to load most active members: ' . $e->getMessage());
             }
             
+            // Load top 10 points
+            $top10Points = [];
+            try {
+                $top10Points = $this->getTop10Points();
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load top 10 points: ' . $e->getMessage());
+            }
+            
+            // Load top 10 voucher owners
+            $top10VoucherOwners = [];
+            try {
+                $top10VoucherOwners = $this->getTop10VoucherOwners();
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load top 10 voucher owners: ' . $e->getMessage());
+            }
+            
+            // Load top 10 point redemptions
+            $top10PointRedemptions = [];
+            try {
+                $top10PointRedemptions = $this->getTop10PointRedemptions();
+            } catch (\Exception $e) {
+                Log::error('CRM Dashboard: Failed to load top 10 point redemptions: ' . $e->getMessage());
+            }
+            
             $pointStats = [];
             try {
         $pointStats = $this->getPointStats($startDate, $endDate);
@@ -251,6 +275,9 @@ class CrmDashboardController extends Controller
                 'topSpendersDateRange' => $topSpendersDateRange,
                 'mostActiveMembers' => is_array($mostActiveMembers) ? $mostActiveMembers : (is_object($mostActiveMembers) ? $mostActiveMembers->toArray() : []),
                 'mostActiveMembersDateRange' => $mostActiveMembersDateRange,
+                'top10Points' => is_array($top10Points) ? $top10Points : (is_object($top10Points) && method_exists($top10Points, 'toArray') ? $top10Points->toArray() : []),
+                'top10VoucherOwners' => is_array($top10VoucherOwners) ? $top10VoucherOwners : (is_object($top10VoucherOwners) && method_exists($top10VoucherOwners, 'toArray') ? $top10VoucherOwners->toArray() : []),
+                'top10PointRedemptions' => is_array($top10PointRedemptions) ? $top10PointRedemptions : (is_object($top10PointRedemptions) && method_exists($top10PointRedemptions, 'toArray') ? $top10PointRedemptions->toArray() : []),
                 'memberFavouritePicks' => is_array($memberFavouritePicks) ? (object)$memberFavouritePicks : (is_object($memberFavouritePicks) ? $memberFavouritePicks : (object)['food' => [], 'beverages' => []]),
                 'activeVouchers' => is_array($activeVouchers) ? $activeVouchers : (is_object($activeVouchers) ? $activeVouchers->toArray() : []),
                 'activeChallenges' => is_array($activeChallenges) ? $activeChallenges : (is_object($activeChallenges) ? $activeChallenges->toArray() : []),
@@ -296,6 +323,9 @@ class CrmDashboardController extends Controller
                 'topSpendersDateRange' => null,
                 'mostActiveMembers' => [],
                 'mostActiveMembersDateRange' => null,
+                'top10Points' => [],
+                'top10VoucherOwners' => [],
+                'top10PointRedemptions' => [],
                 'memberFavouritePicks' => (object)['food' => [], 'beverages' => []],
                 'activeVouchers' => [],
                 'activeRewards' => [],
@@ -1377,6 +1407,8 @@ class CrmDashboardController extends Controller
             return [
                 'memberId' => $spender->member_id,
                 'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'email' => $member->email ?? '-',
+                'mobilePhone' => $member->mobile_phone ?? '-',
                 'totalSpending' => (float) $spender->total_spending,
                 'totalSpendingFormatted' => 'Rp ' . number_format($spender->total_spending, 0, ',', '.'),
                 'orderCount' => $spender->order_count,
@@ -1439,6 +1471,8 @@ class CrmDashboardController extends Controller
             return [
                 'memberId' => $member->member_id ?? '-',
                 'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'email' => $member->email ?? '-',
+                'mobilePhone' => $member->mobile_phone ?? '-',
                 'transactionCount' => $active->transaction_count,
                 'orderCount' => $orderCount,
                 'pointBalance' => $member->just_points ?? 0,
@@ -1457,6 +1491,126 @@ class CrmDashboardController extends Controller
                 'max_date_formatted' => $endDate->format('d M Y'),
             ],
         ];
+    }
+
+    /**
+     * Get top 10 members with most points
+     */
+    private function getTop10Points()
+    {
+        $topMembers = MemberAppsMember::select('id', 'member_id', 'nama_lengkap', 'just_points', 'email', 'mobile_phone', 'member_level')
+            ->where('just_points', '>', 0)
+            ->orderBy('just_points', 'desc')
+            ->limit(10)
+            ->get();
+
+        $data = $topMembers->map(function ($member) {
+            return [
+                'memberId' => $member->member_id ?? '-',
+                'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'pointBalance' => (int) $member->just_points,
+                'pointBalanceFormatted' => number_format($member->just_points, 0, ',', '.'),
+                'email' => $member->email ?? '-',
+                'mobilePhone' => $member->mobile_phone ?? '-',
+                'memberLevel' => $member->member_level ?? '-',
+            ];
+        });
+
+        return $data;
+    }
+
+    /**
+     * Get top 10 members with most vouchers
+     */
+    private function getTop10VoucherOwners()
+    {
+        // Count vouchers per member (only active vouchers)
+        $voucherCounts = DB::table('member_apps_member_vouchers')
+            ->select('member_id', DB::raw('COUNT(*) as voucher_count'))
+            ->where('status', 'active')
+            ->where(function($query) {
+                $query->whereNull('expires_at')
+                      ->orWhere('expires_at', '>', Carbon::now());
+            })
+            ->groupBy('member_id')
+            ->orderBy('voucher_count', 'desc')
+            ->limit(10)
+            ->get();
+
+        if ($voucherCounts->isEmpty()) {
+            return collect([]);
+        }
+
+        $memberIds = $voucherCounts->pluck('member_id')->toArray();
+        $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
+
+        $data = $voucherCounts->map(function ($voucherCount) use ($members) {
+            $member = $members->get($voucherCount->member_id);
+            
+            return [
+                'memberId' => $member->member_id ?? '-',
+                'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'voucherCount' => (int) $voucherCount->voucher_count,
+                'voucherCountFormatted' => number_format($voucherCount->voucher_count, 0, ',', '.'),
+                'email' => $member->email ?? '-',
+                'mobilePhone' => $member->mobile_phone ?? '-',
+                'memberLevel' => $member->member_level ?? '-',
+                'pointBalance' => (int) ($member->just_points ?? 0),
+                'pointBalanceFormatted' => number_format($member->just_points ?? 0, 0, ',', '.'),
+            ];
+        });
+
+        return $data;
+    }
+
+    /**
+     * Get top 10 members with most point redemptions
+     */
+    private function getTop10PointRedemptions()
+    {
+        // Get members with most redeemed points (negative point_amount)
+        $redemptions = MemberAppsPointTransaction::select('member_id', DB::raw('SUM(ABS(point_amount)) as total_redeemed'))
+            ->where('point_amount', '<', 0)
+            ->groupBy('member_id')
+            ->orderBy('total_redeemed', 'desc')
+            ->limit(10)
+            ->get();
+
+        if ($redemptions->isEmpty()) {
+            return collect([]);
+        }
+
+        $memberIds = $redemptions->pluck('member_id')->toArray();
+        $members = MemberAppsMember::whereIn('id', $memberIds)->get()->keyBy('id');
+
+        // Get redemption count per member
+        $redemptionCounts = MemberAppsPointTransaction::select('member_id', DB::raw('COUNT(*) as redemption_count'))
+            ->where('point_amount', '<', 0)
+            ->whereIn('member_id', $memberIds)
+            ->groupBy('member_id')
+            ->get()
+            ->keyBy('member_id');
+
+        $data = $redemptions->map(function ($redemption) use ($members, $redemptionCounts) {
+            $member = $members->get($redemption->member_id);
+            $redemptionCount = $redemptionCounts->get($redemption->member_id);
+            
+            return [
+                'memberId' => $member->member_id ?? '-',
+                'memberName' => $member->nama_lengkap ?? 'Member Tidak Diketahui',
+                'totalRedeemed' => (int) $redemption->total_redeemed,
+                'totalRedeemedFormatted' => number_format($redemption->total_redeemed, 0, ',', '.'),
+                'redemptionCount' => $redemptionCount ? (int) $redemptionCount->redemption_count : 0,
+                'redemptionCountFormatted' => $redemptionCount ? number_format($redemptionCount->redemption_count, 0, ',', '.') : '0',
+                'email' => $member->email ?? '-',
+                'mobilePhone' => $member->mobile_phone ?? '-',
+                'memberLevel' => $member->member_level ?? '-',
+                'pointBalance' => (int) ($member->just_points ?? 0),
+                'pointBalanceFormatted' => number_format($member->just_points ?? 0, 0, ',', '.'),
+            ];
+        });
+
+        return $data;
     }
 
     /**
@@ -2417,12 +2571,228 @@ class CrmDashboardController extends Controller
                 'data' => $transactions->toArray(),
             ]);
         } catch (\Exception $e) {
-            Log::error('CRM Get Member Transactions Error: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString(),
-            ]);
+            Log::error('CRM Dashboard: Error getting member transactions: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(),
+                'message' => 'Failed to get member transactions',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get member vouchers detail
+     */
+    public function getMemberVouchers(Request $request)
+    {
+        try {
+            $memberId = $request->get('member_id');
+            
+            if (!$memberId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Member ID is required',
+                ], 400);
+            }
+            
+            $member = MemberAppsMember::where('member_id', $memberId)->first();
+            if (!$member) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Member not found',
+                ], 404);
+            }
+            
+            // Get all vouchers for this member (active and used)
+            $vouchers = DB::table('member_apps_member_vouchers as mav')
+                ->join('member_apps_vouchers as av', 'mav.voucher_id', '=', 'av.id')
+                ->where('mav.member_id', $member->id)
+                ->select([
+                    'mav.id',
+                    'mav.serial_code',
+                    'mav.status',
+                    'mav.expires_at',
+                    'mav.used_at',
+                    'mav.created_at',
+                    'av.name as voucher_name',
+                    'av.description',
+                    'av.voucher_type',
+                    'av.discount_percentage',
+                    'av.discount_amount',
+                    'av.min_purchase',
+                ])
+                ->orderBy('mav.created_at', 'desc')
+                ->get();
+            
+            $vouchersData = $vouchers->map(function ($voucher) {
+                $isExpired = $voucher->expires_at && Carbon::parse($voucher->expires_at)->isPast();
+                $status = $voucher->status;
+                if ($isExpired && $status === 'active') {
+                    $status = 'expired';
+                }
+                
+                // Determine discount type and value based on voucher_type
+                $discountType = 'percentage';
+                $discountValue = 0;
+                
+                if ($voucher->voucher_type === 'discount_percentage' || $voucher->discount_percentage > 0) {
+                    $discountType = 'percentage';
+                    $discountValue = (float) ($voucher->discount_percentage ?? 0);
+                    $discountFormatted = number_format($discountValue, 0, ',', '.') . '%';
+                } elseif ($voucher->voucher_type === 'discount_amount' || $voucher->discount_amount > 0) {
+                    $discountType = 'fixed';
+                    $discountValue = (float) ($voucher->discount_amount ?? 0);
+                    $discountFormatted = 'Rp ' . number_format($discountValue, 0, ',', '.');
+                } else {
+                    $discountFormatted = '-';
+                }
+                
+                return [
+                    'id' => $voucher->id,
+                    'serialCode' => $voucher->serial_code ?? '-',
+                    'voucherName' => $voucher->voucher_name ?? 'Voucher',
+                    'description' => $voucher->description ?? '',
+                    'status' => $status,
+                    'statusText' => ucfirst($status),
+                    'voucherType' => $voucher->voucher_type ?? 'discount',
+                    'discountType' => $discountType,
+                    'discountValue' => $discountValue,
+                    'discountFormatted' => $discountFormatted,
+                    'minimumPurchase' => (float) ($voucher->min_purchase ?? 0),
+                    'minimumPurchaseFormatted' => $voucher->min_purchase > 0 
+                        ? 'Rp ' . number_format($voucher->min_purchase, 0, ',', '.')
+                        : '-',
+                    'expiresAt' => $voucher->expires_at ? Carbon::parse($voucher->expires_at)->format('d M Y, H:i') : '-',
+                    'usedAt' => $voucher->used_at ? Carbon::parse($voucher->used_at)->format('d M Y, H:i') : '-',
+                    'createdAt' => Carbon::parse($voucher->created_at)->format('d M Y, H:i'),
+                ];
+            });
+            
+            return response()->json([
+                'status' => 'success',
+                'member_id' => $memberId,
+                'data' => $vouchersData->toArray(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Error getting member vouchers: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get member vouchers',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get member point redemptions detail with location
+     */
+    public function getMemberPointRedemptions(Request $request)
+    {
+        try {
+            $memberId = $request->get('member_id');
+            
+            if (!$memberId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Member ID is required',
+                ], 400);
+            }
+            
+            $member = MemberAppsMember::where('member_id', $memberId)->first();
+            if (!$member) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Member not found',
+                ], 404);
+            }
+            
+            // Get point redemptions (negative point_amount)
+            $redemptions = MemberAppsPointTransaction::where('member_id', $member->id)
+                ->where('point_amount', '<', 0)
+                ->orderBy('created_at', 'desc')
+                ->limit(100)
+                ->get();
+            
+            $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+            $memberIdString = $member->member_id;
+            
+            $redemptionsData = $redemptions->map(function ($redemption) use ($dbJustusName, $memberIdString) {
+                $outletName = 'Outlet Tidak Diketahui';
+                $transactionAmount = $redemption->transaction_amount ?? 0;
+                $redemptionType = 'Unknown';
+                $redemptionDetail = '';
+                
+                // Try to get outlet name and details from order
+                $orderId = null;
+                if (isset($redemption->metadata) && $redemption->metadata) {
+                    $metadata = json_decode($redemption->metadata ?? '{}', true);
+                    $orderId = $metadata['order_id'] ?? null;
+                }
+                
+                if (!$orderId && isset($redemption->reference_id)) {
+                    $orderId = $redemption->reference_id;
+                }
+                
+                if (!$orderId && isset($redemption->transaction_id)) {
+                    $orderId = $redemption->transaction_id;
+                }
+                
+                // Get outlet name from order
+                if ($orderId && $memberIdString) {
+                    $orderWithOutlet = DB::connection('db_justus')
+                        ->table('orders')
+                        ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                        ->where('orders.id', $orderId)
+                        ->where('orders.member_id', $memberIdString)
+                        ->select(['orders.grand_total', 'o.nama_outlet', 'orders.kode_outlet'])
+                        ->first();
+                    
+                    if ($orderWithOutlet) {
+                        if (isset($orderWithOutlet->nama_outlet) && $orderWithOutlet->nama_outlet) {
+                            $outletName = $orderWithOutlet->nama_outlet;
+                        }
+                        if (isset($orderWithOutlet->grand_total) && $orderWithOutlet->grand_total && !$transactionAmount) {
+                            $transactionAmount = (float) $orderWithOutlet->grand_total;
+                        }
+                    }
+                }
+                
+                // Determine redemption type
+                $transactionType = $redemption->transaction_type ?? null;
+                if ($transactionType === 'voucher_purchase') {
+                    $redemptionType = 'Voucher Purchase';
+                    $redemptionDetail = 'Purchase voucher using points';
+                } elseif ($transactionType === 'reward_redemption' || $transactionType === 'redeem') {
+                    $redemptionType = 'Reward Redemption';
+                    $redemptionDetail = 'Redeem reward using points';
+                } else {
+                    $redemptionType = 'Point Redemption';
+                    $redemptionDetail = 'Redeem points for transaction';
+                }
+                
+                return [
+                    'id' => $redemption->id,
+                    'redemptionType' => $redemptionType,
+                    'redemptionDetail' => $redemptionDetail,
+                    'pointAmount' => abs($redemption->point_amount),
+                    'pointAmountFormatted' => number_format(abs($redemption->point_amount), 0, ',', '.'),
+                    'transactionAmount' => $transactionAmount,
+                    'transactionAmountFormatted' => $transactionAmount > 0 ? 'Rp ' . number_format($transactionAmount, 0, ',', '.') : '-',
+                    'outletName' => $outletName,
+                    'outletCode' => $orderWithOutlet->kode_outlet ?? '-',
+                    'createdAt' => Carbon::parse($redemption->created_at)->format('d M Y, H:i'),
+                    'createdAtFull' => $redemption->created_at,
+                ];
+            });
+            
+            return response()->json([
+                'status' => 'success',
+                'member_id' => $memberId,
+                'data' => $redemptionsData->toArray(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('CRM Dashboard: Error getting member point redemptions: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get member point redemptions',
             ], 500);
         }
     }
