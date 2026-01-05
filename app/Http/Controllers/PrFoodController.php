@@ -41,12 +41,12 @@ class PrFoodController extends Controller
         $perPage = $request->per_page ?? 10;
         $prFoods = $query->paginate($perPage)->withQueryString();
         
-        // API response
-        if ($request->expectsJson() || $request->ajax()) {
+        // API response (only for explicit API requests, not Inertia)
+        if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
             return response()->json($prFoods);
         }
         
-        // Web response
+        // Web response (Inertia)
         return Inertia::render('PrFoods/Index', [
             'prFoods' => $prFoods,
             'filters' => $request->only(['search', 'status', 'from', 'to']),
@@ -88,12 +88,12 @@ class PrFoodController extends Controller
                 }
             }
 
-            // API response
-            if (request()->expectsJson() || request()->ajax()) {
+            // API response (only for explicit API requests, not Inertia)
+            if ((request()->expectsJson() || request()->ajax()) && !request()->header('X-Inertia')) {
                 return response()->json($prFood);
             }
             
-            // Web response
+            // Web response (Inertia)
             return Inertia::render('PrFoods/Show', [
                 'prFood' => $prFood,
             ]);
@@ -104,15 +104,15 @@ class PrFoodController extends Controller
                 'id' => $id
             ]);
             
-            // API response
-            if (request()->expectsJson() || request()->ajax()) {
+            // API response (only for explicit API requests, not Inertia)
+            if ((request()->expectsJson() || request()->ajax()) && !request()->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to load PR Food detail'
                 ], 500);
             }
             
-            // Web response
+            // Web response (Inertia)
             return redirect()->route('pr-foods.index')
                 ->with('error', 'Gagal memuat detail PR Food');
         }
@@ -218,16 +218,16 @@ class PrFoodController extends Controller
             );
         }
         
-        // API response
-        if ($request->expectsJson() || $request->ajax()) {
+        // API response (only for explicit API requests, not Inertia)
+        if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
             return response()->json([
                 'success' => true,
                 'message' => 'PR Food created successfully',
-                'data' => $prFood->load(['warehouse', 'warehouseDivision', 'requester', 'items.item']),
+                'data' => $prFood->load(['warehouse:id,code,name', 'warehouseDivision:id,name', 'requester:id,nama_lengkap', 'items.item:id,name']),
             ], 201);
         }
         
-        // Web response
+        // Web response (Inertia)
         return redirect()->route('pr-foods.index');
     }
 
@@ -289,16 +289,16 @@ class PrFoodController extends Controller
         ]);
         DB::commit();
         
-        // API response
-        if ($request->expectsJson() || $request->ajax()) {
+        // API response (only for explicit API requests, not Inertia)
+        if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
             return response()->json([
                 'success' => true,
                 'message' => 'PR Food updated successfully',
-                'data' => $prFood->fresh()->load(['warehouse', 'warehouseDivision', 'requester', 'items.item']),
+                'data' => $prFood->fresh()->load(['warehouse:id,code,name', 'warehouseDivision:id,name', 'requester:id,nama_lengkap', 'items.item:id,name']),
             ]);
         }
         
-        // Web response
+        // Web response (Inertia)
         return redirect()->route('pr-foods.index');
     }
 
@@ -318,15 +318,15 @@ class PrFoodController extends Controller
             'new_data' => null,
         ]);
         
-        // API response
-        if (request()->expectsJson() || request()->ajax()) {
+        // API response (only for explicit API requests, not Inertia)
+        if ((request()->expectsJson() || request()->ajax()) && !request()->header('X-Inertia')) {
             return response()->json([
                 'success' => true,
                 'message' => 'PR Food deleted successfully',
             ]);
         }
         
-        // Web response
+        // Web response (Inertia)
         return redirect()->route('pr-foods.index');
     }
 
@@ -338,7 +338,7 @@ class PrFoodController extends Controller
         // Check if warehouse is MK1 or MK2 - jika MK, tidak perlu approval asisten SSD manager
         $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         if ($isMKWarehouse) {
-            if ($request->expectsJson() || $request->ajax()) {
+            if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'PR MK tidak memerlukan approval Asisten SSD Manager'
@@ -441,7 +441,7 @@ class PrFoodController extends Controller
         
         // Untuk PR non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
         if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
-            if ($request->expectsJson() || $request->ajax()) {
+            if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'PR harus di-approve Asisten SSD Manager terlebih dahulu'
