@@ -2678,6 +2678,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/employee-survey-report', [App\Http\Controllers\EmployeeSurveyController::class, 'report'])->name('employee-survey.report');
 });
 
+// Bank Account routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('bank-accounts', App\Http\Controllers\BankAccountController::class);
+});
+
 // Member Apps Settings routes
 Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/member-apps-settings', [App\Http\Controllers\MemberAppsSettingsController::class, 'index'])->name('member-apps-settings.index');

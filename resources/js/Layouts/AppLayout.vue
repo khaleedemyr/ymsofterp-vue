@@ -88,6 +88,7 @@ const menuGroups = [
             { name: () => 'Locked Budget Food Categories', icon: 'fa-solid fa-lock', route: '/locked-budget-food-categories', code: 'locked_budget_food_categories' },
             { name: () => 'Budget Management', icon: 'fa-solid fa-chart-pie', route: '/budget-management', code: 'budget_management' },
             { name: () => 'Chart of Account', icon: 'fa-solid fa-chart-line', route: '/chart-of-accounts', code: 'chart_of_account' },
+            { name: () => 'Master Data Bank', icon: 'fa-solid fa-building-columns', route: '/bank-accounts', code: 'bank_accounts' },
         ],
     },
     {

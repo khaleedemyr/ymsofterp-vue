@@ -1494,6 +1494,28 @@ class PurchaseRequisitionController extends Controller
         }
 
         try {
+            // Use database transaction to ensure atomicity
+            DB::beginTransaction();
+            
+            // Lock the purchase requisition row to prevent concurrent modifications
+            $purchaseRequisition = PurchaseRequisition::lockForUpdate()->findOrFail($purchaseRequisition->id);
+            
+            // Refresh model again after lock to ensure we have the latest data
+            $purchaseRequisition->refresh();
+            
+            // Re-check status after lock (might have changed during concurrent request)
+            $status = strtoupper(trim($purchaseRequisition->status));
+            if ($status !== 'SUBMITTED') {
+                DB::rollBack();
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Only submitted purchase requisitions can be approved. Current status: ' . $purchaseRequisition->status
+                    ], 400);
+                }
+                return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
+            }
+            
             // Get current approver
             $currentApprover = auth()->user();
             // Superadmin: user dengan id_role = '5af56935b011a' bisa approve semua
@@ -1514,6 +1536,7 @@ class PurchaseRequisitionController extends Controller
                     ->get();
                 
                 if ($pendingFlows->isEmpty()) {
+                    DB::rollBack();
                     if ($request->expectsJson() || $request->wantsJson()) {
                         return response()->json([
                             'success' => false,
@@ -1539,6 +1562,7 @@ class PurchaseRequisitionController extends Controller
                     ->first();
                 
                 if (!$currentApprovalFlow) {
+                    DB::rollBack();
                     if ($request->expectsJson() || $request->wantsJson()) {
                         return response()->json([
                             'success' => false,
@@ -1570,45 +1594,68 @@ class PurchaseRequisitionController extends Controller
                 // All approvers have approved, validate budget before updating status to APPROVED
                 // Skip budget validation for kasbon mode
                 if ($purchaseRequisition->mode !== 'kasbon') {
-                    // For pr_ops and purchase_payment mode, check budget per outlet/category from items
-                    if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
-                        // Group items by outlet_id and category_id
-                        $budgetChecks = [];
-                        $items = $purchaseRequisition->items;
-                        
-                        foreach ($items as $item) {
-                            if (!empty($item->category_id)) {
-                                $key = ($item->outlet_id ?? 'null') . '_' . $item->category_id;
-                                if (!isset($budgetChecks[$key])) {
-                                    $budgetChecks[$key] = [
-                                        'outlet_id' => $item->outlet_id,
-                                        'category_id' => $item->category_id,
-                                        'amount' => 0
-                                    ];
+                    try {
+                        // For pr_ops and purchase_payment mode, check budget per outlet/category from items
+                        if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
+                            // Group items by outlet_id and category_id
+                            $budgetChecks = [];
+                            $items = $purchaseRequisition->items;
+                            
+                            foreach ($items as $item) {
+                                if (!empty($item->category_id)) {
+                                    $key = ($item->outlet_id ?? 'null') . '_' . $item->category_id;
+                                    if (!isset($budgetChecks[$key])) {
+                                        $budgetChecks[$key] = [
+                                            'outlet_id' => $item->outlet_id,
+                                            'category_id' => $item->category_id,
+                                            'amount' => 0
+                                        ];
+                                    }
+                                    $budgetChecks[$key]['amount'] += $item->subtotal ?? ($item->qty * $item->unit_price);
                                 }
-                                $budgetChecks[$key]['amount'] += $item->subtotal ?? ($item->qty * $item->unit_price);
                             }
-                        }
-                        
-                        // Validate each outlet/category combination
-                        foreach ($budgetChecks as $check) {
-                            $budgetValidation = $this->validateBudgetLimit($check['category_id'], $check['outlet_id'], $check['amount']);
-                            if (!$budgetValidation['valid']) {
-                                // Revert the approval flow that was just approved
-                                // Note: Don't set approver_id to null as it's a required field
-                                if ($isSuperadmin && $nextFlow) {
-                                    $nextFlow->update([
-                                        'status' => 'PENDING',
-                                        'approved_at' => null,
-                                        'comments' => null,
+                            
+                            // Validate each outlet/category combination
+                            foreach ($budgetChecks as $check) {
+                                $budgetValidation = $this->validateBudgetLimit($check['category_id'], $check['outlet_id'], $check['amount'], $purchaseRequisition->id);
+                                if (!$budgetValidation['valid']) {
+                                    // Rollback transaction (this will revert all changes including approval flow)
+                                    DB::rollBack();
+                                    
+                                    \Log::warning('Budget validation failed during PR approval', [
+                                        'pr_id' => $purchaseRequisition->id,
+                                        'category_id' => $check['category_id'],
+                                        'outlet_id' => $check['outlet_id'],
+                                        'amount' => $check['amount'],
+                                        'message' => $budgetValidation['message']
                                     ]);
-                                } else if (!$isSuperadmin && $currentApprovalFlow) {
-                                    $currentApprovalFlow->update([
-                                        'status' => 'PENDING',
-                                        'approved_at' => null,
-                                        'comments' => null,
+                                    
+                                    if ($request->expectsJson() || $request->wantsJson()) {
+                                        return response()->json([
+                                            'success' => false,
+                                            'message' => $budgetValidation['message']
+                                        ], 400);
+                                    }
+                                    return back()->withErrors([
+                                        'budget_exceeded' => $budgetValidation['message']
                                     ]);
                                 }
+                            }
+                        } else if ($purchaseRequisition->category_id) {
+                            // For other modes (non-pr_ops), use main category_id and outlet_id
+                            $amount = $purchaseRequisition->amount ?? 0;
+                            $budgetValidation = $this->validateBudgetLimit($purchaseRequisition->category_id, $purchaseRequisition->outlet_id, $amount, $purchaseRequisition->id);
+                            if (!$budgetValidation['valid']) {
+                                // Rollback transaction (this will revert all changes including approval flow)
+                                DB::rollBack();
+                                
+                                \Log::warning('Budget validation failed during PR approval', [
+                                    'pr_id' => $purchaseRequisition->id,
+                                    'category_id' => $purchaseRequisition->category_id,
+                                    'outlet_id' => $purchaseRequisition->outlet_id,
+                                    'amount' => $amount,
+                                    'message' => $budgetValidation['message']
+                                ]);
                                 
                                 if ($request->expectsJson() || $request->wantsJson()) {
                                     return response()->json([
@@ -1621,37 +1668,33 @@ class PurchaseRequisitionController extends Controller
                                 ]);
                             }
                         }
-                    } else if ($purchaseRequisition->category_id) {
-                        // For other modes (non-pr_ops), use main category_id and outlet_id
-                        $amount = $purchaseRequisition->amount ?? 0;
-                        $budgetValidation = $this->validateBudgetLimit($purchaseRequisition->category_id, $purchaseRequisition->outlet_id, $amount);
-                        if (!$budgetValidation['valid']) {
-                            // Revert the approval flow that was just approved
-                            // Note: Don't set approver_id to null as it's a required field
-                            if ($isSuperadmin && $nextFlow) {
-                                $nextFlow->update([
-                                    'status' => 'PENDING',
-                                    'approved_at' => null,
-                                    'comments' => null,
-                                ]);
-                            } else if (!$isSuperadmin && $currentApprovalFlow) {
-                                $currentApprovalFlow->update([
-                                    'status' => 'PENDING',
-                                    'approved_at' => null,
-                                    'comments' => null,
-                                ]);
-                            }
-                            
-                            if ($request->expectsJson() || $request->wantsJson()) {
-                                return response()->json([
-                                    'success' => false,
-                                    'message' => $budgetValidation['message']
-                                ], 400);
-                            }
-                            return back()->withErrors([
-                                'budget_exceeded' => $budgetValidation['message']
-                            ]);
+                    } catch (\Exception $budgetError) {
+                        // If budget validation throws exception, rollback and return error
+                        // This prevents intermittent errors from causing partial approvals
+                        DB::rollBack();
+                        
+                        \Log::error('Budget validation exception during PR approval', [
+                            'pr_id' => $purchaseRequisition->id,
+                            'pr_number' => $purchaseRequisition->pr_number,
+                            'mode' => $purchaseRequisition->mode,
+                            'error' => $budgetError->getMessage(),
+                            'file' => $budgetError->getFile(),
+                            'line' => $budgetError->getLine(),
+                            'trace' => $budgetError->getTraceAsString()
+                        ]);
+                        
+                        $errorMessage = 'Gagal memvalidasi budget. Silakan coba lagi atau hubungi administrator.';
+                        if (config('app.debug')) {
+                            $errorMessage .= ' Error: ' . $budgetError->getMessage();
                         }
+                        
+                        if ($request->expectsJson() || $request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => $errorMessage
+                            ], 500);
+                        }
+                        return back()->withErrors(['error' => $errorMessage]);
                     }
                 }
                 
@@ -1667,6 +1710,9 @@ class PurchaseRequisitionController extends Controller
                 
                 $message = 'Purchase Requisition fully approved!';
             }
+            
+            // Commit transaction - PENTING: Commit semua perubahan ke database
+            DB::commit();
             
             // Return JSON response for API calls
             if ($request->expectsJson() || $request->wantsJson()) {
