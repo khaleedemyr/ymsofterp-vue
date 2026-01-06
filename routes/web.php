@@ -2684,6 +2684,58 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('bank-accounts', App\Http\Controllers\BankAccountController::class);
 });
 
+// Asset Management routes
+Route::middleware(['auth'])->prefix('asset-management')->name('asset-management.')->group(function () {
+    // Asset Categories
+    Route::resource('categories', App\Http\Controllers\AssetManagement\AssetCategoryController::class);
+    Route::patch('categories/{id}/toggle-status', [App\Http\Controllers\AssetManagement\AssetCategoryController::class, 'toggleStatus'])->name('categories.toggle-status');
+    
+    // Assets
+    Route::resource('assets', App\Http\Controllers\AssetManagement\AssetController::class);
+    Route::get('assets/{id}/qr-code', [App\Http\Controllers\AssetManagement\AssetController::class, 'generateQrCode'])->name('assets.qr-code');
+    Route::post('assets/{id}/generate-qr-code', [App\Http\Controllers\AssetManagement\AssetController::class, 'generateQrCodeImage'])->name('assets.generate-qr-code');
+    Route::post('assets/create-brand', [App\Http\Controllers\AssetManagement\AssetController::class, 'createBrand'])->name('assets.create-brand');
+    
+    // Asset Transfers
+    Route::resource('transfers', App\Http\Controllers\AssetManagement\AssetTransferController::class);
+    Route::post('transfers/{id}/approve', [App\Http\Controllers\AssetManagement\AssetTransferController::class, 'approve'])->name('transfers.approve');
+    Route::post('transfers/{id}/reject', [App\Http\Controllers\AssetManagement\AssetTransferController::class, 'reject'])->name('transfers.reject');
+    Route::post('transfers/{id}/complete', [App\Http\Controllers\AssetManagement\AssetTransferController::class, 'complete'])->name('transfers.complete');
+    
+    // Asset Maintenance Schedules
+    Route::resource('maintenance-schedules', App\Http\Controllers\AssetManagement\AssetMaintenanceScheduleController::class);
+    Route::patch('maintenance-schedules/{id}/toggle-status', [App\Http\Controllers\AssetManagement\AssetMaintenanceScheduleController::class, 'toggleStatus'])->name('maintenance-schedules.toggle-status');
+    
+    // Asset Maintenances
+    Route::resource('maintenances', App\Http\Controllers\AssetManagement\AssetMaintenanceController::class);
+    Route::post('maintenances/{id}/complete', [App\Http\Controllers\AssetManagement\AssetMaintenanceController::class, 'complete'])->name('maintenances.complete');
+    
+    // Asset Disposals
+    Route::resource('disposals', App\Http\Controllers\AssetManagement\AssetDisposalController::class);
+    Route::post('disposals/{id}/approve', [App\Http\Controllers\AssetManagement\AssetDisposalController::class, 'approve'])->name('disposals.approve');
+    Route::post('disposals/{id}/reject', [App\Http\Controllers\AssetManagement\AssetDisposalController::class, 'reject'])->name('disposals.reject');
+    Route::post('disposals/{id}/complete', [App\Http\Controllers\AssetManagement\AssetDisposalController::class, 'complete'])->name('disposals.complete');
+    
+    // Asset Documents
+    Route::resource('documents', App\Http\Controllers\AssetManagement\AssetDocumentController::class);
+    Route::get('documents/{id}/download', [App\Http\Controllers\AssetManagement\AssetDocumentController::class, 'download'])->name('documents.download');
+    
+    // Asset Depreciation
+    Route::get('depreciations/{asset_id}', [App\Http\Controllers\AssetManagement\AssetDepreciationController::class, 'show'])->name('depreciations.show');
+    Route::post('depreciations/{asset_id}/calculate', [App\Http\Controllers\AssetManagement\AssetDepreciationController::class, 'calculate'])->name('depreciations.calculate');
+    Route::get('depreciations/{asset_id}/history', [App\Http\Controllers\AssetManagement\AssetDepreciationController::class, 'history'])->name('depreciations.history');
+    
+    // Reports & Dashboard
+    Route::get('dashboard', [App\Http\Controllers\AssetManagement\AssetDashboardController::class, 'index'])->name('dashboard.index');
+    Route::get('reports/asset-register', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'assetRegister'])->name('reports.asset-register');
+    Route::get('reports/asset-by-outlet', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'assetByOutlet'])->name('reports.asset-by-outlet');
+    Route::get('reports/asset-by-category', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'assetByCategory'])->name('reports.asset-by-category');
+    Route::get('reports/maintenance-history', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'maintenanceHistory'])->name('reports.maintenance-history');
+    Route::get('reports/transfer-history', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'transferHistory'])->name('reports.transfer-history');
+    Route::get('reports/depreciation', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'depreciation'])->name('reports.depreciation');
+    Route::get('reports/asset-value', [App\Http\Controllers\AssetManagement\AssetReportController::class, 'assetValue'])->name('reports.asset-value');
+});
+
 // Member Apps Settings routes
 Route::middleware(['auth'])->prefix('admin')->group(function () {
     Route::get('/member-apps-settings', [App\Http\Controllers\MemberAppsSettingsController::class, 'index'])->name('member-apps-settings.index');

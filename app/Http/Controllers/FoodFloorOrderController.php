@@ -341,8 +341,32 @@ class FoodFloorOrderController extends Controller
         $fo_mode = $request->fo_mode;
         $exclude_id = $request->exclude_id;
         $warehouse_outlet_id = $request->warehouse_outlet_id;
+        $currentHour = now('Asia/Jakarta')->hour;
 
-        $query = \App\Models\FoodFloorOrder::where('tanggal', $tanggal)
+        // Logika untuk mengatasi masalah RO Utama yang dibuat jam 00:01:
+        // - RO yang dibuat sebelum jam 12:00 untuk tanggal X, dianggap untuk tanggal X+1 (besok)
+        // - RO yang dibuat setelah jam 12:00 untuk tanggal X, dianggap untuk tanggal X yang sama (hari ini)
+        // 
+        // Contoh:
+        // - RO dibuat jam 00:01 tanggal 6 Jan untuk tanggal 7 Jan → dianggap untuk tanggal 7 Jan (besok)
+        // - RO dibuat jam 22:00 tanggal 7 Jan untuk tanggal 7 Jan → dianggap untuk tanggal 7 Jan (hari ini)
+        // - Jadi kedua RO tersebut bisa ada bersamaan karena berbeda "effective date"
+
+        $query = \App\Models\FoodFloorOrder::where(function($q) use ($tanggal, $currentHour) {
+                // Jika user input setelah jam 12:00 untuk tanggal X
+                if ($currentHour >= 12) {
+                    // Cek RO dengan tanggal X yang dibuat SETELAH jam 12:00
+                    // (karena RO yang dibuat sebelum jam 12:00 dianggap untuk hari berikutnya, bukan hari ini)
+                    $q->where('tanggal', $tanggal)
+                      ->whereRaw('HOUR(created_at) >= 12');
+                } else {
+                    // Jika user input sebelum jam 12:00 untuk tanggal X
+                    // Cek RO dengan tanggal X yang dibuat SEBELUM jam 12:00
+                    // (karena RO yang dibuat setelah jam 12:00 dianggap untuk hari yang sama, bukan hari berikutnya)
+                    $q->where('tanggal', $tanggal)
+                      ->whereRaw('HOUR(created_at) < 12');
+                }
+            })
             ->where('id_outlet', $id_outlet)
             ->where('fo_mode', $fo_mode)
             ->whereNotIn('status', ['rejected']);
