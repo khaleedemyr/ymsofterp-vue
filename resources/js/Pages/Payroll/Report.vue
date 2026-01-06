@@ -160,6 +160,19 @@ const filteredPayrollData = computed(() => {
     return [];
   }
   
+  // Debug: Log mutated employees
+  const mutatedEmployees = props.payrollData.filter(item => item.is_mutated_employee);
+  if (mutatedEmployees.length > 0) {
+    console.log('Frontend - Mutated employees in payrollData:', mutatedEmployees.map(item => ({
+      user_id: item.user_id,
+      nama_lengkap: item.nama_lengkap,
+      hari_kerja: item.hari_kerja,
+      is_mutated_employee: item.is_mutated_employee,
+      mutation_effective_date: item.mutation_effective_date,
+      mutation_outlet_to: item.mutation_outlet_to
+    })));
+  }
+  
   if (!searchQuery.value || searchQuery.value.trim() === '') {
     return props.payrollData;
   }
@@ -1135,6 +1148,9 @@ onMounted(() => {
                         <span v-if="item.is_new_employee" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                           Karyawan Baru
                         </span>
+                        <span v-if="item.is_mutated_employee" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          Mutasi
+                        </span>
                         <span v-if="item.resignation_date" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                           Resign
                         </span>
@@ -1147,6 +1163,9 @@ onMounted(() => {
                       </div>
                       <div v-if="item.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
                         Resign: {{ formatDate(item.resignation_date) }}
+                      </div>
+                      <div v-if="item.is_mutated_employee && item.mutation_effective_date" class="text-xs text-purple-600 mt-1 font-medium">
+                        Mutasi: {{ formatDate(item.mutation_effective_date) }} → {{ item.mutation_outlet_to }}
                       </div>
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.jabatan }}</td>
