@@ -5,12 +5,14 @@ import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import ChartOfAccountFormModal from './ChartOfAccountFormModal.vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Switch } from '@headlessui/vue';
+import axios from 'axios';
 
 const props = defineProps({
   chartOfAccounts: Object,
   filters: Object,
   parents: Array,
+  menus: Array,
+  allMenus: Array,
   statistics: {
     type: Object,
     default: () => ({
@@ -167,6 +169,110 @@ function getParentPath(coa) {
   
   return path.join(' > ');
 }
+
+// Helper function to get mode payment label
+function getModePaymentLabel(mode) {
+  const labels = {
+    'pr_ops': 'Purchase Requisition',
+    'purchase_payment': 'Payment Application',
+    'travel_application': 'Travel Application',
+    'kasbon': 'Kasbon'
+  };
+  return labels[mode] || mode;
+}
+
+// Helper function to get mode payments as array
+function getModePayments(modePayment) {
+  if (!modePayment) return [];
+  if (Array.isArray(modePayment)) return modePayment;
+  // If it's still a string (old data), convert to array
+  return [modePayment];
+}
+
+// Helper function to get menu IDs as array
+function getMenuIds(menuId) {
+  if (!menuId) return [];
+  if (Array.isArray(menuId)) return menuId;
+  // If it's still a single value (old data), convert to array
+  return [menuId];
+}
+
+// Helper function to get menu name by ID
+function getMenuNameById(menuId) {
+  if (!props.allMenus) return `Menu #${menuId}`;
+  const menu = props.allMenus.find(m => m.id === menuId);
+  if (!menu) return `Menu #${menuId}`;
+  if (menu.parent) {
+    return `${menu.parent.name} > ${menu.name}`;
+  }
+  return menu.name;
+}
+
+// Helper function to get menu code by ID
+function getMenuCodeById(menuId) {
+  if (!props.allMenus) return '';
+  const menu = props.allMenus.find(m => m.id === menuId);
+  return menu ? menu.code : '';
+}
+
+// Helper function to format currency
+function formatCurrency(value) {
+  if (!value) return '0';
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+// Toggle status aktif/non-aktif
+async function toggleStatus(coa) {
+  const oldStatus = coa.is_active;
+  // Optimistic update
+  coa.is_active = coa.is_active == 1 ? 0 : 1;
+  
+  try {
+    const response = await axios.patch(`/chart-of-accounts/${coa.id}/toggle-status`, {}, {
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.data?.success) {
+      // Reload data untuk memastikan konsistensi dengan database
+      router.reload({ 
+        preserveState: true,
+        only: ['chartOfAccounts', 'statistics']
+      });
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: 'Status berhasil diubah',
+        timer: 1500,
+        showConfirmButton: false
+      });
+    } else {
+      // Revert jika tidak berhasil
+      coa.is_active = oldStatus;
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Gagal mengubah status',
+      });
+    }
+  } catch (error) {
+    // Revert status jika error
+    coa.is_active = oldStatus;
+    console.error('Toggle status error:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.response?.data?.message || 'Gagal mengubah status',
+    });
+  }
+}
 </script>
 
 <template>
@@ -303,6 +409,10 @@ function getParentPath(coa) {
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Parent</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Type</th>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Description</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Budget Limit</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Static/Dynamic</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Menu</th>
+              <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Payment</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Status</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
             </tr>
@@ -339,13 +449,73 @@ function getParentPath(coa) {
                 </span>
               </td>
               <td class="px-4 py-2 text-sm text-gray-500">{{ coa.description || '-' }}</td>
-              <td class="px-4 py-2 whitespace-nowrap text-center">
-                <span :class="[
-                  'px-2 py-1 rounded-full text-xs font-semibold',
-                  coa.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                ]">
-                  {{ coa.is_active ? 'Active' : 'Inactive' }}
+              <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                <span v-if="coa.budget_limit" class="font-medium">
+                  Rp {{ formatCurrency(coa.budget_limit) }}
                 </span>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap text-sm">
+                <span v-if="coa.static_or_dynamic" class="px-2 py-1 text-xs font-semibold rounded-full"
+                  :class="{
+                    'bg-blue-100 text-blue-800': coa.static_or_dynamic === 'static',
+                    'bg-purple-100 text-purple-800': coa.static_or_dynamic === 'dynamic',
+                  }">
+                  {{ coa.static_or_dynamic === 'static' ? 'Static' : 'Dynamic' }}
+                </span>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-4 py-2 text-sm text-gray-500">
+                <div v-if="getMenuIds(coa.menu_id).length > 0" class="flex flex-col gap-1">
+                  <div
+                    v-for="menuId in getMenuIds(coa.menu_id)"
+                    :key="menuId"
+                    class="flex flex-col"
+                  >
+                    <span class="font-medium text-gray-900">{{ getMenuNameById(menuId) }}</span>
+                    <span class="text-xs text-gray-500">{{ getMenuCodeById(menuId) }}</span>
+                  </div>
+                </div>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-4 py-2 text-sm">
+                <div v-if="coa.show_in_menu_payment" class="flex flex-col gap-1">
+                  <span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                    Show in Payment
+                  </span>
+                  <div v-if="getModePayments(coa.mode_payment).length > 0" class="flex flex-wrap gap-1">
+                    <span
+                      v-for="mode in getModePayments(coa.mode_payment)"
+                      :key="mode"
+                      class="px-2 py-1 text-xs font-semibold rounded-full"
+                      :class="{
+                        'bg-blue-100 text-blue-800': mode === 'pr_ops',
+                        'bg-green-100 text-green-800': mode === 'purchase_payment',
+                        'bg-purple-100 text-purple-800': mode === 'travel_application',
+                        'bg-orange-100 text-orange-800': mode === 'kasbon',
+                      }">
+                      {{ getModePaymentLabel(mode) }}
+                    </span>
+                  </div>
+                </div>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap text-center">
+                <button
+                  @click="toggleStatus(coa)"
+                  type="button"
+                  :class="[
+                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
+                    coa.is_active == 1 ? 'bg-blue-600' : 'bg-gray-200'
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                      coa.is_active == 1 ? 'translate-x-6' : 'translate-x-1'
+                    ]"
+                  />
+                </button>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center flex gap-2 justify-center">
                 <button @click="openCreateChild(coa)" class="px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 transition" title="Tambah Child">
@@ -360,7 +530,7 @@ function getParentPath(coa) {
               </td>
             </tr>
             <tr v-if="chartOfAccounts.data.length === 0">
-              <td colspan="7" class="text-center py-8 text-gray-400">Tidak ada data</td>
+              <td colspan="11" class="text-center py-8 text-gray-400">Tidak ada data</td>
             </tr>
           </tbody>
         </table>
@@ -384,6 +554,7 @@ function getParentPath(coa) {
       :mode="modalMode"
       :chartOfAccount="selectedChartOfAccount"
       :parents="parents"
+      :menus="menus"
       @close="closeModal"
       @success="onSuccess"
     />

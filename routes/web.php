@@ -295,6 +295,7 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('categories', CategoryController::class);
     Route::put('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
     Route::resource('chart-of-accounts', App\Http\Controllers\ChartOfAccountController::class);
+    Route::patch('chart-of-accounts/{id}/toggle-status', [App\Http\Controllers\ChartOfAccountController::class, 'toggleStatus'])->name('chart-of-accounts.toggle-status');
     Route::resource('jurnal', App\Http\Controllers\JurnalController::class);
     Route::post('jurnal/{id}/post', [App\Http\Controllers\JurnalController::class, 'post'])->name('jurnal.post');
     Route::post('jurnal/{id}/cancel', [App\Http\Controllers\JurnalController::class, 'cancel'])->name('jurnal.cancel');

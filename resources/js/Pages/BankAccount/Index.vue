@@ -19,6 +19,7 @@ const perPage = ref(props.filters?.per_page || 15);
 const showModal = ref(false);
 const modalMode = ref('create');
 const selectedItem = ref(null);
+const isLoading = ref(false);
 const formData = ref({
   bank_name: '',
   account_number: '',
@@ -91,22 +92,43 @@ function closeModal() {
 }
 
 async function save() {
+  isLoading.value = true;
   try {
     let response;
     if (modalMode.value === 'create') {
-      response = await axios.post('/bank-accounts', formData.value);
+      response = await axios.post('/bank-accounts', formData.value, {
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      });
     } else {
-      response = await axios.put(`/bank-accounts/${selectedItem.value.id}`, formData.value);
+      response = await axios.put(`/bank-accounts/${selectedItem.value.id}`, formData.value, {
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      });
     }
     
-    if (response.status === 200 || response.status === 201) {
-      Swal.fire('Berhasil', modalMode.value === 'create' ? 'Bank account berhasil ditambahkan' : 'Bank account berhasil diupdate', 'success');
+    if (response.data?.success || response.status === 200 || response.status === 201) {
+      Swal.fire('Berhasil', response.data?.message || (modalMode.value === 'create' ? 'Bank account berhasil ditambahkan' : 'Bank account berhasil diupdate'), 'success');
       reload();
       closeModal();
     }
   } catch (error) {
-    const errorMessage = error.response?.data?.message || error.response?.data?.errors || 'Gagal menyimpan data';
+    let errorMessage = 'Gagal menyimpan data';
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.response?.data?.errors) {
+      const errors = error.response.data.errors;
+      errorMessage = Object.values(errors).flat().join(', ');
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
     Swal.fire('Error', errorMessage, 'error');
+  } finally {
+    isLoading.value = false;
   }
 }
 
@@ -163,14 +185,38 @@ async function toggleStatus(item) {
   if (!result.isConfirmed) return;
   
   try {
-    const updatedData = { ...item, is_active: !item.is_active };
-    const response = await axios.put(`/bank-accounts/${item.id}`, updatedData);
-    if (response.status === 200) {
-      Swal.fire('Berhasil', 'Status bank account berhasil diubah', 'success');
+    const updatedData = {
+      bank_name: item.bank_name,
+      account_number: item.account_number,
+      account_name: item.account_name,
+      outlet_id: item.outlet_id,
+      is_active: !item.is_active
+    };
+    const response = await axios.put(`/bank-accounts/${item.id}`, updatedData, {
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      }
+    });
+    
+    if (response.data?.success || response.status === 200) {
+      Swal.fire('Berhasil', response.data?.message || 'Status bank account berhasil diubah', 'success');
       reload();
     }
   } catch (error) {
-    Swal.fire('Error', 'Gagal mengubah status data', 'error');
+    // Jika data sudah terupdate meskipun ada error, tetap reload
+    if (error.response?.status === 200 || error.response?.data?.success) {
+      Swal.fire('Berhasil', 'Status bank account berhasil diubah', 'success');
+      reload();
+    } else {
+      let errorMessage = 'Gagal mengubah status data';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      Swal.fire('Error', errorMessage, 'error');
+    }
   }
 }
 
@@ -471,15 +517,18 @@ watch([outletId, status, perPage], () => {
                 <button
                   type="button"
                   @click="closeModal"
-                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  :disabled="isLoading"
+                  class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  :disabled="isLoading"
+                  class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  Simpan
+                  <i v-if="isLoading" class="fa-solid fa-spinner fa-spin"></i>
+                  <span>{{ isLoading ? 'Menyimpan...' : 'Simpan' }}</span>
                 </button>
               </div>
             </form>

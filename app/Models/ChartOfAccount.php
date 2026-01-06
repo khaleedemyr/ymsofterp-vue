@@ -12,6 +12,10 @@ class ChartOfAccount extends Model
     protected $casts = [
         'is_active' => 'boolean',
         'parent_id' => 'integer',
+        'show_in_menu_payment' => 'boolean',
+        'menu_id' => 'array', // Changed to array for multiple selection
+        'budget_limit' => 'decimal:2',
+        'mode_payment' => 'array',
     ];
     
     // Relationship: Parent CoA
@@ -24,6 +28,19 @@ class ChartOfAccount extends Model
     public function children()
     {
         return $this->hasMany(ChartOfAccount::class, 'parent_id')->orderBy('code');
+    }
+    
+    // Helper: Get menus as array of IDs
+    public function getMenuIdsAttribute()
+    {
+        if ($this->menu_id && is_array($this->menu_id)) {
+            return $this->menu_id;
+        }
+        // Backward compatibility: if it's still a single value, convert to array
+        if ($this->menu_id) {
+            return [$this->menu_id];
+        }
+        return [];
     }
     
     // Helper: Get full path (code dengan parent)

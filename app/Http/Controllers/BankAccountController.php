@@ -96,6 +96,13 @@ class BankAccountController extends Controller
         ]);
 
         if ($validator->fails()) {
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
             return redirect()->back()
                 ->withErrors($validator)
                 ->withInput();
@@ -108,6 +115,14 @@ class BankAccountController extends Controller
             'outlet_id' => $request->outlet_id ?: null,
             'is_active' => $request->is_active ?? true,
         ]);
+
+        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Bank account created successfully.',
+                'data' => $bankAccount
+            ], 201);
+        }
 
         return redirect()->route('bank-accounts.index')
             ->with('success', 'Bank account created successfully.');
@@ -143,8 +158,10 @@ class BankAccountController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, BankAccount $bankAccount)
+    public function update(Request $request, $bank_account)
     {
+        $bankAccount = BankAccount::findOrFail($bank_account);
+        
         $validator = Validator::make($request->all(), [
             'bank_name' => 'required|string|max:255',
             'account_number' => 'required|string|max:100',
@@ -154,6 +171,13 @@ class BankAccountController extends Controller
         ]);
 
         if ($validator->fails()) {
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
             return redirect()->back()
                 ->withErrors($validator)
                 ->withInput();
@@ -166,6 +190,14 @@ class BankAccountController extends Controller
             'outlet_id' => $request->outlet_id ?: null,
             'is_active' => $request->is_active ?? true,
         ]);
+
+        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Bank account updated successfully.',
+                'data' => $bankAccount->fresh()
+            ], 200);
+        }
 
         return redirect()->route('bank-accounts.index')
             ->with('success', 'Bank account updated successfully.');
