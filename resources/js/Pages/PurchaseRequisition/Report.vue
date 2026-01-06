@@ -575,19 +575,29 @@
                     </Link>
                     <div class="text-sm text-gray-600 mt-1">{{ formatDate(pr.date) }} | {{ pr.division }}</div>
                     <div v-if="pr.creator" class="flex items-center gap-2 mt-2">
-                      <img v-if="pr.creator.avatar" :src="pr.creator.avatar" :alt="pr.creator.name" 
-                        class="w-6 h-6 rounded-full object-cover">
-                      <div v-else class="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
-                        {{ pr.creator.name.charAt(0).toUpperCase() }}
+                      <div v-if="pr.creator.avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.creator.avatar}`)">
+                        <img 
+                          :src="`/storage/${pr.creator.avatar}`" 
+                          :alt="pr.creator.name" 
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                        {{ getInitials(pr.creator.name) }}
                       </div>
                       <span class="text-xs text-gray-600">{{ pr.creator.name }}</span>
                     </div>
                     <div v-if="pr.approval && pr.approval.approver" class="flex items-center gap-2 mt-2">
                       <i class="fa-solid fa-check-circle text-green-600 text-xs"></i>
-                      <img v-if="pr.approval.approver.avatar" :src="pr.approval.approver.avatar" :alt="pr.approval.approver.name" 
-                        class="w-6 h-6 rounded-full object-cover">
-                      <div v-else class="w-6 h-6 rounded-full bg-green-300 flex items-center justify-center text-xs text-green-700">
-                        {{ pr.approval.approver.name.charAt(0).toUpperCase() }}
+                      <div v-if="pr.approval.approver.avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.approval.approver.avatar}`)">
+                        <img 
+                          :src="`/storage/${pr.approval.approver.avatar}`" 
+                          :alt="pr.approval.approver.name" 
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                        {{ getInitials(pr.approval.approver.name) }}
                       </div>
                       <div class="flex flex-col">
                         <span class="text-xs text-gray-600 font-medium">{{ pr.approval.approver.name }}</span>
@@ -663,10 +673,15 @@
                     <div class="text-sm text-gray-600 mt-1">{{ formatDate(rnf.date) }} | {{ rnf.outlet_name }} | {{ rnf.supplier_name }}</div>
                     <div v-if="rnf.notes" class="text-sm text-gray-500 mt-1 italic">{{ rnf.notes }}</div>
                     <div v-if="rnf.creator" class="flex items-center gap-2 mt-2">
-                      <img v-if="rnf.creator.avatar" :src="rnf.creator.avatar" :alt="rnf.creator.name" 
-                        class="w-6 h-6 rounded-full object-cover">
-                      <div v-else class="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
-                        {{ rnf.creator.name.charAt(0).toUpperCase() }}
+                      <div v-if="rnf.creator.avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${rnf.creator.avatar}`)">
+                        <img 
+                          :src="`/storage/${rnf.creator.avatar}`" 
+                          :alt="rnf.creator.name" 
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                        {{ getInitials(rnf.creator.name) }}
                       </div>
                       <span class="text-xs text-gray-600">{{ rnf.creator.name }}</span>
                     </div>
@@ -792,19 +807,29 @@
                           </Link>
                           <div class="text-xs text-gray-600 mt-1">{{ formatDate(pr.date) }}</div>
                           <div v-if="pr.creator" class="flex items-center gap-2 mt-2">
-                            <img v-if="pr.creator.avatar" :src="pr.creator.avatar" :alt="pr.creator.name" 
-                              class="w-5 h-5 rounded-full object-cover">
-                            <div v-else class="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
-                              {{ pr.creator.name.charAt(0).toUpperCase() }}
+                            <div v-if="pr.creator.avatar" class="w-5 h-5 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.creator.avatar}`)">
+                              <img 
+                                :src="`/storage/${pr.creator.avatar}`" 
+                                :alt="pr.creator.name" 
+                                class="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div v-else class="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                              {{ getInitials(pr.creator.name) }}
                             </div>
                             <span class="text-xs text-gray-600">{{ pr.creator.name }}</span>
                           </div>
                           <div v-if="pr.approval && pr.approval.approver" class="flex items-center gap-2 mt-2">
                             <i class="fa-solid fa-check-circle text-green-600 text-xs"></i>
-                            <img v-if="pr.approval.approver.avatar" :src="pr.approval.approver.avatar" :alt="pr.approval.approver.name" 
-                              class="w-5 h-5 rounded-full object-cover">
-                            <div v-else class="w-5 h-5 rounded-full bg-green-300 flex items-center justify-center text-xs text-green-700">
-                              {{ pr.approval.approver.name.charAt(0).toUpperCase() }}
+                            <div v-if="pr.approval.approver.avatar" class="w-5 h-5 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.approval.approver.avatar}`)">
+                              <img 
+                                :src="`/storage/${pr.approval.approver.avatar}`" 
+                                :alt="pr.approval.approver.name" 
+                                class="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div v-else class="w-5 h-5 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                              {{ getInitials(pr.approval.approver.name) }}
                             </div>
                             <div class="flex flex-col">
                               <span class="text-xs text-gray-600 font-medium">{{ pr.approval.approver.name }}</span>
@@ -853,10 +878,15 @@
                           <div class="text-xs text-gray-600 mt-1">{{ formatDate(rnf.date) }} | {{ rnf.supplier_name }}</div>
                           <div v-if="rnf.notes" class="text-xs text-gray-500 mt-1 italic">{{ rnf.notes }}</div>
                           <div v-if="rnf.creator" class="flex items-center gap-2 mt-2">
-                            <img v-if="rnf.creator.avatar" :src="rnf.creator.avatar" :alt="rnf.creator.name" 
-                              class="w-5 h-5 rounded-full object-cover">
-                            <div v-else class="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
-                              {{ rnf.creator.name.charAt(0).toUpperCase() }}
+                            <div v-if="rnf.creator.avatar" class="w-5 h-5 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${rnf.creator.avatar}`)">
+                              <img 
+                                :src="`/storage/${rnf.creator.avatar}`" 
+                                :alt="rnf.creator.name" 
+                                class="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div v-else class="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                              {{ getInitials(rnf.creator.name) }}
                             </div>
                             <span class="text-xs text-gray-600">{{ rnf.creator.name }}</span>
                           </div>
@@ -958,19 +988,29 @@
                     <div class="text-sm text-gray-600 mt-1">{{ formatDate(pr.date) }}</div>
                     <div v-if="pr.description" class="text-sm text-gray-500 mt-1 italic">{{ pr.description }}</div>
                     <div v-if="pr.creator" class="flex items-center gap-2 mt-2">
-                      <img v-if="pr.creator.avatar" :src="pr.creator.avatar" :alt="pr.creator.name" 
-                        class="w-6 h-6 rounded-full object-cover">
-                      <div v-else class="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
-                        {{ pr.creator.name.charAt(0).toUpperCase() }}
+                      <div v-if="pr.creator.avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.creator.avatar}`)">
+                        <img 
+                          :src="`/storage/${pr.creator.avatar}`" 
+                          :alt="pr.creator.name" 
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                        {{ getInitials(pr.creator.name) }}
                       </div>
                       <span class="text-xs text-gray-600">{{ pr.creator.name }}</span>
                     </div>
                     <div v-if="pr.approval && pr.approval.approver" class="flex items-center gap-2 mt-2">
                       <i class="fa-solid fa-check-circle text-green-600 text-xs"></i>
-                      <img v-if="pr.approval.approver.avatar" :src="pr.approval.approver.avatar" :alt="pr.approval.approver.name" 
-                        class="w-6 h-6 rounded-full object-cover">
-                      <div v-else class="w-6 h-6 rounded-full bg-green-300 flex items-center justify-center text-xs text-green-700">
-                        {{ pr.approval.approver.name.charAt(0).toUpperCase() }}
+                      <div v-if="pr.approval.approver.avatar" class="w-6 h-6 rounded-full overflow-hidden cursor-pointer hover:scale-110 transition-transform border-2 border-gray-200" @click="openImageModal(`/storage/${pr.approval.approver.avatar}`)">
+                        <img 
+                          :src="`/storage/${pr.approval.approver.avatar}`" 
+                          :alt="pr.approval.approver.name" 
+                          class="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div v-else class="w-6 h-6 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold border-2 border-gray-200">
+                        {{ getInitials(pr.approval.approver.name) }}
                       </div>
                       <div class="flex flex-col">
                         <span class="text-xs text-gray-600 font-medium">{{ pr.approval.approver.name }}</span>
@@ -1030,6 +1070,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Image Modal (Lightbox) -->
+    <div v-if="showImageModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100] p-4" @click="closeImageModal">
+      <div class="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center">
+        <button @click="closeImageModal" class="absolute top-4 right-4 text-white hover:text-gray-300 text-3xl z-10">
+          <i class="fas fa-times"></i>
+        </button>
+        <img :src="imageModalUrl" alt="Avatar" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" @click.stop />
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -1073,6 +1123,10 @@ const loadingDivisionDetail = ref(false);
 const expandedCategories = ref(new Set());
 const expandedPRs = ref(new Set());
 const expandedDivisionPRs = ref(new Set());
+
+// Image Modal
+const showImageModal = ref(false);
+const imageModalUrl = ref('');
 
 const filters = reactive({
   date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
@@ -1322,6 +1376,21 @@ function toggleDivisionPRExpand(prId) {
   } else {
     expandedDivisionPRs.value.add(prId);
   }
+}
+
+function getInitials(name) {
+  if (!name) return 'U';
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function openImageModal(imageUrl) {
+  imageModalUrl.value = imageUrl;
+  showImageModal.value = true;
+}
+
+function closeImageModal() {
+  showImageModal.value = false;
+  imageModalUrl.value = '';
 }
 
 const statusChartSeries = computed(() => {
