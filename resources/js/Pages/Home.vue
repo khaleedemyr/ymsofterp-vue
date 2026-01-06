@@ -7461,7 +7461,7 @@ watch(locale, () => {
                             </div>
                             <div class="bg-white dark:bg-gray-800 p-3 rounded-lg">
                                 <div class="text-sm font-medium text-green-600">Remaining Budget</div>
-                                <div class="text-lg font-bold" :class="getPoOpsRemainingAmount() < 0 ? 'text-red-800' : 'text-green-800'">
+                                <div class="text-lg font-bold text-green-800">
                                     Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsRemainingAmount()) }}
                                 </div>
                             </div>
@@ -7479,22 +7479,6 @@ watch(locale, () => {
                             </div>
                         </div>
                         
-                        <!-- Warning Messages -->
-                        <div v-if="getPoOpsRemainingAmount() < 0" class="mt-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded text-red-800 dark:text-red-400 text-sm">
-                            <i class="fa fa-exclamation-triangle mr-2"></i>
-                            <strong>Budget Exceeded!</strong> 
-                            <span v-if="poOpsApprovalBudgetInfo.budget_type === 'PER_OUTLET'">
-                                This outlet has exceeded its monthly budget limit.
-                            </span>
-                            <span v-else>
-                                This category has exceeded its monthly budget limit.
-                            </span>
-                        </div>
-                        <div v-else-if="getPoOpsRemainingAmount() < (getPoOpsTotalBudget() * 0.1)" class="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded text-yellow-800 dark:text-yellow-400 text-sm">
-                            <i class="fa fa-exclamation-circle mr-2"></i>
-                            <strong>Budget Warning!</strong> Only Rp {{ new Intl.NumberFormat('id-ID').format(getPoOpsRemainingAmount()) }} remaining.
-                        </div>
-
                         <!-- Budget Breakdown Detail -->
                         <div v-if="poOpsApprovalBudgetInfo.breakdown" class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
                             <h5 class="text-sm font-semibold text-gray-800 dark:text-white mb-3 flex items-center gap-2">

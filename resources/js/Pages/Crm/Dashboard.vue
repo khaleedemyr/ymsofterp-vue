@@ -210,8 +210,8 @@ const openMemberTransactionsModal = async (memberId, memberName, type = 'orders'
   try {
     let endpoint = '/api/crm/member-transactions';
     let params = { 
-      member_id: memberId,
-      type: type
+        member_id: memberId,
+        type: type
     };
     
     // Use different endpoints for vouchers and redemptions
@@ -2224,9 +2224,9 @@ function getAgeGroupColor(ageGroup) {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
+                  </div>
+                </div>
+        
         <!-- Member Favourite Picks -->
         <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100">

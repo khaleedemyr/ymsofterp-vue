@@ -28,6 +28,7 @@ const menuGroups = [
             { name: () => 'Cashflow Outlet Dashboard', icon: 'fa-solid fa-chart-pie', route: route('cashflow-outlet-dashboard.index'), code: 'cashflow_outlet_dashboard' },
             { name: () => 'My Attendance', icon: 'fa-solid fa-user-clock', route: '/attendance', code: 'my_attendance' },
             { name: () => 'Payment', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
+            { name: () => 'Payment Report', icon: 'fa-solid fa-chart-bar', route: '/pr-ops/report', code: 'pr_ops_report' },
             { name: () => 'Payment Approval Tracker', icon: 'fa-solid fa-chart-line', route: '/purchase-requisitions/payment-tracker', code: 'payment_tracker' },
             { name: () => 'Video Tutorial Gallery', icon: 'fa-solid fa-play-circle', route: '/video-tutorials/gallery' },
             //{ name: () => 'Dashboard Outlet', icon: 'fa-solid fa-map-location-dot', route: '/dashboard-outlet', code: 'dashboard_outlet' },

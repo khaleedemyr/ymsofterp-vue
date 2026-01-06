@@ -454,6 +454,13 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/po-ops', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'index'])->name('po-ops.index');
     Route::get('/po-ops/report', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'index'])->name('po-ops.report');
     Route::get('/po-ops/report/export', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'exportExcel'])->name('po-ops.report.export');
+    
+    // Purchase Requisition Ops Report routes
+    Route::get('/pr-ops/report', [\App\Http\Controllers\PurchaseRequisitionOpsReportController::class, 'index'])->name('pr-ops.report');
+    Route::get('/pr-ops/report/export', [\App\Http\Controllers\PurchaseRequisitionOpsReportController::class, 'exportExcel'])->name('pr-ops.report.export');
+    Route::get('/pr-ops/report/category/{categoryId}', [\App\Http\Controllers\PurchaseRequisitionOpsReportController::class, 'getCategoryDetail'])->name('pr-ops.report.category-detail');
+    Route::get('/pr-ops/report/outlet/{outletId}', [\App\Http\Controllers\PurchaseRequisitionOpsReportController::class, 'getOutletDetail'])->name('pr-ops.report.outlet-detail');
+    Route::get('/pr-ops/report/division/{divisionId}', [\App\Http\Controllers\PurchaseRequisitionOpsReportController::class, 'getDivisionDetail'])->name('pr-ops.report.division-detail');
     Route::get('/po-ops/report/supplier/{supplierId}', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getSupplierDetail'])->name('po-ops.report.supplier-detail');
     Route::get('/po-ops/report/item-detail', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getItemDetail'])->name('po-ops.report.item-detail');
     Route::get('/po-ops/report/outlet/{outletId}', [\App\Http\Controllers\PurchaseOrderOpsReportController::class, 'getOutletDetail'])->name('po-ops.report.outlet-detail');
