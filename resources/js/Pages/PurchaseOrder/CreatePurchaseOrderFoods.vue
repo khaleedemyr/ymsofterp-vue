@@ -30,7 +30,7 @@ const poForm = useForm({
 const fetchPRList = async () => {
     try {
         loading.value = true;
-        const response = await axios.get('/api/pr-foods/available');
+        const response = await axios.get('/pr-foods/available');
         prList.value = response.data.map(pr => ({
             ...pr,
             items: pr.items.map(item => {

@@ -399,7 +399,7 @@ const poForm = useForm({
 // Fetch PR list yang belum di-PO
 const fetchPRList = async () => {
     try {
-        const response = await axios.get('/api/pr-foods/available');
+        const response = await axios.get('/pr-foods/available');
         prList.value = response.data;
     } catch (error) {
         console.error('Error fetching PR list:', error);

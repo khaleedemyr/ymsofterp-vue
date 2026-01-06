@@ -812,9 +812,7 @@ Route::prefix('pos/sync')->group(function () {
     Route::get('/retail-food', [PosSyncController::class, 'syncRetailFood'])->name('api.pos.sync.retail-food');
 });
 
-// PR Foods routes
-Route::get('/pr-foods/available', [PurchaseOrderFoodsController::class, 'getAvailablePR']);
-Route::post('/pr-foods/items', [PurchaseOrderFoodsController::class, 'getPRItems']);
+// PR Foods routes - moved to web.php for web app usage
 
 // Purchase Order Ops API routes
 Route::get('/pr-ops/available', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getAvailablePR']);

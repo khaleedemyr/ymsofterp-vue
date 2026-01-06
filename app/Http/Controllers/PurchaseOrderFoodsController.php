@@ -12,6 +12,7 @@ use App\Models\Unit;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\Auth;
@@ -161,63 +162,77 @@ class PurchaseOrderFoodsController extends Controller
 
     public function getAvailablePR()
     {
-        // Get all PR item IDs that are already in PO
-        $poPrItemIds = DB::table('purchase_order_food_items')
-            ->whereNotNull('pr_food_item_id')
-            ->pluck('pr_food_item_id')
-            ->toArray();
+        try {
+            // Get all PR item IDs that are already in PO
+            $poPrItemIds = DB::table('purchase_order_food_items')
+                ->whereNotNull('pr_food_item_id')
+                ->pluck('pr_food_item_id')
+                ->toArray();
 
-        // Use raw query instead of Eloquent relationships for better performance
-        $prs = DB::table('pr_foods as pr')
-            ->join('pr_food_items as items', 'pr.id', '=', 'items.pr_food_id')
-            ->leftJoin('items as i', 'items.item_id', '=', 'i.id')
-            ->leftJoin('warehouses as w', 'pr.warehouse_id', '=', 'w.id')
-            ->where('pr.status', 'approved')
-            ->whereNotIn('items.id', $poPrItemIds)
-            ->select(
-                'pr.id',
-                'pr.pr_number',
-                'pr.tanggal',
-                'pr.warehouse_id',
-                'pr.description',
-                'items.id as item_id',
-                'items.item_id as item_master_id',
-                'items.qty',
-                'items.unit',
-                'items.arrival_date',
-                'items.note',
-                'i.name as item_name',
-                'w.name as warehouse_name'
-            )
-            ->get()
-            ->groupBy('id')
-            ->map(function ($group) {
-                $first = $group->first();
-                return [
-                    'id' => $first->id,
-                    'number' => $first->pr_number,
-                    'date' => \Carbon\Carbon::parse($first->tanggal)->format('d/m/Y'),
-                    'warehouse_id' => $first->warehouse_id,
-                    'warehouse_name' => $first->warehouse_name ?? 'Unknown Warehouse',
-                    'description' => $first->description,
-                    'items' => $group->map(function ($item) {
-                        return [
-                            'id' => $item->item_id,
-                            'item_id' => $item->item_master_id,
-                            'name' => $item->item_name ?? '-',
-                            'quantity' => $item->qty,
-                            'unit' => $item->unit,
-                            'arrival_date' => $item->arrival_date,
-                            'note' => $item->note,
-                            'supplier_id' => null,
-                            'price' => null,
-                        ];
-                    })->values(),
-                ];
-            })
-            ->values();
+            // Use raw query instead of Eloquent relationships for better performance
+            $prs = DB::table('pr_foods as pr')
+                ->join('pr_food_items as items', 'pr.id', '=', 'items.pr_food_id')
+                ->leftJoin('items as i', 'items.item_id', '=', 'i.id')
+                ->leftJoin('warehouses as w', 'pr.warehouse_id', '=', 'w.id')
+                ->where('pr.status', 'approved')
+                ->whereNotIn('items.id', $poPrItemIds)
+                ->select(
+                    'pr.id',
+                    'pr.pr_number',
+                    'pr.tanggal',
+                    'pr.warehouse_id',
+                    'pr.description',
+                    'items.id as item_id',
+                    'items.item_id as item_master_id',
+                    'items.qty',
+                    'items.unit',
+                    'items.arrival_date',
+                    'items.note',
+                    'i.name as item_name',
+                    'w.name as warehouse_name'
+                )
+                ->get()
+                ->groupBy('id')
+                ->map(function ($group) {
+                    $first = $group->first();
+                    return [
+                        'id' => $first->id,
+                        'number' => $first->pr_number,
+                        'date' => \Carbon\Carbon::parse($first->tanggal)->format('d/m/Y'),
+                        'warehouse_id' => $first->warehouse_id,
+                        'warehouse_name' => $first->warehouse_name ?? 'Unknown Warehouse',
+                        'description' => $first->description,
+                        'items' => $group->map(function ($item) {
+                            return [
+                                'id' => $item->item_id,
+                                'item_id' => $item->item_master_id,
+                                'name' => $item->item_name ?? '-',
+                                'quantity' => $item->qty,
+                                'unit' => $item->unit,
+                                'arrival_date' => $item->arrival_date,
+                                'note' => $item->note,
+                                'supplier_id' => null,
+                                'price' => null,
+                            ];
+                        })->values(),
+                    ];
+                })
+                ->values();
 
-        return response()->json($prs);
+            return response()->json($prs);
+        } catch (\Exception $e) {
+            Log::error('Purchase Order Foods: Error getting available PR list', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to fetch PR list',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function getPRItems(Request $request)

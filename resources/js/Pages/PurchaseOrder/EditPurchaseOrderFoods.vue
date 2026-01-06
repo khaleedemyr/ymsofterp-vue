@@ -398,7 +398,7 @@ const addItemForm = ref({
 const fetchPRList = async () => {
   try {
     loadingPR.value = true;
-    const response = await axios.get('/api/pr-foods/available');
+    const response = await axios.get('/pr-foods/available');
     prList.value = response.data.map(pr => ({
       ...pr,
       items: pr.items.map(item => {
