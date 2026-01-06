@@ -1595,11 +1595,11 @@ class PurchaseRequisitionController extends Controller
                             $budgetValidation = $this->validateBudgetLimit($check['category_id'], $check['outlet_id'], $check['amount']);
                             if (!$budgetValidation['valid']) {
                                 // Revert the approval flow that was just approved
+                                // Note: Don't set approver_id to null as it's a required field
                                 if ($isSuperadmin && $nextFlow) {
                                     $nextFlow->update([
                                         'status' => 'PENDING',
                                         'approved_at' => null,
-                                        'approver_id' => null,
                                         'comments' => null,
                                     ]);
                                 } else if (!$isSuperadmin && $currentApprovalFlow) {
@@ -1627,11 +1627,11 @@ class PurchaseRequisitionController extends Controller
                         $budgetValidation = $this->validateBudgetLimit($purchaseRequisition->category_id, $purchaseRequisition->outlet_id, $amount);
                         if (!$budgetValidation['valid']) {
                             // Revert the approval flow that was just approved
+                            // Note: Don't set approver_id to null as it's a required field
                             if ($isSuperadmin && $nextFlow) {
                                 $nextFlow->update([
                                     'status' => 'PENDING',
                                     'approved_at' => null,
-                                    'approver_id' => null,
                                     'comments' => null,
                                 ]);
                             } else if (!$isSuperadmin && $currentApprovalFlow) {
