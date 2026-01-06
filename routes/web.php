@@ -894,6 +894,7 @@ Route::resource('packing-list', App\Http\Controllers\PackingListController::clas
 
 // API route untuk mobile app
 Route::get('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'apiIndex']);
+Route::post('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'store']);
 Route::get('/api/packing-list/create', [\App\Http\Controllers\PackingListController::class, 'apiCreate']);
 
 Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
