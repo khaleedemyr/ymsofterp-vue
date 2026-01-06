@@ -12,8 +12,6 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        \Log::info('Schedule method called', ['time' => now()]);
-        
         // Process holiday attendance automatically every day at 6:00 AM
         $schedule->command('attendance:process-holiday')
             ->dailyAt('06:00')
