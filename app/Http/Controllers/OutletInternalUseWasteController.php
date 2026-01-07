@@ -2213,6 +2213,12 @@ class OutletInternalUseWasteController extends Controller
                 $message = 'Approval berhasil! Notifikasi dikirim ke approver berikutnya.';
             } else {
                 // All approvers have approved, process stock and update status
+                \Log::info("OutletInternalUseWaste approve: All approvers approved, processing stock", [
+                    'header_id' => $id,
+                    'type' => $header->type,
+                    'outlet_id' => $header->outlet_id
+                ]);
+                
                 $this->processStockAfterApproval($id);
                 
                 DB::table('outlet_internal_use_waste_headers')
@@ -2223,6 +2229,12 @@ class OutletInternalUseWasteController extends Controller
                     ]);
                 
                 DB::commit();
+                
+                \Log::info("OutletInternalUseWaste approve: Stock processing and status update completed", [
+                    'header_id' => $id,
+                    'type' => $header->type,
+                    'status' => 'APPROVED'
+                ]);
                 
                 // Activity log APPROVE (complete - semua approver sudah approve)
                 try {
@@ -2400,17 +2412,40 @@ class OutletInternalUseWasteController extends Controller
             throw new \Exception('Header not found');
         }
         
+        \Log::info("OutletInternalUseWaste processStockAfterApproval: Starting stock processing", [
+            'header_id' => $headerId,
+            'type' => $header->type,
+            'outlet_id' => $header->outlet_id,
+            'warehouse_outlet_id' => $header->warehouse_outlet_id
+        ]);
+        
         $details = DB::table('outlet_internal_use_waste_details')->where('header_id', $headerId)->get();
+        
+        if ($details->isEmpty()) {
+            \Log::warning("OutletInternalUseWaste processStockAfterApproval: No details found for header_id: {$headerId}, type: {$header->type}");
+            return;
+        }
+        
+        \Log::info("OutletInternalUseWaste processStockAfterApproval: Found {$details->count()} detail items", [
+            'header_id' => $headerId,
+            'type' => $header->type
+        ]);
         
         foreach ($details as $item) {
             $inventoryItem = DB::table('outlet_food_inventory_items')
                 ->where('item_id', $item->item_id)
                 ->first();
             if (!$inventoryItem) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Inventory item not found for item_id: {$item->item_id}, header_id: {$headerId}, type: {$header->type}");
                 continue;
             }
             
             $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+            if (!$itemMaster) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Item master not found for item_id: {$item->item_id}, header_id: {$headerId}");
+                continue;
+            }
+            
             $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
             $qty_input = $item->qty;
             $qty_small = 0;
@@ -2445,6 +2480,7 @@ class OutletInternalUseWasteController extends Controller
                 ->first();
             
             if (!$stock) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Stock not found for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
                 continue;
             }
             
@@ -2454,7 +2490,7 @@ class OutletInternalUseWasteController extends Controller
             }
             
             // Update stok di outlet (kurangi)
-            DB::table('outlet_food_inventory_stocks')
+            $updated = DB::table('outlet_food_inventory_stocks')
                 ->where('inventory_item_id', $inventoryItem->id)
                 ->where('id_outlet', $header->outlet_id)
                 ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
@@ -2464,6 +2500,23 @@ class OutletInternalUseWasteController extends Controller
                     'qty_large' => $stock->qty_large - $qty_large,
                     'updated_at' => now(),
                 ]);
+            
+            if ($updated === 0) {
+                \Log::error("OutletInternalUseWaste processStockAfterApproval: Failed to update stock for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
+                throw new \Exception("Gagal mengupdate stock untuk item: {$itemMaster->name ?? $item->item_id}");
+            }
+            
+            \Log::info("OutletInternalUseWaste processStockAfterApproval: Stock updated successfully", [
+                'header_id' => $headerId,
+                'type' => $header->type,
+                'item_id' => $item->item_id,
+                'inventory_item_id' => $inventoryItem->id,
+                'outlet_id' => $header->outlet_id,
+                'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                'qty_small_reduced' => $qty_small,
+                'old_qty_small' => $stock->qty_small,
+                'new_qty_small' => $stock->qty_small - $qty_small
+            ]);
             
             // Insert kartu stok OUT
             DB::table('outlet_food_inventory_cards')->insert([
@@ -2488,6 +2541,12 @@ class OutletInternalUseWasteController extends Controller
                 'created_at' => now(),
             ]);
         }
+        
+        \Log::info("OutletInternalUseWaste processStockAfterApproval: Stock processing completed", [
+            'header_id' => $headerId,
+            'type' => $header->type,
+            'total_details_processed' => $details->count()
+        ]);
     }
 
     /**
