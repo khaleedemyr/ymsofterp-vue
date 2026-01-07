@@ -6001,22 +6001,14 @@ class PurchaseRequisitionController extends Controller
         // Use BudgetCalculationService for consistent validation
         $budgetService = new BudgetCalculationService();
         
-        // Note: excludeId is not yet supported in service, but can be added if needed
-        // For now, we'll use the service and handle excludeId separately if needed
+        // Pass excludeId to exclude PR from calculation (for approval/update scenario)
+        // This prevents double counting when approving a PR that's already counted as SUBMITTED
         $validation = $budgetService->validateBudget(
             categoryId: $categoryId,
             outletId: $outletId,
-            currentAmount: $amount
+            currentAmount: $amount,
+            excludePrId: $excludeId
         );
-        
-        // If excludeId is provided, we need to recalculate excluding that PR
-        // This is a temporary workaround until service supports excludeId
-        // For update scenario, excludeId should exclude the current PR from calculation
-        if ($excludeId && $validation['valid']) {
-            // For now, return the validation result
-            // TODO: Add excludeId support to BudgetCalculationService if needed
-            // The excludeId is used when updating a PR to exclude its own amount from calculation
-        }
         
         return $validation;
     }

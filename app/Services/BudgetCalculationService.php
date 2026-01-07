@@ -23,7 +23,8 @@ class BudgetCalculationService
         ?int $outletId = null,
         ?string $dateFrom = null,
         ?string $dateTo = null,
-        ?float $currentAmount = 0
+        ?float $currentAmount = 0,
+        ?int $excludePrId = null
     ): array {
         // Set default dates
         if (!$dateFrom) {
@@ -47,7 +48,7 @@ class BudgetCalculationService
 
         // Calculate based on budget type
         if ($category->isGlobalBudget()) {
-            return $this->calculateGlobalBudget($category, $year, $month, $dateFrom, $dateTo, $currentAmount);
+            return $this->calculateGlobalBudget($category, $year, $month, $dateFrom, $dateTo, $currentAmount, $excludePrId);
         } else if ($category->isPerOutletBudget()) {
             if (!$outletId) {
                 return [
@@ -55,7 +56,7 @@ class BudgetCalculationService
                     'message' => 'Outlet ID is required for per-outlet budget'
                 ];
             }
-            return $this->calculatePerOutletBudget($category, $outletId, $year, $month, $dateFrom, $dateTo, $currentAmount);
+            return $this->calculatePerOutletBudget($category, $outletId, $year, $month, $dateFrom, $dateTo, $currentAmount, $excludePrId);
         }
 
         return [
@@ -73,7 +74,8 @@ class BudgetCalculationService
         int $month,
         string $dateFrom,
         string $dateTo,
-        float $currentAmount
+        float $currentAmount,
+        ?int $excludePrId = null
     ): array {
         $categoryId = $category->id;
         $categoryBudget = $category->budget_limit;
@@ -91,10 +93,12 @@ class BudgetCalculationService
 
         // Get total PR items (all PR items for this category - termasuk yang sudah jadi PO)
         // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
-        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month, $dateFrom, $dateTo);
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month, $dateFrom, $dateTo, $excludePrId);
 
         // Get unpaid amounts (SIMPLIFIED: hanya PR unpaid)
-        $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, null, $year, $month);
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, null, $year, $month, $excludePrId);
         
         // Get total PO items (all PO items for this category - approved)
         $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
@@ -159,7 +163,8 @@ class BudgetCalculationService
         int $month,
         string $dateFrom,
         string $dateTo,
-        float $currentAmount
+        float $currentAmount,
+        ?int $excludePrId = null
     ): array {
         $categoryId = $category->id;
 
@@ -189,10 +194,12 @@ class BudgetCalculationService
 
         // Get total PR items (all PR items for this category/outlet - termasuk yang sudah jadi PO)
         // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
-        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month, $dateFrom, $dateTo, $excludePrId);
 
         // Get unpaid amounts for this outlet (SIMPLIFIED: hanya PR unpaid)
-        $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, $outletId, $year, $month);
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        $prUnpaidAmount = $this->calculatePrUnpaidAmount($categoryId, $outletId, $year, $month, $excludePrId);
         
         // Get total PO items (all PO items for this category/outlet - approved)
         $poTotalAmount = $paidAmountFromPo; // PO total = paid amount from PO (approved PO items)
@@ -436,7 +443,7 @@ class BudgetCalculationService
     /**
      * Calculate PR Unpaid Amount (SIMPLIFIED: PR items yang belum jadi PO items)
      */
-    private function calculatePrUnpaidAmount(int $categoryId, ?int $outletId, int $year, int $month): float
+    private function calculatePrUnpaidAmount(int $categoryId, ?int $outletId, int $year, int $month, ?int $excludePrId = null): float
     {
         // SIMPLIFIED: Hitung PR items yang belum ada di PO items
         $query = DB::table('purchase_requisition_items as pri')
@@ -470,6 +477,11 @@ class BudgetCalculationService
             ->where('pr.is_held', false)
             ->whereNull('poi.id'); // PR item yang belum jadi PO item
 
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        if ($excludePrId) {
+            $query->where('pr.id', '!=', $excludePrId);
+        }
+
         // Filter by category and outlet
         if ($outletId) {
             // PER_OUTLET: Filter by outlet and category
@@ -490,7 +502,7 @@ class BudgetCalculationService
      * Gunakan filter tanggal dari pri.created_at untuk konsistensi dengan query manual
      * dan hitung menggunakan qty*unit_price untuk konsistensi dengan query manual
      */
-    private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month, string $dateFrom, string $dateTo): float
+    private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month, string $dateFrom, string $dateTo, ?int $excludePrId = null): float
     {
         // PR Total = semua PR items yang sudah dibuat, EXCLUDE REJECTED
         // Join ke purchase_requisitions untuk filter status dan is_held
@@ -503,6 +515,11 @@ class BudgetCalculationService
             ->where('pr.status', '!=', 'REJECTED')
             // Exclude held PRs
             ->where('pr.is_held', false);
+
+        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        if ($excludePrId) {
+            $query->where('pr.id', '!=', $excludePrId);
+        }
 
         // Filter by outlet jika per outlet budget
         if ($outletId) {
@@ -818,7 +835,7 @@ class BudgetCalculationService
         ?string $dateTo = null,
         ?int $excludePrId = null
     ): array {
-        $budgetInfo = $this->getBudgetInfo($categoryId, $outletId, $dateFrom, $dateTo, $currentAmount);
+        $budgetInfo = $this->getBudgetInfo($categoryId, $outletId, $dateFrom, $dateTo, $currentAmount, $excludePrId);
 
         if (!$budgetInfo['success']) {
             return [

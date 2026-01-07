@@ -1388,6 +1388,20 @@ async function approveMultipleAllPr() {
         const success = results.filter(r => !r.error).length;
         const failed = results.filter(r => r.error).length;
         
+        // Collect error messages
+        const errorMessages = results
+            .filter(r => r.error)
+            .map(r => {
+                const error = r.error;
+                if (error.response?.data?.message) {
+                    return `PR ${r.prId}: ${error.response.data.message}`;
+                } else if (error.response?.data?.errors?.budget_exceeded) {
+                    const budgetError = error.response.data.errors.budget_exceeded;
+                    return `PR ${r.prId}: ${Array.isArray(budgetError) ? budgetError[0] : budgetError}`;
+                }
+                return `PR ${r.prId}: Gagal menyetujui`;
+            });
+        
         selectedAllPrApprovals.value.clear();
         isSelectingAllPr.value = false;
         loadAllPrApprovals();
@@ -1395,11 +1409,23 @@ async function approveMultipleAllPr() {
         if (failed === 0) {
             Swal.fire('Success', `${success} Purchase Requisition berhasil disetujui`, 'success');
         } else {
-            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+            const errorText = errorMessages.length > 0 
+                ? errorMessages.join('\n') 
+                : `${failed} PR gagal disetujui`;
+            Swal.fire({
+                icon: 'warning',
+                title: 'Partial Success',
+                html: `${success} berhasil, ${failed} gagal<br><br><small style="text-align: left; display: block;">${errorText}</small>`,
+                confirmButtonColor: '#3085d6',
+            });
         }
     } catch (error) {
         console.error('Error approving multiple PRs:', error);
-        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+        let errorMessage = 'Gagal menyetujui Purchase Requisition';
+        if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        }
+        Swal.fire('Error', errorMessage, 'error');
     }
 }
 
@@ -1747,6 +1773,20 @@ async function approveMultiplePr() {
         const success = results.filter(r => !r.error).length;
         const failed = results.filter(r => r.error).length;
         
+        // Collect error messages
+        const errorMessages = results
+            .filter(r => r.error)
+            .map(r => {
+                const error = r.error;
+                if (error.response?.data?.message) {
+                    return `PR ${r.prId}: ${error.response.data.message}`;
+                } else if (error.response?.data?.errors?.budget_exceeded) {
+                    const budgetError = error.response.data.errors.budget_exceeded;
+                    return `PR ${r.prId}: ${Array.isArray(budgetError) ? budgetError[0] : budgetError}`;
+                }
+                return `PR ${r.prId}: Gagal menyetujui`;
+            });
+        
         selectedPrApprovals.value.clear();
         isSelectingPrApprovals.value = false;
         loadPendingPrApprovals();
@@ -1754,11 +1794,23 @@ async function approveMultiplePr() {
         if (failed === 0) {
             Swal.fire('Success', `${success} Purchase Requisition berhasil disetujui`, 'success');
         } else {
-            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+            const errorText = errorMessages.length > 0 
+                ? errorMessages.join('\n') 
+                : `${failed} PR gagal disetujui`;
+            Swal.fire({
+                icon: 'warning',
+                title: 'Partial Success',
+                html: `${success} berhasil, ${failed} gagal<br><br><small style="text-align: left; display: block;">${errorText}</small>`,
+                confirmButtonColor: '#3085d6',
+            });
         }
     } catch (error) {
         console.error('Error approving multiple PRs:', error);
-        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+        let errorMessage = 'Gagal menyetujui Purchase Requisition';
+        if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        }
+        Swal.fire('Error', errorMessage, 'error');
     }
 }
 
@@ -1773,7 +1825,28 @@ async function approvePr(prId) {
         }
     } catch (error) {
         console.error('Error approving PR:', error);
-        Swal.fire('Error', 'Gagal menyetujui Purchase Requisition', 'error');
+        let errorMessage = 'Gagal menyetujui Purchase Requisition';
+        
+        // Extract specific error message from response
+        if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.response?.data?.errors) {
+            const errors = error.response.data.errors;
+            if (errors.budget_exceeded) {
+                errorMessage = Array.isArray(errors.budget_exceeded) 
+                    ? errors.budget_exceeded[0] 
+                    : errors.budget_exceeded;
+            } else {
+                errorMessage = Object.values(errors).flat().join(', ');
+            }
+        }
+        
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal Menyetujui PR',
+            text: errorMessage,
+            confirmButtonColor: '#3085d6',
+        });
     }
 }
 
