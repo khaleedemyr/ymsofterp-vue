@@ -2502,8 +2502,9 @@ class OutletInternalUseWasteController extends Controller
                 ]);
             
             if ($updated === 0) {
+                $itemName = $itemMaster->name ?? $item->item_id;
                 \Log::error("OutletInternalUseWaste processStockAfterApproval: Failed to update stock for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
-                throw new \Exception("Gagal mengupdate stock untuk item: {$itemMaster->name ?? $item->item_id}");
+                throw new \Exception("Gagal mengupdate stock untuk item: {$itemName}");
             }
             
             \Log::info("OutletInternalUseWaste processStockAfterApproval: Stock updated successfully", [
