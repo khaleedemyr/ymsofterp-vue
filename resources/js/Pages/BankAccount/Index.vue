@@ -42,15 +42,85 @@ function onSearchInput() {
 }
 
 function goToPage(url) {
-  if (url) {
-    const urlObj = new URL(url);
-    urlObj.searchParams.set('search', search.value);
-    urlObj.searchParams.set('outlet_id', outletId.value);
-    urlObj.searchParams.set('status', status.value);
-    urlObj.searchParams.set('per_page', perPage.value);
+  if (!url) return;
+  
+  // Ekstrak nomor halaman dari URL
+  let page = 1;
+  try {
+    // Jika url adalah relative path, tambahkan base URL
+    let fullUrl = url;
+    if (url.startsWith('/')) {
+      fullUrl = window.location.origin + url;
+    } else if (!url.startsWith('http')) {
+      fullUrl = window.location.origin + '/' + url;
+    }
     
-    router.visit(urlObj.toString(), { preserveState: true, replace: true });
+    const urlObj = new URL(fullUrl);
+    const pageParam = urlObj.searchParams.get('page');
+    if (pageParam) {
+      page = parseInt(pageParam);
+    }
+  } catch (e) {
+    // Fallback: coba ekstrak dari query string manual
+    const match = url.match(/[?&]page=(\d+)/);
+    if (match) {
+      page = parseInt(match[1]);
+    }
   }
+  
+  // Pastikan page valid
+  if (isNaN(page) || page < 1) {
+    page = 1;
+  }
+  
+  // Gunakan router.get dengan semua parameter
+  const params = {
+    page: page,
+    per_page: perPage.value || 15, // Selalu kirim per_page karena penting untuk pagination
+  };
+  
+  // Hanya tambahkan parameter jika ada nilainya
+  if (search.value) {
+    params.search = search.value;
+  }
+  if (outletId.value !== '') {
+    params.outlet_id = outletId.value;
+  }
+  if (status.value && status.value !== 'all') {
+    params.status = status.value;
+  }
+  
+  router.get('/bank-accounts', params, { 
+    preserveState: false, // Set false agar data benar-benar dimuat ulang
+    preserveScroll: false,
+    replace: true
+  });
+}
+
+function goToPageByNumber(page) {
+  if (!page || page < 1) return;
+  
+  const params = {
+    page: page,
+    per_page: perPage.value || 15, // Selalu kirim per_page karena penting untuk pagination
+  };
+  
+  // Hanya tambahkan parameter jika ada nilainya
+  if (search.value) {
+    params.search = search.value;
+  }
+  if (outletId.value !== '') {
+    params.outlet_id = outletId.value;
+  }
+  if (status.value && status.value !== 'all') {
+    params.status = status.value;
+  }
+  
+  router.get('/bank-accounts', params, { 
+    preserveState: false, // Set false agar data benar-benar dimuat ulang
+    preserveScroll: false,
+    replace: true
+  });
 }
 
 function openCreate() {
@@ -225,12 +295,28 @@ function reload() {
 }
 
 watch([outletId, status, perPage], () => {
-  router.get('/bank-accounts', {
-    search: search.value,
-    outlet_id: outletId.value,
-    status: status.value,
-    per_page: perPage.value,
-  }, { preserveState: true, replace: true });
+  // Reset ke page 1 ketika filter berubah
+  const params = {
+    page: 1, // Reset ke page 1 saat filter berubah
+  };
+  
+  // Hanya tambahkan parameter jika ada nilainya
+  if (search.value) {
+    params.search = search.value;
+  }
+  if (outletId.value !== '') {
+    params.outlet_id = outletId.value;
+  }
+  if (status.value && status.value !== 'all') {
+    params.status = status.value;
+  }
+  // Selalu kirim per_page karena ini penting untuk pagination
+  params.per_page = perPage.value || 15;
+  
+  router.get('/bank-accounts', params, { 
+    preserveState: true, 
+    replace: true 
+  });
 });
 </script>
 
@@ -315,12 +401,12 @@ watch([outletId, status, perPage], () => {
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-if="bankAccounts.data && bankAccounts.data.length === 0">
+              <tr v-if="!bankAccounts || !bankAccounts.data || bankAccounts.data.length === 0">
                 <td colspan="7" class="px-6 py-4 text-center text-gray-500">
                   Tidak ada data
                 </td>
               </tr>
-              <tr v-for="(item, index) in bankAccounts.data" :key="item.id" class="hover:bg-gray-50">
+              <tr v-else v-for="(item, index) in bankAccounts.data" :key="item.id" class="hover:bg-gray-50">
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {{ (bankAccounts.current_page - 1) * bankAccounts.per_page + index + 1 }}
                 </td>
@@ -380,19 +466,19 @@ watch([outletId, status, perPage], () => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="bankAccounts.last_page > 1" class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+        <div v-if="bankAccounts && bankAccounts.last_page > 1" class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
           <div class="flex items-center justify-between">
             <div class="flex-1 flex justify-between sm:hidden">
               <button
-                @click="goToPage(bankAccounts.prev_page_url)"
-                :disabled="!bankAccounts.prev_page_url"
+                @click="goToPage(bankAccounts?.prev_page_url)"
+                :disabled="!bankAccounts?.prev_page_url"
                 class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
               <button
-                @click="goToPage(bankAccounts.next_page_url)"
-                :disabled="!bankAccounts.next_page_url"
+                @click="goToPage(bankAccounts?.next_page_url)"
+                :disabled="!bankAccounts?.next_page_url"
                 class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
@@ -402,35 +488,35 @@ watch([outletId, status, perPage], () => {
               <div>
                 <p class="text-sm text-gray-700">
                   Menampilkan
-                  <span class="font-medium">{{ bankAccounts.from }}</span>
+                  <span class="font-medium">{{ bankAccounts?.from || 0 }}</span>
                   sampai
-                  <span class="font-medium">{{ bankAccounts.to }}</span>
+                  <span class="font-medium">{{ bankAccounts?.to || 0 }}</span>
                   dari
-                  <span class="font-medium">{{ bankAccounts.total }}</span>
+                  <span class="font-medium">{{ bankAccounts?.total || 0 }}</span>
                   hasil
                 </p>
               </div>
               <div>
                 <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                   <button
-                    @click="goToPage(bankAccounts.prev_page_url)"
-                    :disabled="!bankAccounts.prev_page_url"
+                    @click="goToPage(bankAccounts?.prev_page_url)"
+                    :disabled="!bankAccounts?.prev_page_url"
                     class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <i class="fa-solid fa-chevron-left"></i>
                   </button>
                   <span
-                    v-for="page in Array.from({ length: bankAccounts.last_page }, (_, i) => i + 1)"
+                    v-for="page in Array.from({ length: bankAccounts?.last_page || 0 }, (_, i) => i + 1)"
                     :key="page"
-                    @click="goToPage(bankAccounts.path + '?page=' + page)"
-                    :class="page === bankAccounts.current_page ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
+                    @click="goToPageByNumber(page)"
+                    :class="page === bankAccounts?.current_page ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
                     class="relative inline-flex items-center px-4 py-2 border text-sm font-medium cursor-pointer"
                   >
                     {{ page }}
                   </span>
                   <button
-                    @click="goToPage(bankAccounts.next_page_url)"
-                    :disabled="!bankAccounts.next_page_url"
+                    @click="goToPage(bankAccounts?.next_page_url)"
+                    :disabled="!bankAccounts?.next_page_url"
                     class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <i class="fa-solid fa-chevron-right"></i>

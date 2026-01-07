@@ -16,10 +16,15 @@ class BankAccountController extends Controller
      */
     public function index(Request $request)
     {
-        $search = $request->get('search', '');
-        $outletId = $request->get('outlet_id', '');
-        $status = $request->get('status', 'all'); // 'all', 'active', 'inactive'
-        $perPage = $request->get('per_page', 15);
+        $search = $request->input('search', '');
+        $outletId = $request->input('outlet_id', '');
+        $status = $request->input('status', 'all'); // 'all', 'active', 'inactive'
+        $perPage = (int) $request->input('per_page', 15);
+        
+        // Pastikan perPage valid
+        if ($perPage < 1 || $perPage > 100) {
+            $perPage = 15;
+        }
 
         $query = BankAccount::with('outlet');
 
