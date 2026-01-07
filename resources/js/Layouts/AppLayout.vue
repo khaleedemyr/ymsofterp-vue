@@ -423,6 +423,7 @@ const menuGroups = [
             { name: () => 'Support Admin Panel', icon: 'fa-solid fa-comments', route: '/support/admin', code: 'support_admin_panel' },
             { name: () => 'Monitoring User Aktif', icon: 'fa-solid fa-users-line', route: '/monitoring/active-users', code: 'monitoring_active_users' },
             { name: () => 'Activity Log Report', icon: 'fa-solid fa-list-alt', route: '/report/activity-log', code: 'activity_log_report' },
+            { name: () => 'CCTV Access Request', icon: 'fa-solid fa-video', route: '/cctv-access-requests', code: 'cctv_access_request' },
         ],
     },
     {

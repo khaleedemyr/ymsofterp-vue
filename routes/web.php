@@ -112,6 +112,7 @@ use App\Http\Controllers\LmsCurriculumController;
 use App\Http\Controllers\JabatanTrainingController;
 use App\Http\Controllers\TrainingComplianceController;
 use App\Http\Controllers\LeaveManagementController;
+use App\Http\Controllers\CctvAccessRequestController;
 
 
 Route::get('/', function () {
@@ -2579,6 +2580,29 @@ Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function 
     Route::post('/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject'])->name('api.approval.reject');
     Route::post('/{id}/hrd-approve', [\App\Http\Controllers\ApprovalController::class, 'hrdApprove'])->name('api.approval.hrd-approve');
     Route::post('/{id}/hrd-reject', [\App\Http\Controllers\ApprovalController::class, 'hrdReject'])->name('api.approval.hrd-reject');
+});
+
+// CCTV Access Request Routes
+Route::middleware(['auth', 'verified'])->group(function () {
+    // Frontend page route
+    Route::get('/cctv-access-requests', [\App\Http\Controllers\CctvAccessRequestController::class, 'indexPage'])->name('cctv-access-requests.index');
+    Route::get('/cctv-access-requests/{id}/playback/{fileIndex}', [\App\Http\Controllers\CctvAccessRequestController::class, 'servePlaybackFile'])->name('cctv-access-requests.playback');
+    
+    // API routes
+    Route::prefix('api/cctv-access-requests')->group(function () {
+        Route::get('/', [\App\Http\Controllers\CctvAccessRequestController::class, 'index'])->name('api.cctv-access-requests.index');
+        Route::get('/pending-approvals', [\App\Http\Controllers\CctvAccessRequestController::class, 'getPendingApprovals'])->name('api.cctv-access-requests.pending-approvals');
+        Route::post('/{id}/upload-playback', [\App\Http\Controllers\CctvAccessRequestController::class, 'uploadPlayback'])->name('api.cctv-access-requests.upload-playback');
+        Route::get('/my-requests', [\App\Http\Controllers\CctvAccessRequestController::class, 'getMyRequests'])->name('api.cctv-access-requests.my-requests');
+        Route::get('/stats', [\App\Http\Controllers\CctvAccessRequestController::class, 'getStats'])->name('api.cctv-access-requests.stats');
+        Route::post('/', [\App\Http\Controllers\CctvAccessRequestController::class, 'store'])->name('api.cctv-access-requests.store');
+        Route::get('/{id}', [\App\Http\Controllers\CctvAccessRequestController::class, 'show'])->name('api.cctv-access-requests.show');
+        Route::put('/{id}', [\App\Http\Controllers\CctvAccessRequestController::class, 'update'])->name('api.cctv-access-requests.update');
+        Route::delete('/{id}', [\App\Http\Controllers\CctvAccessRequestController::class, 'destroy'])->name('api.cctv-access-requests.destroy');
+        Route::post('/{id}/approve', [\App\Http\Controllers\CctvAccessRequestController::class, 'approve'])->name('api.cctv-access-requests.approve');
+        Route::post('/{id}/reject', [\App\Http\Controllers\CctvAccessRequestController::class, 'reject'])->name('api.cctv-access-requests.reject');
+        Route::post('/{id}/revoke', [\App\Http\Controllers\CctvAccessRequestController::class, 'revoke'])->name('api.cctv-access-requests.revoke');
+    });
 });
 
 // Holiday Attendance Routes

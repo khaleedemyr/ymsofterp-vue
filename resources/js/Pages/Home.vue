@@ -14,6 +14,7 @@ import PRFoodApprovalCard from '@/Components/PRFoodApprovalCard.vue';
 import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
 import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
+import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
@@ -4856,6 +4857,17 @@ function handleEmployeeResignationRejected(resignationId) {
     console.log('Employee Resignation rejected:', resignationId);
 }
 
+// CCTV Access Request approval handlers
+function handleCctvAccessRequestApproved(requestId) {
+    // Component already handles reload, just log if needed
+    console.log('CCTV Access Request approved:', requestId);
+}
+
+function handleCctvAccessRequestRejected(requestId) {
+    // Component already handles reload, just log if needed
+    console.log('CCTV Access Request rejected:', requestId);
+}
+
 onMounted(() => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -5741,6 +5753,9 @@ watch(locale, () => {
 
                 <!-- Employee Resignation Approval Section -->
                 <EmployeeResignationApprovalCard :is-night="isNight" @approved="handleEmployeeResignationApproved" @rejected="handleEmployeeResignationRejected" />
+
+                <!-- CCTV Access Request Approval Section -->
+                <CctvAccessRequestApprovalCard :is-night="isNight" @approved="handleCctvAccessRequestApproved" @rejected="handleCctvAccessRequestRejected" />
 
                 <!-- Contra Bon Approval Section -->
                 <div v-if="contraBonApprovalCount > 0" class="flex-shrink-0 mb-4">
