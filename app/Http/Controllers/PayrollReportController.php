@@ -89,6 +89,7 @@ class PayrollReportController extends Controller
         $totalMP = 0;
         $totalMPAktif = 0;
         $totalMPResign = 0;
+        $mutatedEmployeeIds = []; // Initialize mutatedEmployeeIds to avoid undefined variable error
 
         if ($outletId && $month && $year) {
             // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
