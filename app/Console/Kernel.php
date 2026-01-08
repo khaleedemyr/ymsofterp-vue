@@ -87,19 +87,21 @@ class Kernel extends ConsoleKernel
             ->appendOutputTo(storage_path('logs/birthday-vouchers-distribution.log'))
             ->description('Distribute birthday vouchers to members who have their birthday today');
 
-        // Send incomplete profile notification - run every hour
+        // Send incomplete profile notification - run daily at 7:00 AM
         // This checks for members who registered 24 hours ago but haven't completed their profile
+        // Changed from hourly to daily to reduce server load
         $schedule->command('member:notify-incomplete-profile')
-            ->hourly()
+            ->dailyAt('07:00')
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/incomplete-profile-notifications.log'))
             ->description('Send notification to members who registered 24 hours ago but haven\'t completed their profile');
 
-        // Send incomplete challenge notification - run every hour
+        // Send incomplete challenge notification - run daily at 7:00 AM
         // This checks for members who started a challenge but haven't completed it within 24 hours
+        // Changed from hourly to daily to reduce server load
         $schedule->command('member:notify-incomplete-challenge')
-            ->hourly()
+            ->dailyAt('07:00')
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/incomplete-challenge-notifications.log'))

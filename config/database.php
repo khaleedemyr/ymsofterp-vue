@@ -57,9 +57,23 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // OPTIMASI UNTUK MYSQL SERVER TERPISAH
+            // Connection timeout: 5 detik (prevent hanging)
+            // Emulate prepares: false (better performance, native prepared statements)
+            // Default fetch mode: ASSOC (reduce memory)
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                // Connection timeout (5 detik) - prevent PHP-FPM processes hang
+                PDO::ATTR_TIMEOUT => 5,
+                // Emulate prepares = false (better performance dengan native prepared statements)
+                PDO::ATTR_EMULATE_PREPARES => false,
+                // Default fetch mode (reduce memory usage)
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                // Persistent connection (optional, test dulu - bisa cause issues jika tidak dikonfigurasi dengan benar)
+                // PDO::ATTR_PERSISTENT => env('DB_PERSISTENT', false),
             ]) : [],
+            // Sticky connections (reuse connection untuk same request)
+            'sticky' => true,
         ],
 
         'mysql_second' => [
