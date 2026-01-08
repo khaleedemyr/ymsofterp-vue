@@ -2689,7 +2689,12 @@ const hasGASupervisorAsFirst = computed(() => {
   if (form.mode !== 'travel_application' || form.approvers.length === 0) {
     return true // Not required for non-travel applications
   }
-  return isGASupervisor(form.approvers[0])
+  // Check if first approver exists and has id before checking
+  const firstApprover = form.approvers[0]
+  if (!firstApprover || !firstApprover.id) {
+    return false
+  }
+  return isGASupervisor(firstApprover)
 })
 
 // Check if GM Finance is in approvers list
@@ -2697,7 +2702,10 @@ const hasGMFinance = computed(() => {
   if (form.mode !== 'kasbon' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application') {
     return true // Not required for other modes
   }
-  return form.approvers.some(approver => isGMFinance(approver))
+  // Filter out null/undefined approvers before checking
+  return form.approvers
+    .filter(approver => approver && approver.id)
+    .some(approver => isGMFinance(approver))
 })
 
 // Watch totalAmount changes to update budget info
@@ -3296,6 +3304,12 @@ const addApprover = (user) => {
 }
 
 const removeApprover = (index) => {
+  // Validate index and approver exists
+  if (index < 0 || index >= form.approvers.length || !form.approvers[index]) {
+    console.error('Invalid approver index:', index)
+    return
+  }
+  
   // Prevent removing GA Supervisor from first position in Travel Application
   if (form.mode === 'travel_application' && index === 0 && isGASupervisor(form.approvers[index])) {
     Swal.fire({
@@ -3311,6 +3325,16 @@ const removeApprover = (index) => {
 }
 
 const reorderApprover = (fromIndex, toIndex) => {
+  // Validate indices
+  if (fromIndex < 0 || fromIndex >= form.approvers.length || !form.approvers[fromIndex]) {
+    console.error('Invalid fromIndex:', fromIndex)
+    return
+  }
+  if (toIndex < 0 || toIndex > form.approvers.length) {
+    console.error('Invalid toIndex:', toIndex)
+    return
+  }
+  
   // Prevent moving GA Supervisor from first position in Travel Application
   if (form.mode === 'travel_application' && fromIndex === 0 && isGASupervisor(form.approvers[fromIndex])) {
     Swal.fire({
@@ -3323,7 +3347,7 @@ const reorderApprover = (fromIndex, toIndex) => {
     return
   }
   // Prevent moving other approvers to first position if GA Supervisor is required
-  if (form.mode === 'travel_application' && toIndex === 0 && form.approvers.length > 0 && isGASupervisor(form.approvers[0])) {
+  if (form.mode === 'travel_application' && toIndex === 0 && form.approvers.length > 0 && form.approvers[0] && isGASupervisor(form.approvers[0])) {
     Swal.fire({
       icon: 'warning',
       title: 'Tidak Dapat Dipindahkan',
@@ -3334,6 +3358,10 @@ const reorderApprover = (fromIndex, toIndex) => {
     return
   }
   const approver = form.approvers.splice(fromIndex, 1)[0]
+  if (!approver) {
+    console.error('Approver not found at index:', fromIndex)
+    return
+  }
   form.approvers.splice(toIndex, 0, approver)
 }
 
