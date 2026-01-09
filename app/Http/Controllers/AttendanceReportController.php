@@ -51,7 +51,8 @@ class AttendanceReportController extends Controller
                     'u.id as user_id',
                     'u.nama_lengkap'
                 )
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+                ->where('a.scan_date', '>=', $start . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
             // Apply filters
             if (!empty($outletId)) {
                 $sub->where('u.id_outlet', $outletId);
@@ -478,7 +479,8 @@ class AttendanceReportController extends Controller
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->whereIn(DB::raw('DATE(a.scan_date)'), [$tanggal, $nextDay])
+            ->where('a.scan_date', '>=', $tanggal . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($nextDay . ' +1 day')) . ' 00:00:00')
             ->select(
                 'o.id_outlet', 
                 'o.nama_outlet',
@@ -681,7 +683,8 @@ class AttendanceReportController extends Controller
                     'u.id as user_id',
                     'u.nama_lengkap'
                 )
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+                ->where('a.scan_date', '>=', $start . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
             if (!empty($outletId)) {
                 $sub->where('u.id_outlet', $outletId);
             }
@@ -1076,7 +1079,8 @@ class AttendanceReportController extends Controller
                 'u.id_outlet', // ✅ FIX: Add user's outlet for grouping
                 'o.nama_outlet' // ✅ FIX: Add outlet name for display
             )
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+            ->where('a.scan_date', '>=', $start . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
         // Filter outlet hanya untuk dropdown karyawan, bukan untuk report
         if (!empty($divisionId)) {
             $sub->where('u.division_id', $divisionId);
@@ -1300,7 +1304,8 @@ class AttendanceReportController extends Controller
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->whereIn(DB::raw('DATE(a.scan_date)'), $period)
+            ->where('a.scan_date', '>=', min($period) . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime(max($period) . ' +1 day')) . ' 00:00:00')
             ->selectRaw('DATE(a.scan_date) as tanggal')
             ->distinct()
             ->pluck('tanggal')
@@ -1510,7 +1515,8 @@ class AttendanceReportController extends Controller
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
             ->select('a.scan_date', 'a.inoutmode')
             ->orderBy('a.scan_date')
             ->get();
@@ -1705,7 +1711,8 @@ class AttendanceReportController extends Controller
                         'u.nama_lengkap',
                         'u.division_id'
                     )
-                    ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+                    ->where('a.scan_date', '>=', $start . ' 00:00:00')
+                    ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
 
                 // Apply filters - Filter outlet dan divisi untuk memfilter karyawan
                 if (!empty($outletId)) {
@@ -2275,7 +2282,8 @@ class AttendanceReportController extends Controller
                         'u.nama_lengkap',
                         'u.division_id'
                     )
-                    ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+                    ->where('a.scan_date', '>=', $start . ' 00:00:00')
+                    ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
 
                 // Apply filters - SAMA PERSIS DENGAN METHOD employeeSummary
                 if (!empty($outletId)) {

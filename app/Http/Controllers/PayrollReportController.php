@@ -721,7 +721,8 @@ class PayrollReportController extends Controller
                     'u.nama_lengkap',
                     'u.division_id'
                 )
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+                ->where('a.scan_date', '>=', $start . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
             
             // Apply filter outlet - SAMA PERSIS dengan employeeSummary
             // PERBAIKAN: Jangan filter berdasarkan outlet untuk karyawan mutasi, karena attendance tidak berdasarkan outlet
@@ -2072,7 +2073,8 @@ class PayrollReportController extends Controller
                     ->join('users as u', 'up.user_id', '=', 'u.id')
                     ->where('u.id', $userId)
                     ->where('o.id_outlet', $outletId)
-                    ->whereDate('a.scan_date', $tanggal)
+                    ->where('a.scan_date', '>=', $tanggal . ' 00:00:00')
+                    ->where('a.scan_date', '<', date('Y-m-d', strtotime($tanggal . ' +1 day')) . ' 00:00:00')
                     ->count();
                 
                 // If no scans found with outlet_id, try alternative query
@@ -2083,7 +2085,8 @@ class PayrollReportController extends Controller
                         ->join('tbl_data_outlet as o', 'up.outlet_id', '=', 'o.id_outlet')
                         ->where('u.id', $userId)
                         ->where('o.id_outlet', $outletId)
-                        ->whereDate('a.scan_date', $tanggal)
+                        ->where('a.scan_date', '>=', $tanggal . ' 00:00:00')
+                        ->where('a.scan_date', '<', date('Y-m-d', strtotime($tanggal . ' +1 day')) . ' 00:00:00')
                         ->count();
                 }
                 
@@ -2609,7 +2612,8 @@ class PayrollReportController extends Controller
                 'u.division_id'
             )
             ->where('u.id_outlet', $outletId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$start, $end]);
+            ->where('a.scan_date', '>=', $start . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
 
         // Gunakan chunk untuk mencegah memory overflow
         $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
@@ -3491,7 +3495,8 @@ class PayrollReportController extends Controller
                 'u.division_id'
             )
             ->where('u.id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
             ->orderBy('a.scan_date')
             ->get();
         
@@ -5529,7 +5534,8 @@ class PayrollReportController extends Controller
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
             ->select('a.scan_date', 'a.inoutmode')
             ->orderBy('a.scan_date')
             ->get();

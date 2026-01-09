@@ -143,7 +143,8 @@ class ScheduleAttendanceCorrectionController extends Controller
                     })
                     ->leftJoin('users', 'user_pins.user_id', '=', 'users.id')
                     ->whereIn('users.id', $allUserIds)
-                    ->whereBetween(DB::raw('DATE(att_log.scan_date)'), [$startDate, $endDate])
+                    ->where('att_log.scan_date', '>=', $startDate . ' 00:00:00')
+                    ->where('att_log.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
                     ->when($userId, fn($q) => $q->where('users.id', $userId))
                     ->select([
                         'att_log.sn',
@@ -906,11 +907,13 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ]);
                 
                 // Find record by sn and pin only (as suggested by user)
+                $oldDate = date('Y-m-d', strtotime($oldData['scan_date']));
                 $existingRecord = DB::table('att_log')
                     ->where('sn', $oldData['sn'])
                     ->where('pin', $oldData['pin'])
                     ->where('inoutmode', $oldData['inoutmode'])
-                    ->whereDate('scan_date', date('Y-m-d', strtotime($oldData['scan_date'])))
+                    ->where('scan_date', '>=', $oldDate . ' 00:00:00')
+                    ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate . ' +1 day')) . ' 00:00:00')
                     ->select('*')
                     ->first();
                 
@@ -925,10 +928,12 @@ class ScheduleAttendanceCorrectionController extends Controller
                 
                 // If still not found, try to find any record with same sn and pin on the same day
                 if (!$existingRecord) {
+                    $oldDate = date('Y-m-d', strtotime($oldData['scan_date']));
                     $existingRecord = DB::table('att_log')
                         ->where('sn', $oldData['sn'])
                         ->where('pin', $oldData['pin'])
-                        ->whereDate('scan_date', date('Y-m-d', strtotime($oldData['scan_date'])))
+                        ->where('scan_date', '>=', $oldDate . ' 00:00:00')
+                        ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate . ' +1 day')) . ' 00:00:00')
                         ->select('*')
                         ->first();
                     

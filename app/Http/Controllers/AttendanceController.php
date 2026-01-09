@@ -262,7 +262,8 @@ class AttendanceController extends Controller
             })
             ->join('users as u', 'up.user_id', '=', 'u.id')
             ->where('u.id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
             ->selectRaw('
                 COUNT(DISTINCT DATE(a.scan_date)) as total_days,
                 COUNT(DISTINCT CASE WHEN a.inoutmode = 0 THEN DATE(a.scan_date) END) as present_days,
@@ -484,7 +485,8 @@ class AttendanceController extends Controller
                 'o.nama_outlet'
             )
             ->where('u.id', $userId)
-            ->whereBetween(DB::raw('DATE(a.scan_date)'), [$startDate, $endDate])
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
             ->orderBy('a.scan_date')
             ->get();
 
@@ -887,7 +889,8 @@ class AttendanceController extends Controller
                     $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                 })
                 ->where('up.user_id', $user->id)
-                ->whereBetween(DB::raw('DATE(a.scan_date)'), [$request->date_from, $request->date_to])
+                ->where('a.scan_date', '>=', $request->date_from . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($request->date_to . ' +1 day')) . ' 00:00:00')
                 ->exists();
             
             if ($hasAttendance) {

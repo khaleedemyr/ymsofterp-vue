@@ -74,7 +74,7 @@ class ExtraOffService
                     AND DATE(a.scan_date) = DATE(us.tanggal)
                 WHERE 
                     a.inoutmode = 1
-                    AND DATE(a.scan_date) = ?
+                    AND a.scan_date >= ? AND a.scan_date < ?
                     AND (us.id IS NULL OR us.shift_id IS NULL)  -- TIDAK ADA SHIFT atau SHIFT = NULL (OFF)
                     AND u.status = 'A'
                     AND NOT EXISTS (
@@ -95,7 +95,7 @@ class ExtraOffService
                     )
                 GROUP BY u.id, DATE(a.scan_date)
                 ORDER BY DATE(a.scan_date) DESC, u.id
-            ", [$date]);
+            ", [$date . ' 00:00:00', date('Y-m-d', strtotime($date . ' +1 day')) . ' 00:00:00']);
 
             $results['detected'] = count($unscheduledWorkers);
             
@@ -281,7 +281,8 @@ class ExtraOffService
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->where(DB::raw('DATE(a.scan_date)'), $workDate)
+            ->where('a.scan_date', '>=', $workDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($workDate . ' +1 day')) . ' 00:00:00')
             ->select('a.scan_date', 'a.inoutmode')
             ->orderBy('a.scan_date')
             ->get();
@@ -317,7 +318,8 @@ class ExtraOffService
                     $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                 })
                 ->where('up.user_id', $userId)
-                ->where(DB::raw('DATE(a.scan_date)'), $nextDay)
+                ->where('a.scan_date', '>=', $nextDay . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($nextDay . ' +1 day')) . ' 00:00:00')
                 ->where('a.inoutmode', 2)
                 ->select('a.scan_date')
                 ->orderBy('a.scan_date')
@@ -367,7 +369,8 @@ class ExtraOffService
                 $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->where('up.user_id', $userId)
-            ->where(DB::raw('DATE(a.scan_date)'), $workDate)
+            ->where('a.scan_date', '>=', $workDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($workDate . ' +1 day')) . ' 00:00:00')
             ->select('a.scan_date', 'a.inoutmode')
             ->orderBy('a.scan_date')
             ->get();
@@ -411,7 +414,8 @@ class ExtraOffService
                     $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                 })
                 ->where('up.user_id', $userId)
-                ->where(DB::raw('DATE(a.scan_date)'), $nextDay)
+                ->where('a.scan_date', '>=', $nextDay . ' 00:00:00')
+                ->where('a.scan_date', '<', date('Y-m-d', strtotime($nextDay . ' +1 day')) . ' 00:00:00')
                 ->where('a.inoutmode', 2)
                 ->select('a.scan_date')
                 ->orderBy('a.scan_date')

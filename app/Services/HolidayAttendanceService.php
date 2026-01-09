@@ -93,7 +93,8 @@ class HolidayAttendanceService
             ->join('users as u', 'up.user_id', '=', 'u.id')
             ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
             ->join('tbl_data_level as l', 'j.id_level', '=', 'l.id')
-            ->where(DB::raw('DATE(a.scan_date)'), $date)
+            ->where('a.scan_date', '>=', $date . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($date . ' +1 day')) . ' 00:00:00')
             ->where('a.inoutmode', 1) // Check-in only (following AttendanceController logic)
             ->where('u.status', 'A') // Active employees only
             ->select([
