@@ -79,13 +79,19 @@ class DeliveryOrderController extends Controller
     {
         // Ambil daftar packing list yang belum/do belum dibuat
         $usedPackingListIds = DB::table('delivery_orders')->whereNotNull('packing_list_id')->pluck('packing_list_id')->toArray();
+        
+        // Filter tanggal: hanya 1 minggu ke belakang dari hari ini
+        $today = date('Y-m-d');
+        $oneWeekAgo = date('Y-m-d', strtotime('-7 days'));
+        
         $packingLists = DB::table('food_packing_lists as pl')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'pl.created_by', '=', 'u.id')
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id');
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59']);
         
         // Hanya apply whereNotIn jika ada data yang sudah digunakan
         if (!empty($usedPackingListIds)) {
@@ -114,6 +120,7 @@ class DeliveryOrderController extends Controller
         $packingLists = $packingLists->toArray();
 
         // Ambil data RO Supplier yang sudah di-GR dan belum dibuat DO
+        // Filter tanggal: hanya 1 minggu ke belakang dari hari ini
         $roSupplierGRs = DB::table('food_good_receives as gr')
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
@@ -122,6 +129,7 @@ class DeliveryOrderController extends Controller
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             ->where('po.source_type', 'ro_supplier')
+            ->whereBetween('gr.receive_date', [$oneWeekAgo, $today])
             ->whereNotExists(function($query) {
                 $query->select(DB::raw(1))
                       ->from('delivery_orders as do')
