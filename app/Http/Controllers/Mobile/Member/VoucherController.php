@@ -32,7 +32,7 @@ class VoucherController extends Controller
                 ], 401);
             }
 
-            // Removed debug log for performance
+            \Log::info('Get Vouchers - Member ID: ' . $member->id);
 
             // Get pagination parameters
             $limit = $request->input('limit', 5); // Default 5 vouchers per page
@@ -53,11 +53,11 @@ class VoucherController extends Controller
                 ->whereIn('status', ['active', 'used'])
                 ->count();
 
-            // Removed debug log for performance
+            \Log::info('Get Vouchers - Found member vouchers: ' . $memberVouchers->count());
 
             // Debug: Check if there are any member vouchers at all for this member
             $allMemberVouchers = MemberAppsMemberVoucher::where('member_id', $member->id)->get();
-            // Removed debug log for performance
+            \Log::info('Get Vouchers - All member vouchers (any status): ' . $allMemberVouchers->count());
 
             // Debug: Check distributions for this member
             // Query JSON array dengan cara yang benar
@@ -65,7 +65,7 @@ class VoucherController extends Controller
                 ->where('distribution_type', 'specific')
                 ->whereRaw('JSON_CONTAINS(member_ids, ?)', [json_encode($member->id)])
                 ->get();
-            // Removed debug log for performance
+            \Log::info('Get Vouchers - Distributions for member: ' . $distributions->count());
             
             // Jika tidak ada di member_vouchers tapi ada di distributions, mungkin perlu create
             if ($memberVouchers->count() == 0 && $distributions->count() > 0) {

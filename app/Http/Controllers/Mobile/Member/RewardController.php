@@ -54,7 +54,14 @@ class RewardController extends Controller
                 }
             }
             
-            // Removed debug log for performance
+            // Log for debugging
+            \Log::info('RewardController@index', [
+                'screen' => $screen,
+                'is_reward_screen' => $isRewardScreen,
+                'has_member' => $member ? 'yes' : 'no',
+                'member_id' => $memberId,
+                'member_points' => $memberPoints,
+                'has_token' => $token ? 'yes' : 'no',
             ]);
 
             // 1. Ambil semua rewards
@@ -90,7 +97,13 @@ class RewardController extends Controller
             $redeemableLimit = (int) $request->input('redeemable_limit', 4); // Default 4 redeemable rewards per page
             $redeemableOffset = (int) $request->input('redeemable_offset', 0); // Default start from 0
             
-            // Removed debug log for performance
+            \Log::info('Rewards API pagination parameters', [
+                'challenge_limit' => $challengeLimit,
+                'challenge_offset' => $challengeOffset,
+                'redeemable_limit' => $redeemableLimit,
+                'redeemable_offset' => $redeemableOffset,
+                'screen' => $screen,
+            ]);
             $totalChallengeCount = 0; // Initialize total count
             
             // 2. Ambil reward dari challenge yang sudah completed
@@ -123,7 +136,11 @@ class RewardController extends Controller
                 // Include semua challenge rewards yang sudah completed
                 // Termasuk yang sudah di-redeem, expired, dan yang belum di-claim
                 // Serial code akan di-generate otomatis jika belum ada
-                // Removed debug log for performance
+                \Log::info('Challenge rewards pagination', [
+                    'member_id' => $memberId,
+                    'challenge_offset' => $challengeOffset,
+                    'challenge_limit' => $challengeLimit,
+                ]);
                 
                 $completedChallenges = MemberAppsChallengeProgress::where('member_id', $memberId)
                     ->where('is_completed', true)
@@ -133,9 +150,18 @@ class RewardController extends Controller
                     ->take($challengeLimit)
                     ->get();
                 
-                // Removed debug log for performance
+                \Log::info('Challenge rewards query result', [
+                    'member_id' => $memberId,
+                    'offset' => $challengeOffset,
+                    'limit' => $challengeLimit,
+                    'returned_count' => $completedChallenges->count(),
+                ]);
                 
-                // Removed debug log for performance
+                // Log for debugging
+                \Log::info('Challenge rewards query result', [
+                    'member_id' => $memberId,
+                    'completed_challenges_count' => $completedChallenges->count(),
+                    'challenges' => $completedChallenges->map(function($p) {
                         return [
                             'challenge_id' => $p->challenge_id,
                             'reward_claimed' => $p->reward_claimed,
@@ -160,7 +186,14 @@ class RewardController extends Controller
                         $rules = json_decode($rules, true);
                     }
 
-                    // Removed debug log for performance
+                    \Log::info('Processing challenge reward', [
+                        'progress_id' => $progress->id,
+                        'challenge_id' => $progress->challenge_id,
+                        'reward_claimed' => $progress->reward_claimed,
+                        'serial_code' => $progress->serial_code,
+                        'reward_type' => $rules['reward_type'] ?? 'none',
+                        'has_reward_value' => isset($rules['reward_value'])
+                    ]);
 
                     // Process challenge rewards - show all (including expired/redeemed) with badges
                     if (isset($rules['reward_type']) && $rules['reward_type'] === 'item' && isset($rules['reward_value'])) {
@@ -292,7 +325,11 @@ class RewardController extends Controller
                                     }
                                 }
                                 
-                                // Removed debug log for performance
+                                \Log::info('Adding challenge reward item to collection', [
+                                    'challenge_reward_id' => $challengeRewardId,
+                                    'item_id' => $item->item_id,
+                                    'item_name' => $item->item_name,
+                                    'serial_code' => $serialCode,
                                     'reward_claimed' => $progress->reward_claimed ?? false,
                                     'reward_redeemed_at' => $redeemedAt,
                                     'reward_expires_at' => $rewardExpiresAt,
@@ -390,7 +427,12 @@ class RewardController extends Controller
                     )
                     ->get();
 
-                // Removed debug log for performance
+                // Log for debugging
+                \Log::info('Reward outlets query', [
+                    'reward_id' => $reward->reward_id,
+                    'outlets_count' => $outlets->count(),
+                    'outlets' => $outlets->toArray()
+                ]);
 
                 // If no outlets found, it means reward is available at all outlets
                 // Otherwise, it's only available at specific outlets
@@ -403,7 +445,11 @@ class RewardController extends Controller
                     ];
                 })->toArray();
                 
-                // Removed debug log for performance
+                \Log::info('Reward outlet result', [
+                    'reward_id' => $reward->reward_id,
+                    'all_outlets' => $allOutlets,
+                    'outlet_list_count' => count($outletList)
+                ]);
 
                 return [
                     'id' => $reward->reward_id,
@@ -467,7 +513,26 @@ class RewardController extends Controller
                     'has_more' => ($redeemableOffset + $redeemableLimit) < $totalRedeemableCount,
                 ]);
                 
-                // Removed debug log for performance
+                \Log::info('Reward screen filter', [
+                    'challenge_rewards_count' => count($challengeRewardsList),
+                    'challenge_rewards_raw_count' => $challengeRewards->count(),
+                    'formatted_challenge_rewards_count' => $formattedChallengeRewards->count(),
+                    'redeemable_rewards_total' => $totalRedeemableCount,
+                    'redeemable_rewards_count' => count($redeemableRewardsList),
+                    'redeemable_limit' => $redeemableLimit,
+                    'redeemable_offset' => $redeemableOffset,
+                    'total_formatted_rewards' => $formattedRewards->count(),
+                    'member_points' => $memberPoints,
+                    'challenge_rewards_details' => array_map(function($r) {
+                        return [
+                            'id' => $r['id'] ?? null,
+                            'item_id' => $r['item_id'] ?? null,
+                            'item_name' => $r['item_name'] ?? null,
+                            'serial_code' => $r['serial_code'] ?? null,
+                            'reward_claimed' => $r['reward_claimed'] ?? null
+                        ];
+                    }, $challengeRewardsList)
+                ]);
                 
                 return response()->json([
                     'success' => true,
@@ -498,7 +563,12 @@ class RewardController extends Controller
                     return $reward !== null; // Remove null values (filtered out rewards)
                 });
                 
-                // Removed debug log for performance
+                \Log::info('Home screen rewards', [
+                    'total_rewards' => $rewards->count(),
+                    'formatted_rewards_count' => $formattedRewards->count(),
+                    'filtered_rewards_count' => $allRewards->count(),
+                    'member_points' => $memberPoints,
+                ]);
                 
                 return response()->json([
                     'success' => true,
@@ -2807,34 +2877,21 @@ class RewardController extends Controller
                 $cleanMemberIdNoPrefix = preg_replace('/^(U|JTS-)/i', '', $cleanMemberId);
                 
                 // Try exact match first (case insensitive)
-                // Gunakan member_id_normalized jika ada, fallback ke LOWER(TRIM())
-                $normalizedMemberId = strtolower(trim($cleanMemberId));
-                $member = MemberAppsMember::where('member_id_normalized', $normalizedMemberId)
-                    ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedMemberId])
-                    ->first();
+                $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberId))])->first();
                 
                 // Try without JTS- prefix
                 if (!$member && $cleanMemberIdNoJTS !== $cleanMemberId) {
-                    $normalizedNoJTS = strtolower(trim($cleanMemberIdNoJTS));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoJTS)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoJTS])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoJTS))])->first();
                 }
                 
                 // Try without U prefix
                 if (!$member && $cleanMemberIdNoU !== $cleanMemberId) {
-                    $normalizedNoU = strtolower(trim($cleanMemberIdNoU));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoU)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoU])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoU))])->first();
                 }
                 
                 // Try without any prefix
                 if (!$member && $cleanMemberIdNoPrefix !== $cleanMemberId) {
-                    $normalizedNoPrefix = strtolower(trim($cleanMemberIdNoPrefix));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoPrefix)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoPrefix])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoPrefix))])->first();
                 }
                 
                 // Try exact match (case sensitive) as fallback

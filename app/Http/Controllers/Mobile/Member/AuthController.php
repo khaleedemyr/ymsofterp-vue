@@ -31,10 +31,8 @@ class AuthController extends Controller
         $normalizedEmail = strtolower(trim($request->email));
         $normalizedMobile = preg_replace('/[^0-9+]/', '', trim($request->mobile_phone)); // Keep only numbers and +
         
-        // Check if email already exists (case-insensitive) - menggunakan email_normalized jika ada
-        $existingEmail = MemberAppsMember::where('email_normalized', strtolower(trim($normalizedEmail)))
-            ->orWhereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($normalizedEmail))])
-            ->first();
+        // Check if email already exists (case-insensitive)
+        $existingEmail = MemberAppsMember::whereRaw('LOWER(TRIM(email)) = ?', [strtolower(trim($normalizedEmail))])->first();
         if ($existingEmail) {
             return response()->json([
                 'success' => false,
@@ -206,7 +204,10 @@ class AuthController extends Controller
                 // Send verification email
                 Mail::to($member->email)->send(new MemberEmailVerification($member, $verificationUrl));
                 
-                // Removed debug log for performance
+                Log::info('Email verification sent to new member', [
+                    'member_id' => $member->id,
+                    'email' => $member->email,
+                ]);
             } catch (\Exception $e) {
                 // Log error but don't fail registration
                 Log::error('Failed to send email verification', [
@@ -231,7 +232,10 @@ class AuthController extends Controller
                     ]
                 );
                 
-                // Removed debug log for performance
+                Log::info('Welcome notification sent to new member', [
+                    'member_id' => $member->id,
+                    'member_member_id' => $member->member_id,
+                ]);
             } catch (\Exception $e) {
                 // Log error but don't fail registration
                 Log::error('Failed to send welcome notification', [
@@ -304,7 +308,11 @@ class AuthController extends Controller
                 ], 400);
             }
 
-            // Removed debug log for performance
+            // Log the search attempt
+            Log::info('Searching for member', [
+                'member_id' => $memberId,
+                'mobile_phone' => $mobilePhone
+            ]);
 
             // Find member by member_id or mobile_phone
             $member = null;
@@ -316,37 +324,29 @@ class AuthController extends Controller
                 $cleanMemberIdNoJTS = preg_replace('/^JTS-/i', '', $cleanMemberId);
                 $cleanMemberIdNoPrefix = preg_replace('/^(U|JTS-)/i', '', $cleanMemberId);
                 
-                // Removed debug log for performance
+                Log::info('Searching for member', [
+                    'original' => $cleanMemberId,
+                    'no_u' => $cleanMemberIdNoU,
+                    'no_jts' => $cleanMemberIdNoJTS,
+                    'no_prefix' => $cleanMemberIdNoPrefix
+                ]);
                 
                 // Try exact match first (case insensitive) - most common case
-                // Gunakan member_id_normalized jika ada, fallback ke LOWER(TRIM())
-                $normalizedMemberId = strtolower(trim($cleanMemberId));
-                $member = MemberAppsMember::where('member_id_normalized', $normalizedMemberId)
-                    ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedMemberId])
-                    ->first();
+                $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberId))])->first();
                 
                 // Try without JTS- prefix
                 if (!$member && $cleanMemberIdNoJTS !== $cleanMemberId) {
-                    $normalizedNoJTS = strtolower(trim($cleanMemberIdNoJTS));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoJTS)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoJTS])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoJTS))])->first();
                 }
                 
                 // Try without U prefix
                 if (!$member && $cleanMemberIdNoU !== $cleanMemberId) {
-                    $normalizedNoU = strtolower(trim($cleanMemberIdNoU));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoU)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoU])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoU))])->first();
                 }
                 
                 // Try without any prefix
                 if (!$member && $cleanMemberIdNoPrefix !== $cleanMemberId) {
-                    $normalizedNoPrefix = strtolower(trim($cleanMemberIdNoPrefix));
-                    $member = MemberAppsMember::where('member_id_normalized', $normalizedNoPrefix)
-                        ->orWhereRaw('LOWER(TRIM(member_id)) = ?', [$normalizedNoPrefix])
-                        ->first();
+                    $member = MemberAppsMember::whereRaw('LOWER(TRIM(member_id)) = ?', [strtolower(trim($cleanMemberIdNoPrefix))])->first();
                 }
                 
                 // Try exact match (case sensitive) as fallback
@@ -364,7 +364,11 @@ class AuthController extends Controller
                     $member = MemberAppsMember::where('id', (int)$cleanMemberIdNoPrefix)->first();
                 }
                 
-                // Removed debug log for performance
+                Log::info('Member search result', [
+                    'found' => $member ? 'yes' : 'no',
+                    'member_id' => $member ? $member->member_id : null,
+                    'id' => $member ? $member->id : null
+                ]);
             }
             
             // If member not found by member_id, try mobile_phone
@@ -431,8 +435,7 @@ class AuthController extends Controller
                 ], 404);
             }
 
-            // Removed debug log for performance
-            // Log::info('Member found', [
+            Log::info('Member found', [
                 'member_id' => $member->member_id,
                 'id' => $member->id,
                 'nama_lengkap' => $member->nama_lengkap
@@ -531,7 +534,11 @@ class AuthController extends Controller
             // Create token
             $token = $member->createToken('mobile-app')->plainTextToken;
             
-            // Removed debug log for performance
+            Log::info('Login successful', [
+                'member_id' => $member->id,
+                'email' => $member->email,
+                'token_preview' => substr($token, 0, 20) . '...'
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -575,8 +582,7 @@ class AuthController extends Controller
                 // Delete current token
                 $request->user()->currentAccessToken()->delete();
                 
-                // Removed debug log for performance
-                // Log::info('Logout successful', [
+                Log::info('Logout successful', [
                     'member_id' => $user->id
                 ]);
             }
@@ -613,8 +619,7 @@ class AuthController extends Controller
                 ], 401);
             }
             
-            // Removed debug log for performance
-            // Log::info('Auth me successful', [
+            Log::info('Auth me successful', [
                 'member_id' => $member->id,
                 'email' => $member->email
             ]);
