@@ -1554,11 +1554,16 @@ class NonFoodPaymentController extends Controller
         }
     }
 
-    public function approve(NonFoodPayment $nonFoodPayment, Request $request = null)
+    public function approve($nonFoodPayment, Request $request = null)
     {
         // Ensure we have a request object
         if ($request === null) {
             $request = request();
+        }
+        
+        // Handle both route model binding (web) and ID parameter (API)
+        if (!($nonFoodPayment instanceof NonFoodPayment)) {
+            $nonFoodPayment = NonFoodPayment::findOrFail($nonFoodPayment);
         }
         
         // Log approval attempt
@@ -1716,8 +1721,18 @@ class NonFoodPaymentController extends Controller
         }
     }
 
-    public function reject(NonFoodPayment $nonFoodPayment, Request $request = null)
+    public function reject($nonFoodPayment, Request $request = null)
     {
+        // Ensure we have a request object
+        if ($request === null) {
+            $request = request();
+        }
+        
+        // Handle both route model binding (web) and ID parameter (API)
+        if (!($nonFoodPayment instanceof NonFoodPayment)) {
+            $nonFoodPayment = NonFoodPayment::findOrFail($nonFoodPayment);
+        }
+        
         if (!$nonFoodPayment->canBeRejected()) {
             if ($request && ($request->wantsJson() || $request->ajax() || $request->expectsJson())) {
                 return response()->json(['success' => false, 'message' => 'Payment ini tidak dapat ditolak.'], 400);
