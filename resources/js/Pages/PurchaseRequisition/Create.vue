@@ -3673,7 +3673,10 @@ const submitForm = async () => {
     })
     
     // Add travel specific data
-    formData.travel_outlet_ids = form.travel_outlets.map(outlet => outlet.outlet_id).filter(id => id)
+    formData.travel_outlet_ids = (form.travel_outlets || [])
+      .filter(outlet => outlet && outlet.outlet_id)
+      .map(outlet => outlet.outlet_id)
+      .filter(id => id)
     formData.travel_agenda = form.travel_agenda
     formData.travel_notes = form.travel_notes
     formData.description = form.travel_agenda // Use travel_agenda as description
@@ -3685,17 +3688,23 @@ const submitForm = async () => {
   } else if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
     // For pr_ops and purchase_payment mode, flatten outlets structure to items array with outlet_id and category_id
     formData.items = []
-    form.outlets.forEach(outlet => {
-      outlet.categories.forEach(category => {
-        category.items.forEach(item => {
-          formData.items.push({
-            ...item,
-            outlet_id: outlet.outlet_id,
-            category_id: category.category_id
+    ;(form.outlets || [])
+      .filter(outlet => outlet && outlet.outlet_id)
+      .forEach(outlet => {
+        ;(outlet.categories || [])
+          .filter(category => category && category.category_id)
+          .forEach(category => {
+            ;(category.items || [])
+              .filter(item => item)
+              .forEach(item => {
+                formData.items.push({
+                  ...item,
+                  outlet_id: outlet.outlet_id,
+                  category_id: category.category_id
+                })
+              })
           })
-        })
       })
-    })
     // Clear outlets from formData (backend doesn't need it)
     delete formData.outlets
     // For pr_ops, outlet_id and category_id in main form should be null
@@ -3712,8 +3721,13 @@ const submitForm = async () => {
     // First, create the payment
     const response = await axios.post('/purchase-requisitions', formData)
     
+    // Validate response structure
+    if (!response || !response.data) {
+      throw new Error('Invalid response from server')
+    }
+    
     // If PR created successfully and we have attachments, upload them
-    const prId = response.data?.purchase_requisition?.id
+    const prId = response.data?.purchase_requisition?.id || response.data?.id
     if (prId) {
       uploading.value = true
       
@@ -3773,11 +3787,53 @@ const submitForm = async () => {
     }
     
     // Redirect to the created PR
-    router.visit(`/purchase-requisitions/${response.data.purchase_requisition.id}`)
+    // prId already declared above, reuse it
+    if (prId) {
+      router.visit(`/purchase-requisitions/${prId}`)
+    } else {
+      console.error('PR ID not found in response:', response.data)
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Gagal mendapatkan ID Purchase Requisition. Silakan refresh halaman dan coba lagi.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
+    }
     
   } catch (error) {
     loading.value = false
     console.error('Form errors:', error.response?.data || error.message)
+    
+    // Check if response is HTML (error page) instead of JSON
+    const responseData = error.response?.data
+    const isHtmlResponse = typeof responseData === 'string' && responseData.trim().startsWith('<!DOCTYPE')
+    
+    if (isHtmlResponse) {
+      // Server returned HTML error page (likely validation error or server error)
+      console.error('Server returned HTML instead of JSON. This usually means a validation error or server error.')
+      
+      // Try to extract error message from response if possible
+      let errorMessage = 'Terjadi kesalahan saat menyimpan data. Silakan refresh halaman dan coba lagi.'
+      
+      // Check if it's a validation error by checking status code
+      if (error.response?.status === 422) {
+        errorMessage = 'Data yang dimasukkan tidak valid. Silakan periksa kembali form Anda.'
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Terjadi kesalahan di server. Silakan hubungi administrator atau coba lagi nanti.'
+      } else if (error.response?.status === 419) {
+        errorMessage = 'Session expired. Silakan refresh halaman dan coba lagi.'
+      }
+      
+      await Swal.fire({
+        icon: 'error',
+        title: 'Terjadi Kesalahan',
+        html: `<p class="text-sm">${errorMessage}</p><p class="text-xs text-gray-500 mt-2">Status: ${error.response?.status || 'Unknown'}</p>`,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#EF4444'
+      })
+      return
+    }
     
     // Handle budget exceeded error
     if (error.response?.data?.errors?.budget_exceeded) {
@@ -3808,6 +3864,16 @@ const submitForm = async () => {
         return
       }
     }
+    
+    // Handle generic error message
+    const errorMessage = error.response?.data?.message || error.message || 'Terjadi kesalahan saat menyimpan data.'
+    await Swal.fire({
+      icon: 'error',
+      title: 'Terjadi Kesalahan',
+      html: `<p class="text-sm">${errorMessage}</p>`,
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#EF4444'
+    })
     
     // Handle general errors
     await Swal.fire({

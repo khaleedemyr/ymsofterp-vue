@@ -541,6 +541,15 @@ class PurchaseRequisitionController extends Controller
             foreach ($budgetChecks as $check) {
                 $budgetValidation = $this->validateBudgetLimit($check['category_id'], $check['outlet_id'], $check['amount']);
                 if (!$budgetValidation['valid']) {
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'errors' => [
+                                'budget_exceeded' => $budgetValidation['message']
+                            ],
+                            'message' => $budgetValidation['message']
+                        ], 400);
+                    }
                     return back()->withErrors([
                         'budget_exceeded' => $budgetValidation['message']
                     ]);
@@ -588,8 +597,20 @@ class PurchaseRequisitionController extends Controller
             // Check if current date is within input period
             if ($now->lt($startDate) || $now->gt($endDate)) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                $errorMessage = "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}";
+                
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => [
+                            'kasbon_period' => $errorMessage
+                        ],
+                        'message' => $errorMessage
+                    ], 400);
+                }
+                
                 return back()->withErrors([
-                    'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}"
+                    'kasbon_period' => $errorMessage
                 ]);
             }
             
@@ -610,9 +631,20 @@ class PurchaseRequisitionController extends Controller
                     $creator = $existingKasbon->creator;
                     $creatorName = $creator ? $creator->nama_lengkap : 'Unknown';
                     $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
+                    $errorMessage = "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet.";
+                    
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'errors' => [
+                                'kasbon_exists' => $errorMessage
+                            ],
+                            'message' => $errorMessage
+                        ], 400);
+                    }
                     
                     return back()->withErrors([
-                        'kasbon_exists' => "Sudah ada pengajuan kasbon untuk outlet ini di periode {$periodText}. Dibuat oleh: {$creatorName}. Per periode hanya diijinkan 1 user saja per outlet."
+                        'kasbon_exists' => $errorMessage
                     ]);
                 }
             }
@@ -725,6 +757,20 @@ class PurchaseRequisitionController extends Controller
                            ->with('success', 'Purchase Requisition created successfully!');
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Purchase Requisition store error:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['password', 'password_confirmation'])
+            ]);
+            
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to create purchase requisition: ' . $e->getMessage(),
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Failed to create purchase requisition: ' . $e->getMessage()]);
         }
     }

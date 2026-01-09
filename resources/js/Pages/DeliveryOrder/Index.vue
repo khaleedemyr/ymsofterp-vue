@@ -284,8 +284,10 @@ const canDelete = computed(() => {
 });
 
 const search = ref(props.filters?.search || '');
-const dateFrom = ref(props.filters?.dateFrom || '');
-const dateTo = ref(props.filters?.dateTo || '');
+// Set default ke hari ini jika tidak ada filter
+const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+const dateFrom = ref(props.filters?.dateFrom || today);
+const dateTo = ref(props.filters?.dateTo || today);
 const loadData = ref(props.filters?.load_data || '');
 const perPage = ref(props.filters?.per_page || 15);
 

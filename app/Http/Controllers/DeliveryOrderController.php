@@ -987,11 +987,72 @@ class DeliveryOrderController extends Controller
             $bindings[] = $dateTo;
         }
         
+        // Default filter: hari ini jika tidak ada filter (mencegah scan semua rows)
+        if (empty($dateFrom) && empty($dateTo)) {
+            $today = date('Y-m-d');
+            $query .= " AND DATE(do.created_at) >= ?";
+            $bindings[] = $today;
+            $query .= " AND DATE(do.created_at) <= ?";
+            $bindings[] = $today;
+        }
+        
         $query .= " ORDER BY do.created_at DESC";
         
-        // Get total count for pagination
-        $countQuery = "SELECT COUNT(*) as total FROM ($query) as count_query";
-        $total = DB::select($countQuery, $bindings)[0]->total;
+        // OPTIMIZED: Query COUNT terpisah (lebih cepat daripada COUNT dengan subquery)
+        $countQuery = "
+            SELECT COUNT(*) as total
+            FROM delivery_orders do
+            LEFT JOIN users u ON do.created_by = u.id
+            LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
+            LEFT JOIN food_good_receives gr ON do.ro_supplier_gr_id = gr.id
+            LEFT JOIN purchase_order_foods po ON gr.po_id = po.id
+            LEFT JOIN food_floor_orders fo ON (
+                (do.packing_list_id IS NOT NULL AND pl.food_floor_order_id = fo.id) OR
+                (do.ro_supplier_gr_id IS NOT NULL AND po.source_id = fo.id)
+            )
+            LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
+            LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
+            LEFT JOIN warehouse_division wd ON pl.warehouse_division_id = wd.id
+            LEFT JOIN warehouses w ON wd.warehouse_id = w.id
+            WHERE 1=1
+        ";
+        
+        $countBindings = [];
+        
+        // Apply same filters untuk COUNT
+        if (!empty($search)) {
+            $countQuery .= " AND (
+                COALESCE(pl.packing_number, gr.gr_number) LIKE ? OR
+                fo.order_number LIKE ? OR
+                u.nama_lengkap LIKE ? OR
+                o.nama_outlet LIKE ? OR
+                wo.name LIKE ? OR
+                do.number LIKE ?
+            )";
+            $searchTerm = '%' . $search . '%';
+            $countBindings = array_merge($countBindings, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+        }
+        
+        if (!empty($dateFrom)) {
+            $countQuery .= " AND DATE(do.created_at) >= ?";
+            $countBindings[] = $dateFrom;
+        }
+        
+        if (!empty($dateTo)) {
+            $countQuery .= " AND DATE(do.created_at) <= ?";
+            $countBindings[] = $dateTo;
+        }
+        
+        // Default filter untuk COUNT juga
+        if (empty($dateFrom) && empty($dateTo)) {
+            $today = date('Y-m-d');
+            $countQuery .= " AND DATE(do.created_at) >= ?";
+            $countBindings[] = $today;
+            $countQuery .= " AND DATE(do.created_at) <= ?";
+            $countBindings[] = $today;
+        }
+        
+        $total = DB::select($countQuery, $countBindings)[0]->total;
         
         // Apply pagination
         $offset = (request('page', 1) - 1) * $perPage;
