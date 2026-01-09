@@ -13,6 +13,7 @@ const props = defineProps({
   parents: Array,
   menus: Array,
   allMenus: Array,
+  allCoAs: Array,
   statistics: {
     type: Object,
     default: () => ({
@@ -555,6 +556,7 @@ async function toggleStatus(coa) {
       :chartOfAccount="selectedChartOfAccount"
       :parents="parents"
       :menus="menus"
+      :allCoAs="allCoAs"
       @close="closeModal"
       @success="onSuccess"
     />

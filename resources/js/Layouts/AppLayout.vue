@@ -236,6 +236,7 @@ const menuGroups = [
             //{ name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
             { name: () => 'Outlet Payments', icon: 'fa-solid fa-money-bill', route: route('outlet-payments.index'), code: 'outlet_payments' },
             //{ name: () => 'Outlet Payment Supplier', icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },
+            { name: () => 'Buku Bank', icon: 'fa-solid fa-book', route: '/bank-books', code: 'bank_books' },
            
             //{ name: () => 'PR Payment', icon: 'fa-solid fa-credit-card', route: '/payments', code: 'pr_payment' },
             {

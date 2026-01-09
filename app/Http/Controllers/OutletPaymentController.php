@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\OutletPayment;
 use App\Models\Outlet;
 use App\Models\OutletFoodGoodReceive;
+use App\Services\BankBookService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -278,7 +279,9 @@ class OutletPaymentController extends Controller
             'retail_ids.*' => 'exists:retail_warehouse_sales,id',
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
-            'total_amount' => 'required|numeric|min:0'
+            'total_amount' => 'required|numeric|min:0',
+            'payment_method' => 'nullable|in:cash,transfer,check',
+            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id'
         ]);
 
         // Validate that at least one transaction is selected
@@ -331,6 +334,9 @@ class OutletPaymentController extends Controller
                     'date' => $request->date_from,
                     'total_amount' => $totalAmount,
                     'notes' => $request->notes,
+                    'payment_method' => $request->payment_method ?? 'cash',
+                    'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
+                    'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null,
                     'status' => 'pending',
                 ];
                 
@@ -349,6 +355,9 @@ class OutletPaymentController extends Controller
                     'date' => $request->date_from,
                     'total_amount' => $retail->total_amount,
                     'notes' => $request->notes,
+                    'payment_method' => $request->payment_method ?? 'cash',
+                    'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
+                    'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null,
                     'status' => 'pending',
                 ];
                 
@@ -382,7 +391,9 @@ class OutletPaymentController extends Controller
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
             'gr_id' => 'required|exists:outlet_food_good_receives,id',
             'date' => 'required|date',
-            'total_amount' => 'required|numeric|min:0'
+            'total_amount' => 'required|numeric|min:0',
+            'payment_method' => 'nullable|in:cash,transfer,check',
+            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id'
         ]);
 
         $gr = OutletFoodGoodReceive::findOrFail($request->gr_id);
@@ -402,14 +413,17 @@ class OutletPaymentController extends Controller
             'gr_id' => $request->gr_id,
             'date' => $request->date,
             'total_amount' => $request->total_amount,
-            'notes' => $request->notes
+            'notes' => $request->notes,
+            'payment_method' => $request->payment_method ?? 'cash',
+            'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
+            'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null
         ]);
 
         return redirect()->route('outlet-payments.index')
             ->with('success', 'Payment berhasil diupdate.');
     }
 
-    public function updateStatus(Request $request, OutletPayment $outletPayment)
+    public function updateStatus(Request $request, OutletPayment $outletPayment, BankBookService $bankBookService)
     {
         if ($outletPayment->status !== 'pending') {
             return back()->with('error', 'Hanya payment dengan status pending yang dapat diubah statusnya.');
@@ -432,6 +446,11 @@ class OutletPaymentController extends Controller
                     ->where('id', $outletPayment->retail_sales_id)
                     ->update(['status' => 'paid']);
             }
+
+            // Create bank book entry if payment is paid and method is transfer/check
+            if ($request->status === 'paid') {
+                $bankBookService->createFromOutletPayment($outletPayment);
+            }
             
             DB::commit();
             
@@ -445,19 +464,32 @@ class OutletPaymentController extends Controller
             ->with('success', 'Status payment berhasil diupdate.');
     }
 
-    public function destroy(OutletPayment $outletPayment)
+    public function destroy(OutletPayment $outletPayment, BankBookService $bankBookService)
     {
         if ($outletPayment->status !== 'pending') {
             return back()->with('error', 'Hanya payment dengan status pending yang dapat dihapus.');
         }
 
+        try {
+            DB::beginTransaction();
+
+            // Delete bank book entries if exists
+            $bankBookService->deleteByReference('outlet_payment', $outletPayment->id);
+
         $outletPayment->delete();
+
+            DB::commit();
 
         return redirect()->route('outlet-payments.index')
             ->with('success', 'Payment berhasil dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Error deleting OutletPayment: ' . $e->getMessage());
+            return back()->with('error', 'Gagal menghapus payment: ' . $e->getMessage());
+        }
     }
 
-    public function bulkConfirm(Request $request)
+    public function bulkConfirm(Request $request, BankBookService $bankBookService)
     {
         $request->validate([
             'payment_ids' => 'required|array|min:1',
@@ -478,6 +510,10 @@ class OutletPaymentController extends Controller
             $confirmedCount = 0;
             foreach ($payments as $payment) {
                 $payment->update(['status' => 'paid']);
+                
+                // Create bank book entry if payment method is transfer/check
+                $bankBookService->createFromOutletPayment($payment);
+                
                 $confirmedCount++;
             }
 
@@ -571,10 +607,33 @@ class OutletPaymentController extends Controller
             ];
         });
 
+        // Get banks for payment method selection
+        $banks = \App\Models\BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->orderBy('bank_name')
+            ->get();
+        
+        // Transform untuk include outlet name
+        $banks = $banks->map(function($bank) {
+            return [
+                'id' => $bank->id,
+                'bank_name' => $bank->bank_name,
+                'account_number' => $bank->account_number,
+                'account_name' => $bank->account_name,
+                'outlet_id' => $bank->outlet_id,
+                'outlet' => $bank->outlet ? [
+                    'id_outlet' => $bank->outlet->id_outlet,
+                    'nama_outlet' => $bank->outlet->nama_outlet,
+                ] : null,
+                'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+            ];
+        });
+
         return Inertia::render('OutletPayment/Form', [
             'mode' => 'create',
             'outlets' => $outlets,
             'grList' => $groupedGrList,
+            'banks' => $banks,
         ]);
     }
 

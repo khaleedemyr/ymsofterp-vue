@@ -65,6 +65,35 @@
               </select>
             </div>
 
+            <!-- Bank Selection (hanya muncul jika Transfer atau Check) -->
+            <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'" class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Bank <span class="text-red-500">*</span>
+              </label>
+              <multiselect
+                v-model="selectedBank"
+                :options="banks"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Cari dan pilih bank..."
+                label="display_name"
+                track-by="id"
+                @select="onBankSelect"
+                @remove="onBankRemove"
+                class="w-full"
+                required
+              >
+                <template #noOptions>
+                  <span>Tidak ada bank ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada bank ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Cari dan pilih bank dari master data bank untuk {{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</p>
+            </div>
+
             <!-- Payment Date -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Payment Date *</label>
@@ -137,21 +166,30 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   payment: Object,
-  suppliers: Array
+  suppliers: Array,
+  banks: {
+    type: Array,
+    default: () => []
+  }
 });
 
 const isSubmitting = ref(false);
+
+const selectedBank = ref(null);
 
 const form = reactive({
   supplier_id: '',
   amount: '',
   payment_method: '',
+  bank_id: null,
   payment_date: '',
   due_date: '',
   description: '',
@@ -159,17 +197,50 @@ const form = reactive({
   notes: ''
 });
 
+// Transform banks untuk multiselect dengan display name yang include outlet
+const banks = computed(() => {
+  if (!props.banks || !Array.isArray(props.banks)) return [];
+  return props.banks.map(bank => {
+    // Gunakan outlet.nama_outlet jika ada, atau 'Head Office' jika null
+    const outletName = bank.outlet?.nama_outlet || bank.outlet_name || 'Head Office';
+    return {
+      ...bank,
+      display_name: `${bank.bank_name} - ${bank.account_number} (${bank.account_name}) - ${outletName}`
+    };
+  });
+});
+
+function onBankSelect(bank) {
+  if (bank && bank.id) {
+    form.bank_id = bank.id;
+  }
+}
+
+function onBankRemove() {
+  form.bank_id = null;
+  selectedBank.value = null;
+}
+
 onMounted(() => {
   // Pre-fill form with existing payment data
   if (props.payment) {
     form.supplier_id = props.payment.supplier_id || '';
     form.amount = props.payment.amount || '';
     form.payment_method = props.payment.payment_method || '';
+    form.bank_id = props.payment.bank_id || null;
     form.payment_date = props.payment.payment_date ? new Date(props.payment.payment_date).toISOString().split('T')[0] : '';
     form.due_date = props.payment.due_date ? new Date(props.payment.due_date).toISOString().split('T')[0] : '';
     form.description = props.payment.description || '';
     form.reference_number = props.payment.reference_number || '';
     form.notes = props.payment.notes || '';
+    
+    // Set selected bank object
+    if (props.payment.bank_id && banks.value.length > 0) {
+      const bank = banks.value.find(b => b.id == props.payment.bank_id);
+      if (bank) {
+        selectedBank.value = bank;
+      }
+    }
   }
 });
 

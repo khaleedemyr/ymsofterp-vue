@@ -76,6 +76,7 @@ class ChartOfAccountController extends Controller
             'parents' => $parents,
             'menus' => $menus,
             'allMenus' => $allMenus,
+            'allCoAs' => $allCoAs, // For counter account dropdown
             'statistics' => $statistics,
             'filters' => [
                 'search' => $request->search,
@@ -107,6 +108,7 @@ class ChartOfAccountController extends Controller
             'chartOfAccount' => null,
             'parents' => $parents,
             'menus' => $menus,
+            'allCoAs' => $allCoAs, // For counter account dropdown
         ]);
     }
     
@@ -179,6 +181,7 @@ class ChartOfAccountController extends Controller
             'mode_payment' => 'nullable|array',
             'mode_payment.*' => 'in:pr_ops,purchase_payment,travel_application,kasbon',
             'budget_limit' => 'nullable|numeric|min:0',
+            'default_counter_account_id' => 'nullable|exists:chart_of_accounts,id',
         ];
         
         // Jika static_or_dynamic = static, maka menu_id wajib diisi (minimal 1)
@@ -195,9 +198,10 @@ class ChartOfAccountController extends Controller
         
         $validated = $request->validate($rules);
 
-        $validated['is_active'] = $request->has('is_active') ? 1 : 0;
+        $validated['is_active'] = $request->boolean('is_active') ? 1 : 0;
         $validated['parent_id'] = $request->parent_id ?: null;
-        $validated['show_in_menu_payment'] = $request->has('show_in_menu_payment') ? 1 : 0;
+        $validated['show_in_menu_payment'] = $request->boolean('show_in_menu_payment') ? 1 : 0;
+        $validated['default_counter_account_id'] = $request->default_counter_account_id ?: null;
         
         // Mode payment hanya diisi jika show_in_menu_payment = true
         if (!$validated['show_in_menu_payment']) {
@@ -254,6 +258,7 @@ class ChartOfAccountController extends Controller
             'chartOfAccount' => $chartOfAccount,
             'parents' => $parents,
             'menus' => $menus,
+            'allCoAs' => $allCoAs, // For counter account dropdown
         ]);
     }
     
@@ -289,6 +294,7 @@ class ChartOfAccountController extends Controller
             'mode_payment' => 'nullable|array',
             'mode_payment.*' => 'in:pr_ops,purchase_payment,travel_application,kasbon',
             'budget_limit' => 'nullable|numeric|min:0',
+            'default_counter_account_id' => 'nullable|exists:chart_of_accounts,id|different:' . $id,
         ];
         
         // Jika static_or_dynamic = static, maka menu_id wajib diisi (minimal 1)
@@ -305,6 +311,11 @@ class ChartOfAccountController extends Controller
         
         $validated = $request->validate($rules);
 
+        // Prevent circular reference: default_counter_account_id tidak boleh sama dengan id sendiri
+        if ($request->default_counter_account_id == $id) {
+            return back()->withErrors(['default_counter_account_id' => 'Akun lawan tidak boleh sama dengan akun ini.']);
+        }
+
         // Prevent circular reference: check if parent_id is not a child of current (recursively)
         if ($request->parent_id) {
             $childIds = $this->getChildIds($id);
@@ -313,9 +324,10 @@ class ChartOfAccountController extends Controller
             }
         }
 
-        $validated['is_active'] = $request->has('is_active') ? 1 : 0;
+        $validated['is_active'] = $request->boolean('is_active') ? 1 : 0;
         $validated['parent_id'] = $request->parent_id ?: null;
-        $validated['show_in_menu_payment'] = $request->has('show_in_menu_payment') ? 1 : 0;
+        $validated['show_in_menu_payment'] = $request->boolean('show_in_menu_payment') ? 1 : 0;
+        $validated['default_counter_account_id'] = $request->default_counter_account_id ?: null;
         
         // Mode payment hanya diisi jika show_in_menu_payment = true
         if (!$validated['show_in_menu_payment']) {

@@ -20,6 +20,7 @@ class NonFoodPayment extends Model
         'supplier_id',
         'amount',
         'payment_method',
+        'bank_id',
         'payment_date',
         'due_date',
         'status',
@@ -90,6 +91,11 @@ class NonFoodPayment extends Model
     public function attachments()
     {
         return $this->hasMany(NonFoodPaymentAttachment::class);
+    }
+    
+    public function bank()
+    {
+        return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
     }
 
     // Scopes

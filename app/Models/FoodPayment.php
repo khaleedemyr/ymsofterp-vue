@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class FoodPayment extends Model
 {
     protected $fillable = [
-        'number', 'date', 'supplier_id', 'total', 'payment_type', 'notes', 'bukti_transfer_path', 'status',
+        'number', 'date', 'supplier_id', 'total', 'payment_type', 'bank_id', 'notes', 'bukti_transfer_path', 'status',
         'finance_manager_approved_at', 'finance_manager_approved_by', 'finance_manager_note',
         'gm_finance_approved_at', 'gm_finance_approved_by', 'gm_finance_note',
         'created_by'
@@ -32,6 +32,10 @@ class FoodPayment extends Model
     }
     public function gmFinance() {
         return $this->belongsTo(\App\Models\User::class, 'gm_finance_approved_by');
+    }
+    
+    public function bank() {
+        return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
     }
 
     // Methods

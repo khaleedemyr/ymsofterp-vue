@@ -23,6 +23,34 @@
             </select>
           </div>
         </div>
+        <!-- Bank Selection (hanya muncul jika Transfer atau Giro) -->
+        <div v-if="form.payment_type === 'Transfer' || form.payment_type === 'Giro'">
+          <label class="block text-sm font-medium text-gray-700">
+            Pilih Bank <span class="text-red-500">*</span>
+          </label>
+          <multiselect
+            v-model="selectedBank"
+            :options="banks"
+            :searchable="true"
+            :close-on-select="true"
+            :show-labels="false"
+            placeholder="Cari dan pilih bank..."
+            label="display_name"
+            track-by="id"
+            @select="onBankSelect"
+            @remove="onBankRemove"
+            class="mt-1"
+            required
+          >
+            <template #noOptions>
+              <span>Tidak ada bank ditemukan</span>
+            </template>
+            <template #noResult>
+              <span>Tidak ada bank ditemukan</span>
+            </template>
+          </multiselect>
+          <p class="mt-1 text-xs text-gray-500">Cari dan pilih bank dari master data bank untuk {{ form.payment_type }}</p>
+        </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Supplier</label>
           <multiselect
@@ -219,6 +247,10 @@ const props = defineProps({
   payment: {
     type: Object,
     default: null
+  },
+  banks: {
+    type: Array,
+    default: () => []
   }
 });
 
@@ -228,11 +260,27 @@ const suppliers = ref([]);
 const selectedSupplier = ref(null);
 const contraBons = ref([]);
 const contraBonSearch = ref('');
+const selectedBank = ref(null);
 const form = ref({
   date: '',
   payment_type: '',
+  bank_id: null,
   selected_contra_bon_ids: [],
   notes: '',
+});
+
+// Transform banks untuk multiselect dengan display name yang include outlet
+// Format sama seperti di BankAccount/Index: menggunakan outlet.nama_outlet
+const banks = computed(() => {
+  if (!props.banks || !Array.isArray(props.banks)) return [];
+  return props.banks.map(bank => {
+    // Gunakan outlet.nama_outlet jika ada, atau 'Head Office' jika null
+    const outletName = bank.outlet?.nama_outlet || bank.outlet_name || 'Head Office';
+    return {
+      ...bank,
+      display_name: `${bank.bank_name} - ${bank.account_number} (${bank.account_name}) - ${outletName}`
+    };
+  });
 });
 
 const file = ref(null);
@@ -391,6 +439,17 @@ function onSupplierRemove() {
   selectedSupplier.value = null;
 }
 
+function onBankSelect(bank) {
+  if (bank && bank.id) {
+    form.value.bank_id = bank.id;
+  }
+}
+
+function onBankRemove() {
+  form.value.bank_id = null;
+  selectedBank.value = null;
+}
+
 function isImageFile(path) {
   return path && (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png'));
 }
@@ -411,6 +470,9 @@ async function onSubmit() {
     const formData = new FormData();
     formData.append('date', form.value.date);
     formData.append('payment_type', form.value.payment_type);
+    if (form.value.bank_id) {
+      formData.append('bank_id', form.value.bank_id);
+    }
     formData.append('notes', form.value.notes);
     formData.append('supplier_id', selectedSupplier.value.id);
     form.value.selected_contra_bon_ids.forEach(id => {
@@ -459,7 +521,16 @@ onMounted(async () => {
     // Load data payment untuk edit
     form.value.date = props.payment.date || '';
     form.value.payment_type = props.payment.payment_type || '';
+    form.value.bank_id = props.payment.bank_id || null;
     form.value.notes = props.payment.notes || '';
+    
+    // Set selected bank object
+    if (props.payment.bank_id && banks.value.length > 0) {
+      const bank = banks.value.find(b => b.id == props.payment.bank_id);
+      if (bank) {
+        selectedBank.value = bank;
+      }
+    }
     
     // Set selected supplier object - pastikan suppliers sudah ter-load
     if (props.payment.supplier_id && suppliers.value.length > 0) {

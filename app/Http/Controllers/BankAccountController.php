@@ -227,5 +227,47 @@ class BankAccountController extends Controller
         return redirect()->route('bank-accounts.index')
             ->with('success', 'Bank account deleted successfully.');
     }
+
+    /**
+     * Get banks by outlet_id (API endpoint)
+     * Returns banks that belong to the outlet OR banks with outlet_id = null (Head Office)
+     */
+    public function getByOutlet(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        
+        $query = BankAccount::where('is_active', 1)
+            ->with('outlet');
+        
+        if ($outletId) {
+            // Get banks for specific outlet: banks with this outlet_id OR banks with outlet_id = null (Head Office)
+            $query->where(function($q) use ($outletId) {
+                $q->where('outlet_id', $outletId)
+                  ->orWhereNull('outlet_id');
+            });
+        } else {
+            // If no outlet_id, only show Head Office banks (outlet_id = null)
+            $query->whereNull('outlet_id');
+        }
+        
+        $banks = $query->orderBy('bank_name')
+            ->orderBy('account_name')
+            ->get()
+            ->map(function($bank) {
+                return [
+                    'id' => $bank->id,
+                    'bank_name' => $bank->bank_name,
+                    'account_number' => $bank->account_number,
+                    'account_name' => $bank->account_name,
+                    'outlet_id' => $bank->outlet_id,
+                    'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+                ];
+            });
+        
+        return response()->json([
+            'success' => true,
+            'data' => $banks
+        ]);
+    }
 }
 

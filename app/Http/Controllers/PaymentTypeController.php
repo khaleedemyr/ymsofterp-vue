@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PaymentType;
 use App\Models\Outlet;
 use App\Models\Region;
+use App\Models\BankAccount;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +87,7 @@ class PaymentTypeController extends Controller
                 \Log::info('PaymentTypeController@store - Attach outlets', $request->outlets);
             }
 
+
             DB::commit();
 
             return redirect()->route('payment-types.index')
@@ -165,6 +167,26 @@ class PaymentTypeController extends Controller
                 $paymentType->regions()->detach();
             }
 
+            // Sync bank accounts with outlet_id
+            // Delete existing bank account relationships
+            DB::table('bank_account_payment_type')
+                ->where('payment_type_id', $paymentType->id)
+                ->delete();
+            
+            // Insert new relationships
+            if ($request->has('bank_accounts') && is_array($request->bank_accounts)) {
+                foreach ($request->bank_accounts as $bank) {
+                    DB::table('bank_account_payment_type')->insert([
+                        'payment_type_id' => $paymentType->id,
+                        'outlet_id' => $bank['outlet_id'] ?? null,
+                        'bank_account_id' => $bank['id'],
+                        'is_default' => $bank['is_default'] ?? 0,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
             DB::commit();
 
             return redirect()->route('payment-types.index')
@@ -183,5 +205,186 @@ class PaymentTypeController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal menghapus jenis pembayaran: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Show manage banks page for a payment type
+     */
+    public function manageBanks(PaymentType $paymentType)
+    {
+        if (!$paymentType->is_bank) {
+            return back()->with('error', 'Payment type ini bukan tipe bank');
+        }
+
+        $outlets = Outlet::where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '')
+            ->get()
+            ->map(function($o) {
+                return [
+                    'id' => $o->id_outlet,
+                    'name' => $o->nama_outlet,
+                ];
+            })
+            ->values();
+
+        $banks = BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->get()
+            ->map(function($bank) {
+                return [
+                    'id' => $bank->id,
+                    'bank_name' => $bank->bank_name,
+                    'account_number' => $bank->account_number,
+                    'account_name' => $bank->account_name,
+                    'outlet_id' => $bank->outlet_id,
+                    'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+                ];
+            })
+            ->values();
+
+        // Get existing bank accounts for this payment type
+        $bankAccountsData = DB::table('bank_account_payment_type')
+            ->where('payment_type_id', $paymentType->id)
+            ->join('bank_accounts', 'bank_account_payment_type.bank_account_id', '=', 'bank_accounts.id')
+            ->leftJoin('tbl_data_outlet', 'bank_account_payment_type.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->select(
+                'bank_accounts.id',
+                'bank_accounts.bank_name',
+                'bank_accounts.account_number',
+                'bank_accounts.account_name',
+                'bank_account_payment_type.outlet_id',
+                'tbl_data_outlet.nama_outlet as outlet_name'
+            )
+            ->get()
+            ->map(function($item) {
+                return [
+                    'id' => $item->id,
+                    'bank_name' => $item->bank_name,
+                    'account_number' => $item->account_number,
+                    'account_name' => $item->account_name,
+                    'outlet_id' => $item->outlet_id,
+                    'outlet_name' => $item->outlet_name ?? 'Head Office (Semua Outlet)'
+                ];
+            })
+            ->values();
+
+        return Inertia::render('PaymentTypes/ManageBanks', [
+            'paymentType' => $paymentType,
+            'outlets' => $outlets,
+            'banks' => $banks,
+            'bankAccounts' => $bankAccountsData
+        ]);
+    }
+
+    /**
+     * Store bank account for payment type (supports batch insert)
+     */
+    public function storeBank(Request $request, PaymentType $paymentType)
+    {
+        if (!$paymentType->is_bank) {
+            return back()->with('error', 'Payment type ini bukan tipe bank');
+        }
+
+        // Support both single and batch insert
+        if ($request->has('banks') && is_array($request->banks)) {
+            // Batch insert
+            $validated = $request->validate([
+                'banks' => 'required|array|min:1',
+                'banks.*.bank_account_id' => 'required|exists:bank_accounts,id',
+                'banks.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet'
+            ]);
+
+            $insertData = [];
+            $errors = [];
+
+            foreach ($validated['banks'] as $bank) {
+                // Check if combination already exists
+                $exists = DB::table('bank_account_payment_type')
+                    ->where('payment_type_id', $paymentType->id)
+                    ->where('outlet_id', $bank['outlet_id'] ?? null)
+                    ->where('bank_account_id', $bank['bank_account_id'])
+                    ->exists();
+
+                if (!$exists) {
+                    $insertData[] = [
+                        'payment_type_id' => $paymentType->id,
+                        'outlet_id' => $bank['outlet_id'] ?? null,
+                        'bank_account_id' => $bank['bank_account_id'],
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                } else {
+                    $errors[] = "Bank account untuk outlet ini sudah ada";
+                }
+            }
+
+            if (!empty($insertData)) {
+                DB::table('bank_account_payment_type')->insert($insertData);
+            }
+
+            if (!empty($errors) && empty($insertData)) {
+                return back()->with('error', implode(', ', $errors));
+            }
+
+            $message = count($insertData) . ' bank account berhasil ditambahkan';
+            if (!empty($errors)) {
+                $message .= '. ' . count($errors) . ' bank account diabaikan karena sudah ada';
+            }
+
+            return back()->with('success', $message);
+        } else {
+            // Single insert (backward compatibility)
+            $validated = $request->validate([
+                'bank_account_id' => 'required|exists:bank_accounts,id',
+                'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet'
+            ]);
+
+            // Check if combination already exists
+            $exists = DB::table('bank_account_payment_type')
+                ->where('payment_type_id', $paymentType->id)
+                ->where('outlet_id', $validated['outlet_id'] ?? null)
+                ->where('bank_account_id', $validated['bank_account_id'])
+                ->exists();
+
+            if ($exists) {
+                return back()->with('error', 'Bank account untuk outlet ini sudah ada');
+            }
+
+            DB::table('bank_account_payment_type')->insert([
+                'payment_type_id' => $paymentType->id,
+                'outlet_id' => $validated['outlet_id'] ?? null,
+                'bank_account_id' => $validated['bank_account_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return back()->with('success', 'Bank account berhasil ditambahkan');
+        }
+    }
+
+    /**
+     * Delete bank account from payment type
+     */
+    public function deleteBank(Request $request, PaymentType $paymentType)
+    {
+        $validated = $request->validate([
+            'bank_account_id' => 'required|exists:bank_accounts,id',
+            'outlet_id' => 'nullable'
+        ]);
+
+        $query = DB::table('bank_account_payment_type')
+            ->where('payment_type_id', $paymentType->id)
+            ->where('bank_account_id', $validated['bank_account_id']);
+        
+        if ($validated['outlet_id'] === null) {
+            $query->whereNull('outlet_id');
+        } else {
+            $query->where('outlet_id', $validated['outlet_id']);
+        }
+        
+        $query->delete();
+
+        return back()->with('success', 'Bank account berhasil dihapus');
     }
 } 

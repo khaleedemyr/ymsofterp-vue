@@ -11,7 +11,10 @@ use App\Models\MemberAppsMember;
 use App\Models\MemberAppsPointTransaction;
 use App\Models\MemberAppsPointEarning;
 use App\Models\MemberAppsMonthlySpending;
+use App\Models\PaymentType;
+use App\Models\BankBook;
 use App\Services\MemberTierService;
+use App\Services\BankBookService;
 use App\Events\PointEarned;
 use App\Events\PointReturned;
 use Carbon\Carbon;
@@ -181,23 +184,128 @@ class PosOrderController extends Controller
                     // Delete existing payments first
                     DB::table('order_payment')->where('order_id', $orderData['id'])->delete();
 
+                    // Get outlet_id from kode_outlet
+                    $outletId = null;
+                    if (!empty($kodeOutlet)) {
+                        $outlet = DB::table('tbl_data_outlet')
+                            ->where('kode_outlet', $kodeOutlet)
+                            ->first();
+                        $outletId = $outlet->id_outlet ?? null;
+                    }
+
                     foreach ($orderData['payments'] as $payment) {
+                        // Auto-fill bank_id based on payment_code and outlet
+                        $bankId = null;
+                        if (!empty($payment['payment_code'])) {
+                            // Get payment type by code
+                            $paymentType = PaymentType::where('code', $payment['payment_code'])
+                                ->where('status', 'active')
+                                ->where('is_bank', true)
+                                ->first();
+                            
+                            if ($paymentType) {
+                                // Get bank account for this payment type and outlet
+                                // Priority: outlet-specific bank > Head Office bank
+                                $bankAccount = DB::table('bank_account_payment_type')
+                                    ->where('payment_type_id', $paymentType->id)
+                                    ->join('bank_accounts', 'bank_account_payment_type.bank_account_id', '=', 'bank_accounts.id')
+                                    ->where('bank_accounts.is_active', 1)
+                                    ->where(function($query) use ($outletId) {
+                                        if ($outletId) {
+                                            $query->where('bank_account_payment_type.outlet_id', $outletId)
+                                                  ->orWhereNull('bank_account_payment_type.outlet_id');
+                                        } else {
+                                            $query->whereNull('bank_account_payment_type.outlet_id');
+                                        }
+                                    })
+                                    ->select('bank_accounts.id')
+                                    ->orderByRaw('CASE WHEN bank_account_payment_type.outlet_id = ? THEN 0 ELSE 1 END', [$outletId])
+                                    ->first();
+                                
+                                if ($bankAccount) {
+                                    $bankId = $bankAccount->id;
+                                }
+                            }
+                        }
+
+                        $paymentDate = $convertDateTime($payment['created_at'] ?? null);
+                        
+                        // Insert order_payment
                         DB::table('order_payment')->insert([
                             'id' => $payment['id'] ?? null,
                             'order_id' => $orderData['id'],
                             'paid_number' => $payment['paid_number'] ?? null,
                             'payment_type' => $payment['payment_type'] ?? null,
                             'payment_code' => $payment['payment_code'] ?? null,
+                            'bank_id' => $bankId,
                             'amount' => $payment['amount'] ?? 0,
                             'card_first4' => $payment['card_first4'] ?? null,
                             'card_last4' => $payment['card_last4'] ?? null,
                             'approval_code' => $payment['approval_code'] ?? null,
-                            'created_at' => $convertDateTime($payment['created_at'] ?? null),
+                            'created_at' => $paymentDate,
                             'kasir' => $payment['kasir'] ?? '-',
                             'note' => $payment['note'] ?? null,
                             'change' => $payment['change'] ?? 0,
                             'kode_outlet' => $kodeOutlet,
                         ]);
+
+                        // Insert to bank_books if bank_id exists
+                        if ($bankId) {
+                            try {
+                                // Check if already exists to avoid duplicate
+                                $existingEntry = BankBook::where('reference_type', 'order_payment')
+                                    ->where('reference_id', $payment['id'] ?? null)
+                                    ->where('bank_account_id', $bankId)
+                                    ->first();
+                                
+                                if (!$existingEntry) {
+                                    // Use BankBookService to create entry (it will handle balance calculation)
+                                    // But since we're in a transaction, we'll do it manually
+                                    $transactionDate = date('Y-m-d', strtotime($paymentDate));
+                                    
+                                    // Get last balance for this bank account (before this transaction date)
+                                    $lastEntry = BankBook::where('bank_account_id', $bankId)
+                                        ->whereDate('transaction_date', '<', $transactionDate)
+                                        ->orderBy('transaction_date', 'desc')
+                                        ->orderBy('id', 'desc')
+                                        ->first();
+                                    
+                                    // Also check entries on the same date to get the latest balance
+                                    $sameDateEntry = BankBook::where('bank_account_id', $bankId)
+                                        ->whereDate('transaction_date', $transactionDate)
+                                        ->orderBy('id', 'desc')
+                                        ->first();
+                                    
+                                    $currentBalance = $sameDateEntry ? $sameDateEntry->balance : ($lastEntry ? $lastEntry->balance : 0);
+                                    $amount = $payment['amount'] ?? 0;
+                                    $newBalance = $currentBalance + $amount; // Credit = money coming in
+                                    
+                                    // Create bank book entry
+                                    BankBook::create([
+                                        'bank_account_id' => $bankId,
+                                        'transaction_date' => $transactionDate,
+                                        'transaction_type' => 'credit', // Order payment is money coming in
+                                        'amount' => $amount,
+                                        'description' => "Order Payment: {$orderData['nomor']} - {$payment['payment_type']}" . 
+                                            ($payment['note'] ? " - {$payment['note']}" : ''),
+                                        'reference_type' => 'order_payment',
+                                        'reference_id' => $payment['id'] ?? null,
+                                        'balance' => $newBalance,
+                                    ]);
+                                    
+                                    // Recalculate balance for all entries on the same date and after
+                                    BankBook::recalculateBalance($bankId, $transactionDate);
+                                }
+                            } catch (\Exception $e) {
+                                // Log error but don't fail the order sync
+                                Log::warning('Failed to create bank book entry for order payment', [
+                                    'order_id' => $orderData['id'],
+                                    'payment_id' => $payment['id'] ?? null,
+                                    'bank_id' => $bankId,
+                                    'error' => $e->getMessage()
+                                ]);
+                            }
+                        }
                     }
                     Log::info('Order payments synced', [
                         'order_id' => $orderData['id'],

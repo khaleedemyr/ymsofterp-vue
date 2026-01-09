@@ -68,6 +68,9 @@
                 <Link :href="route('payment-types.edit', paymentType.id)" class="ml-2 inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                   <i class="fa fa-edit mr-1"></i> Edit
                 </Link>
+                <Link v-if="paymentType.is_bank" :href="route('payment-types.manage-banks', paymentType.id)" class="ml-2 inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                  <i class="fa fa-university mr-1"></i> Manage Bank
+                </Link>
                 <button @click="handleDelete(paymentType.id)" :disabled="loadingDeleteId === paymentType.id" class="ml-2 inline-flex items-center btn btn-xs bg-red-100 text-red-800 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50">
                   <i v-if="loadingDeleteId === paymentType.id" class="fa fa-spinner fa-spin mr-1"></i>
                   <i v-else class="fa fa-trash mr-1"></i> Delete

@@ -57,8 +57,9 @@ class JurnalController extends Controller
 
         // Get Chart of Accounts for dropdown
         $coas = ChartOfAccount::where('is_active', 1)
+            ->with('defaultCounterAccount')
             ->orderBy('code')
-            ->get(['id', 'code', 'name', 'type']);
+            ->get(['id', 'code', 'name', 'type', 'default_counter_account_id']);
 
         // Get Outlets for dropdown
         $outlets = DB::table('tbl_data_outlet')
@@ -93,8 +94,9 @@ class JurnalController extends Controller
     public function create()
     {
         $coas = ChartOfAccount::where('is_active', 1)
+            ->with('defaultCounterAccount')
             ->orderBy('code')
-            ->get(['id', 'code', 'name', 'type']);
+            ->get(['id', 'code', 'name', 'type', 'default_counter_account_id']);
 
         // Get Outlets for dropdown
         $outlets = DB::table('tbl_data_outlet')
@@ -304,8 +306,9 @@ class JurnalController extends Controller
         }
 
         $coas = ChartOfAccount::where('is_active', 1)
+            ->with('defaultCounterAccount')
             ->orderBy('code')
-            ->get(['id', 'code', 'name', 'type']);
+            ->get(['id', 'code', 'name', 'type', 'default_counter_account_id']);
 
         // Get Outlets for dropdown
         $outlets = DB::table('tbl_data_outlet')

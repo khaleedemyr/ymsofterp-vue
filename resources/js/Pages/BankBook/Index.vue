@@ -1,0 +1,256 @@
+<template>
+  <AppLayout>
+    <div class="w-full py-8 px-0">
+      <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <i class="fa-solid fa-book"></i> Buku Bank
+        </h1>
+        <button @click="goToCreatePage" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+          + Tambah Entri
+        </button>
+      </div>
+      
+      <!-- Filters -->
+      <div class="flex flex-wrap gap-3 mb-4 items-center">
+        <select v-model="filters.bank_account_id" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="">Semua Bank</option>
+          <option v-for="bank in bankAccounts" :key="bank.id" :value="bank.id">
+            {{ bank.bank_name }} - {{ bank.account_number }} ({{ bank.outlet_name }})
+          </option>
+        </select>
+        
+        <input 
+          type="date" 
+          v-model="filters.date_from" 
+          @change="onFilterChange" 
+          class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
+          placeholder="Dari Tanggal" 
+        />
+        
+        <input 
+          type="date" 
+          v-model="filters.date_to" 
+          @change="onFilterChange" 
+          class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" 
+          placeholder="Sampai Tanggal" 
+        />
+        
+        <select v-model="filters.transaction_type" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="">Semua Tipe</option>
+          <option value="credit">Credit (Masuk)</option>
+          <option value="debit">Debit (Keluar)</option>
+        </select>
+        
+        <select v-model="filters.per_page" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="20">20 per halaman</option>
+          <option value="50">50 per halaman</option>
+          <option value="100">100 per halaman</option>
+        </select>
+      </div>
+      
+      <!-- Table -->
+      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+        <table class="w-full min-w-full divide-y divide-gray-200">
+          <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Tanggal</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Bank</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tipe</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Keterangan</th>
+              <th class="px-6 py-3 text-right text-xs font-bold text-blue-700 uppercase tracking-wider">Jumlah</th>
+              <th class="px-6 py-3 text-right text-xs font-bold text-blue-700 uppercase tracking-wider">Saldo</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Referensi</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr v-if="!bankBooks.data || !bankBooks.data.length">
+              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data buku bank.</td>
+            </tr>
+            <tr v-for="entry in bankBooks.data" :key="entry.id" class="hover:bg-blue-50 transition">
+              <td class="px-6 py-3 whitespace-nowrap">
+                <span class="text-sm font-medium text-gray-900">{{ formatDate(entry.transaction_date) }}</span>
+              </td>
+              <td class="px-6 py-3">
+                <div class="text-sm text-gray-900">{{ entry.bank_account?.bank_name }}</div>
+                <div class="text-xs text-gray-500">{{ entry.bank_account?.account_number }}</div>
+                <div class="text-xs text-gray-400">{{ entry.bank_account?.outlet?.nama_outlet || 'Head Office' }}</div>
+              </td>
+              <td class="px-6 py-3 whitespace-nowrap">
+                <span 
+                  :class="entry.transaction_type === 'credit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                  class="px-2 py-1 rounded-full text-xs font-semibold"
+                >
+                  {{ entry.transaction_type === 'credit' ? 'Credit' : 'Debit' }}
+                </span>
+              </td>
+              <td class="px-6 py-3">
+                <div class="text-sm text-gray-900">{{ entry.description || '-' }}</div>
+              </td>
+              <td class="px-6 py-3 text-right whitespace-nowrap">
+                <span 
+                  :class="entry.transaction_type === 'credit' ? 'text-green-600' : 'text-red-600'"
+                  class="text-sm font-semibold"
+                >
+                  {{ entry.transaction_type === 'credit' ? '+' : '-' }}{{ formatCurrency(entry.amount) }}
+                </span>
+              </td>
+              <td class="px-6 py-3 text-right whitespace-nowrap">
+                <span class="text-sm font-bold text-blue-600">{{ formatCurrency(entry.balance) }}</span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="entry.reference_type" class="text-xs">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    {{ entry.reference_type }} #{{ entry.reference_id }}
+                  </span>
+                </div>
+                <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-6 py-3 whitespace-nowrap">
+                <div class="flex gap-2">
+                  <button @click="viewEntry(entry)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
+                    <i class="fa fa-eye mr-1"></i> Detail
+                  </button>
+                  <button @click="editEntry(entry)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
+                    <i class="fa fa-pencil-alt mr-1"></i> Edit
+                  </button>
+                  <button @click="deleteEntry(entry)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                    <i class="fa fa-trash mr-1"></i> Hapus
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination -->
+      <div v-if="bankBooks.links && bankBooks.links.length > 3" class="mt-4 flex justify-center">
+        <div class="flex gap-1">
+          <button
+            v-for="(link, index) in bankBooks.links"
+            :key="index"
+            @click="goToPage(link.url)"
+            :disabled="!link.url"
+            :class="[
+              'px-3 py-2 rounded-lg text-sm font-medium transition',
+              link.active 
+                ? 'bg-blue-600 text-white' 
+                : link.url 
+                  ? 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300' 
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            ]"
+            v-html="link.label"
+          ></button>
+        </div>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue';
+import { router } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
+
+const props = defineProps({
+  bankBooks: Object,
+  bankAccounts: Array,
+  filters: Object,
+});
+
+const filters = ref({
+  bank_account_id: props.filters?.bank_account_id || '',
+  date_from: props.filters?.date_from || '',
+  date_to: props.filters?.date_to || '',
+  transaction_type: props.filters?.transaction_type || '',
+  per_page: props.filters?.per_page || 20,
+});
+
+function onFilterChange() {
+  router.get('/bank-books', filters.value, {
+    preserveState: true,
+    replace: true,
+  });
+}
+
+function goToPage(url) {
+  if (!url) return;
+  
+  const params = { ...filters.value };
+  const urlObj = new URL(url);
+  const page = urlObj.searchParams.get('page');
+  if (page) {
+    params.page = page;
+  }
+  
+  router.get('/bank-books', params, {
+    preserveState: false,
+    preserveScroll: false,
+    replace: true,
+  });
+}
+
+function goToCreatePage() {
+  router.visit('/bank-books/create');
+}
+
+function viewEntry(entry) {
+  router.visit(`/bank-books/${entry.id}`);
+}
+
+function editEntry(entry) {
+  router.visit(`/bank-books/${entry.id}/edit`);
+}
+
+async function deleteEntry(entry) {
+  const result = await Swal.fire({
+    title: 'Hapus Entri?',
+    text: 'Yakin ingin menghapus entri ini?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal',
+  });
+
+  if (result.isConfirmed) {
+    router.delete(`/bank-books/${entry.id}`, {
+      onSuccess: () => {
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil',
+          text: 'Entri berhasil dihapus',
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      },
+      onError: () => {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal',
+          text: 'Gagal menghapus entri',
+        });
+      },
+    });
+  }
+}
+
+function formatDate(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatCurrency(amount) {
+  if (!amount) return 'Rp 0';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(amount);
+}
+</script>

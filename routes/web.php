@@ -1381,6 +1381,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/payment-types/{paymentType}/edit', [PaymentTypeController::class, 'edit'])->name('payment-types.edit');
     Route::put('/payment-types/{paymentType}', [PaymentTypeController::class, 'update'])->name('payment-types.update');
     Route::delete('/payment-types/{paymentType}', [PaymentTypeController::class, 'destroy'])->name('payment-types.destroy');
+    Route::get('/payment-types/{paymentType}/manage-banks', [PaymentTypeController::class, 'manageBanks'])->name('payment-types.manage-banks');
+    Route::post('/payment-types/{paymentType}/store-bank', [PaymentTypeController::class, 'storeBank'])->name('payment-types.store-bank');
+    Route::post('/payment-types/{paymentType}/delete-bank', [PaymentTypeController::class, 'deleteBank'])->name('payment-types.delete-bank');
 });
 // Outlet Payment Supplier
 Route::get('/outlet-payment-suppliers', [\App\Http\Controllers\OutletPaymentSupplierController::class, 'index'])->name('outlet-payment-suppliers.index');
@@ -2706,6 +2709,12 @@ Route::middleware(['auth'])->group(function () {
 // Bank Account routes
 Route::middleware(['auth'])->group(function () {
     Route::resource('bank-accounts', App\Http\Controllers\BankAccountController::class);
+    Route::get('/bank-accounts/by-outlet', [App\Http\Controllers\BankAccountController::class, 'getByOutlet'])->name('bank-accounts.by-outlet');
+});
+
+// Bank Book routes
+Route::middleware(['auth'])->group(function () {
+    Route::resource('bank-books', App\Http\Controllers\BankBookController::class);
 });
 
 // Asset Management routes

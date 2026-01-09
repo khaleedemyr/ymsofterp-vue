@@ -18,6 +18,9 @@ class OutletPayment extends Model
         'total_amount',
         'status',
         'notes',
+        'payment_method',
+        'bank_id',
+        'receiver_bank_id',
         'created_by',
         'updated_by'
     ];
@@ -55,6 +58,16 @@ class OutletPayment extends Model
     public function items()
     {
         return $this->goodReceive->items;
+    }
+
+    public function bank()
+    {
+        return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
+    }
+
+    public function receiverBank()
+    {
+        return $this->belongsTo(\App\Models\BankAccount::class, 'receiver_bank_id');
     }
 
     protected static function boot()

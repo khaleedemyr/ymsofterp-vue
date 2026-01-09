@@ -9,6 +9,7 @@ const props = defineProps({
   chartOfAccount: Object,
   parents: Array,
   menus: Array,
+  allCoAs: Array, // All COAs for counter account dropdown
 });
 
 const emit = defineEmits(['close', 'success']);
@@ -25,6 +26,7 @@ const form = useForm({
   menu_id: [],
   mode_payment: [],
   budget_limit: null,
+  default_counter_account_id: null,
 });
 
 const menuSearch = ref('');
@@ -154,6 +156,7 @@ watch(() => props.show, (val) => {
       form.mode_payment = [];
     }
     form.budget_limit = props.chartOfAccount.budget_limit || null;
+    form.default_counter_account_id = props.chartOfAccount.default_counter_account_id || null;
     
     // Set menu search value if menu_id exists
     if (form.menu_id && props.menus) {
@@ -175,6 +178,7 @@ watch(() => props.show, (val) => {
     form.menu_id = [];
     form.mode_payment = [];
     form.budget_limit = null;
+    form.default_counter_account_id = null;
     menuSearch.value = '';
   }
 });
@@ -322,6 +326,31 @@ function submit() {
             </div>
             <p class="mt-1 text-xs text-gray-500">Masukkan budget limit untuk COA ini (opsional)</p>
             <div v-if="form.errors.budget_limit" class="mt-1 text-sm text-red-600">{{ form.errors.budget_limit }}</div>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Default Counter Account (Akun Lawan)
+            </label>
+            <select
+              v-model="form.default_counter_account_id"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option :value="null">Tidak ada (kosongkan)</option>
+              <option 
+                v-for="coa in allCoAs" 
+                :key="coa.id" 
+                :value="coa.id"
+                :disabled="mode === 'edit' && chartOfAccount && coa.id === chartOfAccount.id"
+              >
+                {{ coa.code }} - {{ coa.name }} ({{ coa.type }})
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">
+              Pilih akun lawan default untuk memudahkan pembuatan jurnal. 
+              Saat membuat jurnal dengan akun ini, akun lawan akan terisi otomatis.
+            </p>
+            <div v-if="form.errors.default_counter_account_id" class="mt-1 text-sm text-red-600">{{ form.errors.default_counter_account_id }}</div>
           </div>
           
           <div>

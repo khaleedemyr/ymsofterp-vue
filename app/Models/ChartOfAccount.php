@@ -30,6 +30,18 @@ class ChartOfAccount extends Model
         return $this->hasMany(ChartOfAccount::class, 'parent_id')->orderBy('code');
     }
     
+    // Relationship: Default Counter Account
+    public function defaultCounterAccount()
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'default_counter_account_id');
+    }
+    
+    // Relationship: CoAs that use this as default counter account
+    public function usedAsCounterAccount()
+    {
+        return $this->hasMany(ChartOfAccount::class, 'default_counter_account_id');
+    }
+    
     // Helper: Get menus as array of IDs
     public function getMenuIdsAttribute()
     {

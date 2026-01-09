@@ -6,6 +6,7 @@ use App\Models\FoodPayment;
 use App\Models\FoodPaymentContraBon;
 use App\Models\ContraBon;
 use App\Services\NotificationService;
+use App\Services\BankBookService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +89,30 @@ class FoodPaymentController extends Controller
     // Show create form
     public function create()
     {
-        return inertia('FoodPayment/Form');
+        $banks = \App\Models\BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->orderBy('bank_name')
+            ->get();
+        
+        // Transform untuk include outlet name (sama seperti di BankAccount/Index)
+        $banks = $banks->map(function($bank) {
+            return [
+                'id' => $bank->id,
+                'bank_name' => $bank->bank_name,
+                'account_number' => $bank->account_number,
+                'account_name' => $bank->account_name,
+                'outlet_id' => $bank->outlet_id,
+                'outlet' => $bank->outlet ? [
+                    'id_outlet' => $bank->outlet->id_outlet,
+                    'nama_outlet' => $bank->outlet->nama_outlet,
+                ] : null,
+                'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+            ];
+        });
+        
+        return inertia('FoodPayment/Form', [
+            'banks' => $banks,
+        ]);
     }
 
     // Store new food payment
@@ -132,6 +156,7 @@ class FoodPaymentController extends Controller
                 'supplier_id' => $validated['supplier_id'],
                 'total' => $total,
                 'payment_type' => $validated['payment_type'],
+                'bank_id' => in_array($validated['payment_type'], ['Transfer', 'Giro']) ? ($validated['bank_id'] ?? null) : null,
                 'notes' => $validated['notes'] ?? null,
                 'bukti_transfer_path' => $buktiPath,
                 'status' => 'draft',
@@ -364,7 +389,7 @@ class FoodPaymentController extends Controller
     }
 
     // Mark Food Payment as Paid (from approved status)
-    public function markAsPaid($id)
+    public function markAsPaid($id, BankBookService $bankBookService)
     {
         try {
             $foodPayment = FoodPayment::findOrFail($id);
@@ -376,9 +401,14 @@ class FoodPaymentController extends Controller
                 ], 400);
             }
             
+            DB::beginTransaction();
+            
             $foodPayment->update([
                 'status' => 'paid'
             ]);
+            
+            // Create bank book entry if payment type is Transfer or Giro
+            $bankBookService->createFromFoodPayment($foodPayment);
             
             // Log activity
             \App\Models\ActivityLog::create([
@@ -389,11 +419,14 @@ class FoodPaymentController extends Controller
                 'ip_address' => request()->ip(),
             ]);
             
+            DB::commit();
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Food Payment berhasil ditandai sebagai paid'
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             \Log::error('Error marking Food Payment as paid: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
@@ -729,8 +762,30 @@ class FoodPaymentController extends Controller
             return $contraBon;
         }) : collect();
         
+        $banks = \App\Models\BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->orderBy('bank_name')
+            ->get();
+        
+        // Transform untuk include outlet name (sama seperti di BankAccount/Index)
+        $banks = $banks->map(function($bank) {
+            return [
+                'id' => $bank->id,
+                'bank_name' => $bank->bank_name,
+                'account_number' => $bank->account_number,
+                'account_name' => $bank->account_name,
+                'outlet_id' => $bank->outlet_id,
+                'outlet' => $bank->outlet ? [
+                    'id_outlet' => $bank->outlet->id_outlet,
+                    'nama_outlet' => $bank->outlet->nama_outlet,
+                ] : null,
+                'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+            ];
+        });
+        
         return inertia('FoodPayment/Form', [
-            'payment' => $payment
+            'payment' => $payment,
+            'banks' => $banks,
         ]);
     }
 
@@ -739,7 +794,8 @@ class FoodPaymentController extends Controller
         try {
             $validated = $request->validate([
                 'date' => 'required|date',
-                'payment_type' => 'required|string',
+                'payment_type' => 'required|string|in:Transfer,Giro,Cash',
+                'bank_id' => 'nullable|required_if:payment_type,Transfer,Giro|exists:bank_accounts,id',
                 'supplier_id' => 'required|exists:suppliers,id',
                 'contra_bon_ids' => 'required|array|min:1',
                 'contra_bon_ids.*' => 'exists:food_contra_bons,id',
@@ -771,6 +827,7 @@ class FoodPaymentController extends Controller
                 'supplier_id' => $validated['supplier_id'],
                 'total' => $total,
                 'payment_type' => $validated['payment_type'],
+                'bank_id' => in_array($validated['payment_type'], ['Transfer', 'Giro']) ? ($validated['bank_id'] ?? null) : null,
                 'notes' => $validated['notes'] ?? null,
                 'bukti_transfer_path' => $buktiPath,
             ]);
@@ -806,12 +863,15 @@ class FoodPaymentController extends Controller
         }
     }
 
-    public function destroy($id)
+    public function destroy($id, BankBookService $bankBookService)
     {
         try {
             DB::beginTransaction();
 
             $payment = FoodPayment::findOrFail($id);
+
+            // Delete bank book entries if exists
+            $bankBookService->deleteByReference('food_payment', $payment->id);
 
             // Update status contra bon menjadi approved
             ContraBon::whereIn('id', $payment->contraBons->pluck('id'))

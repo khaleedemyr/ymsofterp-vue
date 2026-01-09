@@ -37,5 +37,15 @@ class BankAccount extends Model
     {
         return 'id';
     }
+
+    /**
+     * Get the payment types that use this bank account
+     */
+    public function paymentTypes()
+    {
+        return $this->belongsToMany(PaymentType::class, 'bank_account_payment_type', 'bank_account_id', 'payment_type_id')
+            ->withPivot('is_default')
+            ->withTimestamps();
+    }
 }
 

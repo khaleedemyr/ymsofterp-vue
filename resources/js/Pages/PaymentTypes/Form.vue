@@ -91,6 +91,7 @@ const form = ref({
   regions: props.paymentType?.regions || []
 });
 
+
 // Set initial outlet type based on existing data
 watch(() => props.paymentType, (newVal) => {
   if (newVal) {
@@ -132,6 +133,7 @@ async function submit() {
   } else {
     formData.regions = [];
   }
+
 
   if (props.isEdit) {
     router.put(route('payment-types.update', props.paymentType.id), formData, {

@@ -654,6 +654,35 @@
               </select>
             </div>
 
+            <!-- Bank Selection (hanya muncul jika Transfer atau Check) -->
+            <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Pilih Bank <span class="text-red-500">*</span>
+              </label>
+              <multiselect
+                v-model="selectedBank"
+                :options="banks"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Cari dan pilih bank..."
+                label="display_name"
+                track-by="id"
+                @select="onBankSelect"
+                @remove="onBankRemove"
+                class="w-full"
+                required
+              >
+                <template #noOptions>
+                  <span>Tidak ada bank ditemukan</span>
+                </template>
+                <template #noResult>
+                  <span>Tidak ada bank ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Cari dan pilih bank dari master data bank untuk {{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</p>
+            </div>
+
             <!-- Payment Date -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Payment Date *</label>
@@ -1009,7 +1038,11 @@ const props = defineProps({
   suppliers: Array,
   availablePOs: Array,
   availablePRs: Array,
-  filters: Object
+  filters: Object,
+  banks: {
+    type: Array,
+    default: () => []
+  }
 });
 
 // Map PO data to ensure is_held is boolean
@@ -1053,6 +1086,7 @@ const isSubmitting = ref(false);
 const selectedPO = ref(null);
 const selectedPR = ref(null);
 const selectedSupplier = ref(null);
+const selectedBank = ref(null);
 const poItems = ref([]);
 const itemsByOutlet = ref({});
 const loadingPOItems = ref(false);
@@ -1074,6 +1108,7 @@ const form = reactive({
   supplier_id: '',
   amount: '',
   payment_method: '',
+  bank_id: null,
   payment_date: new Date().toISOString().split('T')[0],
   due_date: '',
   description: '',
@@ -1081,6 +1116,30 @@ const form = reactive({
   notes: '',
   is_partial_payment: false
 });
+
+// Transform banks untuk multiselect dengan display name yang include outlet
+const banks = computed(() => {
+  if (!props.banks || !Array.isArray(props.banks)) return [];
+  return props.banks.map(bank => {
+    // Gunakan outlet.nama_outlet jika ada, atau 'Head Office' jika null
+    const outletName = bank.outlet?.nama_outlet || bank.outlet_name || 'Head Office';
+    return {
+      ...bank,
+      display_name: `${bank.bank_name} - ${bank.account_number} (${bank.account_name}) - ${outletName}`
+    };
+  });
+});
+
+function onBankSelect(bank) {
+  if (bank && bank.id) {
+    form.bank_id = bank.id;
+  }
+}
+
+function onBankRemove() {
+  form.bank_id = null;
+  selectedBank.value = null;
+}
 
 // Computed properties for supplier field visibility and requirement
 const shouldShowSupplier = computed(() => {

@@ -310,6 +310,57 @@
             </p>
           </div>
         </div>
+
+        <!-- Payment Method and Bank Section -->
+        <div class="mt-6 space-y-6">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Metode Pembayaran</label>
+            <select 
+              v-model="form.payment_method" 
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+            >
+              <option value="cash">Cash</option>
+              <option value="transfer">Transfer</option>
+              <option value="check">Check</option>
+            </select>
+          </div>
+          
+          <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Bank Pengirim (Outlet)</label>
+              <Multiselect
+                v-model="selectedBank"
+                :options="banks"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Cari dan pilih bank pengirim..."
+                label="display_name"
+                track-by="id"
+                @select="onBankSelect"
+                @remove="onBankRemove"
+                class="w-full"
+              />
+            </div>
+            
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Bank Penerima (Head Office)</label>
+              <Multiselect
+                v-model="selectedReceiverBank"
+                :options="banks"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Cari dan pilih bank penerima..."
+                label="display_name"
+                track-by="id"
+                @select="onReceiverBankSelect"
+                @remove="onReceiverBankRemove"
+                class="w-full"
+              />
+            </div>
+          </div>
+        </div>
         <div class="flex justify-end gap-2 mt-8">
           <button type="button" @click="goBack" class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold shadow-sm">Batal</button>
           <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg hover:bg-blue-700 transition-all">{{ isEditing ? 'Update' : 'Simpan' }}</button>
@@ -321,13 +372,18 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
+import Multiselect from 'vue-multiselect';
 const props = defineProps({
   mode: { type: String, default: 'create' },
   payment: Object,
   outlets: Array,
   grList: Array,
+  banks: {
+    type: Array,
+    default: () => []
+  }
 });
 
 // State for refresh functionality
@@ -362,13 +418,57 @@ const isEditing = computed(() => props.mode === 'edit');
 const canLoadData = computed(() => {
   return form.value.outlet_id && form.value.date_from && form.value.date_to;
 });
+const selectedBank = ref(null);
+const selectedReceiverBank = ref(null);
+
 const form = ref({
   outlet_id: '',
   date_from: new Date().toISOString().split('T')[0],
   date_to: new Date().toISOString().split('T')[0],
   gr_ids: [], // Changed from gr_id to gr_ids for multiple selection
   retail_ids: [], // New field for retail sales
-  total_amount: 0
+  total_amount: 0,
+  payment_method: 'cash',
+  bank_id: null,
+  receiver_bank_id: null
+});
+
+// Transform banks untuk Multiselect
+const banks = computed(() => {
+  return props.banks.map(bank => ({
+    id: bank.id,
+    display_name: `${bank.bank_name} - ${bank.account_number} (${bank.account_name}) - ${bank.outlet_name}`
+  }));
+});
+
+// Handle bank selection (pengirim)
+function onBankSelect(bank) {
+  form.value.bank_id = bank.id;
+}
+
+function onBankRemove() {
+  form.value.bank_id = null;
+  selectedBank.value = null;
+}
+
+// Handle receiver bank selection (penerima)
+function onReceiverBankSelect(bank) {
+  form.value.receiver_bank_id = bank.id;
+}
+
+function onReceiverBankRemove() {
+  form.value.receiver_bank_id = null;
+  selectedReceiverBank.value = null;
+}
+
+// Watch payment_method to clear bank if changed to cash
+watch(() => form.value.payment_method, (newMethod) => {
+  if (newMethod === 'cash') {
+    selectedBank.value = null;
+    form.value.bank_id = null;
+    selectedReceiverBank.value = null;
+    form.value.receiver_bank_id = null;
+  }
 });
 
 const grListFiltered = computed(() => {
@@ -767,4 +867,31 @@ async function submitForm() {
     onError(e);
   }
 }
+
+// Pre-fill bank if editing
+onMounted(() => {
+  if (props.payment) {
+    if (props.payment.payment_method) {
+      form.value.payment_method = props.payment.payment_method;
+    }
+    
+    if (props.payment.bank_id) {
+      const bank = banks.value.find(b => b.id == props.payment.bank_id);
+      if (bank) {
+        selectedBank.value = bank;
+        form.value.bank_id = props.payment.bank_id;
+      }
+    }
+    
+    if (props.payment.receiver_bank_id) {
+      const receiverBank = banks.value.find(b => b.id == props.payment.receiver_bank_id);
+      if (receiverBank) {
+        selectedReceiverBank.value = receiverBank;
+        form.value.receiver_bank_id = props.payment.receiver_bank_id;
+      }
+    }
+  }
+});
 </script> 
+
+<style src="vue-multiselect/dist/vue-multiselect.css"></style> 

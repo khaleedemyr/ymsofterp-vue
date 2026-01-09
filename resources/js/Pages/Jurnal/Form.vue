@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -48,6 +48,40 @@ function getCoaInfo(coaId) {
   if (!coaId) return null;
   return props.coas.find(c => c.id == coaId);
 }
+
+// Auto-fill counter account when COA is selected
+function handleCoaChange(entry, field) {
+  const coaId = entry[field];
+  if (!coaId) return;
+  
+  const coa = getCoaInfo(coaId);
+  if (!coa || !coa.default_counter_account_id) return;
+  
+  // Auto-fill counter account
+  if (field === 'coa_debit_id') {
+    // If debit selected, fill kredit with counter account
+    if (!entry.coa_kredit_id) {
+      entry.coa_kredit_id = coa.default_counter_account_id;
+    }
+  } else if (field === 'coa_kredit_id') {
+    // If kredit selected, fill debit with counter account
+    if (!entry.coa_debit_id) {
+      entry.coa_debit_id = coa.default_counter_account_id;
+    }
+  }
+}
+
+// Watch for COA changes in all entries
+watch(() => entries.value, (newEntries) => {
+  newEntries.forEach(entry => {
+    if (entry.coa_debit_id) {
+      handleCoaChange(entry, 'coa_debit_id');
+    }
+    if (entry.coa_kredit_id) {
+      handleCoaChange(entry, 'coa_kredit_id');
+    }
+  });
+}, { deep: true });
 
 // Total debit dan kredit
 const totalDebit = computed(() => {
