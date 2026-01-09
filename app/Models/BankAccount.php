@@ -14,6 +14,7 @@ class BankAccount extends Model
         'account_number',
         'account_name',
         'outlet_id',
+        'coa_id',
         'is_active',
     ];
 
@@ -46,6 +47,14 @@ class BankAccount extends Model
         return $this->belongsToMany(PaymentType::class, 'bank_account_payment_type', 'bank_account_id', 'payment_type_id')
             ->withPivot('is_default')
             ->withTimestamps();
+    }
+
+    /**
+     * Get the Chart of Account associated with this bank account
+     */
+    public function coa(): BelongsTo
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'coa_id');
     }
 }
 

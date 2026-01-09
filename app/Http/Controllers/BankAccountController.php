@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BankAccount;
 use App\Models\DataOutlet;
+use App\Models\ChartOfAccount;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ class BankAccountController extends Controller
             $perPage = 15;
         }
 
-        $query = BankAccount::with('outlet');
+        $query = BankAccount::with(['outlet', 'coa']);
 
         // Search filter
         if ($search) {
@@ -61,9 +62,15 @@ class BankAccountController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
+        // Get Chart of Accounts for dropdown
+        $coas = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'type']);
+
         return Inertia::render('BankAccount/Index', [
             'bankAccounts' => $bankAccounts,
             'outlets' => $outlets,
+            'coas' => $coas,
             'filters' => [
                 'search' => $search,
                 'outlet_id' => $outletId,
@@ -82,8 +89,14 @@ class BankAccountController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
+        // Get Chart of Accounts (filter untuk asset type atau semua)
+        $coas = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'type']);
+
         return Inertia::render('BankAccount/Create', [
             'outlets' => $outlets,
+            'coas' => $coas,
         ]);
     }
 
@@ -118,6 +131,7 @@ class BankAccountController extends Controller
             'account_number' => $request->account_number,
             'account_name' => $request->account_name,
             'outlet_id' => $request->outlet_id ?: null,
+            'coa_id' => $request->coa_id ?: null,
             'is_active' => $request->is_active ?? true,
         ]);
 
@@ -154,9 +168,15 @@ class BankAccountController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
+        // Get Chart of Accounts
+        $coas = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'type']);
+
         return Inertia::render('BankAccount/Edit', [
             'bankAccount' => $bankAccount,
             'outlets' => $outlets,
+            'coas' => $coas,
         ]);
     }
 
@@ -172,6 +192,7 @@ class BankAccountController extends Controller
             'account_number' => 'required|string|max:100',
             'account_name' => 'required|string|max:255',
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
+            'coa_id' => 'nullable|integer|exists:chart_of_accounts,id',
             'is_active' => 'boolean',
         ]);
 
@@ -193,6 +214,7 @@ class BankAccountController extends Controller
             'account_number' => $request->account_number,
             'account_name' => $request->account_name,
             'outlet_id' => $request->outlet_id ?: null,
+            'coa_id' => $request->coa_id ?: null,
             'is_active' => $request->is_active ?? true,
         ]);
 

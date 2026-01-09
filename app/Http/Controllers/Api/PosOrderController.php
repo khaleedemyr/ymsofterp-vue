@@ -184,11 +184,11 @@ class PosOrderController extends Controller
                     // Delete existing payments first
                     DB::table('order_payment')->where('order_id', $orderData['id'])->delete();
 
-                    // Get outlet_id from kode_outlet
+                    // Get outlet_id from kode_outlet (qr_code)
                     $outletId = null;
                     if (!empty($kodeOutlet)) {
                         $outlet = DB::table('tbl_data_outlet')
-                            ->where('kode_outlet', $kodeOutlet)
+                            ->where('qr_code', $kodeOutlet)
                             ->first();
                         $outletId = $outlet->id_outlet ?? null;
                     }

@@ -2714,7 +2714,9 @@ Route::middleware(['auth'])->group(function () {
 
 // Bank Book routes
 Route::middleware(['auth'])->group(function () {
-    Route::resource('bank-books', App\Http\Controllers\BankBookController::class);
+    // Export route must be defined before resource route to avoid route conflict
+    Route::get('/bank-books/export', [App\Http\Controllers\BankBookController::class, 'export'])->name('bank-books.export');
+    Route::resource('bank-books', App\Http\Controllers\BankBookController::class)->except(['show']);
 });
 
 // Asset Management routes

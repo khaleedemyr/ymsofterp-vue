@@ -9,6 +9,7 @@ import axios from 'axios';
 const props = defineProps({
   bankAccounts: Object,
   outlets: Array,
+  coas: Array,
   filters: Object,
 });
 
@@ -25,6 +26,7 @@ const formData = ref({
   account_number: '',
   account_name: '',
   outlet_id: null,
+  coa_id: null,
   is_active: true,
 });
 
@@ -131,6 +133,7 @@ function openCreate() {
     account_number: '',
     account_name: '',
     outlet_id: null,
+    coa_id: null,
     is_active: true,
   };
   showModal.value = true;
@@ -144,6 +147,7 @@ function openEdit(item) {
     account_number: item.account_number,
     account_name: item.account_name,
     outlet_id: item.outlet_id,
+    coa_id: item.coa_id,
     is_active: item.is_active,
   };
   showModal.value = true;
@@ -157,6 +161,7 @@ function closeModal() {
     account_number: '',
     account_name: '',
     outlet_id: null,
+    coa_id: null,
     is_active: true,
   };
 }
@@ -586,6 +591,20 @@ watch([outletId, status, perPage], () => {
                     {{ outlet.name }}
                   </option>
                 </select>
+              </div>
+              
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Chart of Account (COA)</label>
+                <select
+                  v-model="formData.coa_id"
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option :value="null">Pilih COA (Opsional)</option>
+                  <option v-for="coa in coas" :key="coa.id" :value="coa.id">
+                    {{ coa.code }} - {{ coa.name }} ({{ coa.type }})
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Pilih akun COA yang terkait dengan bank account ini untuk pencatatan jurnal</p>
               </div>
               
               <div>

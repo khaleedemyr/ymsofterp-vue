@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\BankBook;
 use App\Models\BankAccount;
 use App\Services\BankBookService;
+use App\Exports\BankBookReportExport;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
 
 class BankBookController extends Controller
 {
@@ -202,5 +204,37 @@ class BankBookController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal menghapus entri buku bank: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Export bank book report to Excel
+     */
+    public function export(Request $request)
+    {
+        $bankAccountId = $request->input('bank_account_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $transactionType = $request->input('transaction_type');
+
+        // Generate filename with filters
+        $filename = 'Buku_Bank';
+        if ($bankAccountId) {
+            $bank = BankAccount::find($bankAccountId);
+            if ($bank) {
+                $filename .= '_' . str_replace(' ', '_', $bank->bank_name);
+            }
+        }
+        if ($dateFrom) {
+            $filename .= '_' . date('Ymd', strtotime($dateFrom));
+        }
+        if ($dateTo) {
+            $filename .= '_' . date('Ymd', strtotime($dateTo));
+        }
+        $filename .= '_' . date('YmdHis') . '.xlsx';
+
+        return Excel::download(
+            new BankBookReportExport($bankAccountId, $dateFrom, $dateTo, $transactionType),
+            $filename
+        );
     }
 }

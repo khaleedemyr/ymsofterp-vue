@@ -5,9 +5,14 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-book"></i> Buku Bank
         </h1>
-        <button @click="goToCreatePage" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Entri
-        </button>
+        <div class="flex gap-3">
+          <button @click="exportReport" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa fa-file-excel mr-2"></i> Export Report
+          </button>
+          <button @click="goToCreatePage" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Tambah Entri
+          </button>
+        </div>
       </div>
       
       <!-- Filters -->
@@ -252,5 +257,25 @@ function formatCurrency(amount) {
     currency: 'IDR',
     minimumFractionDigits: 0,
   }).format(amount);
+}
+
+function exportReport() {
+  // Build export URL with current filters
+  const params = new URLSearchParams();
+  if (filters.value.bank_account_id) {
+    params.append('bank_account_id', filters.value.bank_account_id);
+  }
+  if (filters.value.date_from) {
+    params.append('date_from', filters.value.date_from);
+  }
+  if (filters.value.date_to) {
+    params.append('date_to', filters.value.date_to);
+  }
+  if (filters.value.transaction_type) {
+    params.append('transaction_type', filters.value.transaction_type);
+  }
+  
+  const url = `/bank-books/export${params.toString() ? '?' + params.toString() : ''}`;
+  window.open(url, '_blank');
 }
 </script>
