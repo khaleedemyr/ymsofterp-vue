@@ -1521,6 +1521,27 @@ Route::get('/sales-outlet-dashboard/non-promo-bank-discount-transactions', [App\
 Route::get('/sales-outlet-dashboard/export-non-promo-bank-discount-transactions', [App\Http\Controllers\SalesOutletDashboardController::class, 'exportNonPromoBankDiscountTransactions'])->name('sales-outlet-dashboard.export-non-promo-bank-discount-transactions');
 Route::get('/sales-outlet-dashboard/promo-usage-by-outlet', [App\Http\Controllers\SalesOutletDashboardController::class, 'getPromoUsageByOutlet'])->name('sales-outlet-dashboard.promo-usage-by-outlet');
 Route::get('/sales-outlet-dashboard/ai/insight', [App\Http\Controllers\AIAnalyticsController::class, 'getAutoInsight'])->name('sales-outlet-dashboard.ai.insight');
+
+// Marketing Dashboard - Customer Behavior Analysis & Strategy
+Route::get('/marketing/dashboard', [App\Http\Controllers\MarketingDashboardController::class, 'index'])->name('marketing.dashboard');
+Route::get('/api/marketing/behavior-analysis', [App\Http\Controllers\MarketingDashboardController::class, 'getBehaviorAnalysis'])->name('api.marketing.behavior-analysis');
+Route::get('/api/marketing/strategies', [App\Http\Controllers\MarketingDashboardController::class, 'getStrategies'])->name('api.marketing.strategies');
+Route::get('/api/marketing/rfm-segmentation', [App\Http\Controllers\MarketingDashboardController::class, 'getRFMSegmentation'])->name('api.marketing.rfm-segmentation');
+Route::get('/api/marketing/rfm-detail', [App\Http\Controllers\MarketingDashboardController::class, 'getRFMDetail'])->name('api.marketing.rfm-detail');
+Route::get('/api/marketing/churn-risk', [App\Http\Controllers\MarketingDashboardController::class, 'getChurnRisk'])->name('api.marketing.churn-risk');
+Route::get('/api/marketing/product-preferences', [App\Http\Controllers\MarketingDashboardController::class, 'getProductPreferences'])->name('api.marketing.product-preferences');
+Route::get('/api/marketing/time-patterns', [App\Http\Controllers\MarketingDashboardController::class, 'getTimePatterns'])->name('api.marketing.time-patterns');
+Route::get('/api/marketing/promo-transactions', [App\Http\Controllers\MarketingDashboardController::class, 'getPromoTransactions'])->name('api.marketing.promo-transactions');
+Route::get('/api/marketing/manual-discount-transactions', [App\Http\Controllers\MarketingDashboardController::class, 'getManualDiscountTransactions'])->name('api.marketing.manual-discount-transactions');
+Route::get('/api/marketing/export-report', [App\Http\Controllers\MarketingDashboardController::class, 'exportReport'])->name('api.marketing.export-report');
+Route::get('/api/marketing/customer-lifetime-value', [App\Http\Controllers\MarketingDashboardController::class, 'getCustomerLifetimeValue'])->name('api.marketing.customer-lifetime-value');
+Route::get('/api/marketing/repeat-purchase-rate', [App\Http\Controllers\MarketingDashboardController::class, 'getRepeatPurchaseRate'])->name('api.marketing.repeat-purchase-rate');
+Route::get('/api/marketing/average-days-between-orders', [App\Http\Controllers\MarketingDashboardController::class, 'getAverageDaysBetweenOrders'])->name('api.marketing.average-days-between-orders');
+Route::get('/api/marketing/basket-analysis', [App\Http\Controllers\MarketingDashboardController::class, 'getBasketAnalysis'])->name('api.marketing.basket-analysis');
+Route::get('/api/marketing/peak-hours-day-analysis', [App\Http\Controllers\MarketingDashboardController::class, 'getPeakHoursDayAnalysis'])->name('api.marketing.peak-hours-day-analysis');
+Route::get('/api/marketing/customer-acquisition-trends', [App\Http\Controllers\MarketingDashboardController::class, 'getCustomerAcquisitionTrends'])->name('api.marketing.customer-acquisition-trends');
+Route::get('/api/marketing/analysis-by-region', [App\Http\Controllers\MarketingDashboardController::class, 'getAnalysisByRegion'])->name('api.marketing.analysis-by-region');
+Route::get('/api/marketing/analysis-by-outlet', [App\Http\Controllers\MarketingDashboardController::class, 'getAnalysisByOutlet'])->name('api.marketing.analysis-by-outlet');
 // POST route untuk ask question - HARUS di atas GET handler untuk prioritas
 Route::post('/sales-outlet-dashboard/ai/ask', [App\Http\Controllers\AIAnalyticsController::class, 'askQuestion'])->name('sales-outlet-dashboard.ai.ask');
 // GET routes untuk chat history - HARUS di atas GET handler untuk /ai/ask
