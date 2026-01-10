@@ -2737,6 +2737,8 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth'])->group(function () {
     // Export route must be defined before resource route to avoid route conflict
     Route::get('/bank-books/export', [App\Http\Controllers\BankBookController::class, 'export'])->name('bank-books.export');
+    // Show route must be defined after create/edit routes to avoid route conflict
+    Route::get('/bank-books/{bank_book}', [App\Http\Controllers\BankBookController::class, 'show'])->name('bank-books.show')->where('bank_book', '[0-9]+');
     Route::resource('bank-books', App\Http\Controllers\BankBookController::class)->except(['show']);
 });
 

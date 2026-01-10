@@ -50,6 +50,44 @@ UPDATE orders SET issync=0 WHERE nomor='MIMTEMP26010363';
 UPDATE orders SET issync=0 WHERE nomor='MIMTEMP26010364';
 
 -- ============================================
+-- Update orders set issync=0 untuk nomor-nomor JWTEMP
+-- ============================================
+
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010372';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010371';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010370';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010369';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010368';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010367';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010366';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010365';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010364';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010363';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010362';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010361';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010360';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010359';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010358';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010357';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010356';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010355';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010354';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010353';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010352';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010351';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010350';
+UPDATE orders SET issync=0 WHERE nomor='JWTEMP26010349';
+
+-- ============================================
+-- Update orders set issync=0 untuk nomor-nomor PSKLTEMP
+-- ============================================
+
+UPDATE orders SET issync=0 WHERE nomor='PSKLTEMP26010651';
+UPDATE orders SET issync=0 WHERE nomor='PSKLTEMP26010632';
+UPDATE orders SET issync=0 WHERE nomor='PSKLTEMP26010645';
+UPDATE orders SET issync=0 WHERE nomor='PSKLTEMP26010652';
+
+-- ============================================
 -- ALTERNATIF: Update dalam satu query (lebih efisien)
 -- ============================================
 -- Uncomment jika ingin menggunakan cara ini:
@@ -97,6 +135,40 @@ UPDATE orders SET issync=0 WHERE nomor='MIMTEMP26010364';
 --     'MIMTEMP26010363',
 --     'MIMTEMP26010364'
 -- );
+--
+-- UPDATE orders SET issync=0 WHERE nomor IN (
+--     'JWTEMP26010372',
+--     'JWTEMP26010371',
+--     'JWTEMP26010370',
+--     'JWTEMP26010369',
+--     'JWTEMP26010368',
+--     'JWTEMP26010367',
+--     'JWTEMP26010366',
+--     'JWTEMP26010365',
+--     'JWTEMP26010364',
+--     'JWTEMP26010363',
+--     'JWTEMP26010362',
+--     'JWTEMP26010361',
+--     'JWTEMP26010360',
+--     'JWTEMP26010359',
+--     'JWTEMP26010358',
+--     'JWTEMP26010357',
+--     'JWTEMP26010356',
+--     'JWTEMP26010355',
+--     'JWTEMP26010354',
+--     'JWTEMP26010353',
+--     'JWTEMP26010352',
+--     'JWTEMP26010351',
+--     'JWTEMP26010350',
+--     'JWTEMP26010349'
+-- );
+--
+-- UPDATE orders SET issync=0 WHERE nomor IN (
+--     'PSKLTEMP26010651',
+--     'PSKLTEMP26010632',
+--     'PSKLTEMP26010645',
+--     'PSKLTEMP26010652'
+-- );
 
 -- ============================================
 -- VERIFIKASI: Cek hasil update
@@ -143,4 +215,38 @@ UPDATE orders SET issync=0 WHERE nomor='MIMTEMP26010364';
 --     'MIMTEMP26010362',
 --     'MIMTEMP26010363',
 --     'MIMTEMP26010364'
+-- ) ORDER BY nomor DESC;
+--
+-- SELECT nomor, issync FROM orders WHERE nomor IN (
+--     'JWTEMP26010372',
+--     'JWTEMP26010371',
+--     'JWTEMP26010370',
+--     'JWTEMP26010369',
+--     'JWTEMP26010368',
+--     'JWTEMP26010367',
+--     'JWTEMP26010366',
+--     'JWTEMP26010365',
+--     'JWTEMP26010364',
+--     'JWTEMP26010363',
+--     'JWTEMP26010362',
+--     'JWTEMP26010361',
+--     'JWTEMP26010360',
+--     'JWTEMP26010359',
+--     'JWTEMP26010358',
+--     'JWTEMP26010357',
+--     'JWTEMP26010356',
+--     'JWTEMP26010355',
+--     'JWTEMP26010354',
+--     'JWTEMP26010353',
+--     'JWTEMP26010352',
+--     'JWTEMP26010351',
+--     'JWTEMP26010350',
+--     'JWTEMP26010349'
+-- ) ORDER BY nomor DESC;
+--
+-- SELECT nomor, issync FROM orders WHERE nomor IN (
+--     'PSKLTEMP26010651',
+--     'PSKLTEMP26010632',
+--     'PSKLTEMP26010645',
+--     'PSKLTEMP26010652'
 -- ) ORDER BY nomor DESC;

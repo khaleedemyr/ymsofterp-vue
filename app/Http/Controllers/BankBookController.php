@@ -23,6 +23,7 @@ class BankBookController extends Controller
         $dateTo = $request->input('date_to');
         $transactionType = $request->input('transaction_type');
         $perPage = $request->input('per_page', 20);
+        $search = $request->input('search');
 
         $query = BankBook::with(['bankAccount.outlet', 'creator', 'updater'])
             ->orderBy('transaction_date', 'desc')
@@ -46,6 +47,32 @@ class BankBookController extends Controller
         }
 
         $bankBooks = $query->paginate($perPage)->withQueryString();
+
+        // Load kasir from order_payment for entries with reference_type = 'order_payment'
+        $orderPaymentIds = $bankBooks->getCollection()
+            ->filter(function ($bankBook) {
+                return $bankBook->reference_type === 'order_payment' && $bankBook->reference_id;
+            })
+            ->pluck('reference_id')
+            ->unique()
+            ->toArray();
+
+        if (!empty($orderPaymentIds)) {
+            $orderPayments = DB::table('order_payment')
+                ->whereIn('id', $orderPaymentIds)
+                ->pluck('kasir', 'id')
+                ->toArray();
+
+            $bankBooks->getCollection()->transform(function ($bankBook) use ($orderPayments) {
+                if ($bankBook->reference_type === 'order_payment' && $bankBook->reference_id) {
+                    $kasir = $orderPayments[$bankBook->reference_id] ?? null;
+                    if ($kasir && $kasir !== '-') {
+                        $bankBook->kasir_name = $kasir;
+                    }
+                }
+                return $bankBook;
+            });
+        }
 
         // Get all bank accounts for filter
         $bankAccounts = BankAccount::where('is_active', 1)
@@ -123,9 +150,9 @@ class BankBookController extends Controller
     /**
      * Display the specified bank book entry
      */
-    public function show(BankBook $bankBook)
+    public function show($bank_book)
     {
-        $bankBook->load(['bankAccount.outlet', 'creator', 'updater']);
+        $bankBook = BankBook::with(['bankAccount.outlet', 'creator', 'updater'])->findOrFail($bank_book);
         
         // Load reference if exists
         $reference = null;

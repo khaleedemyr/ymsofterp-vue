@@ -17,12 +17,59 @@
       
       <!-- Filters -->
       <div class="flex flex-wrap gap-3 mb-4 items-center">
-        <select v-model="filters.bank_account_id" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
-          <option value="">Semua Bank</option>
-          <option v-for="bank in bankAccounts" :key="bank.id" :value="bank.id">
-            {{ bank.bank_name }} - {{ bank.account_number }} ({{ bank.outlet_name }})
-          </option>
-        </select>
+        <div class="relative" @click.stop>
+          <div class="relative">
+            <input 
+              type="text" 
+              v-model="bankSearchInput"
+              @focus="showBankDropdown = true"
+              @blur="handleBankBlur"
+              @input="handleBankInput"
+              :placeholder="selectedBankName || 'Cari atau pilih bank...'"
+              class="w-80 px-4 py-2 pr-10 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+            />
+            <i class="fa-solid fa-chevron-down absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+          </div>
+          <!-- Dropdown Bank -->
+          <div 
+            v-if="showBankDropdown" 
+            class="absolute z-50 mt-1 w-80 bg-white border border-gray-300 rounded-xl shadow-lg max-h-60 overflow-y-auto"
+            @mousedown.prevent
+          >
+            <div class="p-2 border-b border-gray-200 sticky top-0 bg-white">
+              <input 
+                type="text" 
+                v-model="bankSearch"
+                @input="filterBankAccounts"
+                @focus="keepDropdownOpen = true"
+                @blur="keepDropdownOpen = false"
+                placeholder="Cari bank..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+              />
+            </div>
+            <div class="py-1">
+              <div 
+                @mousedown.prevent
+                @click="selectBank('')"
+                :class="['px-4 py-2 cursor-pointer hover:bg-blue-50', filters.bank_account_id === '' ? 'bg-blue-100 font-semibold' : '']"
+              >
+                Semua Bank
+              </div>
+              <div 
+                v-for="bank in filteredBankAccounts" 
+                :key="bank.id"
+                @mousedown.prevent
+                @click="selectBank(bank.id)"
+                :class="['px-4 py-2 cursor-pointer hover:bg-blue-50', filters.bank_account_id == bank.id ? 'bg-blue-100 font-semibold' : '']"
+              >
+                {{ bank.bank_name }} - {{ bank.account_number }} ({{ bank.outlet_name }})
+              </div>
+              <div v-if="filteredBankAccounts.length === 0" class="px-4 py-2 text-gray-500 text-sm">
+                Bank tidak ditemukan
+              </div>
+            </div>
+          </div>
+        </div>
         
         <input 
           type="date" 
@@ -65,16 +112,18 @@
               <th class="px-6 py-3 text-right text-xs font-bold text-blue-700 uppercase tracking-wider">Jumlah</th>
               <th class="px-6 py-3 text-right text-xs font-bold text-blue-700 uppercase tracking-wider">Saldo</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Referensi</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr v-if="!bankBooks.data || !bankBooks.data.length">
-              <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data buku bank.</td>
+              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data buku bank.</td>
             </tr>
             <tr v-for="entry in bankBooks.data" :key="entry.id" class="hover:bg-blue-50 transition">
-              <td class="px-6 py-3 whitespace-nowrap">
-                <span class="text-sm font-medium text-gray-900">{{ formatDate(entry.transaction_date) }}</span>
+              <td class="px-6 py-3">
+                <div class="text-sm font-medium text-gray-900">{{ formatDate(entry.transaction_date) }}</div>
+                <div class="text-xs text-gray-500">{{ formatTime(entry.created_at || entry.updated_at) }}</div>
               </td>
               <td class="px-6 py-3">
                 <div class="text-sm text-gray-900">{{ entry.bank_account?.bank_name }}</div>
@@ -110,6 +159,17 @@
                   </span>
                 </div>
                 <span v-else class="text-gray-400">-</span>
+              </td>
+              <td class="px-6 py-3">
+                <div v-if="entry.kasir_name" class="text-sm text-gray-900">
+                  <i class="fa-solid fa-user mr-1 text-blue-500"></i>
+                  {{ entry.kasir_name }}
+                </div>
+                <div v-else-if="entry.creator" class="text-sm text-gray-900">
+                  <i class="fa-solid fa-user mr-1 text-blue-500"></i>
+                  {{ entry.creator?.nama_lengkap || entry.creator?.nama_panggilan || entry.creator?.email || '-' }}
+                </div>
+                <span v-else class="text-gray-400 text-sm">-</span>
               </td>
               <td class="px-6 py-3 whitespace-nowrap">
                 <div class="flex gap-2">
@@ -172,6 +232,67 @@ const filters = ref({
   transaction_type: props.filters?.transaction_type || '',
   per_page: props.filters?.per_page || 20,
 });
+
+const bankSearch = ref('');
+const bankSearchInput = ref('');
+const showBankDropdown = ref(false);
+const keepDropdownOpen = ref(false);
+
+const selectedBankName = computed(() => {
+  if (!filters.value.bank_account_id) {
+    return '';
+  }
+  const bank = props.bankAccounts.find(b => b.id == filters.value.bank_account_id);
+  return bank ? `${bank.bank_name} - ${bank.account_number} (${bank.outlet_name})` : '';
+});
+
+const filteredBankAccounts = computed(() => {
+  if (!bankSearch.value) {
+    return props.bankAccounts;
+  }
+  const searchLower = bankSearch.value.toLowerCase();
+  return props.bankAccounts.filter(bank => {
+    const bankName = (bank.bank_name || '').toLowerCase();
+    const accountNumber = (bank.account_number || '').toLowerCase();
+    const accountName = (bank.account_name || '').toLowerCase();
+    const outletName = (bank.outlet_name || '').toLowerCase();
+    return bankName.includes(searchLower) || 
+           accountNumber.includes(searchLower) || 
+           accountName.includes(searchLower) ||
+           outletName.includes(searchLower);
+  });
+});
+
+const selectBank = (bankId) => {
+  filters.value.bank_account_id = bankId;
+  bankSearchInput.value = bankId ? selectedBankName.value : '';
+  bankSearch.value = '';
+  showBankDropdown.value = false;
+  keepDropdownOpen.value = false;
+  onFilterChange();
+};
+
+const handleBankBlur = () => {
+  // Delay to allow click event to fire first
+  setTimeout(() => {
+    if (!keepDropdownOpen.value) {
+      showBankDropdown.value = false;
+      bankSearchInput.value = selectedBankName.value;
+      bankSearch.value = '';
+    }
+  }, 200);
+};
+
+const handleBankInput = () => {
+  // When typing in main input, show dropdown and sync search
+  showBankDropdown.value = true;
+  bankSearch.value = bankSearchInput.value;
+};
+
+const filterBankAccounts = () => {
+  // Keep dropdown open when searching
+  showBankDropdown.value = true;
+};
 
 function onFilterChange() {
   router.get('/bank-books', filters.value, {
@@ -247,6 +368,15 @@ function formatDate(date) {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+  });
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   });
 }
 
