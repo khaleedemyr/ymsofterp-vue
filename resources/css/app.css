@@ -1,9 +1,9 @@
+/* Import Shared Documents CSS - must be before @tailwind */
+@import './shared-documents.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Import Shared Documents CSS */
-@import './shared-documents.css';
 
 /* Custom animations for 3D effects */
 @keyframes float {
