@@ -7,15 +7,15 @@
           <i class="fa-solid fa-money-bill-transfer text-blue-500"></i> {{ isEditMode ? 'Edit' : 'Buat' }} Food Payment
         </h1>
       </div>
-      <form @submit.prevent="onSubmit" class="space-y-6">
+      <div class="space-y-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">Tanggal</label>
-            <input type="date" v-model="form.date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required />
+            <input type="date" v-model="form.date" @keydown.enter.prevent="showPreview" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Payment Type</label>
-            <select v-model="form.payment_type" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
+            <select v-model="form.payment_type" @keydown.enter.prevent="showPreview" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required>
               <option value="">Pilih Payment Type</option>
               <option value="Transfer">Transfer</option>
               <option value="Giro">Giro</option>
@@ -356,9 +356,208 @@
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" @click="goBack" class="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold hover:bg-gray-300">Batal</button>
-          <button type="submit" class="px-4 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700">Simpan</button>
+          <button type="button" @click.prevent="showPreview" :disabled="isSubmitting" class="px-4 py-2 rounded bg-gradient-to-r from-blue-500 to-blue-700 text-white font-semibold hover:from-blue-600 hover:to-blue-800 disabled:opacity-50">
+            <i class="fa fa-eye mr-2"></i>
+            Preview & Simpan
+          </button>
         </div>
-      </form>
+      </div>
+
+      <!-- Preview Modal -->
+      <div v-if="showPreviewModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showPreviewModal = false">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+          <!-- Background overlay -->
+          <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showPreviewModal = false"></div>
+
+          <!-- Modal panel -->
+          <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+              <h3 class="text-lg font-semibold text-white">
+                <i class="fa fa-eye mr-2"></i>
+                Preview Data Food Payment
+              </h3>
+              <button
+                @click="showPreviewModal = false"
+                class="text-white hover:text-gray-200 focus:outline-none"
+              >
+                <i class="fa fa-times text-xl"></i>
+              </button>
+            </div>
+
+            <!-- Content -->
+            <div class="px-6 py-6 max-h-[70vh] overflow-y-auto">
+              <div class="space-y-6">
+                <!-- Payment Information -->
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                  <h4 class="font-semibold text-blue-800 mb-3">
+                    <i class="fa fa-credit-card mr-2"></i>
+                    Informasi Pembayaran
+                  </h4>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span class="font-medium text-gray-700">Tanggal:</span>
+                      <span class="ml-2 text-gray-900">{{ formatDate(form.date) }}</span>
+                    </div>
+                    <div>
+                      <span class="font-medium text-gray-700">Payment Type:</span>
+                      <span class="ml-2 text-gray-900 capitalize">{{ form.payment_type || '-' }}</span>
+                    </div>
+                    <div>
+                      <span class="font-medium text-gray-700">Supplier:</span>
+                      <span class="ml-2 text-gray-900">{{ selectedSupplier ? selectedSupplier.name : '-' }}</span>
+                    </div>
+                    <div>
+                      <span class="font-medium text-gray-700">Total Bayar:</span>
+                      <span class="ml-2 text-lg font-bold text-green-600">{{ formatCurrency(totalBayar) }}</span>
+                    </div>
+                    <div v-if="form.notes" class="md:col-span-2">
+                      <span class="font-medium text-gray-700">Notes:</span>
+                      <p class="mt-1 text-gray-900 whitespace-pre-wrap">{{ form.notes }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Selected Contra Bons -->
+                <div v-if="form.selected_contra_bon_ids.length > 0" class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                  <h4 class="font-semibold text-green-800 mb-3">
+                    <i class="fa fa-list-ul mr-2"></i>
+                    Contra Bon yang Dipilih ({{ form.selected_contra_bon_ids.length }})
+                  </h4>
+                  <div class="space-y-2 max-h-60 overflow-y-auto">
+                    <div v-for="cb in selectedContraBons" :key="cb.id" class="bg-white border border-green-200 rounded-lg p-3">
+                      <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                          <div class="flex items-center gap-2 mb-1">
+                            <span class="font-semibold text-gray-900">{{ cb.number }}</span>
+                            <span v-if="cb.source_type_display === 'PR Foods'" class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-semibold">
+                              🔵 PR Foods
+                            </span>
+                            <span v-else-if="cb.source_type_display === 'RO Supplier'" class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">
+                              🟢 RO Supplier
+                            </span>
+                            <span v-else-if="cb.source_type_display === 'Retail Food'" class="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-semibold">
+                              🟣 Retail Food
+                            </span>
+                          </div>
+                          <div class="text-xs text-gray-600 space-y-1">
+                            <div><strong>Total:</strong> {{ formatCurrency(cb.total_amount) }}</div>
+                            <div v-if="cb.date"><strong>Tanggal:</strong> {{ formatDate(cb.date) }}</div>
+                            <div v-if="cb.supplier_invoice_number"><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}</div>
+                            <div v-if="cb.outlet_names && cb.outlet_names.length > 0">
+                              <strong>Outlet:</strong> {{ Array.isArray(cb.outlet_names) ? cb.outlet_names.join(', ') : cb.outlet_names }}
+                            </div>
+                          </div>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-lg font-bold text-green-600">{{ formatCurrency(cb.total_amount) }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Payment Per Outlet -->
+                <div v-if="selectedContraBonsByOutlet && Object.keys(selectedContraBonsByOutlet).length > 0" class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+                  <h4 class="font-semibold text-purple-800 mb-3">
+                    <i class="fa fa-store mr-2"></i>
+                    Pembayaran Per Outlet
+                  </h4>
+                  <div class="space-y-3">
+                    <div v-for="(outletData, outletKey) in selectedContraBonsByOutlet" :key="outletKey" class="bg-white border border-purple-200 rounded-lg p-3">
+                      <div class="flex justify-between items-start mb-2">
+                        <div>
+                          <h5 class="font-semibold text-gray-900">{{ outletData.outlet_name || 'Global / All Outlets' }}</h5>
+                          <div class="text-xs text-gray-600 mt-1">
+                            <span>Total Contra Bon: {{ formatCurrency(outletData.total_amount) }}</span>
+                            <span class="ml-2">({{ outletData.contra_bon_count }} contra bon)</span>
+                          </div>
+                          <div v-if="outletData.contra_bons && outletData.contra_bons.length > 0" class="text-xs text-gray-500 mt-1">
+                            <strong>Contra Bon:</strong> {{ outletData.contra_bons.map(cb => cb.number).join(', ') }}
+                          </div>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-lg font-bold text-purple-600">
+                            {{ formatCurrency(outletPayments[outletKey]?.amount || 0) }}
+                          </div>
+                          <div class="text-xs text-gray-500">Amount</div>
+                        </div>
+                      </div>
+                      <div v-if="(form.payment_type === 'Transfer' || form.payment_type === 'Giro') && outletPayments[outletKey]?.selectedBank" class="mt-2 pt-2 border-t border-purple-200">
+                        <span class="text-xs font-medium text-gray-700">Bank:</span>
+                        <span class="ml-2 text-xs text-gray-900">{{ outletPayments[outletKey].selectedBank.display_name }}</span>
+                      </div>
+                    </div>
+                    <div class="bg-white border border-purple-300 rounded-lg p-3 mt-3">
+                      <div class="flex justify-between items-center">
+                        <span class="font-semibold text-gray-700">Total Pembayaran Semua Outlet:</span>
+                        <span class="text-xl font-bold text-purple-600">{{ formatCurrency(totalOutletPayments) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bukti Transfer -->
+                <div v-if="filePreview || existingBuktiPath" class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                  <h4 class="font-semibold text-amber-800 mb-3">
+                    <i class="fa fa-file-upload mr-2"></i>
+                    Bukti Transfer
+                  </h4>
+                  <div v-if="filePreview && isImage" class="mt-2">
+                    <img :src="filePreview" alt="Preview" class="max-w-xs rounded shadow" />
+                  </div>
+                  <div v-else-if="filePreview && isPdf" class="mt-2">
+                    <a :href="filePreview" target="_blank" class="text-blue-500 hover:underline">
+                      <i class="fas fa-file-pdf mr-1"></i> Preview PDF
+                    </a>
+                  </div>
+                  <div v-else-if="existingBuktiPath" class="mt-2">
+                    <div v-if="isImageFile(existingBuktiPath)">
+                      <img :src="`/storage/${existingBuktiPath}`" alt="Current Bukti" class="max-w-xs rounded shadow" />
+                    </div>
+                    <div v-else>
+                      <a :href="`/storage/${existingBuktiPath}`" target="_blank" class="text-blue-500 hover:underline">
+                        <i class="fas fa-file-pdf mr-1"></i> Lihat Bukti Transfer Saat Ini
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Warning/Info -->
+                <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                  <h4 class="font-semibold text-amber-800 mb-2">
+                    <i class="fa fa-exclamation-triangle mr-2"></i>
+                    Konfirmasi
+                  </h4>
+                  <p class="text-sm text-amber-700">
+                    Pastikan semua data di atas sudah benar sebelum menyimpan. Setelah disimpan, data tidak dapat diubah.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 px-6 py-4 flex justify-between">
+              <button
+                @click="showPreviewModal = false"
+                class="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                <i class="fa fa-times mr-2"></i>
+                Batal
+              </button>
+              <button
+                @click="confirmSubmit"
+                :disabled="isSubmitting"
+                class="px-6 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-md hover:from-green-600 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i v-if="isSubmitting" class="fa fa-spinner fa-spin mr-2"></i>
+                <i v-else class="fa fa-check mr-2"></i>
+                {{ isSubmitting ? 'Menyimpan...' : 'Konfirmasi & Simpan' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -417,6 +616,8 @@ const filePreview = ref(null);
 const isImage = ref(false);
 const isPdf = ref(false);
 const existingBuktiPath = ref(null);
+const showPreviewModal = ref(false);
+const isSubmitting = ref(false);
 
 const outletPayments = ref({});
 
@@ -496,6 +697,11 @@ const totalOutletPayments = computed(() => {
   return Object.values(outletPayments.value).reduce((sum, outlet) => {
     return sum + (parseFloat(outlet.amount) || 0);
   }, 0);
+});
+
+// Computed untuk selected contra bons (untuk preview)
+const selectedContraBons = computed(() => {
+  return contraBons.value.filter(cb => form.value.selected_contra_bon_ids.includes(cb.id));
 });
 
 // Watch selectedContraBonsByOutlet untuk initialize outletPayments
@@ -703,10 +909,38 @@ function isImageFile(path) {
   return path && (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png'));
 }
 
-async function onSubmit() {
+function showPreview(event) {
+  // Prevent any default form submission
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  // IMPORTANT: This function should ONLY show preview modal, NOT submit!
+  // Do NOT call confirmSubmit() here!
+
+  // Validate date
+  if (!form.value.date) {
+    Swal.fire('Error', 'Tanggal harus diisi', 'error');
+    return false;
+  }
+
+  // Validate payment type
+  if (!form.value.payment_type) {
+    Swal.fire('Error', 'Payment Type harus dipilih', 'error');
+    return false;
+  }
+
+  // Validate supplier
   if (!selectedSupplier.value || !selectedSupplier.value.id) {
     Swal.fire('Error', 'Pilih supplier terlebih dahulu', 'error');
-    return;
+    return false;
+  }
+
+  // Validate contra bon
+  if (form.value.selected_contra_bon_ids.length === 0) {
+    Swal.fire('Error', 'Pilih minimal satu contra bon', 'error');
+    return false;
   }
 
   // Validate bank per outlet if payment method is Transfer or Giro
@@ -718,9 +952,23 @@ async function onSubmit() {
     
     if (outletsWithoutBank.length > 0) {
       Swal.fire('Error', 'Semua outlet yang memiliki jumlah pembayaran harus memiliki bank yang dipilih untuk metode pembayaran ' + form.value.payment_type + '.', 'error');
-      return;
+      return false;
     }
   }
+
+  // Show preview modal - ONLY show modal, do NOT submit
+  console.log('Showing preview modal...');
+  showPreviewModal.value = true;
+  
+  // IMPORTANT: Do NOT call confirmSubmit here!
+  // confirmSubmit should ONLY be called from the preview modal button
+  return false;
+}
+
+async function confirmSubmit() {
+  console.log('confirmSubmit called - this should ONLY happen from preview modal button');
+  isSubmitting.value = true;
+  showPreviewModal.value = false;
 
   try {
     Swal.fire({
@@ -788,6 +1036,8 @@ async function onSubmit() {
     } else {
       Swal.fire('Error', `Terjadi kesalahan saat ${isEditMode.value ? 'memperbarui' : 'menyimpan'} data`, 'error');
     }
+  } finally {
+    isSubmitting.value = false;
   }
 }
 

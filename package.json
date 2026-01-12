@@ -2,7 +2,9 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+        "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build",
+        "build:win": "set NODE_OPTIONS=--max-old-space-size=4096 && vite build",
+        "build:unix": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
         "dev": "vite"
     },
     "devDependencies": {
@@ -13,6 +15,7 @@
         "autoprefixer": "^10.4.12",
         "axios": "^1.9.0",
         "concurrently": "^9.0.1",
+        "cross-env": "^10.1.0",
         "laravel-vite-plugin": "^1.2.0",
         "postcss": "^8.4.31",
         "tailwindcss": "^3.2.1",

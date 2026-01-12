@@ -127,7 +127,7 @@
       </div>
 
       <!-- Step 2: Form Payment dengan Detail PO/PR -->
-      <form v-if="selectedPO || selectedPR" @submit.prevent="submitForm" class="space-y-6">
+      <div v-if="selectedPO || selectedPR" class="space-y-6">
         <!-- PO/PR Information -->
         <div class="bg-white rounded-2xl shadow-2xl p-6">
           <div class="flex justify-between items-center mb-4">
@@ -865,12 +865,12 @@
           <button type="button" @click="resetSelection" class="bg-gray-500 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             Kembali ke Pilih PO
           </button>
-          <button type="submit" :disabled="isSubmitting" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold disabled:opacity-50">
-            <i v-if="isSubmitting" class="fa fa-spinner fa-spin mr-2"></i>
-            {{ isSubmitting ? 'Menyimpan...' : 'Simpan Payment' }}
+          <button type="button" @click="showPreview" :disabled="isSubmitting" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold disabled:opacity-50">
+            <i class="fa fa-eye mr-2"></i>
+            Preview & Simpan
           </button>
         </div>
-      </form>
+      </div>
     </div>
 
     <!-- Lightbox Modal -->
@@ -886,6 +886,176 @@
         />
         <div class="text-center text-white mt-2">
           <p class="text-sm">{{ lightboxImage?.name }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div v-if="showPreviewModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showPreviewModal = false">
+      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showPreviewModal = false"></div>
+
+        <!-- Modal panel -->
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+          <!-- Header -->
+          <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-white">
+              <i class="fa fa-eye mr-2"></i>
+              Preview Data Non Food Payment
+            </h3>
+            <button
+              @click="showPreviewModal = false"
+              class="text-white hover:text-gray-200 focus:outline-none"
+            >
+              <i class="fa fa-times text-xl"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="px-6 py-6 max-h-[70vh] overflow-y-auto">
+            <div class="space-y-6">
+              <!-- PO/PR Information -->
+              <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                <h4 class="font-semibold text-blue-800 mb-3">
+                  <i class="fa fa-file-invoice mr-2"></i>
+                  {{ selectedPO ? 'Purchase Order' : 'Purchase Requisition' }}
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span class="font-medium text-gray-700">{{ selectedPO ? 'PO Number' : 'PR Number' }}:</span>
+                    <span class="ml-2 text-gray-900">{{ selectedPO ? selectedPO.number : selectedPR.pr_number }}</span>
+                  </div>
+                  <div v-if="selectedPO">
+                    <span class="font-medium text-gray-700">Supplier:</span>
+                    <span class="ml-2 text-gray-900">{{ selectedPO.supplier_name }}</span>
+                  </div>
+                  <div>
+                    <span class="font-medium text-gray-700">{{ selectedPO ? 'PO Date' : 'PR Date' }}:</span>
+                    <span class="ml-2 text-gray-900">{{ formatDate(selectedPO ? selectedPO.date : selectedPR.date) }}</span>
+                  </div>
+                  <div>
+                    <span class="font-medium text-gray-700">Grand Total:</span>
+                    <span class="ml-2 text-lg font-bold text-green-600">
+                      {{ formatCurrency(selectedPO ? (selectedPO.po_discount_info?.grand_total || selectedPO.grand_total) : selectedPR.amount) }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Payment Information -->
+              <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                <h4 class="font-semibold text-green-800 mb-3">
+                  <i class="fa fa-credit-card mr-2"></i>
+                  Informasi Pembayaran
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span class="font-medium text-gray-700">Supplier:</span>
+                    <span class="ml-2 text-gray-900">{{ selectedSupplier ? selectedSupplier.name : (selectedPO ? selectedPO.supplier_name : '-') }}</span>
+                  </div>
+                  <div>
+                    <span class="font-medium text-gray-700">Amount:</span>
+                    <span class="ml-2 text-lg font-bold text-green-600">{{ formatCurrency(form.amount) }}</span>
+                  </div>
+                  <div>
+                    <span class="font-medium text-gray-700">Payment Method:</span>
+                    <span class="ml-2 text-gray-900 capitalize">{{ form.payment_method || '-' }}</span>
+                  </div>
+                  <div>
+                    <span class="font-medium text-gray-700">Payment Date:</span>
+                    <span class="ml-2 text-gray-900">{{ formatDate(form.payment_date) }}</span>
+                  </div>
+                  <div v-if="form.due_date">
+                    <span class="font-medium text-gray-700">Due Date:</span>
+                    <span class="ml-2 text-gray-900">{{ formatDate(form.due_date) }}</span>
+                  </div>
+                  <div v-if="form.reference_number">
+                    <span class="font-medium text-gray-700">Reference Number:</span>
+                    <span class="ml-2 text-gray-900">{{ form.reference_number }}</span>
+                  </div>
+                  <div v-if="form.description" class="md:col-span-2">
+                    <span class="font-medium text-gray-700">Description:</span>
+                    <p class="mt-1 text-gray-900 whitespace-pre-wrap">{{ form.description }}</p>
+                  </div>
+                  <div v-if="form.notes" class="md:col-span-2">
+                    <span class="font-medium text-gray-700">Notes:</span>
+                    <p class="mt-1 text-gray-900 whitespace-pre-wrap">{{ form.notes }}</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Payment Per Outlet -->
+              <div v-if="Object.keys(outletPayments).length > 0" class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
+                <h4 class="font-semibold text-purple-800 mb-3">
+                  <i class="fa fa-store mr-2"></i>
+                  Pembayaran Per Outlet
+                </h4>
+                <div class="space-y-3">
+                  <div v-for="(outletData, outletKey) in itemsByOutlet" :key="outletKey" class="bg-white border border-purple-200 rounded-lg p-3">
+                    <div class="flex justify-between items-start mb-2">
+                      <div>
+                        <h5 class="font-semibold text-gray-900">{{ outletData.outlet_name || 'Global / All Outlets' }}</h5>
+                        <div class="text-xs text-gray-600 mt-1">
+                          <span v-if="outletData.category_name" class="inline-block bg-purple-100 text-purple-800 px-2 py-1 rounded-full mr-2">
+                            {{ outletData.category_name }}
+                          </span>
+                          <span>Subtotal: {{ formatCurrency(outletData.subtotal) }}</span>
+                        </div>
+                      </div>
+                      <div class="text-right">
+                        <div class="text-lg font-bold text-purple-600">
+                          {{ formatCurrency(outletPayments[outletKey]?.amount || 0) }}
+                        </div>
+                        <div class="text-xs text-gray-500">Amount</div>
+                      </div>
+                    </div>
+                    <div v-if="(form.payment_method === 'transfer' || form.payment_method === 'check') && outletPayments[outletKey]?.selectedBank" class="mt-2 pt-2 border-t border-purple-200">
+                      <span class="text-xs font-medium text-gray-700">Bank:</span>
+                      <span class="ml-2 text-xs text-gray-900">{{ outletPayments[outletKey].selectedBank.display_name }}</span>
+                    </div>
+                  </div>
+                  <div class="bg-white border border-purple-300 rounded-lg p-3 mt-3">
+                    <div class="flex justify-between items-center">
+                      <span class="font-semibold text-gray-700">Total Pembayaran Semua Outlet:</span>
+                      <span class="text-xl font-bold text-purple-600">{{ formatCurrency(totalOutletPayments) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Warning/Info -->
+              <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded">
+                <h4 class="font-semibold text-amber-800 mb-2">
+                  <i class="fa fa-exclamation-triangle mr-2"></i>
+                  Konfirmasi
+                </h4>
+                <p class="text-sm text-amber-700">
+                  Pastikan semua data di atas sudah benar sebelum menyimpan. Setelah disimpan, data tidak dapat diubah.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="bg-gray-50 px-6 py-4 flex justify-between">
+            <button
+              @click="showPreviewModal = false"
+              class="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              <i class="fa fa-times mr-2"></i>
+              Batal
+            </button>
+            <button
+              @click="confirmSubmit"
+              :disabled="isSubmitting"
+              class="px-6 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-md hover:from-green-600 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i v-if="isSubmitting" class="fa fa-spinner fa-spin mr-2"></i>
+              <i v-else class="fa fa-check mr-2"></i>
+              {{ isSubmitting ? 'Menyimpan...' : 'Konfirmasi & Simpan' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1217,6 +1387,7 @@ const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 const originalAmount = ref(null);
 const showTutorial = ref(false);
+const showPreviewModal = ref(false);
 const paymentInfo = ref({
   total_paid: 0,
   remaining: 0,
@@ -1607,7 +1778,7 @@ async function selectPR(pr) {
 }
 
 
-function submitForm() {
+function showPreview() {
   // Validate that at least one transaction is selected
   if (!form.purchase_order_ops_id && !form.purchase_requisition_id) {
     import('sweetalert2').then(({ default: Swal }) => {
@@ -1660,7 +1831,13 @@ function submitForm() {
     }
   }
 
+  // Show preview modal
+  showPreviewModal.value = true;
+}
+
+function confirmSubmit() {
   isSubmitting.value = true;
+  showPreviewModal.value = false;
 
   // Convert outletPayments object to array, remove selectedBank (only send bank_id)
   const outletPaymentsArray = Object.values(outletPayments.value)
