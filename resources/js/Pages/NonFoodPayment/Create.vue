@@ -654,18 +654,25 @@
               </select>
             </div>
 
-            <!-- Bank Selection (hanya muncul jika Transfer atau Check) -->
-            <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'">
+            <!-- Bank Selection (DISABLED - sekarang bank dipilih per outlet) -->
+            <!-- <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'" class="md:col-span-2">
               <label class="block text-sm font-medium text-gray-700 mb-2">
+                <i class="fa fa-university mr-1"></i>
                 Pilih Bank <span class="text-red-500">*</span>
               </label>
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                <p class="text-xs text-blue-800 mb-2">
+                  <i class="fa fa-info-circle mr-1"></i>
+                  Pilih bank untuk metode pembayaran <strong>{{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</strong>
+                </p>
+              </div>
               <multiselect
                 v-model="selectedBank"
                 :options="banks"
                 :searchable="true"
                 :close-on-select="true"
                 :show-labels="false"
-                placeholder="Cari dan pilih bank..."
+                placeholder="Cari dan pilih bank (ketik untuk mencari)..."
                 label="display_name"
                 track-by="id"
                 @select="onBankSelect"
@@ -680,8 +687,15 @@
                   <span>Tidak ada bank ditemukan</span>
                 </template>
               </multiselect>
-              <p class="mt-1 text-xs text-gray-500">Cari dan pilih bank dari master data bank untuk {{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</p>
-            </div>
+              <p class="mt-2 text-xs text-gray-600">
+                <i class="fa fa-lightbulb mr-1"></i>
+                Format: <strong>Bank Name - Account Number (Account Name) - Outlet Name</strong>
+              </p>
+              <p v-if="selectedBank" class="mt-1 text-xs text-green-600">
+                <i class="fa fa-check-circle mr-1"></i>
+                Bank terpilih: <strong>{{ selectedBank.display_name }}</strong>
+              </p>
+            </div> -->
 
             <!-- Payment Date -->
             <div>
@@ -736,6 +750,113 @@
               class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
               placeholder="Catatan tambahan"
             ></textarea>
+          </div>
+        </div>
+
+        <!-- Payment Per Outlet -->
+        <div v-if="itemsByOutlet && Object.keys(itemsByOutlet).length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4">Pembayaran Per Outlet</h2>
+          <p class="text-sm text-gray-600 mb-4">
+            <i class="fa fa-info-circle mr-1"></i>
+            Input jumlah pembayaran untuk setiap outlet. Default diisi dari subtotal items per outlet, namun dapat diubah sesuai kebutuhan.
+            <span v-if="form.payment_method === 'transfer' || form.payment_method === 'check'" class="block mt-2 text-blue-600">
+              <i class="fa fa-university mr-1"></i>
+              <strong>Penting:</strong> Pilih bank untuk setiap outlet dengan metode pembayaran <strong>{{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</strong>.
+            </span>
+          </p>
+          
+          <div class="space-y-4">
+            <div v-for="(outletData, outletKey) in itemsByOutlet" :key="outletKey" class="border border-gray-200 rounded-lg p-4">
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex-1">
+                  <h3 class="text-lg font-semibold text-gray-900">{{ outletData.outlet_name || 'Global / All Outlets' }}</h3>
+                  <div class="text-sm text-gray-600 mt-1">
+                    <span v-if="outletData.category_name" class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs mr-2">
+                      Category: {{ outletData.category_name }}
+                    </span>
+                    <span class="text-gray-500">Subtotal: {{ formatCurrency(outletData.subtotal) }}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Jumlah Pembayaran untuk Outlet Ini <span class="text-red-500">*</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    v-model="outletPayments[outletKey].amount" 
+                    step="0.01"
+                    :min="0"
+                    required 
+                    class="w-full px-4 py-2 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+                    placeholder="0.00"
+                    @input="updateTotalAmount"
+                  />
+                  <p class="mt-1 text-xs text-gray-500">
+                    Default: {{ formatCurrency(outletData.default_amount || outletData.subtotal) }}
+                  </p>
+                </div>
+                <div class="flex items-end">
+                  <button
+                    type="button"
+                    @click="resetOutletAmount(outletKey, outletData.default_amount || outletData.subtotal)"
+                    class="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition"
+                  >
+                    <i class="fa fa-undo mr-1"></i>
+                    Reset ke Default
+                  </button>
+                </div>
+              </div>
+
+              <!-- Bank Selection per Outlet (hanya muncul jika Transfer atau Check) -->
+              <div v-if="form.payment_method === 'transfer' || form.payment_method === 'check'" class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <i class="fa fa-university mr-1"></i>
+                  Pilih Bank untuk Outlet Ini <span class="text-red-500">*</span>
+                </label>
+                <multiselect
+                  v-model="outletPayments[outletKey].selectedBank"
+                  :options="banks"
+                  :searchable="true"
+                  :close-on-select="true"
+                  :show-labels="false"
+                  placeholder="Cari dan pilih bank untuk outlet ini..."
+                  label="display_name"
+                  track-by="id"
+                  @select="(bank) => onOutletBankSelect(outletKey, bank)"
+                  @remove="() => onOutletBankRemove(outletKey)"
+                  class="w-full"
+                  required
+                >
+                  <template #noOptions>
+                    <span>Tidak ada bank ditemukan</span>
+                  </template>
+                  <template #noResult>
+                    <span>Tidak ada bank ditemukan</span>
+                  </template>
+                </multiselect>
+                <p class="mt-1 text-xs text-gray-500">
+                  Pilih bank untuk metode pembayaran <strong>{{ form.payment_method === 'transfer' ? 'Transfer' : 'Check' }}</strong> di outlet ini
+                </p>
+                <p v-if="outletPayments[outletKey].selectedBank" class="mt-1 text-xs text-green-600">
+                  <i class="fa fa-check-circle mr-1"></i>
+                  Bank terpilih: <strong>{{ outletPayments[outletKey].selectedBank.display_name }}</strong>
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div class="flex justify-between items-center">
+              <span class="text-sm font-medium text-gray-700">Total Pembayaran Semua Outlet:</span>
+              <span class="text-lg font-bold text-blue-600">{{ formatCurrency(totalOutletPayments) }}</span>
+            </div>
+            <p class="text-xs text-gray-600 mt-2">
+              <i class="fa fa-info-circle mr-1"></i>
+              Total ini akan otomatis terisi ke field Amount di atas. Anda juga bisa mengubah Amount secara manual.
+            </p>
           </div>
         </div>
 
@@ -1102,6 +1223,8 @@ const paymentInfo = ref({
   payment_count: 0
 });
 
+const outletPayments = ref({});
+
 const form = reactive({
   purchase_order_ops_id: null,
   purchase_requisition_id: null,
@@ -1116,6 +1239,59 @@ const form = reactive({
   notes: '',
   is_partial_payment: false
 });
+
+// Computed total dari semua outlet payments
+const totalOutletPayments = computed(() => {
+  return Object.values(outletPayments.value).reduce((sum, outlet) => {
+    return sum + (parseFloat(outlet.amount) || 0);
+  }, 0);
+});
+
+// Function untuk update total amount dari outlet payments
+function updateTotalAmount() {
+  form.amount = totalOutletPayments.value;
+}
+
+// Function untuk reset outlet amount ke default
+function resetOutletAmount(outletKey, defaultAmount) {
+  if (outletPayments.value[outletKey]) {
+    outletPayments.value[outletKey].amount = defaultAmount;
+    updateTotalAmount();
+  }
+}
+
+// Function untuk initialize outlet payments dari itemsByOutlet
+function initializeOutletPayments() {
+  outletPayments.value = {};
+  if (itemsByOutlet.value && Object.keys(itemsByOutlet.value).length > 0) {
+    Object.keys(itemsByOutlet.value).forEach(outletKey => {
+      const outletData = itemsByOutlet.value[outletKey];
+      outletPayments.value[outletKey] = {
+        outlet_id: outletData.outlet_id || null,
+        category_id: outletData.category_id || null,
+        amount: outletData.default_amount || outletData.subtotal || 0,
+        bank_id: null,
+        selectedBank: null
+      };
+    });
+    // Set form.amount dari total outlet payments
+    form.amount = totalOutletPayments.value;
+  }
+}
+
+// Function untuk handle bank selection per outlet
+function onOutletBankSelect(outletKey, bank) {
+  if (bank && bank.id) {
+    outletPayments.value[outletKey].bank_id = bank.id;
+    outletPayments.value[outletKey].selectedBank = bank;
+  }
+}
+
+// Function untuk handle bank removal per outlet
+function onOutletBankRemove(outletKey) {
+  outletPayments.value[outletKey].bank_id = null;
+  outletPayments.value[outletKey].selectedBank = null;
+}
 
 // Transform banks untuk multiselect dengan display name yang include outlet
 const banks = computed(() => {
@@ -1246,6 +1422,7 @@ function resetSelection() {
   itemsByOutlet.value = {};
   poAttachments.value = [];
   prAttachments.value = [];
+  outletPayments.value = {};
   form.purchase_order_ops_id = null;
   form.purchase_requisition_id = null;
   form.supplier_id = '';
@@ -1304,6 +1481,9 @@ async function selectPO(po) {
     itemsByOutlet.value = response.data.items_by_outlet || {};
     poAttachments.value = response.data.po_attachments || [];
     prAttachments.value = [];
+    
+    // Initialize outlet payments dari itemsByOutlet
+    initializeOutletPayments();
     
     // Update PO with discount info from API
     if (response.data.po_discount_info) {
@@ -1403,6 +1583,9 @@ async function selectPR(pr) {
     prAttachments.value = response.data.pr_attachments || [];
     poAttachments.value = [];
     
+    // Initialize outlet payments dari itemsByOutlet
+    initializeOutletPayments();
+    
     // Update amount with total from API if available, and save as original
     if (response.data.total_amount) {
       form.amount = response.data.total_amount;
@@ -1462,9 +1645,40 @@ function submitForm() {
     }
   }
 
+  // Validate bank per outlet if payment method is transfer or check
+  if (form.payment_method === 'transfer' || form.payment_method === 'check') {
+    const outletsWithoutBank = Object.keys(outletPayments.value).filter(outletKey => {
+      const outlet = outletPayments.value[outletKey];
+      return outlet.amount && parseFloat(outlet.amount) > 0 && !outlet.bank_id;
+    });
+    
+    if (outletsWithoutBank.length > 0) {
+      import('sweetalert2').then(({ default: Swal }) => {
+        Swal.fire('Error', 'Semua outlet yang memiliki jumlah pembayaran harus memiliki bank yang dipilih untuk metode pembayaran ' + form.payment_method + '.', 'error');
+      });
+      return;
+    }
+  }
+
   isSubmitting.value = true;
 
-  router.post('/non-food-payments', form, {
+  // Convert outletPayments object to array, remove selectedBank (only send bank_id)
+  const outletPaymentsArray = Object.values(outletPayments.value)
+    .filter(outlet => outlet.amount && parseFloat(outlet.amount) > 0)
+    .map(outlet => ({
+      outlet_id: outlet.outlet_id,
+      category_id: outlet.category_id,
+      amount: outlet.amount,
+      bank_id: outlet.bank_id || null
+    }));
+
+  // Prepare form data with outlet_payments
+  const formData = {
+    ...form,
+    outlet_payments: outletPaymentsArray.length > 0 ? outletPaymentsArray : null
+  };
+
+  router.post('/non-food-payments', formData, {
     onSuccess: () => {
       import('sweetalert2').then(({ default: Swal }) => {
         Swal.fire('Berhasil', 'Non Food Payment berhasil dibuat!', 'success');

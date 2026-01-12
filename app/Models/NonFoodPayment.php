@@ -98,6 +98,11 @@ class NonFoodPayment extends Model
         return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
     }
 
+    public function paymentOutlets()
+    {
+        return $this->hasMany(NonFoodPaymentOutlet::class);
+    }
+
     // Scopes
     public function scopeByStatus($query, $status)
     {
