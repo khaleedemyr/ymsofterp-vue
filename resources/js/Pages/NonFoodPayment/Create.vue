@@ -891,13 +891,14 @@
     </div>
 
     <!-- Preview Modal -->
-    <div v-if="showPreviewModal" class="fixed inset-0 z-50 overflow-y-auto" @click.self="showPreviewModal = false">
-      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        <!-- Background overlay -->
-        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" @click="showPreviewModal = false"></div>
-
+    <div v-if="showPreviewModal" class="fixed inset-0 z-50 overflow-y-auto">
+      <!-- Background overlay -->
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="showPreviewModal = false" style="z-index: 1;"></div>
+      
+      <!-- Modal container -->
+      <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0 relative" style="z-index: 2;">
         <!-- Modal panel -->
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full relative" @click.stop>
           <!-- Header -->
           <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex items-center justify-between">
             <h3 class="text-lg font-semibold text-white">
@@ -1040,14 +1041,14 @@
           <!-- Footer -->
           <div class="bg-gray-50 px-6 py-4 flex justify-between">
             <button
-              @click="showPreviewModal = false"
+              @click.stop="showPreviewModal = false"
               class="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
             >
               <i class="fa fa-times mr-2"></i>
               Batal
             </button>
             <button
-              @click="confirmSubmit"
+              @click.stop="confirmSubmit"
               :disabled="isSubmitting"
               class="px-6 py-2 bg-gradient-to-r from-green-500 to-green-700 text-white rounded-md hover:from-green-600 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1319,7 +1320,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Multiselect from 'vue-multiselect';
@@ -1863,8 +1864,53 @@ function confirmSubmit() {
     },
     onError: (errors) => {
       console.error('Validation errors:', errors);
+      console.error('Form data:', formData);
+      
       import('sweetalert2').then(({ default: Swal }) => {
-        Swal.fire('Error', 'Gagal membuat Non Food Payment. Periksa data yang diinput.', 'error');
+        // Get error message from server response
+        let errorMessage = 'Gagal membuat Non Food Payment. Periksa data yang diinput.';
+        let errorDetails = [];
+        
+        // Check if there's a specific error message
+        if (errors && typeof errors === 'object') {
+          // Collect all error messages
+          Object.keys(errors).forEach(key => {
+            const errorValue = errors[key];
+            if (Array.isArray(errorValue) && errorValue.length > 0) {
+              errorDetails.push(`${key}: ${errorValue[0]}`);
+            } else if (typeof errorValue === 'string') {
+              errorDetails.push(`${key}: ${errorValue}`);
+            }
+          });
+          
+          if (errorDetails.length > 0) {
+            errorMessage = errorDetails.join('\n');
+          } else {
+            // Get first error message
+            const firstError = Object.values(errors)[0];
+            if (Array.isArray(firstError) && firstError.length > 0) {
+              errorMessage = firstError[0];
+            } else if (typeof firstError === 'string') {
+              errorMessage = firstError;
+            }
+          }
+        } else if (typeof errors === 'string') {
+          errorMessage = errors;
+        }
+        
+        // Check for error in page props (Laravel flash message)
+        const page = usePage();
+        if (page.props?.error) {
+          errorMessage = page.props.error;
+        }
+        
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          html: errorMessage.replace(/\n/g, '<br>'),
+          confirmButtonText: 'OK',
+          width: '600px'
+        });
       });
     },
     onFinish: () => {

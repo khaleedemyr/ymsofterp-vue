@@ -1132,6 +1132,8 @@ class NonFoodPaymentController extends Controller
 
     public function store(Request $request)
     {
+        \Log::info('NonFoodPaymentController@store - Input', $request->all());
+        
         // Determine if supplier_id is required based on payment mode
         $supplierRequired = true;
         if ($request->purchase_requisition_id) {
@@ -1170,7 +1172,15 @@ class NonFoodPaymentController extends Controller
             $validationRules['supplier_id'] = 'nullable|exists:suppliers,id';
         }
         
-        $request->validate($validationRules);
+        try {
+            $request->validate($validationRules);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('NonFoodPaymentController@store - Validation failed', [
+                'errors' => $e->errors(),
+                'request' => $request->all()
+            ]);
+            return back()->withErrors($e->errors())->withInput();
+        }
 
         // Validate that at least one transaction is selected
         if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id) && empty($request->retail_non_food_id)) {
@@ -1355,13 +1365,21 @@ class NonFoodPaymentController extends Controller
             }
 
             DB::commit();
+            \Log::info('NonFoodPaymentController@store - Success', ['payment_id' => $payment->id]);
 
             return redirect()->route('non-food-payments.index')
                 ->with('success', 'Non Food Payment berhasil dibuat.');
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollback();
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             DB::rollback();
-            return back()->with('error', 'Gagal membuat Non Food Payment: ' . $e->getMessage());
+            Log::error('Error creating Non Food Payment: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return back()->with('error', 'Gagal membuat Non Food Payment: ' . $e->getMessage())->withInput();
         }
     }
 
