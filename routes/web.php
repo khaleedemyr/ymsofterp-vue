@@ -1178,6 +1178,18 @@ Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletIn
 Route::get('/monitoring/active-users', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'index'])->name('monitoring.active-users');
 Route::get('/api/monitoring/active-users/stats', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'getStats'])->name('api.monitoring.active-users.stats');
 
+// Server Performance Monitoring
+Route::middleware('auth')->group(function () {
+    Route::get('/monitoring/server-performance', [\App\Http\Controllers\MonitoringController::class, 'index'])->name('monitoring.server-performance');
+    Route::get('/api/monitoring/mysql-status', [\App\Http\Controllers\MonitoringController::class, 'getMySQLStatus'])->name('api.monitoring.mysql-status');
+    Route::get('/api/monitoring/mysql-processes', [\App\Http\Controllers\MonitoringController::class, 'getMySQLProcesses'])->name('api.monitoring.mysql-processes');
+    Route::get('/api/monitoring/slow-queries', [\App\Http\Controllers\MonitoringController::class, 'getSlowQueries'])->name('api.monitoring.slow-queries');
+    Route::get('/api/monitoring/slow-queries-summary', [\App\Http\Controllers\MonitoringController::class, 'getSlowQueriesSummary'])->name('api.monitoring.slow-queries-summary');
+    Route::get('/api/monitoring/table-stats', [\App\Http\Controllers\MonitoringController::class, 'getTableAccessStats'])->name('api.monitoring.table-stats');
+    Route::get('/api/monitoring/active-users', [\App\Http\Controllers\MonitoringController::class, 'getActiveUsers'])->name('api.monitoring.active-users');
+    Route::post('/api/monitoring/kill-process', [\App\Http\Controllers\MonitoringController::class, 'killProcess'])->name('api.monitoring.kill-process');
+});
+
 // Regional Routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/regional', [\App\Http\Controllers\RegionalController::class, 'index'])->name('regional.index');
