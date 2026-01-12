@@ -160,21 +160,26 @@ class BankBookService
 
     /**
      * Create bank book entry from food payment
-     * Note: Food Payment only has bank_id (sender bank), no receiver_bank_id
+     * Now supports per-outlet payments with per-outlet bank selection
      *
      * @param \App\Models\FoodPayment $foodPayment
-     * @return BankBook|null
+     * @return array|null Returns array of created BankBook entries or null
      */
-    public function createFromFoodPayment($foodPayment): ?BankBook
+    public function createFromFoodPayment($foodPayment): ?array
     {
-        // Only create entry if payment type is Transfer or Giro and has bank_id
-        if (!in_array($foodPayment->payment_type, ['Transfer', 'Giro']) || !$foodPayment->bank_id) {
+        // Only create entry if payment type is Transfer or Giro
+        if (!in_array($foodPayment->payment_type, ['Transfer', 'Giro'])) {
             return null;
         }
 
         // Only create if status is paid
         if ($foodPayment->status !== 'paid') {
             return null;
+        }
+
+        // Load payment outlets relationship
+        if (!$foodPayment->relationLoaded('paymentOutlets')) {
+            $foodPayment->load('paymentOutlets.outlet');
         }
 
         // Check if already exists in bank book to avoid duplicate
@@ -188,23 +193,70 @@ class BankBookService
         }
 
         try {
-            $data = [
-                'bank_account_id' => $foodPayment->bank_id,
-                'transaction_date' => $foodPayment->date,
-                'transaction_type' => 'debit', // Food payment is money going out from bank
-                'amount' => $foodPayment->total,
-                'description' => "Food Payment: {$foodPayment->number}" . 
-                    ($foodPayment->notes ? " - {$foodPayment->notes}" : ''),
-                'reference_type' => 'food_payment',
-                'reference_id' => $foodPayment->id,
-            ];
+            $entries = [];
+            $recalculateBanks = []; // Track which banks need recalculation
 
-            $bankBook = $this->createEntryWithoutTransaction($data);
-            
-            // Recalculate balance for this bank account
-            BankBook::recalculateBalance($foodPayment->bank_id, $foodPayment->date);
+            // If payment has outlet payments, create entry per outlet
+            if ($foodPayment->paymentOutlets && $foodPayment->paymentOutlets->count() > 0) {
+                foreach ($foodPayment->paymentOutlets as $outletPayment) {
+                    // Only create entry if outlet payment has bank_id and amount > 0
+                    if (!$outletPayment->bank_id || $outletPayment->amount <= 0) {
+                        continue;
+                    }
 
-            return $bankBook;
+                    $outletName = $outletPayment->outlet ? $outletPayment->outlet->nama_outlet : 'Global';
+                    
+                    $data = [
+                        'bank_account_id' => $outletPayment->bank_id,
+                        'transaction_date' => $foodPayment->date,
+                        'transaction_type' => 'debit', // Food payment is money going out from bank
+                        'amount' => $outletPayment->amount,
+                        'description' => "Food Payment: {$foodPayment->number} - Outlet: {$outletName}" . 
+                            ($foodPayment->notes ? " - {$foodPayment->notes}" : ''),
+                        'reference_type' => 'food_payment',
+                        'reference_id' => $foodPayment->id,
+                    ];
+
+                    $entries[] = $this->createEntryWithoutTransaction($data);
+                    
+                    // Track bank for recalculation
+                    $key = $outletPayment->bank_id . '_' . $foodPayment->date->format('Y-m-d');
+                    if (!isset($recalculateBanks[$key])) {
+                        $recalculateBanks[$key] = [
+                            'bank_account_id' => $outletPayment->bank_id,
+                            'transaction_date' => $foodPayment->date,
+                        ];
+                    }
+                }
+            } 
+            // Fallback: if no outlet payments but has main bank_id (backward compatibility)
+            elseif ($foodPayment->bank_id) {
+                $data = [
+                    'bank_account_id' => $foodPayment->bank_id,
+                    'transaction_date' => $foodPayment->date,
+                    'transaction_type' => 'debit', // Food payment is money going out from bank
+                    'amount' => $foodPayment->total,
+                    'description' => "Food Payment: {$foodPayment->number}" . 
+                        ($foodPayment->notes ? " - {$foodPayment->notes}" : ''),
+                    'reference_type' => 'food_payment',
+                    'reference_id' => $foodPayment->id,
+                ];
+
+                $entries[] = $this->createEntryWithoutTransaction($data);
+                
+                $key = $foodPayment->bank_id . '_' . $foodPayment->date->format('Y-m-d');
+                $recalculateBanks[$key] = [
+                    'bank_account_id' => $foodPayment->bank_id,
+                    'transaction_date' => $foodPayment->date,
+                ];
+            }
+
+            // Recalculate balance for all affected banks
+            foreach ($recalculateBanks as $bankData) {
+                BankBook::recalculateBalance($bankData['bank_account_id'], $bankData['transaction_date']);
+            }
+
+            return !empty($entries) ? $entries : null;
         } catch (\Exception $e) {
             Log::error('BankBookService::createFromFoodPayment failed', [
                 'error' => $e->getMessage(),
@@ -216,20 +268,26 @@ class BankBookService
 
     /**
      * Create bank book entry from non food payment
+     * Now supports per-outlet payments with per-outlet bank selection
      *
      * @param \App\Models\NonFoodPayment $nonFoodPayment
-     * @return BankBook|null
+     * @return array|null Returns array of created BankBook entries or null
      */
-    public function createFromNonFoodPayment($nonFoodPayment): ?BankBook
+    public function createFromNonFoodPayment($nonFoodPayment): ?array
     {
-        // Only create entry if payment method is transfer or check and has bank_id
-        if (!in_array($nonFoodPayment->payment_method, ['transfer', 'check']) || !$nonFoodPayment->bank_id) {
+        // Only create entry if payment method is transfer or check
+        if (!in_array($nonFoodPayment->payment_method, ['transfer', 'check'])) {
             return null;
         }
 
         // Only create if status is paid
         if ($nonFoodPayment->status !== 'paid') {
             return null;
+        }
+
+        // Load payment outlets relationship
+        if (!$nonFoodPayment->relationLoaded('paymentOutlets')) {
+            $nonFoodPayment->load('paymentOutlets.outlet');
         }
 
         // Check if already exists in bank book to avoid duplicate
@@ -243,23 +301,70 @@ class BankBookService
         }
 
         try {
-            $data = [
-                'bank_account_id' => $nonFoodPayment->bank_id,
-                'transaction_date' => $nonFoodPayment->payment_date,
-                'transaction_type' => 'debit', // Non food payment is money going out
-                'amount' => $nonFoodPayment->amount,
-                'description' => "Non Food Payment: {$nonFoodPayment->payment_number}" . 
-                    ($nonFoodPayment->description ? " - {$nonFoodPayment->description}" : ''),
-                'reference_type' => 'non_food_payment',
-                'reference_id' => $nonFoodPayment->id,
-            ];
+            $entries = [];
+            $recalculateBanks = []; // Track which banks need recalculation
 
-            $bankBook = $this->createEntryWithoutTransaction($data);
-            
-            // Recalculate balance for this bank account
-            BankBook::recalculateBalance($nonFoodPayment->bank_id, $nonFoodPayment->payment_date);
+            // If payment has outlet payments, create entry per outlet
+            if ($nonFoodPayment->paymentOutlets && $nonFoodPayment->paymentOutlets->count() > 0) {
+                foreach ($nonFoodPayment->paymentOutlets as $outletPayment) {
+                    // Only create entry if outlet payment has bank_id and amount > 0
+                    if (!$outletPayment->bank_id || $outletPayment->amount <= 0) {
+                        continue;
+                    }
 
-            return $bankBook;
+                    $outletName = $outletPayment->outlet ? $outletPayment->outlet->nama_outlet : 'Global';
+                    
+                    $data = [
+                        'bank_account_id' => $outletPayment->bank_id,
+                        'transaction_date' => $nonFoodPayment->payment_date,
+                        'transaction_type' => 'debit', // Non food payment is money going out
+                        'amount' => $outletPayment->amount,
+                        'description' => "Non Food Payment: {$nonFoodPayment->payment_number} - Outlet: {$outletName}" . 
+                            ($nonFoodPayment->description ? " - {$nonFoodPayment->description}" : ''),
+                        'reference_type' => 'non_food_payment',
+                        'reference_id' => $nonFoodPayment->id,
+                    ];
+
+                    $entries[] = $this->createEntryWithoutTransaction($data);
+                    
+                    // Track bank for recalculation
+                    $key = $outletPayment->bank_id . '_' . $nonFoodPayment->payment_date->format('Y-m-d');
+                    if (!isset($recalculateBanks[$key])) {
+                        $recalculateBanks[$key] = [
+                            'bank_account_id' => $outletPayment->bank_id,
+                            'transaction_date' => $nonFoodPayment->payment_date,
+                        ];
+                    }
+                }
+            } 
+            // Fallback: if no outlet payments but has main bank_id (backward compatibility)
+            elseif ($nonFoodPayment->bank_id) {
+                $data = [
+                    'bank_account_id' => $nonFoodPayment->bank_id,
+                    'transaction_date' => $nonFoodPayment->payment_date,
+                    'transaction_type' => 'debit', // Non food payment is money going out
+                    'amount' => $nonFoodPayment->amount,
+                    'description' => "Non Food Payment: {$nonFoodPayment->payment_number}" . 
+                        ($nonFoodPayment->description ? " - {$nonFoodPayment->description}" : ''),
+                    'reference_type' => 'non_food_payment',
+                    'reference_id' => $nonFoodPayment->id,
+                ];
+
+                $entries[] = $this->createEntryWithoutTransaction($data);
+                
+                $key = $nonFoodPayment->bank_id . '_' . $nonFoodPayment->payment_date->format('Y-m-d');
+                $recalculateBanks[$key] = [
+                    'bank_account_id' => $nonFoodPayment->bank_id,
+                    'transaction_date' => $nonFoodPayment->payment_date,
+                ];
+            }
+
+            // Recalculate balance for all affected banks
+            foreach ($recalculateBanks as $bankData) {
+                BankBook::recalculateBalance($bankData['bank_account_id'], $bankData['transaction_date']);
+            }
+
+            return !empty($entries) ? $entries : null;
         } catch (\Exception $e) {
             Log::error('BankBookService::createFromNonFoodPayment failed', [
                 'error' => $e->getMessage(),

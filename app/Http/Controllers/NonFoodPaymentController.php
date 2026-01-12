@@ -1948,6 +1948,9 @@ class NonFoodPaymentController extends Controller
         try {
             DB::beginTransaction();
             
+            // Load payment outlets relationship before updating
+            $nonFoodPayment->load('paymentOutlets.outlet');
+            
             $nonFoodPayment->update([
                 'status' => 'paid',
             ]);

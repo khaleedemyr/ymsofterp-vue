@@ -442,6 +442,9 @@ class FoodPaymentController extends Controller
             
             DB::beginTransaction();
             
+            // Load payment outlets relationship before updating
+            $foodPayment->load('paymentOutlets.outlet');
+            
             $foodPayment->update([
                 'status' => 'paid'
             ]);
