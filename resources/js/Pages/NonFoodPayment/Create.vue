@@ -1855,6 +1855,11 @@ function confirmSubmit() {
     ...form,
     outlet_payments: outletPaymentsArray.length > 0 ? outletPaymentsArray : null
   };
+  
+  // If outlet_payments exist, remove bank_id from main level (bank_id is handled per outlet)
+  if (outletPaymentsArray.length > 0) {
+    delete formData.bank_id;
+  }
 
   router.post('/non-food-payments', formData, {
     onSuccess: () => {

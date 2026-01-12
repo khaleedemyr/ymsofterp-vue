@@ -1151,7 +1151,6 @@ class NonFoodPaymentController extends Controller
             'retail_non_food_id' => 'nullable|exists:retail_non_food,id',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,transfer,check',
-            'bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
             'payment_date' => 'required|date',
             'due_date' => 'nullable|date|after_or_equal:payment_date',
             'description' => 'nullable|string|max:1000',
@@ -1164,6 +1163,14 @@ class NonFoodPaymentController extends Controller
             'outlet_payments.*.amount' => 'required|numeric|min:0',
             'outlet_payments.*.bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
         ];
+        
+        // Bank_id validation: required at main level only if no outlet_payments
+        // If outlet_payments exist, bank_id is handled per outlet
+        if (empty($request->outlet_payments) || !is_array($request->outlet_payments) || count($request->outlet_payments) === 0) {
+            $validationRules['bank_id'] = 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id';
+        } else {
+            $validationRules['bank_id'] = 'nullable|exists:bank_accounts,id';
+        }
         
         // Add supplier_id validation based on requirement
         if ($supplierRequired) {
