@@ -38,6 +38,11 @@ class FoodPayment extends Model
         return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
     }
 
+    public function paymentOutlets()
+    {
+        return $this->hasMany(FoodPaymentOutlet::class);
+    }
+
     // Methods
     public function canBePaid()
     {
