@@ -219,7 +219,7 @@ class FoodPaymentController extends Controller
     // Show detail food payment
     public function show($id)
     {
-        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.outlet', 'paymentOutlets.outlet', 'paymentOutlets.bank'])->findOrFail($id);
+        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.warehouse', 'paymentOutlets.outlet', 'paymentOutlets.bank'])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information
         $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
@@ -252,10 +252,9 @@ class FoodPaymentController extends Controller
                 }
             } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Get outlet name for Warehouse Retail Food
-                if ($contraBon->warehouseRetailFood->outlet && $contraBon->warehouseRetailFood->outlet->nama_outlet) {
-                    $outletNames = [$contraBon->warehouseRetailFood->outlet->nama_outlet];
-                }
+                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
+                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
+                $outletNames = [];
             }
             
             $contraBon->source_type_display = $sourceTypeDisplay;
@@ -685,7 +684,7 @@ class FoodPaymentController extends Controller
             ->pluck('contra_bon_id')
             ->toArray();
         
-        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood.outlet', 'warehouseRetailFood.outlet'])
+        $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood.outlet', 'warehouseRetailFood.warehouse'])
             ->where('status', 'approved')
             ->whereNotIn('id', $paidContraBonIds);
         
@@ -732,23 +731,57 @@ class FoodPaymentController extends Controller
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
             
-            if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
-                if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
-                    $sourceTypeDisplay = 'PR Foods';
-                    // PR Foods tidak punya outlet (global)
-                    $outletNames = [];
-                } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
-                    $sourceTypeDisplay = 'RO Supplier';
-                    // Get outlet names for RO Supplier
-                    $outletData = \DB::table('food_floor_orders as fo')
-                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
-                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                        ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
-                        ->select('o.nama_outlet')
-                        ->distinct()
-                        ->get();
-                    
-                    $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+            // Auto-detect source_type jika null atau kosong
+            if (empty($contraBon->source_type) || $contraBon->source_type === null) {
+                // Coba detect dari po_id atau source_id
+                if ($contraBon->po_id) {
+                    $contraBon->source_type = 'purchase_order';
+                } elseif ($contraBon->source_id) {
+                    // Cek apakah ada di retail_food
+                    $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
+                    if ($retailFood) {
+                        $contraBon->source_type = 'retail_food';
+                    } else {
+                        // Cek warehouse_retail_food
+                        $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
+                        if ($warehouseRetailFood) {
+                            $contraBon->source_type = 'warehouse_retail_food';
+                        } else {
+                            // Cek retail_non_food
+                            $retailNonFood = \App\Models\RetailNonFood::find($contraBon->source_id);
+                            if ($retailNonFood) {
+                                $contraBon->source_type = 'retail_non_food';
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if ($contraBon->source_type === 'purchase_order') {
+                if ($contraBon->purchaseOrder) {
+                    if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
+                        $sourceTypeDisplay = 'PR Foods';
+                        // PR Foods tidak punya outlet (global)
+                        $outletNames = [];
+                    } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
+                        $sourceTypeDisplay = 'RO Supplier';
+                        // Get outlet names for RO Supplier
+                        $outletData = \DB::table('food_floor_orders as fo')
+                            ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                            ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
+                            ->select('o.nama_outlet')
+                            ->distinct()
+                            ->get();
+                        
+                        $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                    } else {
+                        // Purchase Order dengan source_type lain atau null
+                        $sourceTypeDisplay = 'Purchase Order';
+                    }
+                } else {
+                    // Purchase Order tidak ditemukan (po_id null atau invalid)
+                    $sourceTypeDisplay = 'Purchase Order';
                 }
             } elseif ($contraBon->source_type === 'retail_food') {
                 $sourceTypeDisplay = 'Retail Food';
@@ -762,11 +795,45 @@ class FoodPaymentController extends Controller
                         $outletNames = [$contraBon->retailFood->outlet->nama_outlet];
                     }
                 }
-            } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
-                $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Get outlet name for Warehouse Retail Food
-                if ($contraBon->warehouseRetailFood->outlet && $contraBon->warehouseRetailFood->outlet->nama_outlet) {
-                    $outletNames = [$contraBon->warehouseRetailFood->outlet->nama_outlet];
+            } elseif ($contraBon->source_type === 'warehouse_retail_food') {
+                if ($contraBon->warehouseRetailFood) {
+                    $sourceTypeDisplay = 'Warehouse Retail Food';
+                } else {
+                    $sourceTypeDisplay = 'Warehouse Retail Food';
+                }
+                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
+                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
+                $outletNames = [];
+            } elseif ($contraBon->source_type === 'retail_non_food') {
+                $sourceTypeDisplay = 'Retail Non Food';
+                $outletNames = [];
+            } else {
+                // Fallback untuk source_type yang tidak dikenal atau null
+                // Cek apakah ada po_id, source_id untuk determine type
+                if (empty($contraBon->source_type) || $contraBon->source_type === null) {
+                    if ($contraBon->po_id) {
+                        // Ada po_id tapi source_type null, assume purchase_order
+                        $sourceTypeDisplay = 'Purchase Order';
+                    } elseif ($contraBon->source_id) {
+                        // Ada source_id tapi source_type null, coba cek dari source_id
+                        // Cek apakah ada di retail_food
+                        $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
+                        if ($retailFood) {
+                            $sourceTypeDisplay = 'Retail Food';
+                        } else {
+                            // Cek warehouse_retail_food
+                            $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
+                            if ($warehouseRetailFood) {
+                                $sourceTypeDisplay = 'Warehouse Retail Food';
+                            } else {
+                                $sourceTypeDisplay = 'Unknown';
+                            }
+                        }
+                    } else {
+                        $sourceTypeDisplay = 'Unknown';
+                    }
+                } else {
+                    $sourceTypeDisplay = ucfirst(str_replace('_', ' ', $contraBon->source_type));
                 }
             }
             
@@ -781,7 +848,7 @@ class FoodPaymentController extends Controller
 
     public function edit($id)
     {
-        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.outlet'])->findOrFail($id);
+        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.warehouse'])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information (same as show)
         $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
@@ -814,10 +881,9 @@ class FoodPaymentController extends Controller
                 }
             } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Get outlet name for Warehouse Retail Food
-                if ($contraBon->warehouseRetailFood->outlet && $contraBon->warehouseRetailFood->outlet->nama_outlet) {
-                    $outletNames = [$contraBon->warehouseRetailFood->outlet->nama_outlet];
-                }
+                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
+                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
+                $outletNames = [];
             }
             
             $contraBon->source_type_display = $sourceTypeDisplay;
