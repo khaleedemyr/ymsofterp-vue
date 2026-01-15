@@ -560,13 +560,13 @@ const approvalDateFilter = ref('');
 const approvalSortBy = ref('newest');
 
 // Training invitations
-const trainingInvitations = ref([]);
-const loadingTrainingInvitations = ref(false);
+// const trainingInvitations = ref([]);
+// const loadingTrainingInvitations = ref(false);
 
 // Available trainings
-const availableTrainings = ref([]);
-const loadingAvailableTrainings = ref(false);
-const showAvailableTrainingsModal = ref(false);
+// const availableTrainings = ref([]);
+// const loadingAvailableTrainings = ref(false);
+// const showAvailableTrainingsModal = ref(false);
 
 // Active sanctions
 const activeSanctions = ref([]);
@@ -577,53 +577,53 @@ const pendingCoachingApprovals = ref([]);
 const loadingCoachingApprovals = ref(false);
 
 // Training detail modal
-const showTrainingDetailModal = ref(false);
-const selectedTrainingDetail = ref(null);
-const refreshingTrainingDetail = ref(false);
+// const showTrainingDetailModal = ref(false);
+// const selectedTrainingDetail = ref(null);
+// const refreshingTrainingDetail = ref(false);
 
 // Training check-in QR scanner
-const showTrainingCheckInModal = ref(false);
-const showCamera = ref(false);
-const qrCodeInput = ref('');
-const isProcessingCheckIn = ref(false);
-const checkInStatusMessage = ref('');
-let html5QrCode = null;
-const cameras = ref([]);
-const selectedCameraId = ref('');
+// const showTrainingCheckInModal = ref(false);
+// const showCamera = ref(false);
+// const qrCodeInput = ref('');
+// const isProcessingCheckIn = ref(false);
+// const checkInStatusMessage = ref('');
+// let html5QrCode = null;
+// const cameras = ref([]);
+// const selectedCameraId = ref('');
 
 // Training check-out QR scanner
-const showTrainingCheckOutModal = ref(false);
-const showCheckOutCamera = ref(false);
-const qrCodeCheckOutInput = ref('');
-const isProcessingCheckOut = ref(false);
-const checkOutStatusMessage = ref('');
-let html5QrCodeCheckOut = null;
-const checkOutCameras = ref([]);
-const selectedCheckOutCameraId = ref('');
+// const showTrainingCheckOutModal = ref(false);
+// const showCheckOutCamera = ref(false);
+// const qrCodeCheckOutInput = ref('');
+// const isProcessingCheckOut = ref(false);
+// const checkOutStatusMessage = ref('');
+// let html5QrCodeCheckOut = null;
+// const checkOutCameras = ref([]);
+// const selectedCheckOutCameraId = ref('');
 
 // Training review modal
-const showTrainingReviewModal = ref(false);
-const isSubmittingReview = ref(false);
-const reviewForm = ref({
-    trainer_id: null,
-    // Trainer ratings
-    trainer_mastery: 5,
-    trainer_language: 5,
-    trainer_intonation: 5,
-    trainer_presentation: 5,
-    trainer_qna: 5,
-    // Training material ratings
-    material_benefit: 5,
-    material_clarity: 5,
-    material_display: 5,
-    material_suggestions: '',
-    material_needs: ''
-});
+// const showTrainingReviewModal = ref(false);
+// const isSubmittingReview = ref(false);
+// const reviewForm = ref({
+//     trainer_id: null,
+//     // Trainer ratings
+//     trainer_mastery: 5,
+//     trainer_language: 5,
+//     trainer_intonation: 5,
+//     trainer_presentation: 5,
+//     trainer_qna: 5,
+//     // Training material ratings
+//     material_benefit: 5,
+//     material_clarity: 5,
+//     material_display: 5,
+//     material_suggestions: '',
+//     material_needs: ''
+// });
 
 // Training history modal
-const showTrainingHistoryModal = ref(false);
-const trainingHistory = ref([]);
-const loadingTrainingHistory = ref(false);
+// const showTrainingHistoryModal = ref(false);
+// const trainingHistory = ref([]);
+// const loadingTrainingHistory = ref(false);
 
 // Computed property for development mode
 const isDevelopment = computed(() => {
@@ -631,23 +631,23 @@ const isDevelopment = computed(() => {
 });
 
 // Computed property to check if all session items are completed
-const allSessionItemsCompleted = computed(() => {
-    if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
-        return false;
-    }
-    
-    // Check if all sessions have all their items completed
-    return selectedTrainingDetail.value.sessions.every(session => {
-        if (!session.items || session.items.length === 0) {
-            return true; // No items means completed
-        }
-        
-        // Check if all items in this session are completed
-        return session.items.every(item => {
-            return item.is_completed && item.completion_status;
-        });
-    });
-});
+// const allSessionItemsCompleted = computed(() => {
+//     if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
+//         return false;
+//     }
+//     
+//     // Check if all sessions have all their items completed
+//     return selectedTrainingDetail.value.sessions.every(session => {
+//         if (!session.items || session.items.length === 0) {
+//             return true; // No items means completed
+//         }
+//         
+//         // Check if all items in this session are completed
+//         return session.items.every(item => {
+//             return item.is_completed && item.completion_status;
+//         });
+//     });
+// });
 
 
 // Announcements modal
@@ -719,20 +719,20 @@ const contraBonApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
-const availableTrainingsStats = computed(() => {
-    const total = availableTrainings.value.length;
-    const completed = availableTrainings.value.filter(t => t.is_completed).length;
-    const invited = availableTrainings.value.filter(t => t.participation_status === 'invited').length;
-    const available = availableTrainings.value.filter(t => t.participation_status === 'available').length;
-    
-    return {
-        total,
-        completed,
-        invited,
-        available,
-        completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
-    };
-});
+// const availableTrainingsStats = computed(() => {
+//     const total = availableTrainings.value.length;
+//     const completed = availableTrainings.value.filter(t => t.is_completed).length;
+//     const invited = availableTrainings.value.filter(t => t.participation_status === 'invited').length;
+//     const available = availableTrainings.value.filter(t => t.participation_status === 'available').length;
+//     
+//     return {
+//         total,
+//         completed,
+//         invited,
+//         available,
+//         completionRate: total > 0 ? Math.round((completed / total) * 100) : 0
+//     };
+// });
 
 // Computed property for filtered approvals
 const filteredApprovals = computed(() => {
@@ -2879,147 +2879,147 @@ async function handleRejectionAction(approval) {
 }
 
 // Training invitation functions
-async function loadTrainingInvitations() {
-    loadingTrainingInvitations.value = true;
-    try {
-        const response = await axios.get('/lms/training-notifications');
-        if (response.data.success) {
-            trainingInvitations.value = response.data.notifications;
-        }
-    } catch (error) {
-        console.error('Error loading training invitations:', error);
-    } finally {
-        loadingTrainingInvitations.value = false;
-    }
-}
+// async function loadTrainingInvitations() {
+//     loadingTrainingInvitations.value = true;
+//     try {
+//         const response = await axios.get('/lms/training-notifications');
+//         if (response.data.success) {
+//             trainingInvitations.value = response.data.notifications;
+//         }
+//     } catch (error) {
+//         console.error('Error loading training invitations:', error);
+//     } finally {
+//         loadingTrainingInvitations.value = false;
+//     }
+// }
 
 // Available trainings functions
-async function loadAvailableTrainings() {
-    loadingAvailableTrainings.value = true;
-    try {
-        const response = await axios.get('/lms/available-trainings');
-        if (response.data.success) {
-            availableTrainings.value = response.data.courses;
-        } else {
-            console.error('API returned success: false', response.data);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: response.data.message || 'Gagal memuat training yang tersedia'
-            });
-        }
-    } catch (error) {
-        console.error('Error loading available trainings:', error);
-        console.error('Error response:', error.response?.data);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: error.response?.data?.message || 'Gagal memuat training yang tersedia'
-        });
-    } finally {
-        loadingAvailableTrainings.value = false;
-    }
-}
+// async function loadAvailableTrainings() {
+//     loadingAvailableTrainings.value = true;
+//     try {
+//         const response = await axios.get('/lms/available-trainings');
+//         if (response.data.success) {
+//             availableTrainings.value = response.data.courses;
+//         } else {
+//             console.error('API returned success: false', response.data);
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Error!',
+//                 text: response.data.message || 'Gagal memuat training yang tersedia'
+//             });
+//         }
+//     } catch (error) {
+//         console.error('Error loading available trainings:', error);
+//         console.error('Error response:', error.response?.data);
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: error.response?.data?.message || 'Gagal memuat training yang tersedia'
+//         });
+//     } finally {
+//         loadingAvailableTrainings.value = false;
+//     }
+// }
 
-function openAvailableTrainingsModal() {
-    showAvailableTrainingsModal.value = true;
-    if (availableTrainings.value.length === 0) {
-        loadAvailableTrainings();
-    }
-}
+// function openAvailableTrainingsModal() {
+//     showAvailableTrainingsModal.value = true;
+//     if (availableTrainings.value.length === 0) {
+//         loadAvailableTrainings();
+//     }
+// }
 
-function closeAvailableTrainingsModal() {
-    showAvailableTrainingsModal.value = false;
-}
+// function closeAvailableTrainingsModal() {
+//     showAvailableTrainingsModal.value = false;
+// }
 
-function getTrainingStatusBadge(training) {
-    if (training.is_completed) {
-        return {
-            text: 'Selesai',
-            class: 'bg-green-100 text-green-800 border-green-200',
-            icon: 'fa-check-circle'
-        };
-    } else if (training.participation_status === 'invited') {
-        const hasCheckedIn = training.current_invitations.some(inv => inv.is_checked_in);
-        const hasCheckedOut = training.current_invitations.some(inv => inv.is_checked_out);
-        
-        if (hasCheckedOut) {
-            return {
-                text: 'Selesai',
-                class: 'bg-green-100 text-green-800 border-green-200',
-                icon: 'fa-check-circle'
-            };
-        } else if (hasCheckedIn) {
-            return {
-                text: 'Sedang Berlangsung',
-                class: 'bg-blue-100 text-blue-800 border-blue-200',
-                icon: 'fa-play-circle'
-            };
-        } else {
-            return {
-                text: 'Diundang',
-                class: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-                icon: 'fa-clock'
-            };
-        }
-    } else {
-        return {
-            text: 'Tersedia',
-            class: 'bg-gray-100 text-gray-800 border-gray-200',
-            icon: 'fa-book'
-        };
-    }
-}
+// function getTrainingStatusBadge(training) {
+//     if (training.is_completed) {
+//         return {
+//             text: 'Selesai',
+//             class: 'bg-green-100 text-green-800 border-green-200',
+//             icon: 'fa-check-circle'
+//         };
+//     } else if (training.participation_status === 'invited') {
+//         const hasCheckedIn = training.current_invitations.some(inv => inv.is_checked_in);
+//         const hasCheckedOut = training.current_invitations.some(inv => inv.is_checked_out);
+//         
+//         if (hasCheckedOut) {
+//             return {
+//                 text: 'Selesai',
+//                 class: 'bg-green-100 text-green-800 border-green-200',
+//                 icon: 'fa-check-circle'
+//             };
+//         } else if (hasCheckedIn) {
+//             return {
+//                 text: 'Sedang Berlangsung',
+//                 class: 'bg-blue-100 text-blue-800 border-blue-200',
+//                 icon: 'fa-play-circle'
+//             };
+//         } else {
+//             return {
+//                 text: 'Diundang',
+//                 class: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+//                 icon: 'fa-clock'
+//             };
+//         }
+//     } else {
+//         return {
+//             text: 'Tersedia',
+//             class: 'bg-gray-100 text-gray-800 border-gray-200',
+//             icon: 'fa-book'
+//         };
+//     }
+// }
 
-function getTargetDisplayText(training) {
-    const targets = [];
-    
-    if (training.target_info.type === 'all') {
-        targets.push('Semua Karyawan');
-    } else {
-        if (training.target_info.divisions.length > 0) {
-            targets.push(`Divisi: ${training.target_info.divisions.join(', ')}`);
-        }
-        if (training.target_info.jabatans.length > 0) {
-            targets.push(`Jabatan: ${training.target_info.jabatans.join(', ')}`);
-        }
-        if (training.target_info.outlets.length > 0) {
-            targets.push(`Outlet: ${training.target_info.outlets.join(', ')}`);
-        }
-    }
-    
-    return targets.length > 0 ? targets.join(' • ') : 'Tidak ada target spesifik';
-}
+// function getTargetDisplayText(training) {
+//     const targets = [];
+//     
+//     if (training.target_info.type === 'all') {
+//         targets.push('Semua Karyawan');
+//     } else {
+//         if (training.target_info.divisions.length > 0) {
+//             targets.push(`Divisi: ${training.target_info.divisions.join(', ')}`);
+//         }
+//         if (training.target_info.jabatans.length > 0) {
+//             targets.push(`Jabatan: ${training.target_info.jabatans.join(', ')}`);
+//         }
+//         if (training.target_info.outlets.length > 0) {
+//             targets.push(`Outlet: ${training.target_info.outlets.join(', ')}`);
+//         }
+//     }
+//     
+//     return targets.length > 0 ? targets.join(' • ') : 'Tidak ada target spesifik';
+// }
 
 // Training history functions
-async function loadTrainingHistory() {
-    loadingTrainingHistory.value = true;
-    try {
-        const response = await axios.get('/lms/training-history');
-        if (response.data.success) {
-            trainingHistory.value = response.data.completed_trainings;
-        }
-    } catch (error) {
-        console.error('Error loading training history:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Gagal memuat riwayat training'
-        });
-    } finally {
-        loadingTrainingHistory.value = false;
-    }
-}
+// async function loadTrainingHistory() {
+//     loadingTrainingHistory.value = true;
+//     try {
+//         const response = await axios.get('/lms/training-history');
+//         if (response.data.success) {
+//             trainingHistory.value = response.data.completed_trainings;
+//         }
+//     } catch (error) {
+//         console.error('Error loading training history:', error);
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Gagal memuat riwayat training'
+//         });
+//     } finally {
+//         loadingTrainingHistory.value = false;
+//     }
+// }
 
-function openTrainingHistoryModal() {
-    showTrainingHistoryModal.value = true;
-    loadTrainingHistory();
-}
+// function openTrainingHistoryModal() {
+//     showTrainingHistoryModal.value = true;
+//     loadTrainingHistory();
+// }
 
-function closeTrainingHistoryModal() {
-    showTrainingHistoryModal.value = false;
-    trainingHistory.value = [];
-}
+// function closeTrainingHistoryModal() {
+//     showTrainingHistoryModal.value = false;
+//     trainingHistory.value = [];
+// }
 
 // Certificate functions
 const showCertificateModal = ref(false);
@@ -3041,274 +3041,274 @@ function closeCertificateModal() {
     selectedCertificate.value = null;
 }
 
-function handleTrainingInvitationClick(invitation) {
-    // Set selected training detail and show modal
-    selectedTrainingDetail.value = invitation;
-    showTrainingDetailModal.value = true;
-}
+// function handleTrainingInvitationClick(invitation) {
+//     // Set selected training detail and show modal
+//     selectedTrainingDetail.value = invitation;
+//     showTrainingDetailModal.value = true;
+// }
 
 
-function closeTrainingDetailModal() {
-    showTrainingDetailModal.value = false;
-    selectedTrainingDetail.value = null;
-}
+// function closeTrainingDetailModal() {
+//     showTrainingDetailModal.value = false;
+//     selectedTrainingDetail.value = null;
+// }
 
 // Function to refresh training detail data
-async function refreshTrainingDetail() {
-    if (!selectedTrainingDetail.value) return;
-    
-    refreshingTrainingDetail.value = true;
-    
-    try {
-        // Reload training invitations to get fresh data
-        await loadTrainingInvitations();
-        
-        // Find the updated invitation data
-        const updatedInvitation = trainingInvitations.value.find(
-            inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
-        );
-        
-        if (updatedInvitation) {
-            // Update selected training detail with fresh data
-            selectedTrainingDetail.value = updatedInvitation;
-            
-            // Show success message
-            Swal.fire({
-                icon: 'success',
-                title: 'Data Diperbarui!',
-                text: 'Data training berhasil diperbarui',
-                timer: 2000,
-                showConfirmButton: false
-            });
-        }
-    } catch (error) {
-        console.error('Error refreshing training detail:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Gagal memperbarui data training'
-        });
-    } finally {
-        refreshingTrainingDetail.value = false;
-    }
-}
+// async function refreshTrainingDetail() {
+//     if (!selectedTrainingDetail.value) return;
+//     
+//     refreshingTrainingDetail.value = true;
+//     
+//     try {
+//         // Reload training invitations to get fresh data
+//         await loadTrainingInvitations();
+//         
+//         // Find the updated invitation data
+//         const updatedInvitation = trainingInvitations.value.find(
+//             inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+//         );
+//         
+//         if (updatedInvitation) {
+//             // Update selected training detail with fresh data
+//             selectedTrainingDetail.value = updatedInvitation;
+//             
+//             // Show success message
+//             Swal.fire({
+//                 icon: 'success',
+//                 title: 'Data Diperbarui!',
+//                 text: 'Data training berhasil diperbarui',
+//                 timer: 2000,
+//                 showConfirmButton: false
+//             });
+//         }
+//     } catch (error) {
+//         console.error('Error refreshing training detail:', error);
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Gagal memperbarui data training'
+//         });
+//     } finally {
+//         refreshingTrainingDetail.value = false;
+//     }
+// }
 
 // Handle session item click
-function handleSessionItemClick(item, session) {
-    if (!item.can_access) {
-        return; // Don't do anything if item is not accessible
-    }
-
-
-    // Handle different item types
-    switch (item.item_type) {
-        case 'quiz':
-            handleQuizItemClick(item, session);
-            break;
-        case 'material':
-            handleMaterialItemClick(item, session);
-            break;
-        case 'activity':
-            handleActivityItemClick(item, session);
-            break;
-        case 'questionnaire':
-            handleQuestionnaireItemClick(item, session);
-            break;
-        default:
-    }
-}
+// function handleSessionItemClick(item, session) {
+//     if (!item.can_access) {
+//         return; // Don't do anything if item is not accessible
+//     }
+//
+//
+//     // Handle different item types
+//     switch (item.item_type) {
+//         case 'quiz':
+//             handleQuizItemClick(item, session);
+//             break;
+//         case 'material':
+//             handleMaterialItemClick(item, session);
+//             break;
+//         case 'activity':
+//             handleActivityItemClick(item, session);
+//             break;
+//         case 'questionnaire':
+//             handleQuestionnaireItemClick(item, session);
+//             break;
+//         default:
+//     }
+// }
 
 // Handle quiz item click
-async function handleQuizItemClick(item, session) {
-    try {
-        
-        // Check if quiz is already completed
-        if (item.is_completed && item.completion_status) {
-            Swal.fire({
-                icon: 'info',
-                title: 'Quiz Sudah Selesai',
-                html: `
-                    <div class="text-left">
-                        <p><strong>Score:</strong> ${item.completion_status.score}%</p>
-                        <p><strong>Status:</strong> ${item.completion_status.is_passed ? 'Lulus' : 'Tidak Lulus'}</p>
-                        <p><strong>Selesai:</strong> ${new Date(item.completion_status.completed_at).toLocaleString('id-ID')}</p>
-                        <p><strong>Attempt:</strong> ${item.completion_status.attempt_number}</p>
-                    </div>
-                `,
-                confirmButtonText: 'OK'
-            });
-            return;
-        }
-        
-        
-        // Check if quiz data is available
-        if (!item.quiz) {
-            console.error('Quiz data not available for item:', item);
-            
-            // Try to start quiz attempt anyway using item_id
-        }
-
-        // Start quiz attempt - use correct quiz ID
-        const quizId = item.quiz ? item.quiz.id : (item.quiz_id || item.item_id);
-        
-        const response = await axios.post('/api/quiz/start-attempt', {
-            quiz_id: quizId,
-            schedule_id: selectedTrainingDetail.value?.schedule_id
-        });
-
-        if (response.data.attempt) {
-            
-            // Open quiz in new tab or redirect
-            const quizUrl = `/lms/quiz/${quizId}/attempt/${response.data.attempt.id}`;
-            window.open(quizUrl, '_blank');
-        }
-    } catch (error) {
-        console.error('Error starting quiz attempt:', error);
-        
-        if (error.response?.data?.error) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: error.response.data.error
-            });
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: 'Terjadi kesalahan saat memulai quiz'
-            });
-        }
-    }
-}
+// async function handleQuizItemClick(item, session) {
+//     try {
+//         
+//         // Check if quiz is already completed
+//         if (item.is_completed && item.completion_status) {
+//             Swal.fire({
+//                 icon: 'info',
+//                 title: 'Quiz Sudah Selesai',
+//                 html: `
+//                     <div class="text-left">
+//                         <p><strong>Score:</strong> ${item.completion_status.score}%</p>
+//                         <p><strong>Status:</strong> ${item.completion_status.is_passed ? 'Lulus' : 'Tidak Lulus'}</p>
+//                         <p><strong>Selesai:</strong> ${new Date(item.completion_status.completed_at).toLocaleString('id-ID')}</p>
+//                         <p><strong>Attempt:</strong> ${item.completion_status.attempt_number}</p>
+//                     </div>
+//                 `,
+//                 confirmButtonText: 'OK'
+//             });
+//             return;
+//         }
+//         
+//         
+//         // Check if quiz data is available
+//         if (!item.quiz) {
+//             console.error('Quiz data not available for item:', item);
+//             
+//             // Try to start quiz attempt anyway using item_id
+//         }
+//
+//         // Start quiz attempt - use correct quiz ID
+//         const quizId = item.quiz ? item.quiz.id : (item.quiz_id || item.item_id);
+//         
+//         const response = await axios.post('/api/quiz/start-attempt', {
+//             quiz_id: quizId,
+//             schedule_id: selectedTrainingDetail.value?.schedule_id
+//         });
+//
+//         if (response.data.attempt) {
+//             
+//             // Open quiz in new tab or redirect
+//             const quizUrl = `/lms/quiz/${quizId}/attempt/${response.data.attempt.id}`;
+//             window.open(quizUrl, '_blank');
+//         }
+//     } catch (error) {
+//         console.error('Error starting quiz attempt:', error);
+//         
+//         if (error.response?.data?.error) {
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Error!',
+//                 text: error.response.data.error
+//             });
+//         } else {
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Error!',
+//                 text: 'Terjadi kesalahan saat memulai quiz'
+//             });
+//         }
+//     }
+// }
 
 // Handle material item click
-async function handleMaterialItemClick(item, session) {
-    
-    if (!item.material || !item.material.files || item.material.files.length === 0) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Material Tidak Tersedia',
-            text: 'File material belum tersedia atau belum diupload'
-        });
-        return;
-    }
-    
-    // Get primary file or first file
-    const primaryFile = item.material.primary_file || item.material.files[0];
-    
-    if (!primaryFile) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'File Tidak Tersedia',
-            text: 'File material tidak ditemukan'
-        });
-        return;
-    }
-    
-    
-    // Mark material as completed when user clicks on it
-    await markMaterialAsCompleted(item, session);
-    
-    // Handle different file types
-    switch (primaryFile.file_type) {
-        case 'pdf':
-            openPdfViewer(primaryFile, item.material);
-            break;
-        case 'video':
-            openVideoPlayer(primaryFile, item.material);
-            break;
-        case 'image':
-            openImageViewer(primaryFile, item.material);
-            break;
-        case 'document':
-        case 'docx':
-        case 'doc':
-        case 'xlsx':
-        case 'xls':
-        case 'pptx':
-        case 'ppt':
-            openDocumentViewer(primaryFile, item.material);
-            break;
-        case 'link':
-            openLink(primaryFile, item.material);
-            break;
-        default:
-            // Fallback: open in new tab
-            window.open(primaryFile.file_url, '_blank');
-            break;
-    }
-}
+// async function handleMaterialItemClick(item, session) {
+//     
+//     if (!item.material || !item.material.files || item.material.files.length === 0) {
+//         Swal.fire({
+//             icon: 'warning',
+//             title: 'Material Tidak Tersedia',
+//             text: 'File material belum tersedia atau belum diupload'
+//         });
+//         return;
+//     }
+//     
+//     // Get primary file or first file
+//     const primaryFile = item.material.primary_file || item.material.files[0];
+//     
+//     if (!primaryFile) {
+//         Swal.fire({
+//             icon: 'warning',
+//             title: 'File Tidak Tersedia',
+//             text: 'File material tidak ditemukan'
+//         });
+//         return;
+//     }
+//     
+//     
+//     // Mark material as completed when user clicks on it
+//     await markMaterialAsCompleted(item, session);
+//     
+//     // Handle different file types
+//     switch (primaryFile.file_type) {
+//         case 'pdf':
+//             openPdfViewer(primaryFile, item.material);
+//             break;
+//         case 'video':
+//             openVideoPlayer(primaryFile, item.material);
+//             break;
+//         case 'image':
+//             openImageViewer(primaryFile, item.material);
+//             break;
+//         case 'document':
+//         case 'docx':
+//         case 'doc':
+//         case 'xlsx':
+//         case 'xls':
+//         case 'pptx':
+//         case 'ppt':
+//             openDocumentViewer(primaryFile, item.material);
+//             break;
+//         case 'link':
+//             openLink(primaryFile, item.material);
+//             break;
+//         default:
+//             // Fallback: open in new tab
+//             window.open(primaryFile.file_url, '_blank');
+//             break;
+//     }
+// }
 
 // Mark material as completed
-async function markMaterialAsCompleted(item, session) {
-    try {
-
-        const response = await axios.post('/api/training/material/complete', {
-            material_id: item.material.id,
-            schedule_id: selectedTrainingDetail.value?.schedule_id,
-            session_id: session.id,
-            session_item_id: item.id,
-            completion_data: {
-                file_type: item.material.primary_file?.file_type || 'unknown',
-                file_name: item.material.primary_file?.file_name || 'unknown',
-                accessed_at: new Date().toISOString()
-            }
-        });
-
-        if (response.data.success) {
-            
-            // Update the item's completion status in the UI
-            item.is_completed = true;
-            item.completion_status = {
-                completed_at: response.data.data.completed_at,
-                time_spent_seconds: response.data.data.time_spent_seconds
-            };
-            
-            // Force reactivity update using nextTick
-            await nextTick();
-            
-            // Force reactivity update
-            
-            // Show success message
-            Swal.fire({
-                icon: 'success',
-                title: 'Material Selesai!',
-                text: 'Material berhasil ditandai sebagai selesai',
-                timer: 2000,
-                showConfirmButton: false
-            });
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Gagal',
-                text: response.data.message || 'Gagal menandai material sebagai selesai',
-                timer: 3000,
-                showConfirmButton: false
-            });
-        }
-    } catch (error) {
-        console.error('Error marking material as completed:', error);
-        
-        // Show error message to user
-        if (error.response && error.response.data && error.response.data.message) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Gagal Menandai Material',
-                text: error.response.data.message,
-                timer: 3000,
-                showConfirmButton: false
-            });
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'Terjadi kesalahan saat menandai material sebagai selesai',
-                timer: 3000,
-                showConfirmButton: false
-            });
-        }
-    }
-}
+// async function markMaterialAsCompleted(item, session) {
+//     try {
+//
+//         const response = await axios.post('/api/training/material/complete', {
+//             material_id: item.material.id,
+//             schedule_id: selectedTrainingDetail.value?.schedule_id,
+//             session_id: session.id,
+//             session_item_id: item.id,
+//             completion_data: {
+//                 file_type: item.material.primary_file?.file_type || 'unknown',
+//                 file_name: item.material.primary_file?.file_name || 'unknown',
+//                 accessed_at: new Date().toISOString()
+//             }
+//         });
+//
+//         if (response.data.success) {
+//             
+//             // Update the item's completion status in the UI
+//             item.is_completed = true;
+//             item.completion_status = {
+//                 completed_at: response.data.data.completed_at,
+//                 time_spent_seconds: response.data.data.time_spent_seconds
+//             };
+//             
+//             // Force reactivity update using nextTick
+//             await nextTick();
+//             
+//             // Force reactivity update
+//             
+//             // Show success message
+//             Swal.fire({
+//                 icon: 'success',
+//                 title: 'Material Selesai!',
+//                 text: 'Material berhasil ditandai sebagai selesai',
+//                 timer: 2000,
+//                 showConfirmButton: false
+//             });
+//         } else {
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Gagal',
+//                 text: response.data.message || 'Gagal menandai material sebagai selesai',
+//                 timer: 3000,
+//                 showConfirmButton: false
+//             });
+//         }
+//     } catch (error) {
+//         console.error('Error marking material as completed:', error);
+//         
+//         // Show error message to user
+//         if (error.response && error.response.data && error.response.data.message) {
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Gagal Menandai Material',
+//                 text: error.response.data.message,
+//                 timer: 3000,
+//                 showConfirmButton: false
+//             });
+//         } else {
+//             Swal.fire({
+//                 icon: 'error',
+//                 title: 'Error',
+//                 text: 'Terjadi kesalahan saat menandai material sebagai selesai',
+//                 timer: 3000,
+//                 showConfirmButton: false
+//             });
+//         }
+//     }
+// }
 
 // PDF Viewer
 function openPdfViewer(file, material) {
@@ -3483,563 +3483,563 @@ function openLink(file, material) {
 }
 
 // Handle activity item click
-function handleActivityItemClick(item, session) {
-    // TODO: Implement activity handling
-    Swal.fire({
-        icon: 'info',
-        title: 'Activity',
-        text: 'Fitur activity akan segera tersedia'
-    });
-}
+// function handleActivityItemClick(item, session) {
+//     // TODO: Implement activity handling
+//     Swal.fire({
+//         icon: 'info',
+//         title: 'Activity',
+//         text: 'Fitur activity akan segera tersedia'
+//     });
+// }
 
 // Handle questionnaire item click
-function handleQuestionnaireItemClick(item, session) {
-    // TODO: Implement questionnaire handling
-    Swal.fire({
-        icon: 'info',
-        title: 'Questionnaire',
-        text: 'Fitur questionnaire akan segera tersedia'
-    });
-}
+// function handleQuestionnaireItemClick(item, session) {
+//     // TODO: Implement questionnaire handling
+//     Swal.fire({
+//         icon: 'info',
+//         title: 'Questionnaire',
+//         text: 'Fitur questionnaire akan segera tersedia'
+//     });
+// }
 
 // Training Check-in Functions
-function openTrainingCheckInModal() {
-    showTrainingCheckInModal.value = true;
-    qrCodeInput.value = '';
-    checkInStatusMessage.value = '';
-}
+// function openTrainingCheckInModal() {
+//     showTrainingCheckInModal.value = true;
+//     qrCodeInput.value = '';
+//     checkInStatusMessage.value = '';
+// }
 
-function closeTrainingCheckInModal() {
-    showTrainingCheckInModal.value = false;
-    showCamera.value = false;
-    qrCodeInput.value = '';
-    checkInStatusMessage.value = '';
-    isProcessingCheckIn.value = false; // Reset processing state
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-    }
-}
+// function closeTrainingCheckInModal() {
+//     showTrainingCheckInModal.value = false;
+//     showCamera.value = false;
+//     qrCodeInput.value = '';
+//     checkInStatusMessage.value = '';
+//     isProcessingCheckIn.value = false; // Reset processing state
+//     if (html5QrCode) {
+//         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+//     }
+// }
 
 // Function to open first session item after successful check-in
-function openFirstSessionItem() {
-    if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
-        return;
-    }
-
-    // Find the first session with items
-    const firstSession = selectedTrainingDetail.value.sessions.find(session => 
-        session.items && session.items.length > 0
-    );
-
-    if (!firstSession) {
-        return;
-    }
-
-    // Find the first accessible item in the first session
-    const firstItem = firstSession.items.find(item => item.can_access);
-
-    if (!firstItem) {
-        return;
-    }
-
-
-    // Make sure training detail modal is open
-    if (!showTrainingDetailModal.value) {
-        showTrainingDetailModal.value = true;
-    }
-
-    // Wait a bit for modal to be ready, then trigger the first item
-    setTimeout(() => {
-        handleSessionItemClick(firstItem, firstSession);
-    }, 500);
-}
+// function openFirstSessionItem() {
+//     if (!selectedTrainingDetail.value || !selectedTrainingDetail.value.sessions) {
+//         return;
+//     }
+//
+//     // Find the first session with items
+//     const firstSession = selectedTrainingDetail.value.sessions.find(session => 
+//         session.items && session.items.length > 0
+//     );
+//
+//     if (!firstSession) {
+//         return;
+//     }
+//
+//     // Find the first accessible item in the first session
+//     const firstItem = firstSession.items.find(item => item.can_access);
+//
+//     if (!firstItem) {
+//         return;
+//     }
+//
+//
+//     // Make sure training detail modal is open
+//     if (!showTrainingDetailModal.value) {
+//         showTrainingDetailModal.value = true;
+//     }
+//
+//     // Wait a bit for modal to be ready, then trigger the first item
+//     setTimeout(() => {
+//         handleSessionItemClick(firstItem, firstSession);
+//     }, 500);
+// }
 
 // Training Check-out Functions
-function openTrainingCheckOutModal() {
-    showTrainingCheckOutModal.value = true;
-    qrCodeCheckOutInput.value = '';
-    checkOutStatusMessage.value = '';
-}
+// function openTrainingCheckOutModal() {
+//     showTrainingCheckOutModal.value = true;
+//     qrCodeCheckOutInput.value = '';
+//     checkOutStatusMessage.value = '';
+// }
 
-function closeTrainingCheckOutModal() {
-    showTrainingCheckOutModal.value = false;
-    showCheckOutCamera.value = false;
-    qrCodeCheckOutInput.value = '';
-    checkOutStatusMessage.value = '';
-    if (html5QrCodeCheckOut) {
-        html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear()).catch(() => {});
-    }
-}
+// function closeTrainingCheckOutModal() {
+//     showTrainingCheckOutModal.value = false;
+//     showCheckOutCamera.value = false;
+//     qrCodeCheckOutInput.value = '';
+//     checkOutStatusMessage.value = '';
+//     if (html5QrCodeCheckOut) {
+//         html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear()).catch(() => {});
+//     }
+// }
 
 // Training Review Functions
-function openTrainingReviewModal() {
-    showTrainingReviewModal.value = true;
-    
-    // Get trainer ID from selected training detail
-    let trainerId = null;
-    if (selectedTrainingDetail.value && selectedTrainingDetail.value.trainers && selectedTrainingDetail.value.trainers.length > 0) {
-        // Get the first internal trainer
-        const internalTrainer = selectedTrainingDetail.value.trainers.find(trainer => trainer.trainer_type === 'internal');
-        if (internalTrainer && internalTrainer.trainer_id) {
-            trainerId = internalTrainer.trainer_id;
-        }
-    }
-    
-    // Reset form
-    reviewForm.value = {
-        trainer_id: trainerId,
-        // Trainer ratings
-        trainer_mastery: 5,
-        trainer_language: 5,
-        trainer_intonation: 5,
-        trainer_presentation: 5,
-        trainer_qna: 5,
-        // Training material ratings
-        material_benefit: 5,
-        material_clarity: 5,
-        material_display: 5,
-        material_suggestions: '',
-        material_needs: ''
-    };
-}
+// function openTrainingReviewModal() {
+//     showTrainingReviewModal.value = true;
+//     
+//     // Get trainer ID from selected training detail
+//     let trainerId = null;
+//     if (selectedTrainingDetail.value && selectedTrainingDetail.value.trainers && selectedTrainingDetail.value.trainers.length > 0) {
+//         // Get the first internal trainer
+//         const internalTrainer = selectedTrainingDetail.value.trainers.find(trainer => trainer.trainer_type === 'internal');
+//         if (internalTrainer && internalTrainer.trainer_id) {
+//             trainerId = internalTrainer.trainer_id;
+//         }
+//     }
+//     
+//     // Reset form
+//     reviewForm.value = {
+//         trainer_id: trainerId,
+//         // Trainer ratings
+//         trainer_mastery: 5,
+//         trainer_language: 5,
+//         trainer_intonation: 5,
+//         trainer_presentation: 5,
+//         trainer_qna: 5,
+//         // Training material ratings
+//         material_benefit: 5,
+//         material_clarity: 5,
+//         material_display: 5,
+//         material_suggestions: '',
+//         material_needs: ''
+//     };
+// }
 
-function closeTrainingReviewModal() {
-    showTrainingReviewModal.value = false;
-    isSubmittingReview.value = false;
-}
+// function closeTrainingReviewModal() {
+//     showTrainingReviewModal.value = false;
+//     isSubmittingReview.value = false;
+// }
 
-async function submitTrainingReview() {
-    if (!selectedTrainingDetail.value) {
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Training detail tidak ditemukan'
-        });
-        return;
-    }
-
-    isSubmittingReview.value = true;
-
-    try {
-        await router.post(route('lms.training.review'), {
-            training_schedule_id: selectedTrainingDetail.value.schedule_id,
-            trainer_id: reviewForm.value.trainer_id,
-            // Trainer ratings
-            trainer_mastery: reviewForm.value.trainer_mastery,
-            trainer_language: reviewForm.value.trainer_language,
-            trainer_intonation: reviewForm.value.trainer_intonation,
-            trainer_presentation: reviewForm.value.trainer_presentation,
-            trainer_qna: reviewForm.value.trainer_qna,
-            // Training material ratings
-            material_benefit: reviewForm.value.material_benefit,
-            material_clarity: reviewForm.value.material_clarity,
-            material_display: reviewForm.value.material_display,
-            material_suggestions: reviewForm.value.material_suggestions,
-            material_needs: reviewForm.value.material_needs,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-            onSuccess: (page) => {
-                if (page.props.flash?.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Terima Kasih!',
-                        html: `
-                            <div class="text-center">
-                                <div class="mb-4">
-                                    <i class="fa-solid fa-heart text-red-500 text-4xl mb-3"></i>
-                                </div>
-                                <h3 class="text-lg font-semibold text-gray-800 mb-2">Review Berhasil Disimpan!</h3>
-                                <p class="text-gray-600 mb-3">Terima kasih telah mengikuti training dan memberikan review yang berharga.</p>
-                                <p class="text-sm text-gray-500">Feedback Anda sangat membantu kami untuk meningkatkan kualitas training di masa depan.</p>
-                            </div>
-                        `,
-                        showConfirmButton: true,
-                        confirmButtonText: 'Sama-sama!',
-                        confirmButtonColor: '#F59E0B',
-                        timer: 5000,
-                        timerProgressBar: true,
-                        allowOutsideClick: false,
-                        allowEscapeKey: false
-                    }).then(() => {
-                        closeTrainingReviewModal();
-                    });
-                } else {
-                    // Fallback jika tidak ada flash success
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Terima Kasih!',
-                        html: `
-                            <div class="text-center">
-                                <div class="mb-4">
-                                    <i class="fa-solid fa-heart text-red-500 text-4xl mb-3"></i>
-                                </div>
-                                <h3 class="text-lg font-semibold text-gray-800 mb-2">Review Berhasil Disimpan!</h3>
-                                <p class="text-gray-600 mb-3">Terima kasih telah mengikuti training dan memberikan review yang berharga.</p>
-                                <p class="text-sm text-gray-500">Feedback Anda sangat membantu kami untuk meningkatkan kualitas training di masa depan.</p>
-                            </div>
-                        `,
-                        showConfirmButton: true,
-                        confirmButtonText: 'Sama-sama!',
-                        confirmButtonColor: '#F59E0B',
-                        timer: 5000,
-                        timerProgressBar: true,
-                        allowOutsideClick: false,
-                        allowEscapeKey: false
-                    }).then(() => {
-                        closeTrainingReviewModal();
-                    });
-                }
-            },
-            onError: (errors) => {
-                const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat menyimpan review';
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Review Gagal!',
-                    text: errorMessage
-                });
-            },
-            onFinish: () => {
-                isSubmittingReview.value = false;
-            }
-        });
-    } catch (error) {
-        console.error('Review submission error:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Terjadi kesalahan saat menyimpan review'
-        });
-        isSubmittingReview.value = false;
-    }
-}
+// async function submitTrainingReview() {
+//     if (!selectedTrainingDetail.value) {
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Training detail tidak ditemukan'
+//         });
+//         return;
+//     }
+//
+//     isSubmittingReview.value = true;
+//
+//     try {
+//         await router.post(route('lms.training.review'), {
+//             training_schedule_id: selectedTrainingDetail.value.schedule_id,
+//             trainer_id: reviewForm.value.trainer_id,
+//             // Trainer ratings
+//             trainer_mastery: reviewForm.value.trainer_mastery,
+//             trainer_language: reviewForm.value.trainer_language,
+//             trainer_intonation: reviewForm.value.trainer_intonation,
+//             trainer_presentation: reviewForm.value.trainer_presentation,
+//             trainer_qna: reviewForm.value.trainer_qna,
+//             // Training material ratings
+//             material_benefit: reviewForm.value.material_benefit,
+//             material_clarity: reviewForm.value.material_clarity,
+//             material_display: reviewForm.value.material_display,
+//             material_suggestions: reviewForm.value.material_suggestions,
+//             material_needs: reviewForm.value.material_needs,
+//         }, {
+//             preserveState: true,
+//             preserveScroll: true,
+//             onSuccess: (page) => {
+//                 if (page.props.flash?.success) {
+//                     Swal.fire({
+//                         icon: 'success',
+//                         title: 'Terima Kasih!',
+//                         html: `
+//                             <div class="text-center">
+//                                 <div class="mb-4">
+//                                     <i class="fa-solid fa-heart text-red-500 text-4xl mb-3"></i>
+//                                 </div>
+//                                 <h3 class="text-lg font-semibold text-gray-800 mb-2">Review Berhasil Disimpan!</h3>
+//                                 <p class="text-gray-600 mb-3">Terima kasih telah mengikuti training dan memberikan review yang berharga.</p>
+//                                 <p class="text-sm text-gray-500">Feedback Anda sangat membantu kami untuk meningkatkan kualitas training di masa depan.</p>
+//                             </div>
+//                         `,
+//                         showConfirmButton: true,
+//                         confirmButtonText: 'Sama-sama!',
+//                         confirmButtonColor: '#F59E0B',
+//                         timer: 5000,
+//                         timerProgressBar: true,
+//                         allowOutsideClick: false,
+//                         allowEscapeKey: false
+//                     }).then(() => {
+//                         closeTrainingReviewModal();
+//                     });
+//                 } else {
+//                     // Fallback jika tidak ada flash success
+//                     Swal.fire({
+//                         icon: 'success',
+//                         title: 'Terima Kasih!',
+//                         html: `
+//                             <div class="text-center">
+//                                 <div class="mb-4">
+//                                     <i class="fa-solid fa-heart text-red-500 text-4xl mb-3"></i>
+//                                 </div>
+//                                 <h3 class="text-lg font-semibold text-gray-800 mb-2">Review Berhasil Disimpan!</h3>
+//                                 <p class="text-gray-600 mb-3">Terima kasih telah mengikuti training dan memberikan review yang berharga.</p>
+//                                 <p class="text-sm text-gray-500">Feedback Anda sangat membantu kami untuk meningkatkan kualitas training di masa depan.</p>
+//                             </div>
+//                         `,
+//                         showConfirmButton: true,
+//                         confirmButtonText: 'Sama-sama!',
+//                         confirmButtonColor: '#F59E0B',
+//                         timer: 5000,
+//                         timerProgressBar: true,
+//                         allowOutsideClick: false,
+//                         allowEscapeKey: false
+//                     }).then(() => {
+//                         closeTrainingReviewModal();
+//                     });
+//                 }
+//             },
+//             onError: (errors) => {
+//                 const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat menyimpan review';
+//                 Swal.fire({
+//                     icon: 'error',
+//                     title: 'Review Gagal!',
+//                     text: errorMessage
+//                 });
+//             },
+//             onFinish: () => {
+//                 isSubmittingReview.value = false;
+//             }
+//         });
+//     } catch (error) {
+//         console.error('Review submission error:', error);
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Terjadi kesalahan saat menyimpan review'
+//         });
+//         isSubmittingReview.value = false;
+//     }
+// }
 
 // QR Scanner Functions
-watch(showCamera, async (val) => {
-    if (val) {
-        await nextTick();
-        if (!window.Html5Qrcode) {
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
-            script.onload = setupCameras;
-            document.body.appendChild(script);
-        } else {
-            setupCameras();
-        }
-    }
-});
+// watch(showCamera, async (val) => {
+//     if (val) {
+//         await nextTick();
+//         if (!window.Html5Qrcode) {
+//             const script = document.createElement('script');
+//             script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+//             script.onload = setupCameras;
+//             document.body.appendChild(script);
+//         } else {
+//             setupCameras();
+//         }
+//     }
+// });
 
 // Check-out QR Scanner Functions
-watch(showCheckOutCamera, async (val) => {
-    if (val) {
-        await nextTick();
-        if (!window.Html5Qrcode) {
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
-            script.onload = setupCheckOutCameras;
-            document.body.appendChild(script);
-        } else {
-            setupCheckOutCameras();
-        }
-    }
-});
+// watch(showCheckOutCamera, async (val) => {
+//     if (val) {
+//         await nextTick();
+//         if (!window.Html5Qrcode) {
+//             const script = document.createElement('script');
+//             script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+//             script.onload = setupCheckOutCameras;
+//             document.body.appendChild(script);
+//         } else {
+//             setupCheckOutCameras();
+//         }
+//     }
+// });
 
-async function setupCameras() {
-    if (!window.Html5Qrcode) return;
-    try {
-        const devices = await window.Html5Qrcode.getCameras();
-        cameras.value = devices;
-        // Default ke kamera belakang jika ada
-        const backCam = devices.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('belakang'));
-        selectedCameraId.value = backCam?.id || devices[0]?.id || '';
-        startCamera();
-    } catch (err) {
-        checkInStatusMessage.value = 'Tidak dapat mengakses kamera';
-    }
-}
+// async function setupCameras() {
+//     if (!window.Html5Qrcode) return;
+//     try {
+//         const devices = await window.Html5Qrcode.getCameras();
+//         cameras.value = devices;
+//         // Default ke kamera belakang jika ada
+//         const backCam = devices.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('belakang'));
+//         selectedCameraId.value = backCam?.id || devices[0]?.id || '';
+//         startCamera();
+//     } catch (err) {
+//         checkInStatusMessage.value = 'Tidak dapat mengakses kamera';
+//     }
+// }
 
-function startCamera() {
-    if (!window.Html5Qrcode || !selectedCameraId.value) return;
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear());
-    }
-    html5QrCode = new window.Html5Qrcode('training-qr-reader');
-    html5QrCode.start(
-        selectedCameraId.value,
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-            qrCodeInput.value = decodedText;
-            showCamera.value = false;
-            html5QrCode.stop().then(() => html5QrCode.clear());
-            processTrainingCheckIn();
-        },
-        (errorMessage) => {}
-    );
-}
+// function startCamera() {
+//     if (!window.Html5Qrcode || !selectedCameraId.value) return;
+//     if (html5QrCode) {
+//         html5QrCode.stop().then(() => html5QrCode.clear());
+//     }
+//     html5QrCode = new window.Html5Qrcode('training-qr-reader');
+//     html5QrCode.start(
+//         selectedCameraId.value,
+//         { fps: 10, qrbox: 250 },
+//         (decodedText) => {
+//             qrCodeInput.value = decodedText;
+//             showCamera.value = false;
+//             html5QrCode.stop().then(() => html5QrCode.clear());
+//             processTrainingCheckIn();
+//         },
+//         (errorMessage) => {}
+//     );
+// }
 
-function switchCamera() {
-    startCamera();
-}
+// function switchCamera() {
+//     startCamera();
+// }
 
 // Check-out Camera Functions
-async function setupCheckOutCameras() {
-    if (!window.Html5Qrcode) return;
-    try {
-        const devices = await window.Html5Qrcode.getCameras();
-        checkOutCameras.value = devices;
-        // Default ke kamera belakang jika ada
-        const backCam = devices.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('belakang'));
-        selectedCheckOutCameraId.value = backCam?.id || devices[0]?.id || '';
-        startCheckOutCamera();
-    } catch (err) {
-        checkOutStatusMessage.value = 'Tidak dapat mengakses kamera';
-    }
-}
+// async function setupCheckOutCameras() {
+//     if (!window.Html5Qrcode) return;
+//     try {
+//         const devices = await window.Html5Qrcode.getCameras();
+//         checkOutCameras.value = devices;
+//         // Default ke kamera belakang jika ada
+//         const backCam = devices.find(cam => cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('belakang'));
+//         selectedCheckOutCameraId.value = backCam?.id || devices[0]?.id || '';
+//         startCheckOutCamera();
+//     } catch (err) {
+//         checkOutStatusMessage.value = 'Tidak dapat mengakses kamera';
+//     }
+// }
 
-function startCheckOutCamera() {
-    if (!window.Html5Qrcode || !selectedCheckOutCameraId.value) return;
-    if (html5QrCodeCheckOut) {
-        html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear());
-    }
-    html5QrCodeCheckOut = new window.Html5Qrcode('training-checkout-qr-reader');
-    html5QrCodeCheckOut.start(
-        selectedCheckOutCameraId.value,
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-            qrCodeCheckOutInput.value = decodedText;
-            showCheckOutCamera.value = false;
-            html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear());
-            processTrainingCheckOut();
-        },
-        (errorMessage) => {}
-    );
-}
+// function startCheckOutCamera() {
+//     if (!window.Html5Qrcode || !selectedCheckOutCameraId.value) return;
+//     if (html5QrCodeCheckOut) {
+//         html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear());
+//     }
+//     html5QrCodeCheckOut = new window.Html5Qrcode('training-checkout-qr-reader');
+//     html5QrCodeCheckOut.start(
+//         selectedCheckOutCameraId.value,
+//         { fps: 10, qrbox: 250 },
+//         (decodedText) => {
+//             qrCodeCheckOutInput.value = decodedText;
+//             showCheckOutCamera.value = false;
+//             html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear());
+//             processTrainingCheckOut();
+//         },
+//         (errorMessage) => {}
+//     );
+// }
 
-function switchCheckOutCamera() {
-    startCheckOutCamera();
-}
+// function switchCheckOutCamera() {
+//     startCheckOutCamera();
+// }
 
-function closeCamera() {
-    showCamera.value = false;
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-    }
-}
+// function closeCamera() {
+//     showCamera.value = false;
+//     if (html5QrCode) {
+//         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+//     }
+// }
 
 // Check-in Process
-async function processTrainingCheckIn() {
-    if (!qrCodeInput.value.trim()) {
-        checkInStatusMessage.value = 'QR Code tidak boleh kosong';
-        return;
-    }
-
-    isProcessingCheckIn.value = true;
-    checkInStatusMessage.value = 'Memproses check-in...';
-
-    try {
-
-        await router.post(route('lms.check-in'), {
-            qr_code: qrCodeInput.value.trim()
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-            onSuccess: (page) => {
-                
-                // Always close modal on success (regardless of data)
-                closeTrainingCheckInModal();
-                
-                if (page.props.flash?.success) {
-                    checkInStatusMessage.value = page.props.flash.success;
-                    
-                    // Show success SweetAlert
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Check-in Berhasil!',
-                        text: page.props.flash.success,
-                        timer: 3000,
-                        showConfirmButton: false
-                    });
-
-                    // Update selected training detail with check-in response data
-                    if (selectedTrainingDetail.value && page.props.flash?.training_sessions) {
-                        selectedTrainingDetail.value.sessions = page.props.flash.training_sessions;
-                    }
-
-                    // Also refresh training invitations data to update session accessibility
-                    loadTrainingInvitations().then(() => {
-                        // Update selected training detail with fresh data
-                        if (selectedTrainingDetail.value) {
-                            const updatedInvitation = trainingInvitations.value.find(
-                                inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
-                            );
-                            if (updatedInvitation) {
-                                // Merge the fresh data with check-in response data
-                                selectedTrainingDetail.value = {
-                                    ...updatedInvitation,
-                                    sessions: selectedTrainingDetail.value.sessions || updatedInvitation.sessions
-                                };
-                            }
-                        }
-                    });
-
-                    // Open first session item after success
-                    setTimeout(() => {
-                        openFirstSessionItem();
-                    }, 1000);
-                } else {
-                    // Even if no success message, show generic success
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Check-in Berhasil!',
-                        text: 'Anda berhasil check-in ke training',
-                        timer: 3000,
-                        showConfirmButton: false
-                    });
-                    
-                    // Still try to refresh data
-                    loadTrainingInvitations().then(() => {
-                        if (selectedTrainingDetail.value) {
-                            const updatedInvitation = trainingInvitations.value.find(
-                                inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
-                            );
-                            if (updatedInvitation) {
-                                selectedTrainingDetail.value = updatedInvitation;
-                            }
-                        }
-                    });
-                }
-            },
-            onError: (errors) => {
-                const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-in'
-                checkInStatusMessage.value = errorMessage;
-                
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Check-in Gagal!',
-                    text: errorMessage
-                });
-            },
-            onFinish: () => {
-                // Don't reset processing state here as it's handled in closeTrainingCheckInModal
-                // isProcessingCheckIn.value = false;
-            }
-        });
-
-    } catch (error) {
-        console.error('Check-in error:', error);
-        checkInStatusMessage.value = 'Terjadi kesalahan saat memproses check-in';
-        isProcessingCheckIn.value = false;
-        
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Terjadi kesalahan saat memproses check-in'
-        });
-    }
-}
+// async function processTrainingCheckIn() {
+//     if (!qrCodeInput.value.trim()) {
+//         checkInStatusMessage.value = 'QR Code tidak boleh kosong';
+//         return;
+//     }
+//
+//     isProcessingCheckIn.value = true;
+//     checkInStatusMessage.value = 'Memproses check-in...';
+//
+//     try {
+//
+//         await router.post(route('lms.check-in'), {
+//             qr_code: qrCodeInput.value.trim()
+//         }, {
+//             preserveState: true,
+//             preserveScroll: true,
+//             onSuccess: (page) => {
+//                 
+//                 // Always close modal on success (regardless of data)
+//                 closeTrainingCheckInModal();
+//                 
+//                 if (page.props.flash?.success) {
+//                     checkInStatusMessage.value = page.props.flash.success;
+//                     
+//                     // Show success SweetAlert
+//                     Swal.fire({
+//                         icon: 'success',
+//                         title: 'Check-in Berhasil!',
+//                         text: page.props.flash.success,
+//                         timer: 3000,
+//                         showConfirmButton: false
+//                     });
+//
+//                     // Update selected training detail with check-in response data
+//                     if (selectedTrainingDetail.value && page.props.flash?.training_sessions) {
+//                         selectedTrainingDetail.value.sessions = page.props.flash.training_sessions;
+//                     }
+//
+//                     // Also refresh training invitations data to update session accessibility
+//                     loadTrainingInvitations().then(() => {
+//                         // Update selected training detail with fresh data
+//                         if (selectedTrainingDetail.value) {
+//                             const updatedInvitation = trainingInvitations.value.find(
+//                                 inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+//                             );
+//                             if (updatedInvitation) {
+//                                 // Merge the fresh data with check-in response data
+//                                 selectedTrainingDetail.value = {
+//                                     ...updatedInvitation,
+//                                     sessions: selectedTrainingDetail.value.sessions || updatedInvitation.sessions
+//                                 };
+//                             }
+//                         }
+//                     });
+//
+//                     // Open first session item after success
+//                     setTimeout(() => {
+//                         openFirstSessionItem();
+//                     }, 1000);
+//                 } else {
+//                     // Even if no success message, show generic success
+//                     Swal.fire({
+//                         icon: 'success',
+//                         title: 'Check-in Berhasil!',
+//                         text: 'Anda berhasil check-in ke training',
+//                         timer: 3000,
+//                         showConfirmButton: false
+//                     });
+//                     
+//                     // Still try to refresh data
+//                     loadTrainingInvitations().then(() => {
+//                         if (selectedTrainingDetail.value) {
+//                             const updatedInvitation = trainingInvitations.value.find(
+//                                 inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+//                             );
+//                             if (updatedInvitation) {
+//                                 selectedTrainingDetail.value = updatedInvitation;
+//                             }
+//                         }
+//                     });
+//                 }
+//             },
+//             onError: (errors) => {
+//                 const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-in'
+//                 checkInStatusMessage.value = errorMessage;
+//                 
+//                 Swal.fire({
+//                     icon: 'error',
+//                     title: 'Check-in Gagal!',
+//                     text: errorMessage
+//                 });
+//             },
+//             onFinish: () => {
+//                 // Don't reset processing state here as it's handled in closeTrainingCheckInModal
+//                 // isProcessingCheckIn.value = false;
+//             }
+//         });
+//
+//     } catch (error) {
+//         console.error('Check-in error:', error);
+//         checkInStatusMessage.value = 'Terjadi kesalahan saat memproses check-in';
+//         isProcessingCheckIn.value = false;
+//         
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Terjadi kesalahan saat memproses check-in'
+//         });
+//     }
+// }
 
 // Check-out Process
-async function processTrainingCheckOut() {
-    if (!qrCodeCheckOutInput.value.trim()) {
-        checkOutStatusMessage.value = 'QR Code tidak boleh kosong';
-        return;
-    }
-
-    isProcessingCheckOut.value = true;
-    checkOutStatusMessage.value = 'Memproses check-out...';
-
-    try {
-
-        await router.post(route('lms.check-out'), {
-            qr_code: qrCodeCheckOutInput.value.trim()
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-            onSuccess: (page) => {
-                if (page.props.flash?.success) {
-                    checkOutStatusMessage.value = page.props.flash.success;
-                    
-                    // Check if user can give feedback after checkout
-                    const canGiveFeedback = selectedTrainingDetail.value?.can_give_feedback;
-                    
-                    if (canGiveFeedback) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Check-out Berhasil!',
-                            text: page.props.flash.success,
-                            showConfirmButton: true,
-                            confirmButtonText: 'Berikan Review',
-                            showCancelButton: true,
-                            cancelButtonText: 'Nanti Saja',
-                            confirmButtonColor: '#F59E0B',
-                            cancelButtonColor: '#6B7280'
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                // Open review modal
-                                openTrainingReviewModal();
-                            }
-                        });
-                    } else {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Check-out Berhasil!',
-                            text: page.props.flash.success,
-                            showConfirmButton: true,
-                            confirmButtonText: 'OK',
-                            confirmButtonColor: '#F59E0B'
-                        });
-                    }
-
-                    // Refresh training invitations data to update status
-                    loadTrainingInvitations().then(() => {
-                        // Update selected training detail with fresh data
-                        if (selectedTrainingDetail.value) {
-                            const updatedInvitation = trainingInvitations.value.find(
-                                inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
-                            );
-                            if (updatedInvitation) {
-                                selectedTrainingDetail.value = {
-                                    ...updatedInvitation,
-                                    sessions: selectedTrainingDetail.value.sessions || updatedInvitation.sessions
-                                };
-                            }
-                        }
-                    });
-
-                    // Close modal after success
-                    setTimeout(() => {
-                        closeTrainingCheckOutModal();
-                    }, 2000);
-                } else {
-                    checkOutStatusMessage.value = 'Check-out berhasil tapi tidak ada data training';
-                }
-            },
-            onError: (errors) => {
-                const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-out'
-                checkOutStatusMessage.value = errorMessage;
-                
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Check-out Gagal!',
-                    text: errorMessage
-                });
-            },
-            onFinish: () => {
-                isProcessingCheckOut.value = false;
-            }
-        });
-    } catch (error) {
-        console.error('Check-out error:', error);
-        checkOutStatusMessage.value = 'Terjadi kesalahan saat check-out';
-        isProcessingCheckOut.value = false;
-        
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: 'Terjadi kesalahan saat memproses check-out'
-        });
-    }
-}
+// async function processTrainingCheckOut() {
+//     if (!qrCodeCheckOutInput.value.trim()) {
+//         checkOutStatusMessage.value = 'QR Code tidak boleh kosong';
+//         return;
+//     }
+//
+//     isProcessingCheckOut.value = true;
+//     checkOutStatusMessage.value = 'Memproses check-out...';
+//
+//     try {
+//
+//         await router.post(route('lms.check-out'), {
+//             qr_code: qrCodeCheckOutInput.value.trim()
+//         }, {
+//             preserveState: true,
+//             preserveScroll: true,
+//             onSuccess: (page) => {
+//                 if (page.props.flash?.success) {
+//                     checkOutStatusMessage.value = page.props.flash.success;
+//                     
+//                     // Check if user can give feedback after checkout
+//                     const canGiveFeedback = selectedTrainingDetail.value?.can_give_feedback;
+//                     
+//                     if (canGiveFeedback) {
+//                         Swal.fire({
+//                             icon: 'success',
+//                             title: 'Check-out Berhasil!',
+//                             text: page.props.flash.success,
+//                             showConfirmButton: true,
+//                             confirmButtonText: 'Berikan Review',
+//                             showCancelButton: true,
+//                             cancelButtonText: 'Nanti Saja',
+//                             confirmButtonColor: '#F59E0B',
+//                             cancelButtonColor: '#6B7280'
+//                         }).then((result) => {
+//                             if (result.isConfirmed) {
+//                                 // Open review modal
+//                                 openTrainingReviewModal();
+//                             }
+//                         });
+//                     } else {
+//                         Swal.fire({
+//                             icon: 'success',
+//                             title: 'Check-out Berhasil!',
+//                             text: page.props.flash.success,
+//                             showConfirmButton: true,
+//                             confirmButtonText: 'OK',
+//                             confirmButtonColor: '#F59E0B'
+//                         });
+//                     }
+//
+//                     // Refresh training invitations data to update status
+//                     loadTrainingInvitations().then(() => {
+//                         // Update selected training detail with fresh data
+//                         if (selectedTrainingDetail.value) {
+//                             const updatedInvitation = trainingInvitations.value.find(
+//                                 inv => inv.schedule_id === selectedTrainingDetail.value.schedule_id
+//                             );
+//                             if (updatedInvitation) {
+//                                 selectedTrainingDetail.value = {
+//                                     ...updatedInvitation,
+//                                     sessions: selectedTrainingDetail.value.sessions || updatedInvitation.sessions
+//                                 };
+//                             }
+//                         }
+//                     });
+//
+//                     // Close modal after success
+//                     setTimeout(() => {
+//                         closeTrainingCheckOutModal();
+//                     }, 2000);
+//                 } else {
+//                     checkOutStatusMessage.value = 'Check-out berhasil tapi tidak ada data training';
+//                 }
+//             },
+//             onError: (errors) => {
+//                 const errorMessage = Object.values(errors)[0] || 'Terjadi kesalahan saat check-out'
+//                 checkOutStatusMessage.value = errorMessage;
+//                 
+//                 Swal.fire({
+//                     icon: 'error',
+//                     title: 'Check-out Gagal!',
+//                     text: errorMessage
+//                 });
+//             },
+//             onFinish: () => {
+//                 isProcessingCheckOut.value = false;
+//             }
+//         });
+//     } catch (error) {
+//         console.error('Check-out error:', error);
+//         checkOutStatusMessage.value = 'Terjadi kesalahan saat check-out';
+//         isProcessingCheckOut.value = false;
+//         
+//         Swal.fire({
+//             icon: 'error',
+//             title: 'Error!',
+//             text: 'Terjadi kesalahan saat memproses check-out'
+//         });
+//     }
+// }
 
 // Cleanup on unmount
 onBeforeUnmount(() => {
@@ -4885,8 +4885,8 @@ onMounted(() => {
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadPendingCorrectionApprovals();
-    loadTrainingInvitations();
-    loadAvailableTrainings();
+    // loadTrainingInvitations();
+    // loadAvailableTrainings();
     loadActiveSanctions();
     loadCoachingApprovals();
 });
@@ -5099,7 +5099,7 @@ watch(locale, () => {
                             </div>
                         </div>
                         
-                        <div v-if="loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals || loadingTrainingInvitations" class="text-center py-4">
+                        <div v-if="loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals" class="text-center py-4">
                             <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
                             <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
                         </div>
@@ -9041,7 +9041,8 @@ watch(locale, () => {
         </div>
 
         <!-- Training Detail Modal -->
-        <div v-if="showTrainingDetailModal && selectedTrainingDetail" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingDetailModal">
+        <!-- <div v-if="showTrainingDetailModal && selectedTrainingDetail" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingDetailModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-slate-800">Detail Training</h3>
@@ -9320,7 +9321,8 @@ watch(locale, () => {
         </div>
 
         <!-- Training Check-in QR Code Modal -->
-        <div v-if="showTrainingCheckInModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingCheckInModal">
+        <!-- <div v-if="showTrainingCheckInModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingCheckInModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-slate-800">Check-in Training</h3>
@@ -9471,7 +9473,8 @@ watch(locale, () => {
         </div>
 
         <!-- Training Check-out QR Code Modal -->
-        <div v-if="showTrainingCheckOutModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingCheckOutModal">
+        <!-- <div v-if="showTrainingCheckOutModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingCheckOutModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold text-slate-800">Check-out Training</h3>
@@ -9611,7 +9614,8 @@ watch(locale, () => {
         </div>
 
         <!-- Training Review Modal -->
-        <div v-if="showTrainingReviewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingReviewModal">
+        <!-- <div v-if="showTrainingReviewModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingReviewModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-6">
                     <h3 class="text-xl font-semibold text-slate-800">Review Training</h3>
@@ -9854,7 +9858,8 @@ watch(locale, () => {
         </div>
 
         <!-- Training History Modal -->
-        <div v-if="showTrainingHistoryModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingHistoryModal">
+        <!-- <div v-if="showTrainingHistoryModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeTrainingHistoryModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-6">
                     <h3 class="text-xl font-semibold text-slate-800">Training History</h3>
@@ -10121,7 +10126,8 @@ watch(locale, () => {
         </div>
 
         <!-- Available Trainings Modal -->
-        <div v-if="showAvailableTrainingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeAvailableTrainingsModal">
+        <!-- <div v-if="showAvailableTrainingsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="closeAvailableTrainingsModal"> -->
+        <div v-if="false" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-6">
                     <h3 class="text-xl font-medium text-gray-900 dark:text-white">
@@ -10413,9 +10419,11 @@ watch(locale, () => {
     </div>
 
     <!-- Training Cards - Moved to Bottom -->
-    <div class="px-4 md:px-6 space-y-4 mb-6">
+    <!-- <div class="px-4 md:px-6 space-y-4 mb-6"> -->
+    <div v-if="false" class="px-4 md:px-6 space-y-4 mb-6">
         <!-- Training Section (Invitations + History) -->
-        <div class="flex-shrink-0 mb-4">
+        <!-- <div class="flex-shrink-0 mb-4"> -->
+        <div v-if="false" class="flex-shrink-0 mb-4">
             <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                 :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                 <div class="flex items-center justify-between mb-3">
@@ -10524,7 +10532,8 @@ watch(locale, () => {
         </div>
 
         <!-- Available Trainings Section -->
-        <div class="flex-shrink-0 mb-4">
+        <!-- <div class="flex-shrink-0 mb-4"> -->
+        <div v-if="false" class="flex-shrink-0 mb-4">
             <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                 :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                 <div class="flex items-center justify-between mb-3">
