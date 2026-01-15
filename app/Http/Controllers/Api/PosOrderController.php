@@ -816,38 +816,70 @@ class PosOrderController extends Controller
                 // Update member points: add back redemption points, deduct earned points
                 // Note: point_remainder sudah di-update di loop sebelumnya untuk setiap earn transaction
                 $pointsChanged = false;
+                $currentPoints = $member->just_points ?? 0;
+                $initialPoints = $currentPoints; // Simpan initial points untuk logging
+                $actualDeducted = 0; // Initialize untuk logging
                 
                 // Kembalikan point dari redemption ke member
                 if ($totalPointsToAddBack > 0) {
-                    $member->just_points = ($member->just_points ?? 0) + $totalPointsToAddBack;
+                    $currentPoints = $currentPoints + $totalPointsToAddBack;
                     $pointsChanged = true;
                     Log::info('Returning redemption points to member', [
                         'member_id' => $memberId,
                         'points_returned' => $totalPointsToAddBack,
-                        'new_points' => $member->just_points
+                        'points_before' => $member->just_points ?? 0,
+                        'points_after' => $currentPoints
                     ]);
                 }
                 
                 // Kurangi point dari earning yang sudah dihapus
-                if ($totalPointsToDeduct > 0 && ($member->just_points ?? 0) >= $totalPointsToDeduct) {
-                    $member->just_points = ($member->just_points ?? 0) - $totalPointsToDeduct;
+                // PENTING: Selalu kurangi point meskipun point member kurang dari yang harus dikurangi
+                // Kurangi sampai 0 maksimal (tidak boleh negatif)
+                if ($totalPointsToDeduct > 0) {
+                    $pointsBeforeDeduct = $currentPoints;
+                    $currentPoints = max(0, $currentPoints - $totalPointsToDeduct); // Pastikan tidak negatif
+                    $actualDeducted = $pointsBeforeDeduct - $currentPoints;
                     $pointsChanged = true;
+                    
                     Log::info('Deducting earned points from member', [
                         'member_id' => $memberId,
-                        'points_deducted' => $totalPointsToDeduct,
-                        'new_points' => $member->just_points
+                        'points_to_deduct' => $totalPointsToDeduct,
+                        'points_before_deduct' => $pointsBeforeDeduct,
+                        'actual_points_deducted' => $actualDeducted,
+                        'points_after_deduct' => $currentPoints,
+                        'note' => $pointsBeforeDeduct < $totalPointsToDeduct 
+                            ? 'Point balance was less than deduction amount, deducted until 0' 
+                            : 'Full deduction applied'
                     ]);
+                    
+                    // Warning jika point kurang dari yang harus dikurangi
+                    if ($pointsBeforeDeduct < $totalPointsToDeduct) {
+                        Log::warning('Point balance less than deduction amount during rollback', [
+                            'member_id' => $memberId,
+                            'order_id' => $orderId,
+                            'points_before' => $pointsBeforeDeduct,
+                            'points_to_deduct' => $totalPointsToDeduct,
+                            'points_after' => $currentPoints,
+                            'points_not_deducted' => $totalPointsToDeduct - $actualDeducted
+                        ]);
+                    }
                 }
+                
+                // Update member points
+                $member->just_points = $currentPoints;
                 
                 // Save member (point_remainder sudah di-update di loop sebelumnya)
                 if ($pointsChanged || isset($member->point_remainder)) {
                     $member->save();
                     Log::info('Member points updated after rollback', [
                         'member_id' => $memberId,
+                        'initial_points' => $initialPoints,
                         'points_added_back' => $totalPointsToAddBack,
-                        'points_deducted' => $totalPointsToDeduct,
+                        'points_to_deduct' => $totalPointsToDeduct,
+                        'actual_points_deducted' => $actualDeducted,
                         'final_points' => $member->just_points,
-                        'point_remainder' => $member->point_remainder ?? 0
+                        'point_remainder' => $member->point_remainder ?? 0,
+                        'net_change' => $member->just_points - $initialPoints
                     ]);
                     
                     // Send push notification to member about point return
@@ -962,7 +994,8 @@ class PosOrderController extends Controller
                 DB::commit();
 
                 // Calculate total points rolled back (net change)
-                $totalPointsRolledBack = $totalPointsToAddBack - $totalPointsToDeduct;
+                // Note: actualDeducted mungkin kurang dari totalPointsToDeduct jika point balance kurang
+                $totalPointsRolledBack = $totalPointsToAddBack - $actualDeducted;
 
                 return response()->json([
                     'success' => true,
@@ -970,10 +1003,16 @@ class PosOrderController extends Controller
                     'data' => [
                         'order_id' => $orderId,
                         'member_id' => $memberId,
+                        'initial_points' => $initialPoints,
                         'points_added_back' => $totalPointsToAddBack,
-                        'points_deducted' => $totalPointsToDeduct,
+                        'points_to_deduct' => $totalPointsToDeduct,
+                        'actual_points_deducted' => $actualDeducted,
                         'points_rolled_back' => $totalPointsRolledBack,
-                        'spending_rolled_back' => $grandTotal
+                        'final_points' => $member->just_points,
+                        'spending_rolled_back' => $grandTotal,
+                        'note' => $actualDeducted < $totalPointsToDeduct 
+                            ? 'Point balance was less than deduction amount, deducted until 0' 
+                            : null
                     ]
                 ]);
 
