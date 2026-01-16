@@ -778,6 +778,7 @@ Route::prefix('mobile/member')->group(function () {
 Route::prefix('pos')->group(function () {
     Route::post('/orders/sync', [PosOrderController::class, 'syncOrder'])->name('api.pos.orders.sync');
     Route::post('/orders/rollback-member', [PosOrderController::class, 'rollbackMemberTransaction'])->name('api.pos.orders.rollback-member');
+    Route::post('/orders/void', [PosOrderController::class, 'voidOrder'])->name('api.pos.orders.void');
 });
 
 // Closing Shift Routes

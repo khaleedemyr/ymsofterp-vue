@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Http;
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsPointTransaction;
 use App\Models\MemberAppsPointEarning;
@@ -1036,6 +1037,301 @@ class PosOrderController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to rollback member transaction: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Void order from POS
+     * This endpoint handles voiding an order, including:
+     * - Logging void action
+     * - Rolling back member transactions
+     * - Rolling back vouchers
+     * - Rolling back reward items
+     * - Deleting order from database
+     */
+    public function voidOrder(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'order_id' => 'required|string',
+                'order_nomor' => 'required|string',
+                'kode_outlet' => 'required|string',
+                'reason' => 'required|string',
+                'user_id' => 'nullable|integer',
+                'username' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $orderId = $request->input('order_id');
+            $orderNomor = $request->input('order_nomor');
+            $kodeOutlet = $request->input('kode_outlet');
+            $reason = $request->input('reason');
+            $userId = $request->input('user_id');
+            $username = $request->input('username', '');
+
+            Log::info('POS Order Void Request', [
+                'order_id' => $orderId,
+                'order_nomor' => $orderNomor,
+                'kode_outlet' => $kodeOutlet,
+                'reason' => $reason,
+                'user_id' => $userId,
+                'username' => $username
+            ]);
+
+            // 1. Get order data before deletion (before transaction)
+            $order = DB::table('orders')
+                ->where('id', $orderId)
+                ->where('kode_outlet', $kodeOutlet)
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found'
+                ], 404);
+            }
+
+            $orderData = (array) $order;
+            $orderItems = DB::table('order_items')
+                ->where('order_id', $orderId)
+                ->get()
+                ->toArray();
+
+            // 2. Rollback member transaction BEFORE main transaction (to avoid nested transactions)
+            if (!empty($orderData['member_id']) && trim($orderData['member_id']) !== '') {
+                try {
+                    Log::info('Rolling back member transaction for void order', [
+                        'order_id' => $orderId,
+                        'member_id' => $orderData['member_id'],
+                        'grand_total' => $orderData['grand_total'] ?? 0
+                    ]);
+
+                    // Call rollbackMemberTransaction via HTTP to avoid nested transaction issues
+                    // Or we can call it directly but it will use its own transaction
+                    $rollbackRequest = new Request([
+                        'order_id' => $orderId,
+                        'order_nomor' => $orderNomor,
+                        'member_id' => $orderData['member_id'],
+                        'grand_total' => $orderData['grand_total'] ?? 0,
+                        'transaction_date' => $orderData['created_at'] ?? $orderData['updated_at'] ?? now()
+                    ]);
+
+                    $rollbackResponse = $this->rollbackMemberTransaction($rollbackRequest);
+                    $rollbackData = json_decode($rollbackResponse->getContent(), true);
+
+                    if ($rollbackData['success'] ?? false) {
+                        Log::info('Member transaction rolled back successfully', [
+                            'order_id' => $orderId,
+                            'rollback_data' => $rollbackData['data'] ?? null
+                        ]);
+                    } else {
+                        Log::warning('Failed to rollback member transaction', [
+                            'order_id' => $orderId,
+                            'error' => $rollbackData['message'] ?? 'Unknown error'
+                        ]);
+                        // Continue with void even if rollback fails
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error rolling back member transaction in void order', [
+                        'order_id' => $orderId,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // Continue with void even if rollback fails
+                }
+            }
+
+            DB::beginTransaction();
+
+            try {
+                // 3. Log void action
+                $voidLogId = DB::table('void_bill_logs')->insertGetId([
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                    'user_id' => $userId,
+                    'username' => $username,
+                    'reason' => $reason,
+                    'waktu' => now()
+                ]);
+
+                DB::table('void_bill_detail_logs')->insert([
+                    'void_log_id' => $voidLogId,
+                    'order_id' => $orderId,
+                    'order_nomor' => $orderNomor,
+                    'order_data' => json_encode($orderData),
+                    'items_data' => json_encode($orderItems)
+                ]);
+
+                Log::info('Void log created', [
+                    'void_log_id' => $voidLogId,
+                    'order_id' => $orderId
+                ]);
+
+                // 4. Rollback voucher if voucher_info exists
+                if (!empty($orderData['voucher_info']) && trim($orderData['voucher_info']) !== '' && $orderData['voucher_info'] !== 'null') {
+                    try {
+                        $voucherInfo = is_string($orderData['voucher_info']) 
+                            ? json_decode($orderData['voucher_info'], true) 
+                            : $orderData['voucher_info'];
+
+                        if (isset($voucherInfo['member_voucher_id']) && $voucherInfo['member_voucher_id']) {
+                            Log::info('Rolling back voucher for void order', [
+                                'order_id' => $orderId,
+                                'member_voucher_id' => $voucherInfo['member_voucher_id']
+                            ]);
+
+                            // Call voucher rollback API
+                            $voucherRollbackUrl = config('app.api_base_url', 'https://ymsofterp.com') . '/api/mobile/member/vouchers/rollback-used';
+                            $voucherResponse = Http::post($voucherRollbackUrl, [
+                                'member_voucher_id' => $voucherInfo['member_voucher_id']
+                            ]);
+
+                            if ($voucherResponse->successful()) {
+                                Log::info('Voucher rolled back successfully', [
+                                    'order_id' => $orderId,
+                                    'member_voucher_id' => $voucherInfo['member_voucher_id']
+                                ]);
+                            } else {
+                                Log::warning('Failed to rollback voucher', [
+                                    'order_id' => $orderId,
+                                    'member_voucher_id' => $voucherInfo['member_voucher_id'],
+                                    'response' => $voucherResponse->body()
+                                ]);
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('Error rolling back voucher in void order', [
+                            'order_id' => $orderId,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        // Continue with void even if rollback fails
+                    }
+                }
+
+                // 5. Rollback reward items (reset redeemed_at for non-point rewards)
+                // Note: Point redemptions (JTS-...) are handled by rollbackMemberTransaction
+                foreach ($orderItems as $item) {
+                    $itemArray = (array) $item;
+                    if (isset($itemArray['notes']) && 
+                        strpos($itemArray['notes'], '[REWARD]') !== false && 
+                        strpos($itemArray['notes'], '[SERIAL:') !== false) {
+                        
+                        preg_match('/\[SERIAL:([^\]]+)\]/', $itemArray['notes'], $matches);
+                        if (isset($matches[1])) {
+                            $serialCode = $matches[1];
+                            
+                            // Only reset for non-point rewards (CH-... or RW-...)
+                            // Point rewards (JTS-...) are handled by rollbackMemberTransaction
+                            if (!str_starts_with($serialCode, 'JTS-')) {
+                                try {
+                                    Log::info('Resetting redeemed_at for reward item', [
+                                        'order_id' => $orderId,
+                                        'serial_code' => $serialCode
+                                    ]);
+
+                                    $resetUrl = config('app.api_base_url', 'https://ymsofterp.com') . '/api/mobile/member/rewards/reset-redeemed';
+                                    $resetResponse = Http::post($resetUrl, [
+                                        'serial_code' => $serialCode
+                                    ]);
+
+                                    if ($resetResponse->successful()) {
+                                        Log::info('Reward redeemed_at reset successfully', [
+                                            'order_id' => $orderId,
+                                            'serial_code' => $serialCode
+                                        ]);
+                                    } else {
+                                        Log::warning('Failed to reset reward redeemed_at', [
+                                            'order_id' => $orderId,
+                                            'serial_code' => $serialCode,
+                                            'response' => $resetResponse->body()
+                                        ]);
+                                    }
+                                } catch (\Exception $e) {
+                                    Log::error('Error resetting reward redeemed_at', [
+                                        'order_id' => $orderId,
+                                        'serial_code' => $serialCode,
+                                        'error' => $e->getMessage()
+                                    ]);
+                                    // Continue with void even if reset fails
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 6. Delete order and related data (in correct order to avoid foreign key issues)
+                // Delete child tables first
+                $deletedItems = DB::table('order_items')
+                    ->where('order_id', $orderId)
+                    ->delete();
+
+                $deletedPromos = DB::table('order_promos')
+                    ->where('order_id', $orderId)
+                    ->delete();
+
+                $deletedPayments = DB::table('order_payment')
+                    ->where('order_id', $orderId)
+                    ->delete();
+
+                // Delete order
+                $deletedOrder = DB::table('orders')
+                    ->where('id', $orderId)
+                    ->delete();
+
+                Log::info('Order deleted from database', [
+                    'order_id' => $orderId,
+                    'deleted_order' => $deletedOrder,
+                    'deleted_items' => $deletedItems,
+                    'deleted_promos' => $deletedPromos,
+                    'deleted_payments' => $deletedPayments
+                ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order voided successfully',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'order_nomor' => $orderNomor,
+                        'void_log_id' => $voidLogId,
+                        'deleted' => [
+                            'order' => $deletedOrder,
+                            'items' => $deletedItems,
+                            'promos' => $deletedPromos,
+                            'payments' => $deletedPayments
+                        ]
+                    ]
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error voiding order', [
+                    'order_id' => $orderId,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Void Order Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to void order: ' . $e->getMessage()
             ], 500);
         }
     }
