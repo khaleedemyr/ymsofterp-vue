@@ -606,6 +606,8 @@ class PurchaseOrderOpsController extends Controller
         $po = PurchaseOrderOps::with([
             'supplier',
             'creator',
+            // PO item level outlet (supports multi-outlet PO)
+            'items.outlet',
             'items.prOpsItem.purchaseRequisition',
             'items.prOpsItem.outlet',
             'items.prOpsItem.category', // Category sudah memiliki division field (string), tidak perlu eager load relationship

@@ -67,6 +67,49 @@ const canApproveGM = computed(() => {
          (props.user.id_jabatan === 152 || props.user.id_jabatan === 381); // GM Finance
 });
 
+function getItemOutletId(item) {
+  // Prefer PO item outlet_id (new structure), fallback to PR Ops item outlet_id (legacy)
+  return item?.outlet_id ?? item?.pr_ops_item?.outlet_id ?? null;
+}
+
+function getItemOutletName(item) {
+  // Prefer PO item outlet relation, fallback to PR Ops item outlet relation
+  return (
+    item?.outlet?.nama_outlet ??
+    item?.pr_ops_item?.outlet?.nama_outlet ??
+    (getItemOutletId(item) == null ? 'Head Office' : 'Unknown Outlet')
+  );
+}
+
+const itemsByOutlet = computed(() => {
+  const groups = new Map();
+  const items = Array.isArray(props.po?.items) ? props.po.items : [];
+
+  items.forEach((item) => {
+    const outletId = getItemOutletId(item);
+    const outletName = getItemOutletName(item);
+    const key = outletId == null ? 'HO' : String(outletId);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        outlet_id: outletId,
+        outlet_name: outletName,
+        items: [],
+        subtotal: 0,
+      });
+    }
+
+    const group = groups.get(key);
+    group.items.push(item);
+    group.subtotal += Number(item?.total || 0);
+  });
+
+  // Stable display order by outlet name
+  return Array.from(groups.values()).sort((a, b) =>
+    String(a.outlet_name || '').localeCompare(String(b.outlet_name || ''), 'id-ID')
+  );
+});
+
 const canEdit = computed(() => {
   return ['draft', 'approved'].includes(props.po.status);
 });
@@ -828,40 +871,69 @@ const canDeleteAttachment = (attachment) => {
           <!-- Items -->
           <div class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Items</h2>
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                  <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
-                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                  <tr v-for="item in po.items" :key="item.id">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
-                      <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
-                        <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
-                        <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
-                      </div>
-                      <span v-else class="text-gray-400">-</span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.total) }}</td>
-                  </tr>
-                  <tr v-if="!po.items || po.items.length === 0">
-                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
-                      No items found. Debug: {{ JSON.stringify(po.items) }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="!po.items || po.items.length === 0" class="py-6 text-center text-sm text-gray-500">
+              No items found.
+            </div>
+
+            <div v-else class="space-y-5">
+              <div
+                v-for="group in itemsByOutlet"
+                :key="group.outlet_id ?? 'HO'"
+                class="border border-gray-200 rounded-xl overflow-hidden"
+              >
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-3 bg-gray-50">
+                  <div class="text-sm text-gray-700 flex items-center gap-2">
+                    <i class="fa fa-store text-blue-600"></i>
+                    <span class="font-medium">Outlet:</span>
+                    <span class="font-semibold text-gray-900">{{ group.outlet_name }}</span>
+                    <span class="text-xs text-gray-500">({{ group.items.length }} item)</span>
+                  </div>
+                  <div class="text-sm text-gray-700">
+                    <span class="font-medium">Subtotal Outlet:</span>
+                    <span class="font-semibold text-gray-900">{{ formatCurrency(group.subtotal) }}</span>
+                  </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-white">
+                      <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <tr v-for="item in group.items" :key="item.id">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.item_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
+                          <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                            <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                            <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                          </div>
+                          <span v-else class="text-gray-400">-</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatCurrency(item.total) }}</td>
+                      </tr>
+
+                      <tr class="bg-gray-50">
+                        <td colspan="5" class="px-6 py-3 text-right text-sm font-semibold text-gray-700">
+                          Subtotal Outlet
+                        </td>
+                        <td class="px-6 py-3 text-right text-sm font-bold text-gray-900">
+                          {{ formatCurrency(group.subtotal) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
 
