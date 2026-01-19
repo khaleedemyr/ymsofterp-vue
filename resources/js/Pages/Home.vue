@@ -4934,7 +4934,7 @@ watch(locale, () => {
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         
                         <!-- Banner Section (Optional) -->
-                        <div class="relative h-48 overflow-hidden">
+                        <div class="relative h-56 sm:h-64 md:h-72 lg:h-80 overflow-hidden">
                             <!-- Custom Banner or Default Gradient -->
                             <div v-if="user.banner" class="w-full h-full">
                                 <img :src="user.banner ? `/storage/${user.banner}` : '/images/banner-default.jpg'" 
@@ -4951,59 +4951,96 @@ watch(locale, () => {
                                 <i class="fa-solid fa-camera text-sm"></i>
                             </button>
                         </div>
-                        
-                        <!-- Avatar Section - Centered -->
-                        <div class="relative -mt-20 mb-6 flex flex-col items-center">
-                            <!-- Avatar - Larger and Centered -->
-                            <div v-if="user.avatar" class="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-2xl cursor-pointer hover:shadow-3xl transition-all hover:scale-105" @click="openImageModal(`/storage/${user.avatar}`)">
-                                <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
-                            </div>
-                            <div v-else class="w-32 h-32 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-2xl">
-                                {{ getInitials(user.nama_lengkap) }}
-                            </div>
-                            
-                            <!-- Avatar Upload Button -->
-                            <button @click="uploadAvatar" class="absolute -bottom-2 right-1/2 transform translate-x-8 bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded-full shadow-lg transition-all">
-                                <i class="fa-solid fa-camera text-sm"></i>
-                            </button>
-                        </div>
-                        
-                        <!-- User Info Section -->
-                        <div class="px-6 pb-6">
-                            <!-- Greeting and Name -->
-                            <div class="text-center mb-6">
-                                <div class="text-xl sm:text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
-                                <div class="text-base sm:text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
-                            </div>
-                            
-                            <!-- User Information Cards -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <!-- Outlet -->
-                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-blue-50'">
-                                    <div class="w-2 h-2 rounded-full bg-blue-500"></div>
-                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-blue-300' : 'text-blue-700'">Outlet:</div>
-                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
+
+                        <!-- Profile Header (Professional layout) -->
+                        <div class="px-6 pb-6 w-full">
+                            <div class="flex flex-col md:flex-row md:items-start md:gap-6">
+                                <!-- Left: Avatar + Greeting -->
+                                <div class="flex flex-col items-center text-center md:items-start md:text-left md:w-80 lg:w-96 flex-shrink-0">
+                                    <div class="relative -mt-16 sm:-mt-20 md:-mt-24 mb-4">
+                                        <!-- Avatar -->
+                                        <div v-if="user.avatar" class="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-2xl cursor-pointer hover:shadow-3xl transition-all hover:scale-105" @click="openImageModal(`/storage/${user.avatar}`)">
+                                            <img :src="user.avatar ? `/storage/${user.avatar}` : '/images/avatar-default.png'" alt="Avatar" class="w-full h-full object-cover" />
+                                        </div>
+                                        <div v-else class="w-32 h-32 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-2xl">
+                                            {{ getInitials(user.nama_lengkap) }}
+                                        </div>
+                                        
+                                        <!-- Avatar Upload Button -->
+                                        <button @click="uploadAvatar" class="absolute -bottom-2 right-2 bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded-full shadow-lg transition-all">
+                                            <i class="fa-solid fa-camera text-sm"></i>
+                                        </button>
+                                    </div>
+
+                                    <div class="w-full">
+                                        <div class="text-xl sm:text-2xl md:text-3xl font-extrabold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ greeting }},</div>
+                                        <div class="text-base sm:text-lg md:text-xl font-bold" :class="isNight ? 'text-indigo-200' : 'text-indigo-700'">{{ user.nama_lengkap }}</div>
+
+                                        <!-- Optional: quick badges for role -->
+                                        <div class="mt-3 flex flex-wrap gap-2 justify-center md:justify-start">
+                                            <span class="px-3 py-1 rounded-full text-xs font-semibold border"
+                                                :class="isNight ? 'bg-slate-700/60 text-slate-100 border-slate-600' : 'bg-slate-50 text-slate-700 border-slate-200'">
+                                                {{ userJabatan }}
+                                            </span>
+                                            <span class="px-3 py-1 rounded-full text-xs font-semibold border"
+                                                :class="isNight ? 'bg-indigo-900/40 text-indigo-100 border-indigo-700/60' : 'bg-indigo-50 text-indigo-700 border-indigo-200'">
+                                                {{ userLevel }}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
-                                
-                                <!-- Divisi -->
-                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-green-50'">
-                                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-green-300' : 'text-green-700'">Divisi:</div>
-                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
-                                </div>
-                                
-                                <!-- Level -->
-                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-purple-50'">
-                                    <div class="w-2 h-2 rounded-full bg-purple-500"></div>
-                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-purple-300' : 'text-purple-700'">Level:</div>
-                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userLevel }}</div>
-                                </div>
-                                
-                                <!-- Jabatan -->
-                                <div class="flex items-center gap-2 p-3 rounded-lg" :class="isNight ? 'bg-slate-700/50' : 'bg-orange-50'">
-                                    <div class="w-2 h-2 rounded-full bg-orange-500"></div>
-                                    <div class="text-xs sm:text-sm font-medium" :class="isNight ? 'text-orange-300' : 'text-orange-700'">Jabatan:</div>
-                                    <div class="text-xs sm:text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userJabatan }}</div>
+
+                                <!-- Right: Info cards (full width) -->
+                                <div class="w-full">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                                        <!-- Outlet -->
+                                        <div class="w-full p-4 rounded-xl border flex items-start gap-3"
+                                            :class="isNight ? 'bg-slate-700/40 border-slate-600/60' : 'bg-white border-slate-200'">
+                                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                                :class="isNight ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700'">
+                                                <i class="fa-solid fa-store text-sm"></i>
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="text-xs font-semibold tracking-wide uppercase" :class="isNight ? 'text-blue-200/80' : 'text-slate-500'">Outlet</div>
+                                                <div class="text-sm font-semibold break-words" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userOutlet }}</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Divisi -->
+                                        <div class="w-full p-4 rounded-xl border flex items-start gap-3"
+                                            :class="isNight ? 'bg-slate-700/40 border-slate-600/60' : 'bg-white border-slate-200'">
+                                            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                                :class="isNight ? 'bg-green-900/30 text-green-200' : 'bg-green-50 text-green-700'">
+                                                <i class="fa-solid fa-building text-sm"></i>
+                                            </div>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="text-xs font-semibold tracking-wide uppercase" :class="isNight ? 'text-green-200/80' : 'text-slate-500'">Divisi</div>
+                                                <div class="text-sm font-semibold break-words" :class="isNight ? 'text-white' : 'text-slate-800'">{{ userDivisi }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Quote (placed on right to avoid empty space) -->
+                                    <div class="mt-3 p-4 rounded-xl border shadow-sm"
+                                        :class="isNight ? 'bg-slate-700/40 text-white border-slate-600/60' : 'bg-white text-slate-800 border-slate-200'">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <i class="fa-solid fa-quote-left text-xs" :class="isNight ? 'text-indigo-200' : 'text-indigo-600'"></i>
+                                            <span class="text-xs font-semibold tracking-wide uppercase" :class="isNight ? 'text-indigo-200/80' : 'text-slate-500'">
+                                                {{ t('home.quote_of_the_day') }}
+                                            </span>
+                                        </div>
+                                        <div v-if="loadingQuote" class="italic text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-500'">
+                                            {{ t('home.loading_quote') }}
+                                        </div>
+                                        <template v-else>
+                                            <div class="italic text-sm md:text-base" :class="isNight ? 'text-slate-200' : 'text-slate-700'">
+                                                "{{ quote.text }}"
+                                            </div>
+                                            <div class="mt-2 text-right font-semibold text-xs" :class="isNight ? 'text-indigo-200' : 'text-indigo-600'">
+                                                - {{ quote.author }}
+                                            </div>
+                                        </template>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -5015,10 +5052,6 @@ watch(locale, () => {
                                 <div class="flex items-center gap-2 mb-3">
                                     <i class="fa-solid fa-gavel text-lg" :class="isNight ? 'text-red-300' : 'text-red-600'"></i>
                                     <span class="font-semibold text-sm" :class="isNight ? 'text-red-300' : 'text-red-600'">Sanksi Aktif</span>
-                                </div>
-                                <!-- Debug info -->
-                                <div class="text-xs mb-2" :class="isNight ? 'text-red-300' : 'text-red-600'">
-                                    Debug: {{ activeSanctions.length }} sanctions found
                                 </div>
                                 <div v-for="sanction in activeSanctions" :key="sanction.id" class="mb-3 last:mb-0">
                                     <div v-for="(action, index) in sanction.sanctions" :key="index" 
@@ -5072,20 +5105,6 @@ watch(locale, () => {
                                 </div>
                             </div>
 
-                            <!-- Quote Section -->
-                            <div class="mt-4 p-4 rounded-xl border shadow-lg animate-fade-in"
-                                :class="[
-                                    isNight ? 'bg-slate-700/80 text-white border-slate-600' : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-slate-800 border-indigo-200'
-                                ]">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="font-semibold text-sm" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">{{ t('home.quote_of_the_day') }}</span>
-                                </div>
-                                <div v-if="loadingQuote" class="italic text-sm" :class="isNight ? 'text-slate-300' : 'text-slate-500'">{{ t('home.loading_quote') }}</div>
-                                <template v-else>
-                                    <div class="italic text-sm md:text-base" :class="isNight ? 'text-slate-200' : 'text-slate-700'">"{{ quote.text }}"</div>
-                                    <div class="mt-1 text-right font-semibold text-xs" :class="isNight ? 'text-indigo-300' : 'text-indigo-600'">- {{ quote.author }}</div>
-                                </template>
-                            </div>
                         </div>
                     </div>
                 </div>
