@@ -41,7 +41,16 @@
           <option value="paid">Paid</option>
           <option value="cancelled">Cancelled</option>
         </select>
-        <input type="date" v-model="filters.date" @change="onFilterChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Tanggal" />
+        <input type="date" v-model="filters.date_from" @change="onFilterChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari Tanggal" />
+        <input type="date" v-model="filters.date_to" @change="onFilterChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai Tanggal" />
+        
+        <!-- Load Data Button -->
+        <button 
+          @click="loadData" 
+          class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-700 text-white rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+        >
+          <i class="fa fa-sync-alt mr-1"></i> Load Data
+        </button>
         
         <!-- Per Page Selector -->
         <select v-model="filters.per_page" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
@@ -51,7 +60,23 @@
           <option value="100">100 per halaman</option>
         </select>
       </div>
-      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+      <!-- Empty State -->
+      <div v-if="!isDataLoaded" class="bg-white rounded-2xl shadow-2xl p-12 text-center">
+        <div class="text-gray-400 mb-4">
+          <i class="fa fa-database text-6xl mb-4"></i>
+          <p class="text-xl font-semibold mb-2">Data Belum Dimuat</p>
+          <p class="text-sm mb-6">Pilih filter dan klik "Load Data" untuk memuat data payment.</p>
+          <button 
+            @click="loadData" 
+            class="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa fa-sync-alt mr-2"></i> Load Data
+          </button>
+        </div>
+      </div>
+
+      <!-- Data Table -->
+      <div v-else class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-yellow-100 to-yellow-200">
             <tr>
@@ -151,7 +176,7 @@
         </table>
       </div>
       <!-- Pagination -->
-      <div class="flex justify-between items-center mt-4">
+      <div v-if="isDataLoaded" class="flex justify-between items-center mt-4">
         <div class="text-sm text-gray-600">
           Menampilkan {{ payments.from || 0 }} - {{ payments.to || 0 }} dari {{ payments.total || 0 }} data
         </div>
@@ -178,21 +203,34 @@
 import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   payments: Object,
   outlets: Array,
   filters: Object,
-  grGroups: Object
+  grGroups: Object,
+  dataLoaded: {
+    type: Boolean,
+    default: false
+  }
 });
+
+const { showLoading, hideLoading } = useLoading();
+
+// Set default date to today
+const today = new Date().toISOString().split('T')[0];
 
 const filters = ref({
   outlet: props.filters?.outlet || '',
   status: props.filters?.status || '',
-  date: props.filters?.date || '',
+  date_from: props.filters?.date_from || today,
+  date_to: props.filters?.date_to || today,
   search: props.filters?.search || '',
   per_page: props.filters?.per_page || '10'
 });
+
+const isDataLoaded = ref(props.dataLoaded || false);
 
 // Bulk selection
 const selectedPayments = ref([]);
@@ -237,20 +275,47 @@ function getStatusClass(status) {
 }
 
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (url) {
+    showLoading('Memuat Data...');
+    // Add load_data parameter to pagination URLs
+    const urlObj = new URL(url, window.location.origin);
+    urlObj.searchParams.set('load_data', 'true');
+    router.visit(urlObj.pathname + urlObj.search, { 
+      preserveState: true, 
+      replace: true,
+      onFinish: () => {
+        hideLoading();
+        isDataLoaded.value = true;
+      }
+    });
+  }
+}
+
+function loadData() {
+  showLoading('Memuat Data Payment...');
+  router.get('/outlet-payments', { 
+    ...filters.value,
+    load_data: true
+  }, {
+    preserveState: true,
+    replace: true,
+    onFinish: () => {
+      hideLoading();
+      isDataLoaded.value = true;
+    }
+  });
 }
 
 function onFilterChange() {
-  router.get('/outlet-payments', { ...filters.value }, { preserveState: true, replace: true });
+  // Don't auto-load, just update filters
+  // User needs to click "Load Data" button
 }
 
-// Search with debounce
+// Search with debounce - don't auto-load
 let searchTimeout = null;
 function onSearchChange() {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    router.get('/outlet-payments', { ...filters.value }, { preserveState: true, replace: true });
-  }, 500); // 500ms debounce
+  // Don't auto-load, just update search filter
+  // User needs to click "Load Data" button
 }
 
 function goToCreatePage() {
@@ -283,11 +348,16 @@ function deletePayment(payment) {
         cancelButtonText: 'Batal'
       }).then((result) => {
         if (result.isConfirmed) {
+          showLoading('Menghapus Payment...');
           router.delete(`/outlet-payments/${payment.id}`, {
             onSuccess: () => {
+              hideLoading();
               Swal.fire('Berhasil', 'Payment berhasil dihapus!', 'success');
+              // Reload data after delete
+              loadData();
             },
             onError: () => {
+              hideLoading();
               Swal.fire('Gagal', 'Gagal menghapus Payment', 'error');
             }
           });
@@ -323,15 +393,20 @@ function bulkConfirm() {
       cancelButtonText: 'Batal'
     }).then((result) => {
       if (result.isConfirmed) {
+        showLoading('Mengkonfirmasi Payments...');
         router.post('/outlet-payments/bulk-confirm', {
           payment_ids: selectedPayments.value
         }, {
           onSuccess: () => {
+            hideLoading();
             selectedPayments.value = [];
             selectAll.value = false;
             Swal.fire('Berhasil', 'Payments berhasil dikonfirmasi!', 'success');
+            // Reload data after bulk confirm
+            loadData();
           },
           onError: () => {
+            hideLoading();
             Swal.fire('Gagal', 'Gagal mengkonfirmasi payments', 'error');
           }
         });

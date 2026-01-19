@@ -933,25 +933,15 @@ class DeliveryOrderController extends Controller
 
     /**
      * OPTIMIZED: Get delivery orders with optimized query
+     * Changes:
+     * 1. Replaced DATE() function with date range comparison for better index usage
+     * 2. Using raw SQL for complex OR join condition (more efficient than query builder)
+     * 3. Optimized COUNT query to avoid duplicate code
      */
     private function getDeliveryOrdersOptimized($search, $dateFrom, $dateTo, $perPage)
     {
-        // Use raw SQL for better performance with complex joins
-        $query = "
-            SELECT 
-                do.id,
-                do.number,
-                do.created_at,
-                DATE_FORMAT(do.created_at, '%d/%m/%Y') as created_date,
-                DATE_FORMAT(do.created_at, '%H:%i:%s') as created_time,
-                do.packing_list_id,
-                do.ro_supplier_gr_id,
-                u.nama_lengkap as created_by_name,
-                COALESCE(pl.packing_number, gr.gr_number) as packing_number,
-                fo.order_number as floor_order_number,
-                o.nama_outlet,
-                wo.name as warehouse_outlet_name,
-                CONCAT(COALESCE(w.name, ''), CASE WHEN w.name IS NOT NULL AND wd.name IS NOT NULL THEN ' - ' ELSE '' END, COALESCE(wd.name, '')) as warehouse_info
+        // Build base query with optimized date range (no DATE() function for better index usage)
+        $baseQuery = "
             FROM delivery_orders do
             LEFT JOIN users u ON do.created_by = u.id
             LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
@@ -970,9 +960,29 @@ class DeliveryOrderController extends Controller
         
         $bindings = [];
         
+        // OPTIMIZED: Use date range comparison instead of DATE() function for better index usage
+        // This allows MySQL to use index on created_at column efficiently
+        if (!empty($dateFrom)) {
+            $baseQuery .= " AND do.created_at >= ?";
+            $bindings[] = $dateFrom . ' 00:00:00';
+        }
+        
+        if (!empty($dateTo)) {
+            $baseQuery .= " AND do.created_at <= ?";
+            $bindings[] = $dateTo . ' 23:59:59';
+        }
+        
+        // Default filter: hari ini jika tidak ada filter (mencegah scan semua rows)
+        if (empty($dateFrom) && empty($dateTo)) {
+            $today = date('Y-m-d');
+            $baseQuery .= " AND do.created_at >= ? AND do.created_at <= ?";
+            $bindings[] = $today . ' 00:00:00';
+            $bindings[] = $today . ' 23:59:59';
+        }
+        
         // Apply search filter
         if (!empty($search)) {
-            $query .= " AND (
+            $baseQuery .= " AND (
                 COALESCE(pl.packing_number, gr.gr_number) LIKE ? OR
                 fo.order_number LIKE ? OR
                 u.nama_lengkap LIKE ? OR
@@ -984,92 +994,38 @@ class DeliveryOrderController extends Controller
             $bindings = array_merge($bindings, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
         }
         
-        // Apply date filters
-        if (!empty($dateFrom)) {
-            $query .= " AND DATE(do.created_at) >= ?";
-            $bindings[] = $dateFrom;
-        }
+        // OPTIMIZED: Get total count (reuse base query)
+        $countQuery = "SELECT COUNT(*) as total " . $baseQuery;
+        $total = DB::select($countQuery, $bindings)[0]->total;
         
-        if (!empty($dateTo)) {
-            $query .= " AND DATE(do.created_at) <= ?";
-            $bindings[] = $dateTo;
-        }
-        
-        // Default filter: hari ini jika tidak ada filter (mencegah scan semua rows)
-        if (empty($dateFrom) && empty($dateTo)) {
-            $today = date('Y-m-d');
-            $query .= " AND DATE(do.created_at) >= ?";
-            $bindings[] = $today;
-            $query .= " AND DATE(do.created_at) <= ?";
-            $bindings[] = $today;
-        }
-        
-        $query .= " ORDER BY do.created_at DESC";
-        
-        // OPTIMIZED: Query COUNT terpisah (lebih cepat daripada COUNT dengan subquery)
-        $countQuery = "
-            SELECT COUNT(*) as total
-            FROM delivery_orders do
-            LEFT JOIN users u ON do.created_by = u.id
-            LEFT JOIN food_packing_lists pl ON do.packing_list_id = pl.id
-            LEFT JOIN food_good_receives gr ON do.ro_supplier_gr_id = gr.id
-            LEFT JOIN purchase_order_foods po ON gr.po_id = po.id
-            LEFT JOIN food_floor_orders fo ON (
-                (do.packing_list_id IS NOT NULL AND pl.food_floor_order_id = fo.id) OR
-                (do.ro_supplier_gr_id IS NOT NULL AND po.source_id = fo.id)
-            )
-            LEFT JOIN tbl_data_outlet o ON fo.id_outlet = o.id_outlet
-            LEFT JOIN warehouse_outlets wo ON fo.warehouse_outlet_id = wo.id
-            LEFT JOIN warehouse_division wd ON pl.warehouse_division_id = wd.id
-            LEFT JOIN warehouses w ON wd.warehouse_id = w.id
-            WHERE 1=1
-        ";
-        
-        $countBindings = [];
-        
-        // Apply same filters untuk COUNT
-        if (!empty($search)) {
-            $countQuery .= " AND (
-                COALESCE(pl.packing_number, gr.gr_number) LIKE ? OR
-                fo.order_number LIKE ? OR
-                u.nama_lengkap LIKE ? OR
-                o.nama_outlet LIKE ? OR
-                wo.name LIKE ? OR
-                do.number LIKE ?
-            )";
-            $searchTerm = '%' . $search . '%';
-            $countBindings = array_merge($countBindings, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
-        }
-        
-        if (!empty($dateFrom)) {
-            $countQuery .= " AND DATE(do.created_at) >= ?";
-            $countBindings[] = $dateFrom;
-        }
-        
-        if (!empty($dateTo)) {
-            $countQuery .= " AND DATE(do.created_at) <= ?";
-            $countBindings[] = $dateTo;
-        }
-        
-        // Default filter untuk COUNT juga
-        if (empty($dateFrom) && empty($dateTo)) {
-            $today = date('Y-m-d');
-            $countQuery .= " AND DATE(do.created_at) >= ?";
-            $countBindings[] = $today;
-            $countQuery .= " AND DATE(do.created_at) <= ?";
-            $countBindings[] = $today;
-        }
-        
-        $total = DB::select($countQuery, $countBindings)[0]->total;
+        // Build main query with pagination
+        $mainQuery = "
+            SELECT 
+                do.id,
+                do.number,
+                do.created_at,
+                DATE_FORMAT(do.created_at, '%d/%m/%Y') as created_date,
+                DATE_FORMAT(do.created_at, '%H:%i:%s') as created_time,
+                do.packing_list_id,
+                do.ro_supplier_gr_id,
+                u.nama_lengkap as created_by_name,
+                COALESCE(pl.packing_number, gr.gr_number) as packing_number,
+                fo.order_number as floor_order_number,
+                o.nama_outlet,
+                wo.name as warehouse_outlet_name,
+                CONCAT(COALESCE(w.name, ''), CASE WHEN w.name IS NOT NULL AND wd.name IS NOT NULL THEN ' - ' ELSE '' END, COALESCE(wd.name, '')) as warehouse_info
+            " . $baseQuery . " ORDER BY do.created_at DESC";
         
         // Apply pagination
-        $offset = (request('page', 1) - 1) * $perPage;
-        $query .= " LIMIT $perPage OFFSET $offset";
-        
-        $results = DB::select($query, $bindings);
-        
-        // Convert to pagination format
         $currentPage = request('page', 1);
+        $offset = ($currentPage - 1) * $perPage;
+        $mainQuery .= " LIMIT ? OFFSET ?";
+        $bindings[] = $perPage;
+        $bindings[] = $offset;
+        
+        $results = DB::select($mainQuery, $bindings);
+        
+        // Calculate pagination info
         $lastPage = ceil($total / $perPage);
         
         return [
@@ -1146,15 +1102,31 @@ class DeliveryOrderController extends Controller
                 ->where('warehouse_id', $warehouse_id)
                 ->get()->keyBy('inventory_item_id');
             
+            // OPTIMIZED: Batch query untuk units (mengganti N+1 queries)
+            $unitIds = $inventoryItems->pluck('small_unit_id')
+                ->merge($inventoryItems->pluck('medium_unit_id'))
+                ->merge($inventoryItems->pluck('large_unit_id'))
+                ->unique()
+                ->filter()
+                ->values();
+            
+            $unitsMap = [];
+            if ($unitIds->isNotEmpty()) {
+                $unitsMap = DB::table('units')
+                    ->whereIn('id', $unitIds)
+                    ->pluck('name', 'id')
+                    ->toArray();
+            }
+            
             foreach ($items as $item) {
                 $inv = $inventoryItems[$item->item_id] ?? null;
                 $stock = $inv ? $stocks[$inv->id] ?? null : null;
                 
-                if ($stock) {
-                    // Ambil nama unit dari tabel units
-                    $unitNameSmall = DB::table('units')->where('id', $inv->small_unit_id)->value('name');
-                    $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
-                    $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
+                if ($stock && $inv) {
+                    // OPTIMIZED: Ambil nama unit dari map (tidak query lagi)
+                    $unitNameSmall = $unitsMap[$inv->small_unit_id] ?? null;
+                    $unitNameMedium = $unitsMap[$inv->medium_unit_id] ?? null;
+                    $unitNameLarge = $unitsMap[$inv->large_unit_id] ?? null;
                     
                     // Simpan semua unit dan stock
                     $itemUnits[$item->id] = [
@@ -1183,16 +1155,32 @@ class DeliveryOrderController extends Controller
             }
         }
 
-        // Ambil conversion factors untuk setiap item
+        // OPTIMIZED: Batch query untuk conversion factors (mengganti N+1 queries)
         $itemConversions = [];
-        foreach ($items as $item) {
-            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-            if ($itemMaster) {
-                $itemConversions[$item->id] = [
-                    'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
-                    'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
-                ];
-            } else {
+        if ($itemIds->isNotEmpty()) {
+            $itemMasters = DB::table('items')
+                ->whereIn('id', $itemIds)
+                ->select('id', 'small_conversion_qty', 'medium_conversion_qty')
+                ->get()
+                ->keyBy('id');
+            
+            foreach ($items as $item) {
+                $itemMaster = $itemMasters[$item->item_id] ?? null;
+                if ($itemMaster) {
+                    $itemConversions[$item->id] = [
+                        'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+                        'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
+                    ];
+                } else {
+                    $itemConversions[$item->id] = [
+                        'small_conversion_qty' => 1,
+                        'medium_conversion_qty' => 1
+                    ];
+                }
+            }
+        } else {
+            // Set default jika tidak ada items
+            foreach ($items as $item) {
                 $itemConversions[$item->id] = [
                     'small_conversion_qty' => 1,
                     'medium_conversion_qty' => 1
@@ -1267,15 +1255,31 @@ class DeliveryOrderController extends Controller
                 ->where('warehouse_id', $warehouse_id)
                 ->get()->keyBy('inventory_item_id');
             
+            // OPTIMIZED: Batch query untuk units (mengganti N+1 queries)
+            $unitIds = $inventoryItems->pluck('small_unit_id')
+                ->merge($inventoryItems->pluck('medium_unit_id'))
+                ->merge($inventoryItems->pluck('large_unit_id'))
+                ->unique()
+                ->filter()
+                ->values();
+            
+            $unitsMap = [];
+            if ($unitIds->isNotEmpty()) {
+                $unitsMap = DB::table('units')
+                    ->whereIn('id', $unitIds)
+                    ->pluck('name', 'id')
+                    ->toArray();
+            }
+            
             foreach ($items as $item) {
                 $inv = $inventoryItems[$item->item_id] ?? null;
                 $stock = $inv ? $stocks[$inv->id] ?? null : null;
                 
-                if ($stock) {
-                    // Ambil nama unit dari tabel units
-                    $unitNameSmall = DB::table('units')->where('id', $inv->small_unit_id)->value('name');
-                    $unitNameMedium = DB::table('units')->where('id', $inv->medium_unit_id)->value('name');
-                    $unitNameLarge = DB::table('units')->where('id', $inv->large_unit_id)->value('name');
+                if ($stock && $inv) {
+                    // OPTIMIZED: Ambil nama unit dari map (tidak query lagi)
+                    $unitNameSmall = $unitsMap[$inv->small_unit_id] ?? null;
+                    $unitNameMedium = $unitsMap[$inv->medium_unit_id] ?? null;
+                    $unitNameLarge = $unitsMap[$inv->large_unit_id] ?? null;
                     
                     // Simpan semua unit dan stock
                     $itemUnits[$item->id] = [
@@ -1304,16 +1308,32 @@ class DeliveryOrderController extends Controller
             }
         }
         
-        // Ambil conversion factors untuk setiap item
+        // OPTIMIZED: Batch query untuk conversion factors (mengganti N+1 queries)
         $itemConversions = [];
-        foreach ($items as $item) {
-            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-            if ($itemMaster) {
-                $itemConversions[$item->id] = [
-                    'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
-                    'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
-                ];
-            } else {
+        if ($itemIds->isNotEmpty()) {
+            $itemMasters = DB::table('items')
+                ->whereIn('id', $itemIds)
+                ->select('id', 'small_conversion_qty', 'medium_conversion_qty')
+                ->get()
+                ->keyBy('id');
+            
+            foreach ($items as $item) {
+                $itemMaster = $itemMasters[$item->item_id] ?? null;
+                if ($itemMaster) {
+                    $itemConversions[$item->id] = [
+                        'small_conversion_qty' => $itemMaster->small_conversion_qty ?? 1,
+                        'medium_conversion_qty' => $itemMaster->medium_conversion_qty ?? 1
+                    ];
+                } else {
+                    $itemConversions[$item->id] = [
+                        'small_conversion_qty' => 1,
+                        'medium_conversion_qty' => 1
+                    ];
+                }
+            }
+        } else {
+            // Set default jika tidak ada items
+            foreach ($items as $item) {
                 $itemConversions[$item->id] = [
                     'small_conversion_qty' => 1,
                     'medium_conversion_qty' => 1

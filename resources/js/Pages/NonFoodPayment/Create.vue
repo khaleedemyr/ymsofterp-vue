@@ -1320,6 +1320,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue';
+import { useLoading } from '@/Composables/useLoading';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -1375,6 +1376,7 @@ const mappedPRs = computed(() => {
 
 
 const isSubmitting = ref(false);
+const { showLoading, hideLoading } = useLoading();
 const selectedPO = ref(null);
 const selectedPR = ref(null);
 const selectedSupplier = ref(null);
@@ -1839,6 +1841,7 @@ function showPreview() {
 function confirmSubmit() {
   isSubmitting.value = true;
   showPreviewModal.value = false;
+  showLoading('Menyimpan Non Food Payment...', 'Mohon tunggu sebentar');
 
   // Convert outletPayments object to array, remove selectedBank (only send bank_id)
   const outletPaymentsArray = Object.values(outletPayments.value)
@@ -1920,6 +1923,7 @@ function confirmSubmit() {
     },
     onFinish: () => {
       isSubmitting.value = false;
+      hideLoading();
     }
   });
 }

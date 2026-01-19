@@ -153,6 +153,12 @@
                   <span v-else-if="cb.source_type_display === 'Retail Food'" class="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-semibold">
                     🟣 Retail Food
                   </span>
+                  <span v-else-if="cb.source_type_display === 'Retail Non Food'" class="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    🟠 Retail Non Food
+                  </span>
+                  <span v-else-if="cb.source_type_display === 'Warehouse Retail Food'" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-semibold">
+                    🔷 Warehouse Retail Food
+                  </span>
                   <span v-else class="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs font-semibold">
                     ⚪ Unknown
                   </span>
@@ -439,6 +445,12 @@
                             </span>
                             <span v-else-if="cb.source_type_display === 'Retail Food'" class="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-semibold">
                               🟣 Retail Food
+                            </span>
+                            <span v-else-if="cb.source_type_display === 'Retail Non Food'" class="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-semibold">
+                              🟠 Retail Non Food
+                            </span>
+                            <span v-else-if="cb.source_type_display === 'Warehouse Retail Food'" class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-semibold">
+                              🔷 Warehouse Retail Food
                             </span>
                           </div>
                           <div class="text-xs text-gray-600 space-y-1">

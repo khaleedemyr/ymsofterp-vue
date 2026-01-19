@@ -17,12 +17,47 @@ class OutletPaymentController extends Controller
         // Get filter parameters
         $outlet = $request->input('outlet');
         $status = $request->input('status');
-        $date = $request->input('date');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $search = $request->input('search');
         $perPage = $request->input('per_page', 10);
+        $loadData = $request->input('load_data', false);
+
+        // LAZY LOADING: Only load data if load_data is true or if filters/search are present
+        if (!$loadData && !$outlet && !$status && !$dateFrom && !$dateTo && !$search) {
+            // Return empty paginator
+            $payments = new \Illuminate\Pagination\LengthAwarePaginator(
+                collect([]),
+                0,
+                $perPage,
+                1,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+            
+            // Get outlets for filter dropdown
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet as id', 'nama_outlet as name')
+                ->orderBy('nama_outlet')
+                ->get();
+
+            return Inertia::render('OutletPayment/Index', [
+                'payments' => $payments,
+                'outlets' => $outlets,
+                'grGroups' => new \Illuminate\Pagination\LengthAwarePaginator(
+                    collect([]),
+                    0,
+                    10,
+                    1,
+                    ['path' => $request->url(), 'pageName' => 'gr_page']
+                ),
+                'filters' => $request->only(['outlet', 'status', 'date_from', 'date_to', 'search', 'per_page']),
+                'dataLoaded' => false
+            ]);
+        }
 
         // Build query with search and filters
-        $query = OutletPayment::query()
+        $query = DB::table('outlet_payments')
             ->leftJoin('tbl_data_outlet as o', 'outlet_payments.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'outlet_payments.created_by', '=', 'u.id')
             ->leftJoin('outlet_food_good_receives as gr', 'outlet_payments.gr_id', '=', 'gr.id')
@@ -47,8 +82,12 @@ class OutletPaymentController extends Controller
             $query->where('outlet_payments.status', $status);
         }
         
-        if ($date) {
-            $query->whereDate('outlet_payments.date', $date);
+        // Date range filter
+        if ($dateFrom) {
+            $query->whereDate('outlet_payments.date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('outlet_payments.date', '<=', $dateTo);
         }
 
         // Apply search
@@ -62,9 +101,12 @@ class OutletPaymentController extends Controller
             });
         }
 
-        $payments = $query->latest('outlet_payments.date')->paginate($perPage)->withQueryString();
+        $payments = $query->orderBy('outlet_payments.date', 'desc')
+            ->paginate($perPage)
+            ->withQueryString();
         
         // Add payment type to each payment
+        // Transform data to add payment_type
         $payments->getCollection()->transform(function($payment) {
             if ($payment->gr_id) {
                 $payment->payment_type = 'GR';
@@ -163,7 +205,8 @@ class OutletPaymentController extends Controller
             'payments' => $payments,
             'outlets' => $outlets,
             'grGroups' => $grGroupsPaginated,
-            'filters' => $request->only(['outlet', 'status', 'date', 'search', 'per_page'])
+            'filters' => $request->only(['outlet', 'status', 'date_from', 'date_to', 'search', 'per_page']),
+            'dataLoaded' => true
         ]);
     }
 

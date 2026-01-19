@@ -169,6 +169,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useLoading } from '@/Composables/useLoading';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 
@@ -182,6 +183,7 @@ const props = defineProps({
 });
 
 const isSubmitting = ref(false);
+const { showLoading, hideLoading } = useLoading();
 
 const selectedBank = ref(null);
 
@@ -250,17 +252,21 @@ function goBack() {
 
 function submitForm() {
   isSubmitting.value = true;
+  showLoading('Menyimpan perubahan Non Food Payment...', 'Mohon tunggu sebentar');
   
   router.put(`/non-food-payments/${props.payment.id}`, form, {
     onSuccess: () => {
       isSubmitting.value = false;
+      hideLoading();
     },
     onError: (errors) => {
       isSubmitting.value = false;
+      hideLoading();
       console.error('Validation errors:', errors);
     },
     onFinish: () => {
       isSubmitting.value = false;
+      hideLoading();
     }
   });
 }

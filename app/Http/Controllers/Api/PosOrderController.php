@@ -1156,6 +1156,7 @@ class PosOrderController extends Controller
                 $voidLogId = DB::table('void_bill_logs')->insertGetId([
                     'order_id' => $orderId,
                     'order_nomor' => $orderNomor,
+                    'kode_outlet' => $kodeOutlet,
                     'user_id' => $userId,
                     'username' => $username,
                     'reason' => $reason,

@@ -5,19 +5,30 @@ import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   user: Object,
   packingLists: Object,
   filters: Object,
+  dataLoaded: {
+    type: Boolean,
+    default: false
+  }
 });
+
+const { showLoading, hideLoading } = useLoading();
+
+// Set default date to today
+const today = dayjs().format('YYYY-MM-DD');
 
 const search = ref(props.filters?.search || '');
 const selectedStatus = ref(props.filters?.status || '');
-const from = ref(props.filters?.date_from || '');
-const to = ref(props.filters?.date_to || '');
+const from = ref(props.filters?.date_from || today);
+const to = ref(props.filters?.date_to || today);
 const loadData = ref(props.filters?.load_data || '');
 const perPage = ref(props.filters?.per_page || 15);
+const isDataLoaded = ref(props.dataLoaded || false);
 
 const showSummaryModal = ref(false);
 const summaryDate = ref(dayjs().format('YYYY-MM-DD'));
@@ -63,6 +74,7 @@ watch(
 );
 
 function loadDataWithFilters() {
+  showLoading('Memuat Data Packing List...');
   router.get('/packing-list', { 
     search: search.value, 
     status: selectedStatus.value, 
@@ -70,7 +82,14 @@ function loadDataWithFilters() {
     date_to: to.value,
     load_data: '1',
     per_page: perPage.value
-  }, { preserveState: true, replace: true });
+  }, { 
+    preserveState: true, 
+    replace: true,
+    onFinish: () => {
+      hideLoading();
+      isDataLoaded.value = true;
+    }
+  });
 }
 
 function clearFilters() {
@@ -89,19 +108,23 @@ function clearFilters() {
 }
 function goToPage(url) {
   if (url) {
+    showLoading('Memuat Data...');
     // Extract page number from URL
     const urlParams = new URLSearchParams(url.split('?')[1]);
     const page = urlParams.get('page') || 1;
     
-    router.get('/packing-list', {
-      search: search.value,
-      status: selectedStatus.value,
-      date_from: from.value,
-      date_to: to.value,
-      load_data: loadData.value, // FIXED: Add load_data parameter
-      per_page: perPage.value,   // FIXED: Add per_page parameter
-      page
-    }, { preserveState: true, replace: true });
+    // Add load_data parameter to pagination URLs
+    const urlObj = new URL(url, window.location.origin);
+    urlObj.searchParams.set('load_data', '1');
+    
+    router.visit(urlObj.pathname + urlObj.search, { 
+      preserveState: true, 
+      replace: true,
+      onFinish: () => {
+        hideLoading();
+        isDataLoaded.value = true;
+      }
+    });
   }
 }
 
@@ -134,9 +157,9 @@ async function hapus(list) {
   });
   if (!result.isConfirmed) return;
   try {
-    console.log('Deleting packing list:', list.id);
+    showLoading('Menghapus Packing List...');
     const response = await axios.delete(`/packing-list/${list.id}`);
-    console.log('Delete response:', response);
+    hideLoading();
     Swal.fire({
       icon: 'success',
       title: 'Berhasil',
@@ -144,10 +167,10 @@ async function hapus(list) {
       timer: 1500,
       showConfirmButton: false
     });
-    window.location.reload();
+    // Reload data after delete
+    loadDataWithFilters();
   } catch (err) {
-    console.error('Delete error:', err);
-    console.error('Error response:', err.response);
+    hideLoading();
     Swal.fire({
       icon: 'error',
       title: 'Gagal',
@@ -164,9 +187,12 @@ function getSubtotal(list) {
   if (!list.items) return 0;
   return list.items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
 }
-const grandTotal = computed(() =>
-  props.packingLists.data.reduce((sum, list) => sum + getSubtotal(list), 0)
-);
+const grandTotal = computed(() => {
+  if (!props.packingLists?.data || !Array.isArray(props.packingLists.data)) {
+    return 0;
+  }
+  return props.packingLists.data.reduce((sum, list) => sum + getSubtotal(list), 0);
+});
 
 async function openSummaryModal() {
   showSummaryModal.value = true;
@@ -515,19 +541,25 @@ function closeMatrixModal() {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!loadData">
-              <td colspan="8" class="text-center py-16">
+            <tr v-if="!isDataLoaded">
+              <td colspan="9" class="text-center py-16">
                 <div class="flex flex-col items-center gap-4">
-                  <i class="fa fa-search text-6xl text-gray-300"></i>
+                  <i class="fa fa-database text-6xl text-gray-300"></i>
                   <div class="text-gray-500">
-                    <p class="text-lg font-semibold">Pilih filter dan klik "Load Data" untuk menampilkan data</p>
-                    <p class="text-sm">Anda bisa search berdasarkan nomor, divisi gudang, atau outlet tujuan</p>
+                    <p class="text-lg font-semibold">Data Belum Dimuat</p>
+                    <p class="text-sm mb-4">Pilih filter dan klik "Load Data" untuk memuat data packing list.</p>
+                    <button 
+                      @click="loadDataWithFilters" 
+                      class="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+                    >
+                      <i class="fa fa-sync-alt mr-2"></i> Load Data
+                    </button>
                   </div>
                 </div>
               </td>
             </tr>
-            <tr v-else-if="props.packingLists.data.length === 0">
-              <td colspan="8" class="text-center py-16">
+            <tr v-else-if="!props.packingLists?.data || props.packingLists.data.length === 0">
+              <td colspan="9" class="text-center py-16">
                 <div class="flex flex-col items-center gap-4">
                   <i class="fa fa-inbox text-6xl text-gray-300"></i>
                   <div class="text-gray-500">
@@ -574,7 +606,7 @@ function closeMatrixModal() {
         </table>
       </div>
       <!-- Pagination -->
-      <div v-if="loadData && props.packingLists.links && props.packingLists.links.length > 3" class="flex justify-end mt-4 gap-2">
+      <div v-if="isDataLoaded && props.packingLists?.links && props.packingLists.links.length > 3" class="flex justify-end mt-4 gap-2">
         <button
           v-for="link in props.packingLists.links"
           :key="link.label"

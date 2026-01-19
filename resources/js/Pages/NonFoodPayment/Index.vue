@@ -18,18 +18,17 @@
           <input 
             type="text" 
             v-model="filters.search" 
-            @input="onSearchChange"
             placeholder="Cari payment number, supplier, creator, PO/PR number..." 
             class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
           />
         </div>
         
         <!-- Filters -->
-        <select v-model="filters.supplier" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+        <select v-model="filters.supplier" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="">Semua Supplier</option>
           <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">{{ supplier.name }}</option>
         </select>
-        <select v-model="filters.status" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+        <select v-model="filters.status" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="">Semua Status</option>
           <option value="pending">Pending</option>
           <option value="pending_finance_manager">Pending GM Finance</option>
@@ -38,10 +37,22 @@
           <option value="rejected">Rejected</option>
           <option value="cancelled">Cancelled</option>
         </select>
-        <input type="date" v-model="filters.date" @change="onFilterChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Tanggal" />
+        <input type="date" v-model="filters.date_from" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari Tanggal" title="Dari Tanggal" />
+        <input type="date" v-model="filters.date_to" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai Tanggal" title="Sampai Tanggal" />
+        
+        <!-- Load Data Button - Selalu visible -->
+        <button 
+          @click="loadData" 
+          :disabled="isLoading"
+          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <i v-if="!isLoading" class="fa fa-download"></i>
+          <img v-else src="/images/logo-icon.png" alt="Loading" class="w-4 h-4 animate-spin-fast" />
+          {{ isLoading ? 'Loading...' : 'Load Data' }}
+        </button>
         
         <!-- Per Page Selector -->
-        <select v-model="filters.per_page" @change="onFilterChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+        <select v-model="filters.per_page" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="10">10 per halaman</option>
           <option value="25">25 per halaman</option>
           <option value="50">50 per halaman</option>
@@ -49,7 +60,34 @@
         </select>
       </div>
       
-      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+      <!-- Show loading spinner -->
+      <div v-if="isLoading" class="bg-white border border-gray-200 rounded-2xl p-12 text-center">
+        <div class="flex flex-col items-center justify-center">
+          <img 
+            src="/images/logo-icon.png" 
+            alt="Loading" 
+            class="w-16 h-16 animate-spin mb-4"
+          />
+          <p class="text-gray-700 text-lg font-semibold">Memuat Data...</p>
+          <p class="text-gray-500 text-sm mt-2">Mohon tunggu sebentar</p>
+        </div>
+      </div>
+      
+      <!-- Show message jika data belum di-load -->
+      <div v-else-if="!isDataLoaded" class="bg-blue-50 border border-blue-200 rounded-2xl p-8 text-center">
+        <i class="fa fa-info-circle text-blue-500 text-4xl mb-4"></i>
+        <p class="text-gray-700 text-lg font-semibold mb-2">Data Belum Dimuat</p>
+        <p class="text-gray-600 mb-4">Klik tombol "Load Data" untuk memuat data Non Food Payment</p>
+        <button 
+          @click="loadData" 
+          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+        >
+          <i class="fa fa-download mr-2"></i> Load Data
+        </button>
+      </div>
+      
+      <!-- Table hanya muncul jika data sudah di-load -->
+      <div v-else class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
             <tr>
@@ -71,24 +109,24 @@
               <td colspan="11" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
             </tr>
             <template v-for="payment in payments.data" :key="payment.id">
-              <tr v-for="(outlet, index) in payment.outlet_breakdown" :key="`${payment.id}-${outlet.outlet_id || index}`" 
+              <tr v-for="(outlet, index) in (payment.outlet_breakdown || [])" :key="`${payment.id}-${outlet?.outlet_id || index}`" 
                   class="hover:bg-blue-50 transition shadow-sm"
                   :class="{ 'border-t-2 border-blue-200': index > 0 }">
                 <!-- Payment Number (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3 font-mono font-semibold text-blue-700" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3 font-mono font-semibold text-blue-700" :rowspan="(payment.outlet_breakdown || []).length">
                   {{ payment.payment_number }}
                 </td>
                 <!-- Payment Date (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <span class="text-blue-600 font-medium">{{ formatDate(payment.payment_date) }}</span>
                   <div class="text-xs text-gray-500">Payment Date</div>
                 </td>
                 <!-- Supplier (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   {{ payment.supplier_name || '-' }}
                 </td>
                 <!-- PO/PR Number (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <div v-if="payment.payment_type === 'PO'">
                     <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       <i class="fa fa-file-invoice mr-1"></i> {{ payment.po_number || '-' }}
@@ -118,7 +156,7 @@
                   <div v-else class="text-gray-400">-</div>
                 </td>
                 <!-- Creator (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                     <i class="fa fa-user mr-1"></i> {{ payment.creator_name || '-' }}
                   </span>
@@ -126,24 +164,24 @@
                 <!-- Amount -->
                 <td class="px-6 py-3 text-right">
                   <div class="font-semibold text-gray-900">{{ formatCurrency(outlet.outlet_total) }}</div>
-                  <div v-if="payment.outlet_breakdown.length > 1" class="text-xs text-gray-500">
+                  <div v-if="(payment.outlet_breakdown || []).length > 1" class="text-xs text-gray-500">
                     dari {{ formatCurrency(payment.amount) }}
                   </div>
                 </td>
                 <!-- Payment Method (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <span :class="getPaymentMethodClass(payment.payment_method)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
                     {{ getPaymentMethodText(payment.payment_method) }}
                   </span>
                 </td>
                 <!-- Status (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <span :class="getStatusClass(payment.status, payment)" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
                     {{ getStatusText(payment.status, payment) }}
                   </span>
                 </td>
                 <!-- Actions (only show on first row) -->
-                <td v-if="index === 0" class="px-6 py-3" :rowspan="payment.outlet_breakdown.length">
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   <div class="flex gap-2">
                     <button @click="viewPayment(payment)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                       <i class="fa fa-eye mr-1"></i> Detail
@@ -168,8 +206,8 @@
         </table>
       </div>
       
-      <!-- Pagination -->
-      <div class="flex justify-between items-center mt-4">
+      <!-- Pagination (hanya muncul jika data sudah di-load) -->
+      <div v-if="isDataLoaded" class="flex justify-between items-center mt-4">
         <div class="text-sm text-gray-600">
           Menampilkan {{ payments.from || 0 }} - {{ payments.to || 0 }} dari {{ payments.total || 0 }} data
         </div>
@@ -193,23 +231,55 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   payments: Object,
   suppliers: Array,
-  filters: Object
+  filters: Object,
+  dataLoaded: {
+    type: Boolean,
+    default: false
+  }
 });
+
+// Set default date_from dan date_to ke today
+const today = new Date().toISOString().split('T')[0];
 
 const filters = ref({
   supplier: props.filters?.supplier || '',
   status: props.filters?.status || '',
-  date: props.filters?.date || '',
+  date_from: props.filters?.date_from || today,
+  date_to: props.filters?.date_to || today,
   search: props.filters?.search || '',
   per_page: props.filters?.per_page || '10'
 });
+
+// Track apakah data sudah di-load
+const isDataLoaded = ref(props.dataLoaded || false);
+
+// Track loading state (local untuk UI di halaman ini)
+const isLoading = ref(false);
+
+// Global loading untuk spinner overlay
+const { showLoading, hideLoading } = useLoading();
+
+// Watch perubahan props.dataLoaded
+watch(() => props.dataLoaded, (newVal) => {
+  isDataLoaded.value = newVal;
+  isLoading.value = false; // Stop loading setelah data loaded
+}, { immediate: true });
+
+// Update isDataLoaded saat payments ada data
+watch(() => props.payments?.data?.length, (newVal) => {
+  if (newVal && newVal > 0) {
+    isDataLoaded.value = true;
+    isLoading.value = false; // Stop loading setelah data loaded
+  }
+}, { immediate: true });
 
 function formatDate(date) {
   if (!date) return '-';
@@ -272,17 +342,26 @@ function goToPage(url) {
   if (url) router.visit(url, { preserveState: true, replace: true });
 }
 
-function onFilterChange() {
-  router.get('/non-food-payments', { ...filters.value }, { preserveState: true, replace: true });
-}
-
-// Search with debounce
-let searchTimeout = null;
-function onSearchChange() {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    router.get('/non-food-payments', { ...filters.value }, { preserveState: true, replace: true });
-  }, 500); // 500ms debounce
+function loadData() {
+  // Set loading state (local dan global)
+  isLoading.value = true;
+  isDataLoaded.value = true;
+  showLoading('Memuat Data Non Food Payment...', 'Mohon tunggu sebentar');
+  
+  router.get('/non-food-payments', { ...filters.value, load_data: true }, { 
+    preserveState: true, 
+    replace: true,
+    onFinish: () => {
+      // Stop loading setelah request selesai (success atau error)
+      isLoading.value = false;
+      hideLoading();
+    },
+    onError: () => {
+      // Stop loading jika ada error
+      isLoading.value = false;
+      hideLoading();
+    }
+  });
 }
 
 function goToCreatePage() {
@@ -315,12 +394,18 @@ function deletePayment(payment) {
         cancelButtonText: 'Batal'
       }).then((result) => {
         if (result.isConfirmed) {
+          showLoading('Menghapus Payment...', 'Mohon tunggu sebentar');
           router.delete(`/non-food-payments/${payment.id}`, {
             onSuccess: () => {
+              hideLoading();
               Swal.fire('Berhasil', 'Payment berhasil dihapus!', 'success');
             },
             onError: () => {
+              hideLoading();
               Swal.fire('Gagal', 'Gagal menghapus Payment', 'error');
+            },
+            onFinish: () => {
+              hideLoading();
             }
           });
         }
@@ -343,12 +428,18 @@ function approvePayment(payment) {
         cancelButtonText: 'Batal'
       }).then((result) => {
         if (result.isConfirmed) {
+          showLoading('Menyetujui Payment...', 'Mohon tunggu sebentar');
           router.post(`/non-food-payments/${payment.id}/approve`, {}, {
             onSuccess: () => {
+              hideLoading();
               Swal.fire('Berhasil', 'Payment berhasil disetujui!', 'success');
             },
             onError: () => {
+              hideLoading();
               Swal.fire('Gagal', 'Gagal menyetujui Payment', 'error');
+            },
+            onFinish: () => {
+              hideLoading();
             }
           });
         }
@@ -371,12 +462,18 @@ function markAsPaid(payment) {
         cancelButtonText: 'Batal'
       }).then((result) => {
         if (result.isConfirmed) {
+          showLoading('Menandai Payment sebagai Dibayar...', 'Mohon tunggu sebentar');
           router.post(`/non-food-payments/${payment.id}/mark-as-paid`, {}, {
             onSuccess: () => {
+              hideLoading();
               Swal.fire('Berhasil', 'Payment berhasil ditandai sebagai dibayar!', 'success');
             },
             onError: () => {
+              hideLoading();
               Swal.fire('Gagal', 'Gagal menandai Payment sebagai dibayar', 'error');
+            },
+            onFinish: () => {
+              hideLoading();
             }
           });
         }
@@ -385,3 +482,22 @@ function markAsPaid(payment) {
   }
 }
 </script>
+
+<style scoped>
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 2s linear infinite;
+}
+
+.animate-spin-fast {
+  animation: spin 1s linear infinite;
+}
+</style>

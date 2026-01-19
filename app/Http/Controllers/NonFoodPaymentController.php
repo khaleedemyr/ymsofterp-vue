@@ -21,9 +21,35 @@ class NonFoodPaymentController extends Controller
         // Get filter parameters
         $supplier = $request->input('supplier');
         $status = $request->input('status');
-        $date = $request->input('date');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $search = $request->input('search');
+        $loadData = $request->input('load_data', false); // Flag untuk load data
         $perPage = $request->input('per_page', 10);
+        
+        // Jika belum ada request untuk load data dan tidak ada filter/search, return empty
+        // Ini untuk optimasi - tidak load data saat pertama kali masuk halaman
+        if (!$loadData && !$supplier && !$status && !$dateFrom && !$dateTo && !$search) {
+            // Get suppliers for filter dropdown (tetap load untuk dropdown)
+            $suppliers = DB::table('suppliers')
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+            
+            return Inertia::render('NonFoodPayment/Index', [
+                'payments' => new \Illuminate\Pagination\LengthAwarePaginator(
+                    collect([]),
+                    0,
+                    $perPage,
+                    1,
+                    ['path' => $request->url(), 'query' => $request->query()]
+                ),
+                'suppliers' => $suppliers,
+                'filters' => $request->only(['supplier', 'status', 'date_from', 'date_to', 'search', 'per_page']),
+                'dataLoaded' => false
+            ]);
+        }
 
         // Build query with search and filters
         // IMPORTANT: No filter by created_by - ALL users can see ALL non food payments
@@ -66,8 +92,12 @@ class NonFoodPaymentController extends Controller
             }
         }
         
-        if ($date) {
-            $query->whereDate('non_food_payments.payment_date', $date);
+        // Filter by date range (date_from dan date_to)
+        if ($dateFrom) {
+            $query->whereDate('non_food_payments.payment_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('non_food_payments.payment_date', '<=', $dateTo);
         }
 
         // Apply search
@@ -102,35 +132,71 @@ class NonFoodPaymentController extends Controller
             'user_id' => Auth::id()
         ]);
         
-        // Transform payments to show per outlet
-        $payments->getCollection()->transform(function($payment) {
+        // PERFORMANCE OPTIMIZATION: Batch query untuk outlet breakdown
+        // Kumpulkan semua PO IDs yang perlu di-query (hanya untuk payment dengan purchase_order_ops_id)
+        $poIds = $payments->getCollection()
+            ->pluck('purchase_order_ops_id')
+            ->filter() // Hapus null values
+            ->unique()
+            ->values()
+            ->toArray();
+        
+        // Batch query sekali untuk semua outlet breakdown
+        $outletBreakdownsMap = [];
+        if (!empty($poIds)) {
+            try {
+                $allBreakdowns = DB::table('purchase_order_ops_items as poi')
+                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+                    ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+                    ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                    ->whereIn('poi.purchase_order_ops_id', $poIds) // WHERE IN instead of loop
+                    ->select(
+                        'poi.purchase_order_ops_id', // Tambahkan untuk grouping
+                        'pr.outlet_id',
+                        'o.nama_outlet as outlet_name',
+                        'prc.name as category_name',
+                        'prc.division as category_division',
+                        'prc.subcategory as category_subcategory',
+                        'prc.budget_type as category_budget_type',
+                        'pr.pr_number',
+                        'pr.title as pr_title',
+                        DB::raw('SUM(poi.total) as outlet_total')
+                    )
+                    ->groupBy('poi.purchase_order_ops_id', 'pr.outlet_id', 'o.nama_outlet', 'prc.name', 'prc.division', 'prc.subcategory', 'prc.budget_type', 'pr.pr_number', 'pr.title')
+                    ->get();
+                
+                // Group hasil query berdasarkan purchase_order_ops_id untuk easy lookup
+                // Gunakan collection untuk konsistensi dengan format sebelumnya
+                foreach ($allBreakdowns as $breakdown) {
+                    $poId = $breakdown->purchase_order_ops_id;
+                    if (!isset($outletBreakdownsMap[$poId])) {
+                        $outletBreakdownsMap[$poId] = collect([]);
+                    }
+                    // Keep as stdClass object (sama seperti ->get() sebelumnya)
+                    $outletBreakdownsMap[$poId]->push($breakdown);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query outlet breakdown', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Jika batch query gagal, fallback ke empty map (akan handle di transform)
+            }
+        }
+        
+        // Transform payments to show per outlet (tanpa query di loop)
+        $payments->getCollection()->transform(function($payment) use ($outletBreakdownsMap) {
+            // Pastikan outlet_breakdown selalu di-set untuk menghindari null/undefined di frontend
             if ($payment->purchase_order_ops_id) {
                 $payment->payment_type = 'PO';
                 
-                // Get outlet breakdown for PO payments
-                try {
-                    $outletBreakdown = DB::table('purchase_order_ops_items as poi')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-                        ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
-                        ->where('poi.purchase_order_ops_id', $payment->purchase_order_ops_id)
-                        ->select(
-                            'pr.outlet_id',
-                            'o.nama_outlet as outlet_name',
-                            'prc.name as category_name',
-                            'prc.division as category_division',
-                            'prc.subcategory as category_subcategory',
-                            'prc.budget_type as category_budget_type',
-                            'pr.pr_number',
-                            'pr.title as pr_title',
-                            DB::raw('SUM(poi.total) as outlet_total')
-                        )
-                        ->groupBy('pr.outlet_id', 'o.nama_outlet', 'prc.name', 'prc.division', 'prc.subcategory', 'prc.budget_type', 'pr.pr_number', 'pr.title')
-                        ->get();
-                    
-                    $payment->outlet_breakdown = $outletBreakdown;
-                } catch (\Exception $e) {
-                    // Fallback if outlet data not available
+                // Gunakan hasil batch query dari map (tanpa query baru)
+                if (isset($outletBreakdownsMap[$payment->purchase_order_ops_id]) && $outletBreakdownsMap[$payment->purchase_order_ops_id]->isNotEmpty()) {
+                    // Gunakan collection langsung (sama seperti format sebelumnya dengan ->get())
+                    $payment->outlet_breakdown = $outletBreakdownsMap[$payment->purchase_order_ops_id];
+                } else {
+                    // Fallback jika data tidak ditemukan (kemungkinan data tidak ada atau error)
+                    // Gunakan collection untuk konsistensi dengan format sebelumnya
                     $payment->outlet_breakdown = collect([[
                         'outlet_id' => null,
                         'outlet_name' => 'Unknown Outlet',
@@ -140,12 +206,13 @@ class NonFoodPaymentController extends Controller
                         'category_budget_type' => null,
                         'pr_number' => null,
                         'pr_title' => null,
-                        'outlet_total' => $payment->amount
+                        'outlet_total' => $payment->amount ?? 0
                     ]]);
                 }
             } else {
                 $payment->payment_type = 'PR';
-                // For PR payments, show as single outlet
+                // For PR payments, show as single outlet (logic tetap sama)
+                // Gunakan collection untuk konsistensi dengan format sebelumnya
                 $payment->outlet_breakdown = collect([[
                     'outlet_id' => null,
                     'outlet_name' => 'Direct PR Payment',
@@ -153,11 +220,27 @@ class NonFoodPaymentController extends Controller
                     'category_division' => null,
                     'category_subcategory' => null,
                     'category_budget_type' => null,
-                    'pr_number' => $payment->pr_number,
+                    'pr_number' => $payment->pr_number ?? null,
                     'pr_title' => null,
-                    'outlet_total' => $payment->amount
+                    'outlet_total' => $payment->amount ?? 0
                 ]]);
             }
+            
+            // Safety check: Pastikan outlet_breakdown tidak null/undefined
+            if (!isset($payment->outlet_breakdown) || $payment->outlet_breakdown === null) {
+                $payment->outlet_breakdown = collect([[
+                    'outlet_id' => null,
+                    'outlet_name' => 'Unknown',
+                    'category_name' => null,
+                    'category_division' => null,
+                    'category_subcategory' => null,
+                    'category_budget_type' => null,
+                    'pr_number' => null,
+                    'pr_title' => null,
+                    'outlet_total' => $payment->amount ?? 0
+                ]]);
+            }
+            
             return $payment;
         });
 
@@ -171,7 +254,8 @@ class NonFoodPaymentController extends Controller
         return Inertia::render('NonFoodPayment/Index', [
             'payments' => $payments,
             'suppliers' => $suppliers,
-            'filters' => $request->only(['supplier', 'status', 'date', 'search', 'per_page'])
+            'filters' => $request->only(['supplier', 'status', 'date_from', 'date_to', 'search', 'per_page', 'load_data']),
+            'dataLoaded' => true
         ]);
     }
 

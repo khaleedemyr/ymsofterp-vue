@@ -9,7 +9,12 @@ import NavLink from '@/Components/NavLink.vue';
 import ProfileUpdateModal from '@/Components/ProfileUpdateModal.vue';
 import UserPinModal from '@/Components/UserPinModal.vue';
 import LiveSupportWidget from '@/Components/LiveSupportWidget.vue';
+import LoadingSpinner from '@/Components/LoadingSpinner.vue';
 import { initializeFirebaseMessaging } from '@/firebase-config';
+import { provideLoading } from '@/Composables/useLoading';
+
+// Provide loading state for all child components
+provideLoading();
 
 const sidebarOpen = ref(true);
 const showLang = ref(false);
@@ -821,111 +826,133 @@ function formatCurrency(amount) {
     <audio ref="notificationSound" src="/sounds/aya_gawean_anyar_ringtone.mp3" preload="auto"></audio>
     
     <!-- Sidebar -->
-    <aside :class="['transition-all duration-300 bg-white shadow-lg border-r border-gray-200 flex flex-col fixed z-30 h-full', sidebarOpen ? 'w-72' : 'w-20']">
-        <div class="flex items-center justify-between h-20 border-b border-gray-200 px-4">
-            <img v-if="sidebarOpen" src="/images/logo.png" alt="Logo" class="h-12 w-auto transition-all duration-300" />
-            <img v-else src="/images/logo-icon.png" alt="Logo Icon" class="h-10 w-10 transition-all duration-300" />
-            <button @click="toggleSidebar" class="text-gray-400 hover:text-blue-500 transition-all ml-2">
-                <i :class="sidebarOpen ? 'fas fa-angle-double-left' : 'fas fa-angle-double-right'"></i>
+    <aside :class="['transition-all duration-300 flex flex-col fixed z-30 h-full bg-white shadow-xl border-r border-gray-200', sidebarOpen ? 'w-72' : 'w-20']">
+        <!-- Sidebar Header -->
+        <div class="flex items-center justify-between h-20 px-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+                <div class="flex-shrink-0">
+                    <img v-if="sidebarOpen" src="/images/logo.png" alt="Logo" class="h-12 w-auto transition-all duration-300" />
+                    <img v-else src="/images/logo-icon.png" alt="Logo Icon" class="h-10 w-10 transition-all duration-300 rounded-lg" />
+                </div>
+            </div>
+            <button @click="toggleSidebar" class="flex-shrink-0 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg p-2 transition-all duration-200">
+                <i :class="['fas transition-transform duration-300', sidebarOpen ? 'fa-angle-double-left' : 'fa-angle-double-right']"></i>
             </button>
         </div>
         <nav class="flex-1 overflow-y-auto py-4">
             <div v-for="(group, idx) in filteredMenuGroups" :key="group.title" class="mb-4">
                 <div
-                    class="px-4 py-3 text-xs font-bold uppercase flex items-center gap-2 cursor-pointer group-title mx-2"
-                    :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
+                    class="px-4 py-2.5 text-xs font-semibold uppercase flex items-center gap-3 cursor-pointer group-title-modern mx-2 rounded-lg"
+                    :class="sidebarOpen ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-50' : 'text-gray-400 justify-center'"
                     @click="toggleGroup(group)"
                     v-if="group.collapsible"
                     :title="!sidebarOpen ? (typeof group.title === 'function' ? group.title() : group.title) : ''"
                 >
-                    <span class="text-lg flex-shrink-0"><i :class="group.icon"></i></span>
-                    <span v-if="sidebarOpen" class="truncate flex-1">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
-                    <svg v-if="sidebarOpen" :class="['w-4 h-4 transition-transform flex-shrink-0', group.open.value ? 'rotate-90' : '']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+                    <span class="text-base flex-shrink-0"><i :class="group.icon"></i></span>
+                    <span v-if="sidebarOpen" class="truncate flex-1 tracking-wider">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
+                    <svg v-if="sidebarOpen" :class="['w-3.5 h-3.5 transition-transform duration-300 flex-shrink-0', group.open.value ? 'rotate-90' : '']" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
                 </div>
                 <div
                     v-else
-                    class="px-4 py-3 text-xs font-bold uppercase flex items-center gap-2 group-title mx-2"
-                    :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400'"
+                    class="px-4 py-2.5 text-xs font-semibold uppercase flex items-center gap-3 group-title-modern mx-2 rounded-lg"
+                    :class="sidebarOpen ? 'text-gray-500' : 'text-gray-400 justify-center'"
                     :title="!sidebarOpen ? (typeof group.title === 'function' ? group.title() : group.title) : ''"
                 >
-                    <span class="text-lg flex-shrink-0"><i :class="group.icon"></i></span>
-                    <span v-if="sidebarOpen" class="truncate flex-1">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
+                    <span class="text-base flex-shrink-0"><i :class="group.icon"></i></span>
+                    <span v-if="sidebarOpen" class="truncate flex-1 tracking-wider">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
                 </div>
-                <div v-show="!group.collapsible || group.open.value">
+                <div v-show="!group.collapsible || group.open.value" class="mt-1">
                     <Link
                         v-for="menu in group.menus"
                         :key="menu.name"
                         :href="menu.route"
-                        class="flex items-center gap-3 px-4 py-2.5 my-1 mx-2 rounded-lg text-gray-700 hover:bg-blue-100 transition-all sidebar-menu relative"
+                        class="flex items-center gap-3 px-4 py-2.5 my-1 mx-2 rounded-lg text-gray-700 hover:text-blue-700 transition-all duration-200 sidebar-menu-modern relative group"
                         :class="[
                             sidebarOpen ? 'justify-start' : 'justify-center',
-                            $page.url.startsWith(menu.route) ? 'bg-blue-50 font-bold text-blue-700' : ''
+                            $page.url.startsWith(menu.route) ? 'bg-blue-50 text-blue-700 font-semibold shadow-sm menu-active' : 'hover:bg-gray-50'
                         ]"
                         :title="!sidebarOpen ? (typeof menu.name === 'function' ? menu.name() : menu.name) : ''"
                     >
-                        <span class="text-lg w-6 flex justify-center flex-shrink-0"><i :class="menu.icon"></i></span>
+                        <span class="text-base w-6 flex justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110"><i :class="menu.icon"></i></span>
                         <span v-if="sidebarOpen" class="text-sm leading-tight truncate">{{ typeof menu.name === 'function' ? menu.name() : menu.name }}</span>
+                        <span v-if="sidebarOpen && $page.url.startsWith(menu.route)" class="absolute right-2 w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
                     </Link>
                 </div>
-                <hr v-if="idx < filteredMenuGroups.length - 1" class="my-2 border-gray-200" />
+                <div v-if="idx < filteredMenuGroups.length - 1" class="my-3 mx-2 h-px bg-gray-200"></div>
             </div>
         </nav>
     </aside>
     <!-- Main Content -->
     <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarOpen ? 'ml-72' : 'ml-20']">
         <!-- Navbar -->
-        <header class="h-16 bg-white border-b border-gray-200 flex items-center px-6 justify-between shadow-sm">
+        <header class="h-16 bg-white/95 backdrop-blur-md border-b border-gray-200/50 flex items-center px-6 justify-between shadow-sm navbar-modern sticky top-0 z-20">
             <div class="flex items-center gap-4">
-                <button @click="toggleSidebar" class="md:hidden text-gray-500 focus:outline-none">
-                    <i class="fas fa-bars"></i>
+                <button @click="toggleSidebar" class="md:hidden text-gray-600 hover:text-blue-600 focus:outline-none p-2 rounded-lg hover:bg-gray-100 transition-all duration-200">
+                    <i class="fas fa-bars text-lg"></i>
                 </button>
+                <div class="hidden md:flex items-center gap-2 text-sm text-gray-600">
+                    <i class="fas fa-home text-gray-400"></i>
+                    <span class="font-medium">{{ $page.component }}</span>
+                </div>
             </div>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
                 <!-- Language -->
                 <div class="relative">
-                    <button class="flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100" @click="showLang = !showLang">
-                        <img :src="currentLang === 'id' ? '/images/indonesia.png' : '/images/united-states.png'" alt="Lang" class="w-5 h-5 rounded-full" />
-                        <span class="hidden md:inline">{{ languages.find(l => l.code === currentLang)?.label }}</span>
-                        <i class="fas fa-chevron-down text-xs"></i>
+                    <button class="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all duration-200 group" @click="showLang = !showLang">
+                        <img :src="currentLang === 'id' ? '/images/indonesia.png' : '/images/united-states.png'" alt="Lang" class="w-5 h-5 rounded-full ring-2 ring-gray-200 group-hover:ring-blue-300 transition-all" />
+                        <span class="hidden md:inline text-sm font-medium text-gray-700">{{ languages.find(l => l.code === currentLang)?.label }}</span>
+                        <i class="fas fa-chevron-down text-xs text-gray-500 group-hover:text-blue-600 transition-colors"></i>
                     </button>
-                    <div v-if="showLang" class="absolute right-0 mt-2 w-40 bg-white border rounded shadow z-50">
-                        <div v-for="lang in languages" :key="lang.code" @click="setLang(lang.code); showLang = false" class="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 cursor-pointer">
+                    <div v-if="showLang" class="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden backdrop-blur-md">
+                        <div v-for="lang in languages" :key="lang.code" @click="setLang(lang.code); showLang = false" class="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 cursor-pointer transition-colors duration-150">
                             <img :src="lang.code === 'id' ? '/images/indonesia.png' : '/images/united-states.png'" alt="Lang" class="w-5 h-5 rounded-full" />
-                            <span>{{ lang.label }}</span>
+                            <span class="text-sm font-medium text-gray-700">{{ lang.label }}</span>
                         </div>
                     </div>
                 </div>
                 <!-- Fullscreen -->
-                <button @click="toggleFullscreen" class="p-2 rounded hover:bg-gray-100">
-                    <i class="fas fa-expand"></i>
+                <button @click="toggleFullscreen" class="p-2.5 rounded-xl hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-all duration-200 group relative" title="Toggle Fullscreen">
+                    <i class="fas fa-expand group-hover:scale-110 transition-transform duration-200"></i>
                 </button>
                 <!-- Notif -->
                 <div class="relative">
-                    <button class="p-2 rounded hover:bg-gray-100 relative" @click="showNotifDropdown = !showNotifDropdown">
-                        <i class="fas fa-bell"></i>
-                        <span v-if="unreadCount > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full px-1">{{ unreadCount }}</span>
+                    <button class="p-2.5 rounded-xl hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-all duration-200 relative group" @click="showNotifDropdown = !showNotifDropdown" title="Notifications">
+                        <i class="fas fa-bell group-hover:animate-pulse"></i>
+                        <span v-if="unreadCount > 0" class="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-lg animate-bounce">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
                     </button>
-                    <div v-if="showNotifDropdown" class="absolute right-0 mt-2 w-80 bg-white border rounded shadow-lg z-50 max-h-96 overflow-y-auto">
-                        <div class="flex items-center justify-between px-4 py-2 border-b">
-                            <span class="font-bold text-gray-700">Notifikasi</span>
-                            <button class="text-xs text-blue-500 hover:underline" @click="markAllAsRead">Tandai semua dibaca</button>
+                    <div v-if="showNotifDropdown" class="absolute right-0 mt-2 w-80 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl shadow-2xl z-50 max-h-96 overflow-hidden">
+                        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+                            <span class="font-bold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-bell text-blue-600"></i>
+                                Notifikasi
+                            </span>
+                            <button class="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors" @click="markAllAsRead">Tandai semua dibaca</button>
                         </div>
                         <div v-if="loading" class="px-4 py-6 text-center">
                             <i class="fas fa-spinner fa-spin text-blue-500"></i>
                         </div>
                         <div v-else-if="notifications.length === 0" class="px-4 py-6 text-center text-gray-400">Tidak ada notifikasi</div>
-                        <div v-else>
-                            <div v-for="notif in notifications" :key="notif.id" @click="handleNotifClick(notif)" class="px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-blue-50 flex gap-2" :class="notif.is_read ? 'bg-gray-50' : 'bg-blue-50/50'">
+                        <div v-else class="overflow-y-auto max-h-80">
+                            <div v-for="notif in notifications" :key="notif.id" @click="handleNotifClick(notif)" class="px-4 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer hover:bg-blue-50/50 flex gap-3 transition-all duration-150 group" :class="notif.is_read ? 'bg-white' : 'bg-blue-50/30'">
                                 <div class="flex-shrink-0 mt-1">
-                                    <i :class="['fas', notif.type === 'success' ? 'fa-check-circle text-green-400' : notif.type === 'error' ? 'fa-exclamation-circle text-red-400' : 'fa-info-circle text-blue-400']"></i>
-                                </div>
-                                <div class="flex-1">
-                                    <div class="font-semibold text-sm text-gray-800">{{ notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info' }}</div>
-                                    <div class="text-xs text-gray-600">{{ notif.message }}</div>
-                                    <div class="text-xs text-gray-400 mt-1">{{ notif.time }}</div>
-                                    <div v-if="notif.url" class="text-xs text-blue-500 mt-1">
-                                        <i class="fas fa-link mr-1"></i>{{ notif.url }}
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center" :class="notif.type === 'success' ? 'bg-green-100' : notif.type === 'error' ? 'bg-red-100' : 'bg-blue-100'">
+                                        <i :class="['fas text-sm', notif.type === 'success' ? 'fa-check-circle text-green-600' : notif.type === 'error' ? 'fa-exclamation-circle text-red-600' : 'fa-info-circle text-blue-600']"></i>
                                     </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-semibold text-sm text-gray-800 mb-1">{{ notif.type === 'success' ? 'Success' : notif.type === 'error' ? 'Error' : 'Info' }}</div>
+                                    <div class="text-xs text-gray-600 leading-relaxed">{{ notif.message }}</div>
+                                    <div class="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                                        <i class="fas fa-clock text-gray-300"></i>
+                                        {{ notif.time }}
+                                    </div>
+                                    <div v-if="notif.url" class="text-xs text-blue-600 mt-1.5 flex items-center gap-1 group-hover:text-blue-700">
+                                        <i class="fas fa-link"></i>
+                                        <span class="truncate">{{ notif.url }}</span>
+                                    </div>
+                                </div>
+                                <div v-if="!notif.is_read" class="flex-shrink-0 mt-1">
+                                    <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                                 </div>
                             </div>
                         </div>
@@ -933,49 +960,69 @@ function formatCurrency(amount) {
                 </div>
                 <!-- Avatar -->
                 <div class="relative">
-                    <button @click="showProfileDropdown = !showProfileDropdown" class="flex items-center gap-2 focus:outline-none">
-                        <img :src="avatarUrl" alt="Avatar" class="w-9 h-9 rounded-full object-cover border-2 border-blue-200" />
-                        <span class="hidden md:inline font-semibold text-gray-700">{{ user.nama_lengkap }}</span>
-                        <i class="fas fa-chevron-down text-xs"></i>
+                    <button @click="showProfileDropdown = !showProfileDropdown" class="flex items-center gap-2.5 focus:outline-none px-2 py-1.5 rounded-xl hover:bg-gray-100 transition-all duration-200 group">
+                        <div class="relative">
+                            <img :src="avatarUrl" alt="Avatar" class="w-10 h-10 rounded-full object-cover border-2 border-blue-300 shadow-md group-hover:border-blue-500 transition-all duration-200" />
+                            <div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        </div>
+                        <div class="hidden md:flex flex-col items-start">
+                            <span class="font-semibold text-sm text-gray-800">{{ user.nama_lengkap }}</span>
+                            <span class="text-xs text-gray-500">{{ userOutlet }}</span>
+                        </div>
+                        <i class="fas fa-chevron-down text-xs text-gray-500 group-hover:text-blue-600 transition-colors"></i>
                     </button>
-                    <div v-if="showProfileDropdown" class="absolute right-0 mt-2 w-64 bg-white border rounded shadow z-50">
-                        <div class="px-4 py-3 border-b">
-                            <div class="font-bold text-gray-800">{{ user.nama_lengkap }}</div>
-                            <div class="mt-2 space-y-1">
-                                <div class="text-xs text-gray-500" v-if="userJabatan !== 'N/A'">
-                                    <span class="font-medium">Jabatan:</span> {{ userJabatan }}
+                    <div v-if="showProfileDropdown" class="absolute right-0 mt-2 w-72 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden">
+                        <div class="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+                            <div class="flex items-center gap-3 mb-3">
+                                <img :src="avatarUrl" alt="Avatar" class="w-12 h-12 rounded-full object-cover border-2 border-blue-300 shadow-md" />
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-bold text-gray-800 text-sm truncate">{{ user.nama_lengkap }}</div>
+                                    <div class="text-xs text-gray-500 truncate">{{ userOutlet }}</div>
                                 </div>
-                                <div class="text-xs text-gray-500" v-if="userLevel !== 'N/A'">
-                                    <span class="font-medium">Level:</span> {{ userLevel }}
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="text-gray-600" v-if="userJabatan !== 'N/A'">
+                                    <span class="font-medium text-gray-500">Jabatan:</span>
+                                    <div class="text-gray-700 truncate">{{ userJabatan }}</div>
                                 </div>
-                                <div class="text-xs text-gray-500" v-if="userDivisi !== 'N/A'">
-                                    <span class="font-medium">Divisi:</span> {{ userDivisi }}
+                                <div class="text-gray-600" v-if="userLevel !== 'N/A'">
+                                    <span class="font-medium text-gray-500">Level:</span>
+                                    <div class="text-gray-700 truncate">{{ userLevel }}</div>
                                 </div>
-                                <div class="text-xs text-gray-500" v-if="userOutlet !== 'N/A'">
-                                    <span class="font-medium">Outlet:</span> {{ userOutlet }}
+                                <div class="text-gray-600 col-span-2" v-if="userDivisi !== 'N/A'">
+                                    <span class="font-medium text-gray-500">Divisi:</span>
+                                    <div class="text-gray-700 truncate">{{ userDivisi }}</div>
                                 </div>
                             </div>
                         </div>
-                        <button @click="showProfileModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
-                            <i class="fa-solid fa-user"></i> {{ t('profile.profile') }}
-                        </button>
-                        <button @click="showESignatureModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
-                            <i class="fa-solid fa-pen-nib"></i> {{ t('profile.esign') }}
-                        </button>
-                        <button @click="showUserPinModal = true; showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
-                            <i class="fa-solid fa-key"></i> Kelola PIN Outlet
-                        </button>
-                        <button @click="openPayroll(); showProfileDropdown = false" class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50">
-                            <i class="fa-solid fa-file-invoice-dollar"></i> Payroll
-                        </button>
-                        <Link
-                            :href="route('logout')"
-                            method="post"
-                            as="button"
-                            class="flex items-center gap-2 w-full text-left px-4 py-2 hover:bg-blue-50"
-                        >
-                            <i class="fa-solid fa-right-from-bracket"></i> {{ t('profile.logout') }}
-                        </Link>
+                        <div class="py-2">
+                            <button @click="showProfileModal = true; showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
+                                <i class="fa-solid fa-user w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
+                                <span class="text-sm font-medium">{{ t('profile.profile') }}</span>
+                            </button>
+                            <button @click="showESignatureModal = true; showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
+                                <i class="fa-solid fa-pen-nib w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
+                                <span class="text-sm font-medium">{{ t('profile.esign') }}</span>
+                            </button>
+                            <button @click="showUserPinModal = true; showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
+                                <i class="fa-solid fa-key w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
+                                <span class="text-sm font-medium">Kelola PIN Outlet</span>
+                            </button>
+                            <button @click="openPayroll(); showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
+                                <i class="fa-solid fa-file-invoice-dollar w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
+                                <span class="text-sm font-medium">Payroll</span>
+                            </button>
+                            <div class="my-2 h-px bg-gray-200"></div>
+                            <Link
+                                :href="route('logout')"
+                                method="post"
+                                as="button"
+                                class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all duration-150 group"
+                            >
+                                <i class="fa-solid fa-right-from-bracket w-5 text-center group-hover:scale-110 transition-transform"></i>
+                                <span class="text-sm font-medium">{{ t('profile.logout') }}</span>
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1353,59 +1400,103 @@ function formatCurrency(amount) {
 
     <!-- Live Support Widget - Floating di semua halaman -->
     <LiveSupportWidget />
+    
+    <!-- Global Loading Spinner -->
+    <LoadingSpinner />
 </div>
 </template>
 
 <style scoped>
 .fas { font-family: 'Font Awesome 5 Free'; font-weight: 900; }
 
+/* Modern Sidebar Styling - Light Theme */
+.group-title-modern {
+    letter-spacing: 0.5px;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+.sidebar-menu-modern {
+    font-size: 14px;
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar-menu-modern::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 3px;
+    background: linear-gradient(180deg, #60a5fa, #3b82f6);
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+}
+
+.sidebar-menu-modern:hover::before,
+.sidebar-menu-modern.menu-active::before {
+    transform: scaleY(1);
+}
+
+.sidebar-menu-modern:hover {
+    transform: translateX(3px);
+}
+
+.sidebar-menu-modern.menu-active {
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+/* Modern Navbar Styling */
+.navbar-modern {
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Toast Animations */
 .toast-slide-enter-active,
 .toast-slide-leave-active {
-    transition: all 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .toast-slide-enter-from {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(100%) scale(0.9);
 }
 
 .toast-slide-leave-to {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(100%) scale(0.9);
 }
 
 .toast-slide-move {
-    transition: transform 0.3s ease;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.group-title {
-    letter-spacing: 0.5px;
-    font-size: 12px;
-    margin-bottom: 4px;
-    border-radius: 6px;
+/* Custom Scrollbar */
+.overflow-y-auto::-webkit-scrollbar {
+    width: 6px;
 }
-.group-title:hover {
-    background-color: #f8fafc;
+
+.overflow-y-auto::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
 }
-.sidebar-menu {
-    font-size: 14px;
-    transition: all 0.2s ease;
-    border-radius: 8px;
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
 }
-.sidebar-menu:hover {
-    background-color: #f1f5f9 !important;
-    transform: translateX(2px);
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
 }
-.sidebar-menu.router-link-exact-active,
-.sidebar-menu.bg-blue-50 {
-    background: #dbeafe !important;
-    color: #1d4ed8 !important;
-    font-weight: 600;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
-}
-hr {
-    border: none;
-    border-top: 1px solid #e5e7eb;
-    margin: 8px 0;
+
+/* Smooth Transitions */
+.sidebar-menu-modern,
+.group-title-modern,
+button {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 </style> 

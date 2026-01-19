@@ -106,8 +106,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!loadData">
-              <td colspan="9" class="text-center py-16">
+            <tr v-if="!isDataLoaded">
+              <td colspan="10" class="text-center py-16">
                 <div class="flex flex-col items-center gap-4">
                   <i class="fa fa-search text-6xl text-gray-300"></i>
                   <div class="text-gray-500">
@@ -117,8 +117,8 @@
                 </div>
               </td>
             </tr>
-            <tr v-else-if="!orders.data.length">
-              <td colspan="9" class="text-center py-16">
+            <tr v-else-if="!orders.data || !orders.data.length">
+              <td colspan="10" class="text-center py-16">
                 <div class="flex flex-col items-center gap-4">
                   <i class="fa fa-inbox text-6xl text-gray-300"></i>
                   <div class="text-gray-500">
@@ -128,8 +128,8 @@
                 </div>
               </td>
             </tr>
-            <tr v-for="(order, idx) in orders.data" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3">{{ (orders.current_page - 1) * orders.per_page + idx + 1 }}</td>
+            <tr v-for="(order, idx) in (orders?.data || [])" :key="order.id" class="hover:bg-blue-50 transition shadow-sm">
+              <td class="px-6 py-3">{{ ((orders?.current_page || 1) - 1) * (orders?.per_page || 15) + idx + 1 }}</td>
               <td class="px-6 py-3">{{ order.number || '-' }}</td>
               <td class="px-6 py-3">
                 <div class="text-sm">
@@ -168,15 +168,15 @@
           </tbody>
         </table>
       </div>
-      <div v-if="loadData && orders.total > orders.per_page" class="flex flex-col items-center mt-6 space-y-4">
+      <div v-if="isDataLoaded && orders && orders.total > orders.per_page" class="flex flex-col items-center mt-6 space-y-4">
         <nav class="flex items-center space-x-1 flex-wrap justify-center" aria-label="Pagination">
           <!-- Previous button -->
           <button 
-            @click="goToPage(orders.current_page - 1)" 
-            :disabled="orders.current_page === 1"
+            @click="goToPage((orders?.current_page || 1) - 1)" 
+            :disabled="(orders?.current_page || 1) === 1"
             :class="[
               'px-3 py-2 text-sm font-medium rounded-md transition-colors',
-              orders.current_page === 1 
+              (orders?.current_page || 1) === 1 
                 ? 'text-gray-400 cursor-not-allowed' 
                 : 'text-blue-700 hover:bg-blue-100'
             ]"
@@ -186,7 +186,7 @@
 
           <!-- First page -->
           <button 
-            v-if="orders.current_page > 3" 
+            v-if="(orders?.current_page || 1) > 3" 
             @click="goToPage(1)" 
             class="px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 rounded-md transition-colors"
           >
@@ -194,7 +194,7 @@
           </button>
 
           <!-- Ellipsis after first page -->
-          <span v-if="orders.current_page > 4" class="px-2 py-2 text-gray-500">...</span>
+          <span v-if="(orders?.current_page || 1) > 4" class="px-2 py-2 text-gray-500">...</span>
 
           <!-- Pages around current page -->
           <button 
@@ -203,7 +203,7 @@
             @click="goToPage(page)" 
             :class="[
               'px-3 py-2 text-sm font-medium rounded-md transition-colors',
-              page === orders.current_page 
+              page === (orders?.current_page || 1) 
                 ? 'bg-blue-500 text-white' 
                 : 'text-blue-700 hover:bg-blue-100'
             ]"
@@ -212,24 +212,24 @@
           </button>
 
           <!-- Ellipsis before last page -->
-          <span v-if="orders.current_page < orders.last_page - 3" class="px-2 py-2 text-gray-500">...</span>
+          <span v-if="(orders?.current_page || 1) < (orders?.last_page || 1) - 3" class="px-2 py-2 text-gray-500">...</span>
 
           <!-- Last page -->
           <button 
-            v-if="orders.current_page < orders.last_page - 2" 
-            @click="goToPage(orders.last_page)" 
+            v-if="(orders?.current_page || 1) < (orders?.last_page || 1) - 2" 
+            @click="goToPage(orders?.last_page || 1)" 
             class="px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 rounded-md transition-colors"
           >
-            {{ orders.last_page }}
+            {{ orders?.last_page || 1 }}
           </button>
 
           <!-- Next button -->
           <button 
-            @click="goToPage(orders.current_page + 1)" 
-            :disabled="orders.current_page === orders.last_page"
+            @click="goToPage((orders?.current_page || 1) + 1)" 
+            :disabled="(orders?.current_page || 1) === (orders?.last_page || 1)"
             :class="[
               'px-3 py-2 text-sm font-medium rounded-md transition-colors',
-              orders.current_page === orders.last_page 
+              (orders?.current_page || 1) === (orders?.last_page || 1)
                 ? 'text-gray-400 cursor-not-allowed' 
                 : 'text-blue-700 hover:bg-blue-100'
             ]"
@@ -240,9 +240,9 @@
 
         <!-- Page info -->
         <div class="text-sm text-gray-600 text-center">
-          Halaman {{ orders.current_page }} dari {{ orders.last_page }}
+          Halaman {{ orders?.current_page || 1 }} dari {{ orders?.last_page || 1 }}
           <span class="mx-2">•</span>
-          Total {{ orders.total }} data
+          Total {{ orders?.total || 0 }} data
         </div>
       </div>
     </div>
@@ -258,6 +258,8 @@ import { ref, watch, computed } from 'vue';
 import { generateStrukPDF } from './generateStrukPDF';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
+import { useLoading } from '@/Composables/useLoading';
+import dayjs from 'dayjs';
 
 const props = defineProps({ 
   orders: Array,
@@ -272,6 +274,8 @@ const exportingDetail = ref(false);
 const page = usePage();
 const user = computed(() => page.props.auth?.user || page.props.user);
 
+const { showLoading, hideLoading } = useLoading();
+
 // Check if user can delete Delivery Order
 // Allow delete for: Superadmin (id_role = '5af56935b011a') or User with division_id=11 and status='A'
 const canDelete = computed(() => {
@@ -285,14 +289,19 @@ const canDelete = computed(() => {
 
 const search = ref(props.filters?.search || '');
 // Set default ke hari ini jika tidak ada filter
-const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+const today = dayjs().format('YYYY-MM-DD');
 const dateFrom = ref(props.filters?.dateFrom || today);
 const dateTo = ref(props.filters?.dateTo || today);
 const loadData = ref(props.filters?.load_data || '');
 const perPage = ref(props.filters?.per_page || 15);
+const isDataLoaded = ref(loadData.value === '1');
 
 // Computed property untuk halaman yang ditampilkan
 const visiblePages = computed(() => {
+  if (!props.orders || !props.orders.current_page || !props.orders.last_page) {
+    return [];
+  }
+  
   const current = props.orders.current_page;
   const last = props.orders.last_page;
   const delta = 2; // Jumlah halaman di kiri dan kanan current page
@@ -350,9 +359,11 @@ async function handleDelete(id) {
   });
   if (!confirm.isConfirmed) return;
   loadingDeleteId.value = id;
+  showLoading('Menghapus Delivery Order...');
   try {
     await router.delete(`/delivery-order/${id}`, {
       onSuccess: async () => {
+        hideLoading();
         await Swal.fire({
           icon: 'success',
           title: 'Sukses',
@@ -360,8 +371,13 @@ async function handleDelete(id) {
           timer: 1500,
           showConfirmButton: false
         });
+        // Reload data after delete
+        if (loadData.value === '1') {
+          loadDataWithFilters();
+        }
       },
       onError: async (err) => {
+        hideLoading();
         await Swal.fire({
           icon: 'error',
           title: 'Gagal',
@@ -395,38 +411,57 @@ async function handleReprint(orderId) {
 }
 
 function loadDataWithFilters() {
+  showLoading('Memuat Data Delivery Order...');
   router.get(route('delivery-order.index'), {
     search: search.value,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
     load_data: '1',
     per_page: perPage.value
-  }, { preserveState: true });
+  }, { 
+    preserveState: true,
+    onFinish: () => {
+      hideLoading();
+      isDataLoaded.value = true;
+    }
+  });
 }
 
 function clearFilters() {
+  showLoading('Membersihkan Filter...');
   search.value = '';
-  dateFrom.value = '';
-  dateTo.value = '';
+  dateFrom.value = today;
+  dateTo.value = today;
   loadData.value = '';
   perPage.value = 15;
   
   // Call backend method to clear session filters
   router.get(route('delivery-order.clear-filters'), {}, { 
     preserveState: false, 
-    replace: true 
+    replace: true,
+    onFinish: () => {
+      hideLoading();
+      isDataLoaded.value = false;
+    }
   });
 }
 
 function goToPage(page) {
+  if (loadData.value !== '1') return;
+  showLoading('Memuat Halaman...');
   router.get(route('delivery-order.index'), {
     search: search.value,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
-    load_data: loadData.value, // FIXED: Add load_data parameter
-    per_page: perPage.value,   // FIXED: Add per_page parameter
+    load_data: '1', // Always send load_data: '1' for pagination
+    per_page: perPage.value,
     page
-  }, { preserveState: true });
+  }, { 
+    preserveState: true,
+    onFinish: () => {
+      hideLoading();
+    }
+  });
 }
 
 async function exportToExcel() {

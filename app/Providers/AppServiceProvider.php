@@ -32,10 +32,11 @@ class AppServiceProvider extends ServiceProvider
         Notification::observe(NotificationObserver::class);
 
         // Log slow queries untuk identify performance issues
-        // Hanya log jika query > 100ms atau jika LOG_SLOW_QUERIES=true di .env
-        if (env('LOG_SLOW_QUERIES', false) || config('app.debug')) {
+        // Hanya log jika LOG_SLOW_QUERIES=true di .env (tidak otomatis aktif di debug mode)
+        // Threshold dinaikkan menjadi 500ms untuk mengurangi spam log
+        if (env('LOG_SLOW_QUERIES', false)) {
             DB::listen(function ($query) {
-                $slowQueryThreshold = env('SLOW_QUERY_THRESHOLD', 100); // Default: 100ms
+                $slowQueryThreshold = env('SLOW_QUERY_THRESHOLD', 500); // Default: 500ms (dinaikkan dari 100ms)
                 
                 if ($query->time > $slowQueryThreshold) {
                     Log::warning('Slow query detected', [

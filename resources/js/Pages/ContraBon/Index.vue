@@ -13,24 +13,73 @@
         </Link>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
-        <input
-          v-model="search"
-          @input="onSearchInput"
-          type="text"
-          placeholder="Cari nomor/PO/Supplier..."
-          class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
-        />
-        <select v-model="selectedStatus" @change="onStatusChange" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+        <!-- Search Box -->
+        <div class="flex-1 min-w-64">
+          <input
+            v-model="filters.search"
+            type="text"
+            placeholder="Cari nomor/PO/Supplier..."
+            class="w-full px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          />
+        </div>
+        
+        <!-- Filters -->
+        <select v-model="filters.status" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
           <option value="">Semua Status</option>
           <option value="draft">Draft</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>
-        <input type="date" v-model="from" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari tanggal" />
-        <span>-</span>
-        <input type="date" v-model="to" @change="onDateChange" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus-border-blue-400 transition" placeholder="Sampai tanggal" />
+        <input type="date" v-model="filters.date_from" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari Tanggal" title="Dari Tanggal" />
+        <input type="date" v-model="filters.date_to" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai Tanggal" title="Sampai Tanggal" />
+        
+        <!-- Load Data Button -->
+        <button 
+          @click="loadData" 
+          :disabled="isLoading"
+          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <i v-if="!isLoading" class="fa fa-download"></i> 
+          <img v-else src="/images/logo-icon.png" alt="Loading" class="w-4 h-4 animate-spin-fast" />
+          {{ isLoading ? 'Memuat...' : 'Load Data' }}
+        </button>
+        
+        <!-- Per Page Selector -->
+        <select v-model="filters.per_page" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="10">10 per halaman</option>
+          <option value="25">25 per halaman</option>
+          <option value="50">50 per halaman</option>
+          <option value="100">100 per halaman</option>
+        </select>
       </div>
-      <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
+      
+      <!-- Loading Spinner di tengah halaman -->
+      <template v-if="isLoading && !isDataLoaded">
+        <div class="bg-blue-50 border border-blue-200 rounded-2xl p-8 text-center">
+          <img src="/images/logo-icon.png" alt="Loading" class="w-16 h-16 mx-auto mb-4 animate-spin" />
+          <p class="text-gray-700 text-lg font-semibold mb-2">Memuat Data...</p>
+          <p class="text-gray-600">Mohon tunggu sebentar.</p>
+        </div>
+      </template>
+
+      <!-- Show message jika data belum di-load dan tidak sedang loading -->
+      <template v-else-if="!isDataLoaded && !isLoading">
+        <div class="bg-blue-50 border border-blue-200 rounded-2xl p-8 text-center">
+          <i class="fa fa-info-circle text-blue-500 text-4xl mb-4"></i>
+          <p class="text-gray-700 text-lg font-semibold mb-2">Data Belum Dimuat</p>
+          <p class="text-gray-600 mb-4">Klik tombol "Load Data" untuk memuat data Contra Bon</p>
+          <button 
+            @click="loadData" 
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa fa-download mr-2"></i> Load Data
+          </button>
+        </div>
+      </template>
+      
+      <!-- Table hanya muncul jika data sudah di-load -->
+      <template v-else>
+        <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all">
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
@@ -49,10 +98,11 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!contraBons.data || !contraBons.data.length">
+            <tr v-if="!safeContraBons.data || !safeContraBons.data.length">
               <td colspan="12" class="text-center py-10 text-gray-400">Belum ada data Contra Bon.</td>
             </tr>
-            <tr v-for="cb in contraBons.data" :key="cb.id" class="hover:bg-blue-50 transition shadow-sm">
+            <template v-else>
+              <tr v-for="cb in safeContraBons.data" :key="cb.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ cb.number }}</td>
               <td class="px-6 py-3">{{ formatDate(cb.date) }}</td>
               <td class="px-6 py-3">{{ cb.supplier?.name }}</td>
@@ -134,13 +184,15 @@
                 </div>
               </td>
             </tr>
+            </template>
           </tbody>
         </table>
-      </div>
+        </div>
+      </template>
       <!-- Pagination -->
-      <div class="flex justify-end mt-4 gap-2">
+      <div v-if="isDataLoaded && safeContraBons && safeContraBons.links && safeContraBons.links.length > 3" class="flex justify-end mt-4 gap-2">
         <button
-          v-for="link in contraBons.links"
+          v-for="link in safeContraBons.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
@@ -161,13 +213,19 @@ import { ref, watch, onMounted, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   contraBons: Object,
   filters: Object,
+  dataLoaded: {
+    type: Boolean,
+    default: false
+  }
 });
 
 const page = usePage();
+const { showLoading, hideLoading } = useLoading();
 
 // Check if user can edit (Finance Manager or Superadmin)
 const canEdit = computed(() => {
@@ -178,18 +236,82 @@ const canEdit = computed(() => {
   return isFinanceManager || isSuperadmin;
 });
 
-const search = ref(props.filters?.search || '');
-const selectedStatus = ref(props.filters?.status || '');
-const from = ref(props.filters?.from || '');
-const to = ref(props.filters?.to || '');
+// Get today's date for default filter
+const getTodayDate = () => {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+};
+
+const filters = ref({
+  search: props.filters?.search || '',
+  status: props.filters?.status || '',
+  date_from: props.filters?.date_from || getTodayDate(),
+  date_to: props.filters?.date_to || getTodayDate(),
+  per_page: props.filters?.per_page || 10
+});
+
+const isDataLoaded = ref(props.dataLoaded || false);
+const isLoading = ref(false);
+
+// Ensure contraBons is always an object with data property
+const safeContraBons = computed(() => {
+  if (!props.contraBons || typeof props.contraBons !== 'object') {
+    return {
+      data: [],
+      links: [],
+      current_page: 1,
+      last_page: 1,
+      total: 0,
+      per_page: 10
+    };
+  }
+  return {
+    ...props.contraBons,
+    data: Array.isArray(props.contraBons.data) ? props.contraBons.data : [],
+    links: Array.isArray(props.contraBons.links) ? props.contraBons.links : [],
+    current_page: props.contraBons.current_page || 1,
+    last_page: props.contraBons.last_page || 1,
+    total: props.contraBons.total || 0,
+    per_page: props.contraBons.per_page || 10
+  };
+});
+
+// Legacy refs for backward compatibility (if needed)
+const search = computed({
+  get: () => filters.value.search,
+  set: (val) => { filters.value.search = val; }
+});
+const selectedStatus = computed({
+  get: () => filters.value.status,
+  set: (val) => { filters.value.status = val; }
+});
+const from = computed({
+  get: () => filters.value.date_from,
+  set: (val) => { filters.value.date_from = val; }
+});
+const to = computed({
+  get: () => filters.value.date_to,
+  set: (val) => { filters.value.date_to = val; }
+});
 
 watch(
   () => props.filters,
-  (filters) => {
-    search.value = filters?.search || '';
-    selectedStatus.value = filters?.status || '';
-    from.value = filters?.from || '';
-    to.value = filters?.to || '';
+  (newFilters) => {
+    if (newFilters) {
+      filters.value.search = newFilters.search || '';
+      filters.value.status = newFilters.status || '';
+      filters.value.date_from = newFilters.date_from || getTodayDate();
+      filters.value.date_to = newFilters.date_to || getTodayDate();
+      filters.value.per_page = newFilters.per_page || 10;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.dataLoaded,
+  (loaded) => {
+    isDataLoaded.value = loaded || false;
   },
   { immediate: true }
 );
@@ -237,25 +359,46 @@ function getSourceNumberBadgeClass(number, sourceTypes) {
   return 'bg-gray-100 text-gray-800 border-gray-300';
 }
 
-function debouncedSearch() {
-  router.get('/contra-bons', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
+function loadData() {
+  isLoading.value = true;
+  showLoading('Memuat data Contra Bon...');
+  
+  const params = {
+    load_data: true,
+    search: filters.value.search,
+    status: filters.value.status,
+    date_from: filters.value.date_from,
+    date_to: filters.value.date_to,
+    per_page: filters.value.per_page
+  };
+  
+  router.get('/contra-bons', params, {
+    preserveState: true,
+    replace: true,
+    onFinish: () => {
+      isLoading.value = false;
+      hideLoading();
+    }
+  });
 }
 
-function onSearchInput() {
-  debouncedSearch();
-}
-
-function onStatusChange() {
-  debouncedSearch();
-}
-
-function onDateChange() {
-  debouncedSearch();
-}
-
+// Load data automatically when pagination is used
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (url) {
+    isLoading.value = true;
+    showLoading('Memuat data Contra Bon...');
+    router.visit(url, { 
+      preserveState: true, 
+      replace: true,
+      onFinish: () => {
+        isLoading.value = false;
+        hideLoading();
+      }
+    });
+  }
 }
+
+// goToPage sudah di-update di atas
 
 function goToEdit(id) {
   router.visit(`/contra-bons/${id}/edit`);
@@ -279,6 +422,7 @@ function confirmDelete(id) {
       cancelButtonText: 'Batal'
     }).then((result) => {
       if (result.isConfirmed) {
+        showLoading('Menghapus Contra Bon...');
         router.delete(`/contra-bons/${id}`, {
           onSuccess: (page) => {
             // Use message from flash or default message
@@ -289,6 +433,9 @@ function confirmDelete(id) {
             // Use error message from flash or default message
             const message = page.props.flash?.error || errors?.message || 'Gagal menghapus Contra Bon';
             Swal.fire('Gagal', message, 'error');
+          },
+          onFinish: () => {
+            hideLoading();
           }
         });
       }

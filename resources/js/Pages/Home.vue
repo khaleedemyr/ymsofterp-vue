@@ -583,23 +583,23 @@ const loadingCoachingApprovals = ref(false);
 
 // Training check-in QR scanner
 // const showTrainingCheckInModal = ref(false);
-// const showCamera = ref(false);
+const showCamera = ref(false);
 // const qrCodeInput = ref('');
 // const isProcessingCheckIn = ref(false);
 // const checkInStatusMessage = ref('');
-// let html5QrCode = null;
+let html5QrCode = null;
 // const cameras = ref([]);
 // const selectedCameraId = ref('');
 
 // Training check-out QR scanner
 // const showTrainingCheckOutModal = ref(false);
-// const showCheckOutCamera = ref(false);
+const showCheckOutCamera = ref(false);
 // const qrCodeCheckOutInput = ref('');
 // const isProcessingCheckOut = ref(false);
 // const checkOutStatusMessage = ref('');
-// let html5QrCodeCheckOut = null;
-// const checkOutCameras = ref([]);
-// const selectedCheckOutCameraId = ref('');
+let html5QrCodeCheckOut = null;
+const checkOutCameras = ref([]);
+const selectedCheckOutCameraId = ref('');
 
 // Training review modal
 // const showTrainingReviewModal = ref(false);
@@ -3815,16 +3815,16 @@ function openLink(file, material) {
 //     );
 // }
 
-// function switchCheckOutCamera() {
-//     startCheckOutCamera();
-// }
+function switchCheckOutCamera() {
+    // startCheckOutCamera();
+}
 
-// function closeCamera() {
-//     showCamera.value = false;
-//     if (html5QrCode) {
-//         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-//     }
-// }
+function closeCamera() {
+    showCamera.value = false;
+    // if (html5QrCode) {
+    //     html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+    // }
+}
 
 // Check-in Process
 // async function processTrainingCheckIn() {
@@ -4044,10 +4044,18 @@ function openLink(file, material) {
 // Cleanup on unmount
 onBeforeUnmount(() => {
     if (html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+        try {
+            html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+        } catch (e) {
+            // Ignore errors if scanner not initialized
+        }
     }
     if (html5QrCodeCheckOut) {
-        html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear()).catch(() => {});
+        try {
+            html5QrCodeCheckOut.stop().then(() => html5QrCodeCheckOut.clear()).catch(() => {});
+        } catch (e) {
+            // Ignore errors if scanner not initialized
+        }
     }
 });
 

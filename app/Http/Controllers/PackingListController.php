@@ -54,83 +54,156 @@ class PackingListController extends Controller
         $loadData = $request->load_data ?? $filters['load_data'] ?? '';
         $perPage = $request->per_page ?? $filters['per_page'] ?? 15;
         
-        // OPTIMIZED: Tidak load data otomatis, hanya load jika ada filter
+        // OPTIMIZED: Tidak load data otomatis, hanya load jika load_data = '1'
         $packingLists = null;
         
         if ($loadData === '1') {
-            $query = FoodPackingList::with([
-                'warehouseDivision',
-                'floorOrder:id,order_number,id_outlet,user_id',
-                'creator:id,nama_lengkap',
-                'warehouseDivision:id,name',
-                'items',
-                'floorOrder.outlet:id_outlet,nama_outlet',
-                'floorOrder.requester:id,nama_lengkap',
-            ]);
+            // OPTIMIZED: Gunakan DB::table() dengan leftJoin untuk performa maksimal
+            $query = \DB::table('food_packing_lists as pl')
+                ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+                ->leftJoin('users as u', 'pl.created_by', '=', 'u.id')
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('users as requester', 'fo.user_id', '=', 'requester.id')
+                ->select(
+                    'pl.*',
+                    'wd.name as warehouse_division_name',
+                    'fo.id as floor_order_id',
+                    'fo.order_number as floor_order_number',
+                    'fo.id_outlet as floor_order_outlet_id',
+                    'fo.user_id as floor_order_user_id',
+                    'u.id as creator_id',
+                    'u.nama_lengkap as creator_name',
+                    'o.id_outlet as outlet_id',
+                    'o.nama_outlet as outlet_name',
+                    'requester.id as requester_id',
+                    'requester.nama_lengkap as requester_name'
+                );
             
             // Apply filters if provided
             if (!empty($search)) {
                 $searchTerm = '%' . $search . '%';
                 $query->where(function($q) use ($searchTerm) {
-                    $q->where('packing_number', 'like', $searchTerm)
-                      ->orWhereHas('floorOrder', function($subQ) use ($searchTerm) {
-                          $subQ->where('order_number', 'like', $searchTerm);
-                      })
-                      ->orWhereHas('creator', function($subQ) use ($searchTerm) {
-                          $subQ->where('nama_lengkap', 'like', $searchTerm);
-                      })
-                      ->orWhereHas('warehouseDivision', function($subQ) use ($searchTerm) {
-                          $subQ->where('name', 'like', $searchTerm);
-                      })
-                      ->orWhereHas('floorOrder.outlet', function($subQ) use ($searchTerm) {
-                          $subQ->where('nama_outlet', 'like', $searchTerm);
-                      });
+                    $q->where('pl.packing_number', 'like', $searchTerm)
+                      ->orWhere('fo.order_number', 'like', $searchTerm)
+                      ->orWhere('u.nama_lengkap', 'like', $searchTerm)
+                      ->orWhere('wd.name', 'like', $searchTerm)
+                      ->orWhere('o.nama_outlet', 'like', $searchTerm);
                 });
             }
             
             if (!empty($dateFrom)) {
-                $query->whereDate('created_at', '>=', $dateFrom);
+                $query->whereDate('pl.created_at', '>=', $dateFrom);
             }
             
             if (!empty($dateTo)) {
-                $query->whereDate('created_at', '<=', $dateTo);
+                $query->whereDate('pl.created_at', '<=', $dateTo);
             }
             
             if (!empty($status)) {
-                $query->where('status', $status);
+                $query->where('pl.status', $status);
             }
             
-            $packingLists = $query->with([
-                'warehouseDivision',
-                'floorOrder:id,order_number,id_outlet,user_id',
-                'creator:id,nama_lengkap',
-                'warehouseDivision:id,name',
-                'items',
-                'floorOrder.outlet:id_outlet,nama_outlet',
-                'floorOrder.requester:id,nama_lengkap',
-            ])->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+            // Get paginated results
+            $packingLists = $query->orderByDesc('pl.created_at')
+                ->paginate($perPage)
+                ->withQueryString();
+            
+            // Batch query untuk items
+            $packingListIds = $packingLists->pluck('id')->toArray();
+            $itemsMap = [];
+            if (!empty($packingListIds)) {
+                $items = \DB::table('food_packing_list_items')
+                    ->whereIn('packing_list_id', $packingListIds)
+                    ->get()
+                    ->groupBy('packing_list_id');
+                
+                foreach ($items as $packingListId => $itemList) {
+                    $itemsMap[$packingListId] = $itemList->values();
+                }
+            }
+            
+            // Transform data - convert stdClass to array for Inertia
+            $packingLists->getCollection()->transform(function($pl) use ($itemsMap) {
+                // Convert to array first
+                $plArray = (array) $pl;
+                
+                // Build transformed data
+                $transformed = [
+                    'id' => $plArray['id'] ?? null,
+                    'packing_number' => $plArray['packing_number'] ?? null,
+                    'created_at' => $plArray['created_at'] ?? null,
+                    'status' => $plArray['status'] ?? null,
+                    'warehouse_division_id' => $plArray['warehouse_division_id'] ?? null,
+                    'warehouse_division' => ($plArray['warehouse_division_name'] ?? null) ? [
+                        'id' => $plArray['warehouse_division_id'] ?? null,
+                        'name' => $plArray['warehouse_division_name'] ?? null
+                    ] : null,
+                    'floor_order' => ($plArray['floor_order_id'] ?? null) ? [
+                        'id' => $plArray['floor_order_id'] ?? null,
+                        'order_number' => $plArray['floor_order_number'] ?? null,
+                        'id_outlet' => $plArray['floor_order_outlet_id'] ?? null,
+                        'user_id' => $plArray['floor_order_user_id'] ?? null,
+                        'outlet' => ($plArray['outlet_id'] ?? null) ? [
+                            'id_outlet' => $plArray['outlet_id'] ?? null,
+                            'nama_outlet' => $plArray['outlet_name'] ?? null
+                        ] : null,
+                        'requester' => ($plArray['requester_id'] ?? null) ? [
+                            'id' => $plArray['requester_id'] ?? null,
+                            'nama_lengkap' => $plArray['requester_name'] ?? null
+                        ] : null
+                    ] : null,
+                    'creator' => ($plArray['creator_id'] ?? null) ? [
+                        'id' => $plArray['creator_id'] ?? null,
+                        'nama_lengkap' => $plArray['creator_name'] ?? null
+                    ] : null,
+                    'items' => isset($itemsMap[$plArray['id']]) ? $itemsMap[$plArray['id']]->toArray() : [],
+                ];
+                
+                return (object) $transformed;
+            });
+        }
+
+        // Transform data untuk Inertia
+        $transformedPackingLists = null;
+        if ($packingLists) {
+            $transformedPackingLists = $packingLists->through(function($pl) {
+                // Handle both object and array
+                $plData = is_object($pl) ? (array) $pl : $pl;
+                $createdAt = isset($plData['created_at']) ? \Carbon\Carbon::parse($plData['created_at']) : null;
+                
+                $floorOrder = $plData['floor_order'] ?? null;
+                $floorOrderData = is_object($floorOrder) ? (array) $floorOrder : $floorOrder;
+                
+                return [
+                    'id' => $plData['id'] ?? null,
+                    'packing_number' => $plData['packing_number'] ?? null,
+                    'created_at' => $plData['created_at'] ?? null,
+                    'created_at_format' => $createdAt ? $createdAt->setTimezone('Asia/Jakarta')->format('d/m/Y H:i') : null,
+                    'fo_number' => $floorOrderData['order_number'] ?? null,
+                    'destination_outlet' => $floorOrderData['outlet'] ?? null,
+                    'requester' => $floorOrderData['requester'] ?? null,
+                    'warehouse_division' => $plData['warehouse_division'] ?? null,
+                    'floor_order' => $floorOrder,
+                    'creator' => $plData['creator'] ?? null,
+                    'status' => $plData['status'] ?? null,
+                    'items' => $plData['items'] ?? [],
+                ];
+            });
+        } else {
+            // Return empty paginator
+            $transformedPackingLists = new \Illuminate\Pagination\LengthAwarePaginator(
+                collect([]),
+                0,
+                $perPage,
+                1,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
         }
 
         return inertia('PackingList/Index', [
             'user' => $user,
-            'packingLists' => $packingLists
-                ? $packingLists->through(function($pl) {
-                    return [
-                        'id' => $pl->id,
-                        'packing_number' => $pl->packing_number,
-                        'created_at' => $pl->created_at,
-                        'created_at_format' => $pl->created_at ? $pl->created_at->setTimezone('Asia/Jakarta')->format('d/m/Y H:i') : null,
-                        'fo_number' => $pl->floorOrder?->order_number,
-                        'destination_outlet' => $pl->floorOrder?->outlet,
-                        'requester' => $pl->floorOrder?->requester,
-                        'warehouse_division' => $pl->warehouseDivision,
-                        'floor_order' => $pl->floorOrder,
-                        'creator' => $pl->creator,
-                        'status' => $pl->status,
-                        'items' => $pl->items,
-                    ];
-                })
-                : [],
+            'packingLists' => $transformedPackingLists,
             'filters' => [
                 'search' => $search,
                 'date_from' => $dateFrom,
@@ -139,6 +212,7 @@ class PackingListController extends Controller
                 'load_data' => $loadData,
                 'per_page' => $perPage
             ],
+            'dataLoaded' => $loadData === '1',
         ]);
     }
 
