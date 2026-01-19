@@ -507,6 +507,7 @@ class PurchaseOrderOpsController extends Controller
                         'created_by' => auth()->id(),
                         'arrival_date' => $prItem->arrival_date,
                         'pr_ops_item_id' => $prItem->id,
+                        'outlet_id' => $prItem->outlet_id,
                         'source_type' => 'purchase_requisition_ops',
                         'source_id' => $prItem->purchase_requisition_id,
                     ];

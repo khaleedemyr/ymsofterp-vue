@@ -818,7 +818,7 @@
                 </label>
                 <multiselect
                   v-model="outletPayments[outletKey].selectedBank"
-                  :options="banks"
+                  :options="getBankOptionsForOutlet(outletPayments[outletKey].outlet_id)"
                   :searchable="true"
                   :close-on-select="true"
                   :show-labels="false"
@@ -1319,7 +1319,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import { useLoading } from '@/Composables/useLoading';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -1477,6 +1477,49 @@ const banks = computed(() => {
       ...bank,
       display_name: `${bank.bank_name} - ${bank.account_number} (${bank.account_name}) - ${outletName}`
     };
+  });
+});
+
+function getBankOutletId(bank) {
+  return bank?.outlet?.id_outlet ?? bank?.outlet_id ?? null;
+}
+
+const bankOptionsByOutletId = computed(() => {
+  const map = new Map();
+  (banks.value || []).forEach((bank) => {
+    const outletId = getBankOutletId(bank);
+    const key = outletId == null ? 'HO' : String(outletId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(bank);
+  });
+  return map;
+});
+
+function getBankOptionsForOutlet(outletId) {
+  const key = outletId == null ? 'HO' : String(outletId);
+  return bankOptionsByOutletId.value.get(key) || [];
+}
+
+// Auto-select bank when only one option, and clear invalid selections on payment method change
+watch(() => form.payment_method, (method) => {
+  const isBankMethod = method === 'transfer' || method === 'check';
+  if (!isBankMethod) {
+    // clear per-outlet bank selection and main bank
+    Object.keys(outletPayments.value).forEach((outletKey) => onOutletBankRemove(outletKey));
+    form.bank_id = null;
+    selectedBank.value = null;
+    return;
+  }
+
+  // For transfer/check: ensure bank chosen per outlet and auto-pick if only 1
+  Object.keys(outletPayments.value).forEach((outletKey) => {
+    const outlet = outletPayments.value[outletKey];
+    if (!outlet) return;
+    const outletId = outlet.outlet_id ?? null;
+    const options = getBankOptionsForOutlet(outletId);
+    if (!outlet.selectedBank && options.length === 1) {
+      onOutletBankSelect(outletKey, options[0]);
+    }
   });
 });
 
@@ -1829,6 +1872,25 @@ function showPreview() {
     if (outletsWithoutBank.length > 0) {
       import('sweetalert2').then(({ default: Swal }) => {
         Swal.fire('Error', 'Semua outlet yang memiliki jumlah pembayaran harus memiliki bank yang dipilih untuk metode pembayaran ' + form.payment_method + '.', 'error');
+      });
+      return;
+    }
+
+    // Validate bank outlet must match the outlet (strict)
+    const outletsWithWrongBank = Object.keys(outletPayments.value).filter(outletKey => {
+      const outlet = outletPayments.value[outletKey];
+      if (!outlet || !(outlet.amount && parseFloat(outlet.amount) > 0)) return false;
+      const outletId = outlet.outlet_id ?? null;
+      // For HO/global outlet, allow HO bank (outlet_id null)
+      if (outletId == null) return false;
+      const selected = outlet.selectedBank || (banks.value || []).find(b => String(b.id) === String(outlet.bank_id));
+      const bankOutletId = getBankOutletId(selected);
+      return String(bankOutletId) !== String(outletId);
+    });
+
+    if (outletsWithWrongBank.length > 0) {
+      import('sweetalert2').then(({ default: Swal }) => {
+        Swal.fire('Error', 'Rekening bank harus sesuai outlet masing-masing. Silakan pilih bank outlet yang tepat untuk setiap outlet.', 'error');
       });
       return;
     }

@@ -147,12 +147,16 @@ class NonFoodPaymentController extends Controller
             try {
                 $allBreakdowns = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-                    ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                    // PR Ops: outlet/category at item level
+                    ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+                    ->leftJoin('tbl_data_outlet as o', function ($join) {
+                        $join->on(DB::raw('COALESCE(poi.outlet_id, pri.outlet_id)'), '=', 'o.id_outlet');
+                    })
+                    ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
                     ->whereIn('poi.purchase_order_ops_id', $poIds) // WHERE IN instead of loop
                     ->select(
                         'poi.purchase_order_ops_id', // Tambahkan untuk grouping
-                        'pr.outlet_id',
+                        DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
                         'o.nama_outlet as outlet_name',
                         'prc.name as category_name',
                         'prc.division as category_division',
@@ -162,7 +166,17 @@ class NonFoodPaymentController extends Controller
                         'pr.title as pr_title',
                         DB::raw('SUM(poi.total) as outlet_total')
                     )
-                    ->groupBy('poi.purchase_order_ops_id', 'pr.outlet_id', 'o.nama_outlet', 'prc.name', 'prc.division', 'prc.subcategory', 'prc.budget_type', 'pr.pr_number', 'pr.title')
+                    ->groupBy(
+                        'poi.purchase_order_ops_id',
+                        DB::raw('COALESCE(poi.outlet_id, pri.outlet_id)'),
+                        'o.nama_outlet',
+                        'prc.name',
+                        'prc.division',
+                        'prc.subcategory',
+                        'prc.budget_type',
+                        'pr.pr_number',
+                        'pr.title'
+                    )
                     ->get();
                 
                 // Group hasil query berdasarkan purchase_order_ops_id untuk easy lookup
@@ -323,7 +337,8 @@ class NonFoodPaymentController extends Controller
             if ($paymentType === 'lunas') {
                 $hasPayment = DB::table('non_food_payments')
                     ->where('purchase_order_ops_id', $po->id)
-                    ->where('status', '!=', 'cancelled')
+                    // Count only active/non-rejected payments
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
                     ->exists();
                 return !$hasPayment;
             }
@@ -332,7 +347,7 @@ class NonFoodPaymentController extends Controller
             if ($paymentType === 'termin') {
                 $totalPaid = DB::table('non_food_payments')
                     ->where('purchase_order_ops_id', $po->id)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
                     ->sum('amount');
                 $totalPaid = (float) $totalPaid;
                 $grandTotal = (float) $po->grand_total;
@@ -342,7 +357,7 @@ class NonFoodPaymentController extends Controller
             // For PO without payment_type or null: exclude if has any payment (except cancelled) - default to lunas behavior
             $hasPayment = DB::table('non_food_payments')
                 ->where('purchase_order_ops_id', $po->id)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->exists();
             return !$hasPayment;
         })->take(50)->values();
@@ -383,14 +398,14 @@ class NonFoodPaymentController extends Controller
             // Check if PR has any payment (except cancelled)
             $hasPayment = DB::table('non_food_payments')
                 ->where('purchase_requisition_id', $pr->id)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->exists();
             
             if ($hasPayment) {
                 // Check if fully paid
                 $totalPaid = DB::table('non_food_payments')
                     ->where('purchase_requisition_id', $pr->id)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
                     ->sum('amount');
                 $totalPaid = (float) $totalPaid;
                 $prAmount = (float) $pr->amount;
@@ -558,8 +573,14 @@ class NonFoodPaymentController extends Controller
             try {
                 $items = DB::table('purchase_order_ops_items as poi')
                     ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-                    ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                    // PR Ops uses outlet/category at item level. Join PR item as source of truth.
+                    ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+                    // Join outlet by PO item outlet_id (fallback to PR item outlet_id for legacy data)
+                    ->leftJoin('tbl_data_outlet as o', function ($join) {
+                        $join->on(DB::raw('COALESCE(poi.outlet_id, pri.outlet_id)'), '=', 'o.id_outlet');
+                    })
+                    // Category is also at PR item level (fallback handled by left join)
+                    ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
                     ->where('poi.purchase_order_ops_id', $poId)
                     ->select(
                         'poi.id',
@@ -571,9 +592,9 @@ class NonFoodPaymentController extends Controller
                         'poi.discount_amount',
                         'poi.total',
                         'pr.id as pr_id',
-                        'pr.outlet_id',
+                        DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
                         'o.nama_outlet as outlet_name',
-                        'pr.category_id',
+                        'pri.category_id as category_id',
                         'prc.name as category_name',
                         'prc.division as category_division',
                         'prc.subcategory as category_subcategory',
@@ -770,7 +791,7 @@ class NonFoodPaymentController extends Controller
             // Get total paid amount from all non-cancelled payments
             $totalPaid = DB::table('non_food_payments')
                 ->where('purchase_order_ops_id', $poId)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->sum('amount');
             
             $remaining = $grandTotal - $totalPaid;
@@ -778,13 +799,13 @@ class NonFoodPaymentController extends Controller
             // Get payment count
             $paymentCount = DB::table('non_food_payments')
                 ->where('purchase_order_ops_id', $poId)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->count();
             
             // Get payment history
             $paymentHistory = DB::table('non_food_payments')
                 ->where('purchase_order_ops_id', $poId)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->select('id', 'payment_number', 'amount', 'payment_date', 'status', 'payment_sequence')
                 ->orderBy('payment_sequence', 'asc')
                 ->orderBy('payment_date', 'asc')
@@ -1308,7 +1329,7 @@ class NonFoodPaymentController extends Controller
             if ($po && $po->payment_type === 'termin') {
                 // Check total paid amount
                 $totalPaid = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
                     ->sum('amount');
                 
                 $remaining = $po->grand_total - $totalPaid;
@@ -1320,7 +1341,7 @@ class NonFoodPaymentController extends Controller
             } else {
                 // For lunas payment, only allow one payment
                 $existingPayment = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
-                    ->where('status', '!=', 'cancelled')
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
                     ->first();
                 if ($existingPayment) {
                     return back()->with('error', 'Purchase Order ini sudah memiliki payment yang aktif.');
@@ -1331,7 +1352,7 @@ class NonFoodPaymentController extends Controller
         // Check if PR already has a payment
         if ($request->purchase_requisition_id) {
             $existingPayment = NonFoodPayment::where('purchase_requisition_id', $request->purchase_requisition_id)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->first();
             if ($existingPayment) {
                 return back()->with('error', 'Purchase Requisition ini sudah memiliki payment yang aktif.');
@@ -1347,7 +1368,7 @@ class NonFoodPaymentController extends Controller
         // Check if Retail Non Food already has a payment
         if ($request->retail_non_food_id) {
             $existingPayment = NonFoodPayment::where('retail_non_food_id', $request->retail_non_food_id)
-                ->where('status', '!=', 'cancelled')
+                ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->first();
             if ($existingPayment) {
                 return back()->with('error', 'Retail Non Food ini sudah memiliki payment yang aktif.');
@@ -1437,6 +1458,26 @@ class NonFoodPaymentController extends Controller
                                 return back()->with('error', 'Bank harus dipilih untuk setiap outlet dengan metode pembayaran ' . $request->payment_method . '.');
                             }
                             $bankId = $outletPayment['bank_id'];
+
+                            // Enforce bank account belongs to the same outlet (strict)
+                            $outletId = $outletPayment['outlet_id'] ?? null;
+                            $bank = \App\Models\BankAccount::find($bankId);
+                            if (!$bank) {
+                                DB::rollback();
+                                return back()->with('error', 'Bank tidak ditemukan. Silakan pilih ulang bank untuk setiap outlet.');
+                            }
+                            if (!empty($outletId)) {
+                                if (intval($bank->outlet_id) !== intval($outletId)) {
+                                    DB::rollback();
+                                    return back()->with('error', 'Rekening bank harus sesuai outlet masing-masing. Silakan pilih rekening bank untuk outlet yang tepat.');
+                                }
+                            } else {
+                                // For global/HO outlet, only allow HO bank account (outlet_id null)
+                                if (!empty($bank->outlet_id)) {
+                                    DB::rollback();
+                                    return back()->with('error', 'Untuk outlet Global/Head Office, pilih rekening bank Head Office.');
+                                }
+                            }
                         }
                         
                         \App\Models\NonFoodPaymentOutlet::create([
@@ -2623,8 +2664,11 @@ class NonFoodPaymentController extends Controller
                 try {
                     $items = DB::table('purchase_order_ops_items as poi')
                         ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
-                        ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+                        ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+                        ->leftJoin('tbl_data_outlet as o', function ($join) {
+                            $join->on(DB::raw('COALESCE(poi.outlet_id, pri.outlet_id)'), '=', 'o.id_outlet');
+                        })
+                        ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
                         ->where('poi.purchase_order_ops_id', $po->id)
                         ->select(
                             'poi.id',
@@ -2636,9 +2680,9 @@ class NonFoodPaymentController extends Controller
                             'poi.discount_amount',
                             'poi.total',
                             'pr.id as pr_id',
-                            'pr.outlet_id',
+                            DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
                             'o.nama_outlet as outlet_name',
-                            'pr.category_id',
+                            'pri.category_id as category_id',
                             'prc.name as category_name',
                             'prc.division as category_division',
                             'prc.subcategory as category_subcategory',

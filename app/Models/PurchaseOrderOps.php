@@ -19,6 +19,8 @@ class PurchaseOrderOps extends Model
         'created_by',
         'notes',
         'arrival_date',
+        'payment_type',
+        'payment_terms',
         'purchasing_manager_approved_at',
         'purchasing_manager_approved_by',
         'purchasing_manager_note',

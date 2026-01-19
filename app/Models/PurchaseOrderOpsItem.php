@@ -23,6 +23,7 @@ class PurchaseOrderOpsItem extends Model
         'created_by',
         'arrival_date',
         'pr_ops_item_id',
+        'outlet_id',
         'source_type',
         'source_id',
     ];
@@ -50,6 +51,11 @@ class PurchaseOrderOpsItem extends Model
     public function prOpsItem()
     {
         return $this->belongsTo(PurchaseRequisitionItem::class, 'pr_ops_item_id');
+    }
+
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
     }
 
     public function sourcePr()
