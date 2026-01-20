@@ -1510,6 +1510,8 @@ const bankOptionsByOutletId = computed(() => {
 });
 
 function getBankOptionsForOutlet(outletId) {
+  // If outlet_id is not available (Global/All Outlets), show ALL banks (no filtering)
+  if (normalizeOutletId(outletId) == null) return banks.value || [];
   const key = getOutletKey(outletId);
   return bankOptionsByOutletId.value.get(key) || [];
 }
@@ -1890,12 +1892,12 @@ function showPreview() {
       return;
     }
 
-    // Validate bank outlet must match the outlet (strict)
+    // Validate bank outlet must match the outlet (strict), except when outlet_id is not available (Global/All Outlets)
     const outletsWithWrongBank = Object.keys(outletPayments.value).filter(outletKey => {
       const outlet = outletPayments.value[outletKey];
       if (!outlet || !(outlet.amount && parseFloat(outlet.amount) > 0)) return false;
-      const outletId = outlet.outlet_id ?? null;
-      // For HO/global outlet, allow HO bank (outlet_id null)
+      const outletId = normalizeOutletId(outlet.outlet_id ?? null);
+      // If outlet_id is not available (Global/All Outlets), don't enforce outlet match
       if (outletId == null) return false;
       const selected = outlet.selectedBank || (banks.value || []).find(b => String(b.id) === String(outlet.bank_id));
       const bankOutletId = getBankOutletId(selected);

@@ -1477,11 +1477,7 @@ class NonFoodPaymentController extends Controller
                                     return back()->with('error', 'Rekening bank harus sesuai outlet masing-masing. Silakan pilih rekening bank untuk outlet yang tepat.');
                                 }
                             } else {
-                                // For global/HO outlet, only allow HO bank account (outlet_id null)
-                                if (!empty($bank->outlet_id)) {
-                                    DB::rollback();
-                                    return back()->with('error', 'Untuk outlet Global/Head Office, pilih rekening bank Head Office.');
-                                }
+                                // If outlet_id is not available (Global/All Outlets), allow any bank (no outlet filtering)
                             }
                         }
                         
