@@ -1480,15 +1480,29 @@ const banks = computed(() => {
   });
 });
 
+function normalizeOutletId(outletId) {
+  if (outletId === undefined || outletId === null || outletId === '') return null;
+  // Some data uses 0 for Head Office
+  if (outletId === 0 || outletId === '0') return null;
+  // Guard against sentinel strings like 'global'/'no-outlet'
+  if (typeof outletId === 'string' && Number.isNaN(Number(outletId))) return null;
+  const n = Number(outletId);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getOutletKey(outletId) {
+  const normalized = normalizeOutletId(outletId);
+  return normalized == null ? 'HO' : String(normalized);
+}
+
 function getBankOutletId(bank) {
-  return bank?.outlet?.id_outlet ?? bank?.outlet_id ?? null;
+  return normalizeOutletId(bank?.outlet?.id_outlet ?? bank?.outlet_id ?? null);
 }
 
 const bankOptionsByOutletId = computed(() => {
   const map = new Map();
   (banks.value || []).forEach((bank) => {
-    const outletId = getBankOutletId(bank);
-    const key = outletId == null ? 'HO' : String(outletId);
+    const key = getOutletKey(getBankOutletId(bank));
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(bank);
   });
@@ -1496,7 +1510,7 @@ const bankOptionsByOutletId = computed(() => {
 });
 
 function getBankOptionsForOutlet(outletId) {
-  const key = outletId == null ? 'HO' : String(outletId);
+  const key = getOutletKey(outletId);
   return bankOptionsByOutletId.value.get(key) || [];
 }
 

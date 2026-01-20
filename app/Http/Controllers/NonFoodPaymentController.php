@@ -1090,11 +1090,16 @@ class NonFoodPaymentController extends Controller
                 
                 foreach ($grouped as $key => $groupItems) {
                     $firstItem = $groupItems->first();
-                    $outletId = $firstItem->outlet_id ?? $pr->outlet_id ?? 'global';
-                    $categoryId = $firstItem->category_id ?? $pr->category_id;
+                    // Normalize outlet/category id for frontend validation + bank filtering
+                    // - outlet_id/category_id should be numeric or null (never 'global'/'no-outlet' strings)
+                    $outletId = $firstItem->outlet_id ?? $pr->outlet_id; // can be null (Head Office)
+                    $categoryId = $firstItem->category_id ?? $pr->category_id; // can be null
                     
                     // Get outlet name
-                    $outletName = $firstItem->item_outlet_name ?? $pr->outlet_name ?? 'Global / All Outlets';
+                    $outletName = $firstItem->item_outlet_name ?? $pr->outlet_name;
+                    if (empty($outletName)) {
+                        $outletName = $outletId ? 'Unknown Outlet' : 'Head Office';
+                    }
                     
                     // Get category info
                     $categoryName = $firstItem->item_category_name ?? $pr->category_name;
@@ -1107,7 +1112,7 @@ class NonFoodPaymentController extends Controller
                     
                     $outletSubtotal = $groupItems->sum('total');
                     
-                    $itemsByOutlet[$outletId . '-' . $categoryId] = [
+                    $itemsByOutlet[$key] = [
                         'outlet_id' => $outletId,
                         'outlet_name' => $outletName,
                         'category_id' => $categoryId,
