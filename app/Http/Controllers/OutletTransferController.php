@@ -214,6 +214,8 @@ class OutletTransferController extends Controller
 
         DB::beginTransaction();
         try {
+            $oldData = $transfer->toArray();
+
             // Update status transfer
             $transfer->update([
                 'status' => 'approved',
@@ -232,8 +234,8 @@ class OutletTransferController extends Controller
                 'description' => 'Approve transfer outlet: ' . $transfer->transfer_number,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
-                'old_data' => null,
-                'new_data' => $transfer->fresh()->toArray(),
+                'old_data' => json_encode($oldData),
+                'new_data' => json_encode($transfer->fresh()->toArray()),
                 'created_at' => now(),
             ]);
 

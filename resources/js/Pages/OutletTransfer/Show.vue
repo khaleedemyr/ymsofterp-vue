@@ -140,6 +140,7 @@ import { computed } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 const props = defineProps({
   transfer: Object,
@@ -213,22 +214,14 @@ function submitTransfer() {
     cancelButtonText: 'Batal'
   }).then((result) => {
     if (result.isConfirmed) {
-      router.post(route('outlet-transfer.submit', props.transfer.id), {}, {
-        onSuccess: () => {
-          Swal.fire(
-            'Berhasil!',
-            'Transfer berhasil di-submit untuk approval.',
-            'success'
-          );
-        },
-        onError: () => {
-          Swal.fire(
-            'Error!',
-            'Terjadi kesalahan saat submit transfer.',
-            'error'
-          );
-        }
-      });
+      axios.post(route('outlet-transfer.submit', props.transfer.id))
+        .then(() => {
+          Swal.fire('Berhasil!', 'Transfer berhasil di-submit untuk approval.', 'success');
+          router.reload({ preserveScroll: true });
+        })
+        .catch(() => {
+          Swal.fire('Error!', 'Terjadi kesalahan saat submit transfer.', 'error');
+        });
     }
   });
 }
