@@ -505,9 +505,22 @@ class OutletTransferController extends Controller
         $user = auth()->user();
         $query = OutletTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet', 'approver']);
 
-        // Filter berdasarkan outlet user
-        if ($user->id_outlet != 1) {
-            $query->where('outlet_id', $user->id_outlet);
+        // Visibility rule:
+        // - Superadmin: see all
+        // - Non-superadmin: only see transfers related to user's outlet (as source OR destination)
+        //
+        // Note: outlet_transfers.outlet_id is currently used as "outlet tujuan" in store(),
+        // so filtering by that column alone would hide transfers created by outlet asal.
+        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
+        $userOutletId = $user->id_outlet ?? null;
+        if (!$isSuperadmin && $userOutletId) {
+            $query->where(function ($q) use ($userOutletId) {
+                $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
+                    $q2->where('outlet_id', $userOutletId);
+                })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
+                    $q2->where('outlet_id', $userOutletId);
+                });
+            });
         }
 
         if ($request->search) {
