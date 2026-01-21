@@ -850,6 +850,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'update'])->name('outlet-transfer.update');
     Route::post('/outlet-transfer/{id}/submit', [\App\Http\Controllers\OutletTransferController::class, 'submit'])->name('outlet-transfer.submit');
     Route::post('/outlet-transfer/{id}/approve', [\App\Http\Controllers\OutletTransferController::class, 'approve'])->name('outlet-transfer.approve');
+    Route::get('/api/outlet-transfer/pending-approvals', [\App\Http\Controllers\OutletTransferController::class, 'getPendingApprovals'])->name('outlet-transfer.pending-approvals');
     
     // Internal Warehouse Transfer Routes
     Route::get('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'index'])->name('internal-warehouse-transfer.index');

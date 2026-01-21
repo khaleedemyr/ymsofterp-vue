@@ -143,6 +143,10 @@ const loadingStockOpnameApprovals = ref(false);
 const selectedStockOpnameApprovals = ref(new Set()); // For multi-select
 const isSelectingStockOpnameApprovals = ref(false); // Toggle select mode
 
+// Outlet Transfer approvals
+const pendingOutletTransferApprovals = ref([]);
+const loadingOutletTransferApprovals = ref(false);
+
 // Warehouse Stock Opname approvals
 const pendingWarehouseStockOpnameApprovals = ref([]);
 const loadingWarehouseStockOpnameApprovals = ref(false);
@@ -704,6 +708,11 @@ const stockOpnameApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const outletTransferApprovalCount = computed(() => {
+    const count = pendingOutletTransferApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const warehouseStockOpnameApprovalCount = computed(() => {
     const count = pendingWarehouseStockOpnameApprovals.value.length;
     return count > 0 ? count : 0;
@@ -1051,6 +1060,21 @@ async function loadPendingStockOpnameApprovals() {
         console.error('Error loading pending Stock Opname approvals:', error);
     } finally {
         loadingStockOpnameApprovals.value = false;
+    }
+}
+
+// Load Outlet Transfer approvals
+async function loadPendingOutletTransferApprovals() {
+    loadingOutletTransferApprovals.value = true;
+    try {
+        const response = await axios.get('/api/outlet-transfer/pending-approvals');
+        if (response.data.success) {
+            pendingOutletTransferApprovals.value = response.data.outlet_transfers || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Outlet Transfer approvals:', error);
+    } finally {
+        loadingOutletTransferApprovals.value = false;
     }
 }
 
@@ -4888,6 +4912,7 @@ onMounted(() => {
     loadPendingStockAdjustmentApprovals();
     loadPendingContraBonApprovals();
     loadPendingStockOpnameApprovals();
+    loadPendingOutletTransferApprovals();
     loadPendingWarehouseStockOpnameApprovals();
     loadPendingMovementApprovals();
     loadLeaveNotifications();
@@ -5627,6 +5652,75 @@ watch(locale, () => {
                             <div v-if="pendingPoOpsApprovals.length > 3" class="text-center pt-2">
                                 <button @click="openAllPoOpsModal" class="text-sm text-orange-500 hover:text-orange-700 font-medium">
                                     Lihat {{ pendingPoOpsApprovals.length - 3 }} PO Ops lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Outlet Transfer Approval Section -->
+                <div v-if="outletTransferApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-right-left mr-2 text-emerald-500"></i>
+                                    Outlet Transfer Approval
+                                </h3>
+                            </div>
+                            <div class="bg-emerald-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ outletTransferApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingOutletTransferApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <div v-for="transfer in pendingOutletTransferApprovals.slice(0, 3)" :key="'ot-approval-' + transfer.id"
+                                @click="router.visit(route('outlet-transfer.show', transfer.id))"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-emerald-50 hover:bg-emerald-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ transfer.transfer_number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-store mr-1 text-emerald-500"></i>
+                                            {{ transfer.warehouse_outlet_from?.outlet?.nama_outlet || '-' }}
+                                            →
+                                            {{ transfer.warehouse_outlet_to?.outlet?.nama_outlet || transfer.outlet?.nama_outlet || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <i class="fa fa-warehouse mr-1 text-purple-500"></i>
+                                            {{ transfer.warehouse_outlet_from?.name || '-' }}
+                                            →
+                                            {{ transfer.warehouse_outlet_to?.name || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-calendar mr-1"></i>
+                                            {{ new Date(transfer.transfer_date).toLocaleDateString('id-ID') }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1"></i>{{ transfer.creator?.nama_lengkap }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-emerald-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>
+                                        <span v-if="transfer.approval_level">Level {{ transfer.approval_level }}: </span>
+                                        {{ transfer.approver_name || 'Outlet Transfer Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="pendingOutletTransferApprovals.length > 3" class="text-center pt-2">
+                                <button @click="router.visit(route('outlet-transfer.index'))" class="text-sm text-emerald-500 hover:text-emerald-700 font-medium">
+                                    Lihat {{ pendingOutletTransferApprovals.length - 3 }} Outlet Transfer lainnya...
                                 </button>
                             </div>
                         </div>

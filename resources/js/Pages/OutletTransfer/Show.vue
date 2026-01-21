@@ -21,10 +21,17 @@
           </button>
           <button
             v-if="transfer.status === 'submitted' && canApprove"
-            @click="approveTransfer"
+            @click="approveTransfer('approve')"
             class="bg-yellow-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
           >
             <i class="fa fa-check mr-2"></i> Approve
+          </button>
+          <button
+            v-if="transfer.status === 'submitted' && canApprove"
+            @click="approveTransfer('reject')"
+            class="bg-red-500 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            <i class="fa fa-times mr-2"></i> Reject
           </button>
           <button
             v-if="transfer.status === 'draft'"
@@ -103,6 +110,46 @@
         </div>
       </div>
 
+      <!-- Approval Flow -->
+      <div v-if="(transfer.approval_flows && transfer.approval_flows.length > 0)" class="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Approval Flow</h2>
+        <div class="space-y-3">
+          <div
+            v-for="flow in transfer.approval_flows"
+            :key="flow.id"
+            class="flex items-center gap-4 p-3 rounded-lg border"
+            :class="getFlowClass(flow)"
+          >
+            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold"
+                 :class="getFlowNumberClass(flow)">
+              {{ flow.approval_level }}
+            </div>
+            <div class="flex-1">
+              <div class="font-semibold">{{ flow.approver?.nama_lengkap || '-' }}</div>
+              <div class="text-sm text-gray-600">{{ flow.approver?.jabatan?.nama_jabatan || '-' }}</div>
+            </div>
+            <div class="flex-shrink-0">
+              <span :class="getFlowStatusClass(flow.status)" class="px-3 py-1 rounded-full text-xs font-semibold">
+                {{ flow.status }}
+              </span>
+            </div>
+            <div v-if="flow.comments" class="flex-shrink-0 text-sm text-gray-600">
+              <i class="fa fa-comment mr-1"></i>
+              {{ flow.comments }}
+            </div>
+            <div v-if="flow.approved_at" class="flex-shrink-0 text-xs text-gray-500">
+              {{ formatDate(flow.approved_at) }}
+            </div>
+            <div v-if="flow.rejected_at" class="flex-shrink-0 text-xs text-gray-500">
+              {{ formatDate(flow.rejected_at) }}
+            </div>
+          </div>
+        </div>
+        <div v-if="pendingFlow" class="mt-4 text-sm text-gray-600">
+          Next approver: <span class="font-semibold">{{ pendingFlow.approver?.nama_lengkap || pendingFlow.approver_id }}</span>
+        </div>
+      </div>
+
       <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div class="p-6 border-b">
           <h2 class="text-lg font-semibold text-gray-800">Detail Item</h2>
@@ -132,11 +179,41 @@
         </div>
       </div>
     </div>
+
+    <!-- Submit Modal (pilih approvers) -->
+    <div v-if="showSubmitModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Submit untuk Approval</h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Approvers (berurutan dari terendah ke tertinggi)</label>
+          <select
+            v-model="selectedApprovers"
+            multiple
+            size="8"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option v-for="u in (users || [])" :key="u.id" :value="u.id">
+              {{ u.nama_lengkap }} - {{ u.jabatan?.nama_jabatan || '-' }}
+            </option>
+          </select>
+          <p class="mt-2 text-xs text-gray-500">Approver level tertinggi akan eksekusi pindah stok saat approve terakhir. Jika ada reject, proses berhenti.</p>
+        </div>
+        <div class="flex justify-end gap-3">
+          <button @click="closeSubmitModal" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+            Batal
+          </button>
+          <button @click="submitForApproval" :disabled="submitting || selectedApprovers.length === 0" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
+            <i v-if="submitting" class="fa fa-spinner fa-spin mr-2"></i>
+            Submit
+          </button>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -146,7 +223,14 @@ const props = defineProps({
   transfer: Object,
   outlets: Object,
   user: Object,
+  canApprove: Boolean,
+  pendingFlow: Object,
+  users: Array,
 });
+
+const showSubmitModal = ref(false);
+const selectedApprovers = ref([]);
+const submitting = ref(false);
 
 function formatDate(date) {
   if (!date) return '-';
@@ -180,89 +264,97 @@ function getStatusClass(status) {
 }
 
 const canApprove = computed(() => {
-  if (!props.user || !props.transfer.warehouse_outlet_to?.name) return false;
-  
-  const userJabatan = props.user.id_jabatan;
-  const userStatus = props.user.status;
-  const isSuperadmin = props.user.id_role === '5af56935b011a' && userStatus === 'A';
-  
-  if (isSuperadmin) return true;
-  
-  const warehouseName = props.transfer.warehouse_outlet_to.name;
-  
-  switch (warehouseName) {
-    case 'Kitchen':
-      return [163, 174, 180, 345, 346, 347, 348, 349].includes(userJabatan) && userStatus === 'A';
-    case 'Bar':
-      return [175, 182, 323].includes(userJabatan) && userStatus === 'A';
-    case 'Service':
-      return [176, 322, 164, 321].includes(userJabatan) && userStatus === 'A';
-    default:
-      return false;
-  }
+  return !!props.canApprove;
 });
 
 function submitTransfer() {
-  Swal.fire({
-    title: 'Submit Transfer?',
-    text: "Transfer akan dikirim untuk approval. Anda tidak dapat mengedit setelah submit.",
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Ya, Submit!',
-    cancelButtonText: 'Batal'
-  }).then((result) => {
-    if (result.isConfirmed) {
-      axios.post(route('outlet-transfer.submit', props.transfer.id))
-        .then(() => {
-          Swal.fire('Berhasil!', 'Transfer berhasil di-submit untuk approval.', 'success');
-          router.reload({ preserveScroll: true });
-        })
-        .catch(() => {
-          Swal.fire('Error!', 'Terjadi kesalahan saat submit transfer.', 'error');
-        });
-    }
-  });
+  selectedApprovers.value = [];
+  showSubmitModal.value = true;
 }
 
-function approveTransfer() {
+function closeSubmitModal() {
+  showSubmitModal.value = false;
+  selectedApprovers.value = [];
+}
+
+async function submitForApproval() {
+  if (!selectedApprovers.value || selectedApprovers.value.length === 0) {
+    Swal.fire('Error!', 'Pilih minimal 1 approver.', 'error');
+    return;
+  }
+  submitting.value = true;
+  try {
+    await axios.post(route('outlet-transfer.submit', props.transfer.id), {
+      approvers: selectedApprovers.value,
+    });
+    closeSubmitModal();
+    Swal.fire('Berhasil!', 'Transfer berhasil di-submit untuk approval.', 'success');
+    router.reload({ preserveScroll: true });
+  } catch (e) {
+    Swal.fire('Error!', 'Terjadi kesalahan saat submit transfer.', 'error');
+  } finally {
+    submitting.value = false;
+  }
+}
+
+function approveTransfer(action) {
+  const isReject = action === 'reject';
   Swal.fire({
-    title: 'Approve Transfer?',
-    text: "Transfer akan disetujui dan stock akan dipindahkan.",
-    icon: 'question',
+    title: isReject ? 'Reject Transfer?' : 'Approve Transfer?',
+    text: isReject
+      ? 'Transfer akan ditolak dan proses approval berhenti.'
+      : 'Transfer akan di-approve. Jika ini approval terakhir, stock akan dipindahkan.',
+    icon: isReject ? 'warning' : 'question',
     showCancelButton: true,
-    confirmButtonColor: '#28a745',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Ya, Approve!',
+    confirmButtonColor: isReject ? '#d33' : '#28a745',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: isReject ? 'Ya, Reject!' : 'Ya, Approve!',
     cancelButtonText: 'Batal',
     input: 'textarea',
-    inputPlaceholder: 'Catatan approval (opsional)',
-    inputAttributes: {
-      'aria-label': 'Catatan approval'
+    inputPlaceholder: isReject ? 'Alasan reject (wajib)' : 'Catatan approval (opsional)',
+    inputAttributes: { 'aria-label': 'Catatan' },
+    preConfirm: (value) => {
+      if (isReject && (!value || !value.trim())) {
+        Swal.showValidationMessage('Alasan reject wajib diisi.');
+      }
+      return value || '';
     }
   }).then((result) => {
     if (result.isConfirmed) {
       router.post(route('outlet-transfer.approve', props.transfer.id), {
-        notes: result.value || ''
+        action,
+        comments: result.value || '',
       }, {
+        preserveScroll: true,
         onSuccess: () => {
-          Swal.fire(
-            'Berhasil!',
-            'Transfer berhasil di-approve.',
-            'success'
-          );
+          Swal.fire('Berhasil!', isReject ? 'Transfer telah di-reject.' : 'Approval berhasil diproses.', 'success');
         },
         onError: () => {
-          Swal.fire(
-            'Error!',
-            'Terjadi kesalahan saat approve transfer.',
-            'error'
-          );
+          Swal.fire('Error!', 'Terjadi kesalahan saat proses approval.', 'error');
         }
       });
     }
   });
+}
+
+function getFlowClass(flow) {
+  if (flow.status === 'APPROVED') return 'bg-green-50 border-green-200';
+  if (flow.status === 'REJECTED') return 'bg-red-50 border-red-200';
+  if (flow.status === 'PENDING') return 'bg-yellow-50 border-yellow-200';
+  return 'bg-gray-50 border-gray-200';
+}
+
+function getFlowNumberClass(flow) {
+  if (flow.status === 'APPROVED') return 'bg-green-500 text-white';
+  if (flow.status === 'REJECTED') return 'bg-red-500 text-white';
+  if (flow.status === 'PENDING') return 'bg-yellow-500 text-white';
+  return 'bg-gray-500 text-white';
+}
+
+function getFlowStatusClass(status) {
+  if (status === 'APPROVED') return 'bg-green-200 text-green-800';
+  if (status === 'REJECTED') return 'bg-red-200 text-red-800';
+  return 'bg-yellow-200 text-yellow-800';
 }
 
 function confirmDelete() {

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\OutletTransfer;
 use App\Models\OutletTransferItem;
+use App\Models\OutletTransferApprovalFlow;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
 
@@ -163,7 +164,7 @@ class OutletTransferController extends Controller
     // Submit draft untuk approval
     public function submit(Request $request, $id)
     {
-        $transfer = OutletTransfer::findOrFail($id);
+        $transfer = OutletTransfer::with('approvalFlows')->findOrFail($id);
         
         if ($transfer->status !== 'draft') {
             return response()->json([
@@ -172,42 +173,86 @@ class OutletTransferController extends Controller
             ], 422);
         }
 
-        $transfer->update([
-            'status' => 'submitted'
+        $validated = $request->validate([
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
         ]);
 
-        // Kirim notifikasi berdasarkan warehouse outlet tujuan
-        $this->sendNotificationByWarehouse($transfer->warehouse_outlet_to_id, $transfer->id, $transfer->transfer_number);
+        try {
+            DB::beginTransaction();
 
-        DB::table('activity_logs')->insert([
-            'user_id' => Auth::id(),
-            'activity_type' => 'submit',
-            'module' => 'outlet_transfer',
-            'description' => 'Submit transfer outlet untuk approval: ' . $transfer->transfer_number,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => json_encode(['status' => 'draft']),
-            'new_data' => json_encode(['status' => 'submitted']),
-            'created_at' => now(),
-        ]);
+            $oldData = $transfer->toArray();
 
-        return response()->json(['success' => true]);
+            // Reset approval flows (in case of resubmit)
+            $transfer->approvalFlows()->delete();
+
+            // Create approval flows (sequential)
+            foreach ($validated['approvers'] as $index => $approverId) {
+                OutletTransferApprovalFlow::create([
+                    'outlet_transfer_id' => $transfer->id,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1, // Level 1 = terendah, level terakhir = tertinggi
+                    'status' => 'PENDING',
+                ]);
+            }
+
+            // Update status
+            $transfer->update([
+                'status' => 'submitted',
+                'approval_by' => null,
+                'approval_at' => null,
+                'approval_notes' => null,
+            ]);
+
+            // Send notification to first approver
+            $this->sendNotificationToNextApprover($transfer);
+
+            DB::table('activity_logs')->insert([
+                'user_id' => Auth::id(),
+                'activity_type' => 'submit',
+                'module' => 'outlet_transfer',
+                'description' => 'Submit transfer outlet untuk approval: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => json_encode($oldData),
+                'new_data' => json_encode($transfer->fresh()->toArray()),
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error saat submit outlet transfer', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal submit transfer: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     // Approve transfer
     public function approve(Request $request, $id)
     {
         $user = Auth::user();
-        $transfer = OutletTransfer::findOrFail($id);
+        $transfer = OutletTransfer::with(['approvalFlows', 'items'])->findOrFail($id);
+
+        $validated = $request->validate([
+            'action' => 'required|in:approve,reject',
+            'comments' => 'nullable|string',
+        ]);
+
+        if ($validated['action'] === 'reject') {
+            $request->validate([
+                'comments' => 'required|string',
+            ]);
+        }
 
         // Cek hak akses berdasarkan warehouse outlet tujuan
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-        $canApprove = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+        $canApproveLegacy = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
         
-        if (!($isSuperadmin || $canApprove)) {
-            abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve transfer untuk warehouse outlet ini');
-        }
-
         if ($transfer->status !== 'submitted') {
             abort(400, 'Tidak bisa approve transfer ini');
         }
@@ -216,16 +261,76 @@ class OutletTransferController extends Controller
         try {
             $oldData = $transfer->toArray();
 
-            // Update status transfer
-            $transfer->update([
-                'status' => 'approved',
-                'approval_by' => $user->id,
-                'approval_at' => now(),
-                'approval_notes' => $request->notes,
-            ]);
+            // New sequential approval flow
+            if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+                // Only the next approver (lowest pending level) can approve/reject
+                $nextFlow = $transfer->approvalFlows()
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level')
+                    ->first();
 
-            // Proses stock transfer
-            $this->processStockTransfer($transfer);
+                if (!$nextFlow) {
+                    throw new \Exception('Tidak ada approval yang pending.');
+                }
+
+                if (!$isSuperadmin && $nextFlow->approver_id != $user->id) {
+                    abort(403, 'Unauthorized - Anda bukan approver berikutnya untuk transfer ini');
+                }
+
+                if ($validated['action'] === 'approve') {
+                    $nextFlow->approve($validated['comments'] ?? null);
+
+                    $hasPending = $transfer->approvalFlows()
+                        ->where('status', 'PENDING')
+                        ->count() > 0;
+
+                    if (!$hasPending) {
+                        // Final approval: execute stock transfer
+                        $transfer->update([
+                            'status' => 'approved',
+                            'approval_by' => $user->id,
+                            'approval_at' => now(),
+                            'approval_notes' => $validated['comments'] ?? null,
+                        ]);
+
+                        $this->processStockTransfer($transfer->fresh()->load('items'));
+                    } else {
+                        // Notify next approver
+                        $this->sendNotificationToNextApprover($transfer);
+                    }
+                } else {
+                    // Reject: stop the chain
+                    $nextFlow->reject($validated['comments'] ?? null);
+                    $transfer->update([
+                        'status' => 'rejected',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? null,
+                    ]);
+                }
+            } else {
+                // Legacy (no approval flows): keep old behavior for backward compatibility
+                if (!($isSuperadmin || $canApproveLegacy)) {
+                    abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve transfer untuk warehouse outlet ini');
+                }
+
+                if ($validated['action'] === 'reject') {
+                    $transfer->update([
+                        'status' => 'rejected',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? null,
+                    ]);
+                } else {
+                    $transfer->update([
+                        'status' => 'approved',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? ($request->notes ?? null),
+                    ]);
+                    $this->processStockTransfer($transfer->fresh()->load('items'));
+                }
+            }
 
             DB::table('activity_logs')->insert([
                 'user_id' => $user->id,
@@ -240,7 +345,10 @@ class OutletTransferController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->back()->with('success', 'Transfer outlet berhasil di-approve');
+            $message = $validated['action'] === 'approve'
+                ? 'Transfer outlet berhasil diproses approval.'
+                : 'Transfer outlet telah di-reject.';
+            return redirect()->back()->with('success', $message);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error saat approve transfer outlet', ['error' => $e->getMessage()]);
@@ -325,6 +433,25 @@ class OutletTransferController extends Controller
             ];
         }
         NotificationService::createMany($data);
+    }
+
+    // Send notification to next approver in approval flow
+    private function sendNotificationToNextApprover(OutletTransfer $transfer)
+    {
+        $nextFlow = $transfer->approvalFlows()
+            ->where('status', 'PENDING')
+            ->orderBy('approval_level')
+            ->first();
+
+        if (!$nextFlow) return;
+
+        NotificationService::insert([
+            'user_id' => $nextFlow->approver_id,
+            'type' => 'outlet_transfer_approval',
+            'message' => 'Outlet Transfer ' . $transfer->transfer_number . ' membutuhkan approval Anda.',
+            'url' => route('outlet-transfer.show', $transfer->id),
+            'is_read' => 0,
+        ]);
     }
 
     // Method untuk memproses stock transfer setelah approval
@@ -505,7 +632,15 @@ class OutletTransferController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        $query = OutletTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet', 'approver']);
+        $query = OutletTransfer::with([
+            'warehouseOutletFrom',
+            'warehouseOutletTo',
+            'creator',
+            'outlet',
+            'approver',
+            'approvalFlows.approver',
+            'approvalFlows.approver.jabatan',
+        ]);
 
         // Visibility rule:
         // - Superadmin: see all
@@ -554,12 +689,28 @@ class OutletTransferController extends Controller
             ->select('id_outlet', 'nama_outlet')
             ->get()
             ->keyBy('id_outlet');
+
+        // User list for selecting approvers (no outlet filter)
+        $users = DB::table('users')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'A')
+            ->select('users.id', 'users.nama_lengkap', 'tbl_data_jabatan.nama_jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->get()
+            ->map(function ($u) {
+                return [
+                    'id' => $u->id,
+                    'nama_lengkap' => $u->nama_lengkap,
+                    'jabatan' => $u->nama_jabatan ? ['nama_jabatan' => $u->nama_jabatan] : null,
+                ];
+            });
         
         return inertia('OutletTransfer/Index', [
             'transfers' => $transfers,
             'filters' => $request->only(['search', 'from', 'to']),
             'outlets' => $outlets,
             'user' => $user,
+            'users' => $users,
         ]);
     }
 
@@ -627,18 +778,67 @@ class OutletTransferController extends Controller
 
     public function show($id)
     {
-        $transfer = OutletTransfer::with(['items.item', 'items.unit', 'warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet', 'approver'])->findOrFail($id);
+        $transfer = OutletTransfer::with([
+            'items.item',
+            'items.unit',
+            'warehouseOutletFrom',
+            'warehouseOutletTo',
+            'creator',
+            'outlet',
+            'approver',
+            'approvalFlows.approver',
+            'approvalFlows.approver.jabatan',
+        ])->findOrFail($id);
         
         // Ambil data outlet untuk mapping
         $outlets = \App\Models\Outlet::where('status', 'A')
             ->select('id_outlet', 'nama_outlet')
             ->get()
             ->keyBy('id_outlet');
+
+        $user = auth()->user();
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
+
+        // Determine pending flow + canApprove (new flow), fallback to legacy rules if no flows
+        $pendingFlow = null;
+        $canApprove = false;
+        if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+            $pendingFlow = $transfer->approvalFlows()
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+            if ($pendingFlow && $pendingFlow->approver_id == $user->id) {
+                $canApprove = true;
+            }
+        } else {
+            $canApprove = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+        }
+        if ($isSuperadmin) {
+            $canApprove = true;
+        }
+
+        // User list for selecting approvers (no outlet filter)
+        $users = DB::table('users')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'A')
+            ->select('users.id', 'users.nama_lengkap', 'tbl_data_jabatan.nama_jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->get()
+            ->map(function ($u) {
+                return [
+                    'id' => $u->id,
+                    'nama_lengkap' => $u->nama_lengkap,
+                    'jabatan' => $u->nama_jabatan ? ['nama_jabatan' => $u->nama_jabatan] : null,
+                ];
+            });
         
         return inertia('OutletTransfer/Show', [
             'transfer' => $transfer,
             'outlets' => $outlets,
-            'user' => auth()->user(),
+            'user' => $user,
+            'canApprove' => $canApprove,
+            'pendingFlow' => $pendingFlow,
+            'users' => $users,
         ]);
     }
 
@@ -1142,5 +1342,125 @@ class OutletTransferController extends Controller
                 'items' => $formItems,
             ]
         ]);
+    }
+
+    /**
+     * Get pending approvals for Outlet Transfer (API for Home dashboard)
+     */
+    public function getPendingApprovals()
+    {
+        try {
+            $user = auth()->user();
+            $userId = $user->id;
+
+            $query = OutletTransfer::with([
+                'outlet',
+                'creator',
+                'warehouseOutletFrom.outlet',
+                'warehouseOutletTo.outlet',
+                'approvalFlows.approver',
+            ])->where('status', 'submitted');
+
+            // Filter by outlet if user is not "all outlets" (same pattern as Stock Opname)
+            if (($user->id_outlet ?? null) != 1) {
+                $query->where('outlet_id', $user->id_outlet);
+            }
+
+            if ($user->id_role === '5af56935b011a') {
+                // Superadmin can see all pending approvals (flow-based + legacy without flows)
+                $pendingApprovals = $query->where(function ($q) {
+                    $q->whereHas('approvalFlows', function ($qq) {
+                        $qq->where('status', 'PENDING');
+                    })->orDoesntHave('approvalFlows');
+                })->get();
+            } else {
+                // Regular users: approvals assigned via flow OR legacy approvals by warehouse rules
+                $pendingApprovals = $query->where(function ($q) use ($userId) {
+                    $q->whereHas('approvalFlows', function ($qq) use ($userId) {
+                        $qq->where('approver_id', $userId)
+                            ->where('status', 'PENDING');
+                    })->orDoesntHave('approvalFlows');
+                })->get();
+            }
+
+            // Only show approvals where user is the next approver and previous levels are approved
+            $filteredApprovals = $pendingApprovals->filter(function ($transfer) use ($user) {
+                // Flow-based approvals
+                if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+                    $allFlows = $transfer->approvalFlows->sortBy('approval_level');
+                    $pendingFlows = $allFlows->where('status', 'PENDING');
+                    $nextApprover = $pendingFlows->first();
+
+                    if (!$nextApprover) {
+                        return false;
+                    }
+
+                    $nextApprovalLevel = $nextApprover->approval_level;
+                    $previousFlows = $allFlows->where('approval_level', '<', $nextApprovalLevel);
+                    $allPreviousApproved = $previousFlows->every(function ($flow) {
+                        return $flow->status === 'APPROVED';
+                    });
+
+                    if (!$allPreviousApproved) {
+                        return false;
+                    }
+
+                    if ($user->id_role === '5af56935b011a') {
+                        return true;
+                    }
+
+                    return $nextApprover->approver_id == $user->id;
+                }
+
+                // Legacy approvals (no flows)
+                if ($user->id_role === '5af56935b011a') {
+                    return true;
+                }
+
+                return $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+            });
+
+            $mappedApprovals = $filteredApprovals->map(function ($transfer) {
+                $nextApprover = null;
+                if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+                    $pendingFlows = $transfer->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+                    $nextApprover = $pendingFlows->first();
+                }
+
+                return [
+                    'id' => $transfer->id,
+                    'transfer_number' => $transfer->transfer_number,
+                    'transfer_date' => $transfer->transfer_date,
+                    'notes' => $transfer->notes,
+                    'outlet' => $transfer->outlet ? ['nama_outlet' => $transfer->outlet->nama_outlet] : null,
+                    'warehouse_outlet_from' => $transfer->warehouseOutletFrom ? [
+                        'name' => $transfer->warehouseOutletFrom->name,
+                        'outlet' => $transfer->warehouseOutletFrom->outlet ? ['nama_outlet' => $transfer->warehouseOutletFrom->outlet->nama_outlet] : null,
+                    ] : null,
+                    'warehouse_outlet_to' => $transfer->warehouseOutletTo ? [
+                        'name' => $transfer->warehouseOutletTo->name,
+                        'outlet' => $transfer->warehouseOutletTo->outlet ? ['nama_outlet' => $transfer->warehouseOutletTo->outlet->nama_outlet] : null,
+                    ] : null,
+                    'creator' => $transfer->creator ? ['nama_lengkap' => $transfer->creator->nama_lengkap] : null,
+                    'approver_name' => ($nextApprover && $nextApprover->approver) ? $nextApprover->approver->nama_lengkap : null,
+                    'approval_level' => $nextApprover ? $nextApprover->approval_level : null,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'outlet_transfers' => $mappedApprovals->values(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting pending Outlet Transfer approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals',
+            ], 500);
+        }
     }
 } 

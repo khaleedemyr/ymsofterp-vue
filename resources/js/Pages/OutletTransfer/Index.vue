@@ -92,6 +92,36 @@
         />
       </div>
     </div>
+
+    <!-- Submit Modal (pilih approvers) -->
+    <div v-if="showSubmitModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Submit untuk Approval</h3>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Approvers (berurutan dari terendah ke tertinggi)</label>
+          <select
+            v-model="selectedApprovers"
+            multiple
+            size="8"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option v-for="u in (users || [])" :key="u.id" :value="u.id">
+              {{ u.nama_lengkap }} - {{ u.jabatan?.nama_jabatan || '-' }}
+            </option>
+          </select>
+          <p class="mt-2 text-xs text-gray-500">Jika ingin multi approval, pilih lebih dari 1 approver. Approver level tertinggi akan eksekusi pindah stok saat approve terakhir.</p>
+        </div>
+        <div class="flex justify-end gap-3">
+          <button @click="closeSubmitModal" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+            Batal
+          </button>
+          <button @click="submitForApproval" :disabled="submitting || selectedApprovers.length === 0" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
+            <i v-if="submitting" class="fa fa-spinner fa-spin mr-2"></i>
+            Submit
+          </button>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -108,11 +138,17 @@ const props = defineProps({
   filters: Object,
   outlets: Object,
   user: Object,
+  users: Array,
 });
 
 const search = ref(props.filters?.search || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
+
+const showSubmitModal = ref(false);
+const selectedTransferId = ref(null);
+const selectedApprovers = ref([]);
+const submitting = ref(false);
 
 watch(
   () => props.filters,
@@ -175,6 +211,13 @@ function getStatusClass(status) {
   return classMap[status] || 'bg-gray-100 text-gray-800';
 }
 
+function getNextPendingFlow(transfer) {
+  const flows = transfer?.approval_flows || [];
+  const pending = flows.filter(f => f?.status === 'PENDING');
+  pending.sort((a, b) => (a.approval_level ?? 0) - (b.approval_level ?? 0));
+  return pending[0] || null;
+}
+
 function canApprove(transfer) {
   if (!props.user || !transfer.warehouse_outlet_to?.name) return false;
   
@@ -183,6 +226,12 @@ function canApprove(transfer) {
   const isSuperadmin = props.user.id_role === '5af56935b011a' && userStatus === 'A';
   
   if (isSuperadmin) return true;
+
+  // New flow: only next approver can approve
+  const nextFlow = getNextPendingFlow(transfer);
+  if (nextFlow) {
+    return nextFlow.approver_id == props.user.id;
+  }
   
   const warehouseName = transfer.warehouse_outlet_to.name;
   
@@ -200,27 +249,36 @@ function canApprove(transfer) {
 
 function submitTransfer(id) {
   if (!id) return;
-  Swal.fire({
-    title: 'Submit Transfer?',
-    text: "Transfer akan dikirim untuk approval. Anda tidak dapat mengedit setelah submit.",
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Ya, Submit!',
-    cancelButtonText: 'Batal'
-  }).then((result) => {
-    if (result.isConfirmed) {
-      axios.post(route('outlet-transfer.submit', id))
-        .then(() => {
-          Swal.fire('Berhasil!', 'Transfer berhasil di-submit untuk approval.', 'success');
-          router.reload({ preserveScroll: true });
-        })
-        .catch(() => {
-          Swal.fire('Error!', 'Terjadi kesalahan saat submit transfer.', 'error');
-        });
-    }
-  });
+  selectedTransferId.value = id;
+  selectedApprovers.value = [];
+  showSubmitModal.value = true;
+}
+
+function closeSubmitModal() {
+  showSubmitModal.value = false;
+  selectedTransferId.value = null;
+  selectedApprovers.value = [];
+}
+
+async function submitForApproval() {
+  if (!selectedTransferId.value) return;
+  if (!selectedApprovers.value || selectedApprovers.value.length === 0) {
+    Swal.fire('Error!', 'Pilih minimal 1 approver.', 'error');
+    return;
+  }
+  submitting.value = true;
+  try {
+    await axios.post(route('outlet-transfer.submit', selectedTransferId.value), {
+      approvers: selectedApprovers.value,
+    });
+    closeSubmitModal();
+    Swal.fire('Berhasil!', 'Transfer berhasil di-submit untuk approval.', 'success');
+    router.reload({ preserveScroll: true });
+  } catch (e) {
+    Swal.fire('Error!', 'Terjadi kesalahan saat submit transfer.', 'error');
+  } finally {
+    submitting.value = false;
+  }
 }
 
 function approveTransfer(id) {
@@ -242,7 +300,8 @@ function approveTransfer(id) {
   }).then((result) => {
     if (result.isConfirmed) {
       router.post(route('outlet-transfer.approve', id), {
-        notes: result.value || ''
+        action: 'approve',
+        comments: result.value || ''
       }, {
         onSuccess: () => {
           Swal.fire(

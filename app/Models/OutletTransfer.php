@@ -38,4 +38,9 @@ class OutletTransfer extends Model
     {
         return $this->belongsTo(User::class, 'approval_by');
     }
+
+    public function approvalFlows()
+    {
+        return $this->hasMany(OutletTransferApprovalFlow::class, 'outlet_transfer_id');
+    }
 }
