@@ -164,49 +164,58 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Item</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty System</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty System</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty Physical</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
-                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Value Adjustment</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Alasan</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Value Adjustment</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Alasan</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr
                 v-for="item in stockOpname.items"
                 :key="item.id"
-                :class="{ 'bg-yellow-50': hasDifference(item) }"
+                :class="{ 'bg-yellow-50': showDifferences && hasDifference(item) }"
               >
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {{ item.inventory_item?.item?.name || '-' }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
+                <td v-if="showDifferences" class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   <div>S: {{ formatNumber(item.qty_system_small) }}</div>
                   <div>M: {{ formatNumber(item.qty_system_medium) }}</div>
                   <div>L: {{ formatNumber(item.qty_system_large) }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
-                  <div>S: {{ formatNumber(item.qty_physical_small) }}</div>
-                  <div>M: {{ formatNumber(item.qty_physical_medium) }}</div>
-                  <div>L: {{ formatNumber(item.qty_physical_large) }}</div>
+                  <div>
+                    S: {{ formatNumber(item.qty_physical_small) }}
+                    <span v-if="getUnitName(item, 'small')" class="text-xs text-gray-500">{{ getUnitName(item, 'small') }}</span>
+                  </div>
+                  <div>
+                    M: {{ formatNumber(item.qty_physical_medium) }}
+                    <span v-if="getUnitName(item, 'medium')" class="text-xs text-gray-500">{{ getUnitName(item, 'medium') }}</span>
+                  </div>
+                  <div>
+                    L: {{ formatNumber(item.qty_physical_large) }}
+                    <span v-if="getUnitName(item, 'large')" class="text-xs text-gray-500">{{ getUnitName(item, 'large') }}</span>
+                  </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <td v-if="showDifferences" class="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <span :class="getDifferenceClass(item)" class="px-2 py-1 rounded font-semibold">
                     <div>S: {{ formatNumber(item.qty_diff_small) }}</div>
                     <div>M: {{ formatNumber(item.qty_diff_medium) }}</div>
                     <div>L: {{ formatNumber(item.qty_diff_large) }}</div>
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
+                <td v-if="showDifferences" class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">
                   {{ formatCurrency(item.mac_before) }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <td v-if="showDifferences" class="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <span :class="item.value_adjustment >= 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
                     {{ formatCurrency(item.value_adjustment) }}
                   </span>
                 </td>
-                <td class="px-6 py-4 text-sm text-gray-700">
+                <td v-if="showDifferences" class="px-6 py-4 text-sm text-gray-700">
                   {{ item.reason || '-' }}
                 </td>
               </tr>
@@ -302,7 +311,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
@@ -322,6 +331,17 @@ const rejectComments = ref('');
 const submitting = ref(false);
 const approving = ref(false);
 const processing = ref(false);
+
+const showDifferences = computed(() => props.stockOpname?.status === 'APPROVED');
+
+function getUnitName(item, size) {
+  const master = item?.inventory_item?.item;
+  if (!master) return '';
+  if (size === 'small') return master.small_unit?.name || '';
+  if (size === 'medium') return master.medium_unit?.name || '';
+  if (size === 'large') return master.large_unit?.name || '';
+  return '';
+}
 
 function formatDate(date) {
   if (!date) return '-';

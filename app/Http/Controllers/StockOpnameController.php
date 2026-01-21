@@ -424,6 +424,9 @@ class StockOpnameController extends Controller
             'creator',
             'items.inventoryItem.item',
             'items.inventoryItem.item.category',
+            'items.inventoryItem.item.smallUnit',
+            'items.inventoryItem.item.mediumUnit',
+            'items.inventoryItem.item.largeUnit',
             'approvalFlows.approver',
             'approvalFlows.approver.jabatan'
         ])->findOrFail($id);
