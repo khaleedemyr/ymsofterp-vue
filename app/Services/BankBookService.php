@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\BankBook;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -195,6 +196,17 @@ class BankBookService
         try {
             $entries = [];
             $recalculateBanks = []; // Track which banks need recalculation
+            $transactionDateStr = null;
+            if (!empty($foodPayment->date)) {
+                if ($foodPayment->date instanceof \DateTimeInterface) {
+                    $transactionDateStr = Carbon::instance($foodPayment->date)->toDateString();
+                } else {
+                    $transactionDateStr = Carbon::parse($foodPayment->date)->toDateString();
+                }
+            }
+            if (!$transactionDateStr) {
+                throw new \Exception('Food payment transaction date is empty');
+            }
 
             // If payment has outlet payments, create entry per outlet
             if ($foodPayment->paymentOutlets && $foodPayment->paymentOutlets->count() > 0) {
@@ -208,7 +220,7 @@ class BankBookService
                     
                     $data = [
                         'bank_account_id' => $outletPayment->bank_id,
-                        'transaction_date' => $foodPayment->date,
+                        'transaction_date' => $transactionDateStr,
                         'transaction_type' => 'debit', // Food payment is money going out from bank
                         'amount' => $outletPayment->amount,
                         'description' => "Food Payment: {$foodPayment->number} - Outlet: {$outletName}" . 
@@ -220,11 +232,11 @@ class BankBookService
                     $entries[] = $this->createEntryWithoutTransaction($data);
                     
                     // Track bank for recalculation
-                    $key = $outletPayment->bank_id . '_' . $foodPayment->date->format('Y-m-d');
+                    $key = $outletPayment->bank_id . '_' . $transactionDateStr;
                     if (!isset($recalculateBanks[$key])) {
                         $recalculateBanks[$key] = [
                             'bank_account_id' => $outletPayment->bank_id,
-                            'transaction_date' => $foodPayment->date,
+                            'transaction_date' => $transactionDateStr,
                         ];
                     }
                 }
@@ -233,7 +245,7 @@ class BankBookService
             elseif ($foodPayment->bank_id) {
                 $data = [
                     'bank_account_id' => $foodPayment->bank_id,
-                    'transaction_date' => $foodPayment->date,
+                    'transaction_date' => $transactionDateStr,
                     'transaction_type' => 'debit', // Food payment is money going out from bank
                     'amount' => $foodPayment->total,
                     'description' => "Food Payment: {$foodPayment->number}" . 
@@ -244,10 +256,10 @@ class BankBookService
 
                 $entries[] = $this->createEntryWithoutTransaction($data);
                 
-                $key = $foodPayment->bank_id . '_' . $foodPayment->date->format('Y-m-d');
+                $key = $foodPayment->bank_id . '_' . $transactionDateStr;
                 $recalculateBanks[$key] = [
                     'bank_account_id' => $foodPayment->bank_id,
-                    'transaction_date' => $foodPayment->date,
+                    'transaction_date' => $transactionDateStr,
                 ];
             }
 

@@ -14,6 +14,7 @@ class FoodPayment extends Model
     ];
 
     protected $casts = [
+        'date' => 'date',
         'finance_manager_approved_at' => 'datetime',
         'gm_finance_approved_at' => 'datetime',
     ];
