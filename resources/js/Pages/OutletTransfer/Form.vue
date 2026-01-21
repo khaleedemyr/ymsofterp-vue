@@ -30,10 +30,80 @@ const form = useForm({
   outlet_to_id: props.editData?.outlet_to_id || '',
   warehouse_outlet_to_id: props.editData?.warehouse_outlet_to_id || '',
   notes: props.editData?.notes || '',
+  approvers: [],
   items: props.editData?.items?.length ? JSON.parse(JSON.stringify(props.editData.items)) : [
     { item_id: '', item_name: '', qty: '', unit: '', note: '', suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, available_units: [], selected_unit: '', _rowKey: Date.now() + '-' + Math.random() }
   ],
 });
+
+// Approver search (mirip Stock Opname)
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+const approverSearchTimeout = ref(null);
+
+async function loadApprovers(search = '') {
+  if (!search || search.length < 2) {
+    approverResults.value = [];
+    showApproverDropdown.value = false;
+    return;
+  }
+
+  try {
+    const response = await axios.get(route('outlet-transfer.approvers'), {
+      params: { search },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.data && response.data.success) {
+      approverResults.value = response.data.users || [];
+      showApproverDropdown.value = approverResults.value.length > 0;
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
+    }
+  } catch (error) {
+    console.error('Failed to load approvers:', error);
+    approverResults.value = [];
+    showApproverDropdown.value = false;
+  }
+}
+
+function onApproverSearch() {
+  if (approverSearchTimeout.value) {
+    clearTimeout(approverSearchTimeout.value);
+  }
+
+  approverSearchTimeout.value = setTimeout(() => {
+    if (approverSearch.value.length >= 2) {
+      loadApprovers(approverSearch.value);
+    } else {
+      approverResults.value = [];
+      showApproverDropdown.value = false;
+    }
+  }, 300);
+}
+
+function addApprover(user) {
+  if (!user || !user.id) return;
+  if (!form.approvers.find(a => a && a.id === user.id)) {
+    form.approvers.push(user);
+  }
+  approverSearch.value = '';
+  showApproverDropdown.value = false;
+}
+
+function removeApprover(index) {
+  form.approvers.splice(index, 1);
+}
+
+function reorderApprover(fromIndex, toIndex) {
+  const approver = form.approvers.splice(fromIndex, 1)[0];
+  form.approvers.splice(toIndex, 0, approver);
+}
 
 // Reactive data untuk warehouse outlets berdasarkan outlet yang dipilih
 const warehouseOutletsFrom = ref([]);
@@ -102,6 +172,19 @@ function removeItem(idx) {
   form.items.splice(idx, 1);
 }
 function onSubmit() {
+  // Create: approver wajib agar langsung masuk approval
+  if (!isEdit.value) {
+    const approverIds = (form.approvers || []).filter(a => a && a.id).map(a => a.id);
+    if (approverIds.length === 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal!',
+        text: 'Pilih minimal 1 approver sebelum menyimpan.',
+      });
+      return;
+    }
+  }
+
   // Log debug qty dan stok
   for (const [idx, item] of form.items.entries()) {
     console.log('DEBUG VALIDASI QTY', { item, stock: item.stock, qty: item.qty, unit: item.selected_unit || item.unit });
@@ -164,6 +247,13 @@ function onSubmit() {
       }
     });
   } else {
+    // Transform approvers objects -> array of IDs
+    const approverIds = (form.approvers || []).filter(a => a && a.id).map(a => a.id);
+    form.transform((data) => ({
+      ...data,
+      approvers: approverIds,
+    }));
+
     form.post('/outlet-transfer', {
       onSuccess: () => {
         Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Data berhasil disimpan', timer: 1500, showConfirmButton: false }).then(() => { router.visit('/outlet-transfer'); });
@@ -484,6 +574,93 @@ onUnmounted(() => {
           <textarea v-model="form.notes" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
           <div v-if="form.errors.notes" class="text-xs text-red-500 mt-1">{{ form.errors.notes }}</div>
         </div>
+
+        <!-- Approval Flow (Create only) -->
+        <div v-if="!isEdit" class="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 class="text-lg font-semibold text-gray-800 mb-2">Approval Flow</h3>
+          <p class="text-sm text-gray-600 mb-4">
+            Tambahkan approver berurutan dari terendah ke tertinggi. Approver terakhir akan eksekusi pindah stok saat approve terakhir.
+          </p>
+
+          <div class="mb-4">
+            <div class="relative">
+              <input
+                v-model="approverSearch"
+                type="text"
+                placeholder="Cari user berdasarkan nama, email, atau jabatan..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                @input="onApproverSearch"
+                @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
+              />
+
+              <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                <div
+                  v-for="u in approverResults"
+                  :key="u.id"
+                  @click="addApprover(u)"
+                  class="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
+                >
+                  <div class="font-medium">{{ u.name }}</div>
+                  <div class="text-sm text-gray-600">{{ u.email }}</div>
+                  <div v-if="u.jabatan" class="text-xs text-blue-600 font-medium">{{ u.jabatan }}</div>
+                </div>
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500">Minimal 2 huruf untuk mencari approver.</p>
+          </div>
+
+          <div v-if="form.approvers.length > 0" class="space-y-2">
+            <h4 class="font-medium text-gray-700">Urutan Approval (Terendah → Tertinggi):</h4>
+
+            <template v-for="(a, idx) in form.approvers" :key="a?.id || idx">
+              <div v-if="a && a.id" class="flex items-center justify-between p-3 rounded-md bg-gray-50 border border-gray-200">
+                <div class="flex items-center space-x-3">
+                  <div class="flex items-center space-x-2">
+                    <button
+                      v-if="idx > 0"
+                      type="button"
+                      @click="reorderApprover(idx, idx - 1)"
+                      class="p-1 text-gray-500 hover:text-gray-700"
+                      title="Pindah ke atas"
+                    >
+                      <i class="fa fa-arrow-up"></i>
+                    </button>
+                    <button
+                      v-if="idx < form.approvers.length - 1"
+                      type="button"
+                      @click="reorderApprover(idx, idx + 1)"
+                      class="p-1 text-gray-500 hover:text-gray-700"
+                      title="Pindah ke bawah"
+                    >
+                      <i class="fa fa-arrow-down"></i>
+                    </button>
+                  </div>
+
+                  <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Level {{ idx + 1 }}
+                    </span>
+                    <div>
+                      <div class="font-medium">{{ a.name }}</div>
+                      <div class="text-sm text-gray-600">{{ a.email }}</div>
+                      <div v-if="a.jabatan" class="text-xs text-blue-600 font-medium">{{ a.jabatan }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  @click="removeApprover(idx)"
+                  class="p-1 text-red-500 hover:text-red-700"
+                  title="Hapus Approver"
+                >
+                  <i class="fa fa-times"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
           <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">

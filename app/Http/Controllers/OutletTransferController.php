@@ -27,6 +27,9 @@ class OutletTransferController extends Controller
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.note' => 'nullable|string',
+            // Optional: if provided, create approval flow immediately
+            'approvers' => 'nullable|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
         ]);
 
         DB::beginTransaction();
@@ -140,6 +143,42 @@ class OutletTransferController extends Controller
                 Log::info('Detail transfer saved (draft mode)', ['item_id' => $item['item_id']]);
             }
 
+            // If approvers provided, auto-submit for approval (same as submit() flow)
+            if (!empty($validated['approvers']) && is_array($validated['approvers'])) {
+                // Reset approval flows (safety)
+                $transfer->approvalFlows()->delete();
+
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    OutletTransferApprovalFlow::create([
+                        'outlet_transfer_id' => $transfer->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+
+                $transfer->update([
+                    'status' => 'submitted',
+                    'approval_by' => null,
+                    'approval_at' => null,
+                    'approval_notes' => null,
+                ]);
+
+                $this->sendNotificationToNextApprover($transfer);
+
+                DB::table('activity_logs')->insert([
+                    'user_id' => Auth::id(),
+                    'activity_type' => 'submit',
+                    'module' => 'outlet_transfer',
+                    'description' => 'Submit transfer outlet untuk approval: ' . $transfer->transfer_number,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => null,
+                    'new_data' => json_encode($transfer->fresh()->toArray()),
+                    'created_at' => now(),
+                ]);
+            }
+
             DB::commit();
             DB::table('activity_logs')->insert([
                 'user_id' => Auth::id(),
@@ -153,7 +192,10 @@ class OutletTransferController extends Controller
                 'created_at' => now(),
             ]);
             Log::info('Selesai proses simpan outlet transfer (draft mode)');
-            return redirect()->route('outlet-transfer.index')->with('success', 'Pindah Outlet berhasil disimpan dalam status draft!');
+            $msg = (!empty($validated['approvers']) && is_array($validated['approvers']))
+                ? 'Pindah Outlet berhasil disimpan dan di-submit untuk approval!'
+                : 'Pindah Outlet berhasil disimpan dalam status draft!';
+            return redirect()->route('outlet-transfer.index')->with('success', $msg);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error saat simpan outlet transfer', ['error' => $e->getMessage()]);
@@ -773,6 +815,41 @@ class OutletTransferController extends Controller
             'warehouse_outlets_from' => $warehouse_outlets_from,
             'warehouse_outlets_to' => $warehouse_outlets_to,
             'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * Get approvers for search (API for create form)
+     */
+    public function getApprovers(Request $request)
+    {
+        $search = $request->get('search', '');
+
+        $usersQuery = DB::table('users')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'A');
+
+        if ($search) {
+            $usersQuery->where(function ($query) use ($search) {
+                $query->where('users.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhere('users.email', 'like', "%{$search}%")
+                    ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            });
+        }
+
+        $users = $usersQuery->select(
+                'users.id',
+                'users.nama_lengkap as name',
+                'users.email',
+                'tbl_data_jabatan.nama_jabatan as jabatan'
+            )
+            ->orderBy('users.nama_lengkap')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'users' => $users,
         ]);
     }
 
