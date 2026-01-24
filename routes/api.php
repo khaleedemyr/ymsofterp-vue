@@ -764,6 +764,9 @@ Route::prefix('mobile/member')->group(function () {
                 Route::get('/feedback/outlets', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'getOutlets'])->name('api.mobile.member.feedback.outlets');
                 Route::post('/feedback', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'store'])->name('api.mobile.member.feedback.store');
                 Route::post('/feedback/{id}/reply', [\App\Http\Controllers\Mobile\Member\FeedbackController::class, 'reply'])->name('api.mobile.member.feedback.reply');
+                
+                // Outlets
+                Route::get('/outlets/nearest', [\App\Http\Controllers\Mobile\Member\OutletController::class, 'getNearestOutlets'])->name('api.mobile.member.outlets.nearest');
         
         // TODO: Add more mobile member API routes here
         // - Profile
