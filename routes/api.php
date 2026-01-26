@@ -276,6 +276,10 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlets', [\App\Http\Controllers\UserPinController::class, 'getOutletsForApprovalApp']);
         Route::get('/divisions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getDivisions']);
         
+        // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
+        Route::get('/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals']);
+        Route::post('/pending-approvals/clear-cache', [\App\Http\Controllers\PendingApprovalController::class, 'clearCache']);
+        
         // Purchase Requisition routes - using existing controller methods
         // IMPORTANT: Specific routes (without {id}) must be defined BEFORE routes with {id} parameter
         Route::get('/purchase-requisitions', [\App\Http\Controllers\PurchaseRequisitionController::class, 'index']);

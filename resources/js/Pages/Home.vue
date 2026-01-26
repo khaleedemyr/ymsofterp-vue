@@ -905,7 +905,97 @@ async function loadPendingApprovals() {
     }
 }
 
-// Load Purchase Requisition approvals
+// OPTIMASI: Load all pending approvals dalam 1 API call (mengurangi dari 15+ menjadi 1)
+// Function ini menggunakan endpoint baru yang sudah dioptimasi dengan caching
+async function loadAllPendingApprovalsOptimized() {
+    // Set semua loading states ke true
+    loadingPrApprovals.value = true;
+    loadingPoOpsApprovals.value = true;
+    loadingContraBonApprovals.value = true;
+    loadingCategoryCostApprovals.value = true;
+    loadingStockAdjustmentApprovals.value = true;
+    loadingStockOpnameApprovals.value = true;
+    loadingOutletTransferApprovals.value = true;
+    loadingWarehouseStockOpnameApprovals.value = true;
+    loadingApprovals.value = true;
+    loadingMovementApprovals.value = true;
+    loadingCoachingApprovals.value = true;
+    loadingCorrectionApprovals.value = true;
+    
+    try {
+        const response = await axios.get('/api/pending-approvals/all', {
+            params: { limit: 50 }
+        });
+        
+        if (response.data.success) {
+            const data = response.data.data;
+            
+            // Assign ke variabel yang sudah ada
+            pendingPrApprovals.value = data.purchase_requisitions || [];
+            pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
+            pendingContraBonApprovals.value = data.contra_bons || [];
+            pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
+            pendingStockAdjustmentApprovals.value = data.outlet_food_inventory_adjustment || [];
+            pendingStockOpnameApprovals.value = data.stock_opnames || [];
+            pendingOutletTransferApprovals.value = data.outlet_transfer || [];
+            pendingWarehouseStockOpnameApprovals.value = data.warehouse_stock_opnames || [];
+            pendingApprovals.value = data.approval || [];
+            pendingMovementApprovals.value = data.employee_movements || [];
+            pendingCoachingApprovals.value = data.coaching || [];
+            pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
+            
+            // Set loading states to false
+            loadingPrApprovals.value = false;
+            loadingPoOpsApprovals.value = false;
+            loadingContraBonApprovals.value = false;
+            loadingCategoryCostApprovals.value = false;
+            loadingStockAdjustmentApprovals.value = false;
+            loadingStockOpnameApprovals.value = false;
+            loadingOutletTransferApprovals.value = false;
+            loadingWarehouseStockOpnameApprovals.value = false;
+            loadingApprovals.value = false;
+            loadingMovementApprovals.value = false;
+            loadingCoachingApprovals.value = false;
+            loadingCorrectionApprovals.value = false;
+            
+            console.log('✅ Loaded all pending approvals from optimized endpoint (cached:', response.data.cached, ')');
+            return true;
+        } else {
+            // Set loading states to false jika response tidak success
+            loadingPrApprovals.value = false;
+            loadingPoOpsApprovals.value = false;
+            loadingContraBonApprovals.value = false;
+            loadingCategoryCostApprovals.value = false;
+            loadingStockAdjustmentApprovals.value = false;
+            loadingStockOpnameApprovals.value = false;
+            loadingOutletTransferApprovals.value = false;
+            loadingWarehouseStockOpnameApprovals.value = false;
+            loadingApprovals.value = false;
+            loadingMovementApprovals.value = false;
+            loadingCoachingApprovals.value = false;
+            loadingCorrectionApprovals.value = false;
+            return false;
+        }
+    } catch (error) {
+        console.warn('⚠️ Optimized endpoint failed, falling back to individual endpoints:', error);
+        // Set loading states to false untuk fallback
+        loadingPrApprovals.value = false;
+        loadingPoOpsApprovals.value = false;
+        loadingContraBonApprovals.value = false;
+        loadingCategoryCostApprovals.value = false;
+        loadingStockAdjustmentApprovals.value = false;
+        loadingStockOpnameApprovals.value = false;
+        loadingOutletTransferApprovals.value = false;
+        loadingWarehouseStockOpnameApprovals.value = false;
+        loadingApprovals.value = false;
+        loadingMovementApprovals.value = false;
+        loadingCoachingApprovals.value = false;
+        loadingCorrectionApprovals.value = false;
+        return false;
+    }
+}
+
+// Load Purchase Requisition approvals (fallback - digunakan jika endpoint baru error)
 async function loadPendingPrApprovals() {
     loadingPrApprovals.value = true;
     try {
@@ -4900,28 +4990,39 @@ function handleCctvAccessRequestRejected(requestId) {
     console.log('CCTV Access Request rejected:', requestId);
 }
 
-onMounted(() => {
+onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
     fetchQuote();
     fetchWeather();
-    loadPendingApprovals();
-    loadPendingPrApprovals();
-    loadPendingPoOpsApprovals();
-    loadPendingCategoryCostApprovals();
-    loadPendingStockAdjustmentApprovals();
-    loadPendingContraBonApprovals();
-    loadPendingStockOpnameApprovals();
-    loadPendingOutletTransferApprovals();
-    loadPendingWarehouseStockOpnameApprovals();
-    loadPendingMovementApprovals();
+    
+    // OPTIMASI: Coba load semua pending approvals dalam 1 API call
+    // Jika berhasil, skip individual calls. Jika error, fallback ke individual calls.
+    const optimizedLoaded = await loadAllPendingApprovalsOptimized();
+    
+    if (!optimizedLoaded) {
+        // Fallback ke individual endpoints jika endpoint baru error
+        console.log('⚠️ Using individual endpoints (fallback)');
+        loadPendingApprovals();
+        loadPendingPrApprovals();
+        loadPendingPoOpsApprovals();
+        loadPendingCategoryCostApprovals();
+        loadPendingStockAdjustmentApprovals();
+        loadPendingContraBonApprovals();
+        loadPendingStockOpnameApprovals();
+        loadPendingOutletTransferApprovals();
+        loadPendingWarehouseStockOpnameApprovals();
+        loadPendingMovementApprovals();
+        loadCoachingApprovals();
+        loadPendingCorrectionApprovals();
+    }
+    
+    // Load yang tidak termasuk di optimized endpoint
     loadLeaveNotifications();
     loadPendingHrdApprovals();
-    loadPendingCorrectionApprovals();
     // loadTrainingInvitations();
     // loadAvailableTrainings();
     loadActiveSanctions();
-    loadCoachingApprovals();
 });
 
 watch(locale, () => {

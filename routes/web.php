@@ -140,6 +140,10 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
     
+    // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
+    Route::get('/api/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals'])->name('pending-approvals.all');
+    Route::post('/api/pending-approvals/clear-cache', [\App\Http\Controllers\PendingApprovalController::class, 'clearCache'])->name('pending-approvals.clear-cache');
+    
     // API route for user announcements
     Route::get('/api/user-announcements', [AnnouncementController::class, 'getUserAnnouncements'])->name('api.user-announcements');
     

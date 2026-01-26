@@ -2675,9 +2675,50 @@ class PurchaseRequisitionController extends Controller
                 });
             }
 
-            // Add approver_name and unread_comments_count to each PR
+            // OPTIMASI: Batch load approver_name dan unread_comments_count untuk menghindari N+1 query
             $userId = auth()->id();
-            $pendingApprovals = $pendingApprovals->map(function($pr) use ($userId) {
+            $allPrIds = $pendingApprovals->pluck('id')->toArray();
+            
+            // Batch load last view time untuk semua PR
+            $allLastViews = collect();
+            if ($userId && !empty($allPrIds)) {
+                $allLastViews = DB::table('purchase_requisition_history')
+                    ->whereIn('purchase_requisition_id', $allPrIds)
+                    ->where('user_id', $userId)
+                    ->where('action', 'viewed')
+                    ->select('purchase_requisition_id as pr_id', 'created_at')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->groupBy('pr_id')
+                    ->map(function($views) {
+                        return $views->first()->created_at;
+                    });
+                
+                // Batch load all comments untuk semua PR
+                $allComments = DB::table('purchase_requisition_comments')
+                    ->whereIn('purchase_requisition_id', $allPrIds)
+                    ->where('user_id', '!=', $userId)
+                    ->select('purchase_requisition_id as pr_id', 'created_at')
+                    ->get()
+                    ->groupBy('pr_id');
+                
+                // Calculate unread count per PR
+                $allUnreadComments = $allComments->map(function($comments, $prId) use ($allLastViews) {
+                    $lastViewTime = $allLastViews->get($prId);
+                    if ($lastViewTime) {
+                        return $comments->filter(function($comment) use ($lastViewTime) {
+                            return $comment->created_at > $lastViewTime;
+                        })->count();
+                    } else {
+                        return $comments->count();
+                    }
+                });
+            } else {
+                $allUnreadComments = collect();
+            }
+            
+            // Add approver_name and unread_comments_count to each PR
+            $pendingApprovals = $pendingApprovals->map(function($pr) use ($allUnreadComments) {
                 $pendingFlows = $pr->approvalFlows->where('status', 'PENDING');
                 if ($pendingFlows->isEmpty()) {
                     $pr->approver_name = null;
@@ -2686,29 +2727,8 @@ class PurchaseRequisitionController extends Controller
                     $pr->approver_name = $nextApprover->approver->nama_lengkap ?? null;
                 }
                 
-                // Calculate unread comments count
-                $pr->unread_comments_count = 0;
-                if ($userId) {
-                    $lastView = DB::table('purchase_requisition_history')
-                        ->where('purchase_requisition_id', $pr->id)
-                        ->where('user_id', $userId)
-                        ->where('action', 'viewed')
-                        ->orderBy('created_at', 'desc')
-                        ->first();
-                    $lastViewTime = $lastView ? $lastView->created_at : null;
-                    if ($lastViewTime) {
-                        $pr->unread_comments_count = DB::table('purchase_requisition_comments')
-                            ->where('purchase_requisition_id', $pr->id)
-                            ->where('user_id', '!=', $userId)
-                            ->where('created_at', '>', $lastViewTime)
-                            ->count();
-                    } else {
-                        $pr->unread_comments_count = DB::table('purchase_requisition_comments')
-                            ->where('purchase_requisition_id', $pr->id)
-                            ->where('user_id', '!=', $userId)
-                            ->count();
-                    }
-                }
+                // OPTIMASI: Get unread comments count from batch loaded data
+                $pr->unread_comments_count = $allUnreadComments->get($pr->id, 0);
                 
                 return $pr;
             });

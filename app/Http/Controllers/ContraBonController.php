@@ -1836,6 +1836,14 @@ class ContraBonController extends Controller
                 ->where('status', 'draft')
                 ->orderByDesc('created_at');
             
+            // OPTIMASI: Batch load approvers sekali untuk menghindari query di loop
+            $financeManager = null;
+            $gmFinance = null;
+            if ($isSuperadmin) {
+                $financeManager = \App\Models\User::where('id_jabatan', 160)->where('status', 'A')->first();
+                $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
+            }
+            
             $pendingApprovals = [];
             
             // Finance Manager approvals (id_jabatan == 160) - Only level
@@ -1853,15 +1861,13 @@ class ContraBonController extends Controller
                     // Get source_types array (same logic as index method)
                     $sourceTypes = $this->getSourceTypes($cb);
                     
-                    // Get approver name - Finance Manager
+                    // OPTIMASI: Get approver name dari batch loaded data
                     $approverName = null;
                     if ($isSuperadmin) {
                         // For superadmin, get the next approver (Finance Manager if not approved, GM Finance if Finance Manager approved)
                         if (!$cb->finance_manager_approved_at) {
-                            $financeManager = \App\Models\User::where('id_jabatan', 160)->where('status', 'A')->first();
                             $approverName = $financeManager ? $financeManager->nama_lengkap : 'Finance Manager';
                         } elseif (!$cb->gm_finance_approved_at) {
-                            $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
                             $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
                         }
                     } else {
@@ -1902,11 +1908,10 @@ class ContraBonController extends Controller
                     // Get source_types array (same logic as index method)
                     $sourceTypes = $this->getSourceTypes($cb);
                     
-                    // Get approver name - GM Finance
+                    // OPTIMASI: Get approver name dari batch loaded data
                     $approverName = null;
                     if ($isSuperadmin) {
-                        // For superadmin, get GM Finance approver
-                        $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
+                        // For superadmin, get GM Finance approver (sudah di-load di atas)
                         $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
                     } else {
                         // For GM Finance, they are the approver
