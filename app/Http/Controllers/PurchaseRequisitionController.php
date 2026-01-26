@@ -5719,8 +5719,18 @@ class PurchaseRequisitionController extends Controller
     /**
      * Upload attachment for purchase requisition
      */
-    public function uploadAttachment(Request $request, PurchaseRequisition $purchaseRequisition)
+    public function uploadAttachment(Request $request, $purchaseRequisition)
     {
+        // Handle both route model binding (web) and ID (API)
+        if (is_numeric($purchaseRequisition)) {
+            $purchaseRequisition = PurchaseRequisition::findOrFail($purchaseRequisition);
+        } elseif (!$purchaseRequisition instanceof PurchaseRequisition) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid purchase requisition',
+            ], 404);
+        }
+
         $request->validate([
             'file' => 'required|file|max:10240', // Max 10MB
             'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet', // For pr_ops mode
@@ -5745,10 +5755,22 @@ class PurchaseRequisitionController extends Controller
                 'uploaded_by' => auth()->id(),
             ]);
 
+            // Load relationships
+            $attachment->load(['uploader', 'outlet']);
+            
+            // Return attachment with file_path as relative path (not full URL)
+            $attachmentData = $attachment->toArray();
+            // Ensure file_path is relative path, not full URL
+            if (isset($attachmentData['file_path']) && strpos($attachmentData['file_path'], 'http') === 0) {
+                // If it's already a full URL, extract just the path
+                $parsedUrl = parse_url($attachmentData['file_path']);
+                $attachmentData['file_path'] = $parsedUrl['path'] ?? $attachmentData['file_path'];
+            }
+            
             return response()->json([
                 'success' => true,
                 'message' => 'File uploaded successfully',
-                'attachment' => $attachment->load(['uploader', 'outlet']),
+                'attachment' => $attachmentData,
             ]);
 
         } catch (\Exception $e) {

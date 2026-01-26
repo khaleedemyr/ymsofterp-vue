@@ -82,12 +82,9 @@
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Batch</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item Produksi</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Created By</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Catatan</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
@@ -95,33 +92,47 @@
           <tbody>
             <tr v-for="header in headers.data" :key="header.id" class="bg-white hover:bg-gray-50 transition-colors">
               <td class="px-6 py-4 whitespace-nowrap text-sm">
-                <span 
-                  class="font-semibold"
-                  :class="{
-                    'text-orange-600': header.number && header.number.startsWith('DRAFT-'),
-                    'text-blue-600': header.number && !header.number.startsWith('DRAFT-'),
-                    'text-gray-500': !header.number
-                  }"
-                >
-                  {{ header.number || (header.source_type === 'old' ? 'Data Lama' : '-') }}
-                </span>
+                <div class="space-y-1">
+                  <span 
+                    class="font-semibold block"
+                    :class="{
+                      'text-orange-600': header.number && header.number.startsWith('DRAFT-'),
+                      'text-blue-600': header.number && !header.number.startsWith('DRAFT-'),
+                      'text-gray-500': !header.number
+                    }"
+                  >
+                    {{ header.number || (header.source_type === 'old' ? 'Data Lama' : '-') }}
+                  </span>
+                  <span 
+                    class="px-2 py-1 rounded text-xs font-semibold inline-block"
+                    :class="{
+                      'bg-orange-100 text-orange-700': header.status === 'DRAFT',
+                      'bg-blue-100 text-blue-700': header.status === 'SUBMITTED',
+                      'bg-green-100 text-green-700': header.status === 'PROCESSED'
+                    }"
+                  >
+                    {{ header.status }}
+                  </span>
+                </div>
               </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatDate(header.production_date) }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm">
-                <span 
-                  class="px-2 py-1 rounded text-xs font-semibold"
-                  :class="{
-                    'bg-orange-100 text-orange-700': header.status === 'DRAFT',
-                    'bg-blue-100 text-blue-700': header.status === 'SUBMITTED',
-                    'bg-green-100 text-green-700': header.status === 'PROCESSED'
-                  }"
-                >
-                  {{ header.status }}
-                </span>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <div class="space-y-1">
+                  <div class="font-medium">{{ formatDate(header.production_date) }}</div>
+                  <div class="text-gray-500 text-xs">{{ formatTime(header.created_at) }}</div>
+                  <div class="text-gray-500 text-xs">
+                    <i class="fa-solid fa-user mr-1"></i>{{ header.created_by_name }}
+                  </div>
+                </div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ header.batch_number || '-' }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ header.outlet_name }}</td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ header.warehouse_outlet_name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <div class="space-y-1">
+                  <div class="font-medium">{{ header.outlet_name }}</div>
+                  <div class="text-gray-500 text-xs">
+                    <i class="fa-solid fa-warehouse mr-1"></i>{{ header.warehouse_outlet_name }}
+                  </div>
+                </div>
+              </td>
               <td class="px-6 py-4 text-sm text-gray-900">
                 <div v-if="getProductions(header.id).length > 0" class="space-y-1">
                   <div v-for="(prod, idx) in getProductions(header.id)" :key="`${header.id}-${prod.item_id}-${idx}`" class="text-xs">
@@ -133,7 +144,6 @@
                 </div>
                 <span v-else class="text-gray-400">-</span>
               </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ header.created_by_name }}</td>
               <td class="px-6 py-4 text-sm text-gray-900">{{ header.notes || '-' }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                 <div class="flex items-center gap-2">
@@ -204,7 +214,32 @@ const filters = useForm({
 
 function formatDate(date) {
   if (!date) return '-';
-  return new Date(date).toLocaleDateString('id-ID');
+  return new Date(date).toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+}
+
+function formatTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+function formatDateTime(date) {
+  if (!date) return '-';
+  return new Date(date).toLocaleString('id-ID', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 }
 
 function formatNumber(value) {

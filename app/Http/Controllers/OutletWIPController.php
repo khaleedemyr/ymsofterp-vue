@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class OutletWIPController extends Controller
@@ -50,8 +51,9 @@ class OutletWIPController extends Controller
 
         // Per page
         $perPage = $request->input('per_page', 10);
+        $currentPage = $request->input('page', 1);
 
-        // Query data baru dari header
+        // Build base query untuk headers
         $queryHeaders = DB::table('outlet_wip_production_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
@@ -79,7 +81,7 @@ class OutletWIPController extends Controller
             $queryHeaders->where('h.outlet_id', $user->id_outlet);
         }
 
-        // Query data lama dari productions (yang tidak punya header_id)
+        // Build base query untuk old data
         $queryOld = DB::table('outlet_wip_productions as p')
             ->leftJoin('tbl_data_outlet as o', 'p.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'p.warehouse_outlet_id', '=', 'wo.id')
@@ -139,24 +141,42 @@ class OutletWIPController extends Controller
             });
         }
 
-        // Get all headers
-        $allHeaders = $queryHeaders->get();
-        $allOld = $queryOld->get();
-
-        // Combine and sort
-        $combined = $allHeaders->concat($allOld)->sortByDesc(function($item) {
-            return $item->production_date . ' ' . $item->id;
-        })->values();
-
-        // Manual pagination
-        $currentPage = $request->input('page', 1);
+        // OPTIMASI: Gunakan UNION untuk menggabungkan query dan pagination di database level
+        // Build SQL untuk UNION query
+        $headersSql = $queryHeaders->toSql();
+        $headersBindings = $queryHeaders->getBindings();
+        
+        $oldSql = $queryOld->toSql();
+        $oldBindings = $queryOld->getBindings();
+        
+        // Combine dengan UNION ALL dan sorting di database
+        $unionSql = "SELECT * FROM (
+            ({$headersSql}) 
+            UNION ALL 
+            ({$oldSql})
+        ) as combined_results 
+        ORDER BY production_date DESC, id DESC";
+        
+        $allBindings = array_merge($headersBindings, $oldBindings);
+        
+        // Count total (lebih efisien)
+        $countSql = "SELECT COUNT(*) as total FROM (
+            ({$headersSql}) 
+            UNION ALL 
+            ({$oldSql})
+        ) as combined_results";
+        
+        $total = DB::selectOne($countSql, $allBindings)->total ?? 0;
+        
+        // Get paginated results
         $offset = ($currentPage - 1) * $perPage;
-        $total = $combined->count();
-        $items = $combined->slice($offset, $perPage)->values();
+        $paginatedSql = $unionSql . " LIMIT {$perPage} OFFSET {$offset}";
+        
+        $combined = collect(DB::select($paginatedSql, $allBindings));
 
-        // Create paginator manually
+        // Create paginator
         $headers = new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
+            $combined,
             $total,
             $perPage,
             $currentPage,
@@ -166,19 +186,18 @@ class OutletWIPController extends Controller
             ]
         );
 
-        // Get production details for headers
-        $headerIds = $allHeaders->pluck('id')->toArray();
-        $oldIds = $allOld->pluck('id')->toArray();
+        // OPTIMASI: Get production details HANYA untuk headers yang ditampilkan di halaman ini
+        $headerIds = $combined->where('source_type', 'header')->pluck('id')->toArray();
+        $oldIds = $combined->where('source_type', 'old')->pluck('id')->toArray();
         $productionsByHeader = [];
 
-        // Get productions for new headers
+        // Get productions for new headers (hanya yang ditampilkan) - gunakan GROUP BY di database
         if (!empty($headerIds)) {
             $productions = DB::table('outlet_wip_productions as p')
                 ->leftJoin('items', 'p.item_id', '=', 'items.id')
                 ->leftJoin('units', 'p.unit_id', '=', 'units.id')
                 ->whereIn('p.header_id', $headerIds)
                 ->select(
-                    'p.id',
                     'p.header_id',
                     'p.item_id',
                     'p.qty',
@@ -187,35 +206,26 @@ class OutletWIPController extends Controller
                     'items.name as item_name',
                     'units.name as unit_name'
                 )
-                ->distinct()
+                ->groupBy('p.header_id', 'p.item_id', 'p.qty', 'p.qty_jadi', 'p.unit_id', 'items.name', 'units.name')
                 ->get();
 
-            // Remove duplicates based on header_id and item_id
-            $seenItems = [];
             foreach ($productions as $prod) {
                 $headerId = $prod->header_id;
-                $itemId = $prod->item_id;
-                $key = $headerId . '-' . $itemId;
-                
-                // Only add if we haven't seen this combination before
-                if (!isset($seenItems[$key])) {
-                    if (!isset($productionsByHeader[$headerId])) {
-                        $productionsByHeader[$headerId] = [];
-                    }
-                    $productionsByHeader[$headerId][] = $prod;
-                    $seenItems[$key] = true;
+                if (!isset($productionsByHeader[$headerId])) {
+                    $productionsByHeader[$headerId] = [];
                 }
+                $productionsByHeader[$headerId][] = $prod;
             }
         }
 
-        // Get productions for old data (treat each production as its own header)
+        // Get productions for old data (hanya yang ditampilkan)
         if (!empty($oldIds)) {
             $oldProductions = DB::table('outlet_wip_productions as p')
                 ->leftJoin('items', 'p.item_id', '=', 'items.id')
                 ->leftJoin('units', 'p.unit_id', '=', 'units.id')
                 ->whereIn('p.id', $oldIds)
                 ->select(
-                    'p.id as header_id', // Use production id as header_id for old data
+                    'p.id as header_id',
                     'p.item_id',
                     'p.qty',
                     'p.qty_jadi',
@@ -252,48 +262,58 @@ class OutletWIPController extends Controller
     {
         $user = auth()->user();
         
-        // Ambil item hasil produksi (composed & aktif) dengan validasi category show_pos=0
-        $items = DB::table('items')
-            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
-            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
-            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->join('categories', 'items.category_id', '=', 'categories.id')
-            ->where('items.composition_type', 'composed')
-            ->where('items.status', 'active')
-            ->where('items.type', 'WIP')
-            ->where('categories.show_pos', '0')
-            ->select(
-                'items.*',
-                'small_unit.name as small_unit_name',
-                'medium_unit.name as medium_unit_name',
-                'large_unit.name as large_unit_name'
-            )
-            ->get();
-
-        // Ambil warehouse outlets berdasarkan user
-        if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
+        // OPTIMASI: Cache items (data jarang berubah, cache 1 jam)
+        $items = Cache::remember('outlet_wip_items', 3600, function () {
+            return DB::table('items')
+                ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+                ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+                ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.composition_type', 'composed')
+                ->where('items.status', 'active')
+                ->where('items.type', 'WIP')
+                ->where('categories.show_pos', '0')
+                ->select(
+                    'items.*',
+                    'small_unit.name as small_unit_name',
+                    'medium_unit.name as medium_unit_name',
+                    'large_unit.name as large_unit_name'
+                )
                 ->get();
-        } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $user->id_outlet)
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        }
+        });
 
-        // Ambil outlets untuk superuser
+        // OPTIMASI: Cache warehouse outlets (data jarang berubah, cache 1 jam)
+        $cacheKey = $user->id_outlet == 1 
+            ? 'outlet_wip_warehouse_outlets_all' 
+            : 'outlet_wip_warehouse_outlets_' . $user->id_outlet;
+            
+        $warehouse_outlets = Cache::remember($cacheKey, 3600, function () use ($user) {
+            if ($user->id_outlet == 1) {
+                return DB::table('warehouse_outlets')
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                return DB::table('warehouse_outlets')
+                    ->where('outlet_id', $user->id_outlet)
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            }
+        });
+
+        // OPTIMASI: Cache outlets untuk superuser (data jarang berubah, cache 1 jam)
         $outlets = [];
         if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet as id', 'nama_outlet as name')
-                ->orderBy('nama_outlet')
-                ->get();
+            $outlets = Cache::remember('outlet_wip_outlets_all', 3600, function () {
+                return DB::table('tbl_data_outlet')
+                    ->where('status', 'A')
+                    ->select('id_outlet as id', 'nama_outlet as name')
+                    ->orderBy('nama_outlet')
+                    ->get();
+            });
         }
 
         return Inertia::render('OutletWIP/Create', [
@@ -329,48 +349,58 @@ class OutletWIPController extends Controller
             ->where('header_id', $id)
             ->get();
 
-        // Get items dengan validasi category show_pos=0
-        $items = DB::table('items')
-            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
-            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
-            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->join('categories', 'items.category_id', '=', 'categories.id')
-            ->where('items.composition_type', 'composed')
-            ->where('items.status', 'active')
-            ->where('items.type', 'WIP')
-            ->where('categories.show_pos', '0')
-            ->select(
-                'items.*',
-                'small_unit.name as small_unit_name',
-                'medium_unit.name as medium_unit_name',
-                'large_unit.name as large_unit_name'
-            )
-            ->get();
-
-        // Get warehouse outlets
-        if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
+        // OPTIMASI: Cache items (data jarang berubah, cache 1 jam)
+        $items = Cache::remember('outlet_wip_items', 3600, function () {
+            return DB::table('items')
+                ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+                ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+                ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.composition_type', 'composed')
+                ->where('items.status', 'active')
+                ->where('items.type', 'WIP')
+                ->where('categories.show_pos', '0')
+                ->select(
+                    'items.*',
+                    'small_unit.name as small_unit_name',
+                    'medium_unit.name as medium_unit_name',
+                    'large_unit.name as large_unit_name'
+                )
                 ->get();
-        } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $user->id_outlet)
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        }
+        });
 
-        // Get outlets for superuser
+        // OPTIMASI: Cache warehouse outlets (data jarang berubah, cache 1 jam)
+        $cacheKey = $user->id_outlet == 1 
+            ? 'outlet_wip_warehouse_outlets_all' 
+            : 'outlet_wip_warehouse_outlets_' . $user->id_outlet;
+            
+        $warehouse_outlets = Cache::remember($cacheKey, 3600, function () use ($user) {
+            if ($user->id_outlet == 1) {
+                return DB::table('warehouse_outlets')
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                return DB::table('warehouse_outlets')
+                    ->where('outlet_id', $user->id_outlet)
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            }
+        });
+
+        // OPTIMASI: Cache outlets untuk superuser (data jarang berubah, cache 1 jam)
         $outlets = [];
         if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet as id', 'nama_outlet as name')
-                ->orderBy('nama_outlet')
-                ->get();
+            $outlets = Cache::remember('outlet_wip_outlets_all', 3600, function () {
+                return DB::table('tbl_data_outlet')
+                    ->where('status', 'A')
+                    ->select('id_outlet as id', 'nama_outlet as name')
+                    ->orderBy('nama_outlet')
+                    ->get();
+            });
         }
 
         return Inertia::render('OutletWIP/Create', [
@@ -406,12 +436,33 @@ class OutletWIPController extends Controller
             )
             ->get();
 
+        // OPTIMASI: Ambil semua inventory items sekaligus untuk menghindari N+1 query
+        $materialItemIds = $bom->pluck('material_item_id')->unique()->toArray();
+        $inventoryItems = DB::table('outlet_food_inventory_items')
+            ->whereIn('item_id', $materialItemIds)
+            ->get()
+            ->keyBy('item_id');
+
+        // OPTIMASI: Ambil semua stock data sekaligus
+        $inventoryItemIds = $inventoryItems->pluck('id')->toArray();
+        $stockDataMap = [];
+        if (!empty($inventoryItemIds)) {
+            $stockDataList = DB::table('outlet_food_inventory_stocks')
+                ->whereIn('inventory_item_id', $inventoryItemIds)
+                ->where('id_outlet', $outlet_id)
+                ->where('warehouse_outlet_id', $warehouse_outlet_id)
+                ->get();
+            
+            // Map by inventory_item_id untuk akses cepat
+            foreach ($stockDataList as $stockData) {
+                $stockDataMap[$stockData->inventory_item_id] = $stockData;
+            }
+        }
+
         $result = [];
         foreach ($bom as $b) {
-            // Cari inventory item untuk material
-            $inventoryItem = DB::table('outlet_food_inventory_items')
-                ->where('item_id', $b->material_item_id)
-                ->first();
+            // Cari inventory item untuk material dari map
+            $inventoryItem = $inventoryItems->get($b->material_item_id);
 
             $stock = 0;
             $stock_medium = 0;
@@ -421,11 +472,7 @@ class OutletWIPController extends Controller
             $last_cost_large = 0;
 
             if ($inventoryItem) {
-                $stockData = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $outlet_id)
-                    ->where('warehouse_outlet_id', $warehouse_outlet_id)
-                    ->first();
+                $stockData = $stockDataMap[$inventoryItem->id] ?? null;
 
                 if ($stockData) {
                     $stock = $stockData->qty_small;
@@ -631,6 +678,9 @@ class OutletWIPController extends Controller
             }
             
             DB::commit();
+            
+            // OPTIMASI: Clear cache untuk index (jika ada cache untuk list headers)
+            // Cache akan auto-refresh saat diakses lagi
             
             return response()->json([
                 'success' => true,
@@ -1036,6 +1086,9 @@ class OutletWIPController extends Controller
             
             Log::info('[OutletWIP] Submit success', ['header_id' => $id]);
             
+            // OPTIMASI: Clear cache untuk index (jika ada cache untuk list headers)
+            // Cache akan auto-refresh saat diakses lagi
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Produksi WIP berhasil disubmit',
@@ -1398,6 +1451,9 @@ class OutletWIPController extends Controller
             DB::commit();
             
             Log::info('[OutletWIP] StoreAndSubmit success', ['header_id' => $headerId]);
+            
+            // OPTIMASI: Clear cache untuk index (jika ada cache untuk list headers)
+            // Cache akan auto-refresh saat diakses lagi
             
             return response()->json([
                 'success' => true,
