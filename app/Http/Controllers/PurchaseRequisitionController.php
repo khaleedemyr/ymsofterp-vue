@@ -188,62 +188,234 @@ class PurchaseRequisitionController extends Controller
                                     ->paginate($perPage)
                                     ->withQueryString();
 
-        // Transform purchase requisitions to include outlet information for multi-outlet modes
-        // and PO/Payment status information
-        $purchaseRequisitions->getCollection()->transform(function($pr) {
-            // For travel_application mode, try to get outlet names from notes
-            if ($pr->mode === 'travel_application' && $pr->notes) {
-                try {
-                    $notesData = json_decode($pr->notes, true);
-                    if (is_array($notesData) && isset($notesData['outlet_ids']) && is_array($notesData['outlet_ids'])) {
-                        // Load outlet names
-                        $outletIds = $notesData['outlet_ids'];
-                        $outlets = Outlet::whereIn('id_outlet', $outletIds)->get(['id_outlet', 'nama_outlet']);
-                        $pr->travel_outlets = $outlets->pluck('nama_outlet')->toArray();
-                    }
-                } catch (\Exception $e) {
-                    // If parsing fails, leave it empty
-                    $pr->travel_outlets = [];
-                }
-            }
-            
-            // Check if PR has been converted to PO
-            $poIds = DB::table('purchase_order_ops_items')
+        // OPTIMASI: Batch load semua data yang dibutuhkan untuk menghindari N+1 query
+        $prCollection = $purchaseRequisitions->getCollection();
+        $allPrIds = $prCollection->pluck('id')->toArray();
+        $userId = auth()->id();
+
+        // Initialize default collections untuk menghindari error jika tidak ada data
+        $allPoIdsByPr = collect();
+        $allPoDetails = collect();
+        $allPaymentsByPo = collect();
+        $totalPaidByPo = collect();
+        $allDirectPayments = collect();
+        $totalPaidDirect = collect();
+        $allLastViews = collect();
+        $allUnreadComments = collect();
+        $allTravelOutlets = collect();
+
+        // Batch load hanya jika ada PR
+        if (!empty($allPrIds)) {
+            // Batch load PO IDs untuk semua PR sekaligus
+            $allPoIdsByPr = DB::table('purchase_order_ops_items')
                 ->where('source_type', 'purchase_requisition_ops')
-                ->where('source_id', $pr->id)
+                ->whereIn('source_id', $allPrIds)
+                ->select('source_id as pr_id', 'purchase_order_ops_id')
+                ->get()
+                ->groupBy('pr_id')
+                ->map(function($items) {
+                    return $items->pluck('purchase_order_ops_id')->unique()->toArray();
+                });
+
+            // Batch load PO details untuk semua PR sekaligus
+            $allPoDetails = DB::table('purchase_order_ops_items as poi')
+                ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
+                ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
+                ->where('poi.source_type', 'purchase_requisition_ops')
+                ->whereIn('poi.source_id', $allPrIds)
+                ->select(
+                    'poi.source_id as pr_id',
+                    'po.number',
+                    'po.created_at',
+                    'creator.nama_lengkap as creator_name',
+                    'creator.email as creator_email'
+                )
                 ->distinct()
-                ->pluck('purchase_order_ops_id')
-                ->toArray();
-            
-            $poCount = count($poIds);
-            
-            $pr->has_po = $poCount > 0;
-            $pr->po_count = $poCount;
-            
-            // Get PO details if exists
-            if ($poCount > 0 && !empty($poIds)) {
-                $poDetails = DB::table('purchase_order_ops_items as poi')
-                    ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
-                    ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->where('poi.source_id', $pr->id)
-                    ->select(
-                        'po.number',
-                        'po.created_at',
-                        'creator.nama_lengkap as creator_name',
-                        'creator.email as creator_email'
-                    )
-                    ->distinct()
-                    ->get()
-                    ->map(function($po) {
+                ->get()
+                ->groupBy('pr_id')
+                ->map(function($pos) {
+                    return $pos->map(function($po) {
                         return [
                             'number' => $po->number,
                             'created_at' => $po->created_at,
                             'creator_name' => $po->creator_name,
                             'creator_email' => $po->creator_email,
                         ];
-                    })
-                    ->toArray();
+                    })->toArray();
+                });
+
+            // Collect semua PO IDs untuk batch load payments
+            $allPoIds = $allPoIdsByPr->flatten()->unique()->toArray();
+
+            // Batch load payments untuk PR yang punya PO
+            if (!empty($allPoIds)) {
+                $allPaymentsByPo = DB::table('non_food_payments as nfp')
+                    ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+                    ->whereIn('nfp.purchase_order_ops_id', $allPoIds)
+                    ->whereIn('nfp.status', ['paid', 'approved'])
+                    ->where('nfp.status', '!=', 'cancelled')
+                    ->select(
+                        'nfp.purchase_order_ops_id as po_id',
+                        'nfp.payment_number',
+                        'nfp.created_at',
+                        'nfp.amount',
+                        'creator.nama_lengkap as creator_name',
+                        'creator.email as creator_email'
+                    )
+                    ->get()
+                    ->groupBy('po_id');
+
+                // Batch load total paid amount per PO
+                $totalPaidByPo = DB::table('non_food_payments')
+                    ->whereIn('purchase_order_ops_id', $allPoIds)
+                    ->whereIn('status', ['paid', 'approved'])
+                    ->where('status', '!=', 'cancelled')
+                    ->select('purchase_order_ops_id as po_id', DB::raw('SUM(amount) as total'))
+                    ->groupBy('purchase_order_ops_id')
+                    ->pluck('total', 'po_id');
+            }
+
+            // Batch load direct payments untuk PR yang tidak punya PO
+            $allDirectPayments = DB::table('non_food_payments as nfp')
+                ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+                ->whereIn('nfp.purchase_requisition_id', $allPrIds)
+                ->whereIn('nfp.status', ['paid', 'approved'])
+                ->where('nfp.status', '!=', 'cancelled')
+                ->select(
+                    'nfp.purchase_requisition_id as pr_id',
+                    'nfp.payment_number',
+                    'nfp.created_at',
+                    'nfp.amount',
+                    'creator.nama_lengkap as creator_name',
+                    'creator.email as creator_email'
+                )
+                ->get()
+                ->groupBy('pr_id');
+
+            // Batch load total paid amount untuk direct payments
+            $totalPaidDirect = DB::table('non_food_payments')
+                ->whereIn('purchase_requisition_id', $allPrIds)
+                ->whereIn('status', ['paid', 'approved'])
+                ->where('status', '!=', 'cancelled')
+                ->select('purchase_requisition_id as pr_id', DB::raw('SUM(amount) as total'))
+                ->groupBy('purchase_requisition_id')
+                ->pluck('total', 'pr_id');
+
+            // Batch load last view time untuk semua PR
+            if ($userId) {
+                $allLastViews = DB::table('purchase_requisition_history')
+                    ->whereIn('purchase_requisition_id', $allPrIds)
+                    ->where('user_id', $userId)
+                    ->where('action', 'viewed')
+                    ->select('purchase_requisition_id as pr_id', 'created_at')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->groupBy('pr_id')
+                    ->map(function($views) {
+                        return $views->first()->created_at;
+                    });
+
+                // Batch load unread comments count untuk semua PR
+                // Get all comments with created_at for all PRs
+                $allComments = DB::table('purchase_requisition_comments')
+                    ->whereIn('purchase_requisition_id', $allPrIds)
+                    ->where('user_id', '!=', $userId)
+                    ->select('purchase_requisition_id as pr_id', 'created_at')
+                    ->get()
+                    ->groupBy('pr_id');
+
+                // Calculate unread count per PR based on last view time
+                $allUnreadComments = $allComments->map(function($comments, $prId) use ($allLastViews) {
+                    $lastViewTime = $allLastViews->get($prId);
+                    if ($lastViewTime) {
+                        return $comments->filter(function($comment) use ($lastViewTime) {
+                            return $comment->created_at > $lastViewTime;
+                        })->count();
+                    } else {
+                        return $comments->count();
+                    }
+                });
+            }
+
+            // Batch load travel outlets untuk PR dengan mode travel_application
+            $travelPrIds = $prCollection->where('mode', 'travel_application')
+                ->filter(function($pr) {
+                    return !empty($pr->notes);
+                })
+                ->pluck('id')
+                ->toArray();
+
+            if (!empty($travelPrIds)) {
+                // Get all travel PRs with their notes
+                $travelPrs = $prCollection->whereIn('id', $travelPrIds);
+                $allOutletIds = [];
+                $outletIdsByPr = [];
+
+                foreach ($travelPrs as $pr) {
+                    try {
+                        $notesData = json_decode($pr->notes, true);
+                        if (is_array($notesData) && isset($notesData['outlet_ids']) && is_array($notesData['outlet_ids'])) {
+                            $outletIds = $notesData['outlet_ids'];
+                            $allOutletIds = array_merge($allOutletIds, $outletIds);
+                            $outletIdsByPr[$pr->id] = $outletIds;
+                        }
+                    } catch (\Exception $e) {
+                        // Skip if parsing fails
+                    }
+                }
+
+                if (!empty($allOutletIds)) {
+                    $allOutletIds = array_unique($allOutletIds);
+                    $outlets = Outlet::whereIn('id_outlet', $allOutletIds)
+                        ->get(['id_outlet', 'nama_outlet'])
+                        ->keyBy('id_outlet');
+
+                    // Map outlets per PR
+                    foreach ($outletIdsByPr as $prId => $outletIds) {
+                        $allTravelOutlets->put($prId, collect($outletIds)
+                            ->map(function($id) use ($outlets) {
+                                return $outlets->get($id);
+                            })
+                            ->filter()
+                            ->pluck('nama_outlet')
+                            ->toArray());
+                    }
+                }
+            }
+        }
+
+        // Transform purchase requisitions to include outlet information for multi-outlet modes
+        // and PO/Payment status information
+        $purchaseRequisitions->getCollection()->transform(function($pr) use (
+            $allPoIdsByPr,
+            $allPoDetails,
+            $allPaymentsByPo,
+            $totalPaidByPo,
+            $allDirectPayments,
+            $totalPaidDirect,
+            $allLastViews,
+            $allUnreadComments,
+            $allTravelOutlets,
+            $userId
+        ) {
+            // OPTIMASI: Gunakan data yang sudah di-batch load
+            // For travel_application mode, get outlet names from batch loaded data
+            if ($pr->mode === 'travel_application') {
+                $pr->travel_outlets = $allTravelOutlets->get($pr->id, []);
+            } else {
+                $pr->travel_outlets = [];
+            }
+            
+            // OPTIMASI: Get PO IDs from batch loaded data
+            $poIds = $allPoIdsByPr->get($pr->id, []);
+            $poCount = count($poIds);
+            
+            $pr->has_po = $poCount > 0;
+            $pr->po_count = $poCount;
+            
+            // OPTIMASI: Get PO details from batch loaded data
+            if ($poCount > 0) {
+                $poDetails = $allPoDetails->get($pr->id, collect())->toArray();
                 $pr->po_details = $poDetails;
                 $pr->po_numbers = array_column($poDetails, 'number');
             } else {
@@ -251,32 +423,26 @@ class PurchaseRequisitionController extends Controller
                 $pr->po_numbers = [];
             }
             
-            // Check if any PO from this PR has been paid
+            // OPTIMASI: Check payments from batch loaded data
             $hasPayment = false;
             $paymentCount = 0;
             $totalPaidAmount = 0;
             
             if ($poCount > 0 && !empty($poIds)) {
-                $payments = DB::table('non_food_payments as nfp')
-                    ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
-                    ->whereIn('nfp.purchase_order_ops_id', $poIds)
-                    ->whereIn('nfp.status', ['paid', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->select(
-                        'nfp.payment_number',
-                        'nfp.created_at',
-                        'creator.nama_lengkap as creator_name',
-                        'creator.email as creator_email'
-                    )
-                    ->get();
+                // Get payments for all POs of this PR
+                $payments = collect();
+                foreach ($poIds as $poId) {
+                    $poPayments = $allPaymentsByPo->get($poId, collect());
+                    $payments = $payments->merge($poPayments);
+                }
                 
                 $hasPayment = $payments->count() > 0;
                 $paymentCount = $payments->count();
-                $totalPaidAmount = DB::table('non_food_payments')
-                    ->whereIn('purchase_order_ops_id', $poIds)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
+                
+                // Calculate total paid amount from all POs
+                foreach ($poIds as $poId) {
+                    $totalPaidAmount += $totalPaidByPo->get($poId, 0);
+                }
                 
                 if ($hasPayment) {
                     $paymentDetails = $payments->map(function($payment) {
@@ -295,28 +461,13 @@ class PurchaseRequisitionController extends Controller
                     $pr->payment_numbers = [];
                 }
             } else {
-                // Check for direct payment (without PO)
-                $directPayments = DB::table('non_food_payments as nfp')
-                    ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
-                    ->where('nfp.purchase_requisition_id', $pr->id)
-                    ->whereIn('nfp.status', ['paid', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->select(
-                        'nfp.payment_number',
-                        'nfp.created_at',
-                        'creator.nama_lengkap as creator_name',
-                        'creator.email as creator_email'
-                    )
-                    ->get();
+                // OPTIMASI: Check for direct payment from batch loaded data
+                $directPayments = $allDirectPayments->get($pr->id, collect());
                 
                 if ($directPayments->count() > 0) {
                     $hasPayment = true;
                     $paymentCount = $directPayments->count();
-                    $totalPaidAmount = DB::table('non_food_payments')
-                        ->where('purchase_requisition_id', $pr->id)
-                        ->whereIn('status', ['paid', 'approved'])
-                        ->where('status', '!=', 'cancelled')
-                        ->sum('amount');
+                    $totalPaidAmount = $totalPaidDirect->get($pr->id, 0);
                     
                     $paymentDetails = $directPayments->map(function($payment) {
                         return [
@@ -339,38 +490,8 @@ class PurchaseRequisitionController extends Controller
             $pr->payment_count = $paymentCount;
             $pr->total_paid_amount = $totalPaidAmount;
             
-            // Count unread comments (comments created after user last viewed this PR)
-            $userId = auth()->id();
-            $unreadCount = 0;
-            
-            if ($userId) {
-                // Get last view time from history (if user has viewed this PR)
-                $lastView = DB::table('purchase_requisition_history')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->where('user_id', $userId)
-                    ->where('action', 'viewed')
-                    ->orderBy('created_at', 'desc')
-                    ->first();
-                
-                $lastViewTime = $lastView ? $lastView->created_at : null;
-                
-                // If user hasn't viewed, count all comments except their own
-                // If user has viewed, count comments created after last view
-                if ($lastViewTime) {
-                    $unreadCount = DB::table('purchase_requisition_comments')
-                        ->where('purchase_requisition_id', $pr->id)
-                        ->where('user_id', '!=', $userId) // Exclude own comments
-                        ->where('created_at', '>', $lastViewTime)
-                        ->count();
-                } else {
-                    // User hasn't viewed this PR, count all comments except their own
-                    $unreadCount = DB::table('purchase_requisition_comments')
-                        ->where('purchase_requisition_id', $pr->id)
-                        ->where('user_id', '!=', $userId) // Exclude own comments
-                        ->count();
-                }
-            }
-            
+            // OPTIMASI: Get unread comments count from batch loaded data
+            $unreadCount = $allUnreadComments->get($pr->id, 0);
             $pr->unread_comments_count = $unreadCount;
             
             return $pr;
