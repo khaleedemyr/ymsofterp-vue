@@ -15,39 +15,47 @@ class OutletWIPController extends Controller
     {
         $user = auth()->user();
         
-        // Ambil item hasil produksi (composed & aktif) dengan validasi category show_pos=0
-        $items = DB::table('items')
-            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
-            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
-            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->join('categories', 'items.category_id', '=', 'categories.id')
-            ->where('items.composition_type', 'composed')
-            ->where('items.status', 'active')
-            ->where('items.type', 'WIP')
-            ->where('categories.show_pos', '0')
-            ->select(
-                'items.*',
-                'small_unit.name as small_unit_name',
-                'medium_unit.name as medium_unit_name',
-                'large_unit.name as large_unit_name'
-            )
-            ->get();
+        // OPTIMASI: Cache items (data jarang berubah, cache 1 jam)
+        $items = Cache::remember('outlet_wip_items', 3600, function () {
+            return DB::table('items')
+                ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+                ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+                ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.composition_type', 'composed')
+                ->where('items.status', 'active')
+                ->where('items.type', 'WIP')
+                ->where('categories.show_pos', '0')
+                ->select(
+                    'items.*',
+                    'small_unit.name as small_unit_name',
+                    'medium_unit.name as medium_unit_name',
+                    'large_unit.name as large_unit_name'
+                )
+                ->get();
+        });
 
-        // Ambil warehouse outlets berdasarkan user
-        if ($user->id_outlet == 1) {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        } else {
-            $warehouse_outlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $user->id_outlet)
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name')
-                ->get();
-        }
+        // OPTIMASI: Cache warehouse outlets (data jarang berubah, cache 1 jam)
+        $cacheKey = $user->id_outlet == 1 
+            ? 'outlet_wip_warehouse_outlets_all' 
+            : 'outlet_wip_warehouse_outlets_' . $user->id_outlet;
+            
+        $warehouse_outlets = Cache::remember($cacheKey, 3600, function () use ($user) {
+            if ($user->id_outlet == 1) {
+                return DB::table('warehouse_outlets')
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                return DB::table('warehouse_outlets')
+                    ->where('outlet_id', $user->id_outlet)
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name')
+                    ->get();
+            }
+        });
 
         // Per page
         $perPage = $request->input('per_page', 10);
