@@ -7,11 +7,14 @@ use App\Models\StockOpnameItem;
 use App\Models\StockOpnameApprovalFlow;
 use App\Models\StockOpnameAdjustment;
 use App\Services\NotificationService;
+use App\Exports\StockOpnameImportTemplateExport;
+use App\Imports\StockOpnameImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class StockOpnameController extends Controller
 {
@@ -1255,6 +1258,381 @@ class StockOpnameController extends Controller
         $items = $this->getInventoryItems($validated['outlet_id'], $validated['warehouse_outlet_id']);
 
         return response()->json($items);
+    }
+
+    /**
+     * Download template import Stock Opname (Info + Items, tanpa MAC)
+     */
+    public function downloadTemplate()
+    {
+        return Excel::download(
+            new StockOpnameImportTemplateExport,
+            'template_stock_opname.xlsx'
+        );
+    }
+
+    /**
+     * Preview import: parse file, resolve item & MAC dari sistem, return tabel preview (tanpa insert)
+     */
+    public function previewImport(Request $request)
+    {
+        $request->validate(['file' => 'required|file|mimes:xlsx,xls']);
+
+        try {
+            $parsed = $this->parseStockOpnameFile($request->file('file'));
+            if (!empty($parsed['info_errors'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => implode(' ', $parsed['info_errors']),
+                    'info_errors' => $parsed['info_errors'],
+                ], 422);
+            }
+
+            $rows = [];
+            foreach ($parsed['item_rows'] as $r) {
+                $qtySmall = (float) ($r['qty_physical_small'] ?? 0);
+                $qtyMedium = (float) ($r['qty_physical_medium'] ?? 0);
+                $qtyLarge = (float) ($r['qty_physical_large'] ?? 0);
+                $sysSmall = (float) ($r['qty_system_small'] ?? 0);
+                $sysMedium = (float) ($r['qty_system_medium'] ?? 0);
+                $sysLarge = (float) ($r['qty_system_large'] ?? 0);
+                $diffSmall = $qtySmall - $sysSmall;
+                $mac = (float) ($r['mac'] ?? 0);
+
+                $rows[] = [
+                    'no' => $r['no'] ?? '',
+                    'kategori' => $r['kategori'] ?? '',
+                    'nama_item' => $r['nama_item'] ?? '',
+                    'qty_terkecil' => $r['qty_terkecil'] ?? '',
+                    'unit_terkecil' => $r['unit_terkecil'] ?? '',
+                    'alasan' => $r['alasan'] ?? '',
+                    'qty_system_small' => $sysSmall,
+                    'mac' => $mac,
+                    'qty_physical_small' => $qtySmall,
+                    'qty_physical_medium' => $qtyMedium,
+                    'qty_physical_large' => $qtyLarge,
+                    'selisih_small' => $diffSmall,
+                    'status' => $r['error'] ? 'error' : 'ok',
+                    'error' => $r['error'] ?? null,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'info' => [
+                    'outlet' => $parsed['outlet_name'] ?? '',
+                    'warehouse_outlet' => $parsed['warehouse_outlet_name'] ?? '',
+                    'tanggal_opname' => $parsed['opname_date'] ?? '',
+                    'catatan' => $parsed['notes'] ?? '',
+                ],
+                'rows' => $rows,
+                'total' => count($rows),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Import Stock Opname dari Excel. MAC diisi otomatis dari sistem (last_cost_small).
+     */
+    public function import(Request $request)
+    {
+        $request->validate(['file' => 'required|file|mimes:xlsx,xls']);
+
+        $user = auth()->user();
+
+        try {
+            $parsed = $this->parseStockOpnameFile($request->file('file'));
+            if (!empty($parsed['info_errors'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => implode(' ', $parsed['info_errors']),
+                ], 422);
+            }
+
+            $outletId = (int) $parsed['outlet_id'];
+            $warehouseOutletId = (int) $parsed['warehouse_outlet_id'];
+            if ($user->id_outlet != 1 && $user->id_outlet != $outletId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk outlet ini.',
+                ], 403);
+            }
+
+            $validItems = [];
+            $errors = [];
+            foreach ($parsed['item_rows'] as $r) {
+                if (!empty($r['error'])) {
+                    $errors[] = ['row' => $r['excel_row'] ?? 0, 'error' => $r['error']];
+                    continue;
+                }
+                $validItems[] = $r;
+            }
+
+            if (empty($validItems)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada baris item yang valid. ' . (count($errors) ? 'Error: ' . ($errors[0]['error'] ?? '') : ''),
+                    'errors' => $errors,
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $opnameNumber = $this->generateOpnameNumber();
+            $stockOpname = StockOpname::create([
+                'opname_number' => $opnameNumber,
+                'outlet_id' => $outletId,
+                'warehouse_outlet_id' => $warehouseOutletId,
+                'opname_date' => $parsed['opname_date'],
+                'status' => 'SAVED',
+                'notes' => $parsed['notes'] ?? null,
+                'created_by' => $user->id,
+            ]);
+
+            $itemsToInsert = [];
+            foreach ($validItems as $r) {
+                $qtyPhysicalSmall = (float) ($r['qty_physical_small'] ?? 0);
+                $qtyPhysicalMedium = (float) ($r['qty_physical_medium'] ?? 0);
+                $qtyPhysicalLarge = (float) ($r['qty_physical_large'] ?? 0);
+                $qtySystemSmall = (float) ($r['qty_system_small'] ?? 0);
+                $qtySystemMedium = (float) ($r['qty_system_medium'] ?? 0);
+                $qtySystemLarge = (float) ($r['qty_system_large'] ?? 0);
+                $mac = (float) ($r['mac'] ?? 0);
+                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $valueAdjustment = $qtyDiffSmall * $mac;
+
+                $itemsToInsert[] = [
+                    'stock_opname_id' => $stockOpname->id,
+                    'inventory_item_id' => $r['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small' => $qtyPhysicalSmall,
+                    'qty_physical_medium' => $qtyPhysicalMedium,
+                    'qty_physical_large' => $qtyPhysicalLarge,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $r['alasan'] ?? null,
+                    'mac_before' => $mac,
+                    'mac_after' => $mac,
+                    'value_adjustment' => $valueAdjustment,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            StockOpnameItem::insert($itemsToInsert);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock Opname berhasil di-import. ' . count($validItems) . ' item tersimpan.',
+                'id' => $stockOpname->id,
+                'success_count' => count($validItems),
+                'errors' => $errors,
+                'error_count' => count($errors),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Parse Excel Stock Opname (Info + Items). MAC diambil dari outlet_food_inventory_stocks.last_cost_small.
+     * Returns: info_errors, outlet_id, warehouse_outlet_id, outlet_name, warehouse_outlet_name, opname_date, notes, item_rows[]
+     */
+    private function parseStockOpnameFile($file): array
+    {
+        $out = [
+            'info_errors' => [],
+            'outlet_id' => null,
+            'warehouse_outlet_id' => null,
+            'outlet_name' => null,
+            'warehouse_outlet_name' => null,
+            'opname_date' => null,
+            'notes' => null,
+            'item_rows' => [],
+        ];
+
+        $sheets = Excel::toArray(new StockOpnameImport, $file);
+
+        $infoRows = $sheets['Info'] ?? [];
+        $info = [];
+        foreach ($infoRows as $row) {
+            $key = $row['key'] ?? $row['Key'] ?? $row[0] ?? null;
+            $val = $row['value'] ?? $row['Value'] ?? $row[1] ?? null;
+            if ($key !== null && $key !== '') {
+                $info[trim((string) $key)] = $val !== null ? trim((string) $val) : '';
+            }
+        }
+
+        $outletName = $info['Outlet'] ?? '';
+        $whName = $info['Warehouse Outlet'] ?? '';
+        $opnameDate = $info['Tanggal Opname'] ?? '';
+        $notes = $info['Catatan'] ?? '';
+
+        if ($outletName === '') {
+            $out['info_errors'][] = 'Outlet wajib diisi di sheet Info.';
+        }
+        if ($whName === '') {
+            $out['info_errors'][] = 'Warehouse Outlet wajib diisi di sheet Info.';
+        }
+        if ($opnameDate === '') {
+            $out['info_errors'][] = 'Tanggal Opname wajib diisi di sheet Info.';
+        } else {
+            try {
+                $d = \Carbon\Carbon::parse($opnameDate);
+                $opnameDate = $d->format('Y-m-d');
+            } catch (\Throwable $e) {
+                $out['info_errors'][] = 'Tanggal Opname tidak valid.';
+            }
+        }
+
+        if (!empty($out['info_errors'])) {
+            $out['opname_date'] = $opnameDate ?: null;
+            $out['notes'] = $notes;
+            return $out;
+        }
+
+        $outlet = DB::table('tbl_data_outlet')->where('nama_outlet', $outletName)->where('status', 'A')->first();
+        if (!$outlet) {
+            $out['info_errors'][] = "Outlet '{$outletName}' tidak ditemukan.";
+            return $out;
+        }
+        $outletId = (int) $outlet->id_outlet;
+
+        $wh = DB::table('warehouse_outlets')->where('name', $whName)->where('outlet_id', $outletId)->where('status', 'active')->first();
+        if (!$wh) {
+            $out['info_errors'][] = "Warehouse Outlet '{$whName}' tidak ditemukan untuk outlet tersebut.";
+            return $out;
+        }
+        $warehouseOutletId = (int) $wh->id;
+
+        $out['outlet_id'] = $outletId;
+        $out['warehouse_outlet_id'] = $warehouseOutletId;
+        $out['outlet_name'] = $outletName;
+        $out['warehouse_outlet_name'] = $whName;
+        $out['opname_date'] = $opnameDate;
+        $out['notes'] = $notes;
+
+        $itemRows = $sheets['Items'] ?? [];
+        $smallConv = 1;
+        $mediumConv = 1;
+
+        foreach ($itemRows as $idx => $row) {
+            $no = $row['no'] ?? $row['No'] ?? ($idx + 1);
+            $kategori = trim((string) ($row['kategori'] ?? $row['Kategori'] ?? ''));
+            $namaItem = trim((string) ($row['nama_item'] ?? $row['Nama Item'] ?? ''));
+            $qtyTerkecil = $row['qty_terkecil'] ?? $row['Qty Terkecil'] ?? '';
+            $unitTerkecil = trim((string) ($row['unit_terkecil'] ?? $row['Unit Terkecil'] ?? ''));
+            $alasan = trim((string) ($row['alasan'] ?? $row['Alasan'] ?? ''));
+            if ($namaItem === '' && $qtyTerkecil === '' && $kategori === '') {
+                continue;
+            }
+
+            $excelRow = $idx + 2;
+            if ($namaItem === '') {
+                $out['item_rows'][] = [
+                    'excel_row' => $excelRow,
+                    'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
+                    'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
+                    'error' => 'Nama item wajib diisi.',
+                ] + array_fill_keys(['inventory_item_id','qty_system_small','qty_system_medium','qty_system_large','mac','qty_physical_small','qty_physical_medium','qty_physical_large','small_conversion_qty','medium_conversion_qty'], null);
+                continue;
+            }
+
+            $qtyVal = is_numeric($qtyTerkecil) ? (float) $qtyTerkecil : null;
+            if ($qtyVal === null || $qtyVal < 0) {
+                $out['item_rows'][] = [
+                    'excel_row' => $excelRow,
+                    'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
+                    'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
+                    'error' => 'Qty Terkecil harus angka >= 0.',
+                ] + array_fill_keys(['inventory_item_id','qty_system_small','qty_system_medium','qty_system_large','mac','qty_physical_small','qty_physical_medium','qty_physical_large','small_conversion_qty','medium_conversion_qty'], null);
+                continue;
+            }
+
+            $rec = DB::table('outlet_food_inventory_stocks as s')
+                ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+                ->join('items as i', 'fi.item_id', '=', 'i.id')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->where('s.id_outlet', $outletId)
+                ->where('s.warehouse_outlet_id', $warehouseOutletId)
+                ->where('i.name', $namaItem)
+                ->when($kategori !== '', function ($q) use ($kategori) {
+                    $q->where('c.name', $kategori);
+                })
+                ->select(
+                    'fi.id as inventory_item_id',
+                    's.qty_small as qty_system_small', 's.qty_medium as qty_system_medium', 's.qty_large as qty_system_large',
+                    's.last_cost_small as mac',
+                    'i.small_conversion_qty', 'i.medium_conversion_qty'
+                )
+                ->first();
+
+            if (!$rec) {
+                $out['item_rows'][] = [
+                    'excel_row' => $excelRow,
+                    'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
+                    'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
+                    'error' => "Item '{$namaItem}'" . ($kategori ? " (kategori: {$kategori})" : '') . ' tidak ditemukan di stok outlet/warehouse ini.',
+                ] + array_fill_keys(['inventory_item_id','qty_system_small','qty_system_medium','qty_system_large','mac','qty_physical_small','qty_physical_medium','qty_physical_large','small_conversion_qty','medium_conversion_qty'], null);
+                continue;
+            }
+
+            $smallConv = (float) ($rec->small_conversion_qty ?? 1) ?: 1;
+            $mediumConv = (float) ($rec->medium_conversion_qty ?? 1) ?: 1;
+            $qtyPhysicalSmall = $qtyVal;
+            $qtyPhysicalMedium = $smallConv > 0 ? $qtyPhysicalSmall / $smallConv : 0;
+            $qtyPhysicalLarge = ($smallConv > 0 && $mediumConv > 0) ? $qtyPhysicalSmall / ($smallConv * $mediumConv) : 0;
+
+            $qtySystemSmall = (float) ($rec->qty_system_small ?? 0);
+            $qtySystemMedium = (float) ($rec->qty_system_medium ?? 0);
+            $qtySystemLarge = (float) ($rec->qty_system_large ?? 0);
+            $diffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+            $diffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+            $diffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+            $hasDiff = abs($diffSmall) > 0.01 || abs($diffMedium) > 0.01 || abs($diffLarge) > 0.01;
+
+            if ($hasDiff && $alasan === '') {
+                $out['item_rows'][] = [
+                    'excel_row' => $excelRow,
+                    'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
+                    'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
+                    'inventory_item_id' => $rec->inventory_item_id,
+                    'qty_system_small' => $qtySystemSmall, 'qty_system_medium' => $qtySystemMedium, 'qty_system_large' => $qtySystemLarge,
+                    'mac' => (float) ($rec->mac ?? 0),
+                    'qty_physical_small' => $qtyPhysicalSmall, 'qty_physical_medium' => $qtyPhysicalMedium, 'qty_physical_large' => $qtyPhysicalLarge,
+                    'error' => 'Ada selisih qty. Kolom Alasan wajib diisi.',
+                ];
+                continue;
+            }
+
+            $out['item_rows'][] = [
+                'excel_row' => $excelRow,
+                'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
+                'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
+                'inventory_item_id' => $rec->inventory_item_id,
+                'qty_system_small' => $qtySystemSmall, 'qty_system_medium' => $qtySystemMedium, 'qty_system_large' => $qtySystemLarge,
+                'mac' => (float) ($rec->mac ?? 0),
+                'qty_physical_small' => $qtyPhysicalSmall, 'qty_physical_medium' => $qtyPhysicalMedium, 'qty_physical_large' => $qtyPhysicalLarge,
+                'error' => null,
+            ];
+        }
+
+        return $out;
     }
 
     /**

@@ -5,12 +5,27 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-clipboard-check text-blue-500"></i> Buat Stock Opname Baru
         </h1>
-        <Link
-          :href="route('stock-opnames.index')"
-          class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
-        >
-          <i class="fas fa-arrow-left mr-2"></i> Kembali
-        </Link>
+        <div class="flex items-center gap-2">
+          <a
+            :href="route('stock-opnames.download-template')"
+            class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+          >
+            <i class="fas fa-download mr-2"></i> Download Template
+          </a>
+          <button
+            type="button"
+            @click="showImportModal = true"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded"
+          >
+            <i class="fas fa-file-import mr-2"></i> Import
+          </button>
+          <Link
+            :href="route('stock-opnames.index')"
+            class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+          >
+            <i class="fas fa-arrow-left mr-2"></i> Kembali
+          </Link>
+        </div>
       </div>
 
       <form @submit.prevent="submitForm" class="bg-white rounded-xl shadow-lg p-6">
@@ -351,12 +366,128 @@
           </button>
         </div>
       </form>
+
+      <!-- Modal Import Stock Opname -->
+      <Modal :show="showImportModal" @close="closeImportModal" max-width="2xl">
+        <div class="p-6">
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Import Stock Opname</h2>
+          <p class="text-sm text-gray-600 mb-4">Upload file Excel (template). Kolom: Kategori, Nama Item, Qty Terkecil, Unit Terkecil, Alasan. MAC diisi otomatis dari sistem.</p>
+
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Pilih File</label>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".xlsx,.xls"
+              @change="onImportFileChange"
+              class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+            />
+          </div>
+
+          <!-- Info dari preview -->
+          <div v-if="previewInfo && (previewInfo.outlet || previewInfo.warehouse_outlet)" class="mb-4 p-3 bg-gray-50 rounded text-sm">
+            <div><span class="font-medium">Outlet:</span> {{ previewInfo.outlet }}</div>
+            <div><span class="font-medium">Warehouse Outlet:</span> {{ previewInfo.warehouse_outlet }}</div>
+            <div><span class="font-medium">Tanggal Opname:</span> {{ previewInfo.tanggal_opname }}</div>
+            <div v-if="previewInfo.catatan"><span class="font-medium">Catatan:</span> {{ previewInfo.catatan }}</div>
+          </div>
+
+          <!-- Tabel Preview -->
+          <div v-if="previewRows.length > 0" class="mb-4 overflow-x-auto max-h-80">
+            <table class="min-w-full divide-y divide-gray-200 border text-sm">
+              <thead class="bg-gray-100 sticky top-0">
+                <tr>
+                  <th class="px-2 py-2 text-left">No</th>
+                  <th class="px-2 py-2 text-left">Kategori</th>
+                  <th class="px-2 py-2 text-left">Nama Item</th>
+                  <th class="px-2 py-2 text-right">Qty Terkecil</th>
+                  <th class="px-2 py-2 text-left">Unit</th>
+                  <th class="px-2 py-2 text-right">Qty System</th>
+                  <th class="px-2 py-2 text-right">MAC</th>
+                  <th class="px-2 py-2 text-right">Qty Physical</th>
+                  <th class="px-2 py-2 text-right">Selisih</th>
+                  <th class="px-2 py-2 text-left">Alasan</th>
+                  <th class="px-2 py-2 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <tr
+                  v-for="(r, i) in previewRows"
+                  :key="i"
+                  :class="{ 'bg-red-50': r.status === 'error' }"
+                >
+                  <td class="px-2 py-2">{{ r.no }}</td>
+                  <td class="px-2 py-2">{{ r.kategori }}</td>
+                  <td class="px-2 py-2">{{ r.nama_item }}</td>
+                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_terkecil) }}</td>
+                  <td class="px-2 py-2">{{ r.unit_terkecil }}</td>
+                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_system_small) }}</td>
+                  <td class="px-2 py-2 text-right">{{ formatNumber(r.mac) }}</td>
+                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_physical_small) }}</td>
+                  <td class="px-2 py-2 text-right" :class="(r.selisih_small || 0) > 0 ? 'text-green-600' : (r.selisih_small || 0) < 0 ? 'text-red-600' : ''">
+                    {{ formatNumber(r.selisih_small) }}
+                  </td>
+                  <td class="px-2 py-2">{{ r.alasan }}</td>
+                  <td class="px-2 py-2">
+                    <span v-if="r.status === 'error'" class="text-red-600 text-xs" :title="r.error">{{ r.error || 'Error' }}</span>
+                    <span v-else class="text-green-600 text-xs">OK</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Hasil Import -->
+          <div v-if="importResults" class="mb-4 p-4 rounded" :class="importResults.success ? 'bg-green-50' : 'bg-red-50'">
+            <div class="flex items-start gap-2">
+              <i :class="importResults.success ? 'fas fa-check-circle text-green-500' : 'fas fa-exclamation-circle text-red-500'"></i>
+              <div>
+                <p :class="importResults.success ? 'text-green-800' : 'text-red-800'">
+                  {{ importResults.message }}
+                  <Link v-if="importResults.success && importResults.id" :href="route('stock-opnames.show', importResults.id)" class="text-blue-600 underline ml-2">Lihat Stock Opname</Link>
+                </p>
+                <div v-if="importResults.errors && importResults.errors.length" class="mt-2 text-sm text-red-700">
+                  <span class="font-medium">{{ importResults.errors.length }} error:</span>
+                  <ul class="list-disc pl-5 mt-1">
+                    <li v-for="(e, i) in importResults.errors" :key="i">Baris {{ e.row }}: {{ e.error }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-4">
+            <button type="button" @click="closeImportModal" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded font-medium">
+              Tutup
+            </button>
+            <button
+              v-if="selectedImportFile && !importResults"
+              type="button"
+              @click="previewImport"
+              class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded font-medium"
+            >
+              Preview
+            </button>
+            <button
+              v-if="selectedImportFile && !importResults"
+              type="button"
+              @click="processImport"
+              :disabled="importLoading"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium disabled:opacity-50"
+            >
+              <span v-if="importLoading"><i class="fas fa-spinner fa-spin mr-1"></i> Importing...</span>
+              <span v-else>Import</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Modal from '@/Components/Modal.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
@@ -394,6 +525,15 @@ const approverSearch = ref('');
 const approverResults = ref([]);
 const showApproverDropdown = ref(false);
 const approverSearchTimeout = ref(null);
+
+// Import modal
+const showImportModal = ref(false);
+const selectedImportFile = ref(null);
+const previewInfo = ref(null);
+const previewRows = ref([]);
+const importResults = ref(null);
+const importLoading = ref(false);
+const fileInputRef = ref(null);
 
 // Autosave
 const draftId = ref(null);
@@ -990,6 +1130,78 @@ function submitForm() {
       });
     },
   });
+}
+
+function onImportFileChange(e) {
+  const f = e.target.files?.[0];
+  selectedImportFile.value = f || null;
+  previewInfo.value = null;
+  previewRows.value = [];
+  importResults.value = null;
+}
+
+async function previewImport() {
+  if (!selectedImportFile.value) return;
+  importResults.value = null;
+  const fd = new FormData();
+  fd.append('file', selectedImportFile.value);
+  try {
+    const res = await axios.post(route('stock-opnames.preview-import'), fd, {
+      headers: { 'Content-Type': 'multipart/form-data', 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (res.data.success) {
+      previewInfo.value = res.data.info || null;
+      previewRows.value = res.data.rows || [];
+    } else {
+      importResults.value = { success: false, message: res.data.message || 'Preview gagal' };
+    }
+  } catch (err) {
+    importResults.value = {
+      success: false,
+      message: err.response?.data?.message || 'Preview gagal',
+      errors: err.response?.data?.info_errors || [],
+    };
+  }
+}
+
+async function processImport() {
+  if (!selectedImportFile.value) return;
+  importLoading.value = true;
+  importResults.value = null;
+  const fd = new FormData();
+  fd.append('file', selectedImportFile.value);
+  try {
+    const res = await axios.post(route('stock-opnames.import'), fd, {
+      headers: { 'Content-Type': 'multipart/form-data', 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (res.data.success) {
+      importResults.value = {
+        success: true,
+        message: res.data.message,
+        id: res.data.id,
+        errors: res.data.errors || [],
+      };
+    } else {
+      importResults.value = { success: false, message: res.data.message, errors: res.data.errors || [] };
+    }
+  } catch (err) {
+    importResults.value = {
+      success: false,
+      message: err.response?.data?.message || 'Import gagal',
+      errors: err.response?.data?.errors || [],
+    };
+  } finally {
+    importLoading.value = false;
+  }
+}
+
+function closeImportModal() {
+  showImportModal.value = false;
+  selectedImportFile.value = null;
+  previewInfo.value = null;
+  previewRows.value = [];
+  importResults.value = null;
+  if (fileInputRef.value) fileInputRef.value.value = '';
 }
 
 // Load items when warehouse outlet changes
