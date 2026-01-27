@@ -13,25 +13,71 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class StockOpnameImportTemplateExport implements WithMultipleSheets
 {
+    protected $outlet;
+    protected $wh;
+    protected $items;
+    protected $opnameDate;
+    protected $notes;
+
+    /**
+     * @param object|null       $outlet  { nama_outlet }
+     * @param object|null       $wh      { name }
+     * @param array|iterable    $items   from getInventoryItems: { category_name, item_name, small_unit_name }
+     * @param string            $opnameDate
+     * @param string            $notes
+     */
+    public function __construct($outlet, $wh, $items = [], $opnameDate = '', $notes = '')
+    {
+        $this->outlet = $outlet;
+        $this->wh = $wh;
+        $this->items = $items;
+        $this->opnameDate = $opnameDate ?: now()->format('Y-m-d');
+        $this->notes = $notes;
+    }
+
     public function sheets(): array
     {
         return [
-            'Info' => new StockOpnameInfoSheet(),
-            'Items' => new StockOpnameItemsSheet(),
+            'Info' => new StockOpnameInfoSheet($this->outlet, $this->wh, $this->opnameDate, $this->notes),
+            'Items' => new StockOpnameItemsSheet($this->items),
         ];
     }
 }
 
 class StockOpnameInfoSheet implements FromArray, WithHeadings, WithTitle, WithStyles, WithEvents
 {
+    protected $outlet;
+    protected $wh;
+    protected $opnameDate;
+    protected $notes;
+
+    public function __construct($outlet, $wh, $opnameDate, $notes)
+    {
+        $this->outlet = $outlet;
+        $this->wh = $wh;
+        $this->opnameDate = $opnameDate;
+        $this->notes = $notes;
+    }
+
     public function array(): array
     {
-        return [
-            ['Outlet', 'Contoh: Justus Steak House'],
-            ['Warehouse Outlet', 'Contoh: Gudang Utama'],
-            ['Tanggal Opname', now()->format('Y-m-d')],
-            ['Catatan', 'Opsional. Contoh: Opname bulanan Januari 2025'],
+        $outletName = $this->outlet ? $this->outlet->nama_outlet : 'Pilih Outlet di halaman Create, lalu download ulang';
+        $whName = $this->wh ? $this->wh->name : 'Pilih Warehouse Outlet di halaman Create, lalu download ulang';
+
+        $rows = [
+            ['Outlet', $outletName],
+            ['Warehouse Outlet', $whName],
+            ['Tanggal Opname', $this->opnameDate],
+            ['Catatan', $this->notes],
         ];
+
+        if ($this->outlet && $this->wh) {
+            array_unshift($rows, ['Petunjuk', 'Outlet & Warehouse sudah terisi. Di sheet Items: isi hanya Qty Terkecil (dan Alasan bila ada selisih).']);
+        } else {
+            array_unshift($rows, ['Petunjuk', 'Pilih Outlet dan Warehouse Outlet di halaman Create, lalu download ulang template.']);
+        }
+
+        return $rows;
     }
 
     public function headings(): array
@@ -46,6 +92,7 @@ class StockOpnameInfoSheet implements FromArray, WithHeadings, WithTitle, WithSt
 
     public function styles(Worksheet $sheet)
     {
+        $lastRow = 6; // 1 header + 5 info rows (Petunjuk + Outlet + WH + Tanggal + Catatan)
         $sheet->getStyle('A1:B1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
@@ -53,7 +100,7 @@ class StockOpnameInfoSheet implements FromArray, WithHeadings, WithTitle, WithSt
                 'startColor' => ['rgb' => '0070C0'],
             ],
         ]);
-        $sheet->getStyle('A1:B5')->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+        $sheet->getStyle('A1:B' . $lastRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
         return [];
     }
 
@@ -69,11 +116,34 @@ class StockOpnameInfoSheet implements FromArray, WithHeadings, WithTitle, WithSt
 
 class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithStyles, WithEvents
 {
+    protected $items;
+
+    /** @param array|\Illuminate\Support\Collection $items */
+    public function __construct($items = [])
+    {
+        $this->items = $items;
+    }
+
     public function array(): array
     {
-        return [
-            [1, 'Bahan Baku', 'Tepung Terigu', 100, 'kg', ''],
-        ];
+        $rows = [];
+        $n = 1;
+        foreach ($this->items as $it) {
+            $rows[] = [
+                $n++,
+                $it->category_name ?? '',
+                $it->item_name ?? '',
+                '', // Qty Terkecil — user isi
+                $it->small_unit_name ?? '',
+                '', // Alasan — user isi bila ada selisih
+            ];
+        }
+
+        if (empty($rows)) {
+            $rows[] = [1, 'Contoh: Bahan Baku', 'Contoh: Tepung Terigu', '', 'kg', ''];
+        }
+
+        return $rows;
     }
 
     public function headings(): array
@@ -95,6 +165,8 @@ class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithS
 
     public function styles(Worksheet $sheet)
     {
+        $rowCount = count($this->items) ?: 1;
+        $lastRow = $rowCount + 1;
         $sheet->getStyle('A1:F1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
@@ -102,7 +174,7 @@ class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithS
                 'startColor' => ['rgb' => '0070C0'],
             ],
         ]);
-        $sheet->getStyle('A1:F2')->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+        $sheet->getStyle('A1:F' . $lastRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
         return [];
     }
 

@@ -1127,6 +1127,9 @@ Route::get('/outlet-inventory/inventory-value-report', [\App\Http\Controllers\Ou
 // Stock Opname Routes (Outlet)
 Route::get('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'index'])->name('stock-opnames.index');
 Route::get('/stock-opnames/create', [\App\Http\Controllers\StockOpnameController::class, 'create'])->name('stock-opnames.create');
+Route::get('/stock-opnames/download-template', [\App\Http\Controllers\StockOpnameController::class, 'downloadTemplate'])->name('stock-opnames.download-template');
+Route::post('/stock-opnames/preview-import', [\App\Http\Controllers\StockOpnameController::class, 'previewImport'])->name('stock-opnames.preview-import');
+Route::post('/stock-opnames/import', [\App\Http\Controllers\StockOpnameController::class, 'import'])->name('stock-opnames.import');
 Route::post('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'store'])->name('stock-opnames.store');
 Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'show'])->name('stock-opnames.show');
 Route::get('/stock-opnames/{id}/edit', [\App\Http\Controllers\StockOpnameController::class, 'edit'])->name('stock-opnames.edit');
@@ -1138,9 +1141,6 @@ Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameCon
 Route::get('/api/stock-opnames/get-items', [\App\Http\Controllers\StockOpnameController::class, 'getItems'])->name('stock-opnames.get-items');
 Route::get('/api/stock-opnames/approvers', [\App\Http\Controllers\StockOpnameController::class, 'getApprovers'])->name('stock-opnames.approvers');
 Route::get('/api/stock-opnames/pending-approvals', [\App\Http\Controllers\StockOpnameController::class, 'getPendingApprovals'])->name('stock-opnames.pending-approvals')->middleware('auth');
-Route::get('/stock-opnames/download-template', [\App\Http\Controllers\StockOpnameController::class, 'downloadTemplate'])->name('stock-opnames.download-template');
-Route::post('/stock-opnames/preview-import', [\App\Http\Controllers\StockOpnameController::class, 'previewImport'])->name('stock-opnames.preview-import');
-Route::post('/stock-opnames/import', [\App\Http\Controllers\StockOpnameController::class, 'import'])->name('stock-opnames.import');
 
 // Stock Opname Adjustment Report Routes
 Route::get('/stock-opname-adjustment-report', [\App\Http\Controllers\StockOpnameAdjustmentReportController::class, 'index'])->name('stock-opname-adjustment-report.index');

@@ -6,12 +6,13 @@
           <i class="fa-solid fa-clipboard-check text-blue-500"></i> Buat Stock Opname Baru
         </h1>
         <div class="flex items-center gap-2">
-          <a
-            :href="route('stock-opnames.download-template')"
+          <button
+            type="button"
+            @click="downloadTemplate"
             class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
           >
             <i class="fas fa-download mr-2"></i> Download Template
-          </a>
+          </button>
           <button
             type="button"
             @click="showImportModal = true"
@@ -29,25 +30,6 @@
       </div>
 
       <form @submit.prevent="submitForm" class="bg-white rounded-xl shadow-lg p-6">
-        <!-- Autosave Status -->
-        <div class="mb-4 flex items-center justify-end gap-2 text-sm">
-          <span v-if="autosaveStatus === 'saving'" class="text-blue-600 flex items-center gap-1">
-            <i class="fas fa-spinner fa-spin"></i>
-            Menyimpan...
-          </span>
-          <span v-else-if="autosaveStatus === 'saved'" class="text-green-600 flex items-center gap-1">
-            <i class="fas fa-check-circle"></i>
-            Tersimpan
-            <span v-if="lastSavedAt" class="text-xs text-gray-500">
-              ({{ new Date(lastSavedAt).toLocaleTimeString('id-ID') }})
-            </span>
-          </span>
-          <span v-else-if="autosaveStatus === 'error'" class="text-red-600 flex items-center gap-1">
-            <i class="fas fa-exclamation-circle"></i>
-            Gagal menyimpan
-          </span>
-        </div>
-
         <!-- Basic Information -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
@@ -367,11 +349,11 @@
         </div>
       </form>
 
-      <!-- Modal Import Stock Opname -->
+      <!-- Modal Import: pilih file → Import → data langsung terisi ke list item di form -->
       <Modal :show="showImportModal" @close="closeImportModal" max-width="2xl">
         <div class="p-6">
           <h2 class="text-lg font-medium text-gray-900 mb-4">Import Stock Opname</h2>
-          <p class="text-sm text-gray-600 mb-4">Upload file Excel (template). Kolom: Kategori, Nama Item, Qty Terkecil, Unit Terkecil, Alasan. MAC diisi otomatis dari sistem.</p>
+          <p class="text-sm text-gray-600 mb-4">Pilih file Excel (dari Download Template). Data akan langsung terisi ke list item di bawah. Isi hanya <b>Qty Terkecil</b> di Excel (dan Alasan bila ada selisih).</p>
 
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-1">Pilih File</label>
@@ -384,76 +366,8 @@
             />
           </div>
 
-          <!-- Info dari preview -->
-          <div v-if="previewInfo && (previewInfo.outlet || previewInfo.warehouse_outlet)" class="mb-4 p-3 bg-gray-50 rounded text-sm">
-            <div><span class="font-medium">Outlet:</span> {{ previewInfo.outlet }}</div>
-            <div><span class="font-medium">Warehouse Outlet:</span> {{ previewInfo.warehouse_outlet }}</div>
-            <div><span class="font-medium">Tanggal Opname:</span> {{ previewInfo.tanggal_opname }}</div>
-            <div v-if="previewInfo.catatan"><span class="font-medium">Catatan:</span> {{ previewInfo.catatan }}</div>
-          </div>
-
-          <!-- Tabel Preview -->
-          <div v-if="previewRows.length > 0" class="mb-4 overflow-x-auto max-h-80">
-            <table class="min-w-full divide-y divide-gray-200 border text-sm">
-              <thead class="bg-gray-100 sticky top-0">
-                <tr>
-                  <th class="px-2 py-2 text-left">No</th>
-                  <th class="px-2 py-2 text-left">Kategori</th>
-                  <th class="px-2 py-2 text-left">Nama Item</th>
-                  <th class="px-2 py-2 text-right">Qty Terkecil</th>
-                  <th class="px-2 py-2 text-left">Unit</th>
-                  <th class="px-2 py-2 text-right">Qty System</th>
-                  <th class="px-2 py-2 text-right">MAC</th>
-                  <th class="px-2 py-2 text-right">Qty Physical</th>
-                  <th class="px-2 py-2 text-right">Selisih</th>
-                  <th class="px-2 py-2 text-left">Alasan</th>
-                  <th class="px-2 py-2 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <tr
-                  v-for="(r, i) in previewRows"
-                  :key="i"
-                  :class="{ 'bg-red-50': r.status === 'error' }"
-                >
-                  <td class="px-2 py-2">{{ r.no }}</td>
-                  <td class="px-2 py-2">{{ r.kategori }}</td>
-                  <td class="px-2 py-2">{{ r.nama_item }}</td>
-                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_terkecil) }}</td>
-                  <td class="px-2 py-2">{{ r.unit_terkecil }}</td>
-                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_system_small) }}</td>
-                  <td class="px-2 py-2 text-right">{{ formatNumber(r.mac) }}</td>
-                  <td class="px-2 py-2 text-right">{{ formatNumber(r.qty_physical_small) }}</td>
-                  <td class="px-2 py-2 text-right" :class="(r.selisih_small || 0) > 0 ? 'text-green-600' : (r.selisih_small || 0) < 0 ? 'text-red-600' : ''">
-                    {{ formatNumber(r.selisih_small) }}
-                  </td>
-                  <td class="px-2 py-2">{{ r.alasan }}</td>
-                  <td class="px-2 py-2">
-                    <span v-if="r.status === 'error'" class="text-red-600 text-xs" :title="r.error">{{ r.error || 'Error' }}</span>
-                    <span v-else class="text-green-600 text-xs">OK</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Hasil Import -->
-          <div v-if="importResults" class="mb-4 p-4 rounded" :class="importResults.success ? 'bg-green-50' : 'bg-red-50'">
-            <div class="flex items-start gap-2">
-              <i :class="importResults.success ? 'fas fa-check-circle text-green-500' : 'fas fa-exclamation-circle text-red-500'"></i>
-              <div>
-                <p :class="importResults.success ? 'text-green-800' : 'text-red-800'">
-                  {{ importResults.message }}
-                  <Link v-if="importResults.success && importResults.id" :href="route('stock-opnames.show', importResults.id)" class="text-blue-600 underline ml-2">Lihat Stock Opname</Link>
-                </p>
-                <div v-if="importResults.errors && importResults.errors.length" class="mt-2 text-sm text-red-700">
-                  <span class="font-medium">{{ importResults.errors.length }} error:</span>
-                  <ul class="list-disc pl-5 mt-1">
-                    <li v-for="(e, i) in importResults.errors" :key="i">Baris {{ e.row }}: {{ e.error }}</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+          <div v-if="importError" class="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm">
+            {{ importError }}
           </div>
 
           <div class="flex justify-end gap-2 mt-4">
@@ -461,21 +375,13 @@
               Tutup
             </button>
             <button
-              v-if="selectedImportFile && !importResults"
+              v-if="selectedImportFile"
               type="button"
-              @click="previewImport"
-              class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded font-medium"
-            >
-              Preview
-            </button>
-            <button
-              v-if="selectedImportFile && !importResults"
-              type="button"
-              @click="processImport"
+              @click="loadImportToForm"
               :disabled="importLoading"
               class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium disabled:opacity-50"
             >
-              <span v-if="importLoading"><i class="fas fa-spinner fa-spin mr-1"></i> Importing...</span>
+              <span v-if="importLoading"><i class="fas fa-spinner fa-spin mr-1"></i> Memuat...</span>
               <span v-else>Import</span>
             </button>
           </div>
@@ -489,7 +395,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
 
 const props = defineProps({
@@ -529,159 +435,10 @@ const approverSearchTimeout = ref(null);
 // Import modal
 const showImportModal = ref(false);
 const selectedImportFile = ref(null);
-const previewInfo = ref(null);
-const previewRows = ref([]);
-const importResults = ref(null);
+const importError = ref('');
 const importLoading = ref(false);
 const fileInputRef = ref(null);
-
-// Autosave
-const draftId = ref(null);
-const autosaveStatus = ref('idle'); // idle, saving, saved, error
-const autosaveTimeout = ref(null);
-const lastSavedAt = ref(null);
-const autosaveInProgress = ref(false); // Flag to prevent multiple simultaneous autosaves
-const lastAutosaveData = ref(null); // Track last saved data to avoid unnecessary saves
-
-// Autosave function
-async function autosave() {
-  // Skip autosave if form is not valid enough (at least outlet and warehouse outlet must be selected)
-  if (!form.outlet_id || !form.warehouse_outlet_id) {
-    return;
-  }
-
-  // Skip if already submitting
-  if (submitting.value) {
-    return;
-  }
-
-  // PERFORMANCE: Prevent multiple simultaneous autosaves
-  if (autosaveInProgress.value) {
-    return;
-  }
-
-  // PERFORMANCE: Skip if no significant changes (compare with last saved data)
-  const currentData = JSON.stringify({
-    outlet_id: form.outlet_id,
-    warehouse_outlet_id: form.warehouse_outlet_id,
-    opname_date: form.opname_date,
-    notes: form.notes,
-    items: form.items.map(item => ({
-      inventory_item_id: item.inventory_item_id,
-      qty_physical_small: item.qty_physical_small,
-      qty_physical_medium: item.qty_physical_medium,
-      qty_physical_large: item.qty_physical_large,
-      reason: item.reason,
-    })),
-  });
-  
-  if (lastAutosaveData.value === currentData) {
-    return; // No changes, skip autosave
-  }
-
-  autosaveInProgress.value = true;
-  autosaveStatus.value = 'saving';
-
-  try {
-    // Only autosave items that have been explicitly filled (not null/undefined)
-    // This prevents overwriting user input with system qty
-    const itemsToSave = form.items.map(item => {
-      const itemData = {
-        inventory_item_id: item.inventory_item_id,
-        reason: item.reason || '',
-      };
-      
-      // Only include qty_physical if it's been explicitly set (not null/undefined)
-      // This way, backend won't overwrite with system qty
-      if (item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '') {
-        itemData.qty_physical_small = parseFloat(item.qty_physical_small);
-      }
-      if (item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '') {
-        itemData.qty_physical_medium = parseFloat(item.qty_physical_medium);
-      }
-      if (item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '') {
-        itemData.qty_physical_large = parseFloat(item.qty_physical_large);
-      }
-      
-      return itemData;
-    });
-
-    // Prepare approvers array (only IDs)
-    const approversIds = form.approvers
-      .filter(approver => approver && approver.id)
-      .map(approver => approver.id);
-
-    const formData = {
-      outlet_id: form.outlet_id,
-      warehouse_outlet_id: form.warehouse_outlet_id,
-      opname_date: form.opname_date,
-      notes: form.notes,
-      items: itemsToSave,
-      approvers: approversIds,
-      autosave: true,
-    };
-
-    let response;
-    if (draftId.value) {
-      // Update existing draft
-      response = await axios.put(route('stock-opnames.update', draftId.value), formData);
-    } else {
-      // Create new draft
-      response = await axios.post(route('stock-opnames.store'), formData);
-    }
-
-    if (response.data.success) {
-      if (response.data.id && !draftId.value) {
-        draftId.value = response.data.id;
-      }
-      autosaveStatus.value = 'saved';
-      lastSavedAt.value = new Date();
-      lastAutosaveData.value = currentData; // Update last saved data
-      
-      // Clear saved status after 3 seconds
-      setTimeout(() => {
-        if (autosaveStatus.value === 'saved') {
-          autosaveStatus.value = 'idle';
-        }
-      }, 3000);
-    }
-  } catch (error) {
-    console.error('Autosave error:', error);
-    autosaveStatus.value = 'error';
-    
-    // Clear error status after 5 seconds
-    setTimeout(() => {
-      if (autosaveStatus.value === 'error') {
-        autosaveStatus.value = 'idle';
-      }
-    }, 5000);
-  } finally {
-    autosaveInProgress.value = false;
-  }
-}
-
-// PERFORMANCE OPTIMIZATION: Debounced autosave with longer delay
-// Increased from 2s to 8s to reduce server load when many users are editing
-function triggerAutosave() {
-  // Don't trigger if autosave is already in progress
-  if (autosaveInProgress.value) {
-    return;
-  }
-
-  // Clear existing timeout
-  if (autosaveTimeout.value) {
-    clearTimeout(autosaveTimeout.value);
-  }
-
-  // PERFORMANCE: Increased debounce from 2s to 8s to reduce frequency
-  // This significantly reduces server load when 50+ users are editing simultaneously
-  autosaveTimeout.value = setTimeout(() => {
-    // Double check before autosave
-    if (!autosaveInProgress.value && !submitting.value) {
-      autosave();
-    }
-  }, 8000); // 8 seconds debounce
-}
+const importJustApplied = ref(false);
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
 
@@ -764,6 +521,24 @@ const filteredWarehouseOutlets = computed(() => {
   
   return warehouseOutlets;
 });
+
+function downloadTemplate() {
+  if (!form.outlet_id || !form.warehouse_outlet_id) {
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({ title: 'Perhatian', text: 'Pilih Outlet dan Warehouse Outlet terlebih dahulu.', icon: 'warning', confirmButtonColor: '#3085d6' });
+    } else {
+      alert('Pilih Outlet dan Warehouse Outlet terlebih dahulu.');
+    }
+    return;
+  }
+  const q = new URLSearchParams({
+    outlet_id: form.outlet_id,
+    warehouse_outlet_id: form.warehouse_outlet_id,
+    opname_date: form.opname_date || new Date().toISOString().split('T')[0],
+    notes: form.notes || '',
+  });
+  window.location.href = route('stock-opnames.download-template') + '?' + q.toString();
+}
 
 function onOutletChange() {
   form.warehouse_outlet_id = '';
@@ -1029,7 +804,6 @@ function addApprover(user) {
   // Check if user already exists
   if (!form.approvers.find(approver => approver && approver.id === user.id)) {
     form.approvers.push(user);
-    triggerAutosave();
   }
   approverSearch.value = '';
   showApproverDropdown.value = false;
@@ -1037,13 +811,11 @@ function addApprover(user) {
 
 function removeApprover(index) {
   form.approvers.splice(index, 1);
-  triggerAutosave();
 }
 
 function reorderApprover(fromIndex, toIndex) {
   const approver = form.approvers.splice(fromIndex, 1)[0];
   form.approvers.splice(toIndex, 0, approver);
-  triggerAutosave();
 }
 
 function submitForm() {
@@ -1093,10 +865,6 @@ function submitForm() {
 
   submitting.value = true;
   
-  // If draft exists, use update route, otherwise use store
-  const routeName = draftId.value ? 'stock-opnames.update' : 'stock-opnames.store';
-  const routeParams = draftId.value ? { id: draftId.value } : {};
-  
   // Prepare approvers array (only IDs)
   const approversIds = form.approvers
     .filter(approver => approver && approver.id)
@@ -1112,12 +880,10 @@ function submitForm() {
     approvers: approversIds,
   });
   
-  submitForm.post(route(routeName, routeParams), {
+  submitForm.post(route('stock-opnames.store'), {
     preserveScroll: true,
     onSuccess: () => {
       submitting.value = false;
-      // Clear draft ID after successful submit
-      draftId.value = null;
     },
     onError: (errors) => {
       submitting.value = false;
@@ -1133,16 +899,14 @@ function submitForm() {
 }
 
 function onImportFileChange(e) {
-  const f = e.target.files?.[0];
-  selectedImportFile.value = f || null;
-  previewInfo.value = null;
-  previewRows.value = [];
-  importResults.value = null;
+  selectedImportFile.value = e.target.files?.[0] || null;
+  importError.value = '';
 }
 
-async function previewImport() {
+async function loadImportToForm() {
   if (!selectedImportFile.value) return;
-  importResults.value = null;
+  importLoading.value = true;
+  importError.value = '';
   const fd = new FormData();
   fd.append('file', selectedImportFile.value);
   try {
@@ -1150,46 +914,33 @@ async function previewImport() {
       headers: { 'Content-Type': 'multipart/form-data', 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });
     if (res.data.success) {
-      previewInfo.value = res.data.info || null;
-      previewRows.value = res.data.rows || [];
+      importJustApplied.value = true;
+      form.outlet_id = String(res.data.outlet_id ?? '');
+      form.warehouse_outlet_id = String(res.data.warehouse_outlet_id ?? '');
+      form.opname_date = res.data.opname_date || new Date().toISOString().split('T')[0];
+      form.notes = res.data.notes || '';
+      form.items = (res.data.items || []).map(it => ({
+        ...it,
+        qty_physical_small: it.qty_physical_small ?? null,
+        qty_physical_medium: it.qty_physical_medium ?? null,
+        qty_physical_large: it.qty_physical_large ?? null,
+      }));
+      closeImportModal();
+      await nextTick();
+      importJustApplied.value = false;
+      const errs = res.data.errors || [];
+      if (errs.length) {
+        const msg = `${res.data.items?.length || 0} item dimuat. ${errs.length} baris error: ${errs[0]?.error || ''}`;
+        if (typeof Swal !== 'undefined') Swal.fire({ title: 'Import', text: msg, icon: 'info', confirmButtonColor: '#3085d6' });
+        else alert(msg);
+      } else if (typeof Swal !== 'undefined') {
+        Swal.fire({ title: 'Berhasil', text: `${form.items.length} item dimuat ke form.`, icon: 'success', timer: 2000, showConfirmButton: false });
+      }
     } else {
-      importResults.value = { success: false, message: res.data.message || 'Preview gagal' };
+      importError.value = res.data.message || 'Gagal memuat file.';
     }
   } catch (err) {
-    importResults.value = {
-      success: false,
-      message: err.response?.data?.message || 'Preview gagal',
-      errors: err.response?.data?.info_errors || [],
-    };
-  }
-}
-
-async function processImport() {
-  if (!selectedImportFile.value) return;
-  importLoading.value = true;
-  importResults.value = null;
-  const fd = new FormData();
-  fd.append('file', selectedImportFile.value);
-  try {
-    const res = await axios.post(route('stock-opnames.import'), fd, {
-      headers: { 'Content-Type': 'multipart/form-data', 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    });
-    if (res.data.success) {
-      importResults.value = {
-        success: true,
-        message: res.data.message,
-        id: res.data.id,
-        errors: res.data.errors || [],
-      };
-    } else {
-      importResults.value = { success: false, message: res.data.message, errors: res.data.errors || [] };
-    }
-  } catch (err) {
-    importResults.value = {
-      success: false,
-      message: err.response?.data?.message || 'Import gagal',
-      errors: err.response?.data?.errors || [],
-    };
+    importError.value = err.response?.data?.message || 'Gagal memuat file.';
   } finally {
     importLoading.value = false;
   }
@@ -1198,34 +949,20 @@ async function processImport() {
 function closeImportModal() {
   showImportModal.value = false;
   selectedImportFile.value = null;
-  previewInfo.value = null;
-  previewRows.value = [];
-  importResults.value = null;
+  importError.value = '';
   if (fileInputRef.value) fileInputRef.value.value = '';
 }
 
-// Load items when warehouse outlet changes
+// Load items when warehouse outlet changes (kecuali baru selesai import, agar form.items tidak tertimpa get-items)
 watch(() => form.warehouse_outlet_id, () => {
   if (form.warehouse_outlet_id) {
+    if (importJustApplied.value) {
+      importJustApplied.value = false;
+      return;
+    }
     loadItems();
   }
 });
-
-// Watch form changes for autosave (but not items to avoid overwriting user input)
-watch([
-  () => form.outlet_id,
-  () => form.warehouse_outlet_id,
-  () => form.opname_date,
-  () => form.notes,
-], () => {
-  triggerAutosave();
-});
-
-// Watch items changes separately with debounce to avoid overwriting while user is typing
-watch(() => form.items, () => {
-  // Only autosave items if user has finished editing (debounced)
-  triggerAutosave();
-}, { deep: true });
 
 // Auto-set outlet_id on mount if user is not superadmin
 if (props.user_outlet_id && String(props.user_outlet_id) !== '1') {

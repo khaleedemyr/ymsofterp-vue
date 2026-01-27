@@ -1261,18 +1261,38 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Download template import Stock Opname (Info + Items, tanpa MAC)
+     * Download template import Stock Opname (Info + Items, tanpa MAC).
+     * Query: outlet_id, warehouse_outlet_id (wajib agar Items terisi), opname_date, notes (opsional).
+     * Outlet & Warehouse Outlet dipilih di halaman Create; sheet Info & Items akan terisi otomatis.
      */
-    public function downloadTemplate()
+    public function downloadTemplate(Request $request)
     {
+        $outletId = $request->get('outlet_id');
+        $warehouseOutletId = $request->get('warehouse_outlet_id');
+        $opnameDate = $request->get('opname_date') ?: now()->format('Y-m-d');
+        $notes = $request->get('notes') ?: '';
+
+        $outlet = null;
+        $wh = null;
+        $items = [];
+
+        if ($outletId && $warehouseOutletId) {
+            $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->where('status', 'A')->first();
+            $wh = DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->where('outlet_id', $outletId)->where('status', 'active')->first();
+            if ($outlet && $wh) {
+                $items = $this->getInventoryItems((int) $outletId, (int) $warehouseOutletId);
+            }
+        }
+
         return Excel::download(
-            new StockOpnameImportTemplateExport,
+            new StockOpnameImportTemplateExport($outlet, $wh, $items, $opnameDate, $notes),
             'template_stock_opname.xlsx'
         );
     }
 
     /**
-     * Preview import: parse file, resolve item & MAC dari sistem, return tabel preview (tanpa insert)
+     * Load import ke form: parse file, return data siap isi form (outlet_id, items).
+     * Tidak insert ke DB. Data langsung terisi di list item halaman Create.
      */
     public function previewImport(Request $request)
     {
@@ -1288,45 +1308,53 @@ class StockOpnameController extends Controller
                 ], 422);
             }
 
-            $rows = [];
-            foreach ($parsed['item_rows'] as $r) {
-                $qtySmall = (float) ($r['qty_physical_small'] ?? 0);
-                $qtyMedium = (float) ($r['qty_physical_medium'] ?? 0);
-                $qtyLarge = (float) ($r['qty_physical_large'] ?? 0);
-                $sysSmall = (float) ($r['qty_system_small'] ?? 0);
-                $sysMedium = (float) ($r['qty_system_medium'] ?? 0);
-                $sysLarge = (float) ($r['qty_system_large'] ?? 0);
-                $diffSmall = $qtySmall - $sysSmall;
-                $mac = (float) ($r['mac'] ?? 0);
+            $user = auth()->user();
+            $outletId = (int) ($parsed['outlet_id'] ?? 0);
+            if ($user->id_outlet != 1 && $user->id_outlet != $outletId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk outlet ini.',
+                ], 403);
+            }
 
-                $rows[] = [
-                    'no' => $r['no'] ?? '',
-                    'kategori' => $r['kategori'] ?? '',
-                    'nama_item' => $r['nama_item'] ?? '',
-                    'qty_terkecil' => $r['qty_terkecil'] ?? '',
-                    'unit_terkecil' => $r['unit_terkecil'] ?? '',
-                    'alasan' => $r['alasan'] ?? '',
-                    'qty_system_small' => $sysSmall,
-                    'mac' => $mac,
-                    'qty_physical_small' => $qtySmall,
-                    'qty_physical_medium' => $qtyMedium,
-                    'qty_physical_large' => $qtyLarge,
-                    'selisih_small' => $diffSmall,
-                    'status' => $r['error'] ? 'error' : 'ok',
-                    'error' => $r['error'] ?? null,
+            $items = [];
+            $errors = [];
+            foreach ($parsed['item_rows'] as $r) {
+                if (!empty($r['error']) && empty($r['inventory_item_id'])) {
+                    $errors[] = ['row' => $r['excel_row'] ?? 0, 'error' => $r['error']];
+                    continue;
+                }
+                if (empty($r['inventory_item_id'])) {
+                    continue;
+                }
+                $items[] = [
+                    'inventory_item_id' => $r['inventory_item_id'],
+                    'item_name' => $r['item_name'] ?? $r['nama_item'] ?? '',
+                    'category_name' => $r['kategori'] ?? '',
+                    'qty_system_small' => (float) ($r['qty_system_small'] ?? 0),
+                    'qty_system_medium' => (float) ($r['qty_system_medium'] ?? 0),
+                    'qty_system_large' => (float) ($r['qty_system_large'] ?? 0),
+                    'qty_physical_small' => (float) ($r['qty_physical_small'] ?? 0),
+                    'qty_physical_medium' => (float) ($r['qty_physical_medium'] ?? 0),
+                    'qty_physical_large' => (float) ($r['qty_physical_large'] ?? 0),
+                    'reason' => $r['alasan'] ?? '',
+                    'small_unit_name' => $r['small_unit_name'] ?? '',
+                    'medium_unit_name' => $r['medium_unit_name'] ?? '',
+                    'large_unit_name' => $r['large_unit_name'] ?? '',
+                    'small_conversion_qty' => (float) ($r['small_conversion_qty'] ?? 1) ?: 1,
+                    'medium_conversion_qty' => (float) ($r['medium_conversion_qty'] ?? 1) ?: 1,
+                    'mac' => (float) ($r['mac'] ?? 0),
                 ];
             }
 
             return response()->json([
                 'success' => true,
-                'info' => [
-                    'outlet' => $parsed['outlet_name'] ?? '',
-                    'warehouse_outlet' => $parsed['warehouse_outlet_name'] ?? '',
-                    'tanggal_opname' => $parsed['opname_date'] ?? '',
-                    'catatan' => $parsed['notes'] ?? '',
-                ],
-                'rows' => $rows,
-                'total' => count($rows),
+                'outlet_id' => $parsed['outlet_id'],
+                'warehouse_outlet_id' => $parsed['warehouse_outlet_id'],
+                'opname_date' => $parsed['opname_date'] ?? now()->format('Y-m-d'),
+                'notes' => $parsed['notes'] ?? '',
+                'items' => $items,
+                'errors' => $errors,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -1553,13 +1581,19 @@ class StockOpnameController extends Controller
                 continue;
             }
 
-            $qtyVal = is_numeric($qtyTerkecil) ? (float) $qtyTerkecil : null;
+            if ($qtyTerkecil === '' || $qtyTerkecil === null) {
+                $qtyVal = 0.0;
+            } elseif (is_numeric($qtyTerkecil)) {
+                $qtyVal = (float) $qtyTerkecil;
+            } else {
+                $qtyVal = null;
+            }
             if ($qtyVal === null || $qtyVal < 0) {
                 $out['item_rows'][] = [
                     'excel_row' => $excelRow,
                     'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
                     'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
-                    'error' => 'Qty Terkecil harus angka >= 0.',
+                    'error' => 'Qty Terkecil harus angka >= 0 (kosong dianggap 0).',
                 ] + array_fill_keys(['inventory_item_id','qty_system_small','qty_system_medium','qty_system_large','mac','qty_physical_small','qty_physical_medium','qty_physical_large','small_conversion_qty','medium_conversion_qty'], null);
                 continue;
             }
@@ -1568,6 +1602,9 @@ class StockOpnameController extends Controller
                 ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
                 ->join('items as i', 'fi.item_id', '=', 'i.id')
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
                 ->where('s.id_outlet', $outletId)
                 ->where('s.warehouse_outlet_id', $warehouseOutletId)
                 ->where('i.name', $namaItem)
@@ -1576,6 +1613,8 @@ class StockOpnameController extends Controller
                 })
                 ->select(
                     'fi.id as inventory_item_id',
+                    'i.name as item_name',
+                    'us.name as small_unit_name', 'um.name as medium_unit_name', 'ul.name as large_unit_name',
                     's.qty_small as qty_system_small', 's.qty_medium as qty_system_medium', 's.qty_large as qty_system_large',
                     's.last_cost_small as mac',
                     'i.small_conversion_qty', 'i.medium_conversion_qty'
@@ -1606,15 +1645,22 @@ class StockOpnameController extends Controller
             $diffLarge = $qtyPhysicalLarge - $qtySystemLarge;
             $hasDiff = abs($diffSmall) > 0.01 || abs($diffMedium) > 0.01 || abs($diffLarge) > 0.01;
 
+            $itemName = $rec->item_name ?? $namaItem;
+            $smallUnitName = $rec->small_unit_name ?? '';
+            $mediumUnitName = $rec->medium_unit_name ?? '';
+            $largeUnitName = $rec->large_unit_name ?? '';
+
             if ($hasDiff && $alasan === '') {
                 $out['item_rows'][] = [
                     'excel_row' => $excelRow,
                     'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
                     'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
                     'inventory_item_id' => $rec->inventory_item_id,
+                    'item_name' => $itemName, 'small_unit_name' => $smallUnitName, 'medium_unit_name' => $mediumUnitName, 'large_unit_name' => $largeUnitName,
                     'qty_system_small' => $qtySystemSmall, 'qty_system_medium' => $qtySystemMedium, 'qty_system_large' => $qtySystemLarge,
                     'mac' => (float) ($rec->mac ?? 0),
                     'qty_physical_small' => $qtyPhysicalSmall, 'qty_physical_medium' => $qtyPhysicalMedium, 'qty_physical_large' => $qtyPhysicalLarge,
+                    'small_conversion_qty' => $smallConv, 'medium_conversion_qty' => $mediumConv,
                     'error' => 'Ada selisih qty. Kolom Alasan wajib diisi.',
                 ];
                 continue;
@@ -1625,9 +1671,11 @@ class StockOpnameController extends Controller
                 'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
                 'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
                 'inventory_item_id' => $rec->inventory_item_id,
+                'item_name' => $itemName, 'small_unit_name' => $smallUnitName, 'medium_unit_name' => $mediumUnitName, 'large_unit_name' => $largeUnitName,
                 'qty_system_small' => $qtySystemSmall, 'qty_system_medium' => $qtySystemMedium, 'qty_system_large' => $qtySystemLarge,
                 'mac' => (float) ($rec->mac ?? 0),
                 'qty_physical_small' => $qtyPhysicalSmall, 'qty_physical_medium' => $qtyPhysicalMedium, 'qty_physical_large' => $qtyPhysicalLarge,
+                'small_conversion_qty' => $smallConv, 'medium_conversion_qty' => $mediumConv,
                 'error' => null,
             ];
         }
