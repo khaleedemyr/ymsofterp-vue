@@ -125,7 +125,7 @@
               </div>
             </div>
 
-            <div v-if="stockOpname.status === 'APPROVED'" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div v-if="canShowProcessButton" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h4 class="font-semibold text-blue-800 mb-2">Process Stock Opname</h4>
               <button
                 @click="processStockOpname"
@@ -135,6 +135,12 @@
                 <i v-if="processing" class="fa fa-spinner fa-spin mr-2"></i>
                 Process & Update Inventory
               </button>
+            </div>
+            <div v-else-if="stockOpname.status === 'APPROVED'" class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h4 class="font-semibold text-gray-700 mb-2">Process Stock Opname</h4>
+              <p class="text-sm text-gray-600">
+                Tombol <strong>Process & Update Inventory</strong> hanya tersedia untuk stock opname dengan <strong>tanggal opname akhir bulan atau tanggal 1</strong> 
+              </p>
             </div>
           </div>
         </div>
@@ -354,6 +360,19 @@ const approving = ref(false);
 const processing = ref(false);
 
 const showDifferences = computed(() => props.stockOpname?.status === 'APPROVED');
+
+// Process & Update Inventory hanya untuk opname akhir bulan atau tgl 1 (biasanya ~23:00 akhir bulan s/d ~05:00 tgl 1)
+function isOpnameDateEligibleForProcess(opnameDate) {
+  if (!opnameDate) return false;
+  const d = new Date(opnameDate);
+  if (isNaN(d.getTime())) return false;
+  const day = d.getDate();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return day === 1 || day === lastDay;
+}
+const canShowProcessButton = computed(() =>
+  props.stockOpname?.status === 'APPROVED' && isOpnameDateEligibleForProcess(props.stockOpname?.opname_date)
+);
 
 function getUnitName(item, size) {
   const master = item?.inventory_item?.item;

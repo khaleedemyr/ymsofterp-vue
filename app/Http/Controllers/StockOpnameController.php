@@ -1082,6 +1082,14 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Stock opname belum di-approve.']);
         }
 
+        $opnameDate = $stockOpname->opname_date instanceof \Carbon\Carbon
+            ? $stockOpname->opname_date
+            : \Carbon\Carbon::parse($stockOpname->opname_date);
+        $isEligible = $opnameDate->day === 1 || $opnameDate->isLastOfMonth();
+        if (!$isEligible) {
+            return back()->withErrors(['error' => 'Process & Update Inventory hanya untuk stock opname dengan tanggal opname akhir bulan atau tanggal 1.']);
+        }
+
         try {
             DB::beginTransaction();
 

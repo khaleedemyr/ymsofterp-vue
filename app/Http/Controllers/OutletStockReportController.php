@@ -506,6 +506,7 @@ class OutletStockReportController extends Controller
             }
             
             // 8. Begin Inventory = Last Stock Opname Physical bulan LALU (mis. laporan Jan → ambil last opname Des)
+            //    Juga include opname dengan opname_date = tgl 1 bulan laporan (opname yang disimpan ~23:00 akhir bulan s/d ~05:00 tgl 1)
             $beginInventoryFromOpname = [];
             $beginOpnamePrevMonth = DB::table('outlet_stock_opname_items as soi')
                 ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
@@ -513,8 +514,12 @@ class OutletStockReportController extends Controller
                 ->where('so.outlet_id', $outletId)
                 ->where('so.warehouse_outlet_id', $warehouseOutletId)
                 ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
-                ->whereYear('so.opname_date', $bulanSebelumnya->year)
-                ->whereMonth('so.opname_date', $bulanSebelumnya->month)
+                ->where(function ($q) use ($bulanSebelumnya, $tanggal1BulanIni) {
+                    $q->where(function ($q2) use ($bulanSebelumnya) {
+                        $q2->whereYear('so.opname_date', $bulanSebelumnya->year)
+                           ->whereMonth('so.opname_date', $bulanSebelumnya->month);
+                    })->orWhereDate('so.opname_date', $tanggal1BulanIni);
+                })
                 ->select('fi.item_id', 'soi.qty_physical_small', 'soi.qty_physical_medium', 'soi.qty_physical_large', 'so.opname_date', 'so.id as so_id')
                 ->orderBy('so.opname_date', 'desc')
                 ->orderBy('so.id', 'desc')
