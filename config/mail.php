@@ -61,6 +61,20 @@ return [
             ],
         ],
 
+        'sendgrid' => [
+            'transport' => 'smtp',
+            'host' => env('MAIL_HOST', 'smtp.sendgrid.net'),
+            'port' => env('MAIL_PORT', 587),
+            'username' => env('MAIL_USERNAME', 'apikey'),
+            'password' => env('MAIL_PASSWORD'),
+            'encryption' => env('MAIL_ENCRYPTION', 'tls'),
+            'timeout' => 30,
+            'local_domain' => env('MAIL_EHLO_DOMAIN', gethostname() ?: parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => false,
+        ],
+
         'ses' => [
             'transport' => 'ses',
         ],

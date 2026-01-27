@@ -26,12 +26,12 @@ return [
     |
     */
     'mailers' => [
-        // Primary SMTP (Gmail)
-        'smtp_gmail' => [
+        // Primary SMTP (SendGrid)
+        'smtp_sendgrid' => [
             'transport' => 'smtp',
-            'host' => env('MAIL_HOST', 'smtp.gmail.com'),
+            'host' => env('MAIL_HOST', 'smtp.sendgrid.net'),
             'port' => env('MAIL_PORT', 587),
-            'username' => env('MAIL_USERNAME'),
+            'username' => env('MAIL_USERNAME', 'apikey'),
             'password' => env('MAIL_PASSWORD'),
             'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'timeout' => 30,
@@ -40,15 +40,18 @@ return [
             'verify_peer_name' => false,
         ],
 
-        // Alternative SMTP (SendGrid, Mailgun, dll)
-        'smtp_alternative' => [
+        // Fallback SMTP (Gmail)
+        'smtp_gmail' => [
             'transport' => 'smtp',
-            'host' => env('MAIL_ALT_HOST', 'smtp.sendgrid.net'),
+            'host' => env('MAIL_ALT_HOST', 'smtp.gmail.com'),
             'port' => env('MAIL_ALT_PORT', 587),
             'username' => env('MAIL_ALT_USERNAME'),
             'password' => env('MAIL_ALT_PASSWORD'),
             'encryption' => env('MAIL_ALT_ENCRYPTION', 'tls'),
             'timeout' => 30,
+            'local_domain' => env('MAIL_EHLO_DOMAIN'),
+            'verify_peer' => false,
+            'verify_peer_name' => false,
         ],
 
         // Sendmail fallback
@@ -67,8 +70,8 @@ return [
         'failover' => [
             'transport' => 'failover',
             'mailers' => [
-                'smtp_gmail',
-                'smtp_alternative', 
+                'smtp_sendgrid',
+                'smtp_gmail', 
                 'sendmail',
                 'log',
             ],
