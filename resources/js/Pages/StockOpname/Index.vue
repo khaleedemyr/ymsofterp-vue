@@ -149,7 +149,7 @@
                   </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="flex items-center justify-center gap-2">
+                  <div class="flex items-center justify-center gap-2 flex-wrap">
                     <Link
                       :href="route('stock-opnames.show', opname.id)"
                       class="inline-flex items-center px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
@@ -158,6 +158,15 @@
                       <i class="fa-solid fa-eye mr-1.5"></i>
                       View
                     </Link>
+                    <a
+                      v-if="opname.status === 'APPROVED'"
+                      :href="route('stock-opnames.export-excel', opname.id)"
+                      class="inline-flex items-center px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+                      title="Download Excel"
+                    >
+                      <i class="fa-solid fa-file-excel mr-1.5"></i>
+                      Excel
+                    </a>
                     <Link
                       v-if="opname.status === 'DRAFT'"
                       :href="route('stock-opnames.edit', opname.id)"

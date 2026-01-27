@@ -1132,6 +1132,7 @@ Route::post('/stock-opnames/preview-import', [\App\Http\Controllers\StockOpnameC
 Route::post('/stock-opnames/import', [\App\Http\Controllers\StockOpnameController::class, 'import'])->name('stock-opnames.import');
 Route::post('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'store'])->name('stock-opnames.store');
 Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'show'])->name('stock-opnames.show');
+Route::get('/stock-opnames/{id}/export-excel', [\App\Http\Controllers\StockOpnameController::class, 'exportToExcel'])->name('stock-opnames.export-excel');
 Route::get('/stock-opnames/{id}/edit', [\App\Http\Controllers\StockOpnameController::class, 'edit'])->name('stock-opnames.edit');
 Route::put('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'update'])->name('stock-opnames.update');
 Route::delete('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'destroy'])->name('stock-opnames.destroy');

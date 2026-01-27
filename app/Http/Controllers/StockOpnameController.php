@@ -8,6 +8,7 @@ use App\Models\StockOpnameApprovalFlow;
 use App\Models\StockOpnameAdjustment;
 use App\Services\NotificationService;
 use App\Exports\StockOpnameImportTemplateExport;
+use App\Exports\StockOpnameResultExport;
 use App\Imports\StockOpnameImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -501,6 +502,31 @@ class StockOpnameController extends Controller
             'users' => $users,
             'user_outlet_id' => $user->id_outlet ?? null,
         ]);
+    }
+
+    /**
+     * Export hasil stock opname ke Excel. Hanya untuk status APPROVED.
+     */
+    public function exportToExcel($id)
+    {
+        $stockOpname = StockOpname::with([
+            'items.inventoryItem.item.category',
+            'items.inventoryItem.item.smallUnit',
+            'items.inventoryItem.item.mediumUnit',
+            'items.inventoryItem.item.largeUnit',
+        ])->findOrFail($id);
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            abort(403, 'Anda tidak memiliki akses untuk stock opname ini.');
+        }
+
+        if ($stockOpname->status !== 'APPROVED') {
+            abort(403, 'Hanya stock opname dengan status Approved yang dapat di-download ke Excel.');
+        }
+
+        $filename = 'Stock_Opname_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stockOpname->opname_number) . '.xlsx';
+        return Excel::download(new StockOpnameResultExport($stockOpname), $filename);
     }
 
     /**
