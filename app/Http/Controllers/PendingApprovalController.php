@@ -235,13 +235,13 @@ class PendingApprovalController extends Controller
                 Log::error('Error loading Coaching approvals: ' . $e->getMessage());
             }
 
-            // 12. Schedule Attendance Correction
+            // 12. Schedule Attendance Correction (getPendingApprovals return key: 'approvals')
             try {
                 $sacController = app(\App\Http\Controllers\ScheduleAttendanceCorrectionController::class);
                 $sacResponse = $sacController->getPendingApprovals($request);
                 if ($sacResponse->getStatusCode() === 200) {
                     $sacData = json_decode($sacResponse->getContent(), true);
-                    $data['schedule_attendance_correction'] = $sacData['data'] ?? $sacData['corrections'] ?? [];
+                    $data['schedule_attendance_correction'] = $sacData['data'] ?? $sacData['corrections'] ?? $sacData['approvals'] ?? [];
                     if ($limit > 0 && count($data['schedule_attendance_correction']) > $limit) {
                         $data['schedule_attendance_correction'] = array_slice($data['schedule_attendance_correction'], 0, $limit);
                     }
