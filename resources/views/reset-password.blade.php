@@ -134,21 +134,6 @@
             border: 1px solid #f5c6cb;
         }
         
-        .back-link {
-            text-align: center;
-            margin-top: 20px;
-        }
-        
-        .back-link a {
-            color: #666;
-            text-decoration: none;
-            font-size: 14px;
-        }
-        
-        .back-link a:hover {
-            color: #000;
-        }
-        
         .loading {
             display: inline-block;
             width: 16px;
@@ -198,9 +183,6 @@
             </button>
         </form>
         
-        <div class="back-link">
-            <a href="https://ymsofterp.com">Back to Home</a>
-        </div>
     </div>
     
     <script>
@@ -255,8 +237,11 @@
                     // Prevent infinite loop
                     if (previousToken === decodedToken) break;
                 }
-                
-                const response = await fetch('https://ymsofterp.com/api/mobile/member/auth/reset-password', {
+
+                // Pakai domain yang sama dengan halaman (hindari CORS / domain salah)
+                const apiUrl = window.location.origin + '/api/mobile/member/auth/reset-password';
+
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -269,19 +254,31 @@
                         password_confirmation: passwordConfirmation
                     })
                 });
-                
-                const data = await response.json();
-                
+
+                const contentType = response.headers.get('content-type');
+                let data;
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    const text = await response.text();
+                    console.error('Reset password: server returned non-JSON', { status: response.status, url: apiUrl, body: text.substring(0, 500) });
+                    showMessage('Server error. Please try again later.', 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Reset Password';
+                    return;
+                }
+
                 if (data.success) {
                     showMessage(data.message || 'Password has been reset successfully! You can now login with your new password.', 'success');
                     form.style.display = 'none';
                     submitBtn.style.display = 'none';
                 } else {
-                    showMessage(data.message || 'Failed to reset password. Please try again.', 'error');
+                    showMessage(data.message || data.error || 'Failed to reset password. Please try again.', 'error');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = 'Reset Password';
                 }
             } catch (error) {
+                console.error('Reset password error:', error);
                 showMessage('An error occurred. Please try again later.', 'error');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Reset Password';

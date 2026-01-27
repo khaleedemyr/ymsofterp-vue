@@ -1277,11 +1277,14 @@ class AuthController extends Controller
                 'message' => 'Password has been reset successfully. You can now login with your new password.'
             ]);
         } catch (\Exception $e) {
-            Log::error('Reset Password Error: ' . $e->getMessage());
+            Log::error('Reset Password Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'email' => $request->input('email'),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reset password',
-                'error' => $e->getMessage()
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred. Please try again later.'
             ], 500);
         }
     }
@@ -1472,7 +1475,8 @@ class AuthController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to send verification email. Please try again later.'
+                'message' => 'Failed to send verification email. Please try again later.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }

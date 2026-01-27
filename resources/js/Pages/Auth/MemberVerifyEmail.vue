@@ -52,7 +52,8 @@ const resendVerification = async () => {
     resendError.value = '';
 
     try {
-        const response = await fetch('/api/mobile/member/auth/resend-verification', {
+        const apiUrl = '/api/mobile/member/auth/resend-verification';
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -63,14 +64,24 @@ const resendVerification = async () => {
             }),
         });
 
-        const data = await response.json();
+        const contentType = response.headers.get('content-type');
+        let data;
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error('Resend verification: server returned non-JSON', { status: response.status, url: apiUrl, body: text?.substring(0, 500) });
+            resendError.value = 'Server error. Please try again later.';
+            return;
+        }
 
         if (data.success) {
             resendMessage.value = data.message || 'Verification email has been sent. Please check your inbox.';
         } else {
-            resendError.value = data.message || 'Failed to send verification email. Please try again.';
+            resendError.value = data.message || data.error || 'Failed to send verification email. Please try again.';
         }
     } catch (error) {
+        console.error('Resend verification error:', error);
         resendError.value = 'An error occurred. Please try again later.';
     } finally {
         resending.value = false;

@@ -86,7 +86,7 @@ return [
     */
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'noreply@ymsofterp.com'),
-        'name' => env('MAIL_FROM_NAME', 'YMSoft ERP'),
+        'name' => env('MAIL_FROM_NAME', 'Justus Group'),
     ],
 
     /*
