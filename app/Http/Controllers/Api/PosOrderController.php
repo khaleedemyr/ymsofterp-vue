@@ -528,6 +528,33 @@ class PosOrderController extends Controller
     }
 
     /**
+     * Cek apakah order sudah ada di server pusat (untuk tombol Sync di Reprint modal)
+     * GET /api/pos/orders/check-exists?order_id=xxx&kode_outlet=yyy
+     */
+    public function checkOrderExists(Request $request)
+    {
+        $orderId = $request->query('order_id');
+        $kodeOutlet = $request->query('kode_outlet');
+
+        if (empty($orderId) || empty($kodeOutlet)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'order_id dan kode_outlet wajib diisi',
+            ], 400);
+        }
+
+        $exists = DB::table('orders')
+            ->where('id', $orderId)
+            ->where('kode_outlet', $kodeOutlet)
+            ->exists();
+
+        return response()->json([
+            'success' => true,
+            'exists' => $exists,
+        ]);
+    }
+
+    /**
      * Rollback member transaction when order is voided
      * This endpoint rolls back:
      * - Total spending

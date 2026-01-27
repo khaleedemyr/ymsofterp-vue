@@ -785,6 +785,7 @@ Route::prefix('mobile/member')->group(function () {
 // POS Order Sync Routes
 Route::prefix('pos')->group(function () {
     Route::post('/orders/sync', [PosOrderController::class, 'syncOrder'])->name('api.pos.orders.sync');
+    Route::get('/orders/check-exists', [PosOrderController::class, 'checkOrderExists'])->name('api.pos.orders.check-exists');
     Route::post('/orders/rollback-member', [PosOrderController::class, 'rollbackMemberTransaction'])->name('api.pos.orders.rollback-member');
     Route::post('/orders/void', [PosOrderController::class, 'voidOrder'])->name('api.pos.orders.void');
 });
