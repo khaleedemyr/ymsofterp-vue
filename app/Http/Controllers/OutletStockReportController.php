@@ -467,103 +467,100 @@ class OutletStockReportController extends Controller
                 ];
             }
             
-            // 7. Data dari Outlet Stock Opname (Stock Fisik)
+            // 7. Data dari Outlet Stock Opname (Stock Fisik) — hanya LAST stock opname per item (bukan di-SUM)
             $stockOpnameData = [];
             
-            // Query untuk mengambil data stock fisik dari outlet_stock_opname_items
-            // Hanya ambil yang sudah diproses (status APPROVED atau PROCESSED)
             $stockOpnameItems = DB::table('outlet_stock_opname_items as soi')
                 ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
                 ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
                 ->where('so.outlet_id', $outletId)
                 ->where('so.warehouse_outlet_id', $warehouseOutletId)
-                ->whereIn('so.status', ['APPROVED', 'PROCESSED']) // Hanya yang sudah diproses
+                ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
                 ->whereYear('so.opname_date', $bulanCarbon->year)
                 ->whereMonth('so.opname_date', $bulanCarbon->month)
                 ->select(
                     'fi.item_id',
-                    DB::raw('SUM(COALESCE(soi.qty_physical_small, 0)) as total_qty_physical_small'),
-                    DB::raw('SUM(COALESCE(soi.qty_physical_medium, 0)) as total_qty_physical_medium'),
-                    DB::raw('SUM(COALESCE(soi.qty_physical_large, 0)) as total_qty_physical_large'),
-                    // Ambil MAC dari stock opname (gunakan mac_after, jika tidak ada gunakan mac_before)
-                    DB::raw('AVG(COALESCE(soi.mac_after, soi.mac_before, 0)) as avg_mac')
+                    'soi.qty_physical_small',
+                    'soi.qty_physical_medium',
+                    'soi.qty_physical_large',
+                    'soi.mac_after',
+                    'soi.mac_before',
+                    'so.opname_date',
+                    'so.id as so_id'
                 )
-                ->groupBy('fi.item_id')
+                ->orderBy('so.opname_date', 'desc')
+                ->orderBy('so.id', 'desc')
                 ->get();
             
+            // Untuk tiap item_id, ambil hanya baris pertama = opname terakhir (opname_date terakhir, so.id terakhir)
             foreach ($stockOpnameItems as $data) {
-                $itemId = $data->item_id;
-                
-                $stockOpnameData[$itemId] = [
-                    'qty_small' => (float) ($data->total_qty_physical_small ?? 0),
-                    'qty_medium' => (float) ($data->total_qty_physical_medium ?? 0),
-                    'qty_large' => (float) ($data->total_qty_physical_large ?? 0),
-                    'mac' => (float) ($data->avg_mac ?? 0),
+                if (isset($stockOpnameData[$data->item_id])) {
+                    continue;
+                }
+                $stockOpnameData[$data->item_id] = [
+                    'qty_small' => (float) ($data->qty_physical_small ?? 0),
+                    'qty_medium' => (float) ($data->qty_physical_medium ?? 0),
+                    'qty_large' => (float) ($data->qty_physical_large ?? 0),
+                    'mac' => (float) ($data->mac_after ?? $data->mac_before ?? 0),
                 ];
             }
             
-            foreach ($inventoryItems as $item) {
-                // Ambil begin inventory dari stock card berdasarkan warehouse_outlet_id yang spesifik
-                // 1. Cek last stock di akhir bulan sebelumnya (tanggal terakhir bulan sebelumnya)
-                // CRITICAL: Pastikan filter berdasarkan warehouse_outlet_id yang dipilih
-                $lastStockCard = DB::table('outlet_food_inventory_cards')
-                    ->where('inventory_item_id', $item->inventory_item_id)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId) // Filter spesifik warehouse yang dipilih
-                    ->whereDate('date', '<=', $tanggalAkhirBulanSebelumnya)
-                    ->orderBy('date', 'desc')
-                    ->orderBy('created_at', 'desc')
-                    ->select('saldo_qty_small', 'saldo_qty_medium', 'saldo_qty_large', 'date', 'created_at', 'warehouse_outlet_id')
-                    ->first();
-                
-                // 2. Jika ada transaksi setelah tanggal akhir bulan sebelumnya, ambil stock di tanggal 1 bulan ini sebelum jam 8 pagi
-                // CRITICAL: Pastikan juga filter berdasarkan warehouse_outlet_id yang dipilih
-                $stockCardTanggal1 = null;
-                if (!$lastStockCard || ($lastStockCard && $lastStockCard->date < $tanggalAkhirBulanSebelumnya)) {
-                    $stockCardTanggal1 = DB::table('outlet_food_inventory_cards')
-                        ->where('inventory_item_id', $item->inventory_item_id)
-                        ->where('id_outlet', $outletId)
-                        ->where('warehouse_outlet_id', $warehouseOutletId) // Filter spesifik warehouse yang dipilih
-                        ->whereDate('date', $tanggal1BulanIni)
-                        ->whereTime('created_at', '<', '08:00:00')
-                        ->orderBy('created_at', 'desc')
-                        ->select('saldo_qty_small', 'saldo_qty_medium', 'saldo_qty_large', 'date', 'created_at', 'warehouse_outlet_id')
-                        ->first();
+            // 8. Begin Inventory = Last Stock Opname Physical bulan LALU (mis. laporan Jan → ambil last opname Des)
+            $beginInventoryFromOpname = [];
+            $beginOpnamePrevMonth = DB::table('outlet_stock_opname_items as soi')
+                ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
+                ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
+                ->where('so.outlet_id', $outletId)
+                ->where('so.warehouse_outlet_id', $warehouseOutletId)
+                ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
+                ->whereYear('so.opname_date', $bulanSebelumnya->year)
+                ->whereMonth('so.opname_date', $bulanSebelumnya->month)
+                ->select('fi.item_id', 'soi.qty_physical_small', 'soi.qty_physical_medium', 'soi.qty_physical_large', 'so.opname_date', 'so.id as so_id')
+                ->orderBy('so.opname_date', 'desc')
+                ->orderBy('so.id', 'desc')
+                ->get();
+            foreach ($beginOpnamePrevMonth as $d) {
+                if (isset($beginInventoryFromOpname[$d->item_id])) {
+                    continue;
                 }
-                
-                // Gunakan stock card tanggal 1 jika ada, jika tidak gunakan last stock bulan sebelumnya
-                $beginStock = $stockCardTanggal1 ?? $lastStockCard;
-                
-                // Jika tidak ada di stock card, ambil dari outlet_food_inventory_stocks (current stock)
-                $beginQtySmall = 0;
-                $beginQtyMedium = 0;
-                $beginQtyLarge = 0;
-                
-                if ($beginStock) {
-                    $beginQtySmall = (float) ($beginStock->saldo_qty_small ?? 0);
-                    $beginQtyMedium = (float) ($beginStock->saldo_qty_medium ?? 0);
-                    $beginQtyLarge = (float) ($beginStock->saldo_qty_large ?? 0);
-                } else {
-                    // Fallback: ambil dari current stock berdasarkan warehouse_outlet_id yang spesifik
-                    // Pastikan filter berdasarkan warehouse_outlet_id yang dipilih
-                    $currentStock = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $item->inventory_item_id)
-                        ->where('id_outlet', $outletId)
-                        ->where('warehouse_outlet_id', $warehouseOutletId) // Filter spesifik warehouse
-                        ->select('qty_small', 'qty_medium', 'qty_large', 'warehouse_outlet_id')
-                        ->first();
-                    
-                    if ($currentStock) {
-                        $beginQtySmall = (float) ($currentStock->qty_small ?? 0);
-                        $beginQtyMedium = (float) ($currentStock->qty_medium ?? 0);
-                        $beginQtyLarge = (float) ($currentStock->qty_large ?? 0);
-                    } else {
-                        // Jika tidak ada stock sama sekali untuk warehouse ini, set ke 0
-                        $beginQtySmall = 0;
-                        $beginQtyMedium = 0;
-                        $beginQtyLarge = 0;
+                $beginInventoryFromOpname[$d->item_id] = [
+                    'qty_small' => (float) ($d->qty_physical_small ?? 0),
+                    'qty_medium' => (float) ($d->qty_physical_medium ?? 0),
+                    'qty_large' => (float) ($d->qty_physical_large ?? 0),
+                ];
+            }
+            
+            // 9. Fallback Begin: jika tidak ada stock opname bulan lalu, ambil dari upload saldo awal (outlet_food_inventory_cards, reference_type=initial_balance)
+            $beginFromUpload = [];
+            $inventoryItemIds = $inventoryItems->pluck('inventory_item_id')->toArray();
+            if (!empty($inventoryItemIds)) {
+                $uploadCards = DB::table('outlet_food_inventory_cards as card')
+                    ->where('card.reference_type', 'initial_balance')
+                    ->where('card.id_outlet', $outletId)
+                    ->where('card.warehouse_outlet_id', $warehouseOutletId)
+                    ->where('card.date', '<=', $tanggalAkhirBulanSebelumnya)
+                    ->whereIn('card.inventory_item_id', $inventoryItemIds)
+                    ->orderBy('card.date', 'desc')
+                    ->orderBy('card.created_at', 'desc')
+                    ->select('card.inventory_item_id', 'card.saldo_qty_small', 'card.saldo_qty_medium', 'card.saldo_qty_large')
+                    ->get();
+                foreach ($uploadCards as $r) {
+                    if (!isset($beginFromUpload[$r->inventory_item_id])) {
+                        $beginFromUpload[$r->inventory_item_id] = [
+                            'qty_small' => (float) ($r->saldo_qty_small ?? 0),
+                            'qty_medium' => (float) ($r->saldo_qty_medium ?? 0),
+                            'qty_large' => (float) ($r->saldo_qty_large ?? 0),
+                        ];
                     }
                 }
+            }
+            
+            foreach ($inventoryItems as $item) {
+                // Begin Inventory = 1) Last Stock Opname Physical bulan lalu, 2) Fallback: upload saldo awal (initial_balance), 3) 0
+                $itemBegin = $beginInventoryFromOpname[$item->item_id] ?? $beginFromUpload[$item->inventory_item_id] ?? ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0];
+                $beginQtySmall = (float) ($itemBegin['qty_small'] ?? 0);
+                $beginQtyMedium = (float) ($itemBegin['qty_medium'] ?? 0);
+                $beginQtyLarge = (float) ($itemBegin['qty_large'] ?? 0);
                 
                 // Format UOM dengan konversi dari table items (array untuk ditampilkan vertikal)
                 $uomParts = [];
@@ -788,7 +785,7 @@ class OutletStockReportController extends Controller
                     $stockOpnameDisplay = ['0'];
                 }
                 
-                // Hitung selisih antara last stock dan stock opname physical
+                // Hitung selisih = Stock Opname Physical - Last Stock
                 // Hanya tampilkan jika ada data stock opname (stock opname > 0)
                 $hasStockOpnameData = ($stockOpnameSmall > 0 || $stockOpnameMedium > 0 || $stockOpnameLarge > 0);
                 
@@ -798,9 +795,9 @@ class OutletStockReportController extends Controller
                 $differenceDisplay = [];
                 
                 if ($hasStockOpnameData) {
-                    $differenceSmall = $lastQtySmall - $stockOpnameSmall;
-                    $differenceMedium = $lastQtyMedium - $stockOpnameMedium;
-                    $differenceLarge = $lastQtyLarge - $stockOpnameLarge;
+                    $differenceSmall = $stockOpnameSmall - $lastQtySmall;
+                    $differenceMedium = $stockOpnameMedium - $lastQtyMedium;
+                    $differenceLarge = $stockOpnameLarge - $lastQtyLarge;
                     
                     // Hitung MAC untuk selisih (gunakan MAC dari Last Stock)
                     $differenceMacSmall = $lastMacSmall;

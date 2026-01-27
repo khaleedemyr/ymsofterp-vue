@@ -344,4 +344,93 @@ class OutletController extends Controller
         
         return response()->json($outlet);
     }
+
+    /**
+     * Get nearest outlets based on member location (for Member App).
+     * Route: GET /api/mobile/member/outlets/nearest?lat=...&long=...&limit=...
+     */
+    public function getNearestOutlets(Request $request)
+    {
+        try {
+            $request->validate([
+                'lat' => 'required|numeric|between:-90,90',
+                'long' => 'required|numeric|between:-180,180',
+                'limit' => 'nullable|integer|min:1|max:20',
+            ]);
+
+            $memberLat = (float) $request->input('lat');
+            $memberLong = (float) $request->input('long');
+            $limit = (int) ($request->input('limit', 5));
+
+            \Log::info('Get Nearest Outlets', ['lat' => $memberLat, 'long' => $memberLong, 'limit' => $limit]);
+
+            $outlets = DB::select("
+                SELECT 
+                    o.id_outlet,
+                    o.nama_outlet,
+                    o.lokasi,
+                    o.lat,
+                    o.`long`,
+                    o.brand,
+                    o.id_brand,
+                    b.logo AS brand_logo,
+                    mab.logo AS background_logo,
+                    (
+                        6371 * acos(
+                            cos(radians(?)) * 
+                            cos(radians(CAST(o.lat AS DECIMAL(10, 8)))) * 
+                            cos(radians(CAST(o.`long` AS DECIMAL(10, 8))) - radians(?)) + 
+                            sin(radians(?)) * 
+                            sin(radians(CAST(o.lat AS DECIMAL(10, 8))))
+                        )
+                    ) AS distance
+                FROM tbl_data_outlet o
+                LEFT JOIN brands b ON o.id_brand = b.id
+                LEFT JOIN member_apps_brands mab ON o.id_outlet = mab.outlet_id AND mab.is_active = 1
+                WHERE o.status = 'A'
+                    AND o.is_outlet = 1
+                    AND o.is_fc = 0
+                    AND o.lat IS NOT NULL
+                    AND o.`long` IS NOT NULL
+                    AND o.lat != ''
+                    AND o.`long` != ''
+                    AND CAST(o.lat AS DECIMAL(10, 8)) BETWEEN -90 AND 90
+                    AND CAST(o.`long` AS DECIMAL(10, 8)) BETWEEN -180 AND 180
+                HAVING distance IS NOT NULL
+                ORDER BY distance ASC
+                LIMIT ?
+            ", [$memberLat, $memberLong, $memberLat, $limit]);
+
+            $formattedOutlets = collect($outlets)->map(function ($outlet) {
+                $brandLogoUrl = null;
+                if (!empty($outlet->brand_logo)) {
+                    $brandLogoUrl = 'https://ymsofterp.com/storage/' . ltrim($outlet->brand_logo, '/');
+                }
+                $backgroundLogoUrl = null;
+                if (!empty($outlet->background_logo)) {
+                    $backgroundLogoUrl = 'https://ymsofterp.com/storage/' . ltrim($outlet->background_logo, '/');
+                }
+                return [
+                    'id_outlet' => $outlet->id_outlet,
+                    'nama_outlet' => $outlet->nama_outlet,
+                    'alamat' => $outlet->lokasi,
+                    'lat' => $outlet->lat,
+                    'long' => $outlet->long,
+                    'brand' => $outlet->brand,
+                    'id_brand' => $outlet->id_brand,
+                    'brand_logo' => $brandLogoUrl,
+                    'background_logo' => $backgroundLogoUrl,
+                    'distance' => round((float) $outlet->distance, 2),
+                ];
+            });
+
+            return response()->json(['success' => true, 'data' => $formattedOutlets->toArray()]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Get Nearest Outlets Validation Error', ['errors' => $e->errors()]);
+            return response()->json(['success' => false, 'message' => 'Validation error', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            \Log::error('Get Nearest Outlets Error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Failed to get nearest outlets', 'error' => $e->getMessage()], 500);
+        }
+    }
 } 

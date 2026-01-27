@@ -900,9 +900,9 @@ Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFlo
 
 Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
 
-// API route untuk mobile app
+// API route untuk mobile app (approval.app.auth agar auth()->id() terisi → created_by tersimpan)
 Route::get('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'apiIndex']);
-Route::post('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'store']);
+Route::post('/api/packing-list', [\App\Http\Controllers\PackingListController::class, 'store'])->middleware('approval.app.auth');
 Route::get('/api/packing-list/create', [\App\Http\Controllers\PackingListController::class, 'apiCreate']);
 
 Route::get('/api/packing-list/available-items', [\App\Http\Controllers\PackingListController::class, 'availableItems']);
@@ -915,6 +915,8 @@ Route::get('/api/packing-list/warehouse-divisions', [\App\Http\Controllers\Packi
 Route::get('/api/packing-list/test-matrix-data', [\App\Http\Controllers\PackingListController::class, 'testMatrixData']);
 Route::get('/api/packing-list/unpicked-floor-orders', [\App\Http\Controllers\PackingListController::class, 'unpickedFloorOrders']);
 Route::get('/api/packing-list/export-unpicked-floor-orders', [\App\Http\Controllers\PackingListController::class, 'exportUnpickedFloorOrders']);
+Route::get('/api/packing-list/{id}', [\App\Http\Controllers\PackingListController::class, 'apiShow']);
+Route::delete('/api/packing-list/{id}', [\App\Http\Controllers\PackingListController::class, 'destroy'])->middleware('approval.app.auth');
 
 // Food Stock Balance Routes
 Route::middleware(['auth', 'verified'])->group(function () {

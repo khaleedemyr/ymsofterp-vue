@@ -755,6 +755,94 @@ class PackingListController extends Controller
         ]);
     }
 
+    /**
+     * API endpoint untuk detail packing list (untuk mobile app)
+     */
+    public function apiShow($id)
+    {
+        try {
+            $pl = FoodPackingList::with([
+                'warehouseDivision',
+                'floorOrder.outlet',
+                'floorOrder.requester',
+                'creator',
+                'items.floorOrderItem.item',
+            ])->findOrFail($id);
+
+            $toIso = function ($v) {
+                if ($v === null) return null;
+                if ($v instanceof \DateTimeInterface) return $v->format('c');
+                return \Carbon\Carbon::parse($v)->format('c');
+            };
+
+            $packingList = [
+                'id' => $pl->id,
+                'packing_number' => $pl->packing_number,
+                'created_at' => $toIso($pl->created_at),
+                'status' => $pl->status,
+                'food_floor_order_id' => $pl->food_floor_order_id,
+                'warehouse_division_id' => $pl->warehouse_division_id,
+                'reason' => $pl->reason,
+                'created_by' => $pl->created_by,
+                'floor_order' => $pl->floorOrder ? [
+                    'id' => $pl->floorOrder->id,
+                    'order_number' => $pl->floorOrder->order_number,
+                    'tanggal' => $toIso($pl->floorOrder->tanggal),
+                    'arrival_date' => $toIso($pl->floorOrder->arrival_date),
+                    'status' => $pl->floorOrder->status,
+                    'id_outlet' => $pl->floorOrder->id_outlet,
+                    'user_id' => $pl->floorOrder->user_id,
+                    'outlet' => $pl->floorOrder->outlet ? [
+                        'id_outlet' => $pl->floorOrder->outlet->id_outlet,
+                        'nama_outlet' => $pl->floorOrder->outlet->nama_outlet,
+                    ] : null,
+                    'requester' => $pl->floorOrder->requester ? [
+                        'id' => $pl->floorOrder->requester->id,
+                        'nama_lengkap' => $pl->floorOrder->requester->nama_lengkap,
+                    ] : null,
+                ] : null,
+                'warehouse_division' => $pl->warehouseDivision ? [
+                    'id' => $pl->warehouseDivision->id,
+                    'name' => $pl->warehouseDivision->name,
+                    'warehouse_id' => $pl->warehouseDivision->warehouse_id,
+                ] : null,
+                'creator' => $pl->creator ? [
+                    'id' => $pl->creator->id,
+                    'nama_lengkap' => $pl->creator->nama_lengkap,
+                ] : null,
+                'items' => $pl->items->map(function ($it) {
+                    $foi = $it->floorOrderItem;
+                    return [
+                        'id' => $it->id,
+                        'packing_list_id' => $it->packing_list_id,
+                        'food_floor_order_item_id' => $it->food_floor_order_item_id,
+                        'qty' => (float) $it->qty,
+                        'unit' => $it->unit,
+                        'source' => $it->source,
+                        'reason' => $it->reason,
+                        'floor_order_item' => $foi ? [
+                            'id' => $foi->id,
+                            'floor_order_id' => $foi->floor_order_id,
+                            'item_id' => $foi->item_id,
+                            'qty' => (float) $foi->qty,
+                            'unit' => $foi->unit,
+                            'item' => $foi->item ? [
+                                'id' => $foi->item->id,
+                                'name' => $foi->item->name,
+                            ] : null,
+                        ] : null,
+                    ];
+                })->values()->toArray(),
+            ];
+
+            return response()->json(['packingList' => $packingList]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Packing list tidak ditemukan', 'error' => 'Not found'], 404);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal memuat detail packing list', 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function edit($id)
     {
         return "Packing List Edit: $id";
