@@ -1321,7 +1321,11 @@ class PosOrderController extends Controller
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
-                throw $e;
+                // OPTIMASI: Return JSON error instead of throwing exception (to avoid HTML error page)
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to void order: ' . $e->getMessage()
+                ], 500);
             }
 
         } catch (\Exception $e) {

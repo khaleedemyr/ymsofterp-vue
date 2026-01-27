@@ -415,7 +415,9 @@ class PurchaseRequisitionController extends Controller
             
             // OPTIMASI: Get PO details from batch loaded data
             if ($poCount > 0) {
-                $poDetails = $allPoDetails->get($pr->id, collect())->toArray();
+                $poDetails = $allPoDetails->get($pr->id, []);
+                // Ensure it's an array (it might already be an array from the batch load)
+                $poDetails = is_array($poDetails) ? $poDetails : collect($poDetails)->toArray();
                 $pr->po_details = $poDetails;
                 $pr->po_numbers = array_column($poDetails, 'number');
             } else {
