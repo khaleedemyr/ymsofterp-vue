@@ -117,6 +117,12 @@ const isSelectingWarehouseStockAdjustmentApprovals = ref(false);
 const loadingWarehouseStockAdjustmentApprovals = ref(false);
 const showWarehouseStockAdjustmentApprovalModal = ref(false);
 const selectedWarehouseStockAdjustmentApproval = ref(null);
+const showAllWarehouseStockAdjustmentModal = ref(false);
+// Filters for All Warehouse Stock Adjustment Modal
+const warehouseStockAdjustmentSearchQuery = ref('');
+const warehouseStockAdjustmentTypeFilter = ref('');
+const warehouseStockAdjustmentDateFilter = ref('');
+const warehouseStockAdjustmentSortBy = ref('newest');
 
 const poOpsApprovalBudgetInfo = ref(null);
 // PO Ops - All list modal
@@ -2187,6 +2193,68 @@ function showRejectWarehouseStockAdjustmentModal(adjustmentId) {
             rejectWarehouseStockAdjustment(adjustmentId, result.value);
         }
     });
+}
+
+// Open all Warehouse Stock Adjustment modal
+function openAllWarehouseStockAdjustmentModal() {
+    showAllWarehouseStockAdjustmentModal.value = true;
+}
+
+// Computed for filtered Warehouse Stock Adjustment approvals
+const filteredWarehouseStockAdjustmentApprovals = computed(() => {
+    let filtered = [...pendingWarehouseStockAdjustmentApprovals.value];
+    
+    // Search filter
+    if (warehouseStockAdjustmentSearchQuery.value) {
+        const query = warehouseStockAdjustmentSearchQuery.value.toLowerCase();
+        filtered = filtered.filter(adj => 
+            (adj.number || '').toLowerCase().includes(query) ||
+            (adj.warehouse?.name || '').toLowerCase().includes(query) ||
+            (adj.creator?.nama_lengkap || '').toLowerCase().includes(query) ||
+            (adj.type === 'in' ? 'stock in' : 'stock out').toLowerCase().includes(query)
+        );
+    }
+    
+    // Type filter
+    if (warehouseStockAdjustmentTypeFilter.value) {
+        filtered = filtered.filter(adj => adj.type === warehouseStockAdjustmentTypeFilter.value);
+    }
+    
+    // Date filter
+    if (warehouseStockAdjustmentDateFilter.value) {
+        const now = new Date();
+        if (warehouseStockAdjustmentDateFilter.value === 'today') {
+            filtered = filtered.filter(adj => {
+                const adjDate = new Date(adj.date);
+                return adjDate.toDateString() === now.toDateString();
+            });
+        } else if (warehouseStockAdjustmentDateFilter.value === 'week') {
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter(adj => new Date(adj.date) >= weekAgo);
+        } else if (warehouseStockAdjustmentDateFilter.value === 'month') {
+            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter(adj => new Date(adj.date) >= monthAgo);
+        }
+    }
+    
+    // Sort
+    if (warehouseStockAdjustmentSortBy.value === 'newest') {
+        filtered.sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at));
+    } else if (warehouseStockAdjustmentSortBy.value === 'oldest') {
+        filtered.sort((a, b) => new Date(a.date || a.created_at) - new Date(b.date || b.created_at));
+    } else if (warehouseStockAdjustmentSortBy.value === 'number') {
+        filtered.sort((a, b) => (a.number || '').localeCompare(b.number || ''));
+    }
+    
+    return filtered;
+});
+
+// Clear Warehouse Stock Adjustment filters
+function clearWarehouseStockAdjustmentFilters() {
+    warehouseStockAdjustmentSearchQuery.value = '';
+    warehouseStockAdjustmentTypeFilter.value = '';
+    warehouseStockAdjustmentDateFilter.value = '';
+    warehouseStockAdjustmentSortBy.value = 'newest';
 }
 
 // Category Cost Outlet approval functions
@@ -6413,7 +6481,7 @@ watch(locale, () => {
                             
                             <!-- Show more button if there are more than 3 -->
                             <div v-if="pendingWarehouseStockAdjustmentApprovals.length > 3" class="text-center pt-2">
-                                <button class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
+                                <button @click="openAllWarehouseStockAdjustmentModal" class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
                                     Lihat {{ pendingWarehouseStockAdjustmentApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
@@ -7906,6 +7974,119 @@ watch(locale, () => {
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Warehouse Stock Adjustment Approval Modal -->
+        <div v-if="showAllWarehouseStockAdjustmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllWarehouseStockAdjustmentModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white">
+                        <i class="fa fa-warehouse mr-2 text-indigo-500"></i>
+                        Semua Warehouse Stock Adjustment Approval
+                    </h3>
+                    <button @click="showAllWarehouseStockAdjustmentModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Cari</label>
+                            <input v-model="warehouseStockAdjustmentSearchQuery" type="text" placeholder="No, Warehouse, atau Pembuat"
+                                   class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-600 dark:text-gray-100" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tipe</label>
+                            <select v-model="warehouseStockAdjustmentTypeFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="in">Stock In</option>
+                                <option value="out">Stock Out</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Tanggal</label>
+                            <select v-model="warehouseStockAdjustmentDateFilter"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="">Semua</option>
+                                <option value="today">Hari ini</option>
+                                <option value="week">7 hari terakhir</option>
+                                <option value="month">30 hari terakhir</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Urutkan</label>
+                            <select v-model="warehouseStockAdjustmentSortBy"
+                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-600 dark:text-gray-100">
+                                <option value="newest">Terbaru</option>
+                                <option value="oldest">Terlama</option>
+                                <option value="number">Nomor</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button @click="clearWarehouseStockAdjustmentFilters" 
+                                class="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <i class="fa-solid fa-times mr-1"></i>Reset Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="loadingWarehouseStockAdjustmentApprovals" class="text-center py-8">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-400">Memuat data...</p>
+                </div>
+
+                <div v-else>
+                    <div v-if="filteredWarehouseStockAdjustmentApprovals.length === 0" class="text-center py-12 text-gray-500 dark:text-gray-400">
+                        <i class="fa fa-inbox text-4xl mb-3"></i>
+                        <p class="text-lg font-medium">Tidak ada approval ditemukan</p>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                            Menampilkan {{ filteredWarehouseStockAdjustmentApprovals.length }} dari {{ pendingWarehouseStockAdjustmentApprovals.length }} Warehouse Stock Adjustment
+                        </div>
+                        <div v-for="adj in filteredWarehouseStockAdjustmentApprovals" :key="'all-warehouse-adj-' + adj.id"
+                            @click="showWarehouseStockAdjustmentApprovalDetails(adj.id); showAllWarehouseStockAdjustmentModal = false"
+                            class="p-4 rounded-lg cursor-pointer transition-all duration-200 hover:scale-[1.02] bg-gray-50 dark:bg-gray-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-600">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1">
+                                    <div class="font-bold text-lg text-gray-900 dark:text-white mb-1">
+                                        {{ adj.number }}
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        <div class="text-gray-600 dark:text-gray-400">
+                                            <i class="fa fa-tag mr-1 text-indigo-500"></i>
+                                            <span :class="adj.type === 'in' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'">
+                                                {{ adj.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                                            </span>
+                                        </div>
+                                        <div class="text-gray-600 dark:text-gray-400">
+                                            <i class="fa fa-warehouse mr-1 text-blue-500"></i>{{ adj.warehouse?.name || 'N/A' }}
+                                        </div>
+                                        <div class="text-gray-600 dark:text-gray-400">
+                                            <i class="fa fa-user mr-1 text-green-500"></i>{{ adj.creator?.nama_lengkap || 'N/A' }}
+                                        </div>
+                                        <div class="text-gray-600 dark:text-gray-400">
+                                            <i class="fa fa-calendar mr-1 text-purple-500"></i>{{ formatDate(adj.date) }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="ml-4 text-right">
+                                    <div class="text-sm text-indigo-600 dark:text-indigo-400 font-medium mb-1">
+                                        <i class="fa fa-user-check mr-1"></i>{{ adj.approver_name || 'Approval' }}
+                                    </div>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        {{ adj.status }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
