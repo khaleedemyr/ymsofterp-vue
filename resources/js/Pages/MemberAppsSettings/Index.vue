@@ -2573,6 +2573,7 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">PDF Menu</label>
               <input @change="handleBrandPdfMenuChange" type="file" accept=".pdf" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <p class="text-xs text-gray-500 mt-1">Max size: 50MB. Format: PDF</p>
               <div v-if="editingBrand && editingBrand.pdf_menu" class="mt-2">
                 <a :href="getImageUrl(editingBrand.pdf_menu)" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">
                   <i class="fa-solid fa-file-pdf mr-1"></i>Current PDF Menu
@@ -2582,6 +2583,7 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">PDF Monthly Promotion</label>
               <input @change="handleBrandPdfNewDiningChange" type="file" accept=".pdf" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <p class="text-xs text-gray-500 mt-1">Max size: 50MB. Format: PDF</p>
               <div v-if="editingBrand && editingBrand.pdf_new_dining_experience" class="mt-2">
                 <a :href="getImageUrl(editingBrand.pdf_new_dining_experience)" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">
                   <i class="fa-solid fa-file-pdf mr-1"></i>Current PDF Monthly Promotion
@@ -4161,11 +4163,37 @@ const handleBrandLogoChange = (event) => {
 }
 
 const handleBrandPdfMenuChange = (event) => {
-  brandForm.value.pdf_menu = event.target.files[0]
+  const file = event.target.files[0]
+  if (file) {
+    if (file.size > 50 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: 'File too large',
+        text: 'PDF Menu size must be less than 50MB',
+        confirmButtonText: 'OK'
+      })
+      event.target.value = ''
+      return
+    }
+    brandForm.value.pdf_menu = file
+  }
 }
 
 const handleBrandPdfNewDiningChange = (event) => {
-  brandForm.value.pdf_new_dining_experience = event.target.files[0]
+  const file = event.target.files[0]
+  if (file) {
+    if (file.size > 50 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: 'File too large',
+        text: 'PDF Monthly Promotion size must be less than 50MB',
+        confirmButtonText: 'OK'
+      })
+      event.target.value = ''
+      return
+    }
+    brandForm.value.pdf_new_dining_experience = file
+  }
 }
 
 const handleBrandGalleryChange = (event) => {
