@@ -468,6 +468,14 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('api.approval-app.notifications.mark-read');
         Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('api.approval-app.notifications.mark-all-read');
         Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.approval-app.notifications.unread-count');
+        
+        // Food Good Receive routes
+        Route::get('/food-good-receives', [\App\Http\Controllers\FoodGoodReceiveController::class, 'index']);
+        Route::post('/food-good-receives', [\App\Http\Controllers\FoodGoodReceiveController::class, 'store']);
+        Route::get('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'show']);
+        Route::put('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'update']);
+        Route::delete('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'destroy']);
+        Route::post('/food-good-receives/fetch-po', [\App\Http\Controllers\FoodGoodReceiveController::class, 'fetchPO']);
     });
 });
 

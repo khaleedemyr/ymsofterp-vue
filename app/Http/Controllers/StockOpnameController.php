@@ -238,16 +238,13 @@ class StockOpnameController extends Controller
             // Generate opname number
             $opnameNumber = $this->generateOpnameNumber();
 
-            // Determine status: if autosave, keep as DRAFT; if manual save, set to SAVED
-            $status = ($request->has('autosave') && $request->autosave) ? 'DRAFT' : 'SAVED';
-
-            // Create stock opname
+            // Create stock opname with DRAFT status
             $stockOpname = StockOpname::create([
                 'opname_number' => $opnameNumber,
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'opname_date' => $validated['opname_date'],
-                'status' => $status,
+                'status' => 'DRAFT',
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => $user->id,
             ]);
@@ -547,10 +544,10 @@ class StockOpnameController extends Controller
             abort(403, 'Anda tidak memiliki akses untuk stock opname ini.');
         }
 
-        // Only allow editing if status is DRAFT (not SAVED or other statuses)
+        // Only allow editing if status is DRAFT
         if ($stockOpname->status !== 'DRAFT') {
             return redirect()->route('stock-opnames.show', $stockOpname->id)
-                           ->with('error', 'Stock opname hanya dapat diedit jika belum disimpan. Setelah klik tombol Simpan Draft, data tidak dapat diedit lagi.');
+                           ->with('error', 'Stock opname hanya dapat diedit jika status masih DRAFT.');
         }
 
         // Get outlets
@@ -635,9 +632,9 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk stock opname ini.']);
         }
 
-        // Only allow editing if status is DRAFT (not SAVED or other statuses)
+        // Only allow editing if status is DRAFT
         if ($stockOpname->status !== 'DRAFT') {
-            return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika belum disimpan. Setelah klik tombol Simpan Draft, data tidak dapat diedit lagi.']);
+            return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika status masih DRAFT.']);
         }
 
         // For autosave, allow empty items array
@@ -672,15 +669,12 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
 
-            // Determine status: if autosave, keep as DRAFT; if manual save, set to SAVED
-            $status = ($request->has('autosave') && $request->autosave) ? 'DRAFT' : 'SAVED';
-
-            // Update stock opname header
+            // Update stock opname header (keep DRAFT status)
             $stockOpname->update([
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'opname_date' => $validated['opname_date'],
-                'status' => $status,
+                'status' => 'DRAFT',
                 'notes' => $validated['notes'] ?? null,
                 'updated_by' => $user->id,
             ]);
@@ -962,7 +956,7 @@ class StockOpnameController extends Controller
         }
 
         if (!$stockOpname->canBeSubmitted()) {
-            return back()->withErrors(['error' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT atau SAVED dan ada items.']);
+            return back()->withErrors(['error' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT dan ada items.']);
         }
 
         $validated = $request->validate([
@@ -1451,7 +1445,7 @@ class StockOpnameController extends Controller
                 'outlet_id' => $outletId,
                 'warehouse_outlet_id' => $warehouseOutletId,
                 'opname_date' => $parsed['opname_date'],
-                'status' => 'SAVED',
+                'status' => 'DRAFT',
                 'notes' => $parsed['notes'] ?? null,
                 'created_by' => $user->id,
             ]);

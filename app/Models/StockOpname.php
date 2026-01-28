@@ -111,7 +111,7 @@ class StockOpname extends Model
 
     public function canBeSubmitted()
     {
-        return in_array($this->status, ['DRAFT', 'SAVED']) && $this->items()->count() > 0;
+        return $this->status === 'DRAFT' && $this->items()->count() > 0;
     }
 
     public function canBeProcessed()

@@ -23,6 +23,10 @@ class FoodGoodReceiveController extends Controller
                 'gr.receive_date',
                 'gr.notes',
                 'gr.received_by',
+                'gr.supplier_id',
+                'gr.created_at',
+                'gr.updated_at',
+                'po.id as po_id',
                 'po.number as po_number',
                 's.name as supplier_name',
                 'u.nama_lengkap as received_by_name'
@@ -44,6 +48,61 @@ class FoodGoodReceiveController extends Controller
         if ($request->to) {
             $query->whereDate('gr.receive_date', '<=', $request->to);
         }
+        
+        // Check if request wants JSON (from API)
+        if ($request->expectsJson() || $request->is('api/*')) {
+            $perPage = $request->input('per_page', 20);
+            $list = $query->orderByDesc('gr.created_at')->paginate($perPage);
+            
+            // Load items for each good receive
+            $goodReceivesWithItems = $list->map(function($gr) {
+                $items = DB::table('food_good_receive_items as gri')
+                    ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+                    ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+                    ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+                    ->select(
+                        'gri.id',
+                        'gri.good_receive_id',
+                        'gri.item_id',
+                        'i.name as item_name',
+                        'gri.qty_ordered',
+                        'gri.qty_received',
+                        'gri.unit_id',
+                        'u.name as unit_name',
+                        'gri.notes',
+                        'gri.created_at',
+                        'gri.updated_at'
+                    )
+                    ->where('gri.good_receive_id', $gr->id)
+                    ->get();
+                
+                return (object)[
+                    'id' => $gr->id,
+                    'gr_number' => $gr->gr_number,
+                    'receive_date' => $gr->receive_date,
+                    'po_id' => $gr->po_id,
+                    'po_number' => $gr->po_number,
+                    'supplier_id' => $gr->supplier_id,
+                    'supplier_name' => $gr->supplier_name,
+                    'received_by' => $gr->received_by,
+                    'received_by_name' => $gr->received_by_name,
+                    'notes' => $gr->notes,
+                    'items' => $items,
+                    'created_at' => $gr->created_at,
+                    'updated_at' => $gr->updated_at,
+                ];
+            });
+            
+            return response()->json([
+                'data' => $goodReceivesWithItems,
+                'current_page' => $list->currentPage(),
+                'last_page' => $list->lastPage(),
+                'per_page' => $list->perPage(),
+                'total' => $list->total(),
+            ]);
+        }
+        
+        // Return inertia for web
         $list = $query->orderByDesc('gr.created_at')->paginate(10)->withQueryString();
         return inertia('FoodGoodReceive/Index', [
             'goodReceives' => $list,
@@ -384,7 +443,14 @@ class FoodGoodReceiveController extends Controller
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->select(
                 'gr.id',
+                'gr.gr_number',
                 'gr.receive_date',
+                'gr.po_id',
+                'gr.supplier_id',
+                'gr.received_by',
+                'gr.notes',
+                'gr.created_at',
+                'gr.updated_at',
                 'po.number as po_number',
                 's.name as supplier_name',
                 'u.nama_lengkap as received_by_name'
@@ -400,9 +466,16 @@ class FoodGoodReceiveController extends Controller
             ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
             ->select(
                 'gri.id',
+                'gri.good_receive_id',
+                'gri.item_id',
                 'i.name as item_name',
+                'gri.qty_ordered',
                 'gri.qty_received',
+                'gri.unit_id',
                 'u.name as unit_name',
+                'gri.notes',
+                'gri.created_at',
+                'gri.updated_at',
                 'poi.price'
             )
             ->where('gri.good_receive_id', $id)

@@ -263,7 +263,6 @@ function formatDate(date) {
 function getStatusClass(status) {
   const classes = {
     DRAFT: 'bg-gray-100 text-gray-700 border border-gray-300',
-    SAVED: 'bg-blue-100 text-blue-700 border border-blue-300',
     SUBMITTED: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
     APPROVED: 'bg-green-100 text-green-700 border border-green-300',
     REJECTED: 'bg-red-100 text-red-700 border border-red-300',
@@ -275,7 +274,6 @@ function getStatusClass(status) {
 function getStatusIcon(status) {
   const icons = {
     DRAFT: 'fa-solid fa-file',
-    SAVED: 'fa-solid fa-save',
     SUBMITTED: 'fa-solid fa-paper-plane',
     APPROVED: 'fa-solid fa-check-circle',
     REJECTED: 'fa-solid fa-times-circle',
