@@ -326,19 +326,7 @@ class StockOpnameController extends Controller
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
 
-                // Validate: if there's a difference, reason is required
-                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
-                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
-                
-                if ($hasDifference && !$hasReason) {
-                    // Skip autosave validation for reason
-                    if (!$request->has('autosave') || !$request->autosave) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
-                        ]);
-                    }
-                }
+                // Reason is optional now (not required even if there's a difference)
 
                 // Calculate value adjustment (using MAC for small unit)
                 $valueAdjustment = $qtyDiffSmall * $mac;
@@ -745,17 +733,7 @@ class StockOpnameController extends Controller
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
 
-                $hasDifference = abs($qtyDiffSmall) > 0.01 || abs($qtyDiffMedium) > 0.01 || abs($qtyDiffLarge) > 0.01;
-                $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
-                
-                if ($hasDifference && !$hasReason) {
-                    if (!$request->has('autosave') || !$request->autosave) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'error' => 'Alasan wajib diisi jika ada selisih antara qty system dan qty physical.'
-                        ]);
-                    }
-                }
+                // Reason is optional now (not required even if there's a difference)
 
                 $valueAdjustment = $qtyDiffSmall * $mac;
                 
@@ -1678,21 +1656,7 @@ class StockOpnameController extends Controller
             $mediumUnitName = $rec->medium_unit_name ?? '';
             $largeUnitName = $rec->large_unit_name ?? '';
 
-            if ($hasDiff && $alasan === '') {
-                $out['item_rows'][] = [
-                    'excel_row' => $excelRow,
-                    'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
-                    'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
-                    'inventory_item_id' => $rec->inventory_item_id,
-                    'item_name' => $itemName, 'small_unit_name' => $smallUnitName, 'medium_unit_name' => $mediumUnitName, 'large_unit_name' => $largeUnitName,
-                    'qty_system_small' => $qtySystemSmall, 'qty_system_medium' => $qtySystemMedium, 'qty_system_large' => $qtySystemLarge,
-                    'mac' => (float) ($rec->mac ?? 0),
-                    'qty_physical_small' => $qtyPhysicalSmall, 'qty_physical_medium' => $qtyPhysicalMedium, 'qty_physical_large' => $qtyPhysicalLarge,
-                    'small_conversion_qty' => $smallConv, 'medium_conversion_qty' => $mediumConv,
-                    'error' => 'Ada selisih qty. Kolom Alasan wajib diisi.',
-                ];
-                continue;
-            }
+            // Reason is optional now (not required even if there's a difference)
 
             $out['item_rows'][] = [
                 'excel_row' => $excelRow,
