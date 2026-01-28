@@ -109,6 +109,15 @@ const selectedAllContraBonApprovals = ref(new Set());
 const loadingStockAdjustmentApprovals = ref(false);
 const showStockAdjustmentApprovalModal = ref(false);
 const selectedStockAdjustmentApproval = ref(null);
+
+// Warehouse Stock Adjustment approvals
+const pendingWarehouseStockAdjustmentApprovals = ref([]);
+const selectedWarehouseStockAdjustmentApprovals = ref(new Set());
+const isSelectingWarehouseStockAdjustmentApprovals = ref(false);
+const loadingWarehouseStockAdjustmentApprovals = ref(false);
+const showWarehouseStockAdjustmentApprovalModal = ref(false);
+const selectedWarehouseStockAdjustmentApproval = ref(null);
+
 const poOpsApprovalBudgetInfo = ref(null);
 // PO Ops - All list modal
 const showAllPoOpsModal = ref(false);
@@ -723,6 +732,11 @@ const stockAdjustmentApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const warehouseStockAdjustmentApprovalCount = computed(() => {
+    const count = pendingWarehouseStockAdjustmentApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const contraBonApprovalCount = computed(() => {
     const count = pendingContraBonApprovals.value.length;
     return count > 0 ? count : 0;
@@ -914,6 +928,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingContraBonApprovals.value = true;
     loadingCategoryCostApprovals.value = true;
     loadingStockAdjustmentApprovals.value = true;
+    loadingWarehouseStockAdjustmentApprovals.value = true;
     loadingStockOpnameApprovals.value = true;
     loadingOutletTransferApprovals.value = true;
     loadingWarehouseStockOpnameApprovals.value = true;
@@ -936,6 +951,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingContraBonApprovals.value = data.contra_bons || [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
             pendingStockAdjustmentApprovals.value = data.outlet_food_inventory_adjustment || [];
+            pendingWarehouseStockAdjustmentApprovals.value = data.food_inventory_adjustment || [];
             pendingStockOpnameApprovals.value = data.stock_opnames || [];
             pendingOutletTransferApprovals.value = data.outlet_transfer || [];
             pendingWarehouseStockOpnameApprovals.value = data.warehouse_stock_opnames || [];
@@ -950,6 +966,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
             loadingStockAdjustmentApprovals.value = false;
+            loadingWarehouseStockAdjustmentApprovals.value = false;
             loadingStockOpnameApprovals.value = false;
             loadingOutletTransferApprovals.value = false;
             loadingWarehouseStockOpnameApprovals.value = false;
@@ -967,6 +984,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
             loadingStockAdjustmentApprovals.value = false;
+            loadingWarehouseStockAdjustmentApprovals.value = false;
             loadingStockOpnameApprovals.value = false;
             loadingOutletTransferApprovals.value = false;
             loadingWarehouseStockOpnameApprovals.value = false;
@@ -1135,6 +1153,21 @@ async function loadPendingStockAdjustmentApprovals() {
         console.error('Error loading pending Stock Adjustment approvals:', error);
     } finally {
         loadingStockAdjustmentApprovals.value = false;
+    }
+}
+
+// Load Warehouse Stock Adjustment approvals
+async function loadPendingWarehouseStockAdjustmentApprovals() {
+    loadingWarehouseStockAdjustmentApprovals.value = true;
+    try {
+        const response = await axios.get('/api/food-inventory-adjustment/pending-approvals');
+        if (response.data.success) {
+            pendingWarehouseStockAdjustmentApprovals.value = response.data.adjustments || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending Warehouse Stock Adjustment approvals:', error);
+    } finally {
+        loadingWarehouseStockAdjustmentApprovals.value = false;
     }
 }
 
@@ -2065,6 +2098,93 @@ function showRejectStockAdjustmentModal(adjustmentId) {
     }).then((result) => {
         if (result.isConfirmed) {
             rejectStockAdjustment(adjustmentId, result.value);
+        }
+    });
+}
+
+// Warehouse Stock Adjustment approval functions
+async function showWarehouseStockAdjustmentApprovalDetails(adjustmentId) {
+    try {
+        const response = await axios.get(`/api/food-inventory-adjustment/${adjustmentId}/approval-details`);
+        if (response.data.success) {
+            selectedWarehouseStockAdjustmentApproval.value = response.data;
+            showWarehouseStockAdjustmentApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading Warehouse Stock Adjustment approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Warehouse Stock Adjustment', 'error');
+    }
+}
+
+async function approveWarehouseStockAdjustment(adjustmentId) {
+    try {
+        const result = await Swal.fire({
+            title: 'Setujui Warehouse Stock Adjustment?',
+            text: 'Tindakan ini akan meneruskan ke approver berikutnya.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Setujui',
+            cancelButtonText: 'Batal',
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#6B7280'
+        });
+        
+        if (!result.isConfirmed) return;
+        
+        const response = await axios.post(`/api/food-inventory-adjustment/${adjustmentId}/approve`, {
+            note: ''
+        });
+        
+        if (response.status === 200 || response.data?.success) {
+            Swal.fire('Success', 'Warehouse Stock Adjustment berhasil disetujui', 'success');
+            showWarehouseStockAdjustmentApprovalModal.value = false;
+            loadPendingWarehouseStockAdjustmentApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error approving Warehouse Stock Adjustment:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Warehouse Stock Adjustment', 'error');
+    }
+}
+
+async function rejectWarehouseStockAdjustment(adjustmentId, reason) {
+    try {
+        const response = await axios.post(`/api/food-inventory-adjustment/${adjustmentId}/reject`, {
+            rejection_reason: reason
+        });
+        
+        if (response.status === 200 || response.data?.success) {
+            Swal.fire('Success', 'Warehouse Stock Adjustment berhasil ditolak', 'success');
+            showWarehouseStockAdjustmentApprovalModal.value = false;
+            loadPendingWarehouseStockAdjustmentApprovals(); // Reload the list
+        }
+    } catch (error) {
+        console.error('Error rejecting Warehouse Stock Adjustment:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Warehouse Stock Adjustment', 'error');
+    }
+}
+
+function showRejectWarehouseStockAdjustmentModal(adjustmentId) {
+    Swal.fire({
+        title: 'Tolak Warehouse Stock Adjustment?',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: {
+            'aria-label': 'Masukkan alasan penolakan'
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan penolakan harus diisi!';
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectWarehouseStockAdjustment(adjustmentId, result.value);
         }
     });
 }
@@ -5008,6 +5128,7 @@ onMounted(async () => {
         loadPendingPoOpsApprovals();
         loadPendingCategoryCostApprovals();
         loadPendingStockAdjustmentApprovals();
+        loadPendingWarehouseStockAdjustmentApprovals();
         loadPendingContraBonApprovals();
         loadPendingStockOpnameApprovals();
         loadPendingOutletTransferApprovals();
@@ -6232,6 +6353,68 @@ watch(locale, () => {
                             <div v-if="pendingStockAdjustmentApprovals.length > 3" class="text-center pt-2">
                                 <button class="text-sm text-teal-500 hover:text-teal-700 font-medium">
                                     Lihat {{ pendingStockAdjustmentApprovals.length - 3 }} lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Warehouse Stock Adjustment Approval Section -->
+                <div v-if="warehouseStockAdjustmentApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-warehouse mr-2 text-indigo-500"></i>
+                                    Warehouse Stock Adjustment Approval
+                                </h3>
+                            </div>
+                            <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ warehouseStockAdjustmentApprovalCount }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingWarehouseStockAdjustmentApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <!-- Warehouse Stock Adjustment Approvals -->
+                            <div v-for="adj in pendingWarehouseStockAdjustmentApprovals.slice(0, 3)" :key="'warehouse-adj-approval-' + adj.id"
+                                @click="showWarehouseStockAdjustmentApprovalDetails(adj.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ adj.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ adj.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-warehouse mr-1 text-blue-500"></i>{{ adj.warehouse?.name || 'N/A' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ adj.creator?.nama_lengkap || 'N/A' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ formatDate(adj.date) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-indigo-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ adj.approver_name || 'Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Show more button if there are more than 3 -->
+                            <div v-if="pendingWarehouseStockAdjustmentApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
+                                    Lihat {{ pendingWarehouseStockAdjustmentApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
                         </div>
@@ -7586,6 +7769,140 @@ watch(locale, () => {
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
                     <button @click="showRejectStockAdjustmentModal(selectedStockAdjustmentApproval.adjustment.id)" 
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Warehouse Stock Adjustment Approval Detail Modal -->
+        <div v-if="showWarehouseStockAdjustmentApprovalModal && selectedWarehouseStockAdjustmentApproval && selectedWarehouseStockAdjustmentApproval.adjustment" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showWarehouseStockAdjustmentApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-warehouse mr-2 text-indigo-500"></i>
+                        Detail Warehouse Stock Adjustment
+                    </h3>
+                    <button @click="showWarehouseStockAdjustmentApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6" v-if="selectedWarehouseStockAdjustmentApproval.adjustment">
+                    <!-- Basic Information -->
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Number</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedWarehouseStockAdjustmentApproval.adjustment.number }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal</div>
+                                <div class="text-gray-900 dark:text-white">{{ formatDate(selectedWarehouseStockAdjustmentApproval.adjustment.date) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipe</div>
+                                <div class="text-gray-900 dark:text-white">
+                                    <span :class="selectedWarehouseStockAdjustmentApproval.adjustment.type === 'in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" class="px-2 py-1 rounded-full text-xs font-medium">
+                                        {{ selectedWarehouseStockAdjustmentApproval.adjustment.type === 'in' ? 'Stock In' : 'Stock Out' }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    {{ selectedWarehouseStockAdjustmentApproval.adjustment.status }}
+                                </span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Warehouse</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedWarehouseStockAdjustmentApproval.adjustment.warehouse?.name || 'N/A' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Dibuat Oleh</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedWarehouseStockAdjustmentApproval.adjustment.creator?.nama_lengkap || 'N/A' }}</div>
+                            </div>
+                        </div>
+                        <div v-if="selectedWarehouseStockAdjustmentApproval.adjustment.reason" class="mt-4">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Alasan / Catatan</div>
+                            <div class="text-gray-900 dark:text-white mt-1">{{ selectedWarehouseStockAdjustmentApproval.adjustment.reason }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Items -->
+                    <div v-if="selectedWarehouseStockAdjustmentApproval.items && selectedWarehouseStockAdjustmentApproval.items.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item Name</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedWarehouseStockAdjustmentApproval.items" :key="item.id">
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item?.name || 'N/A' }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item?.unit || '-' }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.note || '-' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Approval History -->
+                    <div v-if="selectedWarehouseStockAdjustmentApproval.approvers && selectedWarehouseStockAdjustmentApproval.approvers.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-users mr-2 text-blue-500"></i>
+                            Riwayat Approval
+                        </h4>
+                        <div class="space-y-3">
+                            <div v-for="approver in selectedWarehouseStockAdjustmentApproval.approvers" :key="approver.level"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border border-green-500">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Level {{ approver.level }}
+                                    </span>
+                                    <div>
+                                        <div class="text-xs text-blue-600 font-medium mb-1">{{ approver.role }}</div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ approver.approver?.nama_lengkap || 'N/A' }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ approver.approver?.email || 'N/A' }}</div>
+                                        <div v-if="approver.approver?.nama_jabatan" class="text-xs text-gray-500">{{ approver.approver.nama_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium text-green-600">
+                                        APPROVED
+                                    </div>
+                                    <div v-if="approver.approved_at" class="text-xs text-gray-500">
+                                        {{ new Date(approver.approved_at).toLocaleString('id-ID') }}
+                                    </div>
+                                    <div v-if="approver.note" class="text-xs text-gray-600 mt-1 italic max-w-xs">
+                                        "{{ approver.note }}"
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showWarehouseStockAdjustmentApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approveWarehouseStockAdjustment(selectedWarehouseStockAdjustmentApproval.adjustment.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectWarehouseStockAdjustmentModal(selectedWarehouseStockAdjustmentApproval.adjustment.id)" 
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>

@@ -51,6 +51,7 @@ class PendingApprovalController extends Controller
                 'approval' => [],
                 'outlet_internal_use_waste' => [],
                 'outlet_food_inventory_adjustment' => [],
+                'food_inventory_adjustment' => [],
                 'stock_opnames' => [],
                 'outlet_transfer' => [],
                 'warehouse_stock_opnames' => [],
@@ -158,6 +159,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Outlet Food Inventory Adjustment approvals: ' . $e->getMessage());
+            }
+
+            // 6b. Warehouse Food Inventory Adjustment
+            try {
+                $fiaController = app(\App\Http\Controllers\FoodInventoryAdjustmentController::class);
+                $fiaResponse = $fiaController->getPendingApprovals();
+                if ($fiaResponse->getStatusCode() === 200) {
+                    $fiaData = json_decode($fiaResponse->getContent(), true);
+                    $data['food_inventory_adjustment'] = $fiaData['data'] ?? $fiaData['adjustments'] ?? [];
+                    if ($limit > 0 && count($data['food_inventory_adjustment']) > $limit) {
+                        $data['food_inventory_adjustment'] = array_slice($data['food_inventory_adjustment'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Warehouse Food Inventory Adjustment approvals: ' . $e->getMessage());
             }
 
             // 7. Stock Opnames

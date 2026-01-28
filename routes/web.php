@@ -1105,6 +1105,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/outlet-food-inventory-adjustment/{id}/approve', [OutletFoodInventoryAdjustmentController::class, 'approve'])->name('outlet-food-inventory-adjustment.approve');
     Route::post('/outlet-food-inventory-adjustment/{id}/reject', [OutletFoodInventoryAdjustmentController::class, 'reject'])->name('outlet-food-inventory-adjustment.reject');
     Route::delete('/outlet-food-inventory-adjustment/{id}', [OutletFoodInventoryAdjustmentController::class, 'destroy'])->name('outlet-food-inventory-adjustment.destroy');
+    
+    // Warehouse Stock Adjustment approval routes (for web)
+    Route::get('/api/food-inventory-adjustment/pending-approvals', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'getPendingApprovals'])->name('food-inventory-adjustment.pending-approvals')->middleware('auth');
+    Route::get('/api/food-inventory-adjustment/{id}/approval-details', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'getApprovalDetails'])->name('food-inventory-adjustment.approval-details')->middleware('auth');
+    Route::post('/api/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve'])->name('food-inventory-adjustment.approve')->middleware('auth');
+    Route::post('/api/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject'])->name('food-inventory-adjustment.reject')->middleware('auth');
 });
 
 // Laporan Stok Akhir Outlet

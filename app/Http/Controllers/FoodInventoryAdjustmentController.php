@@ -452,6 +452,211 @@ class FoodInventoryAdjustmentController extends Controller
         }
     }
 
+    /**
+     * Get pending approvals for current user
+     */
+    public function getPendingApprovals()
+    {
+        try {
+            $user = Auth::user();
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+            $jabatan = $user->id_jabatan;
+            
+            \Log::info('Warehouse Stock Adjustment approvals check', [
+                'user_id' => $user->id,
+                'user_jabatan' => $jabatan,
+                'user_status' => $user->status,
+                'id_role' => $user->id_role,
+                'isSuperadmin' => $isSuperadmin
+            ]);
+            
+            // Query adjustments based on status
+            $query = FoodInventoryAdjustment::with(['warehouse', 'creator', 'items'])
+                ->whereIn('status', ['waiting_approval', 'waiting_ssd_manager', 'waiting_cost_control']);
+            
+            // Filter based on user role and warehouse (mirip logic di Show.vue)
+            if (!$isSuperadmin) {
+                $query->where(function($q) use ($jabatan) {
+                    // waiting_approval: Asisten SSD Manager (172) atau SSD Manager (161) untuk non-MK
+                    // waiting_approval: Sous Chef MK (179) untuk MK warehouse
+                    if (in_array($jabatan, [172, 161])) {
+                        // Asisten SSD Manager atau SSD Manager: non-MK warehouse, status waiting_approval atau waiting_ssd_manager
+                        $q->where(function($subQ) {
+                            $subQ->whereIn('status', ['waiting_approval', 'waiting_ssd_manager'])
+                                ->whereHas('warehouse', function($wh) {
+                                    $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                                });
+                        });
+                    }
+                    // Sous Chef MK (179): MK warehouse, status waiting_approval
+                    elseif ($jabatan === 179) {
+                        $q->where('status', 'waiting_approval')
+                            ->whereHas('warehouse', function($wh) {
+                                $wh->whereIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                            });
+                    }
+                    // Cost Control Manager (167): semua warehouse, status waiting_cost_control
+                    elseif ($jabatan === 167) {
+                        $q->where('status', 'waiting_cost_control');
+                    }
+                });
+            }
+            
+            $adjustments = $query->orderBy('created_at', 'desc')->get();
+            
+            \Log::info('Warehouse Stock Adjustment query result', [
+                'count' => $adjustments->count()
+            ]);
+            
+            // Transform data untuk response
+            $transformedAdjustments = $adjustments->map(function($adj) {
+                // Tentukan approver berdasarkan status dan warehouse
+                $approverName = 'Approval';
+                $warehouseName = $adj->warehouse->name ?? '';
+                $isMKWarehouse = in_array($warehouseName, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                
+                if ($adj->status === 'waiting_approval') {
+                    if ($isMKWarehouse) {
+                        $approverName = 'Sous Chef MK';
+                    } else {
+                        $approverName = 'Asisten SSD Manager';
+                    }
+                } elseif ($adj->status === 'waiting_ssd_manager') {
+                    $approverName = 'SSD Manager';
+                } elseif ($adj->status === 'waiting_cost_control') {
+                    $approverName = 'Cost Control Manager';
+                }
+                
+                return [
+                    'id' => $adj->id,
+                    'number' => $adj->number,
+                    'date' => $adj->date,
+                    'type' => $adj->type,
+                    'reason' => $adj->reason,
+                    'status' => $adj->status,
+                    'warehouse' => [
+                        'id' => $adj->warehouse->id ?? null,
+                        'name' => $adj->warehouse->name ?? null,
+                    ],
+                    'creator' => [
+                        'id' => $adj->creator->id ?? null,
+                        'nama_lengkap' => $adj->creator->nama_lengkap ?? null,
+                    ],
+                    'created_at' => $adj->created_at,
+                    'items_count' => $adj->items->count(),
+                    'approver_name' => $approverName,
+                ];
+            });
+            
+            return response()->json([
+                'success' => true,
+                'adjustments' => $transformedAdjustments
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting pending warehouse stock adjustment approvals', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get pending approvals'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get approval details for specific adjustment
+     */
+    public function getApprovalDetails($id)
+    {
+        try {
+            $adjustment = FoodInventoryAdjustment::with([
+                'warehouse',
+                'creator',
+                'items.item.category',
+                'items.item.smallUnit',
+                'items.item.mediumUnit',
+                'items.item.largeUnit'
+            ])->findOrFail($id);
+            
+            // Warehouse stock adjustment tidak pakai approval_flows table
+            // Approval data tersimpan di field langsung di tabel food_inventory_adjustments
+            // Field: approved_by_assistant_ssd_manager, approved_by_ssd_manager, approved_by_cost_control_manager, etc.
+            
+            // Get approver details if exists
+            $approvers = [];
+            
+            if ($adjustment->approved_by_assistant_ssd_manager) {
+                $approver = DB::table('users')
+                    ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+                    ->where('users.id', $adjustment->approved_by_assistant_ssd_manager)
+                    ->select('users.*', 'j.nama_jabatan')
+                    ->first();
+                if ($approver) {
+                    $approvers[] = [
+                        'level' => 1,
+                        'role' => 'Asisten SSD Manager',
+                        'approver' => $approver,
+                        'approved_at' => $adjustment->approved_at_assistant_ssd_manager,
+                        'note' => $adjustment->assistant_ssd_manager_note
+                    ];
+                }
+            }
+            
+            if ($adjustment->approved_by_ssd_manager) {
+                $approver = DB::table('users')
+                    ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+                    ->where('users.id', $adjustment->approved_by_ssd_manager)
+                    ->select('users.*', 'j.nama_jabatan')
+                    ->first();
+                if ($approver) {
+                    $approvers[] = [
+                        'level' => 2,
+                        'role' => 'SSD Manager / Sous Chef MK',
+                        'approver' => $approver,
+                        'approved_at' => $adjustment->approved_at_ssd_manager,
+                        'note' => $adjustment->ssd_manager_note
+                    ];
+                }
+            }
+            
+            if ($adjustment->approved_by_cost_control_manager) {
+                $approver = DB::table('users')
+                    ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+                    ->where('users.id', $adjustment->approved_by_cost_control_manager)
+                    ->select('users.*', 'j.nama_jabatan')
+                    ->first();
+                if ($approver) {
+                    $approvers[] = [
+                        'level' => 3,
+                        'role' => 'Cost Control Manager',
+                        'approver' => $approver,
+                        'approved_at' => $adjustment->approved_at_cost_control_manager,
+                        'note' => $adjustment->cost_control_manager_note
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'adjustment' => $adjustment,
+                'items' => $adjustment->items,
+                'approvers' => $approvers
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting approval details', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get adjustment details'
+            ], 500);
+        }
+    }
+
     // Helper untuk generate nomor adjustment
     private function generateAdjustmentNumber()
     {
