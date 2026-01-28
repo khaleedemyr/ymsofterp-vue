@@ -7848,7 +7848,7 @@ watch(locale, () => {
                                     <tr v-for="item in selectedWarehouseStockAdjustmentApproval.items" :key="item.id">
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item?.name || 'N/A' }}</td>
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
-                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item?.unit || '-' }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit || '-' }}</td>
                                         <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.note || '-' }}</td>
                                     </tr>
                                 </tbody>
