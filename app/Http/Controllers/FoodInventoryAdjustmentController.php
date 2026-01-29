@@ -474,28 +474,31 @@ class FoodInventoryAdjustmentController extends Controller
             $query = FoodInventoryAdjustment::with(['warehouse', 'creator', 'items'])
                 ->whereIn('status', ['waiting_approval', 'waiting_ssd_manager', 'waiting_cost_control']);
             
-            // Filter based on user role and warehouse (mirip logic di Show.vue)
+            // Filter based on user role and warehouse - sesuai tahapan approval
             if (!$isSuperadmin) {
                 $query->where(function($q) use ($jabatan) {
-                    // waiting_approval: Asisten SSD Manager (172) atau SSD Manager (161) untuk non-MK
-                    // waiting_approval: Sous Chef MK (179) untuk MK warehouse
-                    if (in_array($jabatan, [172, 161])) {
-                        // Asisten SSD Manager atau SSD Manager: non-MK warehouse, status waiting_approval atau waiting_ssd_manager
-                        $q->where(function($subQ) {
-                            $subQ->whereIn('status', ['waiting_approval', 'waiting_ssd_manager'])
-                                ->whereHas('warehouse', function($wh) {
-                                    $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
-                                });
-                        });
+                    // Asisten SSD Manager (172): non-MK warehouse, hanya tahap pertama (waiting_approval)
+                    if ($jabatan === 172) {
+                        $q->where('status', 'waiting_approval')
+                            ->whereHas('warehouse', function($wh) {
+                                $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                            });
                     }
-                    // Sous Chef MK (179): MK warehouse, status waiting_approval
+                    // SSD Manager (161): non-MK warehouse, hanya tahap kedua (waiting_ssd_manager)
+                    elseif ($jabatan === 161) {
+                        $q->where('status', 'waiting_ssd_manager')
+                            ->whereHas('warehouse', function($wh) {
+                                $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                            });
+                    }
+                    // Sous Chef MK (179): MK warehouse, hanya tahap pertama (waiting_approval)
                     elseif ($jabatan === 179) {
                         $q->where('status', 'waiting_approval')
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
                     }
-                    // Cost Control Manager (167): semua warehouse, status waiting_cost_control
+                    // Cost Control Manager (167): semua warehouse, tahap akhir (waiting_cost_control)
                     elseif ($jabatan === 167) {
                         $q->where('status', 'waiting_cost_control');
                     }
