@@ -593,11 +593,11 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // Outlet routes
     Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
     Route::get('/api/outlets', [\App\Http\Controllers\OutletController::class, 'apiList'])->name('outlets.list');
-    Route::get('/api/outlets/report', [App\Http\Controllers\ReportController::class, 'apiOutlets'])->middleware(['auth']);
-    Route::get('/api/regions', [App\Http\Controllers\ReportController::class, 'apiRegions'])->middleware(['auth']);
+    Route::get('/api/outlets/report', [\App\Http\Controllers\Report\ReportHelperController::class, 'apiOutlets'])->middleware(['auth']);
+    Route::get('/api/regions', [\App\Http\Controllers\Report\ReportHelperController::class, 'apiRegions'])->middleware(['auth']);
     
     // Activity Log Report
-    Route::get('/report/activity-log', [App\Http\Controllers\ReportController::class, 'reportActivityLog'])->middleware(['auth'])->name('report.activity-log');
+    Route::get('/report/activity-log', [\App\Http\Controllers\Report\ReportHelperController::class, 'reportActivityLog'])->middleware(['auth'])->name('report.activity-log');
     Route::get('/api/outlets/investor', [\App\Http\Controllers\InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);
     Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
@@ -1315,29 +1315,29 @@ Route::get('/api/ro-suppliers', [GoodReceiveOutletSupplierController::class, 'ge
 Route::get('/api/delivery-orders-ro-supplier', [GoodReceiveOutletSupplierController::class, 'getAvailableDeliveryOrders']);
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/report-sales-per-category', [ReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');
-    Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\ReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
-    Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\ReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
-    Route::get('/report-sales-all-item-all-outlet/export', [\App\Http\Controllers\ReportController::class, 'exportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet.export');
-    Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
-Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category.export');
-    Route::get('/report-sales-pivot-special', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
-Route::get('/report-sales-pivot-special/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotSpecial'])->name('report.sales-pivot-special.export');
-Route::get('/report-rekap-fj', [\App\Http\Controllers\ReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
-Route::get('/report-rekap-fj/export', [\App\Http\Controllers\ReportController::class, 'exportSalesPivotSpecial'])->name('report.rekap-fj.export');
-    Route::get('/report-good-receive-outlet', [\App\Http\Controllers\ReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
-    Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\ReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
-    Route::get('/report-receiving-sheet', [\App\Http\Controllers\ReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
-    Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\ReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
-    Route::post('/report/retail-sales-detail', [\App\Http\Controllers\ReportController::class, 'retailSalesDetail'])->name('report.retail-sales-detail');
-Route::post('/report/warehouse-sales-detail', [\App\Http\Controllers\ReportController::class, 'warehouseSalesDetail'])->name('report.warehouse-sales-detail');
-    Route::post('/api/report/fj-detail', [\App\Http\Controllers\ReportController::class, 'fjDetail'])->name('report.fj-detail');
-    Route::post('/api/report/fj-detail-pdf', [\App\Http\Controllers\ReportController::class, 'fjDetailPdf'])->name('report.fj-detail-pdf');
-    Route::post('/api/report/fj-detail-excel', [\App\Http\Controllers\ReportController::class, 'fjDetailExcel'])->name('report.fj-detail-excel');
-    Route::post('/api/report/retail-detail-pdf', [\App\Http\Controllers\ReportController::class, 'retailDetailPdf'])->name('report.retail-detail-pdf');
-    Route::post('/api/report/warehouse-detail-pdf', [\App\Http\Controllers\ReportController::class, 'warehouseDetailPdf'])->name('report.warehouse-detail-pdf');
-    Route::post('/api/report/retail-detail-excel', [\App\Http\Controllers\ReportController::class, 'retailDetailExcel'])->name('report.retail-detail-excel');
-    Route::post('/api/report/warehouse-detail-excel', [\App\Http\Controllers\ReportController::class, 'warehouseDetailExcel'])->name('report.warehouse-detail-excel');
+    Route::get('/report-sales-per-category', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');
+    Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
+    Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
+    Route::get('/report-sales-all-item-all-outlet/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet.export');
+    Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
+Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category.export');
+    Route::get('/report-sales-pivot-special', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');
+Route::get('/report-sales-pivot-special/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotSpecial'])->name('report.sales-pivot-special.export');
+Route::get('/report-rekap-fj', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
+Route::get('/report-rekap-fj/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotSpecial'])->name('report.rekap-fj.export');
+    Route::get('/report-good-receive-outlet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
+    Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\Report\WarehouseReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
+    Route::get('/report-receiving-sheet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
+    Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\Report\SalesReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
+    Route::post('/report/retail-sales-detail', [\App\Http\Controllers\Report\RetailReportController::class, 'retailSalesDetail'])->name('report.retail-sales-detail');
+Route::post('/report/warehouse-sales-detail', [\App\Http\Controllers\Report\WarehouseReportController::class, 'warehouseSalesDetail'])->name('report.warehouse-sales-detail');
+    Route::post('/api/report/fj-detail', [\App\Http\Controllers\Report\WarehouseReportController::class, 'fjDetail'])->name('report.fj-detail');
+    Route::post('/api/report/fj-detail-pdf', [\App\Http\Controllers\Report\WarehouseReportController::class, 'fjDetailPdf'])->name('report.fj-detail-pdf');
+    Route::post('/api/report/fj-detail-excel', [\App\Http\Controllers\Report\WarehouseReportController::class, 'fjDetailExcel'])->name('report.fj-detail-excel');
+    Route::post('/api/report/retail-detail-pdf', [\App\Http\Controllers\Report\RetailReportController::class, 'retailDetailPdf'])->name('report.retail-detail-pdf');
+    Route::post('/api/report/warehouse-detail-pdf', [\App\Http\Controllers\Report\WarehouseReportController::class, 'warehouseDetailPdf'])->name('report.warehouse-detail-pdf');
+    Route::post('/api/report/retail-detail-excel', [\App\Http\Controllers\Report\RetailReportController::class, 'retailDetailExcel'])->name('report.retail-detail-excel');
+    Route::post('/api/report/warehouse-detail-excel', [\App\Http\Controllers\Report\WarehouseReportController::class, 'warehouseDetailExcel'])->name('report.warehouse-detail-excel');
 });
 
 // Outlet Payments
@@ -1897,13 +1897,13 @@ Route::get('/report-monthly-fb-revenue-performance', function () {
     return Inertia::render('Report/ReportMonthlyFbRevenuePerformance');
 })->middleware(['auth']);
 
-Route::get('/api/report/sales-simple', [App\Http\Controllers\ReportController::class, 'reportSalesSimple']);
-Route::get('/api/outlet-expenses', [App\Http\Controllers\ReportController::class, 'apiOutletExpenses']);
+Route::get('/api/report/sales-simple', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesSimple']);
+Route::get('/api/outlet-expenses', [App\Http\Controllers\Report\EngineeringReportController::class, 'apiOutletExpenses']);
 
-Route::get('/api/my-outlet-qr', [App\Http\Controllers\ReportController::class, 'myOutletQr']);
+Route::get('/api/my-outlet-qr', [\App\Http\Controllers\Report\ReportHelperController::class, 'myOutletQr']);
 
 // API untuk item engineering
-Route::get('/api/report/item-engineering', [\App\Http\Controllers\ReportController::class, 'reportItemEngineering']);
+Route::get('/api/report/item-engineering', [\App\Http\Controllers\Report\EngineeringReportController::class, 'reportItemEngineering']);
 // Web route untuk halaman
 Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
@@ -2333,9 +2333,9 @@ Route::get('attendance-report/employee-summary/export', [App\Http\Controllers\At
 Route::get('attendance-report/employee-summary-attendance', [App\Http\Controllers\AttendanceReportController::class, 'employeeSummaryAttendance'])->name('attendance-report.employee-summary-attendance');
 Route::post('attendance-report/employee-summary-attendance/export', [App\Http\Controllers\AttendanceReportController::class, 'exportEmployeeSummaryAttendance'])->name('attendance-report.employee-summary-attendance.export');
 
-Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\ReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
+Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\Report\EngineeringReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
 
-Route::get('/report/item-engineering/export', [\App\Http\Controllers\ReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
+Route::get('/report/item-engineering/export', [\App\Http\Controllers\Report\EngineeringReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
 
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 
