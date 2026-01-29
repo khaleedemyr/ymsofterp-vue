@@ -599,9 +599,9 @@ async function checkPayrollStatus() {
   try {
     const response = await axios.get('/payroll/report/status', {
       params: {
-        outlet_id: outletId.value,
-        month: formatMonth(month.value),
-        year: year.value,
+        outlet_id: parseInt(outletId.value),
+        month: parseInt(month.value), // CRITICAL FIX: Send as integer, not formatted string
+        year: parseInt(year.value),
       }
     });
 
@@ -648,8 +648,8 @@ async function generatePayroll() {
   try {
     const response = await axios.post('/payroll/report/generate', {
       outlet_id: outletId.value,
-      month: formatMonth(month.value),
-      year: year.value,
+      month: parseInt(month.value), // CRITICAL FIX: Send as integer, not formatted string
+      year: parseInt(year.value), // Ensure year is also integer
       service_charge: serviceCharge.value || 0,
       lb_amount: lbAmount.value || 0,
       deviasi_amount: deviasiAmount.value || 0,

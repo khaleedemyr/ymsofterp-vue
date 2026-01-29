@@ -1114,8 +1114,11 @@ class PosOrderController extends Controller
             ]);
 
             // 1. Get order data before deletion (before transaction)
+            // IMPORTANT: Use both id AND nomor for double validation
+            // ID and nomor are SAME across all databases (utama, pusat, dummy)
             $order = DB::table('orders')
                 ->where('id', $orderId)
+                ->where('nomor', $orderNomor)  // Extra validation with nomor
                 ->where('kode_outlet', $kodeOutlet)
                 ->first();
 

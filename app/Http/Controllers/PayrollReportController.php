@@ -160,19 +160,16 @@ class PayrollReportController extends Controller
                 // Periode gajian 1: 26 bulan sebelumnya - 25 bulan yang dipilih (untuk gaji pokok dll)
                 // $start dan $end sudah dihitung di atas
                 
-                // Ambil mutasi yang effective_date dalam periode gajian 1 ATAU dalam periode gajian 2
-                // Tapi untuk gajian 2, hanya ambil yang mutasi pada atau setelah tanggal 1 bulan yang dipilih
-                // (karena service charge dll dihitung dari tanggal 1)
+                // PERBAIKAN MUTASI: Ambil mutasi yang effective_date SETELAH start periode
+                // Karyawan yang mutasi SEBELUM atau PADA start periode sudah TIDAK di outlet ini lagi
+                // Contoh: Periode Jan 2026 (26 Des - 25 Jan), mutasi 26 Des → TIDAK muncul di outlet lama
+                // Karyawan hanya muncul di outlet lama jika mutasi SETELAH start (> start)
                 $mutations = DB::table('employee_movements')
                     ->where('employment_type', 'mutation')
                     ->where('unit_property_from', $outletName)
                     ->whereNotNull('employment_effective_date')
-                    ->where(function($query) use ($start, $end, $gajian2Start, $gajian2End) {
-                        // Periode gajian 1: mutasi dalam periode 26-25
-                        $query->whereBetween('employment_effective_date', [$start, $end])
-                              // ATAU periode gajian 2: mutasi dari tanggal 1 bulan yang dipilih sampai akhir bulan
-                              ->orWhereBetween('employment_effective_date', [$gajian2Start, $gajian2End]);
-                    })
+                    ->where('employment_effective_date', '>', $start) // HARUS > start, bukan >=
+                    ->where('employment_effective_date', '<=', $end) // Sampai end periode
                     ->whereIn('status', ['executed', 'approved', 'pending'])
                     ->select('id', 'employee_id', 'employee_name', 'unit_property_from', 'unit_property_to', 'employment_effective_date', 'status')
                     ->get();
@@ -200,32 +197,32 @@ class PayrollReportController extends Controller
                     }
                 }
                 
+                // Buat mutation map untuk processing nanti
+                $mutationMap = [];
+                foreach ($mutations as $m) {
+                    // Ambil outlet_to ID dari nama outlet
+                    $outletToId = DB::table('tbl_data_outlet')
+                        ->where('nama_outlet', $m->unit_property_to)
+                        ->value('id_outlet');
+                    
+                    $mutationMap[$m->employee_id] = [
+                        'effective_date' => $m->employment_effective_date,
+                        'outlet_from_id' => $outletId,
+                        'outlet_to_id' => $outletToId,
+                        'outlet_from_name' => $outletName,
+                        'outlet_to_name' => $m->unit_property_to,
+                        'employee_name' => $m->employee_name
+                    ];
+                }
+                
                 // Debug logging
-                \Log::info('Payroll - Mutations found', [
+                \Log::info('Payroll - Mutations found and mapped', [
                     'outlet_id' => $outletId,
                     'outlet_name' => $outletName,
                     'start_date' => $start,
                     'end_date' => $end,
-                    'gajian2_start' => Carbon::create($year, $month, 1)->startOfDay()->format('Y-m-d'),
-                    'gajian2_end' => Carbon::create($year, $month, 1)->endOfMonth()->endOfDay()->format('Y-m-d'),
                     'mutations_count' => $mutations->count(),
-                    'mutations' => $mutations->map(function($m) use ($start, $end, $year, $month) {
-                        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
-                        $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
-                        $effectiveDate = Carbon::parse($m->employment_effective_date);
-                        $inGajian1 = $effectiveDate->greaterThanOrEqualTo(Carbon::parse($start)) && $effectiveDate->lessThanOrEqualTo(Carbon::parse($end));
-                        $inGajian2 = $effectiveDate->greaterThanOrEqualTo($gajian2Start) && $effectiveDate->lessThanOrEqualTo($gajian2End);
-                        return [
-                            'id' => $m->id,
-                            'employee_id' => $m->employee_id,
-                            'employee_name' => $m->employee_name,
-                            'effective_date' => $m->employment_effective_date,
-                            'outlet_to' => $m->unit_property_to,
-                            'in_gajian1_period' => $inGajian1,
-                            'in_gajian2_period' => $inGajian2,
-                            'will_be_detected' => $inGajian1 || $inGajian2
-                        ];
-                    })->toArray()
+                    'mutation_map' => $mutationMap
                 ]);
             }
             
@@ -1002,6 +999,43 @@ class PayrollReportController extends Controller
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
                 $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
 
+                // ==== CEK APAKAH KARYAWAN MUTASI ====
+                $isMutatedEmployee = isset($mutationMap[$userId]);
+                $mutationData = $isMutatedEmployee ? $mutationMap[$userId] : null;
+                
+                // Jika karyawan mutasi, split attendance berdasarkan effective_date
+                $attendanceBeforeMutation = collect();
+                $attendanceAfterMutation = collect();
+                $hariKerjaOutletLama = 0;
+                $hariKerjaOutletBaru = 0;
+                
+                if ($isMutatedEmployee) {
+                    $effectiveDate = $mutationData['effective_date'];
+                    
+                    // Split attendance
+                    $attendanceBeforeMutation = $employeeRows->filter(function($row) use ($effectiveDate) {
+                        return $row->tanggal < $effectiveDate;
+                    });
+                    
+                    $attendanceAfterMutation = $employeeRows->filter(function($row) use ($effectiveDate) {
+                        return $row->tanggal >= $effectiveDate;
+                    });
+                    
+                    $hariKerjaOutletLama = $attendanceBeforeMutation->count();
+                    $hariKerjaOutletBaru = $attendanceAfterMutation->count();
+                    
+                    \Log::info('Payroll - Mutated employee attendance split', [
+                        'user_id' => $userId,
+                        'employee_name' => $mutationData['employee_name'],
+                        'effective_date' => $effectiveDate,
+                        'total_attendance' => $employeeRows->count(),
+                        'attendance_outlet_lama' => $hariKerjaOutletLama,
+                        'attendance_outlet_baru' => $hariKerjaOutletBaru,
+                        'outlet_from' => $mutationData['outlet_from_name'],
+                        'outlet_to' => $mutationData['outlet_to_name']
+                    ]);
+                }
+
                 // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
                 $isNewEmployee = false;
                 $hariKerjaKaryawanBaru = $hariKerja; // Default: hari kerja normal
@@ -1085,50 +1119,10 @@ class PayrollReportController extends Controller
                     $hariKerjaUntukServiceCharge = $hariKerja;
                 }
 
-                // Cek apakah karyawan mutasi dalam periode ini
-                // PERBAIKAN: Cek 2 periode - gajian 1 (26-25) dan gajian 2 (1-30)
-                $mutation = $mutationsByEmployee->get($user->id);
-                $isMutatedEmployee = false;
-                $mutationEffectiveDate = null;
-                $mutationOutletTo = null;
-                if ($mutation && $mutation->employment_effective_date) {
-                    $mutationEffectiveDate = Carbon::parse($mutation->employment_effective_date);
-                    
-                    // Periode gajian 2: 1-30/31 bulan yang dipilih
-                    $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
-                    $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
-                    
-                    // Dianggap mutasi jika effective_date dalam periode gajian 1 ATAU periode gajian 2
-                    $inGajian1Period = $mutationEffectiveDate->greaterThanOrEqualTo($startDate) && $mutationEffectiveDate->lessThanOrEqualTo($endDate);
-                    $inGajian2Period = $mutationEffectiveDate->greaterThanOrEqualTo($gajian2Start) && $mutationEffectiveDate->lessThanOrEqualTo($gajian2End);
-                    
-                    if ($inGajian1Period || $inGajian2Period) {
-                        $isMutatedEmployee = true;
-                        // Ambil nama outlet dari ID, bukan ID-nya
-                        $outletToId = $mutation->unit_property_to;
-                        if ($outletToId) {
-                            $outletToName = DB::table('tbl_data_outlet')->where('id_outlet', $outletToId)->value('nama_outlet');
-                            $mutationOutletTo = $outletToName ?: $outletToId; // Fallback ke ID jika nama tidak ditemukan
-                        } else {
-                            $mutationOutletTo = $mutation->unit_property_to; // Jika bukan ID, gunakan value asli
-                        }
-                    }
-                } else {
-                    // Debug: Log jika mutation tidak ditemukan atau tidak ada effective_date
-                    if (!$mutation) {
-                        \Log::info('Payroll - Mutation not found for user', [
-                            'user_id' => $user->id,
-                            'nama_lengkap' => $user->nama_lengkap,
-                            'mutations_by_employee_keys' => $mutationsByEmployee->keys()->toArray()
-                        ]);
-                    } elseif (!$mutation->employment_effective_date) {
-                        \Log::info('Payroll - Mutation found but no effective_date', [
-                            'user_id' => $user->id,
-                            'nama_lengkap' => $user->nama_lengkap,
-                            'mutation_id' => $mutation->id ?? null
-                        ]);
-                    }
-                }
+                // Mutation logic sudah di-handle di atas (line ~998-1030)
+                // Ambil mutation info jika ada
+                $mutationEffectiveDate = $isMutatedEmployee ? Carbon::parse($mutationData['effective_date']) : null;
+                $mutationOutletTo = $isMutatedEmployee ? $mutationData['outlet_to_name'] : null;
 
                 // Simpan data user untuk perhitungan service charge
                 $userData[$user->id] = [
@@ -1146,6 +1140,11 @@ class PayrollReportController extends Controller
                     'isMutatedEmployee' => $isMutatedEmployee, // Flag apakah karyawan mutasi
                     'mutationEffectiveDate' => $mutationEffectiveDate, // Tanggal efektif mutasi
                     'mutationOutletTo' => $mutationOutletTo, // Outlet tujuan mutasi
+                    'mutationData' => $mutationData, // Full mutation data
+                    'attendanceBeforeMutation' => $attendanceBeforeMutation, // Attendance sebelum mutasi
+                    'attendanceAfterMutation' => $attendanceAfterMutation, // Attendance setelah mutasi
+                    'hariKerjaOutletLama' => $hariKerjaOutletLama, // Hari kerja di outlet lama
+                    'hariKerjaOutletBaru' => $hariKerjaOutletBaru, // Hari kerja di outlet baru
                     'totalAlpha' => $totalAlpha,
                     'totalIzinCuti' => $totalIzinCuti,
                     'izinCutiBreakdown' => $izinCutiBreakdown,
@@ -1157,13 +1156,30 @@ class PayrollReportController extends Controller
 
             // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
             // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
+            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
             $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
             $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
             
             foreach ($userData as $data) {
                 if ($data['masterData']->sc == 1) {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                    $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
+                    if ($data['isMutatedEmployee'] ?? false) {
+                        // Total hari kerja = outlet lama + outlet baru
+                        $hariKerjaSC = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                        
+                        \Log::info('SC Pool - Mutated employee using TOTAL work days', [
+                            'user_id' => $data['user']->id,
+                            'nama_lengkap' => $data['user']->nama_lengkap,
+                            'hari_kerja_outlet_lama' => $data['hariKerjaOutletLama'] ?? 0,
+                            'hari_kerja_outlet_baru' => $data['hariKerjaOutletBaru'] ?? 0,
+                            'hari_kerja_total' => $hariKerjaSC,
+                            'point' => $data['userPoint']
+                        ]);
+                    } else {
+                        // Karyawan biasa: gunakan hariKerjaUntukServiceCharge
+                        $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    }
+                    
                     $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
                     $totalHariKerja += $hariKerjaSC;
                 }
@@ -1190,11 +1206,16 @@ class PayrollReportController extends Controller
             // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
             // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
+            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
             $totalPointHariKerjaLB = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->lb == 1) {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                    $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
+                    if ($data['isMutatedEmployee'] ?? false) {
+                        $hariKerjaLB = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                    } else {
+                        $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    }
                     $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
                 }
             }
@@ -1209,11 +1230,16 @@ class PayrollReportController extends Controller
             // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
             // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
+            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
             $totalPointHariKerjaDeviasi = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->deviasi == 1) {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                    $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
+                    if ($data['isMutatedEmployee'] ?? false) {
+                        $hariKerjaDeviasi = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                    } else {
+                        $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    }
                     $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
                 }
             }
@@ -1228,11 +1254,16 @@ class PayrollReportController extends Controller
             // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
             // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
             // Menggunakan (point × hari kerja) seperti service charge by point
+            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
             $totalPointHariKerjaCityLedger = 0;
             foreach ($userData as $data) {
                 if ($data['masterData']->city_ledger == 1) {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                    $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
+                    if ($data['isMutatedEmployee'] ?? false) {
+                        $hariKerjaCityLedger = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                    } else {
+                        $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                    }
                     $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
                 }
             }
@@ -2012,6 +2043,136 @@ class PayrollReportController extends Controller
         ]);
     }
 
+    /**
+     * Calculate payroll data - SHARED FUNCTION untuk index() dan export()
+     * Ini adalah single source of truth untuk semua payroll calculation
+     * 
+     * @param int $outletId
+     * @param string $month
+     * @param string $year
+     * @param float $serviceCharge
+     * @param float $lbAmount
+     * @param float $deviasiAmount
+     * @param float $cityLedgerAmount
+     * @return array [payrollData, leaveTypes, totalMP, totalMPAktif, totalMPResign, mutatedEmployeeIds]
+     */
+    private function calculatePayrollData($outletId, $month, $year, $serviceCharge, $lbAmount, $deviasiAmount, $cityLedgerAmount)
+    {
+        // Initialize return values
+        $payrollData = collect();
+        $leaveTypes = collect();
+        $totalMP = 0;
+        $totalMPAktif = 0;
+        $totalMPResign = 0;
+        $mutatedEmployeeIds = [];
+
+        if (!$outletId || !$month || !$year) {
+            return [
+                'payrollData' => $payrollData,
+                'leaveTypes' => $leaveTypes,
+                'totalMP' => $totalMP,
+                'totalMPAktif' => $totalMPAktif,
+                'totalMPResign' => $totalMPResign,
+                'mutatedEmployeeIds' => $mutatedEmployeeIds,
+            ];
+        }
+
+        // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
+        $start = date('Y-m-d', strtotime("$year-$month-26 -1 month"));
+        $end = date('Y-m-d', strtotime("$year-$month-25"));
+        $startDate = Carbon::parse($start);
+        $endDate = Carbon::parse($end);
+
+        // Ambil data karyawan di outlet tersebut (HANYA yang aktif)
+        $users = User::where('status', 'A')
+            ->where('id_outlet', $outletId)
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+
+        // Ambil data resignation untuk periode tersebut
+        $allResignations = EmployeeResignation::where('status', 'approved')
+            ->whereBetween('resignation_date', [$start, $end])
+            ->get(['employee_id', 'resignation_date', 'outlet_id']);
+        
+        $resignedEmployeeIds = $allResignations->pluck('employee_id')->toArray();
+        if (!empty($resignedEmployeeIds)) {
+            $resignedUsers = User::whereIn('id', $resignedEmployeeIds)
+                ->where('id_outlet', $outletId)
+                ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+            
+            $resignedUserIds = $resignedUsers->pluck('id')->toArray();
+            $resignations = $allResignations->whereIn('employee_id', $resignedUserIds)->keyBy('employee_id');
+
+            $existingUserIds = $users->pluck('id')->toArray();
+            $newResignedIds = array_diff($resignedUserIds, $existingUserIds);
+            if (!empty($newResignedIds)) {
+                $newResignedUsers = $resignedUsers->whereIn('id', $newResignedIds);
+                $users = $users->merge($newResignedUsers);
+            }
+        } else {
+            $resignations = collect()->keyBy('employee_id');
+        }
+
+        // Ambil data mutations (CRITICAL FIX: Include mutation handling)
+        $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
+        $mutations = collect();
+        $mutationMap = [];
+        
+        if ($outletName) {
+            // Query mutations dengan logic yang sudah di-fix
+            $mutations = DB::table('employee_movements')
+                ->where('employment_type', 'mutation')
+                ->where('unit_property_from', $outletName)
+                ->whereNotNull('employment_effective_date')
+                ->where('employment_effective_date', '>', $start)
+                ->where('employment_effective_date', '<=', $end)
+                ->whereIn('status', ['executed', 'approved', 'pending'])
+                ->select('id', 'employee_id', 'employee_name', 'unit_property_from', 'unit_property_to', 'employment_effective_date', 'status')
+                ->get();
+            
+            $mutatedEmployeeIds = $mutations->pluck('employee_id')->toArray();
+            if (!empty($mutatedEmployeeIds)) {
+                $mutatedUsers = User::whereIn('id', $mutatedEmployeeIds)
+                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+                
+                $existingUserIds = $users->pluck('id')->toArray();
+                $newMutatedIds = array_diff($mutatedEmployeeIds, $existingUserIds);
+                if (!empty($newMutatedIds)) {
+                    $newMutatedUsers = $mutatedUsers->whereIn('id', $newMutatedIds);
+                    $users = $users->merge($newMutatedUsers);
+                }
+            }
+            
+            // Build mutation map (CRITICAL: Needed for pool calculation fix)
+            foreach ($mutations as $m) {
+                $outletToId = DB::table('tbl_data_outlet')
+                    ->where('nama_outlet', $m->unit_property_to)
+                    ->value('id_outlet');
+                
+                $mutationMap[$m->employee_id] = [
+                    'effective_date' => $m->employment_effective_date,
+                    'outlet_from_id' => $outletId,
+                    'outlet_to_id' => $outletToId,
+                    'outlet_from_name' => $outletName,
+                    'outlet_to_name' => $m->unit_property_to,
+                    'employee_name' => $m->employee_name
+                ];
+            }
+        }
+        
+        // TODO: Continue extracting the rest of the logic from index()
+        // This is a work in progress - will be completed in next steps
+        
+        return [
+            'payrollData' => $payrollData,
+            'leaveTypes' => $leaveTypes,
+            'totalMP' => $totalMP,
+            'totalMPAktif' => $totalMPAktif,
+            'totalMPResign' => $totalMPResign,
+            'mutatedEmployeeIds' => $mutatedEmployeeIds,
+        ];
+    }
+
     private function getAttendanceData($userId, $outletId, $startDate, $endDate)
     {
         // Use AttendanceController method to get attendance data (same logic as my attendance)
@@ -2581,6 +2742,70 @@ class PayrollReportController extends Controller
         $divisions = DB::table('tbl_data_divisi')->pluck('nama_divisi', 'id');
         $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
 
+        // ========== CRITICAL FIX: ADD MUTATION HANDLING (SAMA DENGAN index()) ==========
+        // Ambil data mutations untuk periode ini
+        $mutations = collect();
+        $mutationMap = [];
+        $mutatedEmployeeIds = [];
+        
+        if ($outletName) {
+            // Query mutations dengan logic yang SAMA PERSIS dengan index()
+            $mutations = DB::table('employee_movements')
+                ->where('employment_type', 'mutation')
+                ->where('unit_property_from', $outletName)
+                ->whereNotNull('employment_effective_date')
+                ->where('employment_effective_date', '>', $start) // HARUS > start, bukan >=
+                ->where('employment_effective_date', '<=', $end) // Sampai end periode
+                ->whereIn('status', ['executed', 'approved', 'pending'])
+                ->select('id', 'employee_id', 'employee_name', 'unit_property_from', 'unit_property_to', 'employment_effective_date', 'status')
+                ->get();
+            
+            $mutatedEmployeeIds = $mutations->pluck('employee_id')->toArray();
+            if (!empty($mutatedEmployeeIds)) {
+                $mutatedUsers = User::whereIn('id', $mutatedEmployeeIds)
+                    ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
+                
+                $existingUserIds = $users->pluck('id')->toArray();
+                $newMutatedIds = array_diff($mutatedEmployeeIds, $existingUserIds);
+                if (!empty($newMutatedIds)) {
+                    $newMutatedUsers = $mutatedUsers->whereIn('id', $newMutatedIds);
+                    $users = $users->merge($newMutatedUsers);
+                    
+                    \Log::info('Export - Added mutated employees to users list', [
+                        'mutated_employee_ids' => $newMutatedIds,
+                        'total_users' => $users->count()
+                    ]);
+                }
+            }
+            
+            // Build mutation map (CRITICAL untuk pool calculation fix)
+            foreach ($mutations as $m) {
+                $outletToId = DB::table('tbl_data_outlet')
+                    ->where('nama_outlet', $m->unit_property_to)
+                    ->value('id_outlet');
+                
+                $mutationMap[$m->employee_id] = [
+                    'effective_date' => $m->employment_effective_date,
+                    'outlet_from_id' => $outletId,
+                    'outlet_to_id' => $outletToId,
+                    'outlet_from_name' => $outletName,
+                    'outlet_to_name' => $m->unit_property_to,
+                    'employee_name' => $m->employee_name
+                ];
+            }
+            
+            // Debug logging
+            \Log::info('Export - Mutations found and mapped', [
+                'outlet_id' => $outletId,
+                'outlet_name' => $outletName,
+                'start_date' => $start,
+                'end_date' => $end,
+                'mutations_count' => $mutations->count(),
+                'mutation_map' => $mutationMap
+            ]);
+        }
+        // ========== END MUTATION HANDLING ==========
+
         // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
         $payrollMaster = DB::table('payroll_master')
             ->get()
@@ -2849,6 +3074,51 @@ class PayrollReportController extends Controller
                 $hariKerjaUntukServiceCharge = $hariKerja;
             }
 
+            // ========== CRITICAL FIX: ADD MUTATION SPLIT LOGIC (SAMA DENGAN index()) ==========
+            // Cek apakah user ini adalah karyawan mutasi
+            $isMutatedEmployee = isset($mutationMap[$userId]);
+            $hariKerjaOutletLama = 0;
+            $hariKerjaOutletBaru = 0;
+            $mutationData = null;
+            $attendanceBeforeMutation = collect();
+            $attendanceAfterMutation = collect();
+            
+            if ($isMutatedEmployee) {
+                $mutationData = $mutationMap[$userId];
+                $effectiveDate = Carbon::parse($mutationData['effective_date'])->startOfDay();
+                
+                // Split employeeRows berdasarkan effective_date
+                if (!$employeeRows->isEmpty()) {
+                    foreach ($employeeRows as $row) {
+                        $rowDate = Carbon::parse($row->tanggal)->startOfDay();
+                        
+                        if ($rowDate->lessThan($effectiveDate)) {
+                            // Sebelum mutation (di outlet lama)
+                            $attendanceBeforeMutation->push($row);
+                        } else {
+                            // Setelah/pada mutation date (di outlet baru)
+                            $attendanceAfterMutation->push($row);
+                        }
+                    }
+                }
+                
+                // Hitung hari kerja masing-masing
+                $hariKerjaOutletLama = $attendanceBeforeMutation->count();
+                $hariKerjaOutletBaru = $attendanceAfterMutation->count();
+                
+                \Log::info('Export - Mutation detected, attendance split', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap,
+                    'effective_date' => $mutationData['effective_date'],
+                    'outlet_from' => $mutationData['outlet_from_name'],
+                    'outlet_to' => $mutationData['outlet_to_name'],
+                    'total_attendance' => $employeeRows->count(),
+                    'attendance_before' => $hariKerjaOutletLama,
+                    'attendance_after' => $hariKerjaOutletBaru
+                ]);
+            }
+            // ========== END MUTATION SPLIT LOGIC ==========
+            
             // Simpan data user untuk perhitungan service charge
             $userData[$user->id] = [
                 'user' => $user,
@@ -2868,6 +3138,14 @@ class PayrollReportController extends Controller
                 'leaveData' => $leaveData, // Simpan leaveData untuk digunakan di Step 4
                 'phBonus' => $phBonus, // Simpan phBonus untuk digunakan di Step 4
                 'userPoint' => $userPoint,
+                // ========== ADD MUTATION DATA ==========
+                'isMutatedEmployee' => $isMutatedEmployee,
+                'hariKerjaOutletLama' => $hariKerjaOutletLama,
+                'hariKerjaOutletBaru' => $hariKerjaOutletBaru,
+                'mutationData' => $mutationData,
+                'attendanceBeforeMutation' => $attendanceBeforeMutation,
+                'attendanceAfterMutation' => $attendanceAfterMutation,
+                // ========== END MUTATION DATA ==========
             ];
         }
         
@@ -2876,18 +3154,26 @@ class PayrollReportController extends Controller
             'total_users' => $users->count(),
             'user_data_count' => count($userData),
             'employee_groups_count' => $employeeGroups->count(),
-            'missing_users' => $users->count() - count($userData)
+            'missing_users' => $users->count() - count($userData),
+            'mutated_employees_count' => count($mutationMap)
         ]);
 
         // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
+        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
         $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
         $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
         
         foreach ($userData as $data) {
             if ($data['masterData']->sc == 1) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
+                if ($data['isMutatedEmployee'] ?? false) {
+                    // Mutated employee: Gunakan total hari kerja (outlet lama + baru)
+                    $hariKerjaSC = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                } else {
+                    // Normal employee: Gunakan hariKerjaUntukServiceCharge
+                    $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                }
                 $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
                 $totalHariKerja += $hariKerjaSC;
             }
@@ -2913,12 +3199,16 @@ class PayrollReportController extends Controller
 
         // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // Menggunakan (point × hari kerja) seperti service charge by point
+        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
         $totalPointHariKerjaLB = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->lb == 1) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
+                if ($data['isMutatedEmployee'] ?? false) {
+                    $hariKerjaLB = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                } else {
+                    $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                }
                 $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
             }
         }
@@ -2932,12 +3222,16 @@ class PayrollReportController extends Controller
 
         // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // Menggunakan (point × hari kerja) seperti service charge by point
+        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
         $totalPointHariKerjaDeviasi = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->deviasi == 1) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
+                if ($data['isMutatedEmployee'] ?? false) {
+                    $hariKerjaDeviasi = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                } else {
+                    $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                }
                 $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
             }
         }
@@ -2951,12 +3245,16 @@ class PayrollReportController extends Controller
 
         // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // Menggunakan (point × hari kerja) seperti service charge by point
+        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
         $totalPointHariKerjaCityLedger = 0;
         foreach ($userData as $data) {
             if ($data['masterData']->city_ledger == 1) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
+                if ($data['isMutatedEmployee'] ?? false) {
+                    $hariKerjaCityLedger = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
+                } else {
+                    $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
+                }
                 $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
             }
         }
