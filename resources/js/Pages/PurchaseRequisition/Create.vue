@@ -56,7 +56,7 @@
             <p class="text-sm text-blue-700">{{ getKasbonPeriodText() }}</p>
             </div>
             <p class="text-xs text-gray-600">
-              Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+              Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
             </p>
             <button
               type="button"
@@ -1105,7 +1105,7 @@
               </p>
               <p class="text-xs text-blue-600 mt-1">
                 <i class="fa fa-info-circle mr-1"></i>
-                Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+                Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
               </p>
               <p v-if="userOutletId && userOutletId != 1" class="text-xs text-amber-600 mt-2 font-semibold">
                 <i class="fa fa-exclamation-triangle mr-1"></i>
@@ -2210,7 +2210,7 @@
                   Kasbon digunakan untuk pengajuan <strong>uang muka</strong> atau <strong>kasbon</strong> dengan struktur input yang sederhana dan otomatis.
                 </p>
                 <p class="text-sm text-orange-700 mt-2">
-                  <strong>Catatan Penting:</strong> Per periode hanya diijinkan 1 user saja per outlet. Periode kasbon adalah tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya.
+                  <strong>Catatan Penting:</strong> Per periode hanya diijinkan 1 user saja per outlet. Periode kasbon adalah tanggal 10 hingga tanggal 20 bulan berjalan.
                 </p>
               </div>
 
@@ -2224,7 +2224,7 @@
                   <li class="flex items-start">
                     <i class="fa fa-calendar mr-2 mt-0.5 text-yellow-600"></i>
                     <div>
-                      <strong>Periode Kasbon:</strong> Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+                      <strong>Periode Kasbon:</strong> Tanggal 10 hingga tanggal 20 bulan berjalan
                     </div>
                   </li>
                   <li class="flex items-start">
@@ -2284,7 +2284,7 @@
                         Periode Kasbon:
                       </p>
                       <p class="text-sm text-blue-700">
-                        <strong>Tanggal 20 bulan berjalan</strong> hingga <strong>tanggal 10 bulan selanjutnya</strong>
+                        <strong>Tanggal 10</strong> hingga <strong>tanggal 20 bulan berjalan</strong>
                       </p>
                       <p class="text-xs text-blue-600 mt-2">
                         <i class="fa fa-info-circle mr-1"></i>
@@ -2808,7 +2808,7 @@ watch(() => form.mode, (newMode) => {
               <p class="text-sm text-blue-700">${startStr} - ${endStr}</p>
             </div>
             <p class="text-xs text-gray-600 mt-3">
-              Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+              Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
             </p>
           `,
           confirmButtonText: 'OK',
@@ -3132,57 +3132,38 @@ const getKasbonDivisionName = () => {
   return division ? division.nama_divisi : 'Unknown Division'
 }
 
-// Get kasbon period (tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya)
+// Get kasbon period (tanggal 10 hingga tanggal 20 bulan berjalan)
 const getKasbonPeriod = () => {
   const now = new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() // 0-11
-  const currentDay = now.getDate()
   
-  let startDate, endDate
-  
-  // Tentukan periode berdasarkan tanggal sekarang
-  if (currentDay < 20) {
-    // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-    startDate = new Date(currentYear, currentMonth - 1, 20)
-    endDate = new Date(currentYear, currentMonth, 10)
-  } else {
-    // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
-    startDate = new Date(currentYear, currentMonth, 20)
-    endDate = new Date(currentYear, currentMonth + 1, 10)
-  }
+  // Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
+  const startDate = new Date(currentYear, currentMonth, 10)
+  const endDate = new Date(currentYear, currentMonth, 20)
   
   return { startDate, endDate }
 }
 
 // Check if current date is within kasbon period
-// Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-// Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+// Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
+// Di luar periode ini (tanggal 21 bulan berjalan - 9 bulan selanjutnya) harus di-lock
 const isWithinKasbonPeriod = () => {
   const now = new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() // 0-11
   const currentDay = now.getDate()
   
-  let startDate, endDate
-  
-  // Tentukan periode berdasarkan tanggal sekarang
-  if (currentDay < 20) {
-    // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-    startDate = new Date(currentYear, currentMonth - 1, 20)
-    endDate = new Date(currentYear, currentMonth, 10)
-  } else {
-    // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
-    startDate = new Date(currentYear, currentMonth, 20)
-    endDate = new Date(currentYear, currentMonth + 1, 10)
-  }
+  // Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
+  const startDate = new Date(currentYear, currentMonth, 10)
+  const endDate = new Date(currentYear, currentMonth, 20)
   
   // Set time to 00:00:00 for accurate date comparison
   const nowDate = new Date(currentYear, currentMonth, currentDay)
   const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
   const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
   
-  // Check if current date is within the period
+  // Check if current date is within the period (10-20 bulan berjalan)
   return nowDate >= start && nowDate <= end
 }
 
@@ -3490,7 +3471,7 @@ const submitForm = async () => {
             <p class="text-sm text-blue-700">${startStr} - ${endStr}</p>
           </div>
           <p class="text-xs text-gray-600 mt-3">
-            Periode kasbon: Tanggal 20 bulan berjalan hingga tanggal 10 bulan selanjutnya
+                Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
           </p>
         `,
         confirmButtonText: 'OK',
