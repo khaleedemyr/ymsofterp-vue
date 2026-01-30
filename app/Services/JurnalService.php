@@ -62,85 +62,88 @@ class JurnalService
             throw new \Exception("COA Pendapatan Penjualan tidak ditemukan. Pastikan COA sudah dibuat.");
         }
         
-        // Create multiple debit entries (1 per payment)
-        $jurnalEntries = [];
-        $totalDebit = 0;
-        
-        foreach ($payments as $payment) {
-            $coaDebit = $this->getCoaDebitFromPayment($payment);
+        // Wrap dalam transaction agar insert ke jurnal dan jurnal_global atomic
+        return DB::transaction(function() use ($order, $payments, $outletId, $noJurnal, $tanggal, $keterangan, $coaPendapatan, $grandTotal) {
+            // Create multiple debit entries (1 per payment)
+            $jurnalEntries = [];
+            $totalDebit = 0;
             
-            if (!$coaDebit) {
-                Log::error('COA Debit tidak ditemukan untuk payment', [
-                    'payment_id' => $payment->id ?? null,
-                    'payment_code' => $payment->payment_code ?? null,
-                    'payment_type' => $payment->payment_type ?? null,
-                    'bank_id' => $payment->bank_id ?? null
+            foreach ($payments as $payment) {
+                $coaDebit = $this->getCoaDebitFromPayment($payment);
+                
+                if (!$coaDebit) {
+                    Log::error('COA Debit tidak ditemukan untuk payment', [
+                        'payment_id' => $payment->id ?? null,
+                        'payment_code' => $payment->payment_code ?? null,
+                        'payment_type' => $payment->payment_type ?? null,
+                        'bank_id' => $payment->bank_id ?? null
+                    ]);
+                    throw new \Exception("COA Debit tidak ditemukan untuk payment type: " . ($payment->payment_code ?? 'UNKNOWN'));
+                }
+                
+                $amount = $payment->amount ?? 0;
+                $totalDebit += $amount;
+                
+                // Create jurnal entry
+                $jurnal = Jurnal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaPendapatan,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount, // Balance dengan debit (double entry)
+                    'outlet_id' => $outletId,
+                    'reference_type' => 'pos_order',
+                    'reference_id' => $order->id ?? null,
+                    'status' => 'posted', // Auto-post karena order sudah paid
+                    'created_by' => auth()->id() ?? 1,
                 ]);
-                throw new \Exception("COA Debit tidak ditemukan untuk payment type: " . ($payment->payment_code ?? 'UNKNOWN'));
+                
+                $jurnalEntries[] = $jurnal;
+                
+                // Insert ke jurnal_global juga (harus berhasil, jika gagal akan rollback semua)
+                JurnalGlobal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaPendapatan,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $outletId,
+                    'source_module' => 'pos_order',
+                    'source_id' => $order->id ?? null,
+                    'reference_type' => 'pos_order',
+                    'reference_id' => $order->id ?? null,
+                    'status' => 'posted',
+                    'posted_at' => now(),
+                    'posted_by' => auth()->id() ?? 1,
+                    'created_by' => auth()->id() ?? 1,
+                ]);
             }
             
-            $amount = $payment->amount ?? 0;
-            $totalDebit += $amount;
+            // Validasi: Total debit harus = grand_total (dengan toleransi)
+            if (abs($totalDebit - $grandTotal) > 0.01) {
+                Log::warning('Total debit jurnal tidak sama dengan grand_total', [
+                    'order_id' => $order->id ?? null,
+                    'total_debit' => $totalDebit,
+                    'grand_total' => $grandTotal,
+                    'difference' => abs($totalDebit - $grandTotal)
+                ]);
+            }
             
-            // Create jurnal entry
-            $jurnal = Jurnal::create([
-                'no_jurnal' => $noJurnal,
-                'tanggal' => $tanggal,
-                'keterangan' => $keterangan,
-                'coa_debit_id' => $coaDebit,
-                'coa_kredit_id' => $coaPendapatan,
-                'jumlah_debit' => $amount,
-                'jumlah_kredit' => $amount, // Balance dengan debit (double entry)
-                'outlet_id' => $outletId,
-                'reference_type' => 'pos_order',
-                'reference_id' => $order->id ?? null,
-                'status' => 'posted', // Auto-post karena order sudah paid
-                'created_by' => auth()->id() ?? 1,
-            ]);
-            
-            $jurnalEntries[] = $jurnal;
-            
-            // Insert ke jurnal_global juga
-            JurnalGlobal::create([
-                'no_jurnal' => $noJurnal,
-                'tanggal' => $tanggal,
-                'keterangan' => $keterangan,
-                'coa_debit_id' => $coaDebit,
-                'coa_kredit_id' => $coaPendapatan,
-                'jumlah_debit' => $amount,
-                'jumlah_kredit' => $amount,
-                'outlet_id' => $outletId,
-                'source_module' => 'pos_order',
-                'source_id' => $order->id ?? null,
-                'reference_type' => 'pos_order',
-                'reference_id' => $order->id ?? null,
-                'status' => 'posted',
-                'posted_at' => now(),
-                'posted_by' => auth()->id() ?? 1,
-                'created_by' => auth()->id() ?? 1,
-            ]);
-        }
-        
-        // Validasi: Total debit harus = grand_total (dengan toleransi)
-        if (abs($totalDebit - $grandTotal) > 0.01) {
-            Log::warning('Total debit jurnal tidak sama dengan grand_total', [
+            Log::info('Jurnal created successfully for POS order', [
                 'order_id' => $order->id ?? null,
+                'order_nomor' => $order->nomor ?? null,
+                'no_jurnal' => $noJurnal,
+                'jurnal_entries_count' => count($jurnalEntries),
                 'total_debit' => $totalDebit,
-                'grand_total' => $grandTotal,
-                'difference' => abs($totalDebit - $grandTotal)
+                'grand_total' => $grandTotal
             ]);
-        }
-        
-        Log::info('Jurnal created successfully for POS order', [
-            'order_id' => $order->id ?? null,
-            'order_nomor' => $order->nomor ?? null,
-            'no_jurnal' => $noJurnal,
-            'jurnal_entries_count' => count($jurnalEntries),
-            'total_debit' => $totalDebit,
-            'grand_total' => $grandTotal
-        ]);
-        
-        return $jurnalEntries;
+            
+            return $jurnalEntries;
+        });
     }
     
     /**
