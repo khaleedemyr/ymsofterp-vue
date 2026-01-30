@@ -1609,13 +1609,45 @@ class SalesReportController extends Controller
 
         $orders = $query->orderBy('orders.created_at')->get();
         
+        // Load payments for all orders
+        $orderIds = $orders->pluck('id')->toArray();
+        $payments = [];
+        if (!empty($orderIds)) {
+            $paymentsData = DB::table('order_payment')
+                ->whereIn('order_id', $orderIds)
+                ->select('order_id', 'payment_code', 'payment_type', 'amount', 'change')
+                ->get();
+            
+            // Group payments by order_id
+            foreach ($paymentsData as $payment) {
+                if (!isset($payments[$payment->order_id])) {
+                    $payments[$payment->order_id] = [];
+                }
+                $payments[$payment->order_id][] = [
+                    'payment_code' => $payment->payment_code,
+                    'payment_type' => $payment->payment_type,
+                    'amount' => floatval($payment->amount ?? 0),
+                    'change' => floatval($payment->change ?? 0),
+                ];
+            }
+        }
+        
+        // Attach payments to each order
+        $ordersArray = $orders->map(function($order) use ($payments) {
+            $orderArray = (array) $order;
+            $orderArray['payments'] = $payments[$order->id] ?? [];
+            return $orderArray;
+        })->toArray();
+        
         Log::info('reportSalesSimple - Query result', [
             'count' => $orders->count(),
+            'payments_loaded' => count($payments),
             'first_order' => $orders->first() ? [
                 'id' => $orders->first()->id,
                 'nomor' => $orders->first()->nomor,
                 'kode_outlet' => $orders->first()->kode_outlet,
                 'created_at' => $orders->first()->created_at,
+                'payments_count' => count($payments[$orders->first()->id] ?? []),
             ] : null
         ]);
 
@@ -1694,13 +1726,21 @@ class SalesReportController extends Controller
             'summary' => $summary,
             'per_day_count' => count($perDay),
             'per_day_dates' => array_keys($perDay),
-            'orders_count' => $orders->count(),
+            'orders_count' => count($ordersArray),
+            'orders_with_payments' => count(array_filter($ordersArray, function($o) {
+                return !empty($o['payments']);
+            })),
+            'sample_order_with_payments' => !empty($ordersArray) ? [
+                'id' => $ordersArray[0]['id'] ?? null,
+                'payments_count' => count($ordersArray[0]['payments'] ?? []),
+                'payments' => $ordersArray[0]['payments'] ?? [],
+            ] : null,
         ]);
 
         return response()->json([
             'summary' => $summary,
             'per_day' => $perDay, // Object with date as key
-            'orders' => $orders->toArray(),
+            'orders' => $ordersArray, // Orders with payments attached
         ]);
     }
     
