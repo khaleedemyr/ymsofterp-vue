@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `jurnal_global` (
     `jumlah_kredit` DECIMAL(15, 2) NOT NULL DEFAULT 0.00 COMMENT 'Jumlah kredit',
     `outlet_id` INT UNSIGNED NULL COMMENT 'ID Outlet (relasi ke tbl_data_outlet.id_outlet)',
     `source_module` VARCHAR(50) NULL COMMENT 'Module sumber (jurnal, pos_order, outlet_payment, dll)',
-    `source_id` BIGINT UNSIGNED NULL COMMENT 'ID dari source module',
+    `source_id` VARCHAR(255) NULL COMMENT 'ID dari source module (bisa string atau integer)',
     `reference_type` VARCHAR(50) NULL COMMENT 'Tipe referensi (pos_order, outlet_payment, dll)',
     `reference_id` VARCHAR(255) NULL COMMENT 'ID referensi (order_id, payment_id, dll)',
     `status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'Status: draft, posted, cancelled',

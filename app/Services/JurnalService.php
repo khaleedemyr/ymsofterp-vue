@@ -201,7 +201,22 @@ class JurnalService
             return $this->getCoaPiutangOfficerCheck();
         }
         
-        // 7. Fallback: Kas Tunai jika tidak dikenali
+        // 7. Investor (potong profit)
+        if (stripos($paymentCode, 'INVESTOR') !== false || 
+            stripos($paymentType, 'INVESTOR') !== false) {
+            return $this->getCoaPiutangInvestor();
+        }
+        
+        // 8. Outlet City Ledger (dibebankan ke karyawan, sama seperti Officer Check)
+        if (stripos($paymentCode, 'CITY') !== false || 
+            stripos($paymentCode, 'LEDGER') !== false ||
+            stripos($paymentCode, 'CITY_LEDGER') !== false ||
+            stripos($paymentType, 'CITY') !== false ||
+            stripos($paymentType, 'LEDGER') !== false) {
+            return $this->getCoaPiutangCityLedger();
+        }
+        
+        // 9. Fallback: Kas Tunai jika tidak dikenali
         Log::warning('Payment code tidak dikenali, menggunakan COA Kas Tunai', [
             'payment_code' => $paymentCode,
             'payment_type' => $paymentType,
@@ -300,6 +315,56 @@ class JurnalService
         
         if (!$coa) {
             Log::error('COA Piutang Officer Check tidak ditemukan. Pastikan COA dengan name mengandung "Piutang Officer" atau "Officer Check" sudah dibuat.');
+        }
+        
+        return $coa->id ?? null;
+    }
+    
+    /**
+     * Get COA Piutang Investor
+     * 
+     * @return int|null COA ID
+     */
+    private function getCoaPiutangInvestor()
+    {
+        // Cari by name (karena code bisa berubah)
+        // Investor: potong profit, jadi ini adalah piutang yang akan dipotong dari profit investor
+        $coa = ChartOfAccount::where(function($query) {
+                $query->where('name', 'LIKE', '%Piutang Investor%')
+                      ->orWhere('name', 'LIKE', '%Investor%')
+                      ->orWhere('name', 'LIKE', '%Hutang Investor%');
+            })
+            ->whereIn('type', ['Asset', 'Liability']) // Bisa Asset atau Liability tergantung perspektif
+            ->where('is_active', 1)
+            ->first();
+        
+        if (!$coa) {
+            Log::error('COA Piutang Investor tidak ditemukan. Pastikan COA dengan name mengandung "Piutang Investor" atau "Investor" sudah dibuat.');
+        }
+        
+        return $coa->id ?? null;
+    }
+    
+    /**
+     * Get COA Piutang City Ledger
+     * 
+     * @return int|null COA ID
+     */
+    private function getCoaPiutangCityLedger()
+    {
+        // Cari by name (karena code bisa berubah)
+        // City Ledger: dibebankan ke karyawan, sama seperti Officer Check
+        $coa = ChartOfAccount::where(function($query) {
+                $query->where('name', 'LIKE', '%Piutang City Ledger%')
+                      ->orWhere('name', 'LIKE', '%City Ledger%')
+                      ->orWhere('name', 'LIKE', '%Piutang Karyawan%');
+            })
+            ->where('type', 'Asset')
+            ->where('is_active', 1)
+            ->first();
+        
+        if (!$coa) {
+            Log::error('COA Piutang City Ledger tidak ditemukan. Pastikan COA dengan name mengandung "Piutang City Ledger" atau "City Ledger" sudah dibuat.');
         }
         
         return $coa->id ?? null;
