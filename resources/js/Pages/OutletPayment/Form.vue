@@ -133,7 +133,10 @@
                         <div>
                           <h4 class="text-sm font-medium text-gray-900">{{ gr.number || gr.gr_number || '-' }}</h4>
                           <p class="text-xs text-gray-500">
-                            {{ formatDate(gr.receive_date) }} • {{ gr.outlet_name }}<span v-if="gr.warehouse_outlet_name"> • {{ gr.warehouse_outlet_name }}</span>
+                            {{ formatDate(gr.receive_date) }} • {{ gr.outlet_name }}
+                          </p>
+                          <p v-if="gr.warehouse_name" class="text-xs text-blue-600 font-medium mt-1">
+                            <i class="fas fa-warehouse mr-1"></i>{{ gr.warehouse_name }}
                           </p>
                         </div>
                         <div class="text-right">
@@ -239,8 +242,8 @@
                           <p class="text-xs text-gray-500">
                             {{ formatDate(retail.sale_date) }} • {{ retail.customer_name }} ({{ retail.customer_code }})
                           </p>
-                          <p class="text-xs text-gray-400">
-                            {{ retail.warehouse_name }}<span v-if="retail.division_name"> • {{ retail.division_name }}</span>
+                          <p v-if="retail.warehouse_name" class="text-xs text-green-600 font-medium mt-1">
+                            <i class="fas fa-warehouse mr-1"></i>{{ retail.warehouse_name }}
                           </p>
                         </div>
                         <div class="text-right">
@@ -309,6 +312,28 @@
               Total dari {{ selectedGRs.length }} GR dan {{ selectedRetailSales.length }} Retail Sales yang dipilih
             </p>
           </div>
+          
+          <!-- Warehouse Summary Section -->
+          <div v-if="(selectedGRs.length > 0 || selectedRetailSales.length > 0) && warehouseSummary.length > 0" class="mt-4">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fas fa-warehouse mr-2"></i>Total per Warehouse
+            </label>
+            <div class="border border-blue-200 rounded-lg bg-white overflow-hidden">
+              <div v-for="(warehouse, index) in warehouseSummary" :key="warehouse.name" 
+                   :class="['px-4 py-3 flex items-center justify-between', index !== warehouseSummary.length - 1 ? 'border-b border-gray-200' : '']">
+                <div class="flex items-center">
+                  <i class="fas fa-warehouse text-blue-500 mr-2"></i>
+                  <span class="text-sm font-medium text-gray-900">{{ warehouse.name || 'Tidak Ada Warehouse' }}</span>
+                  <span class="ml-2 text-xs text-gray-500">
+                    <span v-if="warehouse.grCount > 0">{{ warehouse.grCount }} GR</span>
+                    <span v-if="warehouse.grCount > 0 && warehouse.retailCount > 0"> • </span>
+                    <span v-if="warehouse.retailCount > 0">{{ warehouse.retailCount }} Retail Sales</span>
+                  </span>
+                </div>
+                <span class="text-sm font-semibold text-blue-600">{{ formatCurrency(warehouse.total) }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Payment Method and Bank Section -->
@@ -346,18 +371,22 @@
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-2">Bank Penerima (Head Office)</label>
               <Multiselect
-                v-model="selectedReceiverBank"
+                v-model="selectedReceiverBanks"
                 :options="banks"
                 :searchable="true"
-                :close-on-select="true"
+                :close-on-select="false"
+                :multiple="true"
                 :show-labels="false"
-                placeholder="Cari dan pilih bank penerima..."
+                placeholder="Cari dan pilih bank penerima (bisa multiple)..."
                 label="display_name"
                 track-by="id"
                 @select="onReceiverBankSelect"
                 @remove="onReceiverBankRemove"
                 class="w-full"
               />
+              <p v-if="selectedReceiverBanks.length > 0" class="text-xs text-gray-500 mt-1">
+                {{ selectedReceiverBanks.length }} bank penerima dipilih
+              </p>
             </div>
           </div>
         </div>
@@ -419,7 +448,7 @@ const canLoadData = computed(() => {
   return form.value.outlet_id && form.value.date_from && form.value.date_to;
 });
 const selectedBank = ref(null);
-const selectedReceiverBank = ref(null);
+const selectedReceiverBanks = ref([]);
 
 const form = ref({
   outlet_id: '',
@@ -430,7 +459,7 @@ const form = ref({
   total_amount: 0,
   payment_method: 'cash',
   bank_id: null,
-  receiver_bank_id: null
+  receiver_bank_ids: []
 });
 
 // Transform banks untuk Multiselect
@@ -451,14 +480,15 @@ function onBankRemove() {
   selectedBank.value = null;
 }
 
-// Handle receiver bank selection (penerima)
+// Handle receiver bank selection (penerima) - multiple
 function onReceiverBankSelect(bank) {
-  form.value.receiver_bank_id = bank.id;
+  // Update form dengan array bank IDs
+  form.value.receiver_bank_ids = selectedReceiverBanks.value.map(b => b.id);
 }
 
-function onReceiverBankRemove() {
-  form.value.receiver_bank_id = null;
-  selectedReceiverBank.value = null;
+function onReceiverBankRemove(bank) {
+  // Update form dengan array bank IDs setelah remove
+  form.value.receiver_bank_ids = selectedReceiverBanks.value.map(b => b.id);
 }
 
 // Watch payment_method to clear bank if changed to cash
@@ -466,10 +496,15 @@ watch(() => form.value.payment_method, (newMethod) => {
   if (newMethod === 'cash') {
     selectedBank.value = null;
     form.value.bank_id = null;
-    selectedReceiverBank.value = null;
-    form.value.receiver_bank_id = null;
+    selectedReceiverBanks.value = [];
+    form.value.receiver_bank_ids = [];
   }
 });
+
+// Watch selectedReceiverBanks to update form
+watch(selectedReceiverBanks, (newBanks) => {
+  form.value.receiver_bank_ids = newBanks.map(b => b.id);
+}, { deep: true });
 
 const grListFiltered = computed(() => {
   // Data sudah di-filter di backend berdasarkan outlet_id, date_from, date_to
@@ -545,6 +580,82 @@ const totalAmountFromSelectedTransactions = computed(() => {
   const retailTotal = parseFloat(totalAmountFromSelectedRetailSales.value) || 0;
   
   return grTotal + retailTotal;
+});
+
+// Computed for warehouse summary from selected GRs and Retail Sales
+const warehouseSummary = computed(() => {
+  const warehouseMap = {};
+  
+  // Process GRs
+  if (selectedGRs.value && selectedGRs.value.length > 0) {
+    selectedGRs.value.forEach(grId => {
+      const gr = grListFiltered.value.find(g => g.id == grId);
+      if (!gr) return;
+      
+      // Gunakan warehouse_name (warehouse yang mengirim)
+      const warehouseName = gr.warehouse_name || 'Tidak Ada Warehouse';
+      
+      if (!warehouseMap[warehouseName]) {
+        warehouseMap[warehouseName] = {
+          name: warehouseName,
+          total: 0,
+          grCount: 0,
+          retailCount: 0
+        };
+      }
+      
+      // Safely parse the amount
+      let amount = 0;
+      if (gr.total_amount !== null && gr.total_amount !== undefined) {
+        amount = parseFloat(gr.total_amount);
+        if (isNaN(amount)) {
+          amount = 0;
+        }
+      }
+      
+      warehouseMap[warehouseName].total += amount;
+      warehouseMap[warehouseName].grCount += 1;
+    });
+  }
+  
+  // Process Retail Sales
+  if (selectedRetailSales.value && selectedRetailSales.value.length > 0) {
+    selectedRetailSales.value.forEach(retailId => {
+      const retail = retailSalesListFiltered.value.find(r => r.id == retailId);
+      if (!retail) return;
+      
+      // Gunakan warehouse_name (warehouse yang mengirim)
+      const warehouseName = retail.warehouse_name || 'Tidak Ada Warehouse';
+      
+      if (!warehouseMap[warehouseName]) {
+        warehouseMap[warehouseName] = {
+          name: warehouseName,
+          total: 0,
+          grCount: 0,
+          retailCount: 0
+        };
+      }
+      
+      // Safely parse the amount
+      let amount = 0;
+      if (retail.total_amount !== null && retail.total_amount !== undefined) {
+        amount = parseFloat(retail.total_amount);
+        if (isNaN(amount)) {
+          amount = 0;
+        }
+      }
+      
+      warehouseMap[warehouseName].total += amount;
+      warehouseMap[warehouseName].retailCount += 1;
+    });
+  }
+  
+  // Convert to array and sort by name
+  return Object.values(warehouseMap).sort((a, b) => {
+    if (a.name === 'Tidak Ada Warehouse') return 1;
+    if (b.name === 'Tidak Ada Warehouse') return -1;
+    return a.name.localeCompare(b.name);
+  });
 });
 // Watch for selected GRs changes to update total amount
 watch(selectedGRs, (newSelectedGRs) => {
@@ -868,6 +979,24 @@ async function submitForm() {
   }
 }
 
+// Helper function to extract receiver_bank_ids from notes
+function extractReceiverBankIdsFromNotes(notes) {
+  if (!notes) return null;
+  
+  // Cari pattern [Receiver Banks: [1,2,3]]
+  const match = notes.match(/\[Receiver Banks:\s*(\[[\d,\s]*\])\]/);
+  if (match && match[1]) {
+    try {
+      const bankIds = JSON.parse(match[1]);
+      return Array.isArray(bankIds) ? bankIds : null;
+    } catch (e) {
+      console.error('Error parsing receiver bank IDs from notes:', e);
+      return null;
+    }
+  }
+  return null;
+}
+
 // Pre-fill bank if editing
 onMounted(() => {
   if (props.payment) {
@@ -883,11 +1012,26 @@ onMounted(() => {
       }
     }
     
-    if (props.payment.receiver_bank_id) {
+    // Extract receiver_bank_ids dari notes jika ada
+    let receiverBankIds = null;
+    if (props.payment.receiver_bank_ids && Array.isArray(props.payment.receiver_bank_ids) && props.payment.receiver_bank_ids.length > 0) {
+      receiverBankIds = props.payment.receiver_bank_ids;
+    } else if (props.payment.notes) {
+      receiverBankIds = extractReceiverBankIdsFromNotes(props.payment.notes);
+    }
+    
+    if (receiverBankIds && receiverBankIds.length > 0) {
+      const receiverBanks = banks.value.filter(b => receiverBankIds.includes(b.id));
+      if (receiverBanks.length > 0) {
+        selectedReceiverBanks.value = receiverBanks;
+        form.value.receiver_bank_ids = receiverBankIds;
+      }
+    } else if (props.payment.receiver_bank_id) {
+      // Fallback untuk data lama yang masih pakai receiver_bank_id single
       const receiverBank = banks.value.find(b => b.id == props.payment.receiver_bank_id);
       if (receiverBank) {
-        selectedReceiverBank.value = receiverBank;
-        form.value.receiver_bank_id = props.payment.receiver_bank_id;
+        selectedReceiverBanks.value = [receiverBank];
+        form.value.receiver_bank_ids = [props.payment.receiver_bank_id];
       }
     }
   }

@@ -16,6 +16,7 @@ use App\Models\PaymentType;
 use App\Models\BankBook;
 use App\Services\MemberTierService;
 use App\Services\BankBookService;
+use App\Services\JurnalService;
 use App\Events\PointEarned;
 use App\Events\PointReturned;
 use Carbon\Carbon;
@@ -314,7 +315,55 @@ class PosOrderController extends Controller
                     ]);
                 }
 
-                // 5. Handle member spending and points (if member exists)
+                // 5. Create jurnal entries (jika order status = paid)
+                if (($orderData['status'] ?? '') === 'paid') {
+                    try {
+                        $jurnalService = new JurnalService();
+                        
+                        // Get outlet_id
+                        $outletId = null;
+                        if (!empty($kodeOutlet)) {
+                            $outlet = DB::table('tbl_data_outlet')
+                                ->where('qr_code', $kodeOutlet)
+                                ->first();
+                            $outletId = $outlet->id_outlet ?? null;
+                        }
+                        
+                        // Get payments dari database (sudah di-insert sebelumnya)
+                        $payments = DB::table('order_payment')
+                            ->where('order_id', $orderData['id'])
+                            ->get();
+                        
+                        if ($payments->isNotEmpty()) {
+                            $jurnalEntries = $jurnalService->createFromPosOrder(
+                                (object)$orderData,
+                                $payments,
+                                $outletId
+                            );
+                            
+                            Log::info('Jurnal created for POS order', [
+                                'order_id' => $orderData['id'],
+                                'order_nomor' => $orderData['nomor'] ?? null,
+                                'payments_count' => $payments->count(),
+                                'jurnal_entries_count' => count($jurnalEntries)
+                            ]);
+                        } else {
+                            Log::warning('No payments found for order, skipping jurnal creation', [
+                                'order_id' => $orderData['id']
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        // Log error but don't fail the order sync
+                        Log::error('Failed to create jurnal for POS order', [
+                            'order_id' => $orderData['id'],
+                            'order_nomor' => $orderData['nomor'] ?? null,
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                    }
+                }
+
+                // 6. Handle member spending and points (if member exists)
                 if (!empty($orderData['member_id'])) {
                     $member = MemberAppsMember::where('member_id', $orderData['member_id'])
                         ->orWhere('id', $orderData['member_id'])
@@ -1299,7 +1348,30 @@ class PosOrderController extends Controller
                     }
                 }
 
-                // 6. Delete order and related data (in correct order to avoid foreign key issues)
+                // 6. Rollback jurnal entries
+                try {
+                    $jurnalService = new JurnalService();
+                    $rollbackSuccess = $jurnalService->rollbackFromPosOrder($orderId);
+                    
+                    if ($rollbackSuccess) {
+                        Log::info('Jurnal rolled back for void order', [
+                            'order_id' => $orderId
+                        ]);
+                    } else {
+                        Log::warning('Jurnal rollback returned false (mungkin tidak ada jurnal)', [
+                            'order_id' => $orderId
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error rolling back jurnal in void order', [
+                        'order_id' => $orderId,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // Continue with void even if jurnal rollback fails
+                }
+
+                // 7. Delete order and related data (in correct order to avoid foreign key issues)
                 // Delete child tables first
                 $deletedItems = DB::table('order_items')
                     ->where('order_id', $orderId)

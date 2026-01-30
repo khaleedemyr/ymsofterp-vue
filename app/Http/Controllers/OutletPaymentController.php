@@ -324,7 +324,9 @@ class OutletPaymentController extends Controller
             'date_to' => 'required|date|after_or_equal:date_from',
             'total_amount' => 'required|numeric|min:0',
             'payment_method' => 'nullable|in:cash,transfer,check',
-            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id'
+            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id',
+            'receiver_bank_ids' => 'nullable|array',
+            'receiver_bank_ids.*' => 'exists:bank_accounts,id'
         ]);
 
         // Validate that at least one transaction is selected
@@ -370,16 +372,43 @@ class OutletPaymentController extends Controller
                     ->whereNull('gr.deleted_at')
                     ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
                 
+                // Handle receiver_bank_ids (multiple) - simpan sebagai JSON atau gunakan yang pertama untuk backward compatibility
+                $receiverBankId = null;
+                $notes = $request->notes ?? '';
+                
+                if (($request->payment_method === 'transfer' || $request->payment_method === 'check') && !empty($request->receiver_bank_ids)) {
+                    // Untuk backward compatibility, simpan yang pertama di receiver_bank_id
+                    // Dan simpan semua di notes sebagai JSON
+                    $receiverBankId = is_array($request->receiver_bank_ids) ? $request->receiver_bank_ids[0] : $request->receiver_bank_ids;
+                    
+                    // Simpan semua receiver bank IDs di notes sebagai JSON untuk referensi
+                    if (is_array($request->receiver_bank_ids) && count($request->receiver_bank_ids) > 0) {
+                        $receiverBanksInfo = json_encode($request->receiver_bank_ids);
+                        // Hapus existing receiver banks info jika ada
+                        $notes = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notes);
+                        $notes = trim($notes);
+                        // Tambahkan receiver banks info
+                        $notes = $notes ? $notes . "\n[Receiver Banks: " . $receiverBanksInfo . "]" : "[Receiver Banks: " . $receiverBanksInfo . "]";
+                    }
+                } elseif (($request->payment_method === 'transfer' || $request->payment_method === 'check') && $request->receiver_bank_id) {
+                    // Fallback untuk data lama
+                    $receiverBankId = $request->receiver_bank_id;
+                } else {
+                    // Clear receiver banks info dari notes jika payment method bukan transfer/check atau tidak ada receiver banks
+                    $notes = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notes);
+                    $notes = trim($notes);
+                }
+                
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
                     'gr_id' => $grId,
                     'retail_sales_id' => null, // GR payment
                     'date' => $request->date_from,
                     'total_amount' => $totalAmount,
-                    'notes' => $request->notes,
+                    'notes' => $notes,
                     'payment_method' => $request->payment_method ?? 'cash',
                     'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
-                    'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null,
+                    'receiver_bank_id' => $receiverBankId,
                     'status' => 'pending',
                 ];
                 
@@ -391,16 +420,43 @@ class OutletPaymentController extends Controller
             foreach ($retailIds as $retailId) {
                 $retail = DB::table('retail_warehouse_sales')->where('id', $retailId)->first();
                 
+                // Handle receiver_bank_ids (multiple) - simpan sebagai JSON atau gunakan yang pertama untuk backward compatibility
+                $receiverBankId = null;
+                $notesRetail = $request->notes ?? '';
+                
+                if (($request->payment_method === 'transfer' || $request->payment_method === 'check') && !empty($request->receiver_bank_ids)) {
+                    // Untuk backward compatibility, simpan yang pertama di receiver_bank_id
+                    // Dan simpan semua di notes sebagai JSON
+                    $receiverBankId = is_array($request->receiver_bank_ids) ? $request->receiver_bank_ids[0] : $request->receiver_bank_ids;
+                    
+                    // Simpan semua receiver bank IDs di notes sebagai JSON untuk referensi
+                    if (is_array($request->receiver_bank_ids) && count($request->receiver_bank_ids) > 0) {
+                        $receiverBanksInfo = json_encode($request->receiver_bank_ids);
+                        // Hapus existing receiver banks info jika ada
+                        $notesRetail = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notesRetail);
+                        $notesRetail = trim($notesRetail);
+                        // Tambahkan receiver banks info
+                        $notesRetail = $notesRetail ? $notesRetail . "\n[Receiver Banks: " . $receiverBanksInfo . "]" : "[Receiver Banks: " . $receiverBanksInfo . "]";
+                    }
+                } elseif (($request->payment_method === 'transfer' || $request->payment_method === 'check') && $request->receiver_bank_id) {
+                    // Fallback untuk data lama
+                    $receiverBankId = $request->receiver_bank_id;
+                } else {
+                    // Clear receiver banks info dari notes jika payment method bukan transfer/check atau tidak ada receiver banks
+                    $notesRetail = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notesRetail);
+                    $notesRetail = trim($notesRetail);
+                }
+                
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
                     'gr_id' => null, // Retail sales payment
                     'retail_sales_id' => $retailId,
                     'date' => $request->date_from,
                     'total_amount' => $retail->total_amount,
-                    'notes' => $request->notes,
+                    'notes' => $notesRetail,
                     'payment_method' => $request->payment_method ?? 'cash',
                     'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
-                    'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null,
+                    'receiver_bank_id' => $receiverBankId,
                     'status' => 'pending',
                 ];
                 
@@ -436,7 +492,9 @@ class OutletPaymentController extends Controller
             'date' => 'required|date',
             'total_amount' => 'required|numeric|min:0',
             'payment_method' => 'nullable|in:cash,transfer,check',
-            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id'
+            'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id',
+            'receiver_bank_ids' => 'nullable|array',
+            'receiver_bank_ids.*' => 'exists:bank_accounts,id'
         ]);
 
         $gr = OutletFoodGoodReceive::findOrFail($request->gr_id);
@@ -451,15 +509,42 @@ class OutletPaymentController extends Controller
             return back()->with('error', 'Total amount tidak sesuai dengan GR.');
         }
 
+        // Handle receiver_bank_ids (multiple) - simpan sebagai JSON atau gunakan yang pertama untuk backward compatibility
+        $receiverBankId = null;
+        $notes = $request->notes ?? '';
+        
+        if (($request->payment_method === 'transfer' || $request->payment_method === 'check') && !empty($request->receiver_bank_ids)) {
+            // Untuk backward compatibility, simpan yang pertama di receiver_bank_id
+            // Dan simpan semua di notes sebagai JSON
+            $receiverBankId = is_array($request->receiver_bank_ids) ? $request->receiver_bank_ids[0] : $request->receiver_bank_ids;
+            
+            // Extract existing notes tanpa receiver banks info
+            $notes = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notes);
+            $notes = trim($notes);
+            
+            // Simpan semua receiver bank IDs di notes sebagai JSON untuk referensi
+            if (is_array($request->receiver_bank_ids) && count($request->receiver_bank_ids) > 0) {
+                $receiverBanksInfo = json_encode($request->receiver_bank_ids);
+                $notes = $notes ? $notes . "\n[Receiver Banks: " . $receiverBanksInfo . "]" : "[Receiver Banks: " . $receiverBanksInfo . "]";
+            }
+        } elseif (($request->payment_method === 'transfer' || $request->payment_method === 'check') && $request->receiver_bank_id) {
+            // Fallback untuk data lama
+            $receiverBankId = $request->receiver_bank_id;
+        } else {
+            // Clear receiver banks info dari notes jika payment method bukan transfer/check
+            $notes = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notes);
+            $notes = trim($notes);
+        }
+        
         $outletPayment->update([
             'outlet_id' => $request->outlet_id,
             'gr_id' => $request->gr_id,
             'date' => $request->date,
             'total_amount' => $request->total_amount,
-            'notes' => $request->notes,
+            'notes' => $notes,
             'payment_method' => $request->payment_method ?? 'cash',
             'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
-            'receiver_bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->receiver_bank_id : null
+            'receiver_bank_id' => $receiverBankId
         ]);
 
         return redirect()->route('outlet-payments.index')
@@ -597,6 +682,11 @@ class OutletPaymentController extends Controller
             })
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd_pl', 'pl.warehouse_division_id', '=', 'wd_pl.id')
+            ->leftJoin('warehouses as w_pl', 'wd_pl.warehouse_id', '=', 'w_pl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->whereNull('op.id')
             ->whereNull('gr.deleted_at')
             ->select(
@@ -604,8 +694,18 @@ class OutletPaymentController extends Controller
                 'gr.number',
                 'gr.receive_date',
                 'gr.outlet_id',
+                'gr.delivery_order_id',
                 'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name'
+                'wo.name as warehouse_outlet_name',
+                DB::raw('COALESCE(
+                    w_pl.name,
+                    (SELECT w.name 
+                     FROM food_floor_order_items ffoi
+                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                     WHERE ffoi.floor_order_id = ffo.id
+                     LIMIT 1)
+                ) as warehouse_name')
             );
 
         // Apply filters if provided
@@ -637,6 +737,7 @@ class OutletPaymentController extends Controller
                 ->whereNull('gr.deleted_at')
                 ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
 
+            
             return (object) [
                 'id' => $gr->id,
                 'number' => $gr->number,
@@ -645,6 +746,7 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [] // Will be loaded via API when needed
             ];
@@ -697,6 +799,11 @@ class OutletPaymentController extends Controller
             })
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd_pl', 'pl.warehouse_division_id', '=', 'wd_pl.id')
+            ->leftJoin('warehouses as w_pl', 'wd_pl.warehouse_id', '=', 'w_pl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->whereNull('op.id')
             ->whereNull('gr.deleted_at')
             ->select(
@@ -704,8 +811,18 @@ class OutletPaymentController extends Controller
                 'gr.number',
                 'gr.receive_date',
                 'gr.outlet_id',
+                'gr.delivery_order_id',
                 'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name'
+                'wo.name as warehouse_outlet_name',
+                DB::raw('COALESCE(
+                    w_pl.name,
+                    (SELECT w.name 
+                     FROM food_floor_order_items ffoi
+                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                     WHERE ffoi.floor_order_id = ffo.id
+                     LIMIT 1)
+                ) as warehouse_name')
             );
 
         // Apply filters
@@ -745,6 +862,7 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [], // Will be loaded via API when needed
                 'type' => 'gr' // Add type identifier

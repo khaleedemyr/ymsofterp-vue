@@ -76,8 +76,37 @@ class BankBookService
     }
 
     /**
+     * Extract receiver bank IDs from notes field
+     * Format: [Receiver Banks: [1,2,3]]
+     *
+     * @param string|null $notes
+     * @return array
+     */
+    private function extractReceiverBankIdsFromNotes(?string $notes): array
+    {
+        if (!$notes) {
+            return [];
+        }
+
+        // Cari pattern [Receiver Banks: [1,2,3]]
+        if (preg_match('/\[Receiver Banks:\s*(\[[\d,\s]*\])\]/', $notes, $matches)) {
+            $jsonArray = $matches[1];
+            $bankIds = json_decode($jsonArray, true);
+            
+            if (is_array($bankIds)) {
+                return array_filter($bankIds, function($id) {
+                    return is_numeric($id) && $id > 0;
+                });
+            }
+        }
+
+        return [];
+    }
+
+    /**
      * Create bank book entry from outlet payment
-     * For transfer/check: creates 2 entries (debit from sender bank, credit to receiver bank)
+     * For transfer/check: creates entries (debit from sender bank, credit to receiver banks)
+     * Supports multiple receiver banks
      *
      * @param \App\Models\OutletPayment $outletPayment
      * @return array|null Returns array of created BankBook entries or null
@@ -106,6 +135,18 @@ class BankBookService
 
         try {
             $entries = [];
+            $receiverBankIds = [];
+
+            // Extract multiple receiver bank IDs from notes
+            $receiverBankIdsFromNotes = $this->extractReceiverBankIdsFromNotes($outletPayment->notes);
+            
+            // Use multiple receiver banks from notes if available, otherwise fallback to single receiver_bank_id
+            if (!empty($receiverBankIdsFromNotes)) {
+                $receiverBankIds = $receiverBankIdsFromNotes;
+            } elseif ($outletPayment->receiver_bank_id) {
+                // Fallback untuk backward compatibility dengan data lama
+                $receiverBankIds = [$outletPayment->receiver_bank_id];
+            }
 
             // Entry 1: Debit from sender bank (outlet bank)
             if ($outletPayment->bank_id) {
@@ -123,10 +164,10 @@ class BankBookService
                 $entries[] = $this->createEntryWithoutTransaction($debitData);
             }
 
-            // Entry 2: Credit to receiver bank (head office bank)
-            if ($outletPayment->receiver_bank_id) {
+            // Entry 2+: Credit to receiver banks (head office banks) - multiple entries
+            foreach ($receiverBankIds as $receiverBankId) {
                 $creditData = [
-                    'bank_account_id' => $outletPayment->receiver_bank_id,
+                    'bank_account_id' => $receiverBankId,
                     'transaction_date' => $outletPayment->date,
                     'transaction_type' => 'credit', // Money coming in to head office bank
                     'amount' => $outletPayment->total_amount,
@@ -139,13 +180,14 @@ class BankBookService
                 $entries[] = $this->createEntryWithoutTransaction($creditData);
             }
 
-            // Recalculate balance for both banks if entries were created
+            // Recalculate balance for all banks if entries were created
             if (!empty($entries)) {
                 if ($outletPayment->bank_id) {
                     BankBook::recalculateBalance($outletPayment->bank_id, $outletPayment->date);
                 }
-                if ($outletPayment->receiver_bank_id) {
-                    BankBook::recalculateBalance($outletPayment->receiver_bank_id, $outletPayment->date);
+                // Recalculate balance for all receiver banks
+                foreach ($receiverBankIds as $receiverBankId) {
+                    BankBook::recalculateBalance($receiverBankId, $outletPayment->date);
                 }
             }
 
