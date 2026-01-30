@@ -1519,13 +1519,15 @@ class SalesReportController extends Controller
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-       // \Log::info('DEBUG FILTER', [
-       //     'outlet' => $outlet,
-       //     'dateFrom' => $dateFrom,
-       //     'dateTo' => $dateTo,
-       // ]);
+        // Enable debug logging to troubleshoot
+        Log::info('reportSalesSimple - Request params', [
+            'outlet' => $outlet,
+            'dateFrom' => $dateFrom,
+            'dateTo' => $dateTo,
+            'all_params' => $request->all()
+        ]);
 
-        $query = \DB::table('orders')
+        $query = DB::table('orders')
             ->select([
                 'orders.id',
                 'orders.nomor',
@@ -1552,38 +1554,192 @@ class SalesReportController extends Controller
             ->leftJoin('tbl_data_outlet as tdo', 'orders.kode_outlet', '=', 'tdo.qr_code');
 
         if ($outlet) {
-            $query->where('orders.kode_outlet', $outlet);
+            // Handle both QR code and outlet name/ID
+            // If outlet is numeric, treat as id_outlet, otherwise as QR code
+            if (is_numeric($outlet)) {
+                // Get QR code from outlet ID
+                $outletQr = DB::table('tbl_data_outlet')
+                    ->where('id_outlet', $outlet)
+                    ->value('qr_code');
+                if ($outletQr) {
+                    $query->where('orders.kode_outlet', $outletQr);
+                } else {
+                    $query->where('orders.kode_outlet', $outlet);
+                }
+            } else {
+                // Check if it's outlet name or QR code, convert to QR code
+                $outletQr = DB::table('tbl_data_outlet')
+                    ->where(function($q) use ($outlet) {
+                        $q->where('nama_outlet', $outlet)
+                          ->orWhere('qr_code', $outlet);
+                    })
+                    ->value('qr_code');
+                if ($outletQr) {
+                    $query->where('orders.kode_outlet', $outletQr);
+                } else {
+                    // Fallback: try direct match with QR code
+                    $query->where('orders.kode_outlet', $outlet);
+                }
+            }
         }
+        
         if ($dateFrom) {
-            $query->whereDate('orders.created_at', '>=', $dateFrom);
+            // Handle different date formats (MM/DD/YYYY or YYYY-MM-DD)
+            $dateFromFormatted = $this->normalizeDate($dateFrom);
+            $query->whereDate('orders.created_at', '>=', $dateFromFormatted);
         }
         if ($dateTo) {
-            $query->whereDate('orders.created_at', '<=', $dateTo);
+            // Handle different date formats (MM/DD/YYYY or YYYY-MM-DD)
+            $dateToFormatted = $this->normalizeDate($dateTo);
+            $query->whereDate('orders.created_at', '<=', $dateToFormatted);
         }
+        
         // Opsional: filter status jika dikirim
         if ($request->has('status') && $request->status) {
             $query->where('orders.status', $request->status);
         }
 
+        // Log the SQL query for debugging
+        $sql = $query->toSql();
+        $bindings = $query->getBindings();
+        Log::info('reportSalesSimple - SQL Query', [
+            'sql' => $sql,
+            'bindings' => $bindings
+        ]);
+
         $orders = $query->orderBy('orders.created_at')->get();
-        //\Log::info('DEBUG ORDERS COUNT', ['count' => $orders->count()]);
         
+        Log::info('reportSalesSimple - Query result', [
+            'count' => $orders->count(),
+            'first_order' => $orders->first() ? [
+                'id' => $orders->first()->id,
+                'nomor' => $orders->first()->nomor,
+                'kode_outlet' => $orders->first()->kode_outlet,
+                'created_at' => $orders->first()->created_at,
+            ] : null
+        ]);
 
+        // Calculate summary from orders
+        $summary = [
+            'total_sales' => $orders->sum('total') ?? 0,
+            'grand_total' => $orders->sum('grand_total') ?? 0,
+            'total_order' => $orders->count(),
+            'total_pax' => $orders->sum('pax') ?? 0,
+            'total_discount' => $orders->sum(function($order) {
+                $discount = floatval($order->discount ?? 0);
+                $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+                // If both > 0, take the max (same logic as frontend)
+                if ($discount > 0 && $manualDiscount > 0) {
+                    return max($discount, $manualDiscount);
+                }
+                return $discount + $manualDiscount;
+            }),
+            'total_cashback' => $orders->sum('cashback') ?? 0,
+            'total_service' => $orders->sum('service') ?? 0,
+            'total_pb1' => $orders->sum('pb1') ?? 0,
+            'total_commfee' => $orders->sum('commfee') ?? 0,
+            'total_rounding' => $orders->sum('rounding') ?? 0,
+        ];
+
+        // Group orders by date for per_day breakdown
+        $perDay = [];
+        foreach ($orders as $order) {
+            $date = date('Y-m-d', strtotime($order->created_at));
+            if (!isset($perDay[$date])) {
+                $perDay[$date] = [
+                    'tanggal' => $date,
+                    'total_order' => 0,
+                    'total_pax' => 0,
+                    'total_discount' => 0,
+                    'total_cashback' => 0,
+                    'total_service' => 0,
+                    'total_pb1' => 0,
+                    'total_commfee' => 0,
+                    'total_rounding' => 0,
+                    'total_sales' => 0,
+                    'grand_total' => 0,
+                ];
+            }
+            
+            $perDay[$date]['total_order']++;
+            $perDay[$date]['total_pax'] += floatval($order->pax ?? 0);
+            
+            // Calculate discount (same logic as summary)
+            $discount = floatval($order->discount ?? 0);
+            $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+            if ($discount > 0 && $manualDiscount > 0) {
+                $perDay[$date]['total_discount'] += max($discount, $manualDiscount);
+            } else {
+                $perDay[$date]['total_discount'] += ($discount + $manualDiscount);
+            }
+            
+            $perDay[$date]['total_cashback'] += floatval($order->cashback ?? 0);
+            $perDay[$date]['total_service'] += floatval($order->service ?? 0);
+            $perDay[$date]['total_pb1'] += floatval($order->pb1 ?? 0);
+            $perDay[$date]['total_commfee'] += floatval($order->commfee ?? 0);
+            $perDay[$date]['total_rounding'] += floatval($order->rounding ?? 0);
+            $perDay[$date]['total_sales'] += floatval($order->total ?? 0);
+            $perDay[$date]['grand_total'] += floatval($order->grand_total ?? 0);
+        }
+
+        // Frontend expects per_day as object with date as key (v-for="(row, tanggal) in report.per_day")
+        // Calculate avg_check for each day
+        foreach ($perDay as $date => &$day) {
+            $day['avg_check'] = $day['total_pax'] > 0 
+                ? ($day['grand_total'] / $day['total_pax']) 
+                : 0;
+        }
+
+        Log::info('reportSalesSimple - Response prepared', [
+            'summary' => $summary,
+            'per_day_count' => count($perDay),
+            'per_day_dates' => array_keys($perDay),
+            'orders_count' => $orders->count(),
+        ]);
+
+        return response()->json([
+            'summary' => $summary,
+            'per_day' => $perDay, // Object with date as key
+            'orders' => $orders->toArray(),
+        ]);
+    }
+    
+    /**
+     * Normalize date format from various formats to YYYY-MM-DD
+     * Handles: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD
+     */
+    private function normalizeDate($date)
+    {
+        if (empty($date)) {
+            return null;
+        }
         
-        // DEBUG: Log sample orders dengan commfee
-        $sampleOrders = $orders->take(5);
-       // \Log::info('DEBUG SAMPLE ORDERS', [
-         //   'sample_orders' => $sampleOrders->map(function($order) {
-         //       return [
-         //           'id' => $order->id,
-         //           'nomor' => $order->nomor,
-         //           'commfee' => $order->commfee,
-         //           'rounding' => $order->rounding,
-         //           'grand_total' => $order->grand_total,
-         //       ];
-         //   })
-       // ]);
-
-        return response()->json($orders);
+        // If already in YYYY-MM-DD format, return as is
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return $date;
+        }
+        
+        // Try to parse MM/DD/YYYY or DD/MM/YYYY format
+        $parts = preg_split('/[\/\-\.]/', $date);
+        if (count($parts) === 3) {
+            // Check if first part is year (4 digits) or month (1-2 digits)
+            if (strlen($parts[0]) === 4) {
+                // Format: YYYY-MM-DD or YYYY/MM/DD
+                return sprintf('%04d-%02d-%02d', $parts[0], $parts[1], $parts[2]);
+            } else {
+                // Format: MM/DD/YYYY (assuming US format)
+                // Or DD/MM/YYYY (assuming EU format)
+                // Try MM/DD/YYYY first (most common in US systems)
+                if ((int)$parts[0] <= 12 && (int)$parts[1] <= 31) {
+                    return sprintf('%04d-%02d-%02d', $parts[2], $parts[0], $parts[1]);
+                } else {
+                    // Try DD/MM/YYYY
+                    return sprintf('%04d-%02d-%02d', $parts[2], $parts[1], $parts[0]);
+                }
+            }
+        }
+        
+        // If can't parse, return original (let MySQL handle it)
+        return $date;
     }
 }
