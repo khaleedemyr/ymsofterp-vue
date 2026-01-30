@@ -1652,21 +1652,26 @@ class SalesReportController extends Controller
         ]);
 
         // Calculate summary from orders
+        $totalSales = $orders->sum('total') ?? 0;
+        $totalDiscount = $orders->sum(function($order) {
+            $discount = floatval($order->discount ?? 0);
+            $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+            // If both > 0, take the max (same logic as frontend)
+            if ($discount > 0 && $manualDiscount > 0) {
+                return max($discount, $manualDiscount);
+            }
+            return $discount + $manualDiscount;
+        });
+        $totalCashback = $orders->sum('cashback') ?? 0;
+        
         $summary = [
-            'total_sales' => $orders->sum('total') ?? 0,
+            'total_sales' => $totalSales,
             'grand_total' => $orders->sum('grand_total') ?? 0,
             'total_order' => $orders->count(),
             'total_pax' => $orders->sum('pax') ?? 0,
-            'total_discount' => $orders->sum(function($order) {
-                $discount = floatval($order->discount ?? 0);
-                $manualDiscount = floatval($order->manual_discount_amount ?? 0);
-                // If both > 0, take the max (same logic as frontend)
-                if ($discount > 0 && $manualDiscount > 0) {
-                    return max($discount, $manualDiscount);
-                }
-                return $discount + $manualDiscount;
-            }),
-            'total_cashback' => $orders->sum('cashback') ?? 0,
+            'total_discount' => $totalDiscount,
+            'total_cashback' => $totalCashback,
+            'net_sales' => $totalSales - $totalDiscount - $totalCashback, // Net Sales = Sales - Discount - Cashback
             'total_service' => $orders->sum('service') ?? 0,
             'total_pb1' => $orders->sum('pb1') ?? 0,
             'total_commfee' => $orders->sum('commfee') ?? 0,
@@ -1715,11 +1720,13 @@ class SalesReportController extends Controller
         }
 
         // Frontend expects per_day as object with date as key (v-for="(row, tanggal) in report.per_day")
-        // Calculate avg_check for each day
+        // Calculate avg_check and net_sales for each day
         foreach ($perDay as $date => &$day) {
             $day['avg_check'] = $day['total_pax'] > 0 
                 ? ($day['grand_total'] / $day['total_pax']) 
                 : 0;
+            // Calculate net_sales = total_sales - total_discount - total_cashback
+            $day['net_sales'] = $day['total_sales'] - $day['total_discount'] - $day['total_cashback'];
         }
 
         Log::info('reportSalesSimple - Response prepared', [
