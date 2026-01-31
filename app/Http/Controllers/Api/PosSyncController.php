@@ -1536,4 +1536,3 @@ class PosSyncController extends Controller
         }
     }
 }
-
