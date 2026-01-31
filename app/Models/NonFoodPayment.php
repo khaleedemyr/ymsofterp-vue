@@ -35,7 +35,8 @@ class NonFoodPayment extends Model
         'approved_gm_finance_at',
         'notes',
         'is_partial_payment',
-        'payment_sequence'
+        'payment_sequence',
+        'coa_id'
     ];
 
     protected $casts = [

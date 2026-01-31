@@ -12,6 +12,7 @@ use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class NonFoodPaymentController extends Controller
@@ -70,7 +71,15 @@ class NonFoodPaymentController extends Controller
                 'pr.pr_number as pr_number',
                 'pr.date as pr_date'
             )
-            ->distinct(); // Ensure no duplicate rows from joins
+            ;
+
+        // Jika kolom coa_id ada, tambahkan join ke tabel chart_of_accounts untuk menampilkan kode/nama COA
+        if (Schema::hasColumn('non_food_payments', 'coa_id')) {
+            $query->leftJoin('chart_of_accounts as coa', 'non_food_payments.coa_id', '=', 'coa.id')
+                  ->addSelect('coa.code as coa_code', 'coa.name as coa_name');
+        }
+
+        $query->distinct(); // Ensure no duplicate rows from joins
         
         // CRITICAL: Explicitly ensure NO filter by created_by is applied
         // This ensures all users can see all non food payments
@@ -1272,6 +1281,7 @@ class NonFoodPaymentController extends Controller
             'outlet_payments.*.category_id' => 'nullable|exists:purchase_requisition_categories,id',
             'outlet_payments.*.amount' => 'required|numeric|min:0',
             'outlet_payments.*.bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
         ];
         
         // Bank_id validation: required at main level only if no outlet_payments
@@ -1430,8 +1440,8 @@ class NonFoodPaymentController extends Controller
                 }
             }
 
-            // Create payment
-            $payment = NonFoodPayment::create([
+            // Create payment (conditionally include coa_id if column exists)
+            $paymentData = [
                 'payment_number' => $paymentNumber,
                 'purchase_order_ops_id' => $request->purchase_order_ops_id,
                 'purchase_requisition_id' => $request->purchase_requisition_id,
@@ -1449,7 +1459,31 @@ class NonFoodPaymentController extends Controller
                 'is_partial_payment' => $isPartialPayment,
                 'payment_sequence' => $paymentSequence,
                 'created_by' => Auth::id(),
-            ]);
+            ];
+
+            if (Schema::hasColumn('non_food_payments', 'coa_id')) {
+                // Accept multiple possible keys from frontend (coa_id, selected_coa, selectedCoa)
+                $incomingCoa = $request->input('coa_id');
+                if (empty($incomingCoa)) {
+                    $incomingCoa = $request->input('selected_coa');
+                }
+                if (empty($incomingCoa)) {
+                    $incomingCoa = $request->input('selectedCoa');
+                }
+
+                // Log for debugging if COA present or missing
+                \Log::info('NonFoodPayment incoming COA', [
+                    'payment_number' => $paymentNumber,
+                    'incoming_coa' => $incomingCoa,
+                    'request_coa_id' => $request->input('coa_id'),
+                    'request_selected_coa' => $request->input('selected_coa'),
+                    'request_selectedCoa' => $request->input('selectedCoa')
+                ]);
+
+                $paymentData['coa_id'] = $incomingCoa ? $incomingCoa : null;
+            }
+
+            $payment = NonFoodPayment::create($paymentData);
 
             // Save payment per outlet if provided
             if ($request->has('outlet_payments') && is_array($request->outlet_payments)) {
@@ -1761,6 +1795,7 @@ class NonFoodPaymentController extends Controller
             'outlet_payments.*.category_id' => 'nullable|exists:purchase_requisition_categories,id',
             'outlet_payments.*.amount' => 'required|numeric|min:0',
             'outlet_payments.*.bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
         ]);
 
         try {
@@ -1777,6 +1812,10 @@ class NonFoodPaymentController extends Controller
                 'reference_number' => $request->reference_number,
                 'notes' => $request->notes,
             ];
+
+            if (Schema::hasColumn('non_food_payments', 'coa_id')) {
+                $updateData['coa_id'] = $request->coa_id ?? null;
+            }
 
             $nonFoodPayment->update($updateData);
 
@@ -1874,9 +1913,15 @@ class NonFoodPaymentController extends Controller
                 'user_id' => Auth::id()
             ]);
             
+            // If this is an Inertia request, return a redirect with flash (Inertia expects redirects)
+            if ($request->header('X-Inertia')) {
+                return redirect()->back()->with('error', 'Payment ini tidak dapat disetujui.');
+            }
+
             if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
                 return response()->json(['success' => false, 'message' => 'Payment ini tidak dapat disetujui.'], 400);
             }
+
             return back()->with('error', 'Payment ini tidak dapat disetujui.');
         }
 
@@ -1984,8 +2029,14 @@ class NonFoodPaymentController extends Controller
                     ? 'Non Food Payment berhasil disetujui, menunggu persetujuan GM Finance.'
                     : 'Non Food Payment berhasil disetujui.');
 
-            // Always return JSON for API requests (axios sends Accept: application/json by default)
-            if ($request->wantsJson() || $request->ajax() || $request->expectsJson() || $request->header('Accept') === 'application/json') {
+            // If request comes from Inertia, return a redirect with flash message (Inertia handles redirects)
+            if ($request->header('X-Inertia')) {
+                \Log::info('Returning Inertia-friendly redirect for approval', ['payment_id' => $nonFoodPayment->id]);
+                return redirect()->back()->with('success', $successMessage);
+            }
+
+            // For plain AJAX/JSON callers, return JSON
+            if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
                 \Log::info('Returning JSON response for approval', [
                     'payment_id' => $nonFoodPayment->id,
                     'success' => true,
@@ -2005,6 +2056,11 @@ class NonFoodPaymentController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             
+            // If Inertia caller, redirect back with error flash (Inertia expects redirects)
+            if ($request->header('X-Inertia')) {
+                return redirect()->back()->with('error', 'Gagal menyetujui Non Food Payment: ' . $e->getMessage());
+            }
+
             if ($request->wantsJson() || $request->ajax() || $request->expectsJson()) {
                 return response()->json(['success' => false, 'message' => 'Gagal menyetujui Non Food Payment: ' . $e->getMessage()], 500);
             }
@@ -2090,7 +2146,7 @@ class NonFoodPaymentController extends Controller
         }
     }
 
-    public function markAsPaid(NonFoodPayment $nonFoodPayment, \App\Services\BankBookService $bankBookService)
+    public function markAsPaid(NonFoodPayment $nonFoodPayment, \App\Services\BankBookService $bankBookService, \App\Services\JurnalService $jurnalService)
     {
         if (!$nonFoodPayment->canBePaid()) {
             return back()->with('error', 'Payment ini tidak dapat ditandai sebagai dibayar.');
@@ -2101,13 +2157,32 @@ class NonFoodPaymentController extends Controller
             
             // Load payment outlets relationship before updating
             $nonFoodPayment->load('paymentOutlets.outlet');
-            
+
+            // Ensure COA is present when system supports it; fail fast so user can pick COA
+            if (Schema::hasColumn('non_food_payments', 'coa_id') && empty($nonFoodPayment->coa_id)) {
+                DB::rollBack();
+                // Inertia callers expect redirects with flash
+                if (request()->header('X-Inertia')) {
+                    return redirect()->back()->with('error', 'Tidak dapat menandai sebagai dibayar: COA pembayaran belum dipilih. Silakan edit payment dan pilih COA terlebih dahulu.');
+                }
+                return response()->json(['success' => false, 'message' => 'COA pembayaran belum dipilih. Silakan edit payment dan pilih COA terlebih dahulu.'], 400);
+            }
+
             $nonFoodPayment->update([
                 'status' => 'paid',
             ]);
 
             // Create bank book entry if payment method is transfer or check
             $bankBookService->createFromNonFoodPayment($nonFoodPayment);
+
+            // Create jurnal entries (jurnal + jurnal_global) using JurnalService
+            try {
+                $jurnalService->createFromNonFoodPayment($nonFoodPayment);
+            } catch (\Exception $e) {
+                // If jurnal creation fails, rollback and bubble error
+                DB::rollBack();
+                throw $e;
+            }
 
             // Update PR status to PAID if all payments are completed
             $this->updatePRStatusIfAllPaid($nonFoodPayment);

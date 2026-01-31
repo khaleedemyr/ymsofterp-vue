@@ -37,6 +37,29 @@
               </select>
             </div>
 
+              <!-- COA Selection -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Akun Pembayaran (COA)</label>
+                <multiselect
+                  v-model="selectedCoa"
+                  :options="coaList"
+                  :searchable="true"
+                  :close-on-select="true"
+                  :show-labels="false"
+                  placeholder="Pilih Akun (ketik untuk mencari)"
+                  label="display_name"
+                  track-by="id"
+                  @select="(c) => onCoaSelect(c)"
+                  @remove="() => onCoaRemove()"
+                  class="w-full"
+                >
+                  <template #noOptions>
+                    <span>Tidak ada akun ditemukan</span>
+                  </template>
+                </multiselect>
+                <p class="mt-1 text-xs text-gray-500">Opsional: pilih akun untuk jurnal pembayaran</p>
+              </div>
+
             <!-- Amount -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -186,6 +209,8 @@ const isSubmitting = ref(false);
 const { showLoading, hideLoading } = useLoading();
 
 const selectedBank = ref(null);
+const coaList = ref([]);
+const selectedCoa = ref(null);
 
 const form = reactive({
   supplier_id: '',
@@ -230,6 +255,7 @@ onMounted(() => {
     form.amount = props.payment.amount || '';
     form.payment_method = props.payment.payment_method || '';
     form.bank_id = props.payment.bank_id || null;
+    form.coa_id = props.payment.coa_id || '';
     form.payment_date = props.payment.payment_date ? new Date(props.payment.payment_date).toISOString().split('T')[0] : '';
     form.due_date = props.payment.due_date ? new Date(props.payment.due_date).toISOString().split('T')[0] : '';
     form.description = props.payment.description || '';
@@ -243,6 +269,32 @@ onMounted(() => {
         selectedBank.value = bank;
       }
     }
+  }
+  // Fetch COA list for dropdown
+  (async function(){
+    try {
+      const res = await axios.get('/api/chart-of-accounts/dropdown');
+      coaList.value = (res.data || []).map(c => ({ ...c, display_name: `${c.code} - ${c.name}` }));
+      if (form.coa_id) {
+        const found = coaList.value.find(c => String(c.id) === String(form.coa_id));
+        if (found) selectedCoa.value = found;
+      }
+    } catch (e) {
+      console.error('Failed to load COA list', e);
+      coaList.value = [];
+    }
+  })();
+
+  function onCoaSelect(coa) {
+    if (coa && coa.id) {
+      form.coa_id = coa.id;
+      selectedCoa.value = coa;
+    }
+  }
+
+  function onCoaRemove() {
+    form.coa_id = '';
+    selectedCoa.value = null;
   }
 });
 

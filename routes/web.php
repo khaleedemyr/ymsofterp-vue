@@ -300,6 +300,8 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('categories', CategoryController::class);
     Route::put('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
     Route::resource('chart-of-accounts', App\Http\Controllers\ChartOfAccountController::class);
+    // API endpoint for COA dropdown used by Non Food Payment form
+    Route::get('/api/chart-of-accounts/dropdown', [App\Http\Controllers\ChartOfAccountController::class, 'dropdown'])->name('chart-of-accounts.dropdown');
     Route::patch('chart-of-accounts/{id}/toggle-status', [App\Http\Controllers\ChartOfAccountController::class, 'toggleStatus'])->name('chart-of-accounts.toggle-status');
     Route::resource('jurnal', App\Http\Controllers\JurnalController::class);
     Route::post('jurnal/{id}/post', [App\Http\Controllers\JurnalController::class, 'post'])->name('jurnal.post');
@@ -1315,6 +1317,11 @@ Route::get('/api/ro-suppliers', [GoodReceiveOutletSupplierController::class, 'ge
 Route::get('/api/delivery-orders-ro-supplier', [GoodReceiveOutletSupplierController::class, 'getAvailableDeliveryOrders']);
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Jurnal Report Routes
+    Route::get('/report-jurnal-buku-besar', [\App\Http\Controllers\Report\JurnalReportController::class, 'bukuBesar'])->name('report.jurnal-buku-besar');
+    Route::get('/report-jurnal-neraca-saldo', [\App\Http\Controllers\Report\JurnalReportController::class, 'neracaSaldo'])->name('report.jurnal-neraca-saldo');
+    Route::get('/report-arus-kas', [\App\Http\Controllers\Report\JurnalReportController::class, 'arusKas'])->name('report.arus-kas');
+    
     Route::get('/report-sales-per-category', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPerCategory'])->name('report.sales-per-category');
     Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
     Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');

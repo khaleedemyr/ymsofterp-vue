@@ -24,14 +24,17 @@ class SalesPivotPerOutletSubCategoryExport implements FromCollection, WithHeadin
         $this->subCategories = $subCategories;
         $this->tanggal = $tanggal;
         if ($tanggal) {
-            $this->fileName = 'sales_pivot_per_outlet_sub_category_' . $tanggal . '.xlsx';
+            // Sanitize filename - replace invalid characters
+            $sanitizedDate = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '_', $tanggal);
+            $this->fileName = 'sales_pivot_per_outlet_sub_category_' . $sanitizedDate . '.xlsx';
         }
     }
 
     public function collection()
     {
         try {
-            $data = collect($this->report);
+            // Ensure report is an array or collection
+            $data = is_array($this->report) ? collect($this->report) : collect([]);
             
             if ($data->isEmpty()) {
                 // Return empty collection with headers only
@@ -40,7 +43,7 @@ class SalesPivotPerOutletSubCategoryExport implements FromCollection, WithHeadin
             
             return $data;
         } catch (\Exception $e) {
-            \Log::error('Export collection error: ' . $e->getMessage());
+            \Log::error('Export collection error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
             return collect([]);
         }
     }
@@ -56,22 +59,27 @@ class SalesPivotPerOutletSubCategoryExport implements FromCollection, WithHeadin
 
     public function map($row): array
     {
-        $data = [
-            is_object($row) ? $row->customer : $row['customer'],
-            is_object($row) ? $row->line_total : $row['line_total'],
-        ];
-        
-        foreach ($this->subCategories as $subCategory) {
-            $value = 0;
-            if (is_object($row)) {
-                $value = $row->{$subCategory->name} ?? 0;
-            } else {
-                $value = $row[$subCategory->name] ?? 0;
+        try {
+            $data = [
+                is_object($row) ? ($row->customer ?? '') : ($row['customer'] ?? ''),
+                is_object($row) ? ($row->line_total ?? 0) : ($row['line_total'] ?? 0),
+            ];
+            
+            foreach ($this->subCategories as $subCategory) {
+                $value = 0;
+                if (is_object($row)) {
+                    $value = $row->{$subCategory->name} ?? 0;
+                } else {
+                    $value = $row[$subCategory->name] ?? 0;
+                }
+                $data[] = $value;
             }
-            $data[] = $value;
+            
+            return $data;
+        } catch (\Exception $e) {
+            \Log::error('Export map error: ' . $e->getMessage() . ' | Row: ' . json_encode($row));
+            return [];
         }
-        
-        return $data;
     }
 
     public function styles(Worksheet $sheet)
@@ -139,10 +147,16 @@ class SalesPivotPerOutletSubCategoryExport implements FromCollection, WithHeadin
     public function toResponse($request)
     {
         try {
+            \Log::info('Starting Excel export', [
+                'report_count' => is_array($this->report) ? count($this->report) : 0,
+                'sub_categories_count' => $this->subCategories->count(),
+                'filename' => $this->fileName
+            ]);
+            
             return Excel::download($this, $this->fileName);
         } catch (\Exception $e) {
-            \Log::error('Export toResponse error: ' . $e->getMessage());
-            return response()->json(['error' => 'Terjadi kesalahan saat generate file Excel'], 500);
+            \Log::error('Export toResponse error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Terjadi kesalahan saat generate file Excel: ' . $e->getMessage()], 500);
         }
     }
 } 

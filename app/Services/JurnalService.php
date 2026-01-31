@@ -145,6 +145,204 @@ class JurnalService
             return $jurnalEntries;
         });
     }
+
+    /**
+     * Create jurnal from Non Food Payment
+     *
+     * @param \App\Models\NonFoodPayment $payment
+     * @return array Array of created Jurnal entries
+     * @throws \Exception
+     */
+    public function createFromNonFoodPayment($payment)
+    {
+        // Ensure payment is loaded
+        if (!$payment) {
+            throw new \Exception('Payment not provided');
+        }
+
+        // Credit COA should come from payment.coa_id if provided
+        $coaCredit = $payment->coa_id ?? null;
+        if (!$coaCredit) {
+            Log::warning('NonFoodPayment missing coa_id, skipping jurnal creation', ['payment_id' => $payment->id]);
+            return [];
+        }
+
+        // Build payments array: use outlet breakdown if available, otherwise single payment
+        $payments = [];
+        if ($payment->paymentOutlets && $payment->paymentOutlets->count() > 0) {
+            foreach ($payment->paymentOutlets as $po) {
+                $payments[] = (object)[
+                    'amount' => $po->amount ?? 0,
+                    'bank_id' => $po->bank_id ?? null,
+                    'payment_type' => $payment->payment_method ?? null,
+                    'payment_code' => strtoupper($payment->payment_method ?? ''),
+                    'outlet_id' => $po->outlet_id ?? null,
+                ];
+            }
+        } else {
+            // Try to determine outlet for single-payment cases:
+            $singleOutletId = null;
+            // 1) If linked to a PR with outlet
+            try {
+                if ($payment->purchaseRequisition && isset($payment->purchaseRequisition->outlet_id)) {
+                    $singleOutletId = $payment->purchaseRequisition->outlet_id;
+                }
+            } catch (\Exception $e) {
+                // ignore
+            }
+
+            // 2) If not found, try PO items mapping (some systems store outlet per PO) - skip here
+
+            // 3) If still not found and bank_id present, use bank's outlet
+            if (empty($singleOutletId) && !empty($payment->bank_id)) {
+                try {
+                    $bank = BankAccount::find($payment->bank_id);
+                    if ($bank && !empty($bank->outlet_id)) {
+                        $singleOutletId = $bank->outlet_id;
+                    }
+                } catch (\Exception $e) {
+                    // ignore
+                }
+            }
+
+            $payments[] = (object)[
+                'amount' => $payment->amount ?? 0,
+                'bank_id' => $payment->bank_id ?? null,
+                'payment_type' => $payment->payment_method ?? null,
+                'payment_code' => strtoupper($payment->payment_method ?? ''),
+                'outlet_id' => $singleOutletId,
+            ];
+        }
+
+        $totalPayment = collect($payments)->sum('amount');
+        $grandTotal = $payment->amount ?? 0;
+        if (abs($totalPayment - $grandTotal) > 0.01) {
+            Log::warning('Total payment parts not equal to payment amount', ['payment_id' => $payment->id, 'total_parts' => $totalPayment, 'amount' => $grandTotal]);
+        }
+
+        // Generate no jurnal
+        $noJurnal = Jurnal::generateNoJurnal();
+        $tanggal = $payment->payment_date ? date('Y-m-d', strtotime($payment->payment_date)) : date('Y-m-d');
+        $keterangan = "Non Food Payment: " . ($payment->payment_number ?? $payment->id ?? 'N/A');
+
+        return DB::transaction(function() use ($payment, $payments, $noJurnal, $tanggal, $keterangan, $coaCredit, $grandTotal) {
+            $jurnalEntries = [];
+            $totalDebit = 0;
+
+            foreach ($payments as $p) {
+                $coaDebit = $this->getCoaDebitFromPayment($p);
+                if (!$coaDebit) {
+                    Log::error('COA Debit not found for NonFoodPayment part', ['payment_id' => $payment->id, 'bank_id' => $p->bank_id, 'payment_type' => $p->payment_type]);
+                    throw new \Exception('COA Debit not found for payment part');
+                }
+
+                $amount = $p->amount ?? 0;
+                $totalDebit += $amount;
+                // Determine outlet_id for this jurnal line: prefer payment part outlet_id
+                $jurnalOutletId = $p->outlet_id ?? null;
+
+                // If still null, try purchaseOrderOps -> source PR -> outlet
+                if (empty($jurnalOutletId)) {
+                    try {
+                        if ($payment->purchaseOrderOps && $payment->purchaseOrderOps->source_type === 'purchase_requisition_ops' && $payment->purchaseOrderOps->source_id) {
+                            $pr = \App\Models\PurchaseRequisition::find($payment->purchaseOrderOps->source_id);
+                            if ($pr && isset($pr->outlet_id)) {
+                                $jurnalOutletId = $pr->outlet_id;
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // ignore
+                    }
+                }
+
+                // If still null and bank_id set, use bank's outlet
+                if (empty($jurnalOutletId) && !empty($p->bank_id)) {
+                    try {
+                        $bank = BankAccount::find($p->bank_id);
+                        if ($bank && !empty($bank->outlet_id)) {
+                            $jurnalOutletId = $bank->outlet_id;
+                        }
+                    } catch (\Exception $e) {
+                        // ignore
+                    }
+                }
+
+                // If still null and payment type is cash, throw to force user to choose outlet
+                if (empty($jurnalOutletId) && in_array(strtolower($p->payment_type), ['cash', 'tunai'], true)) {
+                    Log::warning('NonFoodPayment missing outlet for cash payment, cannot create jurnal', ['payment_id' => $payment->id]);
+                    throw new \Exception('Outlet belum tersedia untuk jurnal. Untuk pembayaran tunai, silakan pilih outlet pada payment sebelum menandai sebagai dibayar.');
+                }
+
+                $jurnal = Jurnal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaCredit,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $jurnalOutletId,
+                    'reference_type' => 'non_food_payment',
+                    'reference_id' => $payment->id,
+                    'status' => 'posted',
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                // Log created jurnal entry for debugging
+                Log::info('Jurnal entry created', [
+                    'jurnal_id' => $jurnal->id,
+                    'no_jurnal' => $noJurnal,
+                    'coa_debit_id' => $jurnal->coa_debit_id,
+                    'coa_kredit_id' => $jurnal->coa_kredit_id,
+                    'jumlah_debit' => $jurnal->jumlah_debit,
+                    'jumlah_kredit' => $jurnal->jumlah_kredit,
+                    'outlet_id' => $jurnal->outlet_id,
+                    'reference_id' => $jurnal->reference_id
+                ]);
+
+                $jurnalEntries[] = $jurnal;
+
+                $jg = JurnalGlobal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaCredit,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $jurnalOutletId,
+                    'source_module' => 'non_food_payment',
+                    'source_id' => $payment->id,
+                    'reference_type' => 'non_food_payment',
+                    'reference_id' => $payment->id,
+                    'status' => 'posted',
+                    'posted_at' => now(),
+                    'posted_by' => auth()->id() ?? 1,
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                // Log jurnal_global created
+                Log::info('JurnalGlobal entry created', [
+                    'jurnal_global_id' => $jg->id,
+                    'no_jurnal' => $noJurnal,
+                    'coa_debit_id' => $jg->coa_debit_id,
+                    'coa_kredit_id' => $jg->coa_kredit_id,
+                    'jumlah_debit' => $jg->jumlah_debit,
+                    'jumlah_kredit' => $jg->jumlah_kredit,
+                    'outlet_id' => $jg->outlet_id,
+                    'reference_id' => $jg->reference_id
+                ]);
+            }
+
+            if (abs($totalDebit - $grandTotal) > 0.01) {
+                Log::warning('Total debit jurnal not equal to payment amount for NonFoodPayment', ['payment_id' => $payment->id, 'total_debit' => $totalDebit, 'amount' => $grandTotal]);
+            }
+
+            Log::info('Jurnal created for NonFoodPayment', ['payment_id' => $payment->id, 'no_jurnal' => $noJurnal, 'entries' => count($jurnalEntries)]);
+
+            return $jurnalEntries;
+        });
+    }
     
     /**
      * Get COA Debit berdasarkan payment type

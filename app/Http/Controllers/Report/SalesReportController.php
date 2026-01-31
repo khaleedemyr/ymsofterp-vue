@@ -772,6 +772,10 @@ class SalesReportController extends Controller
                 ->where('show_pos', '0')
                 ->orderBy('name')
                 ->get();
+                
+            if ($subCategories->isEmpty()) {
+                return response()->json(['error' => 'Tidak ada sub kategori yang ditemukan'], 400);
+            }
 
             // Query untuk outlet_food_good_receives (sama dengan Report Rekap FJ)
             $query1 = DB::table('outlet_food_good_receives as gr')
@@ -889,20 +893,49 @@ class SalesReportController extends Controller
             unset($row);
 
             // Group data berdasarkan is_outlet
-            $groupedReport = [
-                'outlets' => array_values(array_filter($pivot, function($row) {
-                    return $row['is_outlet'] == 1;
-                })),
-                'nonOutlets' => array_values(array_filter($pivot, function($row) {
-                    return $row['is_outlet'] != 1;
-                }))
-            ];
+            $outlets = array_values(array_filter($pivot, function($row) {
+                return $row['is_outlet'] == 1;
+            }));
+            
+            $nonOutlets = array_values(array_filter($pivot, function($row) {
+                return $row['is_outlet'] != 1;
+            }));
+            
+            // Flatten data untuk export (gabungkan outlets dan non-outlets)
+            $flatReport = array_merge($outlets, $nonOutlets);
+            
+            // Jika tidak ada data, buat row kosong untuk menghindari error
+            if (empty($flatReport)) {
+                Log::warning('Export Sales Pivot: No data found for date range', [
+                    'from' => $from,
+                    'to' => $to
+                ]);
+                
+                // Return empty export dengan header saja
+                $flatReport = [[
+                    'customer' => 'Tidak ada data',
+                    'is_outlet' => 0,
+                    'line_total' => 0
+                ]];
+                
+                // Initialize semua sub kategori dengan 0
+                foreach ($subCategories as $sc) {
+                    $flatReport[0][$sc->name] = 0;
+                }
+            }
+            
+            Log::info('Export Sales Pivot Per Outlet Sub Category', [
+                'from' => $from,
+                'to' => $to,
+                'data_count' => count($flatReport),
+                'sub_categories_count' => $subCategories->count()
+            ]);
 
             // Create export
-            return new \App\Exports\SalesPivotPerOutletSubCategoryExport($groupedReport, $subCategories, $from . ' - ' . $to);
+            return new \App\Exports\SalesPivotPerOutletSubCategoryExport($flatReport, $subCategories, $from . ' - ' . $to);
             
         } catch (\Exception $e) {
-            Log::error('Export error: ' . $e->getMessage());
+            Log::error('Export error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
             return response()->json(['error' => 'Terjadi kesalahan saat export: ' . $e->getMessage()], 500);
         }
     }

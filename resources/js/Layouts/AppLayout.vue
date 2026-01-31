@@ -234,6 +234,9 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Jurnal', icon: 'fa-solid fa-book', route: '/jurnal', code: 'jurnal' },
+            { name: () => 'Buku Besar', icon: 'fa-solid fa-book-open', route: '/report-jurnal-buku-besar', code: 'jurnal_buku_besar' },
+            { name: () => 'Neraca Saldo', icon: 'fa-solid fa-balance-scale', route: '/report-jurnal-neraca-saldo', code: 'jurnal_neraca_saldo' },
+            { name: () => 'Laporan Arus Kas', icon: 'fa-solid fa-water', route: '/report-arus-kas', code: 'jurnal_arus_kas' },
             { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
             { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
             { name: () => 'Non Food Payment', icon: 'fa-solid fa-credit-card', route: '/non-food-payments', code: 'non_food_payment' },

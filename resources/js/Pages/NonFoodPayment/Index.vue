@@ -94,6 +94,7 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">COA</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. PO/PR</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Kategori</th>
@@ -106,7 +107,7 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="11" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
+              <td colspan="12" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
             </tr>
             <template v-for="payment in payments.data" :key="payment.id">
               <tr v-for="(outlet, index) in (payment.outlet_breakdown || [])" :key="`${payment.id}-${outlet?.outlet_id || index}`" 
@@ -124,6 +125,10 @@
                 <!-- Supplier (only show on first row) -->
                 <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
                   {{ payment.supplier_name || '-' }}
+                </td>
+                <!-- COA (only show on first row) -->
+                <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">
+                  <div class="text-sm font-medium text-gray-900">{{ payment.coa_code ? (payment.coa_code + ' - ' + (payment.coa_name || '')) : '-' }}</div>
                 </td>
                 <!-- PO/PR Number (only show on first row) -->
                 <td v-if="index === 0" class="px-6 py-3" :rowspan="(payment.outlet_breakdown || []).length">

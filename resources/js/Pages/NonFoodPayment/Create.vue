@@ -53,6 +53,25 @@
                 </div>
               </div>
             </div>
+
+            <!-- COA Selection -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Akun Pembayaran (COA)</label>
+              <multiselect
+                v-model="selectedCoa"
+                :options="coaList"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Pilih Akun (ketik untuk mencari)"
+                label="display_name"
+                track-by="id"
+                @select="onCoaSelect"
+                @remove="onCoaRemove"
+                class="w-full"
+              />
+              <p class="mt-1 text-xs text-gray-500">Opsional: pilih akun untuk jurnal pembayaran</p>
+            </div>
           </div>
         </div>
 
@@ -535,6 +554,25 @@
               </p>
             </div>
 
+            <!-- COA Selection (visible in payment info) -->
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Akun Pembayaran (COA)</label>
+              <multiselect
+                v-model="selectedCoa"
+                :options="coaList"
+                :searchable="true"
+                :close-on-select="true"
+                :show-labels="false"
+                placeholder="Pilih Akun (ketik untuk mencari)"
+                label="display_name"
+                track-by="id"
+                @select="onCoaSelect"
+                @remove="onCoaRemove"
+                class="w-full"
+              />
+              <p class="mt-1 text-xs text-gray-500">Opsional: pilih akun untuk jurnal pembayaran</p>
+            </div>
+
             <!-- Payment Termin Info (only for PO with termin payment) -->
             <div v-if="selectedPO && selectedPO.payment_type === 'termin'" class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
               <div class="flex items-center justify-between mb-3">
@@ -589,6 +627,17 @@
               </div>
               <div v-else class="mt-3 p-2 bg-green-100 border border-green-300 rounded-lg">
                 <p class="text-sm text-green-800 text-center font-medium">
+                  <!-- If payment is cash and no per-outlet provided, prompt user to choose outlet -->
+                  <div v-if="needsCashOutletSelection" class="md:col-span-2">
+                    <label class="font-medium text-gray-700">Pilih Outlet untuk Pembayaran Tunai:</label>
+                    <div class="mt-2">
+                      <select v-model="selectedCashOutlet" class="px-3 py-2 rounded border border-gray-300 w-full">
+                        <option value="">-- Pilih Outlet --</option>
+                        <option v-for="o in outletsList" :key="o.id" :value="o.id">{{ o.name }}</option>
+                      </select>
+                    </div>
+                    <div v-if="needsCashOutletSelection && !selectedCashOutlet" class="text-sm text-red-600 mt-1">Outlet wajib dipilih untuk pembayaran tunai.</div>
+                  </div>
                   <i class="fa fa-check-circle mr-1"></i>
                   PO sudah lunas!
                 </p>
@@ -962,6 +1011,10 @@
                   <div>
                     <span class="font-medium text-gray-700">Payment Method:</span>
                     <span class="ml-2 text-gray-900 capitalize">{{ form.payment_method || '-' }}</span>
+                  </div>
+                  <div v-if="selectedCoa" class="md:col-span-2">
+                    <span class="font-medium text-gray-700">COA:</span>
+                    <span class="ml-2 text-gray-900">{{ selectedCoa.display_name }}</span>
                   </div>
                   <div>
                     <span class="font-medium text-gray-700">Payment Date:</span>
@@ -1403,6 +1456,7 @@ const form = reactive({
   purchase_order_ops_id: null,
   purchase_requisition_id: null,
   supplier_id: '',
+  coa_id: '',
   amount: '',
   payment_method: '',
   bank_id: null,
@@ -1413,6 +1467,56 @@ const form = reactive({
   notes: '',
   is_partial_payment: false
 });
+
+// COA list for dropdown (with display_name for Multiselect)
+const coaList = ref([]);
+const selectedCoa = ref(null);
+// Outlets for cash selection when needed
+const outletsList = ref([]);
+const selectedCashOutlet = ref(null);
+
+async function fetchCoaList() {
+  try {
+    const res = await axios.get('/api/chart-of-accounts/dropdown');
+    coaList.value = (res.data || []).map(c => ({ ...c, display_name: `${c.code} - ${c.name}` }));
+    // If there's a preselected coa_id in form, try to set selectedCoa
+    if (form.coa_id) {
+      const found = coaList.value.find(c => String(c.id) === String(form.coa_id));
+      if (found) selectedCoa.value = found;
+    }
+  } catch (e) {
+    console.error('Failed to load COA list', e);
+    coaList.value = [];
+  }
+}
+
+// Fetch COA on load
+fetchCoaList();
+
+async function fetchOutlets() {
+  try {
+    const res = await axios.get('/api/outlets');
+    // Expect array of { id_outlet, nama_outlet } or similar
+    outletsList.value = (res.data || []).map(o => ({ id: o.id_outlet || o.id || o.id_outlet, name: o.nama_outlet || o.name || o.nama }));
+  } catch (e) {
+    console.error('Failed to load outlets list', e);
+    outletsList.value = [];
+  }
+}
+
+fetchOutlets();
+
+function onCoaSelect(coa) {
+  if (coa && coa.id) {
+    form.coa_id = coa.id;
+    selectedCoa.value = coa;
+  }
+}
+
+function onCoaRemove() {
+  form.coa_id = '';
+  selectedCoa.value = null;
+}
 
 // Computed total dari semua outlet payments
 const totalOutletPayments = computed(() => {
@@ -1425,6 +1529,15 @@ const totalOutletPayments = computed(() => {
 function updateTotalAmount() {
   form.amount = totalOutletPayments.value;
 }
+
+const needsCashOutletSelection = computed(() => {
+  // Show selector when payment method is cash and there are no per-outlet payments
+  const hasPerOutlet = Object.values(outletPayments.value).some(o => o.amount && parseFloat(o.amount) > 0);
+  if (String(form.payment_method) === 'cash' && !hasPerOutlet) {
+    return true;
+  }
+  return false;
+});
 
 // Function untuk reset outlet amount ke default
 function resetOutletAmount(outletKey, defaultAmount) {
@@ -1939,6 +2052,27 @@ function confirmSubmit() {
   
   // If outlet_payments exist, remove bank_id from main level (bank_id is handled per outlet)
   if (outletPaymentsArray.length > 0) {
+    delete formData.bank_id;
+  }
+
+  // If payment is cash and no per-outlet provided, require selectedCashOutlet and convert to outlet_payments
+  if (needsCashOutletSelection.value) {
+    if (!selectedCashOutlet.value) {
+      isSubmitting.value = false;
+      showPreviewModal.value = true;
+      hideLoading();
+      import('sweetalert2').then(({ default: Swal }) => {
+        Swal.fire('Error', 'Silakan pilih outlet sebelum menyimpan pembayaran tunai.', 'error');
+      });
+      return;
+    }
+
+    formData.outlet_payments = [{
+      outlet_id: selectedCashOutlet.value,
+      category_id: null,
+      amount: form.amount,
+      bank_id: null
+    }];
     delete formData.bank_id;
   }
 

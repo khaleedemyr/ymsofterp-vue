@@ -88,6 +88,17 @@ class ChartOfAccountController extends Controller
         ]);
     }
 
+    /**
+     * API endpoint for dropdown: return active CoAs (id, code, name)
+     */
+    public function dropdown(Request $request)
+    {
+        $coas = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+
+        return response()->json($coas);
+    }
     public function create()
     {
         // Get all CoAs for dropdown (support multi-level)
