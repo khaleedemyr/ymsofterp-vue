@@ -446,6 +446,10 @@ class InternalWarehouseTransferController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        
+        // Check delete permission: only superadmin or warehouse division can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         $query = InternalWarehouseTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet']);
 
         // Filter berdasarkan outlet user
@@ -487,6 +491,7 @@ class InternalWarehouseTransferController extends Controller
             'transfers' => $transfers,
             'filters' => $request->only(['search', 'from', 'to']),
             'outlets' => $outlets,
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -553,6 +558,13 @@ class InternalWarehouseTransferController extends Controller
 
     public function destroy($id)
     {
+        $user = auth()->user();
+        
+        // Check permission: only superadmin or warehouse division can delete
+        if ($user->id_role !== '5af56935b011a' && $user->division_id != 11) {
+            return response()->json(['message' => 'Anda tidak memiliki akses untuk menghapus data ini'], 403);
+        }
+        
         DB::beginTransaction();
         try {
             $transfer = InternalWarehouseTransfer::with('items')->findOrFail($id);

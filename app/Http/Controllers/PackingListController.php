@@ -31,6 +31,9 @@ class PackingListController extends Controller
     {
         $user = auth()->user()->load('outlet');
         
+        // Check if user can delete packing list
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         // Simpan filter di session untuk persist
         if ($request->hasAny(['search', 'date_from', 'date_to', 'status', 'load_data', 'per_page'])) {
             session([
@@ -213,6 +216,7 @@ class PackingListController extends Controller
                 'per_page' => $perPage
             ],
             'dataLoaded' => $loadData === '1',
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -857,6 +861,20 @@ class PackingListController extends Controller
     {
         \DB::beginTransaction();
         try {
+            $user = auth()->user();
+            
+            // Cek authorization: hanya superadmin atau user dengan division_id=11
+            $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
+            $isWarehouseDivision11 = $user && $user->division_id == 11;
+            
+            if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk menghapus Packing List',
+                    'error' => 'Unauthorized: Hanya superadmin atau user dengan division warehouse yang dapat menghapus Packing List'
+                ], 403);
+            }
+            
             $packingList = FoodPackingList::with(['items', 'floorOrder'])->findOrFail($id);
             
             // Cek apakah status masih 'packing' (bisa dihapus)

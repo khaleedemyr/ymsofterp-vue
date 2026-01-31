@@ -41,6 +41,9 @@ class RetailFoodController extends Controller
         if (!$outletExists && $userOutletId != 1) {
             abort(403, 'Outlet tidak terdaftar');
         }
+        
+        // Check delete permission: only superadmin or warehouse division can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         // Get filter parameters
         $search = $request->get('search', '');
@@ -96,8 +99,10 @@ class RetailFoodController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'payment_method' => $paymentMethod,
-            ]
+            ],
+            'canDelete' => $canDelete,
         ]);
+        
     }
 
     public function create()
@@ -631,11 +636,11 @@ class RetailFoodController extends Controller
         try {
             $user = auth()->user();
             
-            // Check if user has permission to delete (only admin with id_outlet = 1)
-            if ($user->id_outlet !== 1) {
+            // Check permission: only superadmin or warehouse division can delete
+            if ($user->id_role !== '5af56935b011a' && $user->division_id != 11) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda tidak memiliki izin untuk menghapus transaksi retail food'
+                    'message' => 'Anda tidak memiliki akses untuk menghapus data ini'
                 ], 403);
             }
 

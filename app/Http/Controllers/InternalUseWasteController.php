@@ -10,6 +10,8 @@ class InternalUseWasteController extends Controller
 {
     public function index()
     {
+        $user = auth()->user();
+
         $data = DB::table('internal_use_wastes')
             ->leftJoin('warehouses', 'internal_use_wastes.warehouse_id', '=', 'warehouses.id')
             ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
@@ -25,8 +27,13 @@ class InternalUseWasteController extends Controller
             ->orderByDesc('internal_use_wastes.date')
             ->orderByDesc('internal_use_wastes.id')
             ->get();
+
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return inertia('InternalUseWaste/Index', [
-            'data' => $data
+            'data' => $data,
+            'canDelete' => $canDelete
         ]);
     }
     public function create()
@@ -201,6 +208,14 @@ class InternalUseWasteController extends Controller
     }
     public function destroy($id)
     {
+        // Check authorization
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
+        if (!$canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus data ini'], 403);
+        }
+
         DB::beginTransaction();
         try {
             $data = DB::table('internal_use_wastes')->where('id', $id)->first();

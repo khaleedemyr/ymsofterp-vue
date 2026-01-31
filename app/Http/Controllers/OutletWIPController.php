@@ -15,6 +15,9 @@ class OutletWIPController extends Controller
     {
         $user = auth()->user();
         
+        // Check delete permission: only superadmin or warehouse division can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         // OPTIMASI: Cache items (data jarang berubah, cache 1 jam)
         $items = Cache::remember('outlet_wip_items', 3600, function () {
             return DB::table('items')
@@ -263,6 +266,7 @@ class OutletWIPController extends Controller
                 'search' => $request->search,
                 'per_page' => $perPage,
             ],
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -1628,6 +1632,11 @@ class OutletWIPController extends Controller
     public function destroy($id)
     {
         $user = auth()->user();
+        
+        // Check permission: only superadmin or warehouse division can delete
+        if ($user->id_role !== '5af56935b011a' && $user->division_id != 11) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus data ini'], 403);
+        }
         
         DB::beginTransaction();
         try {

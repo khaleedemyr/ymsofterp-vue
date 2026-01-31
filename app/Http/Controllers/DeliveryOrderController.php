@@ -28,6 +28,11 @@ class DeliveryOrderController extends Controller
     }
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
+        // Check if user can delete delivery order
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         // Simpan filter di session untuk persist
         if ($request->hasAny(['search', 'dateFrom', 'dateTo', 'load_data', 'per_page'])) {
             session([
@@ -66,6 +71,7 @@ class DeliveryOrderController extends Controller
                 'load_data' => $loadData,
                 'per_page' => $perPage
             ],
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -1358,6 +1364,16 @@ class DeliveryOrderController extends Controller
     {
         DB::beginTransaction();
         try {
+            $user = auth()->user();
+            
+            // Cek authorization: hanya superadmin atau user dengan division_id=11
+            $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
+            $isWarehouseDivision11 = $user && $user->division_id == 11;
+            
+            if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                return redirect()->back()->with('error', 'Anda tidak memiliki akses untuk menghapus Delivery Order. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.');
+            }
+            
             $order = DB::table('delivery_orders')->where('id', $id)->first();
             if (!$order) {
                 return redirect()->route('delivery-order.index')->with('error', 'Delivery Order tidak ditemukan');

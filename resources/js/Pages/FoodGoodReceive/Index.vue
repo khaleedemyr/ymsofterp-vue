@@ -75,7 +75,7 @@
                     <i class="fa-solid fa-pen-to-square mr-1"></i> Edit
                   </button>
                   <button 
-                    v-if="canDelete(gr)"
+                    v-if="props.canDelete"
                     @click="hapus(gr.id)" 
                     class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa-solid fa-trash mr-1"></i> Hapus
@@ -127,22 +127,15 @@ import { generateStrukPDF } from './generateStrukPDF';
 
 const props = defineProps({
   goodReceives: Object,
-  filters: Object
+  filters: Object,
+  canDelete: {
+    type: Boolean,
+    default: false
+  }
 });
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user || page.props.user);
-
-// Check if user can delete Good Receive
-// Allow delete for: Superadmin (id_role = '5af56935b011a') or User with division_id=11 and status='A'
-function canDelete(gr) {
-  if (!user.value) return false;
-  
-  const isSuperadmin = user.value.id_role === '5af56935b011a';
-  const isDivision11 = user.value.division_id === 11 && user.value.status === 'A';
-  
-  return isSuperadmin || isDivision11;
-}
 
 const showForm = ref(false);
 const from = ref(props.filters?.from || '');

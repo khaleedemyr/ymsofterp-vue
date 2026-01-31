@@ -674,6 +674,10 @@ class OutletTransferController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        
+        // Check delete permission: only superadmin or warehouse division can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         $query = OutletTransfer::with([
             'warehouseOutletFrom',
             'warehouseOutletTo',
@@ -753,6 +757,7 @@ class OutletTransferController extends Controller
             'outlets' => $outlets,
             'user' => $user,
             'users' => $users,
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -921,6 +926,13 @@ class OutletTransferController extends Controller
 
     public function destroy($id)
     {
+        $user = auth()->user();
+        
+        // Check permission: only superadmin or warehouse division can delete
+        if ($user->id_role !== '5af56935b011a' && $user->division_id != 11) {
+            return response()->json(['message' => 'Anda tidak memiliki akses untuk menghapus data ini'], 403);
+        }
+        
         DB::beginTransaction();
         try {
             $transfer = OutletTransfer::with('items')->findOrFail($id);

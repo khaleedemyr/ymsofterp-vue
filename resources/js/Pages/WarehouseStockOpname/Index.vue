@@ -159,7 +159,7 @@
                       Edit
                     </Link>
                     <button
-                      v-if="opname.status === 'DRAFT'"
+                      v-if="opname.status === 'DRAFT' && props.canDelete"
                       @click="deleteStockOpname(opname.id)"
                       class="inline-flex items-center px-3 py-1.5 bg-red-500 text-white text-xs font-semibold rounded-lg hover:bg-red-600 transition-colors shadow-sm"
                       title="Delete"
@@ -217,6 +217,7 @@ const props = defineProps({
   stockOpnames: Object,
   warehouses: Array,
   filters: Object,
+  canDelete: Boolean,
 });
 
 const filters = ref({

@@ -48,6 +48,9 @@ class PurchaseRequisitionController extends Controller
         $user = auth()->user();
         $canSeeAllPayments = false;
         
+        // Check if user can delete purchase requisition
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         if ($user && $user->id_role === '5af56935b011a') {
             $canSeeAllPayments = true;
         }
@@ -562,6 +565,7 @@ class PurchaseRequisitionController extends Controller
             'auth' => [
                 'user' => auth()->user()
             ],
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -1483,7 +1487,7 @@ class PurchaseRequisitionController extends Controller
         }
 
         $user = auth()->user();
-        $hasSpecialRole = $user && $user->id_role === '5af56935b011a';
+        $hasSpecialRole = $user && ($user->id_role === '5af56935b011a' || $user->division_id == 11);
         
         // Allow delete for DRAFT and SUBMITTED status (not yet approved/processed)
         // Also allow delete for APPROVED status if user has special role
@@ -1514,7 +1518,7 @@ class PurchaseRequisitionController extends Controller
         }
 
         // For DRAFT and SUBMITTED, check if user is the creator
-        // If user has special role (id_role='5af56935b011a'), allow delete all data without checking creator
+        // If user has special role (id_role='5af56935b011a' or division_id=11), allow delete all data without checking creator
         if (in_array($purchaseRequisition->status, $deletableStatuses) && !$hasSpecialRole && $purchaseRequisition->created_by !== auth()->id()) {
             $errorMessage = 'You can only delete your own purchase requisitions.';
             if ($request->expectsJson() || $request->wantsJson()) {

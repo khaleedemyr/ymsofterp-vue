@@ -267,6 +267,11 @@ class WarehouseTransferController extends Controller
 
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
+        // Check if user can delete warehouse transfer
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         $query = WarehouseTransfer::with(['warehouseFrom', 'warehouseTo', 'creator']);
 
         if ($request->search) {
@@ -304,6 +309,7 @@ class WarehouseTransferController extends Controller
         return inertia('WarehouseTransfer/Index', [
             'transfers' => $transfers,
             'filters' => $request->only(['search', 'status', 'from', 'to']),
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -327,6 +333,16 @@ class WarehouseTransferController extends Controller
     {
         DB::beginTransaction();
         try {
+            $user = auth()->user();
+            
+            // Cek authorization: hanya superadmin atau user dengan division_id=11
+            $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
+            $isWarehouseDivision11 = $user && $user->division_id == 11;
+            
+            if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                return redirect()->back()->with('error', 'Anda tidak memiliki akses untuk menghapus Warehouse Transfer. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.');
+            }
+            
             $transfer = WarehouseTransfer::with('items')->findOrFail($id);
             // Rollback stok dan kartu stok
             foreach ($transfer->items as $item) {

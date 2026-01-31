@@ -67,7 +67,7 @@
                   <button v-if="tr.status === 'submitted' && canApprove(tr)" @click="approveTransfer(tr.id)" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-check mr-1"></i> Approve
                   </button>
-                  <button v-if="tr.status === 'draft'" @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                  <button v-if="tr.status === 'draft' && props.canDelete" @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-trash mr-1"></i> Hapus
                   </button>
                 </div>
@@ -139,6 +139,7 @@ const props = defineProps({
   outlets: Object,
   user: Object,
   users: Array,
+  canDelete: Boolean,
 });
 
 const search = ref(props.filters?.search || '');

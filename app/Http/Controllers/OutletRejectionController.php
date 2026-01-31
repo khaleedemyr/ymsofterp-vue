@@ -89,10 +89,15 @@ class OutletRejectionController extends Controller
         $outlets = Outlet::select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
         $warehouses = Warehouse::select('id', 'name')->orderBy('name')->get();
 
+        // Check if user can delete
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('OutletRejection/Index', [
             'rejections' => $rejections,
             'outlets' => $outlets,
             'warehouses' => $warehouses,
+            'canDelete' => $canDelete,
             'filters' => $request->only(['search', 'status', 'outlet_id', 'warehouse_id', 'date_from', 'date_to', 'per_page'])
         ]);
     }
@@ -666,6 +671,14 @@ class OutletRejectionController extends Controller
 
     public function destroy($id)
     {
+        // Check authorization
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
+        if (!$canDelete) {
+            return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk menghapus data ini']);
+        }
+
         $rejection = OutletRejection::findOrFail($id);
 
         if ($rejection->status !== 'draft') {

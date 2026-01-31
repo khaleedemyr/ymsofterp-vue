@@ -47,7 +47,7 @@
                 <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                   <i class="fa fa-eye mr-1"></i> Detail
                 </button>
-                <button class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" @click="onDelete(row.id)" :disabled="loadingId === row.id">
+                <button v-if="props.canDelete" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition ml-2" @click="onDelete(row.id)" :disabled="loadingId === row.id">
                   <span v-if="loadingId === row.id"><i class="fa fa-spinner fa-spin mr-1"></i> Menghapus...</span>
                   <span v-else><i class="fa fa-trash mr-1"></i> Hapus</span>
                 </button>
@@ -67,7 +67,8 @@ import Swal from 'sweetalert2'
 import { ref } from 'vue'
 
 const props = defineProps({
-  data: Array
+  data: Array,
+  canDelete: Boolean
 })
 
 const loadingId = ref(null)

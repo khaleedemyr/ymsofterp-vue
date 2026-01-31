@@ -14,6 +14,10 @@ const props = defineProps({
   dataLoaded: {
     type: Boolean,
     default: false
+  },
+  canDelete: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -595,7 +599,7 @@ function closeMatrixModal() {
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6-6m2 2l-6 6m-2 2h6a2 2 0 002-2v-6a2 2 0 00-2-2H7a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
                     Edit
                   </button>
-                  <button @click="hapus(list)" :disabled="list.status !== 'packing'" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  <button v-if="props.canDelete" @click="hapus(list)" :disabled="list.status !== 'packing'" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                     Hapus
                   </button>

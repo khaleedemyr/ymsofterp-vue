@@ -210,7 +210,8 @@ import { debounce } from 'lodash'
 const props = defineProps({
   user: Object,
   retailWarehouseFoods: Object,
-  filters: Object
+  filters: Object,
+  canDelete: Boolean
 })
 
 const loadingId = ref(null)
@@ -240,9 +241,9 @@ const activeFiltersCount = computed(() => {
   return count
 })
 
-// Check if user can delete (only admin with id_outlet = 1)
+// Check if user can delete (superadmin or division warehouse)
 const canDelete = computed(() => {
-  return props.user?.id_outlet === 1
+  return props.canDelete
 })
 
 // Debounced search function

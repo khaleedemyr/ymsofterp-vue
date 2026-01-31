@@ -52,9 +52,14 @@ class RetailWarehouseSaleController extends Controller
 
         $sales = $query->orderByDesc('rws.created_at')->paginate($request->get('per_page', 15));
 
+        // Check if user can delete
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('RetailWarehouseSale/Index', [
             'sales' => $sales,
-            'filters' => $request->only(['search', 'from', 'to', 'per_page'])
+            'filters' => $request->only(['search', 'from', 'to', 'per_page']),
+            'canDelete' => $canDelete
         ]);
     }
 
@@ -198,6 +203,14 @@ class RetailWarehouseSaleController extends Controller
 
     public function destroy($id)
     {
+        // Check authorization
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
+        if (!$canDelete) {
+            return redirect()->route('retail-warehouse-sale.index')->with('error', 'Anda tidak memiliki akses untuk menghapus data ini');
+        }
+
         DB::beginTransaction();
         try {
             $sale = DB::table('retail_warehouse_sales')->where('id', $id)->first();

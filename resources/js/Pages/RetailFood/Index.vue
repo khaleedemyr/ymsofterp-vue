@@ -353,7 +353,8 @@ import axios from 'axios'
 const props = defineProps({
   user: Object,
   retailFoods: Object,
-  filters: Object
+  filters: Object,
+  canDelete: Boolean
 })
 
 const loadingId = ref(null)
@@ -382,11 +383,6 @@ const activeFiltersCount = computed(() => {
   if (filters.value.date_to) count++
   if (filters.value.payment_method) count++
   return count
-})
-
-// Check if user can delete (only admin with id_outlet = 1)
-const canDelete = computed(() => {
-  return props.user?.id_outlet === 1
 })
 
 // Debounced search function

@@ -17,6 +17,8 @@ class WarehouseSaleController extends Controller
 {
     public function index()
     {
+        $user = auth()->user();
+
         $sales = \App\Models\WarehouseSale::with(['sourceWarehouse', 'targetWarehouse', 'creator'])
             ->orderByDesc('date')
             ->paginate(10);
@@ -27,8 +29,12 @@ class WarehouseSaleController extends Controller
             return $sale;
         });
 
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('Inventory/WarehouseSales/Index', [
-            'sales' => $sales
+            'sales' => $sales,
+            'canDelete' => $canDelete
         ]);
     }
 
@@ -295,6 +301,14 @@ class WarehouseSaleController extends Controller
 
     public function destroy(WarehouseSale $warehouseSale)
     {
+        // Check authorization
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
+        if (!$canDelete) {
+            return redirect()->route('warehouse-sales.index')->with('error', 'Anda tidak memiliki akses untuk menghapus data ini');
+        }
+
         DB::beginTransaction();
         try {
             // Load relationships yang dibutuhkan

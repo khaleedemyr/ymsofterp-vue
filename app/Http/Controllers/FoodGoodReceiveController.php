@@ -13,6 +13,11 @@ class FoodGoodReceiveController extends Controller
     // List Good Receive
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
+        // Check if user can delete good receive
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         $query = DB::table('food_good_receives as gr')
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
@@ -107,6 +112,7 @@ class FoodGoodReceiveController extends Controller
         return inertia('FoodGoodReceive/Index', [
             'goodReceives' => $list,
             'filters' => $request->only(['search', 'from', 'to']),
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -738,6 +744,19 @@ class FoodGoodReceiveController extends Controller
     {
         DB::beginTransaction();
         try {
+            $user = auth()->user();
+            
+            // Cek authorization: hanya superadmin atau user dengan division_id=11
+            $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
+            $isWarehouseDivision11 = $user && $user->division_id == 11;
+            
+            if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk menghapus Good Receive. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.'
+                ], 403);
+            }
+            
             $gr = DB::table('food_good_receives')->where('id', $id)->first();
             if (!$gr) {
                 return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);

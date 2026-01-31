@@ -51,7 +51,7 @@
                   <button @click="viewDetail(sale)" class="text-blue-600 hover:text-blue-900 mr-2">
                     <i class="fas fa-eye"></i>
                   </button>
-                  <button @click="deleteSale(sale)" class="text-red-600 hover:text-red-900">
+                  <button v-if="props.canDelete" @click="deleteSale(sale)" class="text-red-600 hover:text-red-900">
                     <i class="fas fa-trash"></i>
                   </button>
                 </div>
@@ -86,7 +86,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
-  sales: Object
+  sales: Object,
+  canDelete: Boolean
 });
 
 function formatDate(date) {

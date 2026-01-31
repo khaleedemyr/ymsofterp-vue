@@ -205,6 +205,7 @@
                     Detail
                   </Link>
                   <button
+                    v-if="props.canDelete"
                     @click="confirmDelete(adjustment.id)"
                     class="inline-flex items-center px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all shadow-md hover:shadow-lg text-sm font-medium"
                   >
@@ -285,7 +286,11 @@ import axios from 'axios'
 
 const props = defineProps({
   adjustments: Object,
-  filters: Object
+  filters: Object,
+  canDelete: {
+    type: Boolean,
+    default: false
+  }
 })
 
 const search = ref(props.filters?.search || '')

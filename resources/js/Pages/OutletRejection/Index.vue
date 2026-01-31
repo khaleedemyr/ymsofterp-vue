@@ -225,7 +225,7 @@
 
                         <!-- Delete (only for draft) -->
                         <button
-                          v-if="rejection.status === 'draft'"
+                          v-if="rejection.status === 'draft' && props.canDelete"
                           @click="deleteRejection(rejection.id)"
                           class="text-red-600 hover:text-red-900"
                         >
@@ -267,7 +267,8 @@ const props = defineProps({
   rejections: Object,
   outlets: Array,
   warehouses: Array,
-  filters: Object
+  filters: Object,
+  canDelete: Boolean
 })
 
 const filters = ref({

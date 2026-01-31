@@ -18,6 +18,11 @@ class FoodInventoryAdjustmentController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
+        
+        // Check if user can delete food inventory adjustment
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
         $query = FoodInventoryAdjustment::with(['items', 'warehouse', 'creator']);
         if ($request->search) {
             $search = $request->search;
@@ -38,6 +43,7 @@ class FoodInventoryAdjustmentController extends Controller
         return inertia('FoodInventoryAdjustment/Index', [
             'adjustments' => $adjustments,
             'filters' => $request->only(['search', 'warehouse_id', 'from', 'to']),
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -373,6 +379,19 @@ class FoodInventoryAdjustmentController extends Controller
     {
         DB::beginTransaction();
         try {
+            $user = auth()->user();
+            
+            // Cek authorization: hanya superadmin atau user dengan division_id=11
+            $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
+            $isWarehouseDivision11 = $user && $user->division_id == 11;
+            
+            if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk menghapus Stock Adjustment. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.'
+                ], 403);
+            }
+            
             $adj = FoodInventoryAdjustment::with(['items'])->findOrFail($id);
             // Jika sudah approved, rollback inventory
             if ($adj->status === 'approved') {

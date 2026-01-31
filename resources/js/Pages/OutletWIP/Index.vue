@@ -158,7 +158,7 @@
                   >
                     <i class="fa-solid fa-edit"></i>
                   </button>
-                  <button @click="onDelete(header.id)" class="text-red-600 hover:text-red-900" title="Hapus">
+                  <button v-if="props.canDelete" @click="onDelete(header.id)" class="text-red-600 hover:text-red-900" title="Hapus">
                     <i class="fa-solid fa-trash"></i>
                   </button>
                 </div>
@@ -203,6 +203,7 @@ const props = defineProps({
   headers: Object,
   productionsByHeader: Object,
   filters: Object,
+  canDelete: Boolean
 });
 
 const filters = useForm({

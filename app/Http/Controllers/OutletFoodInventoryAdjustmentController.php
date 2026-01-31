@@ -48,10 +48,15 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $item->created_by = $item->created_by;
             return $item;
         });
+
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return inertia('OutletFoodInventoryAdjustment/Index', [
             'adjustments' => $adjustments,
             'filters' => $request->only(['search', 'outlet_id', 'from', 'to']),
             'user_outlet_id' => $user->id_outlet,
+            'canDelete' => $canDelete,
             'auth' => [
                 'user' => $user
             ],
@@ -981,9 +986,10 @@ class OutletFoodInventoryAdjustmentController extends Controller
             
             // Check if user can delete approved status
             if ($adj->status === 'approved') {
-                // Only allow delete for approved status if user has special role
-                if ($user->id_role !== '5af56935b011a') {
-                    throw new \Exception('Anda tidak memiliki hak untuk menghapus data dengan status approved.');
+                // Only allow delete for approved status if user is superadmin or warehouse division
+                $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+                if (!$canDelete) {
+                    throw new \Exception('Anda tidak memiliki akses untuk menghapus data ini.');
                 }
             }
             

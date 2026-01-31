@@ -86,9 +86,13 @@ class StockOpnameController extends Controller
 
         $outlets = $outletsQuery->get();
 
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('StockOpname/Index', [
             'stockOpnames' => $stockOpnames,
             'outlets' => $outlets,
+            'canDelete' => $canDelete,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -859,6 +863,18 @@ class StockOpnameController extends Controller
             }
             
             $user = auth()->user();
+
+            // Check authorization
+            $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+            if (!$canDelete) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda tidak memiliki akses untuk menghapus data ini'
+                    ], 403);
+                }
+                return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk menghapus data ini']);
+            }
 
             // Validate access
             if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {

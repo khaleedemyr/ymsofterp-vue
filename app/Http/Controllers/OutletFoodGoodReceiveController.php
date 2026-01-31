@@ -59,11 +59,16 @@ class OutletFoodGoodReceiveController extends Controller
         $page = $request->input('page', 1);
         $perPage = 10;
         $goodReceives = $query->orderBy('gr.created_at', 'desc')->paginate($perPage)->appends($request->all());
+
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('OutletFoodGoodReceive/Index', [
             'goodReceives' => $goodReceives,
             'outlets' => Outlet::select('id_outlet as id', 'nama_outlet as name')->get(),
             'filters' => $request->only(['search', 'outlet_id', 'from', 'to']),
             'user_id_outlet' => $user->id_outlet,
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -486,6 +491,13 @@ class OutletFoodGoodReceiveController extends Controller
 
     public function destroy($id)
     {
+        // Check authorization
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        
+        if (!$canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus data ini'], 403);
+        }
         
         // Find the model manually to avoid route model binding issues
         $outletFoodGoodReceive = OutletFoodGoodReceive::withTrashed()->find($id);

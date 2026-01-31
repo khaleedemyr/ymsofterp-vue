@@ -83,7 +83,7 @@
                       <button @click="goToDetail(tr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                         <i class="fa fa-eye mr-1"></i> Detail
                       </button>
-                      <button @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
+                      <button v-if="props.canDelete" @click="confirmDelete(tr.id)" class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition">
                         <i class="fa fa-trash mr-1"></i> Hapus
                       </button>
                     </div>
@@ -114,6 +114,7 @@ const props = defineProps({
   transfers: Object,
   filters: Object,
   outlets: Object,
+  canDelete: Boolean,
 })
 
 const search = ref(props.filters?.search || '')

@@ -907,6 +907,10 @@ const props = defineProps({
     })
   },
   auth: Object,
+  canDelete: {
+    type: Boolean,
+    default: false
+  }
 });
 
 const search = ref(props.filters?.search || '');
@@ -1501,12 +1505,12 @@ function editPR(pr) {
 function canDelete(pr) {
   // Allow delete for DRAFT status and if user is the creator
   // Also allow delete for SUBMITTED status (not yet approved) if user is the creator
-  // Allow delete for APPROVED status if user has id_role = '5af56935b011a'
-  // If user has special role (id_role='5af56935b011a'), allow delete all data without checking creator
+  // Allow delete for APPROVED status if user has id_role = '5af56935b011a' or division_id = 11
+  // If user has special role (id_role='5af56935b011a' or division_id=11), allow delete all data without checking creator
   const deletableStatuses = ['DRAFT', 'SUBMITTED'];
   const isDeletableStatus = deletableStatuses.includes(pr.status);
   const isApprovedStatus = pr.status === 'APPROVED';
-  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
+  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a' || props.auth?.user?.division_id == 11;
   
   // Convert to string for comparison to avoid type mismatch
   const createdBy = String(pr.created_by);
@@ -1528,10 +1532,10 @@ function canDelete(pr) {
 }
 
 function getDeleteTooltip(pr) {
-  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a';
+  const hasSpecialRole = props.auth?.user?.id_role === '5af56935b011a' || props.auth?.user?.division_id == 11;
   
   if (pr.status === 'APPROVED') {
-    return hasSpecialRole ? 'Hapus PR yang sudah di-approve' : 'Hanya bisa dihapus oleh user dengan role khusus';
+    return hasSpecialRole ? 'Hapus PR yang sudah di-approve' : 'Hanya bisa dihapus oleh user dengan role khusus atau division warehouse';
   }
   
   if (hasSpecialRole) {

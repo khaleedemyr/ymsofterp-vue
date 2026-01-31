@@ -66,9 +66,13 @@ class WarehouseStockOpnameController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Check if user can delete
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         return Inertia::render('WarehouseStockOpname/Index', [
             'stockOpnames' => $stockOpnames,
             'warehouses' => $warehouses,
+            'canDelete' => $canDelete,
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -726,6 +730,18 @@ class WarehouseStockOpnameController extends Controller
             }
             
             $user = auth()->user();
+
+            // Check authorization
+            $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+            if (!$canDelete) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda tidak memiliki akses untuk menghapus data ini'
+                    ], 403);
+                }
+                return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk menghapus data ini']);
+            }
 
             // Only allow deletion if status is DRAFT
             if ($stockOpname->status !== 'DRAFT') {

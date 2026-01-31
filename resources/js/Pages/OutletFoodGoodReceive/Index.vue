@@ -65,7 +65,7 @@
                   <button class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
-                  <template v-if="props.user_id_outlet === 1">
+                  <template v-if="props.canDelete">
                     <button v-if="!row.outlet_payment_id" class="inline-flex items-center btn btn-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 rounded px-2 py-1 font-semibold transition ml-2" @click="goEdit(row.id)">
                       <i class="fa fa-edit mr-1"></i> Edit
                     </button>
@@ -133,7 +133,8 @@ const props = defineProps({
   goodReceives: Object,
   user_id_outlet: Number,
   filters: Object,
-  outlets: Array
+  outlets: Array,
+  canDelete: Boolean
 })
 
 const loadingId = ref(null)

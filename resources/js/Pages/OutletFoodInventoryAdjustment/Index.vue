@@ -275,6 +275,14 @@ const statusLabel = (status) => {
 const loadingDelete = ref(false)
 
 function canDelete(adjustment) {
+  // Jika ada flag canDelete dari backend, gunakan itu
+  if (props.canDelete !== undefined && props.canDelete !== null) {
+    const deletableStatuses = ['waiting_approval', 'waiting_cost_control', 'approved'];
+    const isDeletableStatus = deletableStatuses.includes(adjustment.status);
+    return isDeletableStatus && props.canDelete;
+  }
+  
+  // Fallback ke logic lama jika canDelete tidak ada
   const deletableStatuses = ['waiting_approval', 'waiting_cost_control'];
   const isDeletableStatus = deletableStatuses.includes(adjustment.status);
   
@@ -290,7 +298,7 @@ function canDelete(adjustment) {
 
 function getDeleteTooltip(adjustment) {
   if (adjustment.status === 'approved') {
-    return 'Hanya bisa dihapus oleh user dengan role khusus';
+    return 'Hanya bisa dihapus oleh superadmin atau user warehouse division';
   }
   return 'Hanya bisa dihapus jika status waiting_approval atau waiting_cost_control';
 }
