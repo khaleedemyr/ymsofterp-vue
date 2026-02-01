@@ -7,6 +7,7 @@ use App\Models\FoodPaymentContraBon;
 use App\Models\ContraBon;
 use App\Services\NotificationService;
 use App\Services\BankBookService;
+use App\Services\JurnalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -105,6 +106,7 @@ class FoodPaymentController extends Controller
         $paymentIds = $payments->getCollection()->pluck('id')->toArray();
         
         $contraBonsMap = [];
+        $locationsMap = []; // Map payment_id => [locations]
         if (!empty($paymentIds)) {
             try {
                 $allContraBons = DB::table('food_payment_contra_bons as fpcb')
@@ -129,6 +131,75 @@ class FoodPaymentController extends Controller
                 foreach ($contraBonsMap as $paymentId => $invoices) {
                     $contraBonsMap[$paymentId] = array_values(array_unique(array_filter($invoices)));
                 }
+                
+                // Query locations (outlets/warehouses) dari contra bon sources
+                $allLocations = DB::table('food_payment_contra_bons as fpcb')
+                    ->join('food_contra_bons as fc', 'fpcb.contra_bon_id', '=', 'fc.id')
+                    ->leftJoin('retail_food as rf', function($join) {
+                        $join->on('fc.source_id', '=', 'rf.id')
+                             ->where('fc.source_type', '=', 'retail_food');
+                    })
+                    ->leftJoin('retail_non_food as rnf', function($join) {
+                        $join->on('fc.source_id', '=', 'rnf.id')
+                             ->where('fc.source_type', '=', 'retail_non_food');
+                    })
+                    ->leftJoin('retail_warehouse_food as rwf', function($join) {
+                        $join->on('fc.source_id', '=', 'rwf.id')
+                             ->where('fc.source_type', '=', 'warehouse_retail_food');
+                    })
+                    // Join PO untuk ambil warehouse dari PR
+                    ->leftJoin('purchase_order_foods as po', 'fc.po_id', '=', 'po.id')
+                    ->leftJoin('purchase_order_food_items as poi', 'poi.purchase_order_food_id', '=', 'po.id')
+                    ->leftJoin('pr_food_items as pri', 'poi.pr_food_item_id', '=', 'pri.id')
+                    ->leftJoin('pr_foods as prf', 'pri.pr_food_id', '=', 'prf.id')
+                    // Join outlets untuk retail food & retail non food
+                    ->leftJoin('tbl_data_outlet as o', function($join) {
+                        $join->on('o.id_outlet', '=', 'rf.outlet_id')
+                             ->orOn('o.id_outlet', '=', 'rnf.outlet_id');
+                    })
+                    // Join warehouses untuk retail warehouse food & PR
+                    ->leftJoin('warehouses as w', function($join) {
+                        $join->on('w.id', '=', 'rwf.warehouse_id')
+                             ->orOn('w.id', '=', 'prf.warehouse_id');
+                    })
+                    ->whereIn('fpcb.food_payment_id', $paymentIds)
+                    ->select(
+                        'fpcb.food_payment_id',
+                        'fc.source_type',
+                        'o.id_outlet',
+                        'o.nama_outlet',
+                        'w.id as warehouse_id',
+                        'w.name as warehouse_name'
+                    )
+                    ->distinct()
+                    ->get();
+                
+                foreach ($allLocations as $loc) {
+                    if (!isset($locationsMap[$loc->food_payment_id])) {
+                        $locationsMap[$loc->food_payment_id] = [];
+                    }
+                    
+                    // Prioritas: outlet dulu, baru warehouse
+                    if ($loc->id_outlet && $loc->nama_outlet) {
+                        $locationsMap[$loc->food_payment_id][$loc->id_outlet] = [
+                            'type' => 'outlet',
+                            'id' => $loc->id_outlet,
+                            'name' => $loc->nama_outlet
+                        ];
+                    } elseif ($loc->warehouse_id && $loc->warehouse_name) {
+                        $locationsMap[$loc->food_payment_id][$loc->warehouse_id] = [
+                            'type' => 'warehouse',
+                            'id' => $loc->warehouse_id,
+                            'name' => $loc->warehouse_name
+                        ];
+                    }
+                }
+                
+                // Convert to array values (remove keys)
+                foreach ($locationsMap as $paymentId => $locations) {
+                    $locationsMap[$paymentId] = array_values($locations);
+                }
+                
             } catch (\Exception $e) {
                 \Log::error('Error batch query contra bons', [
                     'error' => $e->getMessage(),
@@ -199,7 +270,7 @@ class FoodPaymentController extends Controller
         }
         
         // Transform payments untuk menambahkan invoice numbers (dari batch query)
-        $payments->getCollection()->transform(function($payment) use ($contraBonsMap, $suppliersMap, $creatorsMap, $financeManagersMap, $gmFinancesMap) {
+        $payments->getCollection()->transform(function($payment) use ($contraBonsMap, $locationsMap, $suppliersMap, $creatorsMap, $financeManagersMap, $gmFinancesMap) {
             // Attach relations for backward compatibility
             if ($payment->supplier_id && isset($suppliersMap[$payment->supplier_id])) {
                 $payment->supplier = $suppliersMap[$payment->supplier_id];
@@ -217,6 +288,9 @@ class FoodPaymentController extends Controller
             // Get invoice numbers from batch query result
             $payment->invoice_numbers = isset($contraBonsMap[$payment->id]) ? $contraBonsMap[$payment->id] : [];
             $payment->contraBons = collect([]); // Empty collection untuk backward compatibility
+            
+            // Get locations (outlets/warehouses) from batch query result
+            $payment->locations = isset($locationsMap[$payment->id]) ? $locationsMap[$payment->id] : [];
             
             return $payment;
         });
@@ -252,8 +326,23 @@ class FoodPaymentController extends Controller
             ];
         });
         
+        // Get COA list for payment
+        $coas = \DB::table('chart_of_accounts')
+            ->where('is_active', 1)
+            ->orderBy('code')
+            ->get()
+            ->map(function($coa) {
+                return [
+                    'id' => $coa->id,
+                    'code' => $coa->code,
+                    'name' => $coa->name,
+                    'display_name' => $coa->code . ' - ' . $coa->name,
+                ];
+            });
+        
         return inertia('FoodPayment/Form', [
             'banks' => $banks,
+            'coas' => $coas,
         ]);
     }
 
@@ -272,8 +361,11 @@ class FoodPaymentController extends Controller
                 'bukti_transfer' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
                 'outlet_payments' => 'nullable|array',
                 'outlet_payments.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+                'outlet_payments.*.warehouse_id' => 'nullable|exists:warehouses,id',
                 'outlet_payments.*.amount' => 'required|numeric|min:0',
                 'outlet_payments.*.bank_id' => 'nullable|required_if:payment_type,Transfer,Giro|exists:bank_accounts,id',
+                'outlet_payments.*.coa_id' => 'nullable|exists:chart_of_accounts,id',
+                'outlet_payments.*.location_key' => 'nullable|string',
             ]);
             \Log::info('FoodPaymentController@store - Validated', $validated);
 
@@ -321,7 +413,9 @@ class FoodPaymentController extends Controller
 
             // Save payment per outlet if provided
             if ($request->has('outlet_payments') && is_array($request->outlet_payments)) {
+                \Log::info('FoodPaymentController@store - outlet_payments received', $request->outlet_payments);
                 foreach ($request->outlet_payments as $outletPayment) {
+                    \Log::info('FoodPaymentController@store - Processing outlet payment', $outletPayment);
                     if (!empty($outletPayment['amount']) && $outletPayment['amount'] > 0) {
                         // Validate bank_id if payment method is Transfer or Giro
                         $bankId = null;
@@ -336,12 +430,18 @@ class FoodPaymentController extends Controller
                             $bankId = $outletPayment['bank_id'];
                         }
                         
-                        \App\Models\FoodPaymentOutlet::create([
+                        $outletPaymentData = [
                             'food_payment_id' => $payment->id,
                             'outlet_id' => $outletPayment['outlet_id'] ?? null,
+                            'warehouse_id' => $outletPayment['warehouse_id'] ?? null,
                             'amount' => $outletPayment['amount'],
                             'bank_id' => $bankId,
-                        ]);
+                            'coa_id' => $outletPayment['coa_id'] ?? null,
+                            'location_key' => $outletPayment['location_key'] ?? null,
+                        ];
+                        
+                        \Log::info('FoodPaymentController@store - Creating FoodPaymentOutlet', $outletPaymentData);
+                        \App\Models\FoodPaymentOutlet::create($outletPaymentData);
                     }
                 }
             }
@@ -569,7 +669,7 @@ class FoodPaymentController extends Controller
     }
 
     // Mark Food Payment as Paid (from approved status)
-    public function markAsPaid($id, BankBookService $bankBookService)
+    public function markAsPaid($id, BankBookService $bankBookService, JurnalService $jurnalService)
     {
         try {
             $foodPayment = FoodPayment::findOrFail($id);
@@ -592,6 +692,15 @@ class FoodPaymentController extends Controller
             
             // Create bank book entry if payment type is Transfer or Giro
             $bankBookService->createFromFoodPayment($foodPayment);
+            
+            // Create jurnal entries (jurnal + jurnal_global) using JurnalService
+            try {
+                $jurnalService->createFromFoodPayment($foodPayment);
+            } catch (\Exception $e) {
+                // If jurnal creation fails, rollback and bubble error
+                DB::rollBack();
+                throw $e;
+            }
             
             // Log activity
             \App\Models\ActivityLog::create([
@@ -837,8 +946,10 @@ class FoodPaymentController extends Controller
             ->select(
                 'food_contra_bons.*',
                 's.name as supplier_name',
+                'po.id as po_id_from_join',
                 'po.number as po_number',
                 'po.source_type as po_source_type',
+                'po.source_id as po_source_id',
                 'rf.retail_number as retail_food_number'
             )
             ->where('food_contra_bons.status', 'approved')
@@ -875,6 +986,27 @@ class FoodPaymentController extends Controller
         }
         
         $contraBons = $query->get();
+        
+        // Debug logging untuk contra bon tertentu
+        $debugContraBons = $contraBons->filter(function($cb) {
+            return $cb->number === 'CB-20260119-0064' || $cb->number === 'CB-20260120-0160';
+        });
+        
+        if ($debugContraBons->count() > 0) {
+            \Log::info('Raw Contra Bon Data', [
+                'data' => $debugContraBons->map(function($cb) {
+                    return [
+                        'number' => $cb->number,
+                        'po_id' => $cb->po_id,
+                        'po_id_from_join' => $cb->po_id_from_join ?? 'not set',
+                        'po_source_type' => $cb->po_source_type ?? 'not set',
+                        'po_source_id' => $cb->po_source_id ?? 'not set',
+                        'source_type' => $cb->source_type ?? 'not set',
+                        'source_id' => $cb->source_id ?? 'not set',
+                    ];
+                })->toArray()
+            ]);
+        }
         
         // PERFORMANCE OPTIMIZATION: Batch query untuk outlet data dan source detection
         // Ambil semua contra bon yang punya po_id (tidak peduli source_type-nya)
@@ -1010,6 +1142,61 @@ class FoodPaymentController extends Controller
             }
         }
         
+        // Batch query warehouse data untuk PR Foods (dari PO)
+        $prWarehouseMap = [];
+        if (!empty($poIds)) {
+            try {
+                \Log::info('Starting PR Warehouse Query', [
+                    'poIds' => $poIds,
+                    'poIds_count' => count($poIds)
+                ]);
+                
+                $prWarehouseData = DB::table('purchase_order_foods as po')
+                    ->join('purchase_order_food_items as poi', 'po.id', '=', 'poi.purchase_order_food_id')
+                    ->join('pr_food_items as pri', 'poi.pr_food_item_id', '=', 'pri.id')
+                    ->join('pr_foods as pr', 'pri.pr_food_id', '=', 'pr.id')
+                    ->leftJoin('warehouses as w', 'pr.warehouse_id', '=', 'w.id')
+                    ->whereIn('po.id', $poIds)
+                    ->where('po.source_type', 'pr_foods')
+                    ->select('po.id as po_id', 'w.name as warehouse_name', 'pr.warehouse_id', 'po.number as po_number')
+                    ->distinct()
+                    ->get();
+                
+                \Log::info('PR Warehouse Query Result', [
+                    'poIds' => $poIds,
+                    'result_count' => $prWarehouseData->count(),
+                    'data' => $prWarehouseData->toArray()
+                ]);
+                
+                foreach ($prWarehouseData as $warehouse) {
+                    $poId = (int)$warehouse->po_id;
+                    if (!isset($prWarehouseMap[$poId])) {
+                        $prWarehouseMap[$poId] = [
+                            'names' => [],
+                            'ids' => []
+                        ];
+                    }
+                    if ($warehouse->warehouse_name) {
+                        $prWarehouseMap[$poId]['names'][] = $warehouse->warehouse_name;
+                        if ($warehouse->warehouse_id) {
+                            $prWarehouseMap[$poId]['ids'][] = $warehouse->warehouse_id;
+                        }
+                    }
+                }
+                
+                \Log::info('PR Warehouse Map Final', [
+                    'prWarehouseMap' => $prWarehouseMap
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('Error batch query PR warehouse data', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        } else {
+            \Log::warning('No PO IDs found for PR warehouse query');
+        }
+        
         // Batch query retailNonFood dengan outlet
         $retailNonFoodIds = $contraBons->filter(function($cb) {
             return $cb->source_type === 'retail_non_food' && $cb->source_id;
@@ -1049,9 +1236,10 @@ class FoodPaymentController extends Controller
         }
         
         // Transform data to include source type and outlet information (using batch query results)
-        $contraBons = $contraBons->map(function($contraBon) use ($outletDataMap, $sourceTypeMap, $retailFoodsMap, $warehouseRetailFoodsMap, $purchaseOrdersMap, $retailNonFoodsMap) {
+        $contraBons = $contraBons->map(function($contraBon) use ($outletDataMap, $sourceTypeMap, $retailFoodsMap, $warehouseRetailFoodsMap, $purchaseOrdersMap, $retailNonFoodsMap, $prWarehouseMap) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
+            $warehouseNames = [];
             
             // Get source_type dengan safe access (karena DB::table() return stdClass)
             $contraBonSourceType = isset($contraBon->source_type) ? trim($contraBon->source_type) : null;
@@ -1081,13 +1269,17 @@ class FoodPaymentController extends Controller
                 // Determine display berdasarkan po_source_type
                 if ($poSourceType === 'pr_foods') {
                     $sourceTypeDisplay = 'PR Foods';
-                    // PR Foods tidak punya outlet (global)
+                    // PR Foods - get warehouse names from batch query result
+                    $poId = (int)$contraBonPoId;
+                    $warehouseNames = isset($prWarehouseMap[$poId]['names']) ? $prWarehouseMap[$poId]['names'] : [];
+                    $warehouseIds = isset($prWarehouseMap[$poId]['ids']) ? $prWarehouseMap[$poId]['ids'] : [];
                     $outletNames = [];
                 } elseif ($poSourceType === 'ro_supplier') {
                     $sourceTypeDisplay = 'RO Supplier';
                     // Get outlet names from batch query result - use po_id directly with type casting
                     $poId = (int)$contraBonPoId; // Ensure integer type for key matching
                     $outletNames = isset($outletDataMap[$poId]) ? $outletDataMap[$poId] : [];
+                    $warehouseNames = [];
                 } elseif ($poSourceType === null || $poSourceType === '') {
                     // po_source_type null atau empty - ini data lama, coba detect dari data lain
                     // Cek apakah ada outlet data (jika ada, berarti RO Supplier)
@@ -1096,15 +1288,21 @@ class FoodPaymentController extends Controller
                         // Ada outlet data, berarti RO Supplier
                         $sourceTypeDisplay = 'RO Supplier';
                         $outletNames = $outletDataMap[$poId];
+                        $warehouseNames = [];
+                        $warehouseIds = [];
                     } else {
                         // Tidak ada outlet data, assume PR Foods (data lama biasanya PR Foods)
                         $sourceTypeDisplay = 'PR Foods';
+                        $warehouseNames = isset($prWarehouseMap[$poId]['names']) ? $prWarehouseMap[$poId]['names'] : [];
+                        $warehouseIds = isset($prWarehouseMap[$poId]['ids']) ? $prWarehouseMap[$poId]['ids'] : [];
                         $outletNames = [];
                     }
                 } else {
                     // Purchase Order dengan source_type lain (bukan pr_foods atau ro_supplier)
                     $sourceTypeDisplay = 'Purchase Order';
                     $outletNames = [];
+                    $warehouseNames = [];
+                    $warehouseIds = [];
                 }
                 
                 // Attach purchaseOrder untuk backward compatibility
@@ -1120,18 +1318,27 @@ class FoodPaymentController extends Controller
                 } else {
                     $outletNames = [];
                 }
+                $warehouseNames = [];
+                $warehouseIds = [];
                 // Attach retailFood untuk backward compatibility
                 if ($retailFood) {
                     $contraBon->retailFood = $retailFood;
                 }
             } elseif ($contraBonSourceType === 'warehouse_retail_food') {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
-                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
+                // Get warehouse name from batch query result
+                $warehouseRetailFood = isset($warehouseRetailFoodsMap[$contraBonSourceId]) ? $warehouseRetailFoodsMap[$contraBonSourceId] : null;
+                if ($warehouseRetailFood && $warehouseRetailFood->warehouse && $warehouseRetailFood->warehouse->name) {
+                    $warehouseNames = [$warehouseRetailFood->warehouse->name];
+                    $warehouseIds = [$warehouseRetailFood->warehouse->id];
+                } else {
+                    $warehouseNames = [];
+                    $warehouseIds = [];
+                }
                 $outletNames = [];
                 // Attach warehouseRetailFood untuk backward compatibility
-                if ($contraBonSourceId && isset($warehouseRetailFoodsMap[$contraBonSourceId])) {
-                    $contraBon->warehouseRetailFood = $warehouseRetailFoodsMap[$contraBonSourceId];
+                if ($warehouseRetailFood) {
+                    $contraBon->warehouseRetailFood = $warehouseRetailFood;
                 }
             } elseif ($contraBonSourceType === 'retail_non_food') {
                 $sourceTypeDisplay = 'Retail Non Food';
@@ -1142,6 +1349,8 @@ class FoodPaymentController extends Controller
                 } else {
                     $outletNames = [];
                 }
+                $warehouseNames = [];
+                $warehouseIds = [];
                 // Attach retailNonFood untuk backward compatibility
                 if ($retailNonFood) {
                     $contraBon->retailNonFood = $retailNonFood;
@@ -1152,12 +1361,15 @@ class FoodPaymentController extends Controller
                 $poSourceType = isset($contraBon->po_source_type) ? $contraBon->po_source_type : null;
                 if ($poSourceType === 'pr_foods') {
                     $sourceTypeDisplay = 'PR Foods';
+                    $warehouseNames = [];
                 } elseif ($poSourceType === 'ro_supplier') {
                     $sourceTypeDisplay = 'RO Supplier';
                 } else {
                     $sourceTypeDisplay = 'Purchase Order';
                 }
                 $outletNames = [];
+                $warehouseNames = [];
+                $warehouseIds = [];
             } else {
                 // Fallback untuk source_type yang tidak dikenal
                 // Cek dulu apakah po_id ada (harusnya sudah ter-handle di atas, tapi jaga-jaga)
@@ -1173,24 +1385,35 @@ class FoodPaymentController extends Controller
                     
                     if ($poSourceType === 'pr_foods') {
                         $sourceTypeDisplay = 'PR Foods';
+                        $poId = (int)$contraBonPoId;
+                        $warehouseNames = isset($prWarehouseMap[$poId]['names']) ? $prWarehouseMap[$poId]['names'] : [];
+                        $warehouseIds = isset($prWarehouseMap[$poId]['ids']) ? $prWarehouseMap[$poId]['ids'] : [];
                         $outletNames = [];
                     } elseif ($poSourceType === 'ro_supplier') {
                         $sourceTypeDisplay = 'RO Supplier';
                         $poId = (int)$contraBonPoId;
                         $outletNames = isset($outletDataMap[$poId]) ? $outletDataMap[$poId] : [];
+                        $warehouseNames = [];
+                        $warehouseIds = [];
                     } elseif ($poSourceType === null || $poSourceType === '') {
                         // po_source_type null - coba detect dari outlet data
                         $poId = (int)$contraBonPoId;
                         if (isset($outletDataMap[$poId]) && !empty($outletDataMap[$poId])) {
                             $sourceTypeDisplay = 'RO Supplier';
                             $outletNames = $outletDataMap[$poId];
+                            $warehouseNames = [];
+                            $warehouseIds = [];
                         } else {
                             $sourceTypeDisplay = 'PR Foods';
+                            $warehouseNames = isset($prWarehouseMap[$poId]['names']) ? $prWarehouseMap[$poId]['names'] : [];
+                            $warehouseIds = isset($prWarehouseMap[$poId]['ids']) ? $prWarehouseMap[$poId]['ids'] : [];
                             $outletNames = [];
                         }
                     } else {
                         $sourceTypeDisplay = 'Purchase Order';
                         $outletNames = [];
+                        $warehouseNames = [];
+                        $warehouseIds = [];
                     }
                 } elseif ($contraBonSourceId && isset($sourceTypeMap[$contraBonSourceId])) {
                     // Gunakan hasil batch query untuk source type detection
@@ -1212,8 +1435,28 @@ class FoodPaymentController extends Controller
             }
             
             $contraBon->source_type_display = $sourceTypeDisplay;
-            // Ensure outlet_names is always an array (not null or undefined)
+            // Ensure outlet_names and warehouse_names are always arrays (not null or undefined)
             $contraBon->outlet_names = is_array($outletNames) ? $outletNames : [];
+            $contraBon->warehouse_names = is_array($warehouseNames) ? $warehouseNames : [];
+            $contraBon->warehouse_ids = isset($warehouseIds) && is_array($warehouseIds) ? $warehouseIds : [];
+            
+            // Gabung outlet dan warehouse untuk location_names
+            $locationNames = array_merge($outletNames, $warehouseNames);
+            $contraBon->location_names = $locationNames;
+            
+            // Debug logging untuk contra bon tertentu
+            if ($contraBon->number === 'CB-20260119-0064' || $contraBon->number === 'CB-20260120-0160') {
+                \Log::info('Contra Bon Transform Debug', [
+                    'number' => $contraBon->number,
+                    'po_id' => $contraBonPoId,
+                    'source_type_display' => $sourceTypeDisplay,
+                    'outlet_names' => $outletNames,
+                    'warehouse_names' => $warehouseNames,
+                    'location_names' => $locationNames,
+                    'po_source_type' => isset($purchaseOrdersMap[$contraBonPoId]) ? $purchaseOrdersMap[$contraBonPoId]->source_type : 'not in map',
+                    'prWarehouseMap_entry' => isset($prWarehouseMap[(int)$contraBonPoId]) ? $prWarehouseMap[(int)$contraBonPoId] : 'not in map'
+                ]);
+            }
             
             return $contraBon;
         });

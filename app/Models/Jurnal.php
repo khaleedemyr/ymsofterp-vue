@@ -18,6 +18,7 @@ class Jurnal extends Model
         'jumlah_debit',
         'jumlah_kredit',
         'outlet_id',
+        'warehouse_id',
         'reference_type',
         'reference_id',
         'status',
@@ -54,6 +55,11 @@ class Jurnal extends Model
     public function outlet(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Outlet::class, 'outlet_id', 'id_outlet');
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Warehouse::class, 'warehouse_id');
     }
 
     public static function generateNoJurnal()

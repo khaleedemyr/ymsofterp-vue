@@ -597,8 +597,10 @@ function closeDetailModal() {
 async function approvePayment() {
     if (!selectedPayment.value) return;
     
+    const paymentId = selectedPayment.value.id;
+    
     try {
-        const response = await axios.post(`/food-payments/${selectedPayment.value.id}/approve`, {
+        const response = await axios.post(`/food-payments/${paymentId}/approve`, {
             approved: true,
             note: ''
         });
@@ -609,7 +611,7 @@ async function approvePayment() {
                 Swal.fire('Success', response.data.message || 'Food Payment berhasil disetujui', 'success');
                 closeDetailModal();
                 loadPendingApprovals();
-                emit('approved', selectedPayment.value.id);
+                emit('approved', paymentId);
             } else {
                 // Response OK but success is false
                 const errorMsg = response.data?.message || 'Gagal menyetujui Food Payment';

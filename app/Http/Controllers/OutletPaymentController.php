@@ -21,7 +21,7 @@ class OutletPaymentController extends Controller
         $dateTo = $request->input('date_to');
         $search = $request->input('search');
         $perPage = $request->input('per_page', 10);
-        $loadData = $request->input('load_data', false);
+        $loadData = $request->input('load_data', true); // Changed default to true
 
         // LAZY LOADING: Only load data if load_data is true or if filters/search are present
         if (!$loadData && !$outlet && !$status && !$dateFrom && !$dateTo && !$search) {
@@ -326,7 +326,8 @@ class OutletPaymentController extends Controller
             'payment_method' => 'nullable|in:cash,transfer,check',
             'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id',
             'receiver_bank_ids' => 'nullable|array',
-            'receiver_bank_ids.*' => 'exists:bank_accounts,id'
+            'receiver_bank_ids.*' => 'exists:bank_accounts,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id'
         ]);
 
         // Validate that at least one transaction is selected
@@ -355,6 +356,39 @@ class OutletPaymentController extends Controller
             DB::beginTransaction();
             
             $createdPayments = [];
+            
+            // GET WAREHOUSE_ID FOR EACH GR AND RETAIL
+            $grWarehouseMap = [];
+            foreach ($grIds as $grId) {
+                $grData = DB::table('outlet_food_good_receives as gr')
+                    ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                    ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                    ->leftJoin('warehouse_division as wd_pl', 'pl.warehouse_division_id', '=', 'wd_pl.id')
+                    ->leftJoin('warehouses as w_pl', 'wd_pl.warehouse_id', '=', 'w_pl.id')
+                    ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+                    ->where('gr.id', $grId)
+                    ->select(
+                        'gr.id',
+                        DB::raw('COALESCE(
+                            w_pl.id,
+                            (SELECT w.id 
+                             FROM food_floor_order_items ffoi
+                             INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                             INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                             WHERE ffoi.floor_order_id = ffo.id
+                             LIMIT 1)
+                        ) as warehouse_id')
+                    )
+                    ->first();
+                
+                $grWarehouseMap[$grId] = $grData->warehouse_id ?? null;
+            }
+            
+            $retailWarehouseMap = [];
+            foreach ($retailIds as $retailId) {
+                $retailData = DB::table('retail_warehouse_sales')->where('id', $retailId)->first();
+                $retailWarehouseMap[$retailId] = $retailData->warehouse_id ?? null;
+            }
             
             // Process GR payments
             foreach ($grIds as $grId) {
@@ -401,6 +435,7 @@ class OutletPaymentController extends Controller
                 
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
+                    'warehouse_id' => $grWarehouseMap[$grId],
                     'gr_id' => $grId,
                     'retail_sales_id' => null, // GR payment
                     'date' => $request->date_from,
@@ -409,6 +444,7 @@ class OutletPaymentController extends Controller
                     'payment_method' => $request->payment_method ?? 'cash',
                     'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
                     'receiver_bank_id' => $receiverBankId,
+                    'coa_id' => $request->coa_id,
                     'status' => 'pending',
                 ];
                 
@@ -449,6 +485,7 @@ class OutletPaymentController extends Controller
                 
                 $dataToInsert = [
                     'outlet_id' => $request->outlet_id,
+                    'warehouse_id' => $retailWarehouseMap[$retailId],
                     'gr_id' => null, // Retail sales payment
                     'retail_sales_id' => $retailId,
                     'date' => $request->date_from,
@@ -457,6 +494,7 @@ class OutletPaymentController extends Controller
                     'payment_method' => $request->payment_method ?? 'cash',
                     'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
                     'receiver_bank_id' => $receiverBankId,
+                    'coa_id' => $request->coa_id,
                     'status' => 'pending',
                 ];
                 
@@ -468,7 +506,7 @@ class OutletPaymentController extends Controller
             
         } catch (\Exception $e) {
             DB::rollback();
-            \Log::error('DEBUG: Gagal create OutletPayment', ['error' => $e->getMessage()]);
+            \Log::error('DEBUG: Gagal create OutletPayment', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return back()->with('error', 'Gagal membuat payment: ' . $e->getMessage());
         }
 
@@ -494,7 +532,8 @@ class OutletPaymentController extends Controller
             'payment_method' => 'nullable|in:cash,transfer,check',
             'bank_id' => 'nullable|required_if:payment_method,transfer|required_if:payment_method,check|exists:bank_accounts,id',
             'receiver_bank_ids' => 'nullable|array',
-            'receiver_bank_ids.*' => 'exists:bank_accounts,id'
+            'receiver_bank_ids.*' => 'exists:bank_accounts,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id'
         ]);
 
         $gr = OutletFoodGoodReceive::findOrFail($request->gr_id);
@@ -544,7 +583,8 @@ class OutletPaymentController extends Controller
             'notes' => $notes,
             'payment_method' => $request->payment_method ?? 'cash',
             'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
-            'receiver_bank_id' => $receiverBankId
+            'receiver_bank_id' => $receiverBankId,
+            'coa_id' => $request->coa_id
         ]);
 
         return redirect()->route('outlet-payments.index')
@@ -578,6 +618,9 @@ class OutletPaymentController extends Controller
             // Create bank book entry if payment is paid and method is transfer/check
             if ($request->status === 'paid') {
                 $bankBookService->createFromOutletPayment($outletPayment);
+                
+                // CREATE JURNAL when status = paid
+                $this->createJurnalForOutletPayment($outletPayment);
             }
             
             DB::commit();
@@ -642,6 +685,9 @@ class OutletPaymentController extends Controller
                 // Create bank book entry if payment method is transfer/check
                 $bankBookService->createFromOutletPayment($payment);
                 
+                // CREATE JURNAL when confirmed
+                $this->createJurnalForOutletPayment($payment);
+                
                 $confirmedCount++;
             }
 
@@ -698,6 +744,15 @@ class OutletPaymentController extends Controller
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 DB::raw('COALESCE(
+                    w_pl.id,
+                    (SELECT w.id 
+                     FROM food_floor_order_items ffoi
+                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                     WHERE ffoi.floor_order_id = ffo.id
+                     LIMIT 1)
+                ) as warehouse_id'),
+                DB::raw('COALESCE(
                     w_pl.name,
                     (SELECT w.name 
                      FROM food_floor_order_items ffoi
@@ -746,6 +801,7 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'warehouse_id' => $gr->warehouse_id,
                 'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [] // Will be loaded via API when needed
@@ -774,11 +830,25 @@ class OutletPaymentController extends Controller
             ];
         });
 
+        // Get Chart of Accounts for COA selection
+        $coas = \App\Models\ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get()
+            ->map(function($coa) {
+                return [
+                    'id' => $coa->id,
+                    'code' => $coa->code,
+                    'name' => $coa->name,
+                    'display_name' => $coa->code . ' - ' . $coa->name,
+                ];
+            });
+
         return Inertia::render('OutletPayment/Form', [
             'mode' => 'create',
             'outlets' => $outlets,
             'grList' => $groupedGrList,
             'banks' => $banks,
+            'coas' => $coas,
         ]);
     }
 
@@ -814,6 +884,15 @@ class OutletPaymentController extends Controller
                 'gr.delivery_order_id',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
+                DB::raw('COALESCE(
+                    w_pl.id,
+                    (SELECT w.id 
+                     FROM food_floor_order_items ffoi
+                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                     WHERE ffoi.floor_order_id = ffo.id
+                     LIMIT 1)
+                ) as warehouse_id'),
                 DB::raw('COALESCE(
                     w_pl.name,
                     (SELECT w.name 
@@ -862,6 +941,7 @@ class OutletPaymentController extends Controller
                 'outlet_id' => $gr->outlet_id,
                 'outlet_name' => $gr->outlet_name,
                 'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'warehouse_id' => $gr->warehouse_id,
                 'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [], // Will be loaded via API when needed
@@ -952,6 +1032,7 @@ class OutletPaymentController extends Controller
                 'rws.total_amount',
                 'rws.notes',
                 'rws.created_by',
+                'rws.warehouse_id',
                 'c.name as customer_name',
                 'c.code as customer_code',
                 'c.id_outlet as outlet_id',
@@ -990,6 +1071,7 @@ class OutletPaymentController extends Controller
                 'customer_code' => $retail->customer_code,
                 'outlet_id' => $retail->outlet_id,
                 'outlet_name' => $retail->outlet_name,
+                'warehouse_id' => $retail->warehouse_id,
                 'warehouse_name' => $retail->warehouse_name,
                 'division_name' => $retail->division_name,
                 'items' => [], // Will be loaded via API when needed
@@ -1751,6 +1833,134 @@ class OutletPaymentController extends Controller
         // Export to Excel
         $export = new \App\Exports\InvoiceOutletReportExport($data, $details, $request->only(['from', 'to', 'outlet_id', 'transaction_type', 'fo_mode']));
         $export->export();
+    }
+    
+    /**
+     * Create jurnal entries for outlet payment (when status = paid)
+     */
+    private function createJurnalForOutletPayment($payment)
+    {
+        // Skip if no COA selected
+        if (!$payment->coa_id) {
+            return;
+        }
+        
+        // Get all payments with same warehouse_id (for grouping)
+        $warehouseId = $payment->warehouse_id;
+        
+        // For simplicity, create jurnal for single payment (not grouped)
+        // If you want to group by warehouse, need to collect all payments with same warehouse_id
+        
+        $totalAmount = $payment->total_amount;
+        $paymentNumber = $payment->payment_number ?? $payment->id;
+        
+        // Generate no jurnal
+        $noJurnal = \App\Models\Jurnal::generateNoJurnal();
+        $tanggal = $payment->date;
+        $keterangan = "Outlet Payment: " . $paymentNumber;
+        
+        // Determine COA Kredit for OUTLET (uang keluar dari outlet)
+        $coaKreditOutlet = null;
+        if ($payment->payment_method === 'cash') {
+            // Cash: use Kas Outlet (ID 54)
+            $coaKreditOutlet = 54;
+        } elseif (($payment->payment_method === 'transfer' || $payment->payment_method === 'check') && $payment->bank_id) {
+            // Transfer/Check: use bank's COA from bank_id (bank outlet)
+            $bank = \App\Models\BankAccount::find($payment->bank_id);
+            $coaKreditOutlet = $bank && $bank->coa_id ? $bank->coa_id : 54; // Fallback to Kas Outlet
+        } else {
+            // Default to Kas Outlet
+            $coaKreditOutlet = 54;
+        }
+        
+        // Determine COA Debit for HO (uang masuk ke HO)
+        $coaDebitHO = null;
+        if ($payment->payment_method === 'cash') {
+            // Cash: use Kas HO (ID 60)
+            $coaDebitHO = 60;
+        } elseif (($payment->payment_method === 'transfer' || $payment->payment_method === 'check') && $payment->receiver_bank_id) {
+            // Transfer/Check: use receiver bank's COA
+            $receiverBank = \App\Models\BankAccount::find($payment->receiver_bank_id);
+            $coaDebitHO = $receiverBank && $receiverBank->coa_id ? $receiverBank->coa_id : 60; // Fallback to Kas HO
+        } else {
+            // Default to Kas HO
+            $coaDebitHO = 60;
+        }
+        
+        // JURNAL 1: OUTLET (Debit Expense, Kredit Kas/Bank Outlet)
+        // Note: warehouse_id TIDAK PERLU untuk jurnal outlet
+        \App\Models\Jurnal::create([
+            'no_jurnal' => $noJurnal,
+            'tanggal' => $tanggal,
+            'keterangan' => $keterangan . ' - Outlet',
+            'coa_debit_id' => $payment->coa_id, // User selected COA (expense)
+            'coa_kredit_id' => $coaKreditOutlet,
+            'jumlah_debit' => $totalAmount,
+            'jumlah_kredit' => $totalAmount,
+            'outlet_id' => $payment->outlet_id,
+            'reference_type' => 'outlet_payment',
+            'reference_id' => $payment->id,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
+        ]);
+        
+        \App\Models\JurnalGlobal::create([
+            'no_jurnal' => $noJurnal,
+            'tanggal' => $tanggal,
+            'keterangan' => $keterangan . ' - Outlet',
+            'coa_debit_id' => $payment->coa_id,
+            'coa_kredit_id' => $coaKreditOutlet,
+            'jumlah_debit' => $totalAmount,
+            'jumlah_kredit' => $totalAmount,
+            'outlet_id' => $payment->outlet_id,
+            'reference_type' => 'outlet_payment',
+            'reference_id' => $payment->id,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
+        ]);
+        
+        // JURNAL 2: HEAD OFFICE (Debit Kas/Bank HO, Kredit Piutang/Lawan)
+        // Generate no jurnal baru untuk HO
+        $noJurnalHO = \App\Models\Jurnal::generateNoJurnal();
+        
+        // Note: outlet_id = 1 untuk HO (bukan null)
+        \App\Models\Jurnal::create([
+            'no_jurnal' => $noJurnalHO,
+            'tanggal' => $tanggal,
+            'keterangan' => $keterangan . ' - HO',
+            'coa_debit_id' => $coaDebitHO, // Kas/Bank HO
+            'coa_kredit_id' => $payment->coa_id, // Same COA (lawan account)
+            'jumlah_debit' => $totalAmount,
+            'jumlah_kredit' => $totalAmount,
+            'outlet_id' => 1, // HO outlet_id = 1
+            'reference_type' => 'outlet_payment',
+            'reference_id' => $payment->id,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
+        ]);
+        
+        \App\Models\JurnalGlobal::create([
+            'no_jurnal' => $noJurnalHO,
+            'tanggal' => $tanggal,
+            'keterangan' => $keterangan . ' - HO',
+            'coa_debit_id' => $coaDebitHO,
+            'coa_kredit_id' => $payment->coa_id,
+            'jumlah_debit' => $totalAmount,
+            'jumlah_kredit' => $totalAmount,
+            'outlet_id' => 1, // HO outlet_id = 1
+            'reference_type' => 'outlet_payment',
+            'reference_id' => $payment->id,
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => auth()->id() ?? 1,
+            'created_by' => auth()->id() ?? 1,
+        ]);
     }
 
 } 

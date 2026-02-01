@@ -389,6 +389,30 @@
               </p>
             </div>
           </div>
+
+          <!-- COA Selection -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fas fa-book mr-2"></i>Chart of Account (COA)
+            </label>
+            <Multiselect
+              v-model="selectedCoa"
+              :options="coas"
+              :searchable="true"
+              :close-on-select="true"
+              :show-labels="false"
+              placeholder="Pilih COA untuk pembayaran ini..."
+              label="display_name"
+              track-by="id"
+              @select="onCoaSelect"
+              @remove="onCoaRemove"
+              class="w-full"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              <i class="fas fa-info-circle mr-1"></i>
+              Pilih Chart of Account yang akan digunakan untuk mencatat pembayaran ini
+            </p>
+          </div>
         </div>
         <div class="flex justify-end gap-2 mt-8">
           <button type="button" @click="goBack" class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold shadow-sm">Batal</button>
@@ -410,6 +434,10 @@ const props = defineProps({
   outlets: Array,
   grList: Array,
   banks: {
+    type: Array,
+    default: () => []
+  },
+  coas: {
     type: Array,
     default: () => []
   }
@@ -449,6 +477,7 @@ const canLoadData = computed(() => {
 });
 const selectedBank = ref(null);
 const selectedReceiverBanks = ref([]);
+const selectedCoa = ref(null);
 
 const form = ref({
   outlet_id: '',
@@ -459,7 +488,8 @@ const form = ref({
   total_amount: 0,
   payment_method: 'cash',
   bank_id: null,
-  receiver_bank_ids: []
+  receiver_bank_ids: [],
+  coa_id: null
 });
 
 // Transform banks untuk Multiselect
@@ -489,6 +519,16 @@ function onReceiverBankSelect(bank) {
 function onReceiverBankRemove(bank) {
   // Update form dengan array bank IDs setelah remove
   form.value.receiver_bank_ids = selectedReceiverBanks.value.map(b => b.id);
+}
+
+// Handle COA selection
+function onCoaSelect(coa) {
+  form.value.coa_id = coa.id;
+}
+
+function onCoaRemove() {
+  form.value.coa_id = null;
+  selectedCoa.value = null;
 }
 
 // Watch payment_method to clear bank if changed to cash
@@ -592,15 +632,22 @@ const warehouseSummary = computed(() => {
       const gr = grListFiltered.value.find(g => g.id == grId);
       if (!gr) return;
       
-      // Gunakan warehouse_name (warehouse yang mengirim)
+      // Gunakan warehouse_name (warehouse yang mengirim) dan warehouse_id
       const warehouseName = gr.warehouse_name || 'Tidak Ada Warehouse';
+      const warehouseId = gr.warehouse_id || null;
       
-      if (!warehouseMap[warehouseName]) {
-        warehouseMap[warehouseName] = {
+      // Use warehouse_id as key if available, otherwise use warehouse_name
+      const key = warehouseId ? `wh_${warehouseId}` : warehouseName;
+      
+      if (!warehouseMap[key]) {
+        warehouseMap[key] = {
+          id: warehouseId,
           name: warehouseName,
           total: 0,
           grCount: 0,
-          retailCount: 0
+          retailCount: 0,
+          grIds: [],
+          retailIds: []
         };
       }
       
@@ -613,8 +660,9 @@ const warehouseSummary = computed(() => {
         }
       }
       
-      warehouseMap[warehouseName].total += amount;
-      warehouseMap[warehouseName].grCount += 1;
+      warehouseMap[key].total += amount;
+      warehouseMap[key].grCount += 1;
+      warehouseMap[key].grIds.push(grId);
     });
   }
   
@@ -624,15 +672,22 @@ const warehouseSummary = computed(() => {
       const retail = retailSalesListFiltered.value.find(r => r.id == retailId);
       if (!retail) return;
       
-      // Gunakan warehouse_name (warehouse yang mengirim)
+      // Gunakan warehouse_name (warehouse yang mengirim) dan warehouse_id
       const warehouseName = retail.warehouse_name || 'Tidak Ada Warehouse';
+      const warehouseId = retail.warehouse_id || null;
       
-      if (!warehouseMap[warehouseName]) {
-        warehouseMap[warehouseName] = {
+      // Use warehouse_id as key if available, otherwise use warehouse_name
+      const key = warehouseId ? `wh_${warehouseId}` : warehouseName;
+      
+      if (!warehouseMap[key]) {
+        warehouseMap[key] = {
+          id: warehouseId,
           name: warehouseName,
           total: 0,
           grCount: 0,
-          retailCount: 0
+          retailCount: 0,
+          grIds: [],
+          retailIds: []
         };
       }
       
@@ -645,8 +700,9 @@ const warehouseSummary = computed(() => {
         }
       }
       
-      warehouseMap[warehouseName].total += amount;
-      warehouseMap[warehouseName].retailCount += 1;
+      warehouseMap[key].total += amount;
+      warehouseMap[key].retailCount += 1;
+      warehouseMap[key].retailIds.push(retailId);
     });
   }
   

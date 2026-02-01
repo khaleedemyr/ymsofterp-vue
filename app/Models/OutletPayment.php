@@ -12,6 +12,7 @@ class OutletPayment extends Model
     protected $fillable = [
         'payment_number',
         'outlet_id',
+        'warehouse_id',
         'gr_id',
         'retail_sales_id',
         'date',
@@ -21,6 +22,7 @@ class OutletPayment extends Model
         'payment_method',
         'bank_id',
         'receiver_bank_id',
+        'coa_id',
         'created_by',
         'updated_by'
     ];
@@ -68,6 +70,16 @@ class OutletPayment extends Model
     public function receiverBank()
     {
         return $this->belongsTo(\App\Models\BankAccount::class, 'receiver_bank_id');
+    }
+
+    public function coa()
+    {
+        return $this->belongsTo(\App\Models\ChartOfAccount::class, 'coa_id');
+    }
+
+    public function warehouse()
+    {
+        return $this->belongsTo(\App\Models\Warehouse::class, 'warehouse_id');
     }
 
     protected static function boot()

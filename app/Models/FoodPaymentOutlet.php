@@ -14,8 +14,11 @@ class FoodPaymentOutlet extends Model
     protected $fillable = [
         'food_payment_id',
         'outlet_id',
+        'warehouse_id',
         'amount',
         'bank_id',
+        'coa_id',
+        'location_key',
     ];
 
     protected $casts = [
@@ -33,8 +36,18 @@ class FoodPaymentOutlet extends Model
         return $this->belongsTo(\App\Models\Outlet::class, 'outlet_id', 'id_outlet');
     }
 
+    public function warehouse()
+    {
+        return $this->belongsTo(\App\Models\Warehouse::class, 'warehouse_id');
+    }
+
     public function bank()
     {
         return $this->belongsTo(\App\Models\BankAccount::class, 'bank_id');
+    }
+
+    public function coa()
+    {
+        return $this->belongsTo(\App\Models\ChartOfAccount::class, 'coa_id');
     }
 }

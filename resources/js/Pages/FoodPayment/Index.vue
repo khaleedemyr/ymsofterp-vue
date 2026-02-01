@@ -87,6 +87,7 @@
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nomor</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Location</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Payment Type</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No Invoice</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Total</th>
@@ -97,13 +98,36 @@
           </thead>
           <tbody>
             <tr v-if="!safePayments.data || !safePayments.data.length">
-              <td colspan="9" class="text-center py-10 text-gray-400">Belum ada data Food Payment.</td>
+              <td colspan="10" class="text-center py-10 text-gray-400">Belum ada data Food Payment.</td>
             </tr>
             <template v-else>
               <tr v-for="p in safePayments.data" :key="p.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ p.number }}</td>
               <td class="px-6 py-3">{{ formatDate(p.date) }}</td>
               <td class="px-6 py-3">{{ p.supplier?.name }}</td>
+              <td class="px-6 py-3">
+                <div v-if="p.locations && p.locations.length > 0" class="flex flex-col gap-1">
+                  <!-- Single location -->
+                  <template v-if="p.locations.length === 1">
+                    <span class="text-xs font-semibold" :class="p.locations[0].type === 'outlet' ? 'text-blue-700' : 'text-green-700'">
+                      <i :class="p.locations[0].type === 'outlet' ? 'fa fa-store' : 'fa fa-warehouse'" class="mr-1"></i>
+                      {{ p.locations[0].name }}
+                    </span>
+                  </template>
+                  <!-- Multiple locations -->
+                  <template v-else>
+                    <div class="flex flex-wrap gap-1">
+                      <span v-for="(loc, idx) in p.locations" :key="idx" 
+                        class="text-xs font-semibold px-2 py-1 rounded border"
+                        :class="loc.type === 'outlet' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-green-700 bg-green-50 border-green-200'">
+                        <i :class="loc.type === 'outlet' ? 'fa fa-store' : 'fa fa-warehouse'" class="mr-1"></i>
+                        {{ loc.name }}
+                      </span>
+                    </div>
+                  </template>
+                </div>
+                <span v-else class="text-gray-400 text-xs">-</span>
+              </td>
               <td class="px-6 py-3">{{ p.payment_type }}</td>
               <td class="px-6 py-3">
                 <div v-if="p.invoice_numbers && p.invoice_numbers.length > 0" class="flex flex-wrap gap-1">

@@ -182,9 +182,11 @@
                   <div v-if="cb.retailFood?.number" class="text-xs text-purple-600">
                     <i class="fa fa-store mr-1"></i><strong>Retail:</strong> {{ cb.retailFood.number }}
                   </div>
-                  <div v-if="cb.outlet_names && cb.outlet_names.length > 0" class="text-xs text-orange-600 mt-1">
+                  <div v-if="cb.location_names && cb.location_names.length > 0" class="text-xs mt-1">
                     <i class="fa fa-map-marker-alt mr-1"></i>
-                    <strong>Outlet:</strong> {{ cb.outlet_names.join(', ') }}
+                    <strong>Location:</strong> 
+                    <span v-if="cb.location_names.length === 1">{{ cb.location_names[0] }}</span>
+                    <span v-else>{{ cb.location_names.join(', ') }}</span>
                   </div>
                   <div v-if="cb.notes" class="text-xs text-gray-500 italic mt-1">
                     <i class="fa fa-sticky-note mr-1"></i>{{ cb.notes }}
@@ -205,49 +207,74 @@
           </div>
         </div>
 
-        <!-- Payment Per Outlet -->
+        <!-- Payment Per Location (Outlet/Warehouse) -->
         <div v-if="selectedContraBonsByOutlet && Object.keys(selectedContraBonsByOutlet).length > 0" class="bg-white rounded-lg p-4 shadow mb-4">
-          <h3 class="font-bold text-gray-800 mb-3">Pembayaran Per Outlet</h3>
+          <h3 class="font-bold text-gray-800 mb-3">Pembayaran Per Location (Outlet/Warehouse)</h3>
           <p class="text-sm text-gray-600 mb-4">
             <i class="fa fa-info-circle mr-1"></i>
-            Input jumlah pembayaran untuk setiap outlet. Default diisi dari total contra bon per outlet, namun dapat diubah sesuai kebutuhan.
+            Input jumlah pembayaran untuk setiap location. Default diisi dari total contra bon per location, namun dapat diubah sesuai kebutuhan.
             <span v-if="form.payment_type === 'Transfer' || form.payment_type === 'Giro'" class="block mt-2 text-blue-600">
               <i class="fa fa-university mr-1"></i>
-              <strong>Penting:</strong> Pilih bank untuk setiap outlet dengan metode pembayaran <strong>{{ form.payment_type }}</strong>.
+              <strong>Penting:</strong> Pilih bank untuk setiap location dengan metode pembayaran <strong>{{ form.payment_type }}</strong>.
             </span>
           </p>
           
           <div class="space-y-4">
-            <div v-for="(outletData, outletKey) in selectedContraBonsByOutlet" :key="outletKey" 
+            <div v-for="(locationData, locationKey) in selectedContraBonsByOutlet" :key="locationKey" 
                  class="border rounded-lg p-4"
-                 :class="outletKey === 'global' ? 'border-orange-300 bg-orange-50' : 'border-blue-300 bg-blue-50'">
+                 :class="{
+                   'border-orange-300 bg-orange-50': locationKey === 'global',
+                   'border-blue-300 bg-blue-50': locationData.location_type === 'outlet',
+                   'border-green-300 bg-green-50': locationData.location_type === 'warehouse'
+                 }">
               <div class="flex items-start justify-between mb-3">
                 <div class="flex-1">
                   <div class="flex items-center gap-2 mb-2">
                     <h4 class="text-lg font-semibold" 
-                        :class="outletKey === 'global' ? 'text-orange-900' : 'text-blue-900'">
-                      <i :class="outletKey === 'global' ? 'fa fa-globe mr-2' : 'fa fa-store mr-2'"></i>
-                      {{ outletData.outlet_name || 'Global / All Outlets' }}
+                        :class="{
+                          'text-orange-900': locationKey === 'global',
+                          'text-blue-900': locationData.location_type === 'outlet',
+                          'text-green-900': locationData.location_type === 'warehouse'
+                        }">
+                      <i :class="{
+                        'fa fa-globe mr-2': locationKey === 'global',
+                        'fa fa-store mr-2': locationData.location_type === 'outlet',
+                        'fa fa-warehouse mr-2': locationData.location_type === 'warehouse'
+                      }"></i>
+                      {{ locationData.location_name || 'Global / All Locations' }}
                     </h4>
-                    <span v-if="outletKey === 'global'" 
+                    <span v-if="locationKey === 'global'" 
                           class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-200 text-orange-800">
                       <i class="fa fa-info-circle mr-1"></i>
                       Global
                     </span>
-                    <span v-else 
+                    <span v-else-if="locationData.location_type === 'outlet'" 
                           class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-200 text-blue-800">
                       <i class="fa fa-map-marker-alt mr-1"></i>
-                      Outlet Spesifik
+                      Outlet
+                    </span>
+                    <span v-else-if="locationData.location_type === 'warehouse'" 
+                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-200 text-green-800">
+                      <i class="fa fa-warehouse mr-1"></i>
+                      Warehouse
                     </span>
                   </div>
-                  <div class="text-sm mt-1" :class="outletKey === 'global' ? 'text-orange-700' : 'text-blue-700'">
-                    <span class="font-medium">Total Contra Bon: {{ formatCurrency(outletData.total_amount) }}</span>
-                    <span class="ml-3 text-xs opacity-75">({{ outletData.contra_bon_count }} contra bon)</span>
+                  <div class="text-sm mt-1" :class="{
+                    'text-orange-700': locationKey === 'global',
+                    'text-blue-700': locationData.location_type === 'outlet',
+                    'text-green-700': locationData.location_type === 'warehouse'
+                  }">
+                    <span class="font-medium">Total Contra Bon: {{ formatCurrency(locationData.total_amount) }}</span>
+                    <span class="ml-3 text-xs opacity-75">({{ locationData.contra_bon_count }} contra bon)</span>
                   </div>
-                  <div v-if="outletData.contra_bons && outletData.contra_bons.length > 0" class="mt-2 text-xs" :class="outletKey === 'global' ? 'text-orange-600' : 'text-blue-600'">
+                  <div v-if="locationData.contra_bons && locationData.contra_bons.length > 0" class="mt-2 text-xs" :class="{
+                    'text-orange-600': locationKey === 'global',
+                    'text-blue-600': locationData.location_type === 'outlet',
+                    'text-green-600': locationData.location_type === 'warehouse'
+                  }">
                     <i class="fa fa-list-ul mr-1"></i>
                     <strong>Contra Bon:</strong> 
-                    <span class="ml-1">{{ outletData.contra_bons.map(cb => cb.number).join(', ') }}</span>
+                    <span class="ml-1">{{ locationData.contra_bons.map(cb => cb.number).join(', ') }}</span>
                   </div>
                 </div>
               </div>
@@ -255,11 +282,11 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-2">
-                    Jumlah Pembayaran untuk Outlet Ini <span class="text-red-500">*</span>
+                    Jumlah Pembayaran untuk Location Ini <span class="text-red-500">*</span>
                   </label>
                   <input 
                     type="number" 
-                    v-model="outletPayments[outletKey].amount" 
+                    v-model="outletPayments[locationKey].amount" 
                     step="0.01"
                     :min="0"
                     required 
@@ -268,13 +295,13 @@
                     @input="updateTotalAmount"
                   />
                   <p class="mt-1 text-xs text-gray-500">
-                    Default: {{ formatCurrency(outletData.total_amount) }}
+                    Default: {{ formatCurrency(locationData.total_amount) }}
                   </p>
                 </div>
                 <div class="flex items-end">
                   <button
                     type="button"
-                    @click="resetOutletAmount(outletKey, outletData.total_amount)"
+                    @click="resetOutletAmount(locationKey, locationData.total_amount)"
                     class="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition"
                   >
                     <i class="fa fa-undo mr-1"></i>
@@ -283,23 +310,27 @@
                 </div>
               </div>
 
-              <!-- Bank Selection per Outlet (hanya muncul jika Transfer atau Giro) -->
+              <!-- Bank Selection per Location (hanya muncul jika Transfer atau Giro) -->
               <div v-if="form.payment_type === 'Transfer' || form.payment_type === 'Giro'" class="mt-4">
                 <label class="block text-sm font-medium text-gray-700 mb-2">
                   <i class="fa fa-university mr-1"></i>
-                  Pilih Bank untuk Outlet Ini <span class="text-red-500">*</span>
+                  Pilih Bank untuk 
+                  <span v-if="locationData.location_type === 'outlet'">Outlet</span>
+                  <span v-else-if="locationData.location_type === 'warehouse'">Warehouse</span>
+                  <span v-else>Location</span>
+                  Ini <span class="text-red-500">*</span>
                 </label>
                 <multiselect
-                  v-model="outletPayments[outletKey].selectedBank"
+                  v-model="outletPayments[locationKey].selectedBank"
                   :options="banks"
                   :searchable="true"
                   :close-on-select="true"
                   :show-labels="false"
-                  placeholder="Cari dan pilih bank untuk outlet ini..."
+                  :placeholder="`Cari dan pilih bank untuk ${locationData.location_type === 'outlet' ? 'outlet' : locationData.location_type === 'warehouse' ? 'warehouse' : 'location'} ini...`"
                   label="display_name"
                   track-by="id"
-                  @select="(bank) => onOutletBankSelect(outletKey, bank)"
-                  @remove="() => onOutletBankRemove(outletKey)"
+                  @select="(bank) => onOutletBankSelect(locationKey, bank)"
+                  @remove="() => onOutletBankRemove(locationKey)"
                   class="w-full"
                   required
                 >
@@ -311,11 +342,53 @@
                   </template>
                 </multiselect>
                 <p class="mt-1 text-xs text-gray-500">
-                  Pilih bank untuk metode pembayaran <strong>{{ form.payment_type }}</strong> di outlet ini
+                  Pilih bank untuk metode pembayaran <strong>{{ form.payment_type }}</strong> di 
+                  <span v-if="locationData.location_type === 'outlet'">outlet</span>
+                  <span v-else-if="locationData.location_type === 'warehouse'">warehouse</span>
+                  <span v-else>location</span> ini
                 </p>
-                <p v-if="outletPayments[outletKey].selectedBank" class="mt-1 text-xs text-green-600">
+                <p v-if="outletPayments[locationKey].selectedBank" class="mt-1 text-xs text-green-600">
                   <i class="fa fa-check-circle mr-1"></i>
-                  Bank terpilih: <strong>{{ outletPayments[outletKey].selectedBank.display_name }}</strong>
+                  Bank terpilih: <strong>{{ outletPayments[locationKey].selectedBank.display_name }}</strong>
+                </p>
+              </div>
+              
+              <!-- COA Selection per Location -->
+              <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <i class="fa fa-book mr-1"></i>
+                  Pilih Akun Pembayaran (COA) untuk
+                  <span v-if="locationData.location_type === 'outlet'">Outlet</span>
+                  <span v-else-if="locationData.location_type === 'warehouse'">Warehouse</span>
+                  <span v-else>Location</span>
+                  Ini
+                </label>
+                <multiselect
+                  v-model="outletPayments[locationKey].selectedCoa"
+                  :options="coas"
+                  :searchable="true"
+                  :close-on-select="true"
+                  :show-labels="false"
+                  placeholder="Pilih COA (opsional, ketik untuk mencari...)"
+                  label="display_name"
+                  track-by="id"
+                  class="w-full"
+                  @select="(coa) => onOutletCoaSelect(locationKey, coa)"
+                  @remove="() => onOutletCoaRemove(locationKey)"
+                >
+                  <template #noOptions>
+                    <span>Tidak ada COA ditemukan</span>
+                  </template>
+                  <template #noResult>
+                    <span>Tidak ada COA ditemukan</span>
+                  </template>
+                </multiselect>
+                <p class="mt-1 text-xs text-gray-500">
+                  Opsional: pilih akun untuk jurnal pembayaran location ini
+                </p>
+                <p v-if="outletPayments[locationKey].selectedCoa" class="mt-1 text-xs text-green-600">
+                  <i class="fa fa-check-circle mr-1"></i>
+                  COA terpilih: <strong>{{ outletPayments[locationKey].selectedCoa.display_name }}</strong>
                 </p>
               </div>
             </div>
@@ -323,7 +396,7 @@
           
           <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div class="flex justify-between items-center">
-              <span class="text-sm font-medium text-gray-700">Total Pembayaran Semua Outlet:</span>
+              <span class="text-sm font-medium text-gray-700">Total Pembayaran Semua Location:</span>
               <span class="text-lg font-bold text-blue-600">{{ formatCurrency(totalOutletPayments) }}</span>
             </div>
             <p class="text-xs text-gray-600 mt-2">
@@ -457,8 +530,8 @@
                             <div><strong>Total:</strong> {{ formatCurrency(cb.total_amount) }}</div>
                             <div v-if="cb.date"><strong>Tanggal:</strong> {{ formatDate(cb.date) }}</div>
                             <div v-if="cb.supplier_invoice_number"><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}</div>
-                            <div v-if="cb.outlet_names && cb.outlet_names.length > 0">
-                              <strong>Outlet:</strong> {{ Array.isArray(cb.outlet_names) ? cb.outlet_names.join(', ') : cb.outlet_names }}
+                            <div v-if="cb.location_names && cb.location_names.length > 0">
+                              <strong>Location:</strong> {{ Array.isArray(cb.location_names) ? cb.location_names.join(', ') : cb.location_names }}
                             </div>
                           </div>
                         </div>
@@ -470,40 +543,52 @@
                   </div>
                 </div>
 
-                <!-- Payment Per Outlet -->
+                <!-- Payment Per Location (Outlet/Warehouse) -->
                 <div v-if="selectedContraBonsByOutlet && Object.keys(selectedContraBonsByOutlet).length > 0" class="bg-purple-50 border-l-4 border-purple-500 p-4 rounded">
                   <h4 class="font-semibold text-purple-800 mb-3">
-                    <i class="fa fa-store mr-2"></i>
-                    Pembayaran Per Outlet
+                    <i class="fa fa-map-marker-alt mr-2"></i>
+                    Pembayaran Per Location (Outlet/Warehouse)
                   </h4>
                   <div class="space-y-3">
-                    <div v-for="(outletData, outletKey) in selectedContraBonsByOutlet" :key="outletKey" class="bg-white border border-purple-200 rounded-lg p-3">
+                    <div v-for="(locationData, locationKey) in selectedContraBonsByOutlet" :key="locationKey" class="bg-white border border-purple-200 rounded-lg p-3">
                       <div class="flex justify-between items-start mb-2">
                         <div>
-                          <h5 class="font-semibold text-gray-900">{{ outletData.outlet_name || 'Global / All Outlets' }}</h5>
-                          <div class="text-xs text-gray-600 mt-1">
-                            <span>Total Contra Bon: {{ formatCurrency(outletData.total_amount) }}</span>
-                            <span class="ml-2">({{ outletData.contra_bon_count }} contra bon)</span>
+                          <div class="flex items-center gap-2 mb-1">
+                            <h5 class="font-semibold text-gray-900">{{ locationData.location_name || 'Global / All Locations' }}</h5>
+                            <span v-if="locationData.location_type === 'outlet'" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <i class="fa fa-store mr-1"></i>Outlet
+                            </span>
+                            <span v-else-if="locationData.location_type === 'warehouse'" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <i class="fa fa-warehouse mr-1"></i>Warehouse
+                            </span>
                           </div>
-                          <div v-if="outletData.contra_bons && outletData.contra_bons.length > 0" class="text-xs text-gray-500 mt-1">
-                            <strong>Contra Bon:</strong> {{ outletData.contra_bons.map(cb => cb.number).join(', ') }}
+                          <div class="text-xs text-gray-600 mt-1">
+                            <span>Total Contra Bon: {{ formatCurrency(locationData.total_amount) }}</span>
+                            <span class="ml-2">({{ locationData.contra_bon_count }} contra bon)</span>
+                          </div>
+                          <div v-if="locationData.contra_bons && locationData.contra_bons.length > 0" class="text-xs text-gray-500 mt-1">
+                            <strong>Contra Bon:</strong> {{ locationData.contra_bons.map(cb => cb.number).join(', ') }}
                           </div>
                         </div>
                         <div class="text-right">
                           <div class="text-lg font-bold text-purple-600">
-                            {{ formatCurrency(outletPayments[outletKey]?.amount || 0) }}
+                            {{ formatCurrency(outletPayments[locationKey]?.amount || 0) }}
                           </div>
                           <div class="text-xs text-gray-500">Amount</div>
                         </div>
                       </div>
-                      <div v-if="(form.payment_type === 'Transfer' || form.payment_type === 'Giro') && outletPayments[outletKey]?.selectedBank" class="mt-2 pt-2 border-t border-purple-200">
+                      <div v-if="(form.payment_type === 'Transfer' || form.payment_type === 'Giro') && outletPayments[locationKey]?.selectedBank" class="mt-2 pt-2 border-t border-purple-200">
                         <span class="text-xs font-medium text-gray-700">Bank:</span>
-                        <span class="ml-2 text-xs text-gray-900">{{ outletPayments[outletKey].selectedBank.display_name }}</span>
+                        <span class="ml-2 text-xs text-gray-900">{{ outletPayments[locationKey].selectedBank.display_name }}</span>
+                      </div>
+                      <div v-if="outletPayments[locationKey]?.selectedCoa" class="mt-2 pt-2 border-t border-purple-200">
+                        <span class="text-xs font-medium text-gray-700">COA:</span>
+                        <span class="ml-2 text-xs text-gray-900">{{ outletPayments[locationKey].selectedCoa.display_name }}</span>
                       </div>
                     </div>
                     <div class="bg-white border border-purple-300 rounded-lg p-3 mt-3">
                       <div class="flex justify-between items-center">
-                        <span class="font-semibold text-gray-700">Total Pembayaran Semua Outlet:</span>
+                        <span class="font-semibold text-gray-700">Total Pembayaran Semua Location:</span>
                         <span class="text-xl font-bold text-purple-600">{{ formatCurrency(totalOutletPayments) }}</span>
                       </div>
                     </div>
@@ -592,6 +677,10 @@ const props = defineProps({
   banks: {
     type: Array,
     default: () => []
+  },
+  coas: {
+    type: Array,
+    default: () => []
   }
 });
 
@@ -655,23 +744,42 @@ const selectedContraBonsByOutlet = computed(() => {
   const grouped = {};
   
   selected.forEach(cb => {
-    // Handle outlet_names: bisa array, string, atau null/undefined
-    let outletNames = [];
-    if (cb.outlet_names) {
-      if (Array.isArray(cb.outlet_names)) {
-        outletNames = cb.outlet_names.filter(name => name && name.trim() !== '');
-      } else if (typeof cb.outlet_names === 'string') {
-        outletNames = [cb.outlet_names].filter(name => name && name.trim() !== '');
+    // Handle location_names (outlet + warehouse): bisa array, string, atau null/undefined
+    let locationNames = [];
+    if (cb.location_names) {
+      if (Array.isArray(cb.location_names)) {
+        locationNames = cb.location_names.filter(name => name && name.trim() !== '');
+      } else if (typeof cb.location_names === 'string') {
+        locationNames = [cb.location_names].filter(name => name && name.trim() !== '');
       }
     }
     
-    if (outletNames.length === 0) {
-      // No outlet, group as "Global"
+    // Determine location type (outlet or warehouse)
+    const getLocationType = () => {
+      // Check dari source_type_display
+      if (cb.source_type_display === 'PR Foods') return 'warehouse';
+      if (cb.source_type_display === 'Warehouse Retail Food') return 'warehouse';
+      if (cb.source_type_display === 'RO Supplier') return 'outlet';
+      if (cb.source_type_display === 'Retail Food') return 'outlet';
+      if (cb.source_type_display === 'Retail Non Food') return 'outlet';
+      
+      // Fallback: check warehouse_names vs outlet_names
+      if (cb.warehouse_names && cb.warehouse_names.length > 0) return 'warehouse';
+      if (cb.outlet_names && cb.outlet_names.length > 0) return 'outlet';
+      
+      return 'global';
+    };
+    
+    const locationType = getLocationType();
+    
+    if (locationNames.length === 0) {
+      // No location, group as "Global"
       const key = 'global';
       if (!grouped[key]) {
         grouped[key] = {
-          outlet_id: null,
-          outlet_name: 'Global / All Outlets',
+          location_id: null,
+          location_name: 'Global / All Locations',
+          location_type: 'global',
           contra_bons: [],
           total_amount: 0,
           contra_bon_count: 0
@@ -681,22 +789,23 @@ const selectedContraBonsByOutlet = computed(() => {
       grouped[key].total_amount += parseFloat(cb.total_amount) || 0;
       grouped[key].contra_bon_count += 1;
     } else {
-      // Group by each outlet
-      outletNames.forEach(outletName => {
-        const key = `outlet_${outletName}`;
+      // Group by each location (outlet or warehouse)
+      locationNames.forEach(locationName => {
+        const key = `${locationType}_${locationName}`;
         if (!grouped[key]) {
           grouped[key] = {
-            outlet_id: null, // Will need to get from outlet name if needed
-            outlet_name: outletName,
+            location_id: null,
+            location_name: locationName,
+            location_type: locationType,
             contra_bons: [],
             total_amount: 0,
             contra_bon_count: 0
           };
         }
         grouped[key].contra_bons.push(cb);
-        // Distribute amount equally if contra bon has multiple outlets
-        const amountPerOutlet = (parseFloat(cb.total_amount) || 0) / outletNames.length;
-        grouped[key].total_amount += amountPerOutlet;
+        // Distribute amount equally if contra bon has multiple locations
+        const amountPerLocation = (parseFloat(cb.total_amount) || 0) / locationNames.length;
+        grouped[key].total_amount += amountPerLocation;
         grouped[key].contra_bon_count += 1;
       });
     }
@@ -730,11 +839,30 @@ function initializeOutletPayments() {
   if (selectedContraBonsByOutlet.value && Object.keys(selectedContraBonsByOutlet.value).length > 0) {
     Object.keys(selectedContraBonsByOutlet.value).forEach(outletKey => {
       const outletData = selectedContraBonsByOutlet.value[outletKey];
+      // Jika warehouse, outlet_id = 1, jika outlet gunakan id asli
+      let outletId = outletData.outlet_id || null;
+      let warehouseId = null;
+      
+      if (outletData.location_type === 'warehouse') {
+        outletId = 1;
+        // Extract warehouse_id from contra bons
+        if (outletData.contra_bons && outletData.contra_bons.length > 0) {
+          const firstCb = outletData.contra_bons[0];
+          // Try to get warehouse_id from warehouse_ids array
+          if (firstCb.warehouse_ids && firstCb.warehouse_ids.length > 0) {
+            warehouseId = firstCb.warehouse_ids[0];
+          }
+        }
+      }
+      
       outletPayments.value[outletKey] = {
-        outlet_id: outletData.outlet_id || null,
+        outlet_id: outletId,
+        warehouse_id: warehouseId,
         amount: outletData.total_amount || 0,
         bank_id: null,
-        selectedBank: null
+        selectedBank: null,
+        coa_id: null,
+        selectedCoa: null
       };
     });
   }
@@ -766,6 +894,20 @@ function onOutletBankRemove(outletKey) {
   outletPayments.value[outletKey].selectedBank = null;
 }
 
+// Function untuk handle COA selection per outlet
+function onOutletCoaSelect(outletKey, coa) {
+  if (coa && coa.id) {
+    outletPayments.value[outletKey].coa_id = coa.id;
+    outletPayments.value[outletKey].selectedCoa = coa;
+  }
+}
+
+// Function untuk handle COA removal per outlet
+function onOutletCoaRemove(outletKey) {
+  outletPayments.value[outletKey].coa_id = null;
+  outletPayments.value[outletKey].selectedCoa = null;
+}
+
 // Filter contra bons based on search
 const filteredContraBons = computed(() => {
   if (!contraBonSearch.value) {
@@ -784,6 +926,8 @@ const filteredContraBons = computed(() => {
     const poNumber = (cb.purchaseOrder?.number || '').toLowerCase();
     const retailNumber = (cb.retailFood?.number || '').toLowerCase();
     const outletNames = (cb.outlet_names || []).join(' ').toLowerCase();
+    const warehouseNames = (cb.warehouse_names || []).join(' ').toLowerCase();
+    const locationNames = (cb.location_names || []).join(' ').toLowerCase();
     const sourceType = (cb.source_type_display || '').toLowerCase();
     
     return number.includes(search) ||
@@ -795,6 +939,8 @@ const filteredContraBons = computed(() => {
            poNumber.includes(search) ||
            retailNumber.includes(search) ||
            outletNames.includes(search) ||
+           warehouseNames.includes(search) ||
+           locationNames.includes(search) ||
            sourceType.includes(search);
   });
 });
@@ -871,6 +1017,18 @@ async function onSupplierChange(supplier) {
         supplier_id: supplier.id
       }
     });
+    
+    console.log('Contra Bon Response:', res.data);
+    console.log('First 3 Contra Bons with details:', res.data.slice(0, 3).map(cb => ({
+      number: cb.number,
+      source_type_display: cb.source_type_display,
+      po_id: cb.po_id,
+      outlet_names: cb.outlet_names,
+      warehouse_names: cb.warehouse_names,
+      location_names: cb.location_names,
+      purchaseOrder: cb.purchaseOrder
+    })));
+    
     // Pastikan total_amount adalah number
     let availableContraBons = res.data.map(cb => ({
       ...cb,
@@ -1007,21 +1165,33 @@ async function confirmSubmit() {
     }
 
     // Convert outletPayments object to array and append to formData
-    const outletPaymentsArray = Object.values(outletPayments.value)
-      .filter(outlet => outlet.amount && parseFloat(outlet.amount) > 0)
-      .map(outlet => ({
+    const outletPaymentsArray = Object.entries(outletPayments.value)
+      .filter(([key, outlet]) => outlet.amount && parseFloat(outlet.amount) > 0)
+      .map(([key, outlet]) => ({
         outlet_id: outlet.outlet_id,
+        warehouse_id: outlet.warehouse_id || null,
         amount: outlet.amount,
-        bank_id: outlet.bank_id || null
+        bank_id: outlet.bank_id || null,
+        coa_id: outlet.coa_id || null,
+        location_key: key
       }));
     
     if (outletPaymentsArray.length > 0) {
       // Append each outlet payment as array item
       outletPaymentsArray.forEach((outlet, index) => {
         formData.append(`outlet_payments[${index}][outlet_id]`, outlet.outlet_id || '');
+        if (outlet.warehouse_id) {
+          formData.append(`outlet_payments[${index}][warehouse_id]`, outlet.warehouse_id);
+        }
         formData.append(`outlet_payments[${index}][amount]`, outlet.amount);
         if (outlet.bank_id) {
           formData.append(`outlet_payments[${index}][bank_id]`, outlet.bank_id);
+        }
+        if (outlet.coa_id) {
+          formData.append(`outlet_payments[${index}][coa_id]`, outlet.coa_id);
+        }
+        if (outlet.location_key) {
+          formData.append(`outlet_payments[${index}][location_key]`, outlet.location_key);
         }
       });
     }

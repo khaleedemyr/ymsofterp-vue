@@ -646,4 +646,184 @@ class JurnalService
             return false;
         }
     }
+    
+    /**
+     * Create jurnal entries from Food Payment
+     * 
+     * @param \App\Models\FoodPayment $payment
+     * @return array
+     */
+    public function createFromFoodPayment($payment)
+    {
+        // Ensure payment is loaded with outletPayments relationship
+        if (!$payment) {
+            throw new \Exception('Payment not provided');
+        }
+
+        // Load outlet payments if not already loaded
+        if (!$payment->relationLoaded('paymentOutlets')) {
+            $payment->load('paymentOutlets');
+        }
+
+        // Build payments array from outlet payments
+        $payments = [];
+        if ($payment->paymentOutlets && $payment->paymentOutlets->count() > 0) {
+            foreach ($payment->paymentOutlets as $op) {
+                $payments[] = (object)[
+                    'amount' => $op->amount ?? 0,
+                    'bank_id' => $op->bank_id ?? null,
+                    'coa_id' => $op->coa_id ?? null,
+                    'payment_type' => $payment->payment_type ?? null,
+                    'payment_code' => strtoupper($payment->payment_type ?? ''),
+                    'outlet_id' => $op->outlet_id ?? null,
+                    'warehouse_id' => $op->warehouse_id ?? null,
+                    'location_key' => $op->location_key ?? null,
+                ];
+            }
+        } else {
+            // Fallback to single payment if no outlet payments
+            $payments[] = (object)[
+                'amount' => $payment->total ?? 0,
+                'bank_id' => $payment->bank_id ?? null,
+                'coa_id' => null, // No COA for single payment
+                'payment_type' => $payment->payment_type ?? null,
+                'payment_code' => strtoupper($payment->payment_type ?? ''),
+                'outlet_id' => null,
+                'warehouse_id' => null,
+                'location_key' => null,
+            ];
+        }
+
+        $totalPayment = collect($payments)->sum('amount');
+        $grandTotal = $payment->total ?? 0;
+        if (abs($totalPayment - $grandTotal) > 0.01) {
+            Log::warning('Total payment parts not equal to payment amount', [
+                'payment_id' => $payment->id,
+                'total_parts' => $totalPayment,
+                'amount' => $grandTotal
+            ]);
+        }
+
+        // Generate no jurnal
+        $noJurnal = Jurnal::generateNoJurnal();
+        $tanggal = $payment->date ? date('Y-m-d', strtotime($payment->date)) : date('Y-m-d');
+        $keterangan = "Food Payment: " . ($payment->number ?? 'N/A');
+
+        return DB::transaction(function() use ($payment, $payments, $noJurnal, $tanggal, $keterangan, $grandTotal) {
+            $jurnalEntries = [];
+            $totalDebit = 0;
+
+            foreach ($payments as $p) {
+                // Get COA Debit from payment type/bank
+                $coaDebit = $this->getCoaDebitFromPayment($p);
+                if (!$coaDebit) {
+                    Log::error('COA Debit not found for FoodPayment part', [
+                        'payment_id' => $payment->id,
+                        'bank_id' => $p->bank_id,
+                        'payment_type' => $p->payment_type
+                    ]);
+                    throw new \Exception('COA Debit not found for payment part');
+                }
+
+                // Get COA Credit - use per-location COA if provided, otherwise skip this entry
+                $coaCredit = $p->coa_id ?? null;
+                if (!$coaCredit) {
+                    Log::warning('FoodPayment location missing coa_id, skipping jurnal for this location', [
+                        'payment_id' => $payment->id,
+                        'location_key' => $p->location_key
+                    ]);
+                    continue;
+                }
+
+                $amount = $p->amount ?? 0;
+                $totalDebit += $amount;
+                $jurnalOutletId = $p->outlet_id ?? null;
+                $jurnalWarehouseId = $p->warehouse_id ?? null;
+
+                // Create Jurnal entry
+                $jurnal = Jurnal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaCredit,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $jurnalOutletId,
+                    'warehouse_id' => $jurnalWarehouseId,
+                    'reference_type' => 'food_payment',
+                    'reference_id' => $payment->id,
+                    'status' => 'posted',
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                Log::info('Jurnal entry created for FoodPayment', [
+                    'jurnal_id' => $jurnal->id,
+                    'no_jurnal' => $noJurnal,
+                    'coa_debit_id' => $jurnal->coa_debit_id,
+                    'coa_kredit_id' => $jurnal->coa_kredit_id,
+                    'jumlah_debit' => $jurnal->jumlah_debit,
+                    'jumlah_kredit' => $jurnal->jumlah_kredit,
+                    'outlet_id' => $jurnal->outlet_id,
+                    'reference_id' => $jurnal->reference_id
+                ]);
+
+                $jurnalEntries[] = $jurnal;
+
+                // Create JurnalGlobal entry
+                $jg = JurnalGlobal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $tanggal,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => $coaDebit,
+                    'coa_kredit_id' => $coaCredit,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $jurnalOutletId,
+                    'warehouse_id' => $jurnalWarehouseId,
+                    'source_module' => 'food_payment',
+                    'source_id' => $payment->id,
+                    'reference_type' => 'food_payment',
+                    'reference_id' => $payment->id,
+                    'status' => 'posted',
+                    'posted_at' => now(),
+                    'posted_by' => auth()->id() ?? 1,
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                Log::info('JurnalGlobal entry created for FoodPayment', [
+                    'jurnal_global_id' => $jg->id,
+                    'no_jurnal' => $noJurnal,
+                    'coa_debit_id' => $jg->coa_debit_id,
+                    'coa_kredit_id' => $jg->coa_kredit_id,
+                    'jumlah_debit' => $jg->jumlah_debit,
+                    'jumlah_kredit' => $jg->jumlah_kredit,
+                    'outlet_id' => $jg->outlet_id,
+                    'reference_id' => $jg->reference_id
+                ]);
+            }
+
+            if (count($jurnalEntries) === 0) {
+                Log::warning('No jurnal entries created for FoodPayment (all locations missing COA)', [
+                    'payment_id' => $payment->id
+                ]);
+            }
+
+            if (abs($totalDebit - $grandTotal) > 0.01 && count($jurnalEntries) > 0) {
+                Log::warning('Total debit jurnal not equal to payment amount for FoodPayment', [
+                    'payment_id' => $payment->id,
+                    'total_debit' => $totalDebit,
+                    'amount' => $grandTotal
+                ]);
+            }
+
+            Log::info('Jurnal created for FoodPayment', [
+                'payment_id' => $payment->id,
+                'no_jurnal' => $noJurnal,
+                'entries' => count($jurnalEntries)
+            ]);
+
+            return $jurnalEntries;
+        });
+    }
 }
