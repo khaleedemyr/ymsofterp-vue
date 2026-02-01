@@ -1927,7 +1927,7 @@ class OutletPaymentController extends Controller
         // Generate no jurnal baru untuk HO
         $noJurnalHO = \App\Models\Jurnal::generateNoJurnal();
         
-        // Note: outlet_id = 1 untuk HO (bukan null)
+        // Note: outlet_id = 1 untuk HO (bukan null), warehouse_id tetap diisi
         \App\Models\Jurnal::create([
             'no_jurnal' => $noJurnalHO,
             'tanggal' => $tanggal,
@@ -1937,6 +1937,7 @@ class OutletPaymentController extends Controller
             'jumlah_debit' => $totalAmount,
             'jumlah_kredit' => $totalAmount,
             'outlet_id' => 1, // HO outlet_id = 1
+            'warehouse_id' => $warehouseId,
             'reference_type' => 'outlet_payment',
             'reference_id' => $payment->id,
             'status' => 'posted',
@@ -1954,6 +1955,7 @@ class OutletPaymentController extends Controller
             'jumlah_debit' => $totalAmount,
             'jumlah_kredit' => $totalAmount,
             'outlet_id' => 1, // HO outlet_id = 1
+            'warehouse_id' => $warehouseId,
             'reference_type' => 'outlet_payment',
             'reference_id' => $payment->id,
             'status' => 'posted',
