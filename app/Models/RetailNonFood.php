@@ -22,7 +22,8 @@ class RetailNonFood extends Model
         'transaction_date',
         'total_amount',
         'notes',
-        'status'
+        'status',
+        'jurnal_created'
     ];
 
     protected $casts = [
@@ -63,6 +64,12 @@ class RetailNonFood extends Model
     public function supplier()
     {
         return $this->belongsTo(\App\Models\Supplier::class, 'supplier_id');
+    }
+
+    public function jurnal()
+    {
+        return $this->hasMany(\App\Models\Jurnal::class, 'reference_id')
+            ->where('reference_type', 'retail_non_food');
     }
 
     public static function getDailyTotal($date)

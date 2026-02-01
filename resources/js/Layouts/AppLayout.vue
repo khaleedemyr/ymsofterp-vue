@@ -240,6 +240,7 @@ const menuGroups = [
             { name: () => 'Contra Bon', icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
             { name: () => 'Food Payment', icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
             { name: () => 'Non Food Payment', icon: 'fa-solid fa-credit-card', route: '/non-food-payments', code: 'non_food_payment' },
+            { name: () => 'Retail Non Food Payment', icon: 'fa-solid fa-money-bill-wave', route: route('retail-non-food-payment.index'), code: 'retail_non_food_payment' },
             { name: () => 'OPEX Report', icon: 'fa-solid fa-chart-line', route: '/opex-report', code: 'opex_report' },
             { name: () => 'OPEX By Category', icon: 'fa-solid fa-chart-pie', route: '/opex-by-category', code: 'opex_by_category' },
             //{ name: () => 'MT PO Payment', icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },

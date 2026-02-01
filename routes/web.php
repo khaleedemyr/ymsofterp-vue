@@ -1262,6 +1262,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('retail-non-food/get-budget-info', [\App\Http\Controllers\RetailNonFoodController::class, 'getBudgetInfo']);
     Route::resource('retail-non-food', \App\Http\Controllers\RetailNonFoodController::class);
     
+    // Retail Non Food Payment
+    Route::get('retail-non-food-payment', [\App\Http\Controllers\RetailNonFoodPaymentController::class, 'index'])->name('retail-non-food-payment.index');
+    Route::post('retail-non-food-payment', [\App\Http\Controllers\RetailNonFoodPaymentController::class, 'store'])->name('retail-non-food-payment.store');
+    Route::post('retail-non-food-payment/rollback', [\App\Http\Controllers\RetailNonFoodPaymentController::class, 'rollback'])->name('retail-non-food-payment.rollback');
+    
     // Outlet Food Return
     Route::resource('outlet-food-return', \App\Http\Controllers\OutletFoodReturnController::class);
     Route::get('outlet-food-return/get-warehouse-outlets', [\App\Http\Controllers\OutletFoodReturnController::class, 'getWarehouseOutlets'])->name('outlet-food-return.get-warehouse-outlets');
