@@ -2650,7 +2650,9 @@ class PurchaseRequisitionController extends Controller
                         'category',
                         'outlet',
                         'creator',
-                        'approvalFlows.approver.jabatan'
+                        'approvalFlows.approver.jabatan',
+                        'items.outlet',
+                        'items.category'
                     ])
                     ->orderBy('created_at', 'desc')
                     ->get();
@@ -2666,7 +2668,9 @@ class PurchaseRequisitionController extends Controller
                         'category',
                         'outlet',
                         'creator',
-                        'approvalFlows.approver.jabatan'
+                        'approvalFlows.approver.jabatan',
+                        'items.outlet',
+                        'items.category'
                     ])
                     ->orderBy('created_at', 'desc')
                     ->get();

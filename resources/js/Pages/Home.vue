@@ -2283,7 +2283,21 @@ async function approveCategoryCost(headerId) {
         }
     } catch (error) {
         console.error('Error approving Category Cost:', error);
-        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Category Cost Outlet', 'error');
+        const errorMessage = error.response?.data?.message || 'Gagal menyetujui Category Cost Outlet';
+        
+        // Format error message with line breaks as HTML
+        const formattedMessage = errorMessage.replace(/\n/g, '<br>');
+        
+        Swal.fire({
+            icon: 'error',
+            title: 'Stock Tidak Mencukupi',
+            html: formattedMessage,
+            confirmButtonText: 'OK',
+            customClass: {
+                popup: 'text-left',
+                htmlContainer: 'text-left'
+            }
+        });
     }
 }
 
@@ -9232,10 +9246,25 @@ watch(locale, () => {
                                     <div class="text-xs text-gray-600 dark:text-gray-300 truncate mt-1">
                                         {{ pr.title }}
                                     </div>
-                                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                        {{ pr.division?.nama_divisi || '-' }} 
-                                        <span v-if="pr.outlet?.nama_outlet">• {{ pr.outlet.nama_outlet }}</span>
-                                        • Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount || 0) }}
+                                    <!-- Outlet dan Nilai PR - Lebih Menonjol -->
+                                    <div class="flex items-center gap-3 mt-2">
+                                        <!-- Get outlet from first item if available -->
+                                        <div v-if="pr.items && pr.items.length > 0 && pr.items[0].outlet" class="flex items-center gap-1 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">
+                                            <i class="fa fa-store text-xs text-blue-600 dark:text-blue-400"></i>
+                                            <span class="text-xs font-medium text-blue-700 dark:text-blue-300">{{ pr.items[0].outlet.nama_outlet }}</span>
+                                            <span v-if="pr.items.filter((item, idx, self) => self.findIndex(i => i.outlet_id === item.outlet_id) === idx).length > 1" class="text-[10px] text-blue-600 dark:text-blue-400">+{{ pr.items.filter((item, idx, self) => self.findIndex(i => i.outlet_id === item.outlet_id) === idx).length - 1 }}</span>
+                                        </div>
+                                        <div v-else-if="pr.outlet?.nama_outlet" class="flex items-center gap-1 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded">
+                                            <i class="fa fa-store text-xs text-blue-600 dark:text-blue-400"></i>
+                                            <span class="text-xs font-medium text-blue-700 dark:text-blue-300">{{ pr.outlet.nama_outlet }}</span>
+                                        </div>
+                                        <div class="flex items-center gap-1 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                                            <i class="fa fa-money-bill-wave text-xs text-green-600 dark:text-green-400"></i>
+                                            <span class="text-sm font-semibold text-green-700 dark:text-green-300">Rp {{ new Intl.NumberFormat('id-ID').format(pr.amount || 0) }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+                                        {{ pr.division?.nama_divisi || '-' }}
                                     </div>
                                     <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-1">
                                         <i class="fa fa-user mr-1 text-green-600"></i>

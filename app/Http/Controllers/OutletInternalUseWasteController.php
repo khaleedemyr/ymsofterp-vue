@@ -2431,6 +2431,76 @@ class OutletInternalUseWasteController extends Controller
             'type' => $header->type
         ]);
         
+        // First pass: Check all stock availability
+        $insufficientStockItems = [];
+        
+        foreach ($details as $item) {
+            $inventoryItem = DB::table('outlet_food_inventory_items')
+                ->where('item_id', $item->item_id)
+                ->first();
+            if (!$inventoryItem) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Inventory item not found for item_id: {$item->item_id}, header_id: {$headerId}, type: {$header->type}");
+                continue;
+            }
+            
+            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
+            if (!$itemMaster) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Item master not found for item_id: {$item->item_id}, header_id: {$headerId}");
+                continue;
+            }
+            
+            $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
+            $qty_input = $item->qty;
+            $qty_small = 0;
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+            
+            if ($unit === $unitSmall) {
+                $qty_small = $qty_input;
+            } elseif ($unit === DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name')) {
+                $qty_small = $qty_input * $smallConv;
+            } elseif ($unit === DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name')) {
+                $qty_small = $qty_input * $smallConv * $mediumConv;
+            } else {
+                $qty_small = $qty_input;
+            }
+            
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItem->id)
+                ->where('id_outlet', $header->outlet_id)
+                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                ->first();
+            
+            if (!$stock) {
+                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Stock not found for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
+                continue;
+            }
+            
+            // Check stock availability
+            if ($qty_small > $stock->qty_small) {
+                $itemName = $itemMaster->name ?? "Item ID: {$item->item_id}";
+                $insufficientStockItems[] = [
+                    'name' => $itemName,
+                    'required' => $qty_small,
+                    'available' => $stock->qty_small,
+                    'unit' => $unitSmall
+                ];
+            }
+        }
+        
+        // If any items have insufficient stock, throw error with all details
+        if (!empty($insufficientStockItems)) {
+            $errorMessage = "Stock tidak mencukupi untuk item berikut:\n\n";
+            foreach ($insufficientStockItems as $stockItem) {
+                $errorMessage .= "• {$stockItem['name']}\n";
+                $errorMessage .= "  Dibutuhkan: {$stockItem['required']} {$stockItem['unit']}\n";
+                $errorMessage .= "  Tersedia: {$stockItem['available']} {$stockItem['unit']}\n\n";
+            }
+            throw new \Exception($errorMessage);
+        }
+        
+        // Second pass: Update all stocks (only if all checks passed)
         foreach ($details as $item) {
             $inventoryItem = DB::table('outlet_food_inventory_items')
                 ->where('item_id', $item->item_id)
@@ -2484,12 +2554,7 @@ class OutletInternalUseWasteController extends Controller
                 continue;
             }
             
-            // Check stock availability
-            if ($qty_small > $stock->qty_small) {
-                throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
-            }
-            
-            // Update stok di outlet (kurangi)
+            // Update stok di outlet (kurangi) - Stock check already done in first pass
             $updated = DB::table('outlet_food_inventory_stocks')
                 ->where('inventory_item_id', $inventoryItem->id)
                 ->where('id_outlet', $header->outlet_id)
