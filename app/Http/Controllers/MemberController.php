@@ -783,127 +783,168 @@ class MemberController extends Controller
                 return $pt->point_amount ?? 0;
             }));
             
-            // Transform point transactions to display format
-            $transactions = $pointTransactions->map(function ($pt) use ($memberIdString) {
+            // OPTIMASI: Pre-load all order IDs and data to avoid N+1 query
+            $allOrderIds = [];
+            $allPaidNumbers = [];
+            $allReferenceNumbers = [];
+            
+            foreach ($pointTransactions as $pt) {
+                // Extract order_id from metadata
+                if (isset($pt->metadata) && $pt->metadata) {
+                    $metadata = json_decode($pt->metadata ?? '{}', true);
+                    if (isset($metadata['order_id'])) {
+                        $allOrderIds[] = $metadata['order_id'];
+                    }
+                }
+                
+                // Collect reference_id and transaction_id
+                if (isset($pt->reference_id) && $pt->reference_id) {
+                    $allOrderIds[] = $pt->reference_id;
+                }
+                if (isset($pt->transaction_id) && $pt->transaction_id) {
+                    $allOrderIds[] = $pt->transaction_id;
+                }
+                
+                // Collect paid_number for lookup
+                $paidNumber = (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null);
+                if ($paidNumber) {
+                    $allPaidNumbers[] = $paidNumber;
+                }
+            }
+            
+            // Remove duplicates
+            $allOrderIds = array_unique(array_filter($allOrderIds));
+            $allPaidNumbers = array_unique(array_filter($allPaidNumbers));
+            
+            // Batch load all orders with outlet info
+            $ordersData = collect();
+            if (!empty($allOrderIds) && $memberIdString) {
+                $ordersData = DB::connection('db_justus')
+                    ->table('orders')
+                    ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                    ->whereIn('orders.id', $allOrderIds)
+                    ->where('orders.member_id', $memberIdString)
+                    ->select([
+                        'orders.id',
+                        'orders.paid_number',
+                        'orders.kode_outlet',
+                        'o.nama_outlet'
+                    ])
+                    ->get()
+                    ->keyBy('id');
+            }
+            
+            // Load by paid_number if not found by ID
+            if (!empty($allPaidNumbers) && $memberIdString) {
+                $ordersByPaidNumber = DB::connection('db_justus')
+                    ->table('orders')
+                    ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                    ->whereIn('orders.paid_number', $allPaidNumbers)
+                    ->where('orders.member_id', $memberIdString)
+                    ->select([
+                        'orders.id',
+                        'orders.paid_number',
+                        'orders.kode_outlet',
+                        'o.nama_outlet'
+                    ])
+                    ->get()
+                    ->keyBy('paid_number');
+                
+                // Merge with orders loaded by ID
+                foreach ($ordersByPaidNumber as $order) {
+                    if (!$ordersData->has($order->id)) {
+                        $ordersData->put($order->id, $order);
+                    }
+                }
+            }
+            
+            // Batch load all order items
+            $allOrderItems = collect();
+            $orderIdsWithData = $ordersData->pluck('id')->filter()->toArray();
+            if (!empty($orderIdsWithData)) {
+                $orderItemsData = DB::connection('db_justus')
+                    ->table('order_items')
+                    ->select([
+                        'order_id',
+                        'item_name',
+                        'qty',
+                        'price',
+                        'modifiers',
+                        'notes'
+                    ])
+                    ->whereIn('order_id', $orderIdsWithData)
+                    ->get()
+                    ->groupBy('order_id');
+                
+                $allOrderItems = $orderItemsData;
+            }
+            
+            // Transform point transactions to display format (now without queries in loop)
+            $transactions = $pointTransactions->map(function ($pt) use ($memberIdString, $ordersData, $allOrderItems) {
                 $orderDetails = collect([]);
                 $orderId = null;
                 $outletName = 'Outlet Tidak Diketahui';
+                $paidNumber = (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null;
                 
-                // Get order details if transaction is related to order
-                // Check metadata for order_id
+                // Get order_id from metadata first
                 if (isset($pt->metadata) && $pt->metadata) {
                     $metadata = json_decode($pt->metadata ?? '{}', true);
                     $orderId = $metadata['order_id'] ?? null;
                 }
                 
-                // Try to get order_id from reference_id or transaction_id
+                // Try reference_id or transaction_id
                 if (!$orderId) {
-                    $referenceId = isset($pt->reference_id) ? $pt->reference_id : null;
-                    $transactionId = isset($pt->transaction_id) ? $pt->transaction_id : null;
-                    $paidNumber = (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null;
-                    
-                    // Try reference_id first (usually contains order_id)
-                    if ($referenceId && $memberIdString) {
-                        $order = DB::connection('db_justus')
-                            ->table('orders')
-                            ->where('id', $referenceId)
-                            ->where('member_id', $memberIdString)
-                            ->first();
-                        
-                        if ($order) {
-                            $orderId = $order->id;
-                        }
-                    }
-                    
-                    // Try transaction_id
-                    if (!$orderId && $transactionId && $memberIdString) {
-                        $order = DB::connection('db_justus')
-                            ->table('orders')
-                            ->where('id', $transactionId)
-                            ->where('member_id', $memberIdString)
-                            ->first();
-                        
-                        if ($order) {
-                            $orderId = $order->id;
-                        }
-                    }
-                    
-                    // Try paid_number as last resort
-                    if (!$orderId && $paidNumber && $memberIdString) {
-                        $order = DB::connection('db_justus')
-                            ->table('orders')
-                            ->where('paid_number', $paidNumber)
-                            ->where('member_id', $memberIdString)
-                            ->first();
-                        
-                        if ($order) {
-                            $orderId = $order->id;
-                        }
+                    $orderId = (isset($pt->reference_id) ? $pt->reference_id : null) ?? (isset($pt->transaction_id) ? $pt->transaction_id : null);
+                }
+                
+                // Get order data from pre-loaded collection
+                $order = null;
+                if ($orderId && $ordersData->has($orderId)) {
+                    $order = $ordersData->get($orderId);
+                } elseif ($paidNumber) {
+                    // Try to find by paid_number
+                    $order = $ordersData->firstWhere('paid_number', $paidNumber);
+                    if ($order) {
+                        $orderId = $order->id;
                     }
                 }
                 
-                // Get outlet name from order via kode_outlet -> qr_code join
-                if ($orderId && $memberIdString) {
-                    $orderWithOutlet = DB::connection('db_justus')
-                        ->table('orders')
-                        ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
-                        ->where('orders.id', $orderId)
-                        ->where('orders.member_id', $memberIdString)
-                        ->select([
-                            'orders.*',
-                            'o.nama_outlet'
-                        ])
-                        ->first();
-                    
-                    if ($orderWithOutlet && isset($orderWithOutlet->nama_outlet) && $orderWithOutlet->nama_outlet) {
-                        $outletName = $orderWithOutlet->nama_outlet;
-                    }
+                // Get outlet name from pre-loaded order
+                if ($order && isset($order->nama_outlet) && $order->nama_outlet) {
+                    $outletName = $order->nama_outlet;
                 }
                 
-                // Get order items if order_id found
-                if ($orderId) {
-                    $orderItems = DB::connection('db_justus')
-                        ->table('order_items')
-                        ->select([
-                            'item_name',
-                            'qty',
-                            'price',
-                            'modifiers',
-                            'notes'
-                        ])
-                        ->where('order_id', $orderId)
-                        ->get()
-                        ->map(function ($item) {
-                            $modifiers = [];
-                            if (isset($item->modifiers) && $item->modifiers) {
-                                try {
-                                    $modifiers = json_decode($item->modifiers, true) ?: [];
-                                } catch (\Exception $e) {
-                                    $modifiers = [];
-                                }
+                // Get order items from pre-loaded collection
+                if ($orderId && $allOrderItems->has($orderId)) {
+                    $orderItems = $allOrderItems->get($orderId)->map(function ($item) {
+                        $modifiers = [];
+                        if (isset($item->modifiers) && $item->modifiers) {
+                            try {
+                                $modifiers = json_decode($item->modifiers, true) ?: [];
+                            } catch (\Exception $e) {
+                                $modifiers = [];
                             }
+                        }
 
-                            $qty = isset($item->qty) ? $item->qty : 0;
-                            $price = isset($item->price) ? $item->price : 0;
-                            $totalPrice = $qty * $price;
+                        $qty = isset($item->qty) ? $item->qty : 0;
+                        $price = isset($item->price) ? $item->price : 0;
+                        $totalPrice = $qty * $price;
 
-                            return [
-                                'item_name' => $item->item_name ?? '-',
-                                'qty' => $qty,
-                                'price' => $price,
-                                'price_formatted' => 'Rp ' . number_format($price, 0, ',', '.'),
-                                'total_price' => $totalPrice,
-                                'total_price_formatted' => 'Rp ' . number_format($totalPrice, 0, ',', '.'),
-                                'modifiers' => $modifiers,
-                                'modifiers_formatted' => $this->formatModifiers($modifiers),
-                                'notes' => $item->notes ?? null
-                            ];
-                        });
+                        return [
+                            'item_name' => $item->item_name ?? '-',
+                            'qty' => $qty,
+                            'price' => $price,
+                            'price_formatted' => 'Rp ' . number_format($price, 0, ',', '.'),
+                            'total_price' => $totalPrice,
+                            'total_price_formatted' => 'Rp ' . number_format($totalPrice, 0, ',', '.'),
+                            'modifiers' => $modifiers,
+                            'modifiers_formatted' => $this->formatModifiers($modifiers),
+                            'notes' => $item->notes ?? null
+                        ];
+                    });
                     
                     $orderDetails = $orderItems;
                 }
-                
-                // Outlet name already retrieved from order join above
                 
                 // Determine transaction type
                 $pointAmount = isset($pt->point_amount) ? $pt->point_amount : 0;
@@ -931,7 +972,7 @@ class MemberController extends Controller
                     'jml_trans_formatted' => (isset($pt->transaction_amount) && $pt->transaction_amount) ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
                     'type' => $type,
                     'type_text' => $typeText,
-                    'no_bill' => $paidNumber ?? (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null,
+                    'no_bill' => $paidNumber,
                     'transaction_id' => isset($pt->transaction_id) ? $pt->transaction_id : (isset($pt->reference_id) ? $pt->reference_id : null),
                     'outlet_name' => $outletName,
                     'created_at' => $pt->created_at ?? null,
