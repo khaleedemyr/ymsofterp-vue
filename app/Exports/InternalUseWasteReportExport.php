@@ -88,6 +88,43 @@ class InternalUseWasteReportExport implements FromCollection, WithHeadings, With
             ->orderBy('item.name', 'asc')
             ->get();
 
+        // ===== FIX N+1 QUERY: Pre-load MAC data sebelum loop =====
+        $inventoryItemIds = $items->pluck('inventory_item_id')->filter()->unique()->toArray();
+        $macDataCache = [];
+        $stockDataCache = [];
+        
+        if (!empty($inventoryItemIds)) {
+            // Pre-load cost histories
+            foreach ($inventoryItemIds as $invItemId) {
+                $macRow = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $invItemId)
+                    ->where('id_outlet', $this->outletId)
+                    ->where('date', '<=', $this->endDate)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->select('mac', 'warehouse_outlet_id')
+                    ->first();
+                
+                if ($macRow) {
+                    $key = $invItemId . '_' . $macRow->warehouse_outlet_id;
+                    $macDataCache[$key] = (float) ($macRow->mac ?? 0);
+                }
+            }
+            
+            // Pre-load stock data sebagai fallback
+            $stockData = DB::table('outlet_food_inventory_stocks')
+                ->whereIn('inventory_item_id', $inventoryItemIds)
+                ->where('id_outlet', $this->outletId)
+                ->select('inventory_item_id', 'warehouse_outlet_id', 'last_cost_small')
+                ->get();
+            
+            foreach ($stockData as $stock) {
+                $key = $stock->inventory_item_id . '_' . $stock->warehouse_outlet_id;
+                $stockDataCache[$key] = (float) ($stock->last_cost_small ?? 0);
+            }
+        }
+        // ===== END FIX N+1 QUERY =====
+
         // Ambil data approver untuk setiap header
         $headerIds = $items->pluck('header_id')->unique()->toArray();
         $approvers = [];
@@ -128,33 +165,11 @@ class InternalUseWasteReportExport implements FromCollection, WithHeadings, With
 
         $reportData = [];
         foreach ($items as $row) {
-            // Ambil MAC dari cost history pada tanggal transaksi
+            // ===== FIX N+1 QUERY: Gunakan cached MAC data =====
             $mac = 0;
             if ($row->inventory_item_id) {
-                $macRow = DB::table('outlet_food_inventory_cost_histories')
-                    ->where('inventory_item_id', $row->inventory_item_id)
-                    ->where('id_outlet', $this->outletId)
-                    ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                    ->where('date', '<=', $row->date)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->select('mac')
-                    ->first();
-
-                if ($macRow) {
-                    $mac = (float) ($macRow->mac ?? 0);
-                } else {
-                    $stockRow = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $row->inventory_item_id)
-                        ->where('id_outlet', $this->outletId)
-                        ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                        ->select('last_cost_small')
-                        ->first();
-
-                    if ($stockRow) {
-                        $mac = (float) ($stockRow->last_cost_small ?? 0);
-                    }
-                }
+                $key = $row->inventory_item_id . '_' . $row->warehouse_outlet_id;
+                $mac = $macDataCache[$key] ?? $stockDataCache[$key] ?? 0;
             }
 
             // Konversi qty ke small, medium, large

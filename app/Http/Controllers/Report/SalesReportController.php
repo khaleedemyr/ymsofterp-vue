@@ -60,6 +60,42 @@ class SalesReportController extends Controller
      */
     public function reportSalesPerCategory(Request $request)
     {
+        // Data filter (using cached helpers)
+        $warehouses = $this->getCachedWarehouseNames();
+        $categories = $this->getCachedCategoryNames();
+        $years = $this->getCachedReceiveDateYears();
+        
+        // Cek apakah ada parameter filter atau search (indikasi user sudah klik Load Data)
+        $shouldLoadData = $request->filled('warehouse') 
+            || $request->filled('category') 
+            || $request->filled('tahun') 
+            || $request->filled('bulan') 
+            || $request->filled('search')
+            || $request->filled('page');
+        
+        // Jika tidak ada parameter, return data kosong (initial load)
+        if (!$shouldLoadData) {
+            return Inertia::render('Report/ReportSalesPerCategory', [
+                'report' => [],
+                'warehouses' => $warehouses,
+                'categories' => $categories,
+                'years' => $years,
+                'total' => 0,
+                'perPage' => 25,
+                'page' => 1,
+                'filters' => [
+                    'search' => '',
+                    'warehouse' => '',
+                    'category' => '',
+                    'tahun' => '',
+                    'bulan' => '',
+                    'perPage' => 25,
+                    'page' => 1,
+                ],
+            ]);
+        }
+        
+        // Load data hanya jika user sudah klik Load Data
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -109,21 +145,13 @@ class SalesReportController extends Controller
 
         $perPage = $request->input('perPage', 25);
         $page = $request->input('page', 1);
-        $data = collect($query->get());
-
-        // Manual pagination using LengthAwarePaginator (karena groupBy tidak bisa dipaginate di SQL)
-        // Tetap load semua data, tapi format response lebih proper
-        $total = $data->count();
-        $items = $data->slice(($page - 1) * $perPage, $perPage)->values();
         
-        // Create paginator instance
-        $paginated = new LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $page,
-            ['path' => $request->url(), 'query' => $request->query()]
-        );
+        // OPTIMIZED: Get all data untuk count total, tapi hanya ambil yang diperlukan
+        $data = collect($query->get());
+        $total = $data->count();
+        
+        // Slice data untuk pagination di PHP (karena groupBy tidak bisa di-paginate langsung di SQL)
+        $items = $data->slice(($page - 1) * $perPage, $perPage)->values()->toArray();
 
         // Data filter (using cached helpers)
         $warehouses = $this->getCachedWarehouseNames();
@@ -131,10 +159,13 @@ class SalesReportController extends Controller
         $years = $this->getCachedReceiveDateYears();
 
         return Inertia::render('Report/ReportSalesPerCategory', [
-            'report' => $paginated,
+            'report' => $items, // Kirim sebagai array, bukan paginator object
             'warehouses' => $warehouses,
             'categories' => $categories,
             'years' => $years,
+            'total' => $total, // Kirim total terpisah
+            'perPage' => $perPage, // Kirim perPage terpisah
+            'page' => $page, // Kirim page terpisah
             'filters' => [
                 'search' => $request->search,
                 'warehouse' => $request->warehouse,
@@ -161,6 +192,40 @@ class SalesReportController extends Controller
      */
     public function reportSalesPerTanggal(Request $request)
     {
+        // Data filter (using cached helpers)
+        $warehouses = $this->getCachedWarehouseNames();
+        $years = $this->getCachedReceiveDateYears();
+        $months = range(1, 12);
+        
+        // Cek apakah ada parameter filter atau search (indikasi user sudah klik Load Data)
+        $shouldLoadData = $request->filled('warehouse') 
+            || $request->filled('tahun') 
+            || $request->filled('bulan') 
+            || $request->filled('search')
+            || $request->filled('page');
+        
+        // Jika tidak ada parameter, return data kosong (initial load)
+        if (!$shouldLoadData) {
+            return Inertia::render('Report/ReportSalesPerTanggal', [
+                'report' => [],
+                'warehouses' => $warehouses,
+                'years' => $years,
+                'months' => $months,
+                'total' => 0,
+                'perPage' => 25,
+                'page' => 1,
+                'filters' => [
+                    'search' => '',
+                    'warehouse' => '',
+                    'tahun' => '',
+                    'bulan' => '',
+                    'perPage' => 25,
+                    'page' => 1,
+                ],
+            ]);
+        }
+        
+        // Load data hanya jika user sudah klik Load Data
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -202,20 +267,13 @@ class SalesReportController extends Controller
 
         $perPage = $request->input('perPage', 25);
         $page = $request->input('page', 1);
-        $data = collect($query->get());
-
-        // Manual pagination using LengthAwarePaginator (karena groupBy tidak bisa dipaginate di SQL)
-        $total = $data->count();
-        $items = $data->slice(($page - 1) * $perPage, $perPage)->values();
         
-        // Create paginator instance
-        $paginated = new LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $page,
-            ['path' => $request->url(), 'query' => $request->query()]
-        );
+        // OPTIMIZED: Get all data untuk count total, tapi hanya ambil yang diperlukan
+        $data = collect($query->get());
+        $total = $data->count();
+        
+        // Slice data untuk pagination di PHP (karena groupBy tidak bisa di-paginate langsung di SQL)
+        $items = $data->slice(($page - 1) * $perPage, $perPage)->values()->toArray();
 
         // Data filter (using cached helpers)
         $warehouses = $this->getCachedWarehouseNames();
@@ -223,10 +281,13 @@ class SalesReportController extends Controller
         $months = range(1, 12);
 
         return Inertia::render('Report/ReportSalesPerTanggal', [
-            'report' => $paginated,
+            'report' => $items, // Kirim sebagai array, bukan paginator object
             'warehouses' => $warehouses,
             'years' => $years,
             'months' => $months,
+            'total' => $total, // Kirim total terpisah
+            'perPage' => $perPage, // Kirim perPage terpisah
+            'page' => $page, // Kirim page terpisah
             'filters' => [
                 'search' => $request->search,
                 'warehouse' => $request->warehouse,
@@ -253,6 +314,40 @@ class SalesReportController extends Controller
      */
     public function reportSalesAllItemAllOutlet(Request $request)
     {
+        // Data filter (using cached helpers)
+        $warehouses = $this->getCachedWarehouseNames();
+        $outlets = $this->getCachedOutletNames();
+        
+        // Cek apakah ada parameter filter atau search (indikasi user sudah klik Load Data)
+        $shouldLoadData = $request->filled('gudang') 
+            || $request->filled('outlet') 
+            || $request->filled('dateFrom') 
+            || $request->filled('dateTo') 
+            || $request->filled('search')
+            || $request->filled('page');
+        
+        // Jika tidak ada parameter, return data kosong (initial load)
+        if (!$shouldLoadData) {
+            return Inertia::render('Report/ReportSalesAllItemAllOutlet', [
+                'report' => [],
+                'warehouses' => $warehouses,
+                'outlets' => $outlets,
+                'total' => 0,
+                'perPage' => 25,
+                'page' => 1,
+                'filters' => [
+                    'search' => '',
+                    'gudang' => '',
+                    'outlet' => '',
+                    'dateFrom' => '',
+                    'dateTo' => '',
+                    'perPage' => 25,
+                    'page' => 1,
+                ],
+            ]);
+        }
+        
+        // Load data hanya jika user sudah klik Load Data
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -376,27 +471,21 @@ class SalesReportController extends Controller
         $perPage = $request->input('perPage', 25);
         $page = $request->input('page', 1);
 
-        // Manual pagination using LengthAwarePaginator (karena merge di PHP)
+        // OPTIMIZED: Manual pagination - kirim sebagai array
         $total = $data->count();
-        $items = $data->slice(($page - 1) * $perPage, $perPage)->values();
-        
-        // Create paginator instance
-        $paginated = new LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $page,
-            ['path' => $request->url(), 'query' => $request->query()]
-        );
+        $items = $data->slice(($page - 1) * $perPage, $perPage)->values()->toArray();
 
         // Data filter (using cached helpers)
         $warehouses = $this->getCachedWarehouseNames();
         $outlets = $this->getCachedOutletNames();
 
         return Inertia::render('Report/ReportSalesAllItemAllOutlet', [
-            'report' => $paginated,
+            'report' => $items, // Kirim sebagai array, bukan paginator object
             'warehouses' => $warehouses,
             'outlets' => $outlets,
+            'total' => $total, // Kirim total terpisah
+            'perPage' => $perPage, // Kirim perPage terpisah
+            'page' => $page, // Kirim page terpisah
             'filters' => [
                 'search' => $request->search,
                 'gudang' => $request->gudang,

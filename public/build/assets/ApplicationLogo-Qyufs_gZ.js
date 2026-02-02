@@ -1,0 +1,1 @@
+import{_ as o}from"./_plugin-vue_export-helper-DlAUqK2U.js";import{L as t,B as c}from"./vendor-vue-g7iCcTkf.js";const e={},n={src:"/images/logo.png",alt:"YMSoft ERP Logo",class:"h-20 w-20 object-contain mx-auto"};function s(r,a){return c(),t("img",n)}const m=o(e,[["render",s]]);export{m as A};

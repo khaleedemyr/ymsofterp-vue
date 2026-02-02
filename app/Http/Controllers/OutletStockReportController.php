@@ -560,6 +560,19 @@ class OutletStockReportController extends Controller
                 }
             }
             
+            // 10. Ambil semua current stock SEBELUM loop untuk menghindari N+1 query
+            $currentStocks = [];
+            if (!empty($inventoryItemIds)) {
+                $currentStocksData = DB::table('outlet_food_inventory_stocks')
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->select('inventory_item_id', 'qty_small', 'qty_medium', 'qty_large', 'last_cost_small', 'last_cost_medium', 'last_cost_large')
+                    ->get()
+                    ->keyBy('inventory_item_id');
+                $currentStocks = $currentStocksData->toArray();
+            }
+            
             foreach ($inventoryItems as $item) {
                 // Begin Inventory = 1) Last Stock Opname Physical bulan lalu, 2) Fallback: upload saldo awal (initial_balance), 3) 0
                 $itemBegin = $beginInventoryFromOpname[$item->item_id] ?? $beginFromUpload[$item->inventory_item_id] ?? ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0];
@@ -705,13 +718,8 @@ class OutletStockReportController extends Controller
                 $internalTransferInDisplay = $formatTypeData($itemInternalTransfer['internal_transfer_in']);
                 $internalTransferOutDisplay = $formatTypeData($itemInternalTransfer['internal_transfer_out']);
                 
-                // Ambil last stock (current stock) dari outlet_food_inventory_stocks
-                $currentStock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $item->inventory_item_id)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->select('qty_small', 'qty_medium', 'qty_large', 'last_cost_small', 'last_cost_medium', 'last_cost_large')
-                    ->first();
+                // Ambil last stock (current stock) dari data yang sudah di-load sebelumnya
+                $currentStock = $currentStocks[$item->inventory_item_id] ?? null;
                 
                 $lastQtySmall = $currentStock ? (float) ($currentStock->qty_small ?? 0) : 0;
                 $lastQtyMedium = $currentStock ? (float) ($currentStock->qty_medium ?? 0) : 0;

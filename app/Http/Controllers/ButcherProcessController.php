@@ -112,8 +112,8 @@ class ButcherProcessController extends Controller
             \Log::warning('Items without units found:', $itemsWithoutUnits->toArray());
         }
 
-        // Get good receives that have remaining quantity
-        $goodReceives = FoodGoodReceive::whereHas('items', function($query) {
+        // Get good receives that have remaining quantity with eager loading
+        $goodReceives = FoodGoodReceive::with('items')->whereHas('items', function($query) {
             $query->whereRaw('qty_received > COALESCE((
                 SELECT SUM(bpi.whole_qty)
                 FROM butcher_process_items bpi

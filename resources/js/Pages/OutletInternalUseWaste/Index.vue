@@ -124,69 +124,85 @@
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nomor</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Jam</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tipe</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Approval</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Creator</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Aksi</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Nomor</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Tanggal</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Tipe</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Status</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Approval</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Outlet / Warehouse</th>
+                <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Creator</th>
+                <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.data || !props.data.data || props.data.data.length === 0">
-                <td colspan="10" class="text-center py-10 text-green-300">Tidak ada data.</td>
+                <td colspan="8" class="text-center py-10 text-green-300">Tidak ada data.</td>
               </tr>
-              <tr v-for="row in props.data.data" :key="row.id">
-                <td class="px-6 py-3">
-                  <span class="font-semibold" :class="row.number && row.number.startsWith('DRAFT-') ? 'text-orange-600' : 'text-blue-600'">
+              <tr v-for="row in props.data.data" :key="row.id" class="hover:bg-gray-50 transition">
+                <td class="px-3 py-3 whitespace-nowrap">
+                  <span class="text-sm font-semibold" :class="row.number && row.number.startsWith('DRAFT-') ? 'text-orange-600' : 'text-blue-600'">
                     {{ row.number || '-' }}
                   </span>
                 </td>
-                <td class="px-6 py-3">{{ formatDate(row.date) }}</td>
-                <td class="px-6 py-3">{{ formatTime(row.created_at) }}</td>
-                <td class="px-6 py-3">{{ typeLabel(row.type) }}</td>
-                <td class="px-6 py-3">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="getStatusBadgeClass(row.status)">
+                <td class="px-3 py-3 whitespace-nowrap">
+                  <div class="text-sm text-gray-900">{{ formatDate(row.date) }}</div>
+                  <div class="text-xs text-gray-500">{{ formatTime(row.created_at) }}</div>
+                </td>
+                <td class="px-3 py-3 whitespace-nowrap">
+                  <span class="text-sm text-gray-900">{{ typeLabel(row.type) }}</span>
+                </td>
+                <td class="px-3 py-3 whitespace-nowrap">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" :class="getStatusBadgeClass(row.status)">
                     {{ getStatusLabel(row.status) }}
                   </span>
                 </td>
-                <td class="px-6 py-3">
-                  <div v-if="row.approval_flows && row.approval_flows.length > 0" class="space-y-1">
-                    <div v-for="flow in row.approval_flows.slice(0, 2)" :key="flow.approval_level" class="text-xs">
-                      <div class="flex items-center gap-1">
-                        <span class="text-gray-500">L{{ flow.approval_level }}:</span>
-                        <span class="font-medium" :class="getApprovalStatusColor(flow.status)">
-                          {{ flow.approver_name }}
-                        </span>
-                        <span :class="getApprovalStatusBadgeClass(flow.status)" class="px-1.5 py-0.5 rounded text-[10px]">
-                          {{ flow.status }}
-                        </span>
-                      </div>
-                    </div>
-                    <div v-if="row.approval_flows.length > 2" class="text-xs text-gray-500">
-                      +{{ row.approval_flows.length - 2 }} more
-                    </div>
+                <td class="px-3 py-3">
+                  <div v-if="row.approval_flows && row.approval_flows.length > 0" class="flex flex-wrap gap-1 max-w-[200px]">
+                    <span 
+                      v-for="flow in row.approval_flows" 
+                      :key="flow.approval_level" 
+                      :class="getApprovalStatusBadgeClass(flow.status)"
+                      class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
+                      :title="`Level ${flow.approval_level}: ${flow.approver_name} (${flow.status})`"
+                    >
+                      L{{ flow.approval_level }}
+                    </span>
                   </div>
                   <span v-else class="text-xs text-gray-400">-</span>
                 </td>
-                <td class="px-6 py-3">{{ row.outlet_name }}</td>
-                <td class="px-6 py-3">{{ row.warehouse_outlet_name || '-' }}</td>
-                <td class="px-6 py-3">{{ row.creator_name || '-' }}</td>
-                <td class="px-6 py-3">
-                  <div class="flex flex-col gap-1">
-                    <button class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(row.id)">
-                      <i class="fa fa-eye mr-1"></i> Detail
+                <td class="px-3 py-3">
+                  <div class="text-sm text-gray-900 font-medium">{{ row.outlet_name }}</div>
+                  <div class="text-xs text-gray-500">{{ row.warehouse_outlet_name || '-' }}</div>
+                </td>
+                <td class="px-3 py-3">
+                  <span class="text-sm text-gray-900 max-w-[120px] truncate block" :title="row.creator_name || '-'">
+                    {{ row.creator_name || '-' }}
+                  </span>
+                </td>
+                <td class="px-3 py-3 whitespace-nowrap">
+                  <div class="flex items-center justify-center gap-1">
+                    <button 
+                      class="inline-flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 hover:bg-green-200 rounded transition" 
+                      @click="goDetail(row.id)"
+                      title="Detail"
+                    >
+                      <i class="fa fa-eye text-sm"></i>
                     </button>
-                    <button v-if="row.status === 'DRAFT'" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition" @click="goEdit(row.id)">
-                      <i class="fa fa-edit mr-1"></i> Edit
+                    <button 
+                      v-if="row.status === 'DRAFT'" 
+                      class="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition" 
+                      @click="goEdit(row.id)"
+                      title="Edit"
+                    >
+                      <i class="fa fa-edit text-sm"></i>
                     </button>
-                    <button class="inline-flex items-center btn btn-xs bg-red-100 text-red-700 hover:bg-red-200 rounded px-2 py-1 font-semibold transition" @click="onDelete(row.id)" :disabled="loadingId === row.id">
-                      <span v-if="loadingId === row.id"><i class="fa fa-spinner fa-spin mr-1"></i> Menghapus...</span>
-                      <span v-else><i class="fa fa-trash mr-1"></i> Hapus</span>
+                    <button 
+                      class="inline-flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 hover:bg-red-200 rounded transition" 
+                      @click="onDelete(row.id)" 
+                      :disabled="loadingId === row.id"
+                      title="Hapus"
+                    >
+                      <i :class="loadingId === row.id ? 'fa fa-spinner fa-spin' : 'fa fa-trash'" class="text-sm"></i>
                     </button>
                   </div>
                 </td>

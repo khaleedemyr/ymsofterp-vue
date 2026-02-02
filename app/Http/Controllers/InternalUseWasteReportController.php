@@ -108,6 +108,53 @@ class InternalUseWasteReportController extends Controller
                 ->limit($perPage)
                 ->get();
             
+            // ===== OPTIMIZED: Load MAC data sekaligus dengan subquery =====
+            $inventoryItemIds = $items->pluck('inventory_item_id')->filter()->unique()->toArray();
+            $macDataCache = [];
+            $stockDataCache = [];
+            
+            if (!empty($inventoryItemIds)) {
+                // Ambil MAC dari cost_histories untuk semua items sekaligus menggunakan subquery
+                $macData = DB::table('outlet_food_inventory_cost_histories as ch1')
+                    ->select(
+                        'ch1.inventory_item_id',
+                        'ch1.warehouse_outlet_id',
+                        'ch1.mac'
+                    )
+                    ->whereIn('ch1.inventory_item_id', $inventoryItemIds)
+                    ->where('ch1.id_outlet', $outletId)
+                    ->where('ch1.date', '<=', $endDate)
+                    ->whereRaw('ch1.id = (
+                        SELECT ch2.id 
+                        FROM outlet_food_inventory_cost_histories ch2 
+                        WHERE ch2.inventory_item_id = ch1.inventory_item_id 
+                        AND ch2.warehouse_outlet_id = ch1.warehouse_outlet_id 
+                        AND ch2.id_outlet = ch1.id_outlet 
+                        AND ch2.date <= ?
+                        ORDER BY ch2.date DESC, ch2.id DESC 
+                        LIMIT 1
+                    )', [$endDate])
+                    ->get();
+                
+                foreach ($macData as $macRow) {
+                    $key = $macRow->inventory_item_id . '_' . $macRow->warehouse_outlet_id;
+                    $macDataCache[$key] = (float) ($macRow->mac ?? 0);
+                }
+                
+                // Pre-load stock data sebagai fallback
+                $stockData = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->where('id_outlet', $outletId)
+                    ->select('inventory_item_id', 'warehouse_outlet_id', 'last_cost_small')
+                    ->get();
+                
+                foreach ($stockData as $stock) {
+                    $key = $stock->inventory_item_id . '_' . $stock->warehouse_outlet_id;
+                    $stockDataCache[$key] = (float) ($stock->last_cost_small ?? 0);
+                }
+            }
+            // ===== END OPTIMIZED MAC LOADING =====
+            
             // Ambil data approver untuk setiap header
             $headerIds = $items->pluck('header_id')->unique()->toArray();
             $approvers = [];
@@ -148,34 +195,11 @@ class InternalUseWasteReportController extends Controller
             }
             
             foreach ($items as $row) {
-                // Ambil MAC dari cost history pada tanggal transaksi
+                // ===== FIX N+1 QUERY: Gunakan data yang sudah di-load sebelumnya =====
                 $mac = 0;
                 if ($row->inventory_item_id) {
-                    $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $row->inventory_item_id)
-                        ->where('id_outlet', $outletId)
-                        ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                        ->where('date', '<=', $row->date)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->select('mac')
-                        ->first();
-                    
-                    if ($macRow) {
-                        $mac = (float) ($macRow->mac ?? 0);
-                    } else {
-                        // Fallback: ambil dari stock current
-                        $stockRow = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $row->inventory_item_id)
-                            ->where('id_outlet', $outletId)
-                            ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                            ->select('last_cost_small')
-                            ->first();
-                        
-                        if ($stockRow) {
-                            $mac = (float) ($stockRow->last_cost_small ?? 0);
-                        }
-                    }
+                    $key = $row->inventory_item_id . '_' . $row->warehouse_outlet_id;
+                    $mac = $macDataCache[$key] ?? $stockDataCache[$key] ?? 0;
                 }
                 
                 // Konversi qty ke small, medium, large
@@ -323,34 +347,59 @@ class InternalUseWasteReportController extends Controller
             $allItems = $allItemsQuery->get();
             $grandTotalMac = 0;
             
+            // ===== OPTIMIZED: Load MAC data sekaligus untuk grand total =====
+            $allInventoryItemIds = $allItems->pluck('inventory_item_id')->filter()->unique()->toArray();
+            $allMacDataCache = [];
+            $allStockDataCache = [];
+            
+            if (!empty($allInventoryItemIds)) {
+                // Ambil MAC dari cost_histories untuk semua items sekaligus
+                $allMacData = DB::table('outlet_food_inventory_cost_histories as ch1')
+                    ->select(
+                        'ch1.inventory_item_id',
+                        'ch1.warehouse_outlet_id',
+                        'ch1.mac'
+                    )
+                    ->whereIn('ch1.inventory_item_id', $allInventoryItemIds)
+                    ->where('ch1.id_outlet', $outletId)
+                    ->where('ch1.date', '<=', $endDate)
+                    ->whereRaw('ch1.id = (
+                        SELECT ch2.id 
+                        FROM outlet_food_inventory_cost_histories ch2 
+                        WHERE ch2.inventory_item_id = ch1.inventory_item_id 
+                        AND ch2.warehouse_outlet_id = ch1.warehouse_outlet_id 
+                        AND ch2.id_outlet = ch1.id_outlet 
+                        AND ch2.date <= ?
+                        ORDER BY ch2.date DESC, ch2.id DESC 
+                        LIMIT 1
+                    )', [$endDate])
+                    ->get();
+                
+                foreach ($allMacData as $macRow) {
+                    $key = $macRow->inventory_item_id . '_' . $macRow->warehouse_outlet_id;
+                    $allMacDataCache[$key] = (float) ($macRow->mac ?? 0);
+                }
+                
+                // Pre-load stock data sebagai fallback
+                $allStockData = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $allInventoryItemIds)
+                    ->where('id_outlet', $outletId)
+                    ->select('inventory_item_id', 'warehouse_outlet_id', 'last_cost_small')
+                    ->get();
+                
+                foreach ($allStockData as $stock) {
+                    $key = $stock->inventory_item_id . '_' . $stock->warehouse_outlet_id;
+                    $allStockDataCache[$key] = (float) ($stock->last_cost_small ?? 0);
+                }
+            }
+            // ===== END OPTIMIZED MAC LOADING =====
+            
             foreach ($allItems as $row) {
-                // Ambil MAC dari cost history pada tanggal transaksi (sama dengan logika di report data)
+                // ===== FIX N+1 QUERY: Gunakan data yang sudah di-load sebelumnya =====
                 $mac = 0;
                 if ($row->inventory_item_id) {
-                    $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $row->inventory_item_id)
-                        ->where('id_outlet', $outletId)
-                        ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                        ->where('date', '<=', $row->date)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->select('mac')
-                        ->first();
-                    
-                    if ($macRow) {
-                        $mac = (float) ($macRow->mac ?? 0);
-                    } else {
-                        $stockRow = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $row->inventory_item_id)
-                            ->where('id_outlet', $outletId)
-                            ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                            ->select('last_cost_small')
-                            ->first();
-                        
-                        if ($stockRow) {
-                            $mac = (float) ($stockRow->last_cost_small ?? 0);
-                        }
-                    }
+                    $key = $row->inventory_item_id . '_' . $row->warehouse_outlet_id;
+                    $mac = $allMacDataCache[$key] ?? $allStockDataCache[$key] ?? 0;
                 }
                 
                 // Konversi qty ke small (sama dengan logika di report data)
@@ -436,61 +485,89 @@ class InternalUseWasteReportController extends Controller
         $summaryData = [];
         
         if ($startDate && $endDate) {
-            foreach ($outlets as $outlet) {
-                // Query untuk mengambil data internal use waste dengan type RnD, Marketing, Wrong Maker per outlet
-                $query = DB::table('outlet_internal_use_waste_headers as h')
-                    ->join('outlet_internal_use_waste_details as d', 'h.id', '=', 'd.header_id')
-                    ->join('items as item', 'd.item_id', '=', 'item.id')
-                    ->leftJoin('outlet_food_inventory_items as fi', 'item.id', '=', 'fi.item_id')
-                    ->where('h.outlet_id', $outlet->id_outlet)
-                    ->whereIn('h.type', ['r_and_d', 'marketing', 'wrong_maker'])
-                    ->where('h.status', 'APPROVED')
-                    ->whereBetween('h.date', [$startDate, $endDate])
-                    ->select(
-                        'h.id as header_id',
-                        'h.date',
-                        'd.qty',
-                        'd.unit_id',
-                        'fi.id as inventory_item_id',
-                        'item.small_unit_id',
-                        'item.medium_unit_id',
-                        'item.large_unit_id',
-                        'item.small_conversion_qty',
-                        'item.medium_conversion_qty',
-                        'h.warehouse_outlet_id'
-                    );
+            // ===== FIX N+1 QUERY: Pre-load semua data sebelum loop outlet =====
+            // Query semua data sekaligus untuk semua outlet
+            $allOutletData = DB::table('outlet_internal_use_waste_headers as h')
+                ->join('outlet_internal_use_waste_details as d', 'h.id', '=', 'd.header_id')
+                ->join('items as item', 'd.item_id', '=', 'item.id')
+                ->leftJoin('outlet_food_inventory_items as fi', 'item.id', '=', 'fi.item_id')
+                ->whereIn('h.type', ['r_and_d', 'marketing', 'wrong_maker'])
+                ->where('h.status', 'APPROVED')
+                ->whereBetween('h.date', [$startDate, $endDate])
+                ->select(
+                    'h.outlet_id',
+                    'h.id as header_id',
+                    'h.date',
+                    'd.qty',
+                    'd.unit_id',
+                    'fi.id as inventory_item_id',
+                    'item.small_unit_id',
+                    'item.medium_unit_id',
+                    'item.large_unit_id',
+                    'item.small_conversion_qty',
+                    'item.medium_conversion_qty',
+                    'h.warehouse_outlet_id'
+                )
+                ->get();
+            
+            // Group by outlet_id
+            $dataByOutlet = $allOutletData->groupBy('outlet_id');
+            
+            // Pre-load MAC data untuk semua inventory items
+            $allInventoryItemIds = $allOutletData->pluck('inventory_item_id')->filter()->unique()->toArray();
+            $macDataCache = [];
+            $stockDataCache = [];
+            // Pre-load MAC data untuk semua inventory items
+            $allInventoryItemIds = $allOutletData->pluck('inventory_item_id')->filter()->unique()->toArray();
+            $macDataCache = [];
+            $stockDataCache = [];
+            
+            if (!empty($allInventoryItemIds)) {
+                // Pre-load cost histories
+                $costHistories = DB::table('outlet_food_inventory_cost_histories')
+                    ->whereIn('inventory_item_id', $allInventoryItemIds)
+                    ->where('date', '<=', $endDate)
+                    ->select('inventory_item_id', 'outlet_id', 'warehouse_outlet_id', 'mac', 'date')
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->get();
                 
-                $items = $query->get();
+                foreach ($costHistories as $cost) {
+                    $key = $cost->inventory_item_id . '_' . $cost->outlet_id . '_' . $cost->warehouse_outlet_id;
+                    if (!isset($macDataCache[$key])) {
+                        $macDataCache[$key] = (float) ($cost->mac ?? 0);
+                    }
+                }
+                
+                // Pre-load stock data sebagai fallback
+                $stockData = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $allInventoryItemIds)
+                    ->select('inventory_item_id', 'id_outlet', 'warehouse_outlet_id', 'last_cost_small')
+                    ->get();
+                
+                foreach ($stockData as $stock) {
+                    $key = $stock->inventory_item_id . '_' . $stock->id_outlet . '_' . $stock->warehouse_outlet_id;
+                    $stockDataCache[$key] = (float) ($stock->last_cost_small ?? 0);
+                }
+            }
+            // ===== END FIX N+1 QUERY =====
+            
+            foreach ($outlets as $outlet) {
+                // ===== FIX N+1 QUERY: Gunakan data yang sudah di-group =====
+                $items = $dataByOutlet->get($outlet->id_outlet, collect());
+                
+                if ($items->isEmpty()) {
+                    continue;
+                }
+                
                 $totalMac = 0;
                 
                 foreach ($items as $row) {
-                    // Ambil MAC dari cost history pada tanggal transaksi
+                    // ===== FIX N+1 QUERY: Gunakan cached MAC data =====
                     $mac = 0;
                     if ($row->inventory_item_id) {
-                        $macRow = DB::table('outlet_food_inventory_cost_histories')
-                            ->where('inventory_item_id', $row->inventory_item_id)
-                            ->where('id_outlet', $outlet->id_outlet)
-                            ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                            ->where('date', '<=', $row->date)
-                            ->orderByDesc('date')
-                            ->orderByDesc('id')
-                            ->select('mac')
-                            ->first();
-                        
-                        if ($macRow) {
-                            $mac = (float) ($macRow->mac ?? 0);
-                        } else {
-                            $stockRow = DB::table('outlet_food_inventory_stocks')
-                                ->where('inventory_item_id', $row->inventory_item_id)
-                                ->where('id_outlet', $outlet->id_outlet)
-                                ->where('warehouse_outlet_id', $row->warehouse_outlet_id)
-                                ->select('last_cost_small')
-                                ->first();
-                            
-                            if ($stockRow) {
-                                $mac = (float) ($stockRow->last_cost_small ?? 0);
-                            }
-                        }
+                        $key = $row->inventory_item_id . '_' . $outlet->id_outlet . '_' . $row->warehouse_outlet_id;
+                        $mac = $macDataCache[$key] ?? $stockDataCache[$key] ?? 0;
                     }
                     
                     // Konversi qty ke small

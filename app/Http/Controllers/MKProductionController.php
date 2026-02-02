@@ -165,16 +165,37 @@ class MKProductionController extends Controller
         $notes = $request->input('notes');
         $unit_id = $request->input('unit_id');
         $bom = DB::table('item_bom')->where('item_id', $item_id)->get();
+        
+        // OPTIMIZED: Pre-load semua data yang dibutuhkan untuk menghindari N+1 query
+        $materialItemIds = $bom->pluck('material_item_id')->toArray();
+        
+        // Pre-load inventory items
+        $bomInventories = DB::table('food_inventory_items')
+            ->whereIn('item_id', $materialItemIds)
+            ->get()
+            ->keyBy('item_id');
+        
+        // Pre-load material items
+        $materialItems = DB::table('items')
+            ->whereIn('id', $materialItemIds)
+            ->get()
+            ->keyBy('id');
+        
+        // Pre-load inventory stocks
+        $inventoryItemIds = $bomInventories->pluck('id')->toArray();
+        $stocksData = DB::table('food_inventory_stocks')
+            ->whereIn('inventory_item_id', $inventoryItemIds)
+            ->where('warehouse_id', $request->warehouse_id)
+            ->get()
+            ->keyBy('inventory_item_id');
+        
         // Validasi stok cukup
         foreach ($bom as $b) {
-            $bomInventory = DB::table('food_inventory_items')->where('item_id', $b->material_item_id)->first();
+            $bomInventory = $bomInventories->get($b->material_item_id);
             $bomInventoryId = $bomInventory ? $bomInventory->id : null;
             $stok = 0;
-            if ($bomInventoryId) {
-            $stok = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                ->value('qty_small');
+            if ($bomInventoryId && isset($stocksData[$bomInventoryId])) {
+                $stok = $stocksData[$bomInventoryId]->qty_small;
             }
             $qty_total = $b->qty * $qty_produksi;
             if ($stok < $qty_total) {
@@ -184,8 +205,10 @@ class MKProductionController extends Controller
         DB::beginTransaction();
         try {
             foreach ($bom as $b) {
-                // Ambil/insert inventory_item_id bahan baku
-                $bomInventory = DB::table('food_inventory_items')->where('item_id', $b->material_item_id)->first();
+                // Ambil/insert inventory_item_id bahan baku (gunakan data yang sudah di-load)
+                $bomInventory = $bomInventories->get($b->material_item_id);
+                // Ambil/insert inventory_item_id bahan baku (gunakan data yang sudah di-load)
+                $bomInventory = $bomInventories->get($b->material_item_id);
                 if (!$bomInventory) {
                     $bomInventoryId = DB::table('food_inventory_items')->insertGetId([
                         'item_id' => $b->material_item_id,
@@ -193,12 +216,15 @@ class MKProductionController extends Controller
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+                    // Tambahkan ke collection untuk digunakan di loop berikutnya
+                    $bomInventories->put($b->material_item_id, (object)['id' => $bomInventoryId, 'item_id' => $b->material_item_id]);
                 } else {
                     $bomInventoryId = $bomInventory->id;
                 }
                 $qty_total = $b->qty * $qty_produksi;
-                // Ambil data konversi satuan dari item bahan baku
-                $materialItem = DB::table('items')->where('id', $b->material_item_id)->first();
+                
+                // Ambil data konversi satuan dari item bahan baku (gunakan data yang sudah di-load)
+                $materialItem = $materialItems->get($b->material_item_id);
                 $smallConv = $materialItem->small_conversion_qty ?: 1;
                 $mediumConv = $materialItem->medium_conversion_qty ?: 1;
                 $qty_small = 0; $qty_medium = 0; $qty_large = 0;
@@ -218,11 +244,9 @@ class MKProductionController extends Controller
                 } else {
                     $qty_small = $qty_total;
                 }
-                // Kurangi stok bahan baku
-                $stockBahan = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->first();
+                
+                // Kurangi stok bahan baku (gunakan data yang sudah di-load)
+                $stockBahan = $stocksData->get($bomInventoryId);
                 if ($stockBahan) {
                 DB::table('food_inventory_stocks')
                         ->where('inventory_item_id', $bomInventoryId)
@@ -232,6 +256,16 @@ class MKProductionController extends Controller
                             'qty_medium' => ($stockBahan->qty_medium ?? 0) - $qty_medium,
                             'qty_large' => ($stockBahan->qty_large ?? 0) - $qty_large,
                         ]);
+                    // Update collection untuk digunakan di query selanjutnya
+                    $stocksData->put($bomInventoryId, (object)[
+                        'inventory_item_id' => $bomInventoryId,
+                        'qty_small' => $stockBahan->qty_small - $qty_small,
+                        'qty_medium' => ($stockBahan->qty_medium ?? 0) - $qty_medium,
+                        'qty_large' => ($stockBahan->qty_large ?? 0) - $qty_large,
+                        'last_cost_small' => $stockBahan->last_cost_small ?? 0,
+                        'last_cost_medium' => $stockBahan->last_cost_medium ?? 0,
+                        'last_cost_large' => $stockBahan->last_cost_large ?? 0,
+                    ]);
                 } else {
                     DB::table('food_inventory_stocks')->insert([
                         'inventory_item_id' => $bomInventoryId,
@@ -246,25 +280,26 @@ class MKProductionController extends Controller
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+                    // Tambahkan ke collection
+                    $stocksData->put($bomInventoryId, (object)[
+                        'inventory_item_id' => $bomInventoryId,
+                        'qty_small' => 0 - $qty_small,
+                        'qty_medium' => 0 - $qty_medium,
+                        'qty_large' => 0 - $qty_large,
+                        'last_cost_small' => 0,
+                        'last_cost_medium' => 0,
+                        'last_cost_large' => 0,
+                    ]);
                 }
-                // Ambil cost terakhir bahan baku
-                $last_cost_small = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->value('last_cost_small') ?? 0;
-                $last_cost_medium = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->value('last_cost_medium') ?? 0;
-                $last_cost_large = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->value('last_cost_large') ?? 0;
+                
+                // Ambil cost terakhir bahan baku (dari collection yang sudah di-update)
+                $stockBahanUpdated = $stocksData->get($bomInventoryId);
+                $last_cost_small = $stockBahanUpdated->last_cost_small ?? 0;
+                $last_cost_medium = $stockBahanUpdated->last_cost_medium ?? 0;
+                $last_cost_large = $stockBahanUpdated->last_cost_large ?? 0;
+                
                 // Insert kartu stok OUT bahan baku
-                $saldo = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->first();
+                $saldo = $stocksData->get($bomInventoryId);
                 DB::table('food_inventory_cards')->insert([
                     'inventory_item_id' => $bomInventoryId,
                     'warehouse_id' => $request->warehouse_id,
@@ -329,13 +364,11 @@ class MKProductionController extends Controller
             // Hitung MAC dari total cost bahan baku dibagi qty hasil produksi
             $total_bom_cost = 0;
             foreach ($bom as $b) {
-                $bomInventory = DB::table('food_inventory_items')->where('item_id', $b->material_item_id)->first();
+                $bomInventory = $bomInventories->get($b->material_item_id);
                 $bomInventoryId = $bomInventory ? $bomInventory->id : null;
                 $qty_total = $b->qty * $qty_produksi;
-                $cost = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $bomInventoryId)
-                    ->where('warehouse_id', $request->warehouse_id)
-                    ->value('last_cost_small') ?? 0;
+                $stockBahan = $stocksData->get($bomInventoryId);
+                $cost = $stockBahan ? ($stockBahan->last_cost_small ?? 0) : 0;
                 $total_bom_cost += $qty_total * $cost;
             }
             if ($qty_jadi > 0) {
