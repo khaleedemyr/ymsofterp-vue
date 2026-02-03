@@ -68,60 +68,81 @@ class ButcherProcessController extends Controller
 
     public function create()
     {
-        $warehouses = Warehouse::where('status', 'active')->get();
-        $units = Unit::where('status', 'active')->get();
+        // Cache static data for 5 minutes to reduce database load
+        $warehouses = cache()->remember('active_warehouses', 300, function() {
+            return Warehouse::where('status', 'active')
+                ->select('id', 'name', 'status')
+                ->get();
+        });
         
-        // Get PCS items (items that can be produced from whole items)
-        $pcsItems = Item::whereHas('category', function($q) {
-            $q->where('show_pos', '0');
-        })
-            ->where('items.status', 'active')
-            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
-            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
-            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
-            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
-            ->select(
-                'items.*',
-                'small_unit.id as small_unit_id',
-                'small_unit.name as small_unit_name',
-                'medium_unit.id as medium_unit_id',
-                'medium_unit.name as medium_unit_name',
-                'large_unit.id as large_unit_id',
-                'large_unit.name as large_unit_name',
-                'categories.code as category_code'
-            )
-            ->orderBy('items.name', 'asc')
-            ->get();
+        $units = cache()->remember('active_units', 300, function() {
+            return Unit::where('status', 'active')
+                ->select('id', 'name', 'status')
+                ->get();
+        });
+        
+        // Get PCS items with optimized query
+        $pcsItems = cache()->remember('pcs_items_butcher', 300, function() {
+            $items = Item::whereHas('category', function($q) {
+                $q->where('show_pos', '0');
+            })
+                ->where('items.status', 'active')
+                ->with(['smallUnit:id,name', 'mediumUnit:id,name', 'largeUnit:id,name', 'category:id,code'])
+                ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 
+                        'items.large_unit_id', 'items.category_id', 'items.status')
+                ->orderBy('items.name', 'asc')
+                ->get();
 
-        // Filter out items that don't have any units configured
-        $pcsItems = $pcsItems->filter(function($item) {
-            return $item->small_unit_id || $item->medium_unit_id || $item->large_unit_id;
+            // Filter and transform
+            return $items->filter(function($item) {
+                return $item->small_unit_id || $item->medium_unit_id || $item->large_unit_id;
+            })->map(function($item) {
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'small_unit_id' => $item->smallUnit?->id,
+                    'small_unit_name' => $item->smallUnit?->name,
+                    'medium_unit_id' => $item->mediumUnit?->id,
+                    'medium_unit_name' => $item->mediumUnit?->name,
+                    'large_unit_id' => $item->largeUnit?->id,
+                    'large_unit_name' => $item->largeUnit?->name,
+                    'category_code' => $item->category?->code,
+                ];
+            })->values();
         });
 
-        // Log items yang tidak memiliki unit untuk monitoring
-        $itemsWithoutUnits = Item::whereHas('category', function($q) {
-            $q->where('show_pos', '0');
-        })
-            ->where('items.status', 'active')
-            ->whereNull('small_unit_id')
-            ->whereNull('medium_unit_id')
-            ->whereNull('large_unit_id')
-            ->pluck('name', 'id');
+        // Get good receives with optimized query (latest 100 records)
+        // Load all recent good receives and calculate remaining qty in PHP to avoid slow SQL subquery
+        $goodReceives = FoodGoodReceive::with(['items.item', 'items.unit'])
+            ->orderBy('created_at', 'desc')
+            ->limit(100)
+            ->get();
         
-        if ($itemsWithoutUnits->count() > 0) {
-            \Log::warning('Items without units found:', $itemsWithoutUnits->toArray());
-        }
-
-        // Get good receives that have remaining quantity with eager loading
-        $goodReceives = FoodGoodReceive::with('items')->whereHas('items', function($query) {
-            $query->whereRaw('qty_received > COALESCE((
-                SELECT SUM(bpi.whole_qty)
-                FROM butcher_process_items bpi
-                JOIN butcher_processes bp ON bp.id = bpi.butcher_process_id
-                WHERE bp.good_receive_id = food_good_receives.id
-                AND bpi.whole_item_id = food_good_receive_items.item_id
-            ), 0)');
-        })->get();
+        // Get all used quantities for these good receives in one query
+        $usedQuantities = DB::table('butcher_process_items as bpi')
+            ->join('butcher_processes as bp', 'bp.id', '=', 'bpi.butcher_process_id')
+            ->whereIn('bp.good_receive_id', $goodReceives->pluck('id'))
+            ->select('bp.good_receive_id', 'bpi.whole_item_id', DB::raw('SUM(bpi.whole_qty) as total_used'))
+            ->groupBy('bp.good_receive_id', 'bpi.whole_item_id')
+            ->get()
+            ->groupBy('good_receive_id')
+            ->map(function($items) {
+                return $items->keyBy('whole_item_id');
+            });
+        
+        // Filter in PHP to get only good receives with remaining quantity
+        $goodReceives = $goodReceives->filter(function($gr) use ($usedQuantities) {
+            $grUsed = $usedQuantities->get($gr->id, collect());
+            
+            // Check if any item has remaining quantity
+            foreach ($gr->items as $item) {
+                $used = $grUsed->get($item->item_id)?->total_used ?? 0;
+                if ($item->qty_received > $used) {
+                    return true;
+                }
+            }
+            return false;
+        })->values();
 
         return Inertia::render('ButcherProcess/Create', [
             'warehouses' => $warehouses,
