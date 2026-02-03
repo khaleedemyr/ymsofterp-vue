@@ -650,15 +650,16 @@ function handleNotifClick(notif) {
     showNotifDropdown.value = false;
 }
 
-// Fetch notifications on mount and every 30 seconds
+// Fetch notifications on mount and every 60 seconds (reduced from 30s to save server resources)
 onMounted(async () => {
     await fetchNotifications();
     await fetchUnreadCount();
     
+    // Changed from 30s to 60s to reduce server load
     setInterval(async () => {
         await fetchNotifications();
         await fetchUnreadCount();
-    }, 30000);
+    }, 60000); // 60 seconds instead of 30 seconds
 
     // Load html5-qrcode library
     if (!window.Html5Qrcode) {
