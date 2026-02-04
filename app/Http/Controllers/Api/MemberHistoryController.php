@@ -213,9 +213,9 @@ class MemberHistoryController extends Controller
                     'id',
                     'item_id',
                     'item_name',
-                    'quantity',
+                    'qty',
                     'price',
-                    'sub_total',
+                    'subtotal',
                     'notes'
                 )
                 ->get();
@@ -244,11 +244,11 @@ class MemberHistoryController extends Controller
                         'id' => $item->id,
                         'item_id' => $item->item_id,
                         'item_name' => $item->item_name,
-                        'quantity' => (int) $item->quantity,
+                        'quantity' => (int) $item->qty,
                         'price' => (float) $item->price,
                         'price_formatted' => 'Rp ' . number_format($item->price, 0, ',', '.'),
-                        'sub_total' => (float) $item->sub_total,
-                        'sub_total_formatted' => 'Rp ' . number_format($item->sub_total, 0, ',', '.'),
+                        'sub_total' => (float) $item->subtotal,
+                        'sub_total_formatted' => 'Rp ' . number_format($item->subtotal, 0, ',', '.'),
                         'notes' => $item->notes,
                     ];
                 })
@@ -301,7 +301,7 @@ class MemberHistoryController extends Controller
                     'order_items.item_id',
                     'order_items.item_name',
                     DB::raw('COUNT(*) as order_count'),
-                    DB::raw('SUM(order_items.quantity) as total_quantity'),
+                    DB::raw('SUM(order_items.qty) as total_quantity'),
                     DB::raw('AVG(order_items.price) as avg_price'),
                     DB::raw('MAX(orders.created_at) as last_ordered')
                 )
