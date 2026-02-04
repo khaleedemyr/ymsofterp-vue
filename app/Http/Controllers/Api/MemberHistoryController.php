@@ -216,7 +216,8 @@ class MemberHistoryController extends Controller
                     'qty',
                     'price',
                     'subtotal',
-                    'notes'
+                    'notes',
+                    'modifiers'
                 )
                 ->get();
 
@@ -250,6 +251,7 @@ class MemberHistoryController extends Controller
                         'sub_total' => (float) $item->subtotal,
                         'sub_total_formatted' => 'Rp ' . number_format($item->subtotal, 0, ',', '.'),
                         'notes' => $item->notes,
+                        'modifiers' => $item->modifiers,
                     ];
                 })
             ];
