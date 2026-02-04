@@ -487,6 +487,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
         Route::get('/member-history/order/{orderId}', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getOrderDetail']);
         Route::get('/member-history/preferences', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberPreferences']);
+        Route::get('/member-history/vouchers', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberVouchers']);
+        Route::get('/member-history/challenges', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberChallenges']);
     });
 });
 
