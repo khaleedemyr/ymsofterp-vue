@@ -573,13 +573,13 @@ class MemberHistoryController extends Controller
                 ->where('c.end_date', '>=', Carbon::now())
                 ->select([
                     'c.id',
-                    'c.name as title',
+                    'c.title',
                     'c.description',
-                    'c.challenge_type as type',
-                    'c.target_value as target',
-                    'c.reward_type',
-                    'c.reward_value',
-                    'c.reward_description as reward',
+                    'c.challenge_type_id as type',
+                    'c.validity_period_days',
+                    'c.rules',
+                    'c.image',
+                    'c.points_reward',
                     'c.start_date',
                     'c.end_date',
                     'cp.current_value as progress',
@@ -590,7 +590,8 @@ class MemberHistoryController extends Controller
 
             $challenges = $challenges->map(function($ch) {
                 $progress = $ch->progress ?? 0;
-                $target = $ch->target ?? 1;
+                // Since there's no target_value, we can use a default or calculate from rules
+                $target = 100; // Default target, adjust based on your business logic
                 $daysLeft = Carbon::now()->diffInDays(Carbon::parse($ch->end_date), false);
 
                 return [
@@ -600,7 +601,7 @@ class MemberHistoryController extends Controller
                     'type' => $ch->type,
                     'progress' => $progress,
                     'target' => $target,
-                    'reward' => $ch->reward ?? $ch->reward_value . ' Points',
+                    'reward' => $ch->points_reward . ' Points',
                     'end_date' => $ch->end_date,
                     'days_left' => max(0, $daysLeft),
                     'status' => $ch->progress_status ?? 'in_progress',
