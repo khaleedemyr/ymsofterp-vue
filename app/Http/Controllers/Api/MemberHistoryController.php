@@ -584,7 +584,10 @@ class MemberHistoryController extends Controller
                     'c.end_date',
                     'cp.progress_data',
                     'cp.is_completed',
-                    'cp.completed_at'
+                    'cp.completed_at',
+                    'cp.reward_claimed',
+                    'cp.reward_claimed_at',
+                    'cp.reward_expires_at'
                 ])
                 ->get();
 
@@ -604,6 +607,14 @@ class MemberHistoryController extends Controller
                     $status = 'expired';
                 }
 
+                // Check if reward is expired
+                $rewardExpired = false;
+                $rewardDaysLeft = null;
+                if ($ch->reward_expires_at) {
+                    $rewardDaysLeft = Carbon::now()->diffInDays(Carbon::parse($ch->reward_expires_at), false);
+                    $rewardExpired = $rewardDaysLeft < 0;
+                }
+
                 return [
                     'id' => $ch->id,
                     'title' => $ch->title,
@@ -616,6 +627,11 @@ class MemberHistoryController extends Controller
                     'days_left' => max(0, $daysLeft),
                     'status' => $status,
                     'completed_at' => $ch->completed_at,
+                    'reward_claimed' => (bool) $ch->reward_claimed,
+                    'reward_claimed_at' => $ch->reward_claimed_at,
+                    'reward_expires_at' => $ch->reward_expires_at,
+                    'reward_expired' => $rewardExpired,
+                    'reward_days_left' => $rewardDaysLeft ? max(0, $rewardDaysLeft) : null,
                 ];
             });
 
