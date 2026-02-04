@@ -582,17 +582,27 @@ class MemberHistoryController extends Controller
                     'c.points_reward',
                     'c.start_date',
                     'c.end_date',
-                    'cp.current_value as progress',
-                    'cp.status as progress_status',
+                    'cp.progress_data',
+                    'cp.is_completed',
                     'cp.completed_at'
                 ])
                 ->get();
 
             $challenges = $challenges->map(function($ch) {
-                $progress = $ch->progress ?? 0;
-                // Since there's no target_value, we can use a default or calculate from rules
-                $target = 100; // Default target, adjust based on your business logic
+                // Parse progress_data JSON
+                $progressData = $ch->progress_data ? json_decode($ch->progress_data, true) : null;
+                $progress = $progressData['current'] ?? 0;
+                $target = $progressData['target'] ?? 100;
+                
                 $daysLeft = Carbon::now()->diffInDays(Carbon::parse($ch->end_date), false);
+                
+                // Determine status
+                $status = 'in_progress';
+                if ($ch->is_completed) {
+                    $status = 'completed';
+                } else if ($daysLeft < 0) {
+                    $status = 'expired';
+                }
 
                 return [
                     'id' => $ch->id,
@@ -604,7 +614,7 @@ class MemberHistoryController extends Controller
                     'reward' => $ch->points_reward . ' Points',
                     'end_date' => $ch->end_date,
                     'days_left' => max(0, $daysLeft),
-                    'status' => $ch->progress_status ?? 'in_progress',
+                    'status' => $status,
                     'completed_at' => $ch->completed_at,
                 ];
             });
