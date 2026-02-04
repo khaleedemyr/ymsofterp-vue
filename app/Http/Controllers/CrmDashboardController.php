@@ -22,185 +22,71 @@ class CrmDashboardController extends Controller
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
         
-            // Load critical data first (fast queries)
-        $stats = $this->getStats();
-        $memberGrowth = $this->getMemberGrowth();
-        $tierDistribution = $this->getTierDistribution();
-        $spendingTrend = $this->getSpendingTrend($startDate, $endDate);
-        $pointActivityTrend = $this->getPointActivityTrend($startDate, $endDate);
+            // Set max execution time for this request
+            set_time_limit(120);
+            
+            // Load ONLY critical data first (fast queries) - Heavy data will be loaded via AJAX
+        $stats = Cache::remember('crm_stats', 300, function () {
+            return $this->getStats();
+        });
+        
+        $memberGrowth = Cache::remember('crm_member_growth', 300, function () {
+            return $this->getMemberGrowth();
+        });
+        
+        $tierDistribution = Cache::remember('crm_tier_distribution', 300, function () {
+            return $this->getTierDistribution();
+        });
+        
+        // Simplified initial load - heavy data loaded via AJAX
+        $spendingTrend = [];
+        $pointActivityTrend = [];
         $latestMembers = $this->getLatestMembers();
         $latestPointTransactions = $this->getLatestPointTransactions();
             
-            // Load with timeout protection
+            // Heavy data will be loaded via AJAX - return empty arrays for initial load
             $topSpenders = [];
             $topSpendersDateRange = null;
-            try {
-                $topSpendersResult = $this->getTopSpenders();
-                if (is_array($topSpendersResult) && isset($topSpendersResult['data'])) {
-                    $topSpenders = $topSpendersResult['data'];
-                    $topSpendersDateRange = $topSpendersResult['dateRange'] ?? null;
-                } elseif (is_object($topSpendersResult) && isset($topSpendersResult->data)) {
-                    $topSpenders = $topSpendersResult->data;
-                    $topSpendersDateRange = $topSpendersResult->dateRange ?? null;
-                } else {
-                    $topSpenders = $topSpendersResult;
-                }
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load top spenders: ' . $e->getMessage());
-            }
-            
             $mostActiveMembers = [];
             $mostActiveMembersDateRange = null;
-            try {
-                $mostActiveMembersResult = $this->getMostActiveMembers();
-                if (is_array($mostActiveMembersResult) && isset($mostActiveMembersResult['data'])) {
-                    $mostActiveMembers = $mostActiveMembersResult['data'];
-                    $mostActiveMembersDateRange = $mostActiveMembersResult['dateRange'] ?? null;
-                } elseif (is_object($mostActiveMembersResult) && isset($mostActiveMembersResult->data)) {
-                    $mostActiveMembers = $mostActiveMembersResult->data;
-                    $mostActiveMembersDateRange = $mostActiveMembersResult->dateRange ?? null;
-                } else {
-                    $mostActiveMembers = $mostActiveMembersResult;
-                }
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load most active members: ' . $e->getMessage());
-            }
-            
-            // Load top 10 points
             $top10Points = [];
-            try {
-                $top10Points = $this->getTop10Points();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load top 10 points: ' . $e->getMessage());
-            }
-            
-            // Load top 10 voucher owners
             $top10VoucherOwners = [];
-            try {
-                $top10VoucherOwners = $this->getTop10VoucherOwners();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load top 10 voucher owners: ' . $e->getMessage());
-            }
-            
-            // Load top 10 point redemptions
             $top10PointRedemptions = [];
-            try {
-                $top10PointRedemptions = $this->getTop10PointRedemptions();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load top 10 point redemptions: ' . $e->getMessage());
-            }
-            
             $pointStats = [];
-            try {
-        $pointStats = $this->getPointStats($startDate, $endDate);
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load point stats: ' . $e->getMessage());
-            }
-            
             $memberFavouritePicks = [];
-            try {
-                $memberFavouritePicks = $this->getMemberFavouritePicks();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load member favourite picks: ' . $e->getMessage());
-            }
-            
             $activeVouchers = [];
-            try {
-                $activeVouchers = $this->getActiveVouchers();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load active vouchers: ' . $e->getMessage());
-            }
             
-            $activeChallenges = [];
-            try {
-                $activeChallenges = Cache::remember('crm_active_challenges', 300, function () {
-                    return $this->getActiveChallenges();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load active challenges: ' . $e->getMessage());
-            }
+            // Lightweight cached data
+            $activeChallenges = Cache::remember('crm_active_challenges', 300, function () {
+                return $this->getActiveChallenges();
+            });
             
-            $activeRewards = [];
-            try {
-                $activeRewards = Cache::remember('crm_active_rewards', 300, function () {
-                    return $this->getActiveRewards();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load active rewards: ' . $e->getMessage());
-            }
+            $activeRewards = Cache::remember('crm_active_rewards', 300, function () {
+                return $this->getActiveRewards();
+            });
             
-            // Load lightweight queries with caching
-            $genderDistribution = [];
-            try {
-                $genderDistribution = Cache::remember('crm_gender_distribution', 300, function () {
-                    return $this->getGenderDistribution();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load gender distribution: ' . $e->getMessage());
-            }
+            $genderDistribution = Cache::remember('crm_gender_distribution', 300, function () {
+                return $this->getGenderDistribution();
+            });
             
-            $occupationDistribution = [];
-            try {
-                $occupationDistribution = Cache::remember('crm_occupation_distribution', 300, function () {
-                    return $this->getOccupationDistribution();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load occupation distribution: ' . $e->getMessage());
-            }
+            $occupationDistribution = Cache::remember('crm_occupation_distribution', 300, function () {
+                return $this->getOccupationDistribution();
+            });
             
-            $ageDistribution = [];
-            try {
-                $ageDistribution = Cache::remember('crm_age_distribution', 300, function () {
-                    return $this->getAgeDistribution();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load age distribution: ' . $e->getMessage());
-            }
+            $ageDistribution = Cache::remember('crm_age_distribution', 300, function () {
+                return $this->getAgeDistribution();
+            });
             
-            $latestActivities = [];
-            try {
-                $latestActivities = $this->getLatestActivities();
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load latest activities: ' . $e->getMessage());
-            }
+            $latestActivities = Cache::remember('crm_latest_activities', 60, function () {
+                return $this->getLatestActivities();
+            });
             
-            // Get purchasing power by age with caching (10 minutes) - Year to date
-            try {
-                $yearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
-                $yearEnd = Carbon::now()->format('Y-m-d 23:59:59');
-                $purchasingPowerByAge = Cache::remember('crm_purchasing_power_by_age_ytd', 600, function () use ($yearStart, $yearEnd) {
-                    $data = $this->getPurchasingPowerByAge($yearStart, $yearEnd);
-                    // Convert collection to array
-                    return is_object($data) && method_exists($data, 'toArray') ? $data->toArray() : (array) $data;
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Error loading purchasing power by age: ' . $e->getMessage());
-                $purchasingPowerByAge = [];
-            }
-            
-            // Get purchasing power by age for current month (daily breakdown) - for line chart
-            try {
-                $monthStart = Carbon::now()->startOfMonth()->format('Y-m-d 00:00:00');
-                $monthEnd = Carbon::now()->format('Y-m-d 23:59:59');
-                $purchasingPowerByAgeThisMonth = Cache::remember('crm_purchasing_power_by_age_month_' . Carbon::now()->format('Y-m'), 300, function () use ($monthStart, $monthEnd) {
-                    return $this->getPurchasingPowerByAgeThisMonth($monthStart, $monthEnd);
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Error loading purchasing power by age this month: ' . $e->getMessage());
-                $purchasingPowerByAgeThisMonth = [];
-            }
-            
-            // Load member segmentation
+            // Skip heavy queries on initial load - will be loaded via AJAX
+            $purchasingPowerByAge = [];
+            $purchasingPowerByAgeThisMonth = [];
             $memberSegmentation = [];
-            try {
-                $memberSegmentation = Cache::remember('crm_member_segmentation', 300, function () {
-                    return $this->getMemberSegmentation();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load member segmentation: ' . $e->getMessage());
-            }
             
-            // Skip member lifetime value - too heavy for large dataset
+            // Skip heavy queries on initial load
             $memberLifetimeValue = (object)[
                 'average' => 0,
                 'averageFormatted' => 'Rp 0',
@@ -209,17 +95,7 @@ class CrmDashboardController extends Controller
                 'byTier' => (object)[],
             ];
             
-            // Load churn analysis
             $churnAnalysis = [];
-            try {
-                $churnAnalysis = Cache::remember('crm_churn_analysis', 300, function () {
-                    return $this->getChurnAnalysis();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load churn analysis: ' . $e->getMessage());
-            }
-            
-            // Skip conversion funnel - too heavy
             $conversionFunnel = (object)[
                 'registered' => 0,
                 'emailVerified' => 0,
@@ -232,64 +108,48 @@ class CrmDashboardController extends Controller
                 'repeatRate' => 0,
             ];
             
-            // Load comparison data (MoM & YoY)
             $comparisonData = [];
-            try {
-                $comparisonData = Cache::remember('crm_comparison_data', 300, function () {
-                    return $this->getComparisonData();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load comparison data: ' . $e->getMessage());
-            }
-            
-            // Load regional breakdown
             $regionalBreakdown = [];
-            try {
-                $regionalBreakdown = Cache::remember('crm_regional_breakdown', 300, function () {
-                    return $this->getRegionalBreakdown();
-                });
-            } catch (\Exception $e) {
-                Log::error('CRM Dashboard: Failed to load regional breakdown: ' . $e->getMessage());
-            }
             
             // Skip other heavy queries for now - load only critical data
             // These can be loaded via AJAX later if needed
             $engagementMetrics = [];
             
-            // Convert all collections to arrays to reduce serialization overhead
+            // Simplified response - only critical data for initial page load
             $responseData = [
-                'stats' => is_array($stats) ? $stats : (is_object($stats) ? (array) $stats : []),
-                'memberGrowth' => is_array($memberGrowth) ? $memberGrowth : $memberGrowth->toArray(),
-                'tierDistribution' => is_array($tierDistribution) ? $tierDistribution : $tierDistribution->toArray(),
-                'genderDistribution' => is_array($genderDistribution) ? $genderDistribution : (is_object($genderDistribution) ? $genderDistribution->toArray() : []),
-                'occupationDistribution' => is_array($occupationDistribution) ? $occupationDistribution : (is_object($occupationDistribution) ? $occupationDistribution->toArray() : []),
-                'ageDistribution' => is_array($ageDistribution) ? $ageDistribution : (is_object($ageDistribution) ? $ageDistribution->toArray() : []),
-                'purchasingPowerByAge' => is_array($purchasingPowerByAge) ? $purchasingPowerByAge : (is_object($purchasingPowerByAge) ? $purchasingPowerByAge->toArray() : []),
-                'purchasingPowerByAgeThisMonth' => is_array($purchasingPowerByAgeThisMonth) ? $purchasingPowerByAgeThisMonth : (is_object($purchasingPowerByAgeThisMonth) ? $purchasingPowerByAgeThisMonth->toArray() : []),
-                'spendingTrend' => is_array($spendingTrend) ? $spendingTrend : $spendingTrend->toArray(),
-                'pointActivityTrend' => is_array($pointActivityTrend) ? $pointActivityTrend : $pointActivityTrend->toArray(),
-                'latestMembers' => is_array($latestMembers) ? $latestMembers : $latestMembers->toArray(),
-                'latestPointTransactions' => is_array($latestPointTransactions) ? $latestPointTransactions : $latestPointTransactions->toArray(),
-                'latestActivities' => is_array($latestActivities) ? $latestActivities : (is_object($latestActivities) ? $latestActivities->toArray() : []),
-                'topSpenders' => is_array($topSpenders) ? $topSpenders : (is_object($topSpenders) ? $topSpenders->toArray() : []),
-                'topSpendersDateRange' => $topSpendersDateRange,
-                'mostActiveMembers' => is_array($mostActiveMembers) ? $mostActiveMembers : (is_object($mostActiveMembers) ? $mostActiveMembers->toArray() : []),
-                'mostActiveMembersDateRange' => $mostActiveMembersDateRange,
-                'top10Points' => is_array($top10Points) ? $top10Points : (is_object($top10Points) && method_exists($top10Points, 'toArray') ? $top10Points->toArray() : []),
-                'top10VoucherOwners' => is_array($top10VoucherOwners) ? $top10VoucherOwners : (is_object($top10VoucherOwners) && method_exists($top10VoucherOwners, 'toArray') ? $top10VoucherOwners->toArray() : []),
-                'top10PointRedemptions' => is_array($top10PointRedemptions) ? $top10PointRedemptions : (is_object($top10PointRedemptions) && method_exists($top10PointRedemptions, 'toArray') ? $top10PointRedemptions->toArray() : []),
-                'memberFavouritePicks' => is_array($memberFavouritePicks) ? (object)$memberFavouritePicks : (is_object($memberFavouritePicks) ? $memberFavouritePicks : (object)['food' => [], 'beverages' => []]),
-                'activeVouchers' => is_array($activeVouchers) ? $activeVouchers : (is_object($activeVouchers) ? $activeVouchers->toArray() : []),
-                'activeChallenges' => is_array($activeChallenges) ? $activeChallenges : (is_object($activeChallenges) ? $activeChallenges->toArray() : []),
-                'activeRewards' => is_array($activeRewards) ? $activeRewards : (is_object($activeRewards) ? $activeRewards->toArray() : []),
-                'pointStats' => is_array($pointStats) ? $pointStats : (is_object($pointStats) ? (array) $pointStats : []),
-                'engagementMetrics' => is_array($engagementMetrics) ? $engagementMetrics : (is_object($engagementMetrics) ? (array) $engagementMetrics : []),
-                'memberSegmentation' => is_array($memberSegmentation) ? (object)$memberSegmentation : (is_object($memberSegmentation) ? $memberSegmentation : (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0]),
-                'memberLifetimeValue' => is_array($memberLifetimeValue) ? (object)$memberLifetimeValue : (is_object($memberLifetimeValue) ? $memberLifetimeValue : (object)['average' => 0, 'averageFormatted' => 'Rp 0', 'total' => 0, 'totalFormatted' => 'Rp 0', 'byTier' => (object)[]]),
-                'churnAnalysis' => is_array($churnAnalysis) ? (object)$churnAnalysis : (is_object($churnAnalysis) ? $churnAnalysis : (object)[]),
-                'conversionFunnel' => is_array($conversionFunnel) ? (object)$conversionFunnel : (is_object($conversionFunnel) ? $conversionFunnel : (object)[]),
-                'regionalBreakdown' => is_array($regionalBreakdown) ? (object)$regionalBreakdown : (is_object($regionalBreakdown) ? $regionalBreakdown : (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']]),
-                'comparisonData' => is_array($comparisonData) ? (object)$comparisonData : (is_object($comparisonData) ? $comparisonData : (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]]),
+                'stats' => $stats,
+                'memberGrowth' => $memberGrowth,
+                'tierDistribution' => $tierDistribution,
+                'genderDistribution' => $genderDistribution,
+                'occupationDistribution' => $occupationDistribution,
+                'ageDistribution' => $ageDistribution,
+                'latestMembers' => $latestMembers,
+                'latestPointTransactions' => $latestPointTransactions,
+                'latestActivities' => $latestActivities,
+                'activeChallenges' => $activeChallenges,
+                'activeRewards' => $activeRewards,
+                // Empty arrays for heavy data - will be loaded via AJAX
+                'spendingTrend' => [],
+                'pointActivityTrend' => [],
+                'purchasingPowerByAge' => [],
+                'purchasingPowerByAgeThisMonth' => [],
+                'topSpenders' => [],
+                'topSpendersDateRange' => null,
+                'mostActiveMembers' => [],
+                'mostActiveMembersDateRange' => null,
+                'top10Points' => [],
+                'top10VoucherOwners' => [],
+                'top10PointRedemptions' => [],
+                'memberFavouritePicks' => (object)['food' => [], 'beverages' => []],
+                'activeVouchers' => [],
+                'pointStats' => [],
+                'engagementMetrics' => [],
+                'memberSegmentation' => (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0],
+                'memberLifetimeValue' => $memberLifetimeValue,
+                'churnAnalysis' => (object)[],
+                'conversionFunnel' => $conversionFunnel,
+                'regionalBreakdown' => (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']],
+                'comparisonData' => (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]],
             'filters' => [
                 'start_date' => $startDate,
                 'end_date' => $endDate,
