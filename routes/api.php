@@ -481,6 +481,12 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'update']);
         Route::delete('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'destroy']);
         Route::post('/food-good-receives/fetch-po', [\App\Http\Controllers\FoodGoodReceiveController::class, 'fetchPO']);
+        
+        // Member History routes
+        Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
+        Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
+        Route::get('/member-history/order/{orderId}', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getOrderDetail']);
+        Route::get('/member-history/preferences', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberPreferences']);
     });
 });
 
