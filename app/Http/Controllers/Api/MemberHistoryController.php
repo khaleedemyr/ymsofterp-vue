@@ -312,8 +312,57 @@ class MemberHistoryController extends Controller
                 ->limit($limit)
                 ->get();
 
-            // Format response
-            $formattedItems = $favoriteItems->map(function ($item) {
+            // Format response with popular modifiers
+            $formattedItems = $favoriteItems->map(function ($item) use ($memberId) {
+                // Get all modifiers for this item
+                $modifiersData = DB::connection('db_justus')
+                    ->table('order_items')
+                    ->join('orders', 'order_items.order_id', '=', 'orders.id')
+                    ->where('orders.member_id', $memberId)
+                    ->where('orders.status', 'paid')
+                    ->where('order_items.item_id', $item->item_id)
+                    ->whereNotNull('order_items.modifiers')
+                    ->where('order_items.modifiers', '!=', '')
+                    ->select('order_items.modifiers')
+                    ->get();
+
+                // Count modifier frequency
+                $modifierCounts = [];
+                foreach ($modifiersData as $data) {
+                    try {
+                        $modifiers = json_decode($data->modifiers, true);
+                        if (is_array($modifiers)) {
+                            foreach ($modifiers as $category => $choices) {
+                                if (is_array($choices)) {
+                                    foreach ($choices as $choice => $quantity) {
+                                        if ($quantity > 0) {
+                                            $key = "$category|$choice";
+                                            $modifierCounts[$key] = ($modifierCounts[$key] ?? 0) + 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // Skip invalid JSON
+                    }
+                }
+
+                // Get top 5 most popular modifiers
+                arsort($modifierCounts);
+                $topModifiers = [];
+                $count = 0;
+                foreach ($modifierCounts as $key => $freq) {
+                    if ($count >= 5) break;
+                    list($category, $choice) = explode('|', $key);
+                    $topModifiers[] = [
+                        'category' => $category,
+                        'choice' => $choice,
+                        'frequency' => $freq
+                    ];
+                    $count++;
+                }
+
                 return [
                     'item_id' => $item->item_id,
                     'item_name' => $item->item_name,
@@ -323,6 +372,7 @@ class MemberHistoryController extends Controller
                     'avg_price_formatted' => 'Rp ' . number_format($item->avg_price, 0, ',', '.'),
                     'last_ordered' => $item->last_ordered,
                     'last_ordered_formatted' => \Carbon\Carbon::parse($item->last_ordered)->format('d M Y'),
+                    'popular_modifiers' => $topModifiers,
                 ];
             });
 
