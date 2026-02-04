@@ -102,14 +102,14 @@ class MemberHistoryController extends Controller
                 ->where('orders.status', 'paid')
                 ->select(
                     'orders.id',
-                    'orders.order_id',
+                    'orders.nomor as order_id',
                     'orders.grand_total',
-                    'orders.sub_total',
-                    'orders.tax',
-                    'orders.service_charge',
+                    'orders.total as sub_total',
+                    'orders.pb1 as tax',
+                    'orders.service as service_charge',
                     'orders.discount',
-                    'orders.points_earned',
-                    'orders.points_redeemed',
+                    'orders.cashback',
+                    'orders.redeem_amount',
                     'orders.created_at',
                     'orders.kode_outlet',
                     'o.nama_outlet'
@@ -144,8 +144,8 @@ class MemberHistoryController extends Controller
                     'tax' => (float) $order->tax,
                     'service_charge' => (float) $order->service_charge,
                     'discount' => (float) $order->discount,
-                    'points_earned' => (int) ($order->points_earned ?? 0),
-                    'points_redeemed' => (int) ($order->points_redeemed ?? 0),
+                    'points_earned' => (int) ($order->cashback ?? 0),
+                    'points_redeemed' => (int) ($order->redeem_amount ?? 0),
                     'outlet_name' => $order->nama_outlet ?? 'Outlet Tidak Diketahui',
                     'kode_outlet' => $order->kode_outlet,
                     'created_at' => $order->created_at,
@@ -191,7 +191,7 @@ class MemberHistoryController extends Controller
                 ->table('orders')
                 ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
                 ->where('orders.id', $orderId)
-                ->orWhere('orders.order_id', $orderId)
+                ->orWhere('orders.nomor', $orderId)
                 ->select(
                     'orders.*',
                     'o.nama_outlet'
@@ -223,20 +223,20 @@ class MemberHistoryController extends Controller
             // Format response
             $formattedOrder = [
                 'id' => $order->id,
-                'order_id' => $order->order_id,
+                'order_id' => $order->nomor,
                 'member_id' => $order->member_id,
                 'grand_total' => (float) $order->grand_total,
                 'grand_total_formatted' => 'Rp ' . number_format($order->grand_total, 0, ',', '.'),
-                'sub_total' => (float) $order->sub_total,
-                'tax' => (float) $order->tax,
-                'service_charge' => (float) $order->service_charge,
+                'sub_total' => (float) $order->total,
+                'tax' => (float) $order->pb1,
+                'service_charge' => (float) $order->service,
                 'discount' => (float) $order->discount,
-                'points_earned' => (int) ($order->points_earned ?? 0),
-                'points_redeemed' => (int) ($order->points_redeemed ?? 0),
+                'points_earned' => (int) ($order->cashback ?? 0),
+                'points_redeemed' => (int) ($order->redeem_amount ?? 0),
                 'outlet_name' => $order->nama_outlet ?? 'Outlet Tidak Diketahui',
                 'kode_outlet' => $order->kode_outlet,
                 'status' => $order->status,
-                'payment_method' => $order->payment_method ?? null,
+                'payment_method' => $order->mode ?? null,
                 'created_at' => $order->created_at,
                 'created_at_formatted' => \Carbon\Carbon::parse($order->created_at)->format('d M Y, H:i'),
                 'items' => $orderItems->map(function ($item) {
