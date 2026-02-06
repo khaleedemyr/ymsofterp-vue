@@ -399,7 +399,7 @@ class OutletFoodGoodReceiveController extends Controller
                     $qty_small_for_value = $qty_small;
                 }
                 // Update/insert stok using pre-loaded data
-                $stockKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $stockKey = $inventoryItemId;
                 $stock = $stocks[$stockKey] ?? null;
                 $qty_lama = $stock ? $stock->qty_small : 0;
                 $nilai_lama = $stock ? $stock->value : 0;
@@ -447,7 +447,7 @@ class OutletFoodGoodReceiveController extends Controller
                     ];
                 }
                 // Insert kartu stok using pre-loaded data
-                $lastCardKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $lastCardKey = $inventoryItemId;
                 $lastCard = $lastCards[$lastCardKey] ?? null;
                 if ($lastCard) {
                     $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
@@ -491,7 +491,7 @@ class OutletFoodGoodReceiveController extends Controller
                     'saldo_qty_large' => $saldo_qty_large,
                 ];
                 // Insert cost history using pre-loaded data
-                $lastCostHistoryKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $lastCostHistoryKey = $inventoryItemId;
                 $lastCostHistory = $lastCostHistories[$lastCostHistoryKey] ?? null;
                 $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
                 $costHistoryInserts[] = [
