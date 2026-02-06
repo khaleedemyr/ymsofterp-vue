@@ -1,55 +1,87 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
-      <h1 class="text-2xl font-bold mb-6">Laporan Stok Akhir Outlet</h1>
-      <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <input v-model="search" type="text" placeholder="Cari nama barang atau outlet..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Outlet</label>
-          <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" :disabled="!outletSelectable">
-            <option value="">Semua Outlet</option>
-            <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
-          </select>
+    <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Laporan Stok Akhir Outlet</h1>
+          <p class="text-sm text-gray-500 mt-1">Ringkasan stok akhir per outlet & warehouse outlet, lengkap dengan detail kartu stok.</p>
         </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Warehouse Outlet</label>
-          <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="">Semua Warehouse Outlet</option>
-            <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
-          </select>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+            Real-time (session)
+          </span>
+          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+            Updated: {{ new Date().toLocaleDateString('id-ID') }}
+          </span>
         </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Tampilkan</label>
-          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <span class="text-sm">data</span>
-        </div>
-        <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md font-semibold hover:bg-blue-700">
-          <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
-          <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
-          Load Data
-        </button>
-        <button @click="exportToExcel" :disabled="exporting || !hasAnySelection || stocks.length === 0" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
-          <span v-if="exporting" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
-          <span v-else class="mr-2"><i class="fas fa-file-excel"></i></span>
-          {{ exporting ? 'Exporting...' : 'Export Excel' }}
-        </button>
       </div>
-      <div v-if="props.error" class="bg-red-50 border-l-4 border-red-400 text-red-800 p-4 rounded my-8 text-center font-semibold">
+
+      <div class="bg-white/70 backdrop-blur border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Pencarian</label>
+            <input v-model="search" type="text" placeholder="Cari nama barang atau outlet..." class="px-4 py-2 border border-gray-300 rounded-lg w-full focus:ring-blue-500 focus:border-blue-500" />
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Outlet</label>
+            <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" :disabled="!outletSelectable">
+              <option value="">Semua Outlet</option>
+              <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Warehouse Outlet</label>
+            <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">Semua Warehouse Outlet</option>
+              <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Tampilkan</label>
+            <div class="flex items-center gap-2">
+              <select v-model="perPage" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+                <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
+              </select>
+              <span class="text-sm text-gray-500">data</span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Aksi</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button @click="reloadData" :disabled="loadingReload" class="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 shadow-sm">
+                <span v-if="loadingReload" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+                <span v-else class="mr-2"><i class="fas fa-sync-alt"></i></span>
+                Load
+              </button>
+              <button @click="exportToExcel" :disabled="exporting || !hasAnySelection || stocks.length === 0" class="inline-flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 shadow-sm disabled:bg-gray-400 disabled:cursor-not-allowed">
+                <span v-if="exporting" class="animate-spin mr-2"><i class="fas fa-spinner"></i></span>
+                <span v-else class="mr-2"><i class="fas fa-file-excel"></i></span>
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-if="props.error" class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl my-6 text-center font-semibold">
         {{ props.error }}
       </div>
-      <div v-else-if="!hasAnySelection" class="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded my-8 text-center font-semibold">
+      <div v-else-if="!hasAnySelection" class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl my-6 text-center font-semibold">
         <i class="fas fa-info-circle mr-2"></i>
         Silakan pilih minimal satu filter (Outlet atau Warehouse Outlet), kemudian klik tombol "Load Data" untuk melihat laporan stok akhir.
       </div>
-      <div v-else-if="stocks.length === 0" class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded my-8 text-center font-semibold">
+      <div v-else-if="stocks.length === 0" class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-xl my-6 text-center font-semibold">
         <i class="fas fa-exclamation-triangle mr-2"></i>
         Tidak ada data stok untuk filter yang dipilih. Coba ubah filter atau pilih kombinasi filter yang berbeda.
       </div>
-      <div v-else class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <div v-else class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
+        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <div class="text-sm text-gray-600">
+            Total <span class="font-semibold text-gray-900">{{ filteredStocks.length }}</span> item
+          </div>
+          <div class="text-xs text-gray-500">Klik kategori untuk expand/collapse</div>
+        </div>
         <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
+          <thead class="bg-gray-50 sticky top-0 z-10">
             <tr>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Kategori</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
