@@ -167,20 +167,42 @@ class OutletFoodGoodReceiveController extends Controller
             $today = date('Ymd');
             $prefix = 'OGR-' . $today . '-';
             
-            // Cari nomor terakhir hari ini (EXCLUDE soft deleted data untuk avoid duplicate key)
-            $lastNumber = DB::table('outlet_food_good_receives')
-                ->where('number', 'like', $prefix . '%')
-                ->whereNull('deleted_at') // IMPORTANT: Exclude soft deleted records
-                ->orderBy('number', 'desc')
-                ->first();
-                
-            if ($lastNumber) {
-                $sequence = (int) substr($lastNumber->number, -4) + 1;
-            } else {
-                $sequence = 1;
-            }
+            // Use MySQL named lock to prevent race condition
+            $lockName = 'ogr_number_' . $prefix;
+            $lockTimeout = 10; // 10 seconds
             
-            $number = $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+            try {
+                // Acquire lock
+                $lockResult = DB::select('SELECT GET_LOCK(?, ?) as lockResult', [$lockName, $lockTimeout]);
+                
+                if (!$lockResult[0]->lockResult) {
+                    throw new \Exception('Failed to acquire lock for number generation');
+                }
+                
+                // Cari nomor terakhir hari ini (EXCLUDE soft deleted data untuk avoid duplicate key)
+                $lastNumber = DB::table('outlet_food_good_receives')
+                    ->where('number', 'like', $prefix . '%')
+                    ->whereNull('deleted_at') // IMPORTANT: Exclude soft deleted records
+                    ->orderBy('number', 'desc')
+                    ->lockForUpdate() // Add pessimistic lock
+                    ->first();
+                    
+                if ($lastNumber) {
+                    $sequence = (int) substr($lastNumber->number, -4) + 1;
+                } else {
+                    $sequence = 1;
+                }
+                
+                $number = $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+                
+                // Release lock
+                DB::select('SELECT RELEASE_LOCK(?) as releaseResult', [$lockName]);
+                
+            } catch (\Exception $lockErr) {
+                // Ensure lock is released even on error
+                DB::select('SELECT RELEASE_LOCK(?) as releaseResult', [$lockName]);
+                throw $lockErr;
+            }
             $grId = DB::table('outlet_food_good_receives')->insertGetId([
                 'number' => $number,
             'delivery_order_id' => $validated['delivery_order_id'],
@@ -193,65 +215,138 @@ class OutletFoodGoodReceiveController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            foreach ($validated['items'] as $item) {
+            
+            // BATCH QUERY OPTIMIZATION: Load all master data ONCE before loop
+            $itemIds = collect($validated['items'])->pluck('item_id')->unique()->toArray();
+            
+            // 1. Load all item masters
+            $itemMasters = DB::table('items')->whereIn('id', $itemIds)->get()->keyBy('id');
+            
+            // 2. Load all inventory items
+            $inventoryItems = DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $itemIds)
+                ->get()
+                ->keyBy('item_id');
+            
+            // 3. Load all current stocks
+            $stocks = DB::table('outlet_food_inventory_stocks')
+                ->whereIn('inventory_item_id', $inventoryItems->pluck('id'))
+                ->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->get()
+                ->keyBy('inventory_item_id');
+            
+            // 4. Load cost data based on source type
+            $costs = [];
+            if ($do->source_type === 'ro_supplier_gr') {
+                $grItems = DB::table('food_good_receive_items')
+                    ->where('good_receive_id', $do->ro_supplier_gr_id)
+                    ->whereIn('item_id', $itemIds)
+                    ->get()
+                    ->keyBy('item_id');
                 
-                // Selalu insert ke outlet_food_good_receive_items
-                DB::table('outlet_food_good_receive_items')->insert([
+                $poItemIds = $grItems->pluck('po_item_id')->filter()->toArray();
+                if (!empty($poItemIds)) {
+                    $poItems = DB::table('purchase_order_food_items')
+                        ->whereIn('id', $poItemIds)
+                        ->get()
+                        ->keyBy('id');
+                    foreach ($grItems as $itemId => $grItem) {
+                        $costs[$itemId] = $poItems[$grItem->po_item_id]->price ?? 0;
+                    }
+                }
+            } else {
+                $ffoiItems = DB::table('food_floor_order_items')
+                    ->where('floor_order_id', $do->floor_order_id)
+                    ->whereIn('item_id', $itemIds)
+                    ->get()
+                    ->keyBy('item_id');
+                foreach ($ffoiItems as $itemId => $ffoi) {
+                    $costs[$itemId] = $ffoi->price ?? 0;
+                }
+            }
+            
+            // 5. Load last inventory cards for all items
+            $lastCards = [];
+            foreach ($inventoryItems as $itemId => $invItem) {
+                $lastCard = DB::table('outlet_food_inventory_cards')
+                    ->where('inventory_item_id', $invItem->id)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->limit(1)
+                    ->first();
+                if ($lastCard) {
+                    $lastCards[$invItem->id] = $lastCard;
+                }
+            }
+            
+            // 6. Load last cost histories
+            $lastCostHistories = [];
+            foreach ($inventoryItems as $itemId => $invItem) {
+                $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $invItem->id)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->limit(1)
+                    ->first();
+                if ($lastCostHistory) {
+                    $lastCostHistories[$invItem->id] = $lastCostHistory;
+                }
+            }
+            
+            // Prepare batch inserts
+            $grItemsToInsert = [];
+            $inventoryItemsToInsert = [];
+            $stockUpdates = [];
+            $stockInserts = [];
+            $cardInserts = [];
+            $costHistoryInserts = [];
+            
+            foreach ($validated['items'] as $item) {
+                // Prepare GR item insert
+                $grItemsToInsert[] = [
                     'outlet_food_good_receive_id' => $grId,
                     'item_id' => $item['item_id'],
                     'unit_id' => $item['unit_id'],
                     'qty' => $item['qty'],
                     'received_qty' => $item['received_qty'],
                     'remaining_qty' => $item['qty'] - $item['received_qty'],
-                    'receive_date' => $validated['receive_date'], // Tambahkan receive_date yang sama dengan header
+                    'receive_date' => $validated['receive_date'],
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
+                ];
                 
                 // Jika received_qty = 0, skip proses inventory
                 if ($item['received_qty'] <= 0) {
                     continue;
                 }
                 
-                // Ambil cost berdasarkan source type
-                $ffoi = null;
-                if ($do->source_type === 'ro_supplier_gr') {
-                    // Untuk RO Supplier GR, ambil dari PO items (karena GR items tidak ada price)
-                    $grItem = DB::table('food_good_receive_items')
-                        ->where('good_receive_id', $do->ro_supplier_gr_id)
-                        ->where('item_id', $item['item_id'])
-                        ->first();
-                    
-                    if ($grItem) {
-                        // Ambil price dari PO item
-                        $poItem = DB::table('purchase_order_food_items')
-                            ->where('id', $grItem->po_item_id)
-                            ->first();
-                        $cost = $poItem ? $poItem->price : 0;
-                    } else {
-                        $cost = 0;
-                    }
-                } else {
-                    // Untuk Packing List biasa
-                    $ffoi = DB::table('food_floor_order_items')
-                        ->where('floor_order_id', $do->floor_order_id)
-                        ->where('item_id', $item['item_id'])
-                        ->first();
-                    $cost = $ffoi ? $ffoi->price : 0;
-                }
-                $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
-                if (!$inventoryItem) {
-                    $inventoryItemId = DB::table('outlet_food_inventory_items')->insertGetId([
-                        'item_id' => $item['item_id'],
+                $itemId = $item['item_id'];
+                
+                // Get cost dari pre-loaded data
+                $cost = $costs[$itemId] ?? 0;
+                
+                // Get item master dari pre-loaded data
+                $itemMaster = $itemMasters[$itemId];
+                
+                // Get or mark for insert inventory item
+                if (!isset($inventoryItems[$itemId])) {
+                    $inventoryItemsToInsert[] = [
+                        'item_id' => $itemId,
                         'small_unit_id' => $itemMaster->small_unit_id,
                         'medium_unit_id' => $itemMaster->medium_unit_id,
                         'large_unit_id' => $itemMaster->large_unit_id,
                         'created_at' => now(),
                         'updated_at' => now(),
-                    ]);
+                    ];
+                    $inventoryItemId = 'temp_' . $itemId; // Temporary ID for later processing
+                    $inventoryItems[$itemId] = (object)['id' => $inventoryItemId]; // Cache for this loop
                 } else {
-                    $inventoryItemId = $inventoryItem->id;
+                    $inventoryItemId = $inventoryItems[$itemId]->id;
                 }
                 $unitId = $item['unit_id'];
                 $qtyInput = $item['received_qty'];
@@ -303,12 +398,9 @@ class OutletFoodGoodReceiveController extends Controller
                     $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
                     $qty_small_for_value = $qty_small;
                 }
-                // Update/insert stok
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->first();
+                // Update/insert stok using pre-loaded data
+                $stockKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $stock = $stocks[$stockKey] ?? null;
                 $qty_lama = $stock ? $stock->qty_small : 0;
                 $nilai_lama = $stock ? $stock->value : 0;
                 $qty_baru = $qty_small;
@@ -317,20 +409,23 @@ class OutletFoodGoodReceiveController extends Controller
                 $total_nilai = $nilai_lama + $nilai_baru;
                 $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
                 if ($stock) {
-                    DB::table('outlet_food_inventory_stocks')
-                        ->where('id', $stock->id)
-                        ->update([
-                            'qty_small' => $total_qty,
-                            'qty_medium' => $stock->qty_medium + $qty_medium,
-                            'qty_large' => $stock->qty_large + $qty_large,
-                            'value' => $total_nilai,
-                            'last_cost_small' => $mac,
-                            'last_cost_medium' => $cost_medium,
-                            'last_cost_large' => $cost_large,
-                            'updated_at' => now(),
-                        ]);
+                    $stockUpdates[] = [
+                        'id' => $stock->id,
+                        'qty_small' => $total_qty,
+                        'qty_medium' => $stock->qty_medium + $qty_medium,
+                        'qty_large' => $stock->qty_large + $qty_large,
+                        'value' => $total_nilai,
+                        'last_cost_small' => $mac,
+                        'last_cost_medium' => $cost_medium,
+                        'last_cost_large' => $cost_large,
+                        'updated_at' => now(),
+                    ];
+                    // Update cache for subsequent items
+                    $stocks[$stockKey]->qty_small = $total_qty;
+                    $stocks[$stockKey]->qty_medium = $stock->qty_medium + $qty_medium;
+                    $stocks[$stockKey]->qty_large = $stock->qty_large + $qty_large;
                 } else {
-                    DB::table('outlet_food_inventory_stocks')->insert([
+                    $stockInserts[] = [
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $outletId,
                         'warehouse_outlet_id' => $warehouseOutletId,
@@ -343,16 +438,17 @@ class OutletFoodGoodReceiveController extends Controller
                         'last_cost_large' => $cost_large,
                         'created_at' => now(),
                         'updated_at' => now(),
-                    ]);
+                    ];
+                    // Add to cache for subsequent items
+                    $stocks[$stockKey] = (object)[
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                    ];
                 }
-                // Insert kartu stok
-                $lastCard = DB::table('outlet_food_inventory_cards')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->first();
+                // Insert kartu stok using pre-loaded data
+                $lastCardKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $lastCard = $lastCards[$lastCardKey] ?? null;
                 if ($lastCard) {
                     $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
                     $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
@@ -362,7 +458,7 @@ class OutletFoodGoodReceiveController extends Controller
                     $saldo_qty_medium = $qty_medium;
                     $saldo_qty_large = $qty_large;
                 }
-                DB::table('outlet_food_inventory_cards')->insert([
+                $cardInserts[] = [
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
                     'warehouse_outlet_id' => $warehouseOutletId,
@@ -387,17 +483,18 @@ class OutletFoodGoodReceiveController extends Controller
                     'description' => 'Good Receive Outlet',
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
-                // Insert cost history
-                $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->first();
+                ];
+                // Update cache for subsequent items
+                $lastCards[$lastCardKey] = (object)[
+                    'saldo_qty_small' => $saldo_qty_small,
+                    'saldo_qty_medium' => $saldo_qty_medium,
+                    'saldo_qty_large' => $saldo_qty_large,
+                ];
+                // Insert cost history using pre-loaded data
+                $lastCostHistoryKey = $inventoryItemId . '_' . $outletId . '_' . $warehouseOutletId;
+                $lastCostHistory = $lastCostHistories[$lastCostHistoryKey] ?? null;
                 $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
-                DB::table('outlet_food_inventory_cost_histories')->insert([
+                $costHistoryInserts[] = [
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
                     'warehouse_outlet_id' => $warehouseOutletId,
@@ -409,7 +506,46 @@ class OutletFoodGoodReceiveController extends Controller
                     'reference_type' => 'good_receive_outlet',
                     'reference_id' => $grId,
                     'created_at' => now(),
-                ]);
+                ];
+                // Update cache for subsequent items
+                $lastCostHistories[$lastCostHistoryKey] = (object)['new_cost' => $cost_small];
+            }
+            
+            // Execute all batch inserts/updates AFTER loop completes
+            if (!empty($grItemsToInsert)) {
+                DB::table('outlet_food_good_receive_items')->insert($grItemsToInsert);
+            }
+            
+            if (!empty($inventoryItemsToInsert)) {
+                DB::table('outlet_food_inventory_items')->insert($inventoryItemsToInsert);
+            }
+            
+            // Execute stock updates (must be done individually as each has different ID)
+            foreach ($stockUpdates as $update) {
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $update['id'])
+                    ->update([
+                        'qty_small' => $update['qty_small'],
+                        'qty_medium' => $update['qty_medium'],
+                        'qty_large' => $update['qty_large'],
+                        'value' => $update['value'],
+                        'last_cost_small' => $update['last_cost_small'],
+                        'last_cost_medium' => $update['last_cost_medium'],
+                        'last_cost_large' => $update['last_cost_large'],
+                        'updated_at' => $update['updated_at'],
+                    ]);
+            }
+            
+            if (!empty($stockInserts)) {
+                DB::table('outlet_food_inventory_stocks')->insert($stockInserts);
+            }
+            
+            if (!empty($cardInserts)) {
+                DB::table('outlet_food_inventory_cards')->insert($cardInserts);
+            }
+            
+            if (!empty($costHistoryInserts)) {
+                DB::table('outlet_food_inventory_cost_histories')->insert($costHistoryInserts);
             }
             DB::commit();
             
