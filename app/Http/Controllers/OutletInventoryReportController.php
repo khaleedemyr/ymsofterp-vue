@@ -106,7 +106,18 @@ class OutletInventoryReportController extends Controller
             $query->where('s.warehouse_outlet_id', $warehouseOutletId);
         }
         
-        $data = $query->orderBy('c.name')->orderBy('i.name')->get();
+        // Add search filter if provided
+        $search = $request->input('search');
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('i.name', 'like', "%{$search}%")
+                  ->orWhere('c.name', 'like', "%{$search}%");
+            });
+        }
+        
+        // Use pagination instead of get() to avoid loading all data at once
+        $perPage = $request->input('per_page', 50); // Default 50 items per page
+        $data = $query->orderBy('c.name')->orderBy('i.name')->paginate($perPage);
         
         // Get filter options
         $outletsQuery = DB::table('tbl_data_outlet')
