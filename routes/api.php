@@ -36,6 +36,7 @@ use App\Http\Controllers\ReportWeeklyOutletFbRevenueController;
 use App\Http\Controllers\ReportDailyRevenueForecastController;
 use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
 use App\Http\Controllers\OutletController;
+use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -274,6 +275,17 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/warehouse-transfers', [WarehouseTransferController::class, 'apiIndex']);
         Route::get('/warehouse-transfers/{id}', [WarehouseTransferController::class, 'apiShow']);
         Route::post('/warehouse-transfers', [WarehouseTransferController::class, 'apiStore']);
+
+        // Floor Order (Approval App)
+        Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
+        Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);
+        Route::get('/floor-orders/supplier-available', [FoodFloorOrderController::class, 'supplierAvailable']);
+        Route::get('/floor-orders/{id}', [FoodFloorOrderController::class, 'apiShow']);
+        Route::post('/floor-orders', [FoodFloorOrderController::class, 'store']);
+        Route::put('/floor-orders/{id}', [FoodFloorOrderController::class, 'update']);
+        Route::delete('/floor-orders/{id}', [FoodFloorOrderController::class, 'destroy']);
+        Route::post('/floor-orders/{id}/submit', [FoodFloorOrderController::class, 'submit']);
+        Route::get('/floor-orders/{id}/export-pdf', [FoodFloorOrderController::class, 'exportPdf']);
         
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');
@@ -393,6 +405,9 @@ Route::prefix('approval-app')->group(function () {
         
         // Inventory stock route for approval app
         Route::get('/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
+
+        // Item search route for approval app (FO/RO)
+        Route::get('/items/search', [ItemController::class, 'search']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {

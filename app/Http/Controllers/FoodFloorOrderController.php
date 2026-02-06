@@ -624,6 +624,72 @@ class FoodFloorOrderController extends Controller
         ]);
     }
 
+    // API: List floor orders (Approval App)
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $query = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'warehouseOutlet', 'items.category']);
+
+        if ($user && $user->id_outlet != 1) {
+            $query->where('id_outlet', $user->id_outlet);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('order_number', 'like', "%$search%")
+                  ->orWhereHas('outlet', function($q) use ($search) {
+                      $q->where('nama_outlet', 'like', "%$search%") ;
+                  });
+            });
+        }
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->start_date) {
+            $query->whereDate('tanggal', '>=', $request->start_date);
+        }
+        if ($request->end_date) {
+            $query->whereDate('tanggal', '<=', $request->end_date);
+        }
+
+        $perPage = (int) ($request->get('per_page') ?? 10);
+        $floorOrders = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+
+        $floorOrders->getCollection()->transform(function($order) {
+            $order->loadMissing('items');
+            $order->has_packing_list = \DB::table('food_packing_lists')
+                ->where('food_floor_order_id', $order->id)
+                ->exists();
+            $order->total_amount = $order->items->sum(function($item) {
+                return ($item->qty ?? 0) * ($item->price ?? 0);
+            });
+            return $order;
+        });
+
+        return response()->json($floorOrders);
+    }
+
+    // API: Floor order detail (Approval App)
+    public function apiShow($id)
+    {
+        $order = FoodFloorOrder::with([
+            'outlet',
+            'requester',
+            'foSchedule',
+            'approver',
+            'warehouseOutlet',
+            'items.category',
+            'items.item'
+        ])->findOrFail($id);
+
+        $order->total_amount = $order->items->sum(function($item) {
+            return ($item->qty ?? 0) * ($item->price ?? 0);
+        });
+
+        return response()->json($order);
+    }
+
     public function warehouseOutlet() {
         return $this->belongsTo(WarehouseOutlet::class, 'warehouse_outlet_id');
     }
