@@ -11,6 +11,8 @@ use App\Http\Controllers\RetailController;
 use App\Http\Controllers\Api\MaintenancePurchaseOrderController;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\AnnouncementController;
+use App\Http\Controllers\BirthdayController;
 use App\Http\Controllers\MaintenancePurchaseOrderInvoiceController;
 use App\Http\Controllers\MaintenancePurchaseOrderReceiveController;
 use App\Http\Controllers\Api\MaintenanceEvidenceController;
@@ -262,6 +264,10 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/user/upload-banner', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadBanner']);
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
         Route::get('/allowed-menus', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'getAllowedMenus']);
+
+        // Announcement & Birthday routes for Approval App
+        Route::get('/user-announcements', [AnnouncementController::class, 'getUserAnnouncements']);
+        Route::get('/birthdays', [BirthdayController::class, 'getBirthdays']);
         
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');
