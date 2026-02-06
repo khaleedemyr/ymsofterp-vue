@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use App\Exports\OutletStockPositionExport;
 use Maatwebsite\Excel\Facades\Excel;
@@ -20,30 +21,36 @@ class OutletInventoryReportController extends Controller
         // Validasi input yang diperlukan - harus ada minimal satu filter untuk load data
         if (!$outletId && !$warehouseOutletId) {
             // Filter outlets berdasarkan user - hanya superuser (id_outlet=1) yang bisa pilih semua outlet
-            $outletsQuery = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet as id', 'nama_outlet as name')
-                ->orderBy('nama_outlet');
-            
-            // Jika user bukan superuser (id_outlet != 1), hanya tampilkan outlet mereka sendiri
-            if ($user->id_outlet != 1) {
-                $outletsQuery->where('id_outlet', $user->id_outlet);
-            }
-            
-            $outlets = $outletsQuery->get();
-            
+            $outletsCacheKey = 'outlet_stock_position_outlets_' . ($user->id_outlet ?? 'guest');
+            $outlets = Cache::remember($outletsCacheKey, 300, function () use ($user) {
+                $outletsQuery = DB::table('tbl_data_outlet')
+                    ->where('status', 'A')
+                    ->select('id_outlet as id', 'nama_outlet as name')
+                    ->orderBy('nama_outlet');
+
+                // Jika user bukan superuser (id_outlet != 1), hanya tampilkan outlet mereka sendiri
+                if ($user->id_outlet != 1) {
+                    $outletsQuery->where('id_outlet', $user->id_outlet);
+                }
+
+                return $outletsQuery->get();
+            });
+
             // Filter warehouse outlets berdasarkan outlet yang bisa diakses user
-            $warehouseOutletsQuery = DB::table('warehouse_outlets')
-                ->where('status', 'active')
-                ->select('id', 'name', 'outlet_id')
-                ->orderBy('name');
-            
-            // Jika user bukan superuser, hanya tampilkan warehouse outlet dari outlet mereka
-            if ($user->id_outlet != 1) {
-                $warehouseOutletsQuery->where('outlet_id', $user->id_outlet);
-            }
-            
-            $warehouse_outlets = $warehouseOutletsQuery->get();
+            $warehouseOutletsCacheKey = 'outlet_stock_position_warehouse_outlets_' . ($user->id_outlet ?? 'guest');
+            $warehouse_outlets = Cache::remember($warehouseOutletsCacheKey, 300, function () use ($user) {
+                $warehouseOutletsQuery = DB::table('warehouse_outlets')
+                    ->where('status', 'active')
+                    ->select('id', 'name', 'outlet_id')
+                    ->orderBy('name');
+
+                // Jika user bukan superuser, hanya tampilkan warehouse outlet dari outlet mereka
+                if ($user->id_outlet != 1) {
+                    $warehouseOutletsQuery->where('outlet_id', $user->id_outlet);
+                }
+
+                return $warehouseOutletsQuery->get();
+            });
             
             return inertia('OutletInventory/StockPosition', [
                 'stocks' => collect([]),
@@ -65,82 +72,101 @@ class OutletInventoryReportController extends Controller
             ]);
         }
         
-        $query = DB::table('outlet_food_inventory_stocks as s')
-            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
-            ->join('items as i', 'fi.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as o', 's.id_outlet', '=', 'o.id_outlet')
-            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
-            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
-            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
-            ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
-            ->select(
-                'i.id as item_id',
-                'i.name as item_name',
-                'c.id as category_id',
-                'c.name as category_name',
-                'o.id_outlet as outlet_id',
-                'o.nama_outlet as outlet_name',
-                's.qty_small',
-                's.qty_medium',
-                's.qty_large',
-                's.value',
-                's.last_cost_small',
-                's.last_cost_medium',
-                's.last_cost_large',
-                's.updated_at',
-                'i.small_conversion_qty',
-                'i.medium_conversion_qty',
-                'us.name as small_unit_name',
-                'um.name as medium_unit_name',
-                'ul.name as large_unit_name',
-                'wo.name as warehouse_outlet_name',
-                's.warehouse_outlet_id'
-            );
-            
-        // Apply filters
-        if ($outletId) {
-            $query->where('s.id_outlet', $outletId);
-        }
-        if ($warehouseOutletId) {
-            $query->where('s.warehouse_outlet_id', $warehouseOutletId);
-        }
-        
         // Add search filter if provided
         $search = $request->input('search');
-        if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('i.name', 'like', "%{$search}%")
-                  ->orWhere('c.name', 'like', "%{$search}%");
-            });
-        }
-        
+
         // Use pagination instead of get() to avoid loading all data at once
         $perPage = $request->input('per_page', 50); // Default 50 items per page
-        $data = $query->orderBy('c.name')->orderBy('i.name')->paginate($perPage);
+        $page = (int) $request->input('page', 1);
+
+        $stocksCacheKey = 'outlet_stock_position_' . md5(json_encode([
+            'outlet' => $outletId,
+            'warehouse' => $warehouseOutletId,
+            'search' => $search,
+            'per_page' => $perPage,
+            'page' => $page
+        ]));
+
+        $data = Cache::remember($stocksCacheKey, 30, function () use ($outletId, $warehouseOutletId, $search, $perPage) {
+            $query = DB::table('outlet_food_inventory_stocks as s')
+                ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+                ->join('items as i', 'fi.item_id', '=', 'i.id')
+                ->join('tbl_data_outlet as o', 's.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+                ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+                ->select(
+                    'i.id as item_id',
+                    'i.name as item_name',
+                    'c.id as category_id',
+                    'c.name as category_name',
+                    'o.id_outlet as outlet_id',
+                    'o.nama_outlet as outlet_name',
+                    's.qty_small',
+                    's.qty_medium',
+                    's.qty_large',
+                    's.value',
+                    's.last_cost_small',
+                    's.last_cost_medium',
+                    's.last_cost_large',
+                    's.updated_at',
+                    'i.small_conversion_qty',
+                    'i.medium_conversion_qty',
+                    'us.name as small_unit_name',
+                    'um.name as medium_unit_name',
+                    'ul.name as large_unit_name',
+                    'wo.name as warehouse_outlet_name',
+                    's.warehouse_outlet_id'
+                );
+
+            // Apply filters
+            if ($outletId) {
+                $query->where('s.id_outlet', $outletId);
+            }
+            if ($warehouseOutletId) {
+                $query->where('s.warehouse_outlet_id', $warehouseOutletId);
+            }
+
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('i.name', 'like', "%{$search}%")
+                      ->orWhere('c.name', 'like', "%{$search}%");
+                });
+            }
+
+            return $query->orderBy('c.name')->orderBy('i.name')->paginate($perPage);
+        });
         
         // Get filter options
-        $outletsQuery = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet as id', 'nama_outlet as name')
-            ->orderBy('nama_outlet');
-        
-        if ($user->id_outlet != 1) {
-            $outletsQuery->where('id_outlet', $user->id_outlet);
-        }
-        
-        $outlets = $outletsQuery->get();
-        
-        $warehouseOutletsQuery = DB::table('warehouse_outlets')
-            ->where('status', 'active')
-            ->select('id', 'name', 'outlet_id')
-            ->orderBy('name');
-        
-        if ($user->id_outlet != 1) {
-            $warehouseOutletsQuery->where('outlet_id', $user->id_outlet);
-        }
-        
-        $warehouse_outlets = $warehouseOutletsQuery->get();
+        $outletsCacheKey = 'outlet_stock_position_outlets_' . ($user->id_outlet ?? 'guest');
+        $outlets = Cache::remember($outletsCacheKey, 300, function () use ($user) {
+            $outletsQuery = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet as id', 'nama_outlet as name')
+                ->orderBy('nama_outlet');
+
+            if ($user->id_outlet != 1) {
+                $outletsQuery->where('id_outlet', $user->id_outlet);
+            }
+
+            return $outletsQuery->get();
+        });
+
+        $warehouseOutletsCacheKey = 'outlet_stock_position_warehouse_outlets_' . ($user->id_outlet ?? 'guest');
+        $warehouse_outlets = Cache::remember($warehouseOutletsCacheKey, 300, function () use ($user) {
+            $warehouseOutletsQuery = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name');
+
+            if ($user->id_outlet != 1) {
+                $warehouseOutletsQuery->where('outlet_id', $user->id_outlet);
+            }
+
+            return $warehouseOutletsQuery->get();
+        });
         
         return inertia('OutletInventory/StockPosition', [
             'stocks' => $data,
