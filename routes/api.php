@@ -11,6 +11,7 @@ use App\Http\Controllers\RetailController;
 use App\Http\Controllers\Api\MaintenancePurchaseOrderController;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\WarehouseTransferController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\BirthdayController;
 use App\Http\Controllers\MaintenancePurchaseOrderInvoiceController;
@@ -268,6 +269,11 @@ Route::prefix('approval-app')->group(function () {
         // Announcement & Birthday routes for Approval App
         Route::get('/user-announcements', [AnnouncementController::class, 'getUserAnnouncements']);
         Route::get('/birthdays', [BirthdayController::class, 'getBirthdays']);
+
+        // Warehouse Transfer (Approval App)
+        Route::get('/warehouse-transfers', [WarehouseTransferController::class, 'apiIndex']);
+        Route::get('/warehouse-transfers/{id}', [WarehouseTransferController::class, 'apiShow']);
+        Route::post('/warehouse-transfers', [WarehouseTransferController::class, 'apiStore']);
         
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');

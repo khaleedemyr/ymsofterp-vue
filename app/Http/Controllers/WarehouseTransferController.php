@@ -676,4 +676,306 @@ class WarehouseTransferController extends Controller
             ]
         ]);
     }
+
+    public function apiIndex(Request $request)
+    {
+        $query = WarehouseTransfer::with(['warehouseFrom', 'warehouseTo', 'creator']);
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('transfer_number', 'like', "%$search%")
+                    ->orWhereHas('warehouseFrom', function ($q2) use ($search) {
+                        $q2->where('name', 'like', "%$search%");
+                    })
+                    ->orWhereHas('warehouseTo', function ($q2) use ($search) {
+                        $q2->where('name', 'like', "%$search%");
+                    })
+                    ->orWhere('notes', 'like', "%$search%")
+                    ->orWhere('status', 'like', "%$search%")
+                    ->orWhereHas('creator', function ($q2) use ($search) {
+                        $q2->where('nama_lengkap', 'like', "%$search%");
+                    });
+            });
+        }
+
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->from) {
+            $query->whereDate('transfer_date', '>=', $request->from);
+        }
+
+        if ($request->to) {
+            $query->whereDate('transfer_date', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->get('per_page', 20);
+        $transfers = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+        $transfers->getCollection()->transform(function ($tr) {
+            $tr->total_items = $tr->items()->count();
+            return $tr;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $transfers,
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $transfer = WarehouseTransfer::with(['items.item', 'items.unit', 'warehouseFrom', 'warehouseTo', 'creator'])
+            ->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'transfer' => $transfer,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'transfer_date' => 'required|date',
+            'warehouse_from_id' => 'required|integer|different:warehouse_to_id',
+            'warehouse_to_id' => 'required|integer|different:warehouse_from_id',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.unit' => 'required|string',
+            'items.*.note' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $dateStr = date('Ymd', strtotime($validated['transfer_date']));
+            $transferNumber = null;
+
+            $existingNumbers = WarehouseTransfer::whereDate('transfer_date', $validated['transfer_date'])
+                ->where('transfer_number', 'like', 'WT-' . $dateStr . '-%')
+                ->pluck('transfer_number')
+                ->toArray();
+
+            $maxNumber = 0;
+            foreach ($existingNumbers as $number) {
+                $parts = explode('-', $number);
+                if (count($parts) === 3 && $parts[0] === 'WT' && $parts[1] === $dateStr) {
+                    $currentNumber = (int) $parts[2];
+                    if ($currentNumber > $maxNumber) {
+                        $maxNumber = $currentNumber;
+                    }
+                }
+            }
+
+            $nextNumber = $maxNumber + 1;
+            $transferNumber = 'WT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+
+            $attempts = 0;
+            $maxAttempts = 5;
+            while (WarehouseTransfer::where('transfer_number', $transferNumber)->exists() && $attempts < $maxAttempts) {
+                $nextNumber++;
+                $transferNumber = 'WT-' . $dateStr . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                $attempts++;
+            }
+
+            if ($attempts >= $maxAttempts) {
+                $timestamp = time();
+                $transferNumber = 'WT-' . $dateStr . '-' . substr($timestamp, -4);
+            }
+
+            $transfer = WarehouseTransfer::create([
+                'transfer_number' => $transferNumber,
+                'transfer_date' => $validated['transfer_date'],
+                'warehouse_from_id' => $validated['warehouse_from_id'],
+                'warehouse_to_id' => $validated['warehouse_to_id'],
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => Auth::id(),
+            ]);
+
+            $warehouseFromName = \DB::table('warehouses')->where('id', $validated['warehouse_from_id'])->value('name');
+            $warehouseToName = \DB::table('warehouses')->where('id', $validated['warehouse_to_id'])->value('name');
+
+            foreach ($validated['items'] as $item) {
+                $inventoryItem = FoodInventoryItem::where('item_id', $item['item_id'])->first();
+
+                if (!$inventoryItem) {
+                    throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);
+                }
+                $inventory_item_id = $inventoryItem->id;
+
+                $itemMaster = \App\Models\Item::find($item['item_id']);
+                $unit = $item['unit'];
+                $qty_input = $item['qty'];
+                $qty_small = 0;
+                $qty_medium = 0;
+                $qty_large = 0;
+
+                $unitSmall = optional($itemMaster->smallUnit)->name;
+                $unitMedium = optional($itemMaster->mediumUnit)->name;
+                $unitLarge = optional($itemMaster->largeUnit)->name;
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+                if ($unit === $unitSmall) {
+                    $qty_small = $qty_input;
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                } elseif ($unit === $unitMedium) {
+                    $qty_medium = $qty_input;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                } elseif ($unit === $unitLarge) {
+                    $qty_large = $qty_input;
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                } else {
+                    $qty_small = $qty_input;
+                }
+
+                WarehouseTransferItem::create([
+                    'warehouse_transfer_id' => $transfer->id,
+                    'item_id' => $item['item_id'],
+                    'quantity' => $item['qty'],
+                    'unit_id' => $inventoryItem->small_unit_id,
+                    'qty_small' => $qty_small,
+                    'qty_medium' => $qty_medium,
+                    'qty_large' => $qty_large,
+                    'note' => $item['note'] ?? null,
+                ]);
+
+                $stockFrom = FoodInventoryStock::where('inventory_item_id', $inventory_item_id)
+                    ->where('warehouse_id', $validated['warehouse_from_id'])->first();
+
+                if (!$stockFrom) {
+                    throw new \Exception('Stok tidak ditemukan di gudang asal');
+                }
+                $stockFrom->qty_small -= $qty_small;
+                $stockFrom->qty_medium -= $qty_medium;
+                $stockFrom->qty_large -= $qty_large;
+                $stockFrom->save();
+
+                $stockTo = FoodInventoryStock::firstOrCreate(
+                    [
+                        'inventory_item_id' => $inventory_item_id,
+                        'warehouse_id' => $validated['warehouse_to_id']
+                    ],
+                    [
+                        'qty_small' => 0,
+                        'qty_medium' => 0,
+                        'qty_large' => 0,
+                        'value' => 0,
+                        'last_cost_small' => 0,
+                        'last_cost_medium' => 0,
+                        'last_cost_large' => 0,
+                    ]
+                );
+
+                $qty_lama = $stockTo->qty_small;
+                $nilai_lama = $stockTo->value;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+
+                $stockTo->qty_small = $total_qty;
+                $stockTo->qty_medium += $qty_medium;
+                $stockTo->qty_large += $qty_large;
+                $stockTo->last_cost_small = $mac;
+                $stockTo->last_cost_medium = $stockFrom->last_cost_medium;
+                $stockTo->last_cost_large = $stockFrom->last_cost_large;
+                $stockTo->value = $total_nilai;
+                $stockTo->save();
+
+                FoodInventoryCard::create([
+                    'inventory_item_id' => $inventory_item_id,
+                    'warehouse_id' => $validated['warehouse_from_id'],
+                    'date' => $validated['transfer_date'],
+                    'reference_type' => 'warehouse_transfer',
+                    'reference_id' => $transfer->id,
+                    'out_qty_small' => $qty_small,
+                    'out_qty_medium' => $qty_medium,
+                    'out_qty_large' => $qty_large,
+                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_medium' => $stockFrom->last_cost_medium,
+                    'cost_per_large' => $stockFrom->last_cost_large,
+                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'saldo_qty_small' => $stockFrom->qty_small,
+                    'saldo_qty_medium' => $stockFrom->qty_medium,
+                    'saldo_qty_large' => $stockFrom->qty_large,
+                    'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
+                    'description' => 'Transfer ke Gudang ' . $warehouseToName,
+                ]);
+
+                FoodInventoryCard::create([
+                    'inventory_item_id' => $inventory_item_id,
+                    'warehouse_id' => $validated['warehouse_to_id'],
+                    'date' => $validated['transfer_date'],
+                    'reference_type' => 'warehouse_transfer',
+                    'reference_id' => $transfer->id,
+                    'in_qty_small' => $qty_small,
+                    'in_qty_medium' => $qty_medium,
+                    'in_qty_large' => $qty_large,
+                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_medium' => $stockFrom->last_cost_medium,
+                    'cost_per_large' => $stockFrom->last_cost_large,
+                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'saldo_qty_small' => $stockTo->qty_small,
+                    'saldo_qty_medium' => $stockTo->qty_medium,
+                    'saldo_qty_large' => $stockTo->qty_large,
+                    'saldo_value' => $stockTo->qty_small * $stockFrom->last_cost_small,
+                    'description' => 'Transfer dari Gudang ' . $warehouseFromName,
+                ]);
+
+                $lastCostHistory = \DB::table('food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('warehouse_id', $validated['warehouse_to_id'])
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->first();
+                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                \DB::table('food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'warehouse_id' => $validated['warehouse_to_id'],
+                    'date' => $validated['transfer_date'],
+                    'old_cost' => $old_cost,
+                    'new_cost' => $stockFrom->last_cost_small,
+                    'mac' => $mac,
+                    'type' => 'warehouse_transfer',
+                    'reference_type' => 'warehouse_transfer',
+                    'reference_id' => $transfer->id,
+                    'created_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'create',
+                'module' => 'warehouse_transfer',
+                'description' => 'Membuat transfer gudang: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $transfer->toArray(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'transfer' => $transfer,
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('WarehouseTransfer apiStore error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan data: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 } 
