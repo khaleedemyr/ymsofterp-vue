@@ -168,6 +168,8 @@ const props = defineProps({
   warehouses: Array,
   warehouse_outlets: Array
 });
+const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
+const warehouses = computed(() => (Array.isArray(props.warehouses) ? props.warehouses : []));
 
 const search = ref('');
 const perPage = ref(25);
@@ -182,7 +184,7 @@ const saldoAwalItems = ref({});
 const loadingItems = ref({});
 
 const filteredStocks = computed(() => {
-  let data = props.stocks;
+  let data = stocks.value;
   if (selectedWarehouse.value) {
     data = data.filter(row => String(row.warehouse_id) === String(selectedWarehouse.value));
   }

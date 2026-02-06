@@ -207,6 +207,9 @@ const props = defineProps({
   warehouse_outlets: Array,
   error: String
 });
+const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
+const outlets = computed(() => (Array.isArray(props.outlets) ? props.outlets : []));
+const warehouseOutlets = computed(() => (Array.isArray(props.warehouse_outlets) ? props.warehouse_outlets : []));
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
@@ -231,23 +234,23 @@ const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
 
 // Filter warehouse outlets based on selected outlet
 const filteredWarehouseOutlets = computed(() => {
-  let warehouseOutlets = props.warehouse_outlets;
+  let warehouseOutletsList = warehouseOutlets.value;
   
   // Jika bukan superadmin, hanya tampilkan warehouse outlet milik outlet user
   if (!outletSelectable.value && props.user_outlet_id) {
-    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(props.user_outlet_id));
+    warehouseOutletsList = warehouseOutletsList.filter(wo => String(wo.outlet_id) === String(props.user_outlet_id));
   }
   
   // Jika outlet dipilih, filter berdasarkan outlet tersebut
   if (selectedOutlet.value) {
-    warehouseOutlets = warehouseOutlets.filter(wo => String(wo.outlet_id) === String(selectedOutlet.value));
+    warehouseOutletsList = warehouseOutletsList.filter(wo => String(wo.outlet_id) === String(selectedOutlet.value));
   }
   
-  return warehouseOutlets;
+  return warehouseOutletsList;
 });
 
 const filteredStocks = computed(() => {
-  let data = props.stocks;
+  let data = stocks.value;
   if (selectedOutlet.value) {
     data = data.filter(row => String(row.outlet_id) === String(selectedOutlet.value));
   }
@@ -451,7 +454,7 @@ function getCurrentMonthFirstDate() {
 
 // Auto-expand all categories on mount or when data changes
 watch(() => props.stocks, () => {
-  if (props.stocks && props.stocks.length > 0) {
+  if (stocks.value.length > 0) {
     const categories = Object.keys(groupedStocks.value);
     expandedCategories.value = categories;
   }
@@ -516,7 +519,7 @@ function exportToExcel() {
   }
   
   // Validasi: harus ada data untuk di-export
-  if (props.stocks.length === 0) {
+  if (stocks.value.length === 0) {
     alert('Tidak ada data untuk di-export. Silakan load data terlebih dahulu!');
     return;
   }
