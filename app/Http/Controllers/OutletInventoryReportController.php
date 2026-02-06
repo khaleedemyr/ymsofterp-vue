@@ -169,7 +169,7 @@ class OutletInventoryReportController extends Controller
         });
         
         return inertia('OutletInventory/StockPosition', [
-            'stocks' => $data,
+            'stocks' => $data->items(),
             'outlets' => $outlets,
             'warehouse_outlets' => $warehouse_outlets,
             'user_outlet_id' => $user->id_outlet ?? null,
