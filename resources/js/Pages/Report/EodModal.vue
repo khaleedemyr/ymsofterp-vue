@@ -5,7 +5,7 @@
       <div class="text-center mb-4">
         <div class="text-xl font-bold text-gray-800">Justus Steak House</div>
         <div class="text-sm text-gray-500">{{ summary.nama_outlet }}</div>
-        <div class="text-xs text-gray-400 mt-1">{{ nowDateTime }}</div>
+        <div class="text-xs text-gray-400 mt-1">{{ displayDateTime }}</div>
       </div>
       <div class="border-b border-gray-200 mb-2"></div>
       <div class="space-y-2 text-base">
@@ -32,10 +32,19 @@ const props = defineProps({
   summary: { type: Object, required: true },
   show: Boolean,
 });
-const nowDateTime = computed(() => {
+
+// Display date from summary.tanggal (clicked date) instead of current time
+const displayDateTime = computed(() => {
+  if (props.summary?.tanggal) {
+    // Parse the YYYY-MM-DD date from summary
+    const d = new Date(props.summary.tanggal + 'T09:31:00'); // Use a fixed time or extract from data
+    return d.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  // Fallback to current date if tanggal is not provided
   const d = new Date();
   return d.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 });
+
 function format(val) {
   if (val == null) return '-';
   return typeof val === 'number' ? val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }) : val;
