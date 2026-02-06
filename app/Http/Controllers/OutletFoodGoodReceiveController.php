@@ -167,9 +167,10 @@ class OutletFoodGoodReceiveController extends Controller
             $today = date('Ymd');
             $prefix = 'OGR-' . $today . '-';
             
-            // Cari nomor terakhir hari ini (termasuk data yang soft deleted)
+            // Cari nomor terakhir hari ini (EXCLUDE soft deleted data untuk avoid duplicate key)
             $lastNumber = DB::table('outlet_food_good_receives')
                 ->where('number', 'like', $prefix . '%')
+                ->whereNull('deleted_at') // IMPORTANT: Exclude soft deleted records
                 ->orderBy('number', 'desc')
                 ->first();
                 
