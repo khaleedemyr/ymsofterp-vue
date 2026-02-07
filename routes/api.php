@@ -317,6 +317,20 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/floor-orders/{id}/submit', [FoodFloorOrderController::class, 'submit']);
         Route::get('/floor-orders/{id}/export-pdf', [FoodFloorOrderController::class, 'exportPdf']);
 
+        // Outlet Inventory Stock Position (Approval App)
+        Route::get('/outlet-inventory/stock-position', [
+            \App\Http\Controllers\OutletInventoryReportController::class,
+            'apiStockPosition'
+        ]);
+        Route::get('/outlet-inventory/stock-card/detail', [
+            \App\Http\Controllers\OutletInventoryReportController::class,
+            'apiStockCardDetail'
+        ]);
+        Route::get('/outlet-inventory/warehouse-outlets', [
+            \App\Http\Controllers\OutletInventoryReportController::class,
+            'apiWarehouseOutlets'
+        ]);
+
         // Outlet Stock Adjustment (Approval App)
         Route::get('/outlet-food-inventory-adjustments', [
             \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
