@@ -180,6 +180,7 @@ class OutletInternalUseWasteController extends Controller
             $itemsMin = $request->input('autosave') ? 'min:0' : 'min:1';
             
             $request->validate([
+                'header_id' => 'nullable|integer',
                 'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
@@ -220,17 +221,56 @@ class OutletInternalUseWasteController extends Controller
             // Always save as DRAFT first - no stock processing, no approval sending
             $status = 'DRAFT';
             
+            $headerId = null;
+
+            // If header_id provided, update that specific draft
+            if ($request->filled('header_id')) {
+                $headerId = (int) $request->header_id;
+                $existingHeader = DB::table('outlet_internal_use_waste_headers')
+                    ->where('id', $headerId)
+                    ->where('created_by', $userId)
+                    ->where('status', 'DRAFT')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$existingHeader) {
+                    throw new \Exception('Draft tidak ditemukan atau sudah tidak bisa diedit.');
+                }
+
+                \Log::info('OutletInternalUseWaste store - Updating by header_id', [
+                    'header_id' => $headerId
+                ]);
+
+                DB::table('outlet_internal_use_waste_headers')
+                    ->where('id', $headerId)
+                    ->update([
+                        'type' => $request->type,
+                        'date' => $request->date,
+                        'outlet_id' => $request->outlet_id,
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                        'notes' => $request->notes,
+                        'status' => $status,
+                        'updated_at' => now()
+                    ]);
+
+                DB::table('outlet_internal_use_waste_details')->where('header_id', $headerId)->delete();
+                DB::table('outlet_internal_use_waste_approval_flows')->where('header_id', $headerId)->delete();
+            }
+
             // Cek apakah sudah ada draft untuk outlet, warehouse, type, dan user yang sama
             // Mirip dengan Food Floor Order: cari draft berdasarkan kombinasi outlet_id, warehouse_outlet_id, type, dan user
             // Gunakan lockForUpdate untuk mencegah race condition saat multiple requests datang bersamaan
-            $existingHeader = DB::table('outlet_internal_use_waste_headers')
-                ->where('outlet_id', $request->outlet_id)
-                ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
-                ->where('type', $request->type)
-                ->where('created_by', $userId)
-                ->where('status', 'DRAFT')
-                ->lockForUpdate()
-                ->first();
+            $existingHeader = null;
+            if ($headerId === null) {
+                $existingHeader = DB::table('outlet_internal_use_waste_headers')
+                    ->where('outlet_id', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
+                    ->where('type', $request->type)
+                    ->where('created_by', $userId)
+                    ->where('status', 'DRAFT')
+                    ->lockForUpdate()
+                    ->first();
+            }
             
             \Log::info('OutletInternalUseWaste store - Checking for existing draft', [
                 'outlet_id' => $request->outlet_id,
@@ -263,7 +303,7 @@ class OutletInternalUseWasteController extends Controller
                 
                 // Delete existing approval flows (if any - shouldn't exist for draft, but clean up just in case)
                 DB::table('outlet_internal_use_waste_approval_flows')->where('header_id', $headerId)->delete();
-            } else {
+            } else if ($headerId === null) {
                 // Double check again after lock to prevent race condition
                 $doubleCheck = DB::table('outlet_internal_use_waste_headers')
                     ->where('outlet_id', $request->outlet_id)
