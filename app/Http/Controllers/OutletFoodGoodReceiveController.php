@@ -33,8 +33,6 @@ class OutletFoodGoodReceiveController extends Controller
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name',
                 'u.avatar as creator_avatar',
-                'u.photo_url as creator_photo_url',
-                'u.upload_latest_color_photo as creator_upload_photo',
                 'gr.created_at'
             );
 
