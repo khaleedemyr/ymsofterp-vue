@@ -4,6 +4,143 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+
+class OutletInternalUseWasteController extends Controller
+{
+    // Return paginated JSON list for mobile
+    public function index(Request $request)
+    {
+        $page = (int) $request->get('page', 1);
+        $perPage = (int) $request->get('per_page', 10);
+        $search = $request->get('search');
+        $type = $request->get('type');
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+
+        $query = DB::table('internal_use_wastes as iuw')
+            ->leftJoin('warehouses as w', 'iuw.warehouse_id', '=', 'w.id')
+            ->leftJoin('items as it', 'iuw.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'iuw.unit_id', '=', 'u.id')
+            ->leftJoin('tbl_data_ruko as r', 'iuw.ruko_id', '=', 'r.id_ruko')
+            ->select(
+                'iuw.id',
+                'iuw.type',
+                'iuw.date',
+                'iuw.qty',
+                'iuw.notes',
+                'w.name as warehouse_name',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'r.nama_ruko as outlet_name'
+            );
+
+        if ($type) {
+            $query->where('iuw.type', $type);
+        }
+        if ($dateFrom) {
+            $query->where('iuw.date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->where('iuw.date', '<=', $dateTo);
+        }
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('it.name', 'like', "%{$search}%")
+                  ->orWhere('r.nama_ruko', 'like', "%{$search}%")
+                  ->orWhere('iuw.id', 'like', "%{$search}%");
+            });
+        }
+
+        $total = $query->count();
+        $lastPage = (int) ceil($total / max(1, $perPage));
+
+        $rows = $query->orderByDesc('iuw.date')->orderByDesc('iuw.id')
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
+            ->get();
+
+        return response()->json([
+            'data' => $rows,
+            'current_page' => $page,
+            'last_page' => $lastPage,
+            'per_page' => $perPage,
+            'total' => $total,
+        ]);
+    }
+
+    // Simple item search for mobile
+    public function items(Request $request)
+    {
+        $q = $request->get('search');
+        $limit = (int) $request->get('limit', 50);
+
+        $query = DB::table('items')->where('status', 'active');
+        if ($q) {
+            $query->where(function ($sub) use ($q) {
+                $sub->where('name', 'like', "%{$q}%")->orWhere('sku', 'like', "%{$q}%");
+            });
+        }
+        $rows = $query->select('id', 'name', 'sku')->orderBy('name')->limit($limit)->get();
+        return response()->json($rows);
+    }
+
+    public function show($id)
+    {
+        $data = DB::table('internal_use_wastes as iuw')
+            ->leftJoin('warehouses as w', 'iuw.warehouse_id', '=', 'w.id')
+            ->leftJoin('items as it', 'iuw.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'iuw.unit_id', '=', 'u.id')
+            ->leftJoin('tbl_data_ruko as r', 'iuw.ruko_id', '=', 'r.id_ruko')
+            ->select(
+                'iuw.*',
+                'w.name as warehouse_name',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'r.nama_ruko as outlet_name'
+            )
+            ->where('iuw.id', $id)
+            ->first();
+
+        if (!$data) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        // For simplicity, mobile expects 'items' key sometimes; include single item info
+        $items = [[
+            'item_id' => $data->item_id,
+            'item_name' => $data->item_name,
+            'unit_id' => $data->unit_id,
+            'qty' => $data->qty,
+        ]];
+
+        return response()->json(['data' => $data, 'items' => $items]);
+    }
+
+    public function getItemUnits($itemId)
+    {
+        $item = DB::table('items')->where('id', $itemId)->first();
+        if (!$item) return response()->json(['units' => []]);
+
+        $units = [];
+        if ($item->small_unit_id) {
+            $units[] = ['id' => $item->small_unit_id, 'name' => DB::table('units')->where('id', $item->small_unit_id)->value('name')];
+        }
+        if ($item->medium_unit_id) {
+            $units[] = ['id' => $item->medium_unit_id, 'name' => DB::table('units')->where('id', $item->medium_unit_id)->value('name')];
+        }
+        if ($item->large_unit_id) {
+            $units[] = ['id' => $item->large_unit_id, 'name' => DB::table('units')->where('id', $item->large_unit_id)->value('name')];
+        }
+
+        return response()->json(['units' => $units]);
+    }
+}
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Services\NotificationService;
