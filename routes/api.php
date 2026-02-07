@@ -414,6 +414,17 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/approval/{id}/hrd-approve', [\App\Http\Controllers\ApprovalController::class, 'hrdApprove']);
         Route::post('/approval/{id}/hrd-reject', [\App\Http\Controllers\ApprovalController::class, 'hrdReject']);
         
+        // API endpoints for Outlet Internal Use / Waste (Category Cost)
+        // List, item search, detail, store, store-and-submit, and item units
+        Route::get('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'index']);
+        Route::get('/outlet-internal-use-waste/items', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'items']);
+        Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'show']);
+        Route::post('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'store']);
+        Route::post('/outlet-internal-use-waste/store-and-submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'storeAndSubmit']);
+        Route::post('/outlet-internal-use-waste/{id}/submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'submit']);
+        Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits']);
+
+        // Approval-related endpoints (existing)
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);
         Route::post('/outlet-internal-use-waste/{id}/approve', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'approve']);
