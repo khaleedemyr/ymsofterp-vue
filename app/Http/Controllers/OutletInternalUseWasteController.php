@@ -22,7 +22,8 @@ class OutletInternalUseWasteController extends Controller
                 'h.*',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
-                'u.nama_lengkap as creator_name'
+                'u.nama_lengkap as creator_name',
+                'u.avatar as creator_avatar'
             );
         
         // Filter by outlet (if user is not admin)
