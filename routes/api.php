@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
+use App\Http\Controllers\GoodReceiveOutletSupplierController;
 use App\Http\Middleware\ApprovalAppAuth;
 
 
@@ -196,6 +197,15 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'apiShow']);
         Route::post('/outlet-food-good-receives', [OutletFoodGoodReceiveController::class, 'store']);
         Route::delete('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'destroy']);
+
+        Route::get('/outlet-supplier-good-receives', [GoodReceiveOutletSupplierController::class, 'apiIndex']);
+        Route::get('/outlet-supplier-good-receives/available-ros', [GoodReceiveOutletSupplierController::class, 'apiAvailableROs']);
+        Route::get('/outlet-supplier-good-receives/available-dos', [GoodReceiveOutletSupplierController::class, 'apiAvailableDOs']);
+        Route::get('/outlet-supplier-good-receives/ro-detail/{roSupplierId}', [GoodReceiveOutletSupplierController::class, 'apiRoDetail']);
+        Route::get('/outlet-supplier-good-receives/do-detail/{doId}', [GoodReceiveOutletSupplierController::class, 'apiDoDetail']);
+        Route::get('/outlet-supplier-good-receives/{id}', [GoodReceiveOutletSupplierController::class, 'apiShow']);
+        Route::post('/outlet-supplier-good-receives', [GoodReceiveOutletSupplierController::class, 'apiStore']);
+        Route::delete('/outlet-supplier-good-receives/{id}', [GoodReceiveOutletSupplierController::class, 'destroy']);
     });
 });
 
