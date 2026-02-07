@@ -940,10 +940,14 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
             // Join untuk RO Supplier GR
             ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
             ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
             ->leftJoin('food_floor_orders as fo_ro', 'po.source_id', '=', 'fo_ro.id')
+            ->leftJoin('tbl_data_outlet as o_ro', 'fo_ro.id_outlet', '=', 'o_ro.id_outlet')
+            ->leftJoin('warehouse_outlets as wo_ro', 'fo_ro.warehouse_outlet_id', '=', 'wo_ro.id')
             ->whereNull('gr.id')
             ->where(function($q) use ($idOutlet) {
                 // Jika user bukan admin (id_outlet != 1), filter berdasarkan outlet
@@ -965,7 +969,9 @@ class OutletFoodGoodReceiveController extends Controller
                 'do.number', 
                 'do.created_at as do_date', 
                 'do.source_type',
-                DB::raw('COALESCE(wd.name, "Perishable") as division_name')
+                DB::raw('COALESCE(wd.name, "Perishable") as division_name'),
+                DB::raw('COALESCE(o.nama_outlet, o_ro.nama_outlet) as outlet_name'),
+                DB::raw('COALESCE(wo.name, wo_ro.name) as warehouse_outlet_name')
             )
             ->limit(20)
             ->get();
