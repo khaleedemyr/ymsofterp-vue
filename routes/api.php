@@ -423,6 +423,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-internal-use-waste/store-and-submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'storeAndSubmit']);
         Route::post('/outlet-internal-use-waste/{id}/submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'submit']);
         Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits']);
+        Route::get('/outlet-internal-use-waste/stock', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getStock']);
         Route::get('/outlet-internal-use-waste/approvers', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovers']);
 
         // Approval-related endpoints (existing)

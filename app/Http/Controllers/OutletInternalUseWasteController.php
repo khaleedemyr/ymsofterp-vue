@@ -1670,6 +1670,55 @@ class OutletInternalUseWasteController extends Controller
         return response()->json(['units' => $units]);
     }
 
+    public function getStock(Request $request)
+    {
+        $request->validate([
+            'item_id' => 'required|integer',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer'
+        ]);
+
+        $inventoryItem = DB::table('outlet_food_inventory_items')
+            ->where('item_id', $request->item_id)
+            ->first();
+
+        if (!$inventoryItem) {
+            $itemName = DB::table('items')->where('id', $request->item_id)->value('name') ?? 'Unknown';
+            return response()->json([
+                'success' => false,
+                'message' => "Item '{$itemName}' tidak ditemukan di inventory"
+            ], 404);
+        }
+
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('id_outlet', $request->outlet_id)
+            ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
+            ->first();
+
+        if (!$stock) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Stok item tidak ditemukan untuk outlet/warehouse yang dipilih'
+            ], 404);
+        }
+
+        $item = DB::table('items')->where('id', $request->item_id)->first();
+        $unitSmall = $item?->small_unit_id ? DB::table('units')->where('id', $item->small_unit_id)->value('name') : null;
+        $unitMedium = $item?->medium_unit_id ? DB::table('units')->where('id', $item->medium_unit_id)->value('name') : null;
+        $unitLarge = $item?->large_unit_id ? DB::table('units')->where('id', $item->large_unit_id)->value('name') : null;
+
+        return response()->json([
+            'success' => true,
+            'qty_small' => $stock->qty_small ?? 0,
+            'qty_medium' => $stock->qty_medium ?? 0,
+            'qty_large' => $stock->qty_large ?? 0,
+            'unit_small' => $unitSmall,
+            'unit_medium' => $unitMedium,
+            'unit_large' => $unitLarge,
+        ]);
+    }
+
     public function items(Request $request)
     {
         $search = trim((string) $request->input('search', ''));
