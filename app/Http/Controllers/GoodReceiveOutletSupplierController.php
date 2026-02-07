@@ -36,6 +36,7 @@ class GoodReceiveOutletSupplierController extends Controller
                 'gr.warehouse_outlet_id',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name',
+                'u.avatar as received_by_avatar',
                 'ro.supplier_fo_number as ro_number',
                 'do.number as do_number',
                 'gr_ro.gr_number as ro_gr_number',
