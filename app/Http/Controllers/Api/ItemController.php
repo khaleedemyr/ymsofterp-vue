@@ -109,4 +109,29 @@ class ItemController extends Controller
 
         return response()->json(['items' => $items]);
     }
+
+    public function detail($id)
+    {
+        $item = Item::with('images')->find($id);
+        if (!$item) {
+            return response()->json(['message' => 'Item tidak ditemukan'], 404);
+        }
+
+        $images = $item->images->map(function($img) {
+            return [
+                'id' => $img->id,
+                'path' => $img->path,
+            ];
+        })->values();
+
+        return response()->json([
+            'item' => [
+                'id' => $item->id,
+                'name' => $item->name,
+                'description' => $item->description,
+                'specification' => $item->specification,
+                'images' => $images,
+            ],
+        ]);
+    }
 } 

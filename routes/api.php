@@ -207,6 +207,7 @@ Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'sear
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 Route::get('/items/search-for-pr', [ItemController::class, 'searchForPr']);
+Route::get('/items/{id}/detail', [ApiItemController::class, 'detail']);
 Route::get('/warehouse-outlets/by-outlet', function (Request $request) {
     $outlet_id = $request->get('outlet_id');
     
