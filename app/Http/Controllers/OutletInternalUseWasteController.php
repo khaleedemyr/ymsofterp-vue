@@ -70,6 +70,80 @@ class OutletInternalUseWasteController extends Controller
             ->orderByDesc('h.id')
             ->paginate($perPage)
             ->withQueryString();
+
+        // Calculate subtotal_mac per header for current page
+        $headerRows = collect($data->items());
+        $headerIds = $headerRows->pluck('id')->all();
+        if (!empty($headerIds)) {
+            $details = DB::table('outlet_internal_use_waste_details as d')
+                ->join('outlet_internal_use_waste_headers as h', 'd.header_id', '=', 'h.id')
+                ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+                ->select(
+                    'd.*',
+                    'h.outlet_id',
+                    'h.warehouse_outlet_id',
+                    'h.date',
+                    'i.small_unit_id',
+                    'i.medium_unit_id',
+                    'i.large_unit_id',
+                    'i.small_conversion_qty',
+                    'i.medium_conversion_qty'
+                )
+                ->whereIn('d.header_id', $headerIds)
+                ->get();
+
+            $subtotalPerHeader = [];
+            if ($details->isNotEmpty()) {
+                $itemIds = $details->pluck('item_id')->unique()->all();
+                $inventoryItems = DB::table('outlet_food_inventory_items')
+                    ->whereIn('item_id', $itemIds)
+                    ->get()
+                    ->keyBy('item_id');
+
+                $macCache = [];
+                foreach ($details as $detail) {
+                    $inventoryItem = $inventoryItems->get($detail->item_id);
+                    if (!$inventoryItem) {
+                        continue;
+                    }
+
+                    $macKey = $inventoryItem->id . '_' . $detail->outlet_id . '_' . $detail->warehouse_outlet_id . '_' . $detail->date;
+                    if (!array_key_exists($macKey, $macCache)) {
+                        $macRow = DB::table('outlet_food_inventory_cost_histories')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('id_outlet', $detail->outlet_id)
+                            ->where('warehouse_outlet_id', $detail->warehouse_outlet_id)
+                            ->where('date', '<=', $detail->date)
+                            ->orderByDesc('date')
+                            ->orderByDesc('id')
+                            ->first();
+                        $macCache[$macKey] = $macRow ? $macRow->mac : null;
+                    }
+
+                    $mac = $macCache[$macKey];
+                    $macConverted = null;
+                    if ($mac !== null) {
+                        $macConverted = $mac;
+                        if ($detail->unit_id == $detail->medium_unit_id && $detail->small_conversion_qty > 0) {
+                            $macConverted = $mac * $detail->small_conversion_qty;
+                        } elseif ($detail->unit_id == $detail->large_unit_id && $detail->small_conversion_qty > 0 && $detail->medium_conversion_qty > 0) {
+                            $macConverted = $mac * $detail->small_conversion_qty * $detail->medium_conversion_qty;
+                        }
+                    }
+
+                    $subtotal = $macConverted !== null ? ($macConverted * $detail->qty) : 0;
+                    if (!isset($subtotalPerHeader[$detail->header_id])) {
+                        $subtotalPerHeader[$detail->header_id] = 0;
+                    }
+                    $subtotalPerHeader[$detail->header_id] += $subtotal;
+                }
+            }
+
+            $data->getCollection()->transform(function ($row) use ($subtotalPerHeader) {
+                $row->subtotal_mac = $subtotalPerHeader[$row->id] ?? 0;
+                return $row;
+            });
+        }
         
         // Get approval flows for each header
         $headerIds = collect($data->items())->pluck('id')->toArray();
