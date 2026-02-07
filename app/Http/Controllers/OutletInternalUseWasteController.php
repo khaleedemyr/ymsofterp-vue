@@ -1630,6 +1630,33 @@ class OutletInternalUseWasteController extends Controller
         return response()->json(['units' => $units]);
     }
 
+    public function items(Request $request)
+    {
+        $search = trim((string) $request->input('search', ''));
+        $limit = (int) $request->input('limit', 20);
+        if ($limit <= 0) {
+            $limit = 20;
+        }
+        if ($limit > 50) {
+            $limit = 50;
+        }
+
+        $query = DB::table('items')
+            ->where('status', 'active')
+            ->select('id', 'name', 'sku');
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+
+        $items = $query->orderBy('name')->limit($limit)->get();
+
+        return response()->json($items);
+    }
+
     public function report(Request $request)
     {
         $from = $request->input('from');
