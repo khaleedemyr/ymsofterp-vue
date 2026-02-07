@@ -991,11 +991,13 @@ class OutletFoodGoodReceiveController extends Controller
             ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
             ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
             // Join untuk RO Supplier GR
             ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
             ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
             ->leftJoin('food_floor_orders as fo_ro', 'po.source_id', '=', 'fo_ro.id')
             ->leftJoin('warehouse_outlets as wo_ro', 'fo_ro.warehouse_outlet_id', '=', 'wo_ro.id')
+            ->leftJoin('tbl_data_outlet as o_ro', 'fo_ro.id_outlet', '=', 'o_ro.id_outlet')
             ->select(
                 'do.id as do_id', 'do.number as do_number', 'do.packing_list_id', 'do.floor_order_id',
                 'do.source_type', 'do.ro_supplier_gr_id',
@@ -1007,6 +1009,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'gr_ro.gr_number as ro_gr_number',
                 'fo_ro.order_number as ro_floor_order_number', 'fo_ro.tanggal as ro_floor_order_date', 'fo_ro.description as ro_floor_order_desc',
                 'fo_ro.warehouse_outlet_id as ro_warehouse_outlet_id', 'wo_ro.name as ro_warehouse_outlet_name',
+                DB::raw('COALESCE(o.nama_outlet, o_ro.nama_outlet) as outlet_name'),
                 // Data PO untuk source type dan outlet
                 'po.id as po_id', 'po.number as po_number', 'po.source_type as po_source_type'
             )
