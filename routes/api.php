@@ -40,6 +40,8 @@ use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
+use App\Http\Controllers\OutletFoodGoodReceiveController;
+use App\Http\Middleware\ApprovalAppAuth;
 
 
 // Test route for approvers
@@ -179,6 +181,22 @@ Route::middleware('auth')->group(function () {
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::middleware('auth')->get('/user', [AuthController::class, 'user']);
+});
+
+Route::prefix('approval-app')->group(function () {
+    Route::post('/auth/login', [AuthController::class, 'login']);
+
+    Route::middleware([ApprovalAppAuth::class])->group(function () {
+        Route::get('/auth/me', [AuthController::class, 'user']);
+        Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+        Route::get('/outlet-food-good-receives', [OutletFoodGoodReceiveController::class, 'apiIndex']);
+        Route::get('/outlet-food-good-receives/available-dos', [OutletFoodGoodReceiveController::class, 'availableDOs']);
+        Route::get('/outlet-food-good-receives/do-detail/{doId}', [OutletFoodGoodReceiveController::class, 'doDetail']);
+        Route::get('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'apiShow']);
+        Route::post('/outlet-food-good-receives', [OutletFoodGoodReceiveController::class, 'store']);
+        Route::delete('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'destroy']);
+    });
 });
 
 Route::get('/quotes/{dayOfYear}', [QuoteController::class, 'getQuoteByDay']);

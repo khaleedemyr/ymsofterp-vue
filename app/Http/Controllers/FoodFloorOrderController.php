@@ -687,6 +687,10 @@ class FoodFloorOrderController extends Controller
             return ($item->qty ?? 0) * ($item->price ?? 0);
         });
 
+        $order->has_packing_list = \DB::table('food_packing_lists')
+            ->where('food_floor_order_id', $order->id)
+            ->exists();
+
         return response()->json($order);
     }
 

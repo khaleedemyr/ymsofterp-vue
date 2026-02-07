@@ -10,6 +10,120 @@ use Illuminate\Support\Facades\DB;
 
 class OutletFoodGoodReceiveController extends Controller
 {
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $query = DB::table('outlet_food_good_receives as gr')
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'gr.created_by', '=', 'u.id')
+            ->whereNull('gr.deleted_at')
+            ->select(
+                'gr.id',
+                'gr.number',
+                'gr.receive_date',
+                'gr.status',
+                'gr.outlet_id',
+                'o.nama_outlet as outlet_name',
+                'gr.delivery_order_id',
+                'do.number as delivery_order_number',
+                'do.source_type',
+                'gr.warehouse_outlet_id',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+                'gr.created_at'
+            );
+
+        if ($user && $user->id_outlet != 1) {
+            $query->where('gr.outlet_id', $user->id_outlet);
+        }
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('gr.number', 'like', "%$search%")
+                    ->orWhere('do.number', 'like', "%$search%")
+                    ->orWhere('o.nama_outlet', 'like', "%$search%")
+                    ->orWhere('wo.name', 'like', "%$search%");
+            });
+        }
+        if ($request->from) {
+            $query->whereDate('gr.receive_date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('gr.receive_date', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->input('per_page', 20);
+        $goodReceives = $query->orderBy('gr.created_at', 'desc')
+            ->paginate($perPage)
+            ->appends($request->all());
+
+        return response()->json($goodReceives);
+    }
+
+    public function apiShow($id)
+    {
+        $header = DB::table('outlet_food_good_receives as gr')
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->select(
+                'gr.*',
+                'o.nama_outlet as outlet_name',
+                'do.number as delivery_order_number',
+                'do.floor_order_id',
+                'do.packing_list_id'
+            )
+            ->where('gr.id', $id)
+            ->first();
+
+        if (!$header) {
+            return response()->json(['success' => false, 'message' => 'Good Receive tidak ditemukan'], 404);
+        }
+
+        $details = DB::table('outlet_food_good_receive_items as gri')
+            ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+            ->leftJoin('delivery_order_items as doi', function($join) {
+                $join->on('doi.delivery_order_id', '=', 'gr.delivery_order_id')
+                    ->on('doi.item_id', '=', 'gri.item_id');
+            })
+            ->select(
+                'gri.*',
+                'i.name as item_name',
+                'u.name as unit_name',
+                DB::raw('COALESCE(MAX(doi.qty_packing_list), gri.qty) as qty_do')
+            )
+            ->where('gri.outlet_food_good_receive_id', $id)
+            ->groupBy(
+                'gri.id', 'gri.outlet_food_good_receive_id', 'gri.item_id', 'gri.unit_id',
+                'gri.qty', 'gri.received_qty', 'gri.remaining_qty', 'gri.receive_date',
+                'gri.created_at', 'gri.updated_at', 'i.name', 'u.name'
+            )
+            ->get();
+
+        $deliveryOrder = null;
+        if ($header && $header->delivery_order_id) {
+            $deliveryOrder = DB::table('delivery_orders as do')
+                ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+                ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->select(
+                    'do.id as do_id', 'do.number as do_number',
+                    'fo.order_number as floor_order_number', 'fo.tanggal as floor_order_date', 'fo.description as floor_order_desc',
+                    'pl.packing_number', 'pl.reason as packing_reason'
+                )
+                ->where('do.id', $header->delivery_order_id)
+                ->first();
+        }
+
+        return response()->json([
+            'goodReceive' => $header,
+            'details' => $details,
+            'deliveryOrder' => $deliveryOrder,
+        ]);
+    }
+
     public function index(Request $request)
     {
         $user = auth()->user();
