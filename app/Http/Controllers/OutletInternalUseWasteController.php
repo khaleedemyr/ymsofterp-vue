@@ -1360,11 +1360,12 @@ class OutletInternalUseWasteController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show($id, Request $request)
     {
         $header = DB::table('outlet_internal_use_waste_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
-            ->select('h.*', 'o.nama_outlet as outlet_name')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'wo.name as warehouse_outlet_name')
             ->where('h.id', $id)
             ->first();
         if (!$header) {
@@ -1376,6 +1377,14 @@ class OutletInternalUseWasteController extends Controller
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->where('d.header_id', $id)
             ->get();
+
+        if ($request->wantsJson() || $request->header('Accept') == 'application/json') {
+            return response()->json([
+                'data' => $header,
+                'items' => $details,
+            ]);
+        }
+
         return inertia('OutletInternalUseWaste/Show', [
             'id' => $id,
             'header' => $header,
