@@ -118,6 +118,14 @@ class OutletInternalUseWasteController extends Controller
                 ->get();
         }
         
+        // Return JSON if API request
+        if ($request->wantsJson() || $request->header('Accept') == 'application/json') {
+            return response()->json([
+                'data' => $data,
+                'outlets' => $outlets,
+                'filters' => $request->only(['search', 'outlet_id', 'type', 'date_from', 'date_to', 'per_page'])
+            ]);
+        }
         return inertia('OutletInternalUseWaste/Index', [
             'data' => $data,
             'outlets' => $outlets,

@@ -298,7 +298,6 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/announcement/{id}', [AnnouncementController::class, 'update'])->name('announcement.update');
     Route::delete('/announcement/{id}', [AnnouncementController::class, 'destroy'])->name('announcement.destroy');
     Route::resource('categories', CategoryController::class);
-    Route::put('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
     Route::resource('chart-of-accounts', App\Http\Controllers\ChartOfAccountController::class);
     // API endpoint for COA dropdown used by Non Food Payment form
     Route::get('/api/chart-of-accounts/dropdown', [App\Http\Controllers\ChartOfAccountController::class, 'dropdown'])->name('chart-of-accounts.dropdown');
@@ -306,8 +305,7 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('jurnal', App\Http\Controllers\JurnalController::class);
     Route::post('jurnal/{id}/post', [App\Http\Controllers\JurnalController::class, 'post'])->name('jurnal.post');
     Route::post('jurnal/{id}/cancel', [App\Http\Controllers\JurnalController::class, 'cancel'])->name('jurnal.cancel');
-    Route::patch('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update']);
-    Route::post('/categories/{id}', [App\Http\Controllers\CategoryController::class, 'update'])->name('categories.update');
+    
     Route::patch('/categories/{id}/toggle-status', [CategoryController::class, 'toggleStatus'])->name('categories.toggle-status');
 
     // Master Report routes
@@ -380,7 +378,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/purchase-requisitions/print-preview', [\App\Http\Controllers\PurchaseRequisitionController::class, 'printPreview'])->name('purchase-requisitions.print-preview')->middleware('auth');
 Route::get('/api/purchase-requisitions/pending-approvals', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPendingApprovals'])->name('purchase-requisitions.pending-approvals')->middleware('auth');
 Route::get('/api/purchase-requisitions/{id}/approval-details', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovalDetails'])->name('purchase-requisitions.approval-details')->middleware('auth');
-Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPaymentTracker'])->name('purchase-requisitions.payment-tracker')->middleware('auth');
+Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getPaymentTracker'])->middleware('auth');
 
     // PR Tracking Report (must be before resource routes)
     Route::get('/purchase-requisitions/tracking-report', function() {
