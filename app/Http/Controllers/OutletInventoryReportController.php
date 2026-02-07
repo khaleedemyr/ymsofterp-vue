@@ -770,6 +770,199 @@ class OutletInventoryReportController extends Controller
         ]);
     }
 
+    /**
+     * API: Stock card list for Approval App
+     */
+    public function apiStockCard(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'error' => 'Unauthorized. Silakan login terlebih dahulu.'
+            ], 401);
+        }
+
+        $itemId = $request->input('item_id');
+        $outletId = $request->input('outlet_id');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+
+        $now = now();
+        $from = $request->input('from', $now->copy()->startOfMonth()->format('Y-m-d'));
+        $to = $request->input('to', $now->copy()->endOfMonth()->format('Y-m-d'));
+
+        if (!$itemId) {
+            return response()->json([
+                'error' => 'Item ID harus diisi'
+            ], 400);
+        }
+
+        if ($user->id_outlet != 1) {
+            if ($outletId && $user->id_outlet != $outletId) {
+                return response()->json([
+                    'error' => 'Anda tidak memiliki akses untuk outlet ini.'
+                ], 403);
+            }
+
+            if (!$outletId) {
+                $outletId = $user->id_outlet;
+            }
+
+            if ($warehouseOutletId) {
+                $warehouseOutlet = DB::table('warehouse_outlets')
+                    ->where('id', $warehouseOutletId)
+                    ->select('outlet_id')
+                    ->first();
+                if ($warehouseOutlet && (int) $warehouseOutlet->outlet_id !== (int) $outletId) {
+                    return response()->json([
+                        'error' => 'Anda tidak memiliki akses untuk warehouse outlet ini.'
+                    ], 403);
+                }
+            }
+        }
+
+        $saldoQuery = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->where('i.id', $itemId)
+            ->whereDate('c.date', '<', $from)
+            ->select(
+                'c.saldo_qty_small',
+                'c.saldo_qty_medium',
+                'c.saldo_qty_large',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name'
+            );
+
+        if ($outletId) {
+            $saldoQuery->where('c.id_outlet', $outletId);
+        }
+        if ($warehouseOutletId) {
+            $saldoQuery->where('c.warehouse_outlet_id', $warehouseOutletId);
+        }
+
+        $saldoQuery->orderByDesc('c.date')->orderByDesc('c.id');
+        $last = $saldoQuery->first();
+
+        if ($last) {
+            $saldoAwal = [
+                'small' => $last->saldo_qty_small ?? 0,
+                'medium' => $last->saldo_qty_medium ?? 0,
+                'large' => $last->saldo_qty_large ?? 0,
+                'small_unit_name' => $last->small_unit_name ?? '',
+                'medium_unit_name' => $last->medium_unit_name ?? '',
+                'large_unit_name' => $last->large_unit_name ?? '',
+            ];
+        } else {
+            $unitQuery = DB::table('items as i')
+                ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+                ->where('i.id', $itemId)
+                ->select('us.name as small_unit_name', 'um.name as medium_unit_name', 'ul.name as large_unit_name')
+                ->first();
+
+            $saldoAwal = [
+                'small' => 0,
+                'medium' => 0,
+                'large' => 0,
+                'small_unit_name' => $unitQuery->small_unit_name ?? '',
+                'medium_unit_name' => $unitQuery->medium_unit_name ?? '',
+                'large_unit_name' => $unitQuery->large_unit_name ?? '',
+            ];
+        }
+
+        $query = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->leftJoin('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('i.id', $itemId)
+            ->whereDate('c.date', '>=', $from)
+            ->whereDate('c.date', '<=', $to)
+            ->select(
+                'c.id',
+                'c.date',
+                'i.id as item_id',
+                'i.name as item_name',
+                'o.id_outlet',
+                'o.nama_outlet as outlet_name',
+                'c.in_qty_small',
+                'c.in_qty_medium',
+                'c.in_qty_large',
+                'c.out_qty_small',
+                'c.out_qty_medium',
+                'c.out_qty_large',
+                'c.value_in',
+                'c.value_out',
+                'c.saldo_value',
+                'c.saldo_qty_small',
+                'c.saldo_qty_medium',
+                'c.saldo_qty_large',
+                'c.reference_type',
+                'c.reference_id',
+                'c.description',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'wo.name as warehouse_outlet_name',
+                'c.warehouse_outlet_id'
+            );
+
+        if ($outletId) {
+            $query->where('o.id_outlet', $outletId);
+        }
+        if ($warehouseOutletId) {
+            $query->where('c.warehouse_outlet_id', $warehouseOutletId);
+        }
+
+        $query->orderBy('c.date')->orderBy('c.id');
+        $data = $query->get();
+
+        return response()->json([
+            'cards' => $data->toArray(),
+            'saldo_awal' => $saldoAwal,
+            'count' => $data->count()
+        ]);
+    }
+
+    /**
+     * API: Stock card items list for Approval App
+     */
+    public function apiStockCardItems(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'error' => 'Unauthorized. Silakan login terlebih dahulu.'
+            ], 401);
+        }
+
+        $search = $request->input('search');
+        $limit = (int) $request->input('limit', 200);
+        $limit = max(1, min($limit, 500));
+
+        $query = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name');
+
+        if ($search) {
+            $query->where('items.name', 'like', "%{$search}%");
+        }
+
+        return response()->json($query->limit($limit)->get());
+    }
+
     public function inventoryValueReport(Request $request)
     {
         $user = auth()->user();

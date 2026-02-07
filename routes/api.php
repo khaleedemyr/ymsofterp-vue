@@ -326,6 +326,14 @@ Route::prefix('approval-app')->group(function () {
             \App\Http\Controllers\OutletInventoryReportController::class,
             'apiStockCardDetail'
         ]);
+        Route::get('/outlet-inventory/stock-card', [
+            \App\Http\Controllers\OutletInventoryReportController::class,
+            'apiStockCard'
+        ]);
+        Route::get('/outlet-inventory/stock-card/items', [
+            \App\Http\Controllers\OutletInventoryReportController::class,
+            'apiStockCardItems'
+        ]);
         Route::get('/outlet-inventory/warehouse-outlets', [
             \App\Http\Controllers\OutletInventoryReportController::class,
             'apiWarehouseOutlets'
