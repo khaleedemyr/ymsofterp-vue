@@ -217,6 +217,7 @@ Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'sear
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 Route::get('/items/search-for-pr', [ItemController::class, 'searchForPr']);
+Route::get('/items/search-for-outlet-stock-adjustment', [ItemController::class, 'searchForOutletStockAdjustment']);
 Route::get('/items/{id}/detail', [ApiItemController::class, 'detail']);
 Route::get('/warehouse-outlets/by-outlet', function (Request $request) {
     $outlet_id = $request->get('outlet_id');
@@ -315,6 +316,28 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/floor-orders/{id}', [FoodFloorOrderController::class, 'destroy']);
         Route::post('/floor-orders/{id}/submit', [FoodFloorOrderController::class, 'submit']);
         Route::get('/floor-orders/{id}/export-pdf', [FoodFloorOrderController::class, 'exportPdf']);
+
+        // Outlet Stock Adjustment (Approval App)
+        Route::get('/outlet-food-inventory-adjustments', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'apiIndex'
+        ]);
+        Route::get('/outlet-food-inventory-adjustments/{id}', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'apiShow'
+        ]);
+        Route::post('/outlet-food-inventory-adjustments', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'apiStore'
+        ]);
+        Route::get('/outlet-food-inventory-adjustment/warehouse-outlets', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'getWarehouseOutlets'
+        ]);
+        Route::get('/outlet-food-inventory-adjustment/approvers', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'getApprovers'
+        ]);
         
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');

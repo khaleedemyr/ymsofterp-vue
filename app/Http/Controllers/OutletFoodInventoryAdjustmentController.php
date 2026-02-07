@@ -128,6 +128,268 @@ class OutletFoodInventoryAdjustmentController extends Controller
         return response()->json($warehouse_outlets);
     }
 
+    /**
+     * API: List outlet stock adjustments (Approval App)
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $query = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as creator', 'adj.created_by', '=', 'creator.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'creator.nama_lengkap as creator_name',
+                'creator.avatar as creator_avatar'
+            );
+
+        if ($user->id_outlet != 1) {
+            $query->where('adj.id_outlet', $user->id_outlet);
+        } elseif ($request->outlet_id) {
+            $query->where('adj.id_outlet', $request->outlet_id);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('adj.number', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('creator.nama_lengkap', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->from) {
+            $query->whereDate('adj.date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('adj.date', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->input('per_page', 10);
+        $adjustments = $query->orderByDesc('adj.date')->paginate($perPage);
+
+        return response()->json($adjustments);
+    }
+
+    /**
+     * API: Show outlet stock adjustment detail (Approval App)
+     */
+    public function apiShow($id)
+    {
+        $adjustment = DB::table('outlet_food_inventory_adjustments as adj')
+            ->leftJoin('tbl_data_outlet as o', 'adj.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'adj.created_by', '=', 'u.id')
+            ->leftJoin('warehouse_outlets as wo', 'adj.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'adj.*',
+                'o.nama_outlet',
+                'u.nama_lengkap as creator_nama_lengkap',
+                'u.avatar as creator_avatar',
+                'wo.name as warehouse_outlet_name',
+                'wo.id as warehouse_outlet_id'
+            )
+            ->where('adj.id', $id)
+            ->first();
+
+        if (!$adjustment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Adjustment not found'
+            ], 404);
+        }
+
+        $items = DB::table('outlet_food_inventory_adjustment_items as i')
+            ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+            ->select('i.*', 'it.name as item_name')
+            ->where('i.adjustment_id', $id)
+            ->get();
+
+        $approvalFlows = DB::table('outlet_food_inventory_adjustment_approval_flows as af')
+            ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->select(
+                'af.*',
+                'u.id as approver_id',
+                'u.nik',
+                'u.nama_lengkap',
+                'u.email',
+                'j.id_jabatan',
+                'j.nama_jabatan'
+            )
+            ->where('af.adjustment_id', $id)
+            ->orderBy('af.approval_level', 'asc')
+            ->get();
+
+        $currentApprover = null;
+        $currentUserId = auth()->id();
+        if ($currentUserId) {
+            $currentApprover = DB::table('outlet_food_inventory_adjustment_approval_flows')
+                ->where('adjustment_id', $id)
+                ->where('approver_id', $currentUserId)
+                ->where('status', 'PENDING')
+                ->first();
+        }
+
+        return response()->json([
+            'success' => true,
+            'adjustment' => $adjustment,
+            'items' => $items,
+            'approval_flows' => $approvalFlows,
+            'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
+        ]);
+    }
+
+    /**
+     * API: Store outlet stock adjustment (Approval App)
+     */
+    public function apiStore(Request $request)
+    {
+        try {
+            $request->validate([
+                'date' => 'required|date',
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
+                'type' => 'required|in:in,out',
+                'reason' => 'required|string',
+                'items' => 'required|array|min:1',
+                'items.*.item_id' => 'required|exists:items,id',
+                'items.*.qty' => 'required|numeric|min:0.0001',
+                'items.*.selected_unit' => 'required|string',
+                'items.*.note' => 'nullable|string',
+                'approvers' => 'required|array|min:1',
+                'approvers.*' => 'required|exists:users,id'
+            ]);
+
+            $userId = Auth::id() ?? auth()->id();
+            if (!$userId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User tidak terautentikasi. Silakan login ulang.'
+                ], 401);
+            }
+
+            DB::beginTransaction();
+
+            $status = 'waiting_approval';
+            $number = $this->generateAdjustmentNumber();
+
+            $headerId = DB::table('outlet_food_inventory_adjustments')->insertGetId([
+                'number' => $number,
+                'date' => $request->date,
+                'id_outlet' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                'type' => $request->type,
+                'reason' => $request->reason,
+                'status' => $status,
+                'created_by' => $userId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            foreach ($request->items as $itemIndex => $item) {
+                if (empty($item['item_id'])) {
+                    throw new \Exception("Item ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                }
+                if (empty($item['qty']) || $item['qty'] <= 0) {
+                    throw new \Exception("Quantity harus lebih dari 0 untuk item ke-" . ($itemIndex + 1));
+                }
+                if (empty($item['selected_unit'])) {
+                    throw new \Exception("Unit tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                }
+
+                $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
+                if (!$itemMaster) {
+                    throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                }
+
+                $itemInserted = DB::table('outlet_food_inventory_adjustment_items')->insert([
+                    'adjustment_id' => $headerId,
+                    'item_id' => $item['item_id'],
+                    'qty' => $item['qty'],
+                    'unit' => $item['selected_unit'],
+                    'note' => $item['note'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if (!$itemInserted) {
+                    throw new \Exception("Gagal menyimpan item ke-" . ($itemIndex + 1));
+                }
+            }
+
+            foreach ($request->approvers as $index => $approverId) {
+                if (empty($approverId)) {
+                    throw new \Exception("Approver ID tidak boleh kosong untuk approver ke-" . ($index + 1));
+                }
+
+                $approverExists = DB::table('users')->where('id', $approverId)->exists();
+                if (!$approverExists) {
+                    throw new \Exception("Approver dengan ID {$approverId} tidak ditemukan untuk approver ke-" . ($index + 1));
+                }
+
+                $flowInserted = DB::table('outlet_food_inventory_adjustment_approval_flows')->insert([
+                    'adjustment_id' => $headerId,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if (!$flowInserted) {
+                    throw new \Exception("Gagal menyimpan approval flow untuk approver ke-" . ($index + 1));
+                }
+            }
+
+            try {
+                $this->sendNotificationToNextApprover($headerId);
+            } catch (\Exception $notifError) {
+                \Log::warning('OutletFoodInventoryAdjustment apiStore - Notification failed:', [
+                    'header_id' => $headerId,
+                    'error' => $notifError->getMessage()
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Outlet stock adjustment berhasil dibuat',
+                'id' => $headerId,
+                'number' => $number,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('OutletFoodInventoryAdjustment apiStore - Error:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat outlet stock adjustment: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function store(Request $request)
     {
         \Log::info('OutletFoodInventoryAdjustment store method called with data:', $request->all());
