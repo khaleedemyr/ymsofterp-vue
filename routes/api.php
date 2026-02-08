@@ -314,6 +314,13 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/internal-warehouse-transfers/{id}', [InternalWarehouseTransferController::class, 'apiShow']);
         Route::post('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiStore']);
 
+        // Retail Food (Approval App - Outlet Retail Food)
+        Route::get('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiIndex']);
+        Route::get('/retail-food/create-data', [\App\Http\Controllers\RetailFoodController::class, 'apiCreateData']);
+        Route::get('/retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
+        Route::get('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'apiShow']);
+        Route::post('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiStore']);
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);

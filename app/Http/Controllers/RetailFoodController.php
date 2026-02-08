@@ -1504,4 +1504,129 @@ class RetailFoodController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * API: List retail food for mobile app (approval-app)
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet;
+
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $paymentMethod = $request->get('payment_method', '');
+        $perPage = (int) $request->get('per_page', 20);
+
+        $query = RetailFood::query()
+            ->with(['outlet', 'creator', 'items', 'supplier'])
+            ->leftJoin('warehouse_outlets as wo', 'retail_food.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('suppliers as s', 'retail_food.supplier_id', '=', 's.id')
+            ->addSelect('retail_food.*', 'wo.name as warehouse_outlet_name', 's.name as supplier_name')
+            ->orderByDesc('retail_food.created_at');
+
+        if ($userOutletId != 1) {
+            $query->where('retail_food.outlet_id', $userOutletId);
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('retail_food.retail_number', 'like', "%{$search}%")
+                    ->orWhere('s.name', 'like', "%{$search}%")
+                    ->orWhere('wo.name', 'like', "%{$search}%")
+                    ->orWhereHas('outlet', function ($outletQuery) use ($search) {
+                        $outletQuery->where('nama_outlet', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('retail_food.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('retail_food.transaction_date', '<=', $dateTo);
+        }
+        if ($paymentMethod) {
+            $query->where('retail_food.payment_method', $paymentMethod);
+        }
+
+        $retailFoods = $query->paginate($perPage)->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'data' => $retailFoods,
+        ]);
+    }
+
+    /**
+     * API: Create form data for mobile app (outlets, warehouse_outlets, suppliers)
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+
+        if ($user->id_outlet == 1) {
+            $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        } else {
+            $outlets = Outlet::where('id_outlet', $user->id_outlet)->where('status', 'A')->get(['id_outlet', 'nama_outlet']);
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $user->id_outlet)
+                ->where('status', 'active')
+                ->select('id', 'name', 'outlet_id')
+                ->orderBy('name')
+                ->get();
+        }
+
+        $suppliers = DB::table('suppliers')
+            ->where('status', 'active')
+            ->select('id', 'name', 'code')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'warehouse_outlets' => $warehouse_outlets,
+            'suppliers' => $suppliers,
+            'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * API: Show single retail food for mobile app
+     */
+    public function apiShow($id)
+    {
+        $retailFood = RetailFood::with(['outlet', 'creator', 'items', 'invoices', 'supplier'])->findOrFail($id);
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $retailFood->outlet_id != $user->id_outlet) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $warehouseName = $retailFood->warehouse_outlet_id
+            ? DB::table('warehouse_outlets')->where('id', $retailFood->warehouse_outlet_id)->value('name')
+            : null;
+        $data = $retailFood->toArray();
+        $data['warehouse_outlet_name'] = $warehouseName;
+
+        return response()->json([
+            'success' => true,
+            'retail_food' => $data,
+        ]);
+    }
+
+    /**
+     * API: Store retail food from mobile app (delegates to store())
+     */
+    public function apiStore(Request $request)
+    {
+        return $this->store($request);
+    }
 } 
