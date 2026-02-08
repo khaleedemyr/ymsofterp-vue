@@ -2297,40 +2297,6 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Get approvers for search (for AJAX)
-     * Menampilkan semua user aktif tanpa filter outlet
-     */
-    public function getApprovers(Request $request)
-    {
-        $search = $request->get('search', '');
-        
-        $usersQuery = DB::table('users')
-            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
-            ->where('users.status', 'A');
-        
-        // Tidak ada filter outlet - tampilkan semua user aktif
-        if ($search) {
-            $usersQuery->where(function($query) use ($search) {
-                $query->where('users.nama_lengkap', 'like', "%{$search}%")
-                      ->orWhere('users.email', 'like', "%{$search}%")
-                      ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
-            });
-        }
-        
-        $users = $usersQuery->select(
-                'users.id', 
-                'users.nama_lengkap as name', 
-                'users.email',
-                'tbl_data_jabatan.nama_jabatan as jabatan'
-            )
-            ->orderBy('users.nama_lengkap')
-            ->limit(20)
-            ->get();
-        
-        return response()->json(['success' => true, 'users' => $users]);
-    }
-
-    /**
      * Get pending approvals for current user
      */
     public function getPendingApprovals()
