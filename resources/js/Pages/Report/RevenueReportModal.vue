@@ -2,7 +2,10 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40" @click.self="$emit('close')">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn overflow-y-auto print-modal" style="max-height: 90vh;" id="revenue-report-modal">
       <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
-      <button @click="printModal" class="absolute top-4 right-16 text-gray-400 hover:text-blue-600 text-2xl font-bold" title="Print PDF">
+      <button @click="exportToExcel" class="absolute top-4 right-16 text-gray-400 hover:text-green-600 text-2xl font-bold" title="Export to Excel">
+        <i class="fa-solid fa-file-excel"></i>
+      </button>
+      <button @click="printModal" class="absolute top-4 right-24 text-gray-400 hover:text-blue-600 text-2xl font-bold" title="Print PDF">
         <i class="fa-solid fa-print"></i>
       </button>
       <div class="text-center mb-4">
@@ -163,6 +166,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
+import ExcelJS from 'exceljs';
 const props = defineProps({
   tanggal: String,
   orders: Array,
@@ -373,6 +377,176 @@ function formatDateIndo(dateStr) {
   if (isNaN(d)) return dateStr;
   return `${d.getDate().toString().padStart(2, '0')} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
 }
+function formatNumberForExcel(val) {
+  if (val == null || val === '') return 0;
+  const num = Number(val);
+  return isNaN(num) ? 0 : num;
+}
+
+const headerFill = {
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: { argb: 'FF2563EB' }
+};
+const headerFont = { bold: true, color: { argb: 'FFFFFFFF' } };
+const sectionFont = { bold: true, size: 12 };
+
+function styleHeaderRow(ws, rowIndex) {
+  const row = ws.getRow(rowIndex);
+  row.eachCell((cell) => {
+    cell.fill = headerFill;
+    cell.font = headerFont;
+    cell.alignment = { vertical: 'middle' };
+  });
+}
+
+async function exportToExcel() {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Revenue Report', { views: [{ showGridLines: true }] });
+
+  let rowNum = 1;
+
+  // Title
+  ws.getCell(rowNum, 1).value = 'Revenue Report';
+  ws.getCell(rowNum, 1).font = { bold: true, size: 16 };
+  rowNum += 1;
+
+  ws.getCell(rowNum, 1).value = 'Tanggal';
+  ws.getCell(rowNum, 2).value = props.tanggal || '';
+  rowNum += 1;
+
+  if (outletName.value) {
+    ws.getCell(rowNum, 1).value = 'Outlet';
+    ws.getCell(rowNum, 2).value = outletName.value;
+    rowNum += 1;
+  }
+  rowNum += 1;
+
+  // Section: Ringkasan
+  ws.getCell(rowNum, 1).value = 'Ringkasan';
+  ws.getCell(rowNum, 1).font = sectionFont;
+  rowNum += 1;
+
+  const summaryData = [
+    ['Total Sales', formatNumberForExcel(totalSales.value)],
+    ['Total Cash', formatNumberForExcel(totalCash.value)],
+    ['Total Pengeluaran', formatNumberForExcel(totalExpenses.value)],
+    ['Nilai Setor Cash', formatNumberForExcel(nilaiSetorCash.value)]
+  ];
+  summaryData.forEach(([label, value]) => {
+    ws.getCell(rowNum, 1).value = label;
+    ws.getCell(rowNum, 2).value = value;
+    ws.getCell(rowNum, 2).numFmt = '#,##0';
+    rowNum += 1;
+  });
+  rowNum += 1;
+
+  // Section: Breakdown by Payment Method
+  ws.getCell(rowNum, 1).value = 'Breakdown by Payment Method';
+  ws.getCell(rowNum, 1).font = sectionFont;
+  rowNum += 1;
+
+  ws.getRow(rowNum).values = [null, 'Metode Pembayaran', 'Payment Type', 'Total'];
+  styleHeaderRow(ws, rowNum);
+  rowNum += 1;
+
+  Object.entries(paymentBreakdown.value).forEach(([paymode, total]) => {
+    const paymentTypes = paymentTypeBreakdown.value[paymode] || {};
+    const typeEntries = Object.entries(paymentTypes);
+    if (typeEntries.length === 0) {
+      ws.getRow(rowNum).values = [null, paymode || '-', '-', formatNumberForExcel(total)];
+      ws.getCell(rowNum, 3).numFmt = '#,##0';
+      rowNum += 1;
+    } else {
+      typeEntries.forEach(([ptype, ptotal], idx) => {
+        ws.getRow(rowNum).values = [null, idx === 0 ? (paymode || '-') : '', ptype || '-', formatNumberForExcel(ptotal)];
+        ws.getCell(rowNum, 3).numFmt = '#,##0';
+        rowNum += 1;
+      });
+    }
+  });
+  rowNum += 1;
+
+  // Section: Pengeluaran Bahan Baku
+  ws.getCell(rowNum, 1).value = 'Pengeluaran Bahan Baku';
+  ws.getCell(rowNum, 1).font = sectionFont;
+  rowNum += 1;
+
+  const retailFood = expenses.value.retail_food || [];
+  if (retailFood.length === 0) {
+    ws.getCell(rowNum, 1).value = 'Tidak ada pengeluaran bahan baku.';
+    rowNum += 1;
+  } else {
+    ws.getRow(rowNum).values = [null, 'No', 'Item', 'Qty', 'Harga', 'Subtotal'];
+    styleHeaderRow(ws, rowNum);
+    rowNum += 1;
+    retailFood.forEach(trx => {
+      (trx.items || []).forEach((item, i) => {
+        ws.getRow(rowNum).values = [null, i === 0 ? trx.retail_number : '', item.item_name, formatNumberForExcel(item.qty), formatNumberForExcel(item.harga_barang), formatNumberForExcel(item.subtotal)];
+        ws.getCell(rowNum, 4).numFmt = '#,##0';
+        ws.getCell(rowNum, 5).numFmt = '#,##0';
+        ws.getCell(rowNum, 6).numFmt = '#,##0';
+        rowNum += 1;
+      });
+    });
+  }
+  rowNum += 1;
+
+  // Section: Pengeluaran Non Bahan Baku
+  ws.getCell(rowNum, 1).value = 'Pengeluaran Non Bahan Baku';
+  ws.getCell(rowNum, 1).font = sectionFont;
+  rowNum += 1;
+
+  const retailNonFood = expenses.value.retail_non_food || [];
+  if (retailNonFood.length === 0) {
+    ws.getCell(rowNum, 1).value = 'Tidak ada pengeluaran non bahan baku.';
+    rowNum += 1;
+  } else {
+    ws.getRow(rowNum).values = [null, 'No', 'Divisi/Kategori', 'Item', 'Qty', 'Unit', 'Harga', 'Subtotal'];
+    styleHeaderRow(ws, rowNum);
+    rowNum += 1;
+    retailNonFood.forEach(trx => {
+      const divName = (trx.budget_info && trx.budget_info.division_name) ? trx.budget_info.division_name : '';
+      const catName = (trx.budget_info && trx.budget_info.category_name) ? trx.budget_info.category_name : '';
+      const catInfo = (divName + ' - ' + catName).trim() || '-';
+      (trx.items || []).forEach((item, i) => {
+        ws.getRow(rowNum).values = [null, i === 0 ? trx.retail_number : '', i === 0 ? catInfo : '', item.item_name, formatNumberForExcel(item.qty), item.unit || '', formatNumberForExcel(item.price), formatNumberForExcel(item.subtotal)];
+        ws.getCell(rowNum, 5).numFmt = '#,##0';
+        ws.getCell(rowNum, 7).numFmt = '#,##0';
+        ws.getCell(rowNum, 8).numFmt = '#,##0';
+        rowNum += 1;
+      });
+    });
+  }
+
+  // Column widths
+  ws.getColumn(1).width = 8;
+  ws.getColumn(2).width = 22;
+  ws.getColumn(3).width = 28;
+  ws.getColumn(4).width = 14;
+  ws.getColumn(5).width = 14;
+  ws.getColumn(6).width = 10;
+  ws.getColumn(7).width = 14;
+  ws.getColumn(8).width = 14;
+
+  // Filename: Revenue_Report_<outlet>_<date>.xlsx
+  const safeDate = (props.tanggal || '').replace(/[/\\?*\[\]:]/g, '-').slice(0, 30) || 'report';
+  const safeOutlet = (outletName.value || '')
+    .replace(/[/\\?*\[\]:"]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 40) || '';
+  const filename = (safeOutlet ? 'Revenue_Report_' + safeOutlet + '_' + safeDate : 'Revenue_Report_' + safeDate) + '.xlsx';
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function printModal() {
   setTimeout(() => {
     const modalContent = document.getElementById('revenue-report-modal');
