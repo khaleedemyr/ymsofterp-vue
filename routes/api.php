@@ -336,18 +336,18 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-food-return/{id}', [\App\Http\Controllers\OutletFoodReturnController::class, 'apiShow']);
         Route::post('/outlet-food-return', [\App\Http\Controllers\OutletFoodReturnController::class, 'store']);
 
-        // Outlet Stock Opname (Approval App)
+        // Outlet Stock Opname (Approval App) — route statis dulu, {id} terakhir dengan constraint numerik
         Route::get('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'apiIndex']);
         Route::get('/stock-opnames/create-data', [\App\Http\Controllers\StockOpnameController::class, 'apiCreateData']);
         Route::get('/stock-opnames/get-inventory-items', [\App\Http\Controllers\StockOpnameController::class, 'apiGetInventoryItems']);
         Route::get('/stock-opnames/approvers', [\App\Http\Controllers\StockOpnameController::class, 'getApprovers']);
-        Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiShow']);
+        Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::post('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'apiStore']);
-        Route::put('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiUpdate']);
-        Route::delete('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'destroy']);
-        Route::post('/stock-opnames/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'apiSubmitForApproval']);
-        Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'apiApprove']);
-        Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'apiProcess']);
+        Route::put('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'destroy'])->where('id', '[0-9]+');
+        Route::post('/stock-opnames/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'apiSubmitForApproval'])->where('id', '[0-9]+');
+        Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'apiApprove'])->where('id', '[0-9]+');
+        Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'apiProcess'])->where('id', '[0-9]+');
 
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
