@@ -360,6 +360,9 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-transfers/{id}/approve', [OutletTransferController::class, 'apiApprove']);
         Route::get('/outlet-transfer/approvers', [OutletTransferController::class, 'getApprovers']);
 
+        // Report Invoice Outlet (Approval App - Laporan Invoice Outlet)
+        Route::get('/report-invoice-outlet', [\App\Http\Controllers\OutletPaymentController::class, 'apiReportInvoiceOutlet']);
+
         // Floor Order (Approval App)
         Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
         Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);

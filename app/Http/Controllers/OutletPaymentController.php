@@ -1313,12 +1313,27 @@ class OutletPaymentController extends Controller
 
     public function reportInvoiceOutlet(Request $request)
     {
+        $payload = $this->getReportInvoiceOutletPayload($request);
+        return Inertia::render('OutletPayment/ReportInvoiceOutlet', $payload);
+    }
+
+    /**
+     * API: Laporan Invoice Outlet (untuk mobile app)
+     * Response JSON dengan struktur sama seperti reportInvoiceOutlet.
+     */
+    public function apiReportInvoiceOutlet(Request $request)
+    {
+        $payload = $this->getReportInvoiceOutletPayload($request);
+        return response()->json(array_merge(['success' => true], $payload));
+    }
+
+    /**
+     * Build payload untuk Report Invoice Outlet (dipakai web Inertia dan API JSON).
+     */
+    protected function getReportInvoiceOutletPayload(Request $request)
+    {
         $user = auth()->user();
-        
-        // Ambil daftar outlet untuk filter
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        
-        // Ambil daftar RO Mode untuk filter (dari food_floor_orders yang memiliki GR)
         $roModes = DB::table('food_floor_orders as ffo')
             ->join('delivery_orders as do', 'ffo.id', '=', 'do.floor_order_id')
             ->join('outlet_food_good_receives as gr', 'do.id', '=', 'gr.delivery_order_id')
@@ -1329,25 +1344,23 @@ class OutletPaymentController extends Controller
             ->select('ffo.fo_mode as value')
             ->orderBy('ffo.fo_mode')
             ->get()
-            ->map(function($item) {
+            ->map(function ($item) {
                 return ['id' => $item->value, 'name' => $item->value];
             });
-        
-        // Cek apakah ada filter yang diterapkan
-        $hasFilters = $request->filled('search') || $request->filled('from') || $request->filled('to') || 
-                      ($user->id_outlet == 1 && $request->filled('outlet_id')) ||
-                      ($user->id_outlet != 1) ||
-                      $request->filled('fo_mode') ||
-                      $request->filled('transaction_type');
-        
-        // Jika tidak ada filter, return dengan data kosong
+
+        $hasFilters = $request->filled('search') || $request->filled('from') || $request->filled('to') ||
+            ($user->id_outlet == 1 && $request->filled('outlet_id')) ||
+            ($user->id_outlet != 1) ||
+            $request->filled('fo_mode') ||
+            $request->filled('transaction_type');
+
         if (!$hasFilters) {
-            return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
-                'data' => collect([]),
+            return [
+                'data' => [],
                 'pagination' => [
                     'current_page' => 1,
                     'last_page' => 1,
-                    'per_page' => (int) ($request->input('per_page', 15)),
+                    'per_page' => (int) $request->input('per_page', 15),
                     'total' => 0,
                     'from' => null,
                     'to' => null,
@@ -1358,10 +1371,9 @@ class OutletPaymentController extends Controller
                 'filters' => $request->only(['search', 'from', 'to', 'outlet_id', 'fo_mode', 'transaction_type', 'per_page']),
                 'user_id_outlet' => $user->id_outlet,
                 'hasFilters' => false,
-            ]);
+            ];
         }
-        
-        // Query untuk GR (Good Receive) - langsung dari tabel GR tanpa outlet_payments
+
         $grQuery = DB::table('outlet_food_good_receives as gr')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'gr.created_by', '=', 'u.id')
@@ -1372,11 +1384,11 @@ class OutletPaymentController extends Controller
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->whereNull('gr.deleted_at')
-            ->where('gr.status', 'completed') // Hanya GR yang sudah completed
+            ->where('gr.status', 'completed')
             ->select(
                 'gr.id as gr_id',
                 'gr.number as gr_number',
-                'gr.created_at as invoice_date', // Tgl invoice dari created_at GR
+                'gr.created_at as invoice_date',
                 'gr.receive_date as gr_receive_date',
                 'gr.notes as gr_notes',
                 'o.id_outlet',
@@ -1391,20 +1403,19 @@ class OutletPaymentController extends Controller
                 DB::raw('NULL as payment_number'),
                 DB::raw('NULL as payment_total')
             );
-            
-        // Query untuk RWS (Retail Warehouse Sales) - langsung dari tabel RWS tanpa outlet_payments
+
         $rwsQuery = DB::table('retail_warehouse_sales as rws')
             ->join('customers as c', 'rws.customer_id', '=', 'c.id')
             ->join('tbl_data_outlet as o', 'c.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'rws.created_by', '=', 'u.id')
             ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->where('rws.status', 'completed') // Hanya RWS yang sudah completed
-            ->where('c.type', 'branch') // Hanya customer branch
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
             ->select(
                 'rws.id as gr_id',
                 'rws.number as gr_number',
-                'rws.created_at as invoice_date', // Tgl invoice dari created_at RWS
+                'rws.created_at as invoice_date',
                 'rws.sale_date as gr_receive_date',
                 'rws.notes as gr_notes',
                 'o.id_outlet',
@@ -1419,71 +1430,50 @@ class OutletPaymentController extends Controller
                 DB::raw('NULL as payment_number'),
                 'rws.total_amount as payment_total'
             );
-            
-        // Filter outlet untuk GR query
+
         if ($user->id_outlet != 1) {
-            // Non-superuser: otomatis filter berdasarkan outlet mereka
             $grQuery->where('gr.outlet_id', $user->id_outlet);
         } elseif ($request->filled('outlet_id')) {
-            // Superuser: filter berdasarkan outlet yang dipilih
             $grQuery->where('gr.outlet_id', $request->outlet_id);
         }
-        
-        // Filter outlet untuk RWS query
         if ($user->id_outlet != 1) {
-            // Non-superuser: otomatis filter berdasarkan outlet mereka
             $rwsQuery->where('c.id_outlet', $user->id_outlet);
         } elseif ($request->filled('outlet_id')) {
-            // Superuser: filter berdasarkan outlet yang dipilih
             $rwsQuery->where('c.id_outlet', $request->outlet_id);
         }
-        
-        // Filter tanggal untuk GR query
         if ($request->from) {
             $grQuery->whereDate('gr.created_at', '>=', $request->from);
         }
         if ($request->to) {
             $grQuery->whereDate('gr.created_at', '<=', $request->to);
         }
-        
-        // Filter tanggal untuk RWS query
         if ($request->from) {
             $rwsQuery->whereDate('rws.created_at', '>=', $request->from);
         }
         if ($request->to) {
             $rwsQuery->whereDate('rws.created_at', '<=', $request->to);
         }
-        
-        // Search untuk GR query
         if ($request->search) {
             $search = $request->search;
-            $grQuery->where(function($q) use ($search) {
+            $grQuery->where(function ($q) use ($search) {
                 $q->where('gr.number', 'like', "%$search%")
-                  ->orWhere('o.nama_outlet', 'like', "%$search%")
-                  ->orWhere('u.nama_lengkap', 'like', "%$search%");
+                    ->orWhere('o.nama_outlet', 'like', "%$search%")
+                    ->orWhere('u.nama_lengkap', 'like', "%$search%");
             });
         }
-        
-        // Search untuk RWS query
         if ($request->search) {
             $search = $request->search;
-            $rwsQuery->where(function($q) use ($search) {
+            $rwsQuery->where(function ($q) use ($search) {
                 $q->where('rws.number', 'like', "%$search%")
-                  ->orWhere('o.nama_outlet', 'like', "%$search%")
-                  ->orWhere('u.nama_lengkap', 'like', "%$search%")
-                  ->orWhere('c.name', 'like', "%$search%");
+                    ->orWhere('o.nama_outlet', 'like', "%$search%")
+                    ->orWhere('u.nama_lengkap', 'like', "%$search%")
+                    ->orWhere('c.name', 'like', "%$search%");
             });
         }
-        
-        // Filter FO Mode untuk GR query (hanya berlaku untuk transaksi GR)
         if ($request->filled('fo_mode')) {
             $grQuery->where('ffo.fo_mode', $request->fo_mode);
         }
-        
-        // Filter transaction type
         $transactionType = $request->input('transaction_type');
-        
-        // Gabungkan kedua query dan order by
         if ($transactionType === 'GR') {
             $data = $grQuery->get()->sortByDesc('invoice_date')->values();
         } elseif ($transactionType === 'RWS') {
@@ -1491,39 +1481,16 @@ class OutletPaymentController extends Controller
         } else {
             $data = $grQuery->union($rwsQuery)->get()->sortByDesc('invoice_date')->values();
         }
-        
-        // Pagination
-        $perPageInput = $request->input('per_page', 15);
-        $currentPageInput = $request->input('page', 1);
-        
-        // Handle array input (take first element if array)
-        $perPage = is_array($perPageInput) ? (int) ($perPageInput[0] ?? 15) : (int) $perPageInput;
-        $currentPage = is_array($currentPageInput) ? (int) ($currentPageInput[0] ?? 1) : (int) $currentPageInput;
-        
-        // Ensure minimum values
+
+        $perPage = is_array($request->input('per_page')) ? (int) ($request->input('per_page')[0] ?? 15) : (int) $request->input('per_page', 15);
+        $currentPage = is_array($request->input('page')) ? (int) ($request->input('page')[0] ?? 1) : (int) $request->input('page', 1);
         $perPage = max(1, $perPage);
         $currentPage = max(1, $currentPage);
-        
-        // Convert collection to paginated collection
         $total = $data->count();
         $items = $data->slice(($currentPage - 1) * $perPage, $perPage)->values();
-        
-        // Create paginator manually
-        $paginatedData = new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $currentPage,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-        
-        // Ambil detail item per GR dan RWS
+        $paginatedData = new \Illuminate\Pagination\LengthAwarePaginator($items, $total, $perPage, $currentPage, ['path' => $request->url(), 'query' => $request->query()]);
+
         $details = [];
-        
-        // Detail untuk GR items (gunakan paginated data untuk efisiensi)
         $grIds = collect($paginatedData->items())->where('transaction_type', 'GR')->pluck('gr_id')->unique()->values();
         if ($grIds->count()) {
             $grItemRows = DB::table('outlet_food_good_receive_items as gri')
@@ -1531,66 +1498,42 @@ class OutletPaymentController extends Controller
                 ->join('units as u', 'gri.unit_id', '=', 'u.id')
                 ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                 ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as ffoi', function($join) {
-                    $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')
-                         ->on('gri.item_id', '=', 'ffoi.item_id');
+                ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                    $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')->on('gri.item_id', '=', 'ffoi.item_id');
                 })
                 ->whereIn('gri.outlet_food_good_receive_id', $grIds)
                 ->whereNull('gr.deleted_at')
-                ->select(
-                    'gri.outlet_food_good_receive_id as gr_id',
-                    'i.name as item_name',
-                    'gri.received_qty as qty',
-                    'u.name as unit_name',
-                    DB::raw('COALESCE(ffoi.price, 0) as price'),
-                    DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal')
-                )
+                ->select('gri.outlet_food_good_receive_id as gr_id', 'i.name as item_name', 'gri.received_qty as qty', 'u.name as unit_name', DB::raw('COALESCE(ffoi.price, 0) as price'), DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'))
                 ->get();
             foreach ($grItemRows as $row) {
                 $details[$row->gr_id][] = $row;
             }
         }
-        
-        // Detail untuk RWS items (gunakan paginated data untuk efisiensi)
         $rwsIds = collect($paginatedData->items())->where('transaction_type', 'RWS')->pluck('gr_id')->unique()->values();
         if ($rwsIds->count()) {
             $rwsItemRows = DB::table('retail_warehouse_sale_items as rwsi')
                 ->join('items as i', 'rwsi.item_id', '=', 'i.id')
                 ->whereIn('rwsi.retail_warehouse_sale_id', $rwsIds)
-                ->select(
-                    'rwsi.retail_warehouse_sale_id as gr_id',
-                    'i.name as item_name',
-                    'rwsi.qty as qty',
-                    'rwsi.unit as unit_name',
-                    'rwsi.price as price',
-                    'rwsi.subtotal as subtotal'
-                )
+                ->select('rwsi.retail_warehouse_sale_id as gr_id', 'i.name as item_name', 'rwsi.qty as qty', 'rwsi.unit as unit_name', 'rwsi.price as price', 'rwsi.subtotal as subtotal')
                 ->get();
             foreach ($rwsItemRows as $row) {
                 $details[$row->gr_id][] = $row;
             }
         }
-        
-        // Update payment_total untuk GR berdasarkan total items (hanya untuk data yang di-paginate)
+
         $paginatedItems = collect($paginatedData->items());
         $dataArray = [];
-        
         foreach ($paginatedItems as $row) {
-            // Convert to array first
             $rowData = (array) $row;
-            
-            // Update payment_total untuk GR dari detail items
             if ($rowData['transaction_type'] === 'GR') {
                 if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
                     $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
                 } else {
-                    // Jika tidak ada detail items, coba hitung langsung dari database
                     $grTotal = DB::table('outlet_food_good_receive_items as gri')
                         ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                         ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                        ->join('food_floor_order_items as ffoi', function($join) {
-                            $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')
-                                 ->on('gri.item_id', '=', 'ffoi.item_id');
+                        ->join('food_floor_order_items as ffoi', function ($join) {
+                            $join->on('do.floor_order_id', '=', 'ffoi.floor_order_id')->on('gri.item_id', '=', 'ffoi.item_id');
                         })
                         ->where('gri.outlet_food_good_receive_id', $rowData['gr_id'])
                         ->whereNull('gr.deleted_at')
@@ -1598,28 +1541,20 @@ class OutletPaymentController extends Controller
                     $rowData['payment_total'] = $grTotal ?: 0;
                 }
             }
-            
-            // Pastikan RWS juga punya payment_total yang valid
             if ($rowData['transaction_type'] === 'RWS') {
-                // payment_total sudah diambil dari rws.total_amount di query
                 if (!isset($rowData['payment_total']) || $rowData['payment_total'] === null) {
-                    // Jika tidak ada, ambil dari total items
                     if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
                         $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
                     } else {
-                        // Fallback: hitung dari database
-                        $rwsTotal = DB::table('retail_warehouse_sale_items')
-                            ->where('retail_warehouse_sale_id', $rowData['gr_id'])
-                            ->sum('subtotal');
+                        $rwsTotal = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $rowData['gr_id'])->sum('subtotal');
                         $rowData['payment_total'] = $rwsTotal ?: 0;
                     }
                 }
             }
-            
             $dataArray[] = $rowData;
         }
-        
-        return Inertia::render('OutletPayment/ReportInvoiceOutlet', [
+
+        return [
             'data' => $dataArray,
             'pagination' => [
                 'current_page' => $paginatedData->currentPage(),
@@ -1639,7 +1574,7 @@ class OutletPaymentController extends Controller
             'filters' => $request->only(['search', 'from', 'to', 'outlet_id', 'fo_mode', 'transaction_type', 'per_page']),
             'user_id_outlet' => $user->id_outlet,
             'hasFilters' => true,
-        ]);
+        ];
     }
 
     public function exportInvoiceOutlet(Request $request)
