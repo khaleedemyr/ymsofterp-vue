@@ -489,6 +489,7 @@ class OutletFoodReturnController extends Controller
                 'o.nama_outlet',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as created_by_name',
+                'u.avatar as created_by_avatar',
                 'ofr.created_at'
             )
             ->orderByDesc('ofr.created_at');

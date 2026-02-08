@@ -1225,6 +1225,587 @@ class StockOpnameController extends Controller
         }
     }
 
+    // ==================== API for Mobile App (approval-app) ====================
+
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+        $outletId = $request->get('outlet_id', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $perPage = (int) $request->get('per_page', 20);
+        $page = (int) $request->get('page', 1);
+
+        $query = StockOpname::with([
+            'outlet:id_outlet,nama_outlet',
+            'warehouseOutlet:id,name',
+            'creator:id,nama_lengkap,avatar'
+        ])->orderBy('created_at', 'desc');
+
+        if ($user->id_outlet != 1) {
+            $query->where('outlet_id', $user->id_outlet);
+        }
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('opname_number', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%");
+            });
+        }
+        if ($status && $status !== 'all') {
+            $query->where('status', $status);
+        }
+        if ($outletId) {
+            if ($user->id_outlet != 1 && $outletId != $user->id_outlet) {
+                $outletId = $user->id_outlet;
+            }
+            $query->where('outlet_id', $outletId);
+        }
+        if ($dateFrom) {
+            $query->whereDate('opname_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('opname_date', '<=', $dateTo);
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $items = $paginator->getCollection()->map(function ($so) {
+            $arr = $so->toArray();
+            $arr['outlet'] = $so->outlet ? ['id_outlet' => $so->outlet->id_outlet, 'nama_outlet' => $so->outlet->nama_outlet] : null;
+            $arr['warehouse_outlet'] = $so->warehouseOutlet ? ['id' => $so->warehouseOutlet->id, 'name' => $so->warehouseOutlet->name] : null;
+            $arr['creator'] = $so->creator ? ['id' => $so->creator->id, 'nama_lengkap' => $so->creator->nama_lengkap, 'avatar' => $so->creator->avatar] : null;
+            return $arr;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $items,
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+        $outletsQuery = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet');
+        if ($user->id_outlet != 1) {
+            $outletsQuery->where('id_outlet', $user->id_outlet);
+        }
+        $outlets = $outletsQuery->get();
+
+        $warehouseOutletsQuery = DB::table('warehouse_outlets')
+            ->where('status', 'active')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name');
+        if ($user->id_outlet != 1) {
+            $warehouseOutletsQuery->where('outlet_id', $user->id_outlet);
+        }
+        $warehouseOutlets = $warehouseOutletsQuery->get();
+
+        $usersQuery = DB::table('users')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'active')
+            ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
+        if ($user->id_outlet != 1) {
+            $usersQuery->where('users.id_outlet', $user->id_outlet);
+        }
+        $users = $usersQuery->get()->map(function ($u) {
+            return ['id' => $u->id, 'nama_lengkap' => $u->nama_lengkap, 'email' => $u->email ?? '', 'jabatan' => $u->jabatan ?? ''];
+        });
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'warehouse_outlets' => $warehouseOutlets,
+            'users' => $users,
+            'user_outlet_id' => $user->id_outlet ?? null,
+        ]);
+    }
+
+    public function apiGetInventoryItems(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
+        ]);
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $user->id_outlet != $request->outlet_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+        $items = $this->getInventoryItems($request->outlet_id, $request->warehouse_outlet_id);
+        return response()->json($items);
+    }
+
+    public function apiShow($id)
+    {
+        $stockOpname = StockOpname::with([
+            'outlet:id_outlet,nama_outlet',
+            'warehouseOutlet:id,name',
+            'creator:id,nama_lengkap,avatar',
+            'items.inventoryItem.item:id,name,sku',
+            'items.inventoryItem.item.category:id,name',
+            'items.inventoryItem.item.smallUnit:id,name',
+            'items.inventoryItem.item.mediumUnit:id,name',
+            'items.inventoryItem.item.largeUnit:id,name',
+            'approvalFlows.approver:id,nama_lengkap,email,avatar',
+        ])->find($id);
+
+        if (!$stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $canApprove = false;
+        $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->orderBy('approval_level')->first();
+        if ($pendingFlow && $pendingFlow->approver_id == $user->id) {
+            $canApprove = true;
+        }
+        if ($user->id_role === '5af56935b011a') {
+            $canApprove = true;
+        }
+
+        $usersQuery = DB::table('users')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->where('users.status', 'active')
+            ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
+        if ($user->id_outlet != 1) {
+            $usersQuery->where('users.id_outlet', $user->id_outlet);
+        }
+        $users = $usersQuery->get()->map(function ($u) {
+            return ['id' => $u->id, 'nama_lengkap' => $u->nama_lengkap, 'email' => $u->email ?? '', 'jabatan' => $u->jabatan ?? ''];
+        });
+
+        $approvers = $stockOpname->approvalFlows()
+            ->with('approver:id,nama_lengkap,email')
+            ->orderBy('approval_level')
+            ->get()
+            ->map(function ($f) {
+                return [
+                    'approval_level' => $f->approval_level,
+                    'status' => $f->status,
+                    'approver_id' => $f->approver_id,
+                    'approver_name' => $f->approver->nama_lengkap ?? '',
+                    'approver_email' => $f->approver->email ?? '',
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'stock_opname' => $stockOpname,
+            'can_approve' => $canApprove,
+            'pending_flow' => $pendingFlow,
+            'users' => $users,
+            'approvers' => $approvers,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->merge(['autosave' => false]);
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'nullable|integer',
+            'opname_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.inventory_item_id' => 'required|integer',
+            'items.*.qty_physical_small' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_large' => 'nullable|numeric|min:0',
+            'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
+        ]);
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1) {
+            if ($user->id_outlet != $validated['outlet_id']) {
+                return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk outlet ini.'], 403);
+            }
+            $validated['outlet_id'] = $user->id_outlet;
+        }
+
+        try {
+            DB::beginTransaction();
+            $opnameNumber = $this->generateOpnameNumber();
+            $stockOpname = StockOpname::create([
+                'opname_number' => $opnameNumber,
+                'outlet_id' => $validated['outlet_id'],
+                'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
+                'opname_date' => $validated['opname_date'],
+                'status' => 'DRAFT',
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => $user->id,
+            ]);
+
+            $items = $validated['items'];
+            $inventoryItemIds = array_column($items, 'inventory_item_id');
+            $stocks = [];
+            if (!empty($inventoryItemIds)) {
+                $stocksQuery = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->where('id_outlet', $validated['outlet_id'])
+                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_id'])
+                    ->get();
+                foreach ($stocksQuery as $stock) {
+                    $stocks[$stock->inventory_item_id] = $stock;
+                }
+            }
+
+            $itemsToInsert = [];
+            foreach ($items as $itemData) {
+                $inventoryItemId = $itemData['inventory_item_id'];
+                $stock = $stocks[$inventoryItemId] ?? null;
+                if (!$stock) continue;
+
+                $qtySystemSmall = $stock->qty_small ?? 0;
+                $qtySystemMedium = $stock->qty_medium ?? 0;
+                $qtySystemLarge = $stock->qty_large ?? 0;
+                $mac = $stock->last_cost_small ?? 0;
+
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
+
+                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $valueAdjustment = $qtyDiffSmall * $mac;
+
+                $itemsToInsert[] = [
+                    'stock_opname_id' => $stockOpname->id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small' => $qtyPhysicalSmall,
+                    'qty_physical_medium' => $qtyPhysicalMedium,
+                    'qty_physical_large' => $qtyPhysicalLarge,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $itemData['reason'] ?? null,
+                    'mac_before' => $mac,
+                    'mac_after' => $mac,
+                    'value_adjustment' => $valueAdjustment,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            if (!empty($itemsToInsert)) {
+                StockOpnameItem::insert($itemsToInsert);
+            }
+
+            if (isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    StockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Stock opname berhasil dibuat', 'id' => $stockOpname->id]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Gagal membuat stock opname: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $stockOpname = StockOpname::find($id);
+        if (!$stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+        if ($stockOpname->status !== 'DRAFT') {
+            return response()->json(['success' => false, 'message' => 'Hanya dapat edit jika status DRAFT'], 422);
+        }
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'nullable|integer',
+            'opname_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.inventory_item_id' => 'required|integer',
+            'items.*.qty_physical_small' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_large' => 'nullable|numeric|min:0',
+            'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
+        ]);
+
+        if ($user->id_outlet != 1) {
+            $validated['outlet_id'] = $user->id_outlet;
+        }
+
+        try {
+            DB::beginTransaction();
+            $stockOpname->update([
+                'outlet_id' => $validated['outlet_id'],
+                'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
+                'opname_date' => $validated['opname_date'],
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            $existingItems = $stockOpname->items()->get()->keyBy('inventory_item_id');
+            $items = $validated['items'];
+            $inventoryItemIds = array_column($items, 'inventory_item_id');
+            $stocks = [];
+            if (!empty($inventoryItemIds)) {
+                $stocksQuery = DB::table('outlet_food_inventory_stocks')
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->where('id_outlet', $validated['outlet_id'])
+                    ->where('warehouse_outlet_id', $validated['warehouse_outlet_id'])
+                    ->get();
+                foreach ($stocksQuery as $stock) {
+                    $stocks[$stock->inventory_item_id] = $stock;
+                }
+            }
+
+            $itemsToInsert = [];
+            $inventoryItemIdsToKeep = [];
+            foreach ($items as $itemData) {
+                $inventoryItemId = $itemData['inventory_item_id'];
+                $inventoryItemIdsToKeep[] = $inventoryItemId;
+                $stock = $stocks[$inventoryItemId] ?? null;
+                if (!$stock) continue;
+
+                $qtySystemSmall = $stock->qty_small ?? 0;
+                $qtySystemMedium = $stock->qty_medium ?? 0;
+                $qtySystemLarge = $stock->qty_large ?? 0;
+                $mac = $stock->last_cost_small ?? 0;
+                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
+                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
+                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
+                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $valueAdjustment = $qtyDiffSmall * $mac;
+
+                $itemDataToSave = [
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small' => $qtyPhysicalSmall,
+                    'qty_physical_medium' => $qtyPhysicalMedium,
+                    'qty_physical_large' => $qtyPhysicalLarge,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $itemData['reason'] ?? null,
+                    'mac_before' => $mac,
+                    'mac_after' => $mac,
+                    'value_adjustment' => $valueAdjustment,
+                ];
+
+                if ($existingItems->has($inventoryItemId)) {
+                    $existingItems[$inventoryItemId]->update($itemDataToSave);
+                } else {
+                    $itemsToInsert[] = [
+                        'stock_opname_id' => $stockOpname->id,
+                        'inventory_item_id' => $inventoryItemId,
+                        ...$itemDataToSave,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+            }
+            $stockOpname->items()->whereNotIn('inventory_item_id', $inventoryItemIdsToKeep)->delete();
+            if (!empty($itemsToInsert)) {
+                StockOpnameItem::insert($itemsToInsert);
+            }
+
+            if (isset($validated['approvers']) && is_array($validated['approvers']) && count($validated['approvers']) > 0) {
+                $stockOpname->approvalFlows()->delete();
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    StockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Stock opname berhasil di-update']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Gagal update: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function apiSubmitForApproval(Request $request, $id)
+    {
+        $stockOpname = StockOpname::find($id);
+        if (!$stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+        if (!$stockOpname->canBeSubmitted()) {
+            return response()->json(['success' => false, 'message' => 'Pastikan status DRAFT dan ada items'], 422);
+        }
+        $validated = $request->validate([
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ]);
+        try {
+            DB::beginTransaction();
+            $stockOpname->approvalFlows()->delete();
+            foreach ($validated['approvers'] as $index => $approverId) {
+                StockOpnameApprovalFlow::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                ]);
+            }
+            $stockOpname->update(['status' => 'SUBMITTED']);
+            $this->sendNotificationToNextApprover($stockOpname);
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Berhasil submit untuk approval']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiApprove(Request $request, $id)
+    {
+        $stockOpname = StockOpname::with('approvalFlows')->find($id);
+        if (!$stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+        $user = auth()->user();
+        $validated = $request->validate([
+            'action' => 'required|in:approve,reject',
+            'comments' => 'nullable|string',
+        ]);
+        $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->where('approver_id', $user->id)->orderBy('approval_level')->first();
+        if (!$pendingFlow && $user->id_role === '5af56935b011a') {
+            $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->orderBy('approval_level')->first();
+        }
+        if (!$pendingFlow) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki approval yang pending'], 403);
+        }
+        try {
+            DB::beginTransaction();
+            if ($validated['action'] === 'approve') {
+                $pendingFlow->approve($validated['comments'] ?? null);
+                $allApproved = $stockOpname->approvalFlows()->where('status', 'PENDING')->count() === 0;
+                if ($allApproved) {
+                    $stockOpname->update(['status' => 'APPROVED']);
+                } else {
+                    $this->sendNotificationToNextApprover($stockOpname);
+                }
+            } else {
+                $pendingFlow->reject($validated['comments'] ?? null);
+                $stockOpname->update(['status' => 'REJECTED']);
+            }
+            DB::commit();
+            return response()->json(['success' => true, 'message' => $validated['action'] === 'approve' ? 'Berhasil di-approve' : 'Telah di-reject']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiProcess($id)
+    {
+        $stockOpname = StockOpname::with('items.inventoryItem')->find($id);
+        if (!$stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+        $user = auth()->user();
+        if (!$stockOpname->canBeProcessed()) {
+            return response()->json(['success' => false, 'message' => 'Stock opname belum di-approve'], 422);
+        }
+        $opnameDate = $stockOpname->opname_date instanceof \Carbon\Carbon ? $stockOpname->opname_date : \Carbon\Carbon::parse($stockOpname->opname_date);
+        $isEligible = $opnameDate->day === 1 || $opnameDate->isLastOfMonth();
+        if (!$isEligible) {
+            return response()->json(['success' => false, 'message' => 'Process hanya untuk tanggal opname akhir bulan atau tanggal 1'], 422);
+        }
+        try {
+            DB::beginTransaction();
+            foreach ($stockOpname->items as $item) {
+                if (!$item->hasDifference()) continue;
+                $inventoryItemId = $item->inventory_item_id;
+                $outletId = $stockOpname->outlet_id;
+                $warehouseOutletId = $stockOpname->warehouse_outlet_id;
+                $stock = DB::table('outlet_food_inventory_stocks')->where('inventory_item_id', $inventoryItemId)->where('id_outlet', $outletId)->where('warehouse_outlet_id', $warehouseOutletId)->first();
+                if (!$stock) continue;
+                $mac = $item->mac_before;
+                $qtyDiffSmall = $item->qty_diff_small;
+                $qtyDiffMedium = $item->qty_diff_medium;
+                $qtyDiffLarge = $item->qty_diff_large;
+                $newQtySmall = $stock->qty_small + $qtyDiffSmall;
+                $newQtyMedium = $stock->qty_medium + $qtyDiffMedium;
+                $newQtyLarge = $stock->qty_large + $qtyDiffLarge;
+                $valueAdjustment = $item->value_adjustment;
+                $newValue = $stock->value + $valueAdjustment;
+                DB::table('outlet_food_inventory_stocks')->where('id', $stock->id)->update([
+                    'qty_small' => $newQtySmall, 'qty_medium' => $newQtyMedium, 'qty_large' => $newQtyLarge,
+                    'value' => $newValue, 'updated_at' => now(),
+                ]);
+                $lastCard = DB::table('outlet_food_inventory_cards')->where('inventory_item_id', $inventoryItemId)->where('id_outlet', $outletId)->where('warehouse_outlet_id', $warehouseOutletId)->orderByDesc('date')->orderByDesc('id')->first();
+                $saldoQtySmall = $lastCard ? $lastCard->saldo_qty_small + $qtyDiffSmall : $newQtySmall;
+                $saldoQtyMedium = $lastCard ? $lastCard->saldo_qty_medium + $qtyDiffMedium : $newQtyMedium;
+                $saldoQtyLarge = $lastCard ? $lastCard->saldo_qty_large + $qtyDiffLarge : $newQtyLarge;
+                $saldoValue = $lastCard ? $lastCard->saldo_value + $valueAdjustment : $newValue;
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
+                    'date' => $stockOpname->opname_date, 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
+                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0, 'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0, 'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0, 'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0, 'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                    'cost_per_small' => $mac, 'cost_per_medium' => $stock->last_cost_medium ?? 0, 'cost_per_large' => $stock->last_cost_large ?? 0,
+                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0, 'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                    'saldo_qty_small' => $saldoQtySmall, 'saldo_qty_medium' => $saldoQtyMedium, 'saldo_qty_large' => $saldoQtyLarge, 'saldo_value' => $saldoValue,
+                    'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'), 'created_at' => now(), 'updated_at' => now(),
+                ]);
+                DB::table('outlet_food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
+                    'date' => $stockOpname->opname_date, 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+                StockOpnameAdjustment::create([
+                    'stock_opname_id' => $stockOpname->id, 'stock_opname_item_id' => $item->id, 'inventory_item_id' => $inventoryItemId,
+                    'outlet_id' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
+                    'qty_diff_small' => $qtyDiffSmall, 'qty_diff_medium' => $qtyDiffMedium, 'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $item->reason, 'mac_before' => $item->mac_before, 'mac_after' => $item->mac_after, 'value_adjustment' => $valueAdjustment,
+                    'processed_at' => now(), 'processed_by' => $user->id,
+                ]);
+            }
+            $stockOpname->update(['status' => 'COMPLETED']);
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Stock opname berhasil di-process']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     /**
      * Generate opname number
      */
