@@ -1560,8 +1560,8 @@ class OutletTransferController extends Controller
     {
         $user = auth()->user();
         $query = OutletTransfer::with([
-            'warehouseOutletFrom',
-            'warehouseOutletTo',
+            'warehouseOutletFrom.outlet',
+            'warehouseOutletTo.outlet',
             'creator',
             'outlet',
             'approver',
@@ -1606,7 +1606,14 @@ class OutletTransferController extends Controller
         $perPage = (int) $request->get('per_page', 20);
         $transfers = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
         $transfers->getCollection()->transform(function ($tr) {
-            $tr->total_items = $tr->items()->count();
+            $tr->setAttribute('total_items', $tr->items()->count());
+            // Nama outlet dari tbl_data_outlet (untuk tampilan di app)
+            $tr->setAttribute('outlet_from_nama', $tr->warehouseOutletFrom && $tr->warehouseOutletFrom->outlet
+                ? $tr->warehouseOutletFrom->outlet->nama_outlet
+                : null);
+            $tr->setAttribute('outlet_to_nama', $tr->warehouseOutletTo && $tr->warehouseOutletTo->outlet
+                ? $tr->warehouseOutletTo->outlet->nama_outlet
+                : null);
             return $tr;
         });
 
