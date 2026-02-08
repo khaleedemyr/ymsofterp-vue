@@ -455,7 +455,18 @@ Route::prefix('approval-app')->group(function () {
             \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
             'getApprovers'
         ]);
-        
+
+        // Outlet WIP Production (approval app)
+        Route::get('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'apiIndex']);
+        Route::get('/outlet-wip/create-data', [\App\Http\Controllers\OutletWIPController::class, 'apiCreateData']);
+        Route::post('/outlet-wip/bom', [\App\Http\Controllers\OutletWIPController::class, 'getBomAndStock']);
+        Route::post('/outlet-wip', [\App\Http\Controllers\OutletWIPController::class, 'store']);
+        Route::post('/outlet-wip/store-and-submit', [\App\Http\Controllers\OutletWIPController::class, 'storeAndSubmit']);
+        Route::post('/outlet-wip/{id}/submit', [\App\Http\Controllers\OutletWIPController::class, 'submit']);
+        Route::get('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'apiShow']);
+        Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy']);
+        Route::get('/outlet-wip-report', [\App\Http\Controllers\OutletWIPController::class, 'apiReport']);
+
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');
         Route::post('/device-token/unregister', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'unregister'])->name('api.approval-app.device-token.unregister');

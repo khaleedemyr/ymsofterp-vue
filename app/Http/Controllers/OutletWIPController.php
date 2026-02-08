@@ -1892,6 +1892,345 @@ class OutletWIPController extends Controller
         ]);
     }
 
+    /**
+     * API: Index data untuk mobile app (JSON).
+     */
+    public function apiIndex(Request $request)
+    {
+        $request->merge([
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+            'search' => $request->input('search'),
+            'per_page' => $request->input('per_page', 10),
+            'page' => $request->input('page', 1),
+        ]);
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        $perPage = (int) $request->input('per_page', 10);
+        $currentPage = (int) $request->input('page', 1);
+        $id_outlet = $user->id_outlet ?? null;
+
+        $queryHeaders = DB::table('outlet_wip_production_headers as h')
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->select(
+                'h.id',
+                'h.number',
+                'h.production_date',
+                'h.batch_number',
+                'h.outlet_id',
+                'h.warehouse_outlet_id',
+                'h.notes',
+                'h.status',
+                'h.created_by',
+                'h.created_at',
+                'h.updated_at',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as created_by_name',
+                DB::raw("'header' as source_type")
+            );
+        if ($id_outlet && $id_outlet != 1) {
+            $queryHeaders->where('h.outlet_id', $id_outlet);
+        }
+        if ($request->filled('date_from')) {
+            $queryHeaders->whereDate('h.production_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $queryHeaders->whereDate('h.production_date', '<=', $request->date_to);
+        }
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $queryHeaders->where(function ($q) use ($search) {
+                $q->where('h.number', 'like', "%{$search}%")
+                    ->orWhere('h.batch_number', 'like', "%{$search}%")
+                    ->orWhere('h.notes', 'like', "%{$search}%")
+                    ->orWhere('h.status', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('wo.name', 'like', "%{$search}%")
+                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+            });
+        }
+
+        $queryOld = DB::table('outlet_wip_productions as p')
+            ->leftJoin('tbl_data_outlet as o', 'p.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'p.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'p.created_by', '=', 'u.id')
+            ->whereNull('p.header_id')
+            ->select(
+                'p.id',
+                DB::raw("NULL as number"),
+                'p.production_date',
+                'p.batch_number',
+                'p.outlet_id',
+                'p.warehouse_outlet_id',
+                'p.notes',
+                DB::raw("'PROCESSED' as status"),
+                'p.created_by',
+                'p.created_at',
+                'p.updated_at',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as created_by_name',
+                DB::raw("'old' as source_type")
+            );
+        if ($id_outlet && $id_outlet != 1) {
+            $queryOld->where('p.outlet_id', $id_outlet);
+        }
+        if ($request->filled('date_from')) {
+            $queryOld->whereDate('p.production_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $queryOld->whereDate('p.production_date', '<=', $request->date_to);
+        }
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $queryOld->where(function ($q) use ($search) {
+                $q->where('p.batch_number', 'like', "%{$search}%")
+                    ->orWhere('p.notes', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('wo.name', 'like', "%{$search}%")
+                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+            });
+        }
+
+        $headersSql = $queryHeaders->toSql();
+        $headersBindings = $queryHeaders->getBindings();
+        $oldSql = $queryOld->toSql();
+        $oldBindings = $queryOld->getBindings();
+        $unionSql = "SELECT * FROM (({$headersSql}) UNION ALL ({$oldSql})) as combined_results ORDER BY production_date DESC, id DESC";
+        $allBindings = array_merge($headersBindings, $oldBindings);
+        $countSql = "SELECT COUNT(*) as total FROM (({$headersSql}) UNION ALL ({$oldSql})) as combined_results";
+        $total = DB::selectOne($countSql, $allBindings)->total ?? 0;
+        $offset = ($currentPage - 1) * $perPage;
+        $paginatedSql = $unionSql . " LIMIT {$perPage} OFFSET {$offset}";
+        $combined = collect(DB::select($paginatedSql, $allBindings));
+
+        $headerIds = $combined->where('source_type', 'header')->pluck('id')->toArray();
+        $oldIds = $combined->where('source_type', 'old')->pluck('id')->toArray();
+        $productionsByHeader = [];
+
+        if (!empty($headerIds)) {
+            $productions = DB::table('outlet_wip_productions as p')
+                ->leftJoin('items', 'p.item_id', '=', 'items.id')
+                ->leftJoin('units', 'p.unit_id', '=', 'units.id')
+                ->whereIn('p.header_id', $headerIds)
+                ->select('p.header_id', 'p.item_id', 'p.qty', 'p.qty_jadi', 'p.unit_id', 'items.name as item_name', 'units.name as unit_name')
+                ->get();
+            foreach ($productions as $prod) {
+                $productionsByHeader[$prod->header_id][] = (array) $prod;
+            }
+        }
+        if (!empty($oldIds)) {
+            $oldProductions = DB::table('outlet_wip_productions as p')
+                ->leftJoin('items', 'p.item_id', '=', 'items.id')
+                ->leftJoin('units', 'p.unit_id', '=', 'units.id')
+                ->whereIn('p.id', $oldIds)
+                ->select(DB::raw('p.id as header_id'), 'p.item_id', 'p.qty', 'p.qty_jadi', 'p.unit_id', 'items.name as item_name', 'units.name as unit_name')
+                ->get();
+            foreach ($oldProductions as $prod) {
+                $productionsByHeader[$prod->header_id][] = (array) $prod;
+            }
+        }
+
+        $data = $combined->map(function ($row) {
+            return (array) $row;
+        })->values()->all();
+
+        return response()->json([
+            'data' => $data,
+            'current_page' => $currentPage,
+            'per_page' => $perPage,
+            'total' => (int) $total,
+            'last_page' => (int) ceil($total / $perPage),
+            'productions_by_header' => $productionsByHeader,
+            'can_delete' => $canDelete,
+            'filters' => [
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'search' => $request->search,
+                'per_page' => $perPage,
+            ],
+        ]);
+    }
+
+    /**
+     * API: Create form data untuk mobile app (JSON).
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        $items = Cache::remember('outlet_wip_items', 3600, function () {
+            return DB::table('items')
+                ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+                ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+                ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.composition_type', 'composed')
+                ->where('items.status', 'active')
+                ->where('items.type', 'WIP')
+                ->where('categories.show_pos', '0')
+                ->select(
+                    'items.id',
+                    'items.name',
+                    'items.small_unit_id',
+                    'items.medium_unit_id',
+                    'items.large_unit_id',
+                    'small_unit.name as small_unit_name',
+                    'medium_unit.name as medium_unit_name',
+                    'large_unit.name as large_unit_name'
+                )
+                ->get();
+        });
+        $cacheKey = $user->id_outlet == 1 ? 'outlet_wip_warehouse_outlets_all' : 'outlet_wip_warehouse_outlets_' . $user->id_outlet;
+        $warehouse_outlets = Cache::remember($cacheKey, 3600, function () use ($user) {
+            if ($user->id_outlet == 1) {
+                return DB::table('warehouse_outlets')->where('status', 'active')->select('id', 'name', 'outlet_id')->orderBy('name')->get();
+            }
+            return DB::table('warehouse_outlets')->where('outlet_id', $user->id_outlet)->where('status', 'active')->select('id', 'name', 'outlet_id')->orderBy('name')->get();
+        });
+        $outlets = [];
+        if ($user->id_outlet == 1) {
+            $outlets = Cache::remember('outlet_wip_outlets_all', 3600, function () {
+                return DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+            });
+        }
+        return response()->json([
+            'items' => $items,
+            'warehouse_outlets' => $warehouse_outlets,
+            'outlets' => $outlets,
+            'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * API: Show detail untuk mobile app (JSON).
+     */
+    public function apiShow($id)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        $header = DB::table('outlet_wip_production_headers')->where('id', $id)->first();
+        $isOldData = false;
+        if (!$header) {
+            $oldProduction = DB::table('outlet_wip_productions')->where('id', $id)->whereNull('header_id')->first();
+            if ($oldProduction) {
+                $isOldData = true;
+                $header = (object) [
+                    'id' => $oldProduction->id,
+                    'number' => null,
+                    'production_date' => $oldProduction->production_date,
+                    'batch_number' => $oldProduction->batch_number,
+                    'outlet_id' => $oldProduction->outlet_id,
+                    'warehouse_outlet_id' => $oldProduction->warehouse_outlet_id,
+                    'notes' => $oldProduction->notes,
+                    'status' => 'PROCESSED',
+                    'created_by' => $oldProduction->created_by,
+                    'created_at' => $oldProduction->created_at,
+                    'updated_at' => $oldProduction->updated_at,
+                ];
+            } else {
+                return response()->json(['error' => 'Data produksi tidak ditemukan'], 404);
+            }
+        }
+        if ($user->id_outlet != 1 && $header->outlet_id != $user->id_outlet) {
+            return response()->json(['error' => 'Tidak memiliki akses ke data ini'], 403);
+        }
+        if ($isOldData) {
+            $productions = DB::table('outlet_wip_productions as p')
+                ->leftJoin('items', 'p.item_id', '=', 'items.id')
+                ->leftJoin('units', 'p.unit_id', '=', 'units.id')
+                ->where('p.id', $id)
+                ->select('p.*', 'items.name as item_name', 'units.name as unit_name')
+                ->get();
+        } else {
+            $productions = DB::table('outlet_wip_productions as p')
+                ->leftJoin('items', 'p.item_id', '=', 'items.id')
+                ->leftJoin('units', 'p.unit_id', '=', 'units.id')
+                ->where('p.header_id', $id)
+                ->select('p.id', 'p.header_id', 'p.item_id', 'p.qty', 'p.qty_jadi', 'p.unit_id', 'p.production_date', 'p.batch_number', 'p.outlet_id', 'p.warehouse_outlet_id', 'p.notes', 'p.created_by', 'p.created_at', 'p.updated_at', 'items.name as item_name', 'units.name as unit_name')
+                ->get();
+        }
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->first();
+        $warehouse_outlet = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->first();
+        $stockCards = DB::table('outlet_food_inventory_cards as sc')
+            ->leftJoin('outlet_food_inventory_items as inv_item', 'sc.inventory_item_id', '=', 'inv_item.id')
+            ->leftJoin('items', 'inv_item.item_id', '=', 'items.id')
+            ->where('sc.reference_type', 'outlet_wip_production')
+            ->where('sc.reference_id', $id)
+            ->select('sc.*', 'items.name as item_name')
+            ->orderBy('sc.date')->orderBy('sc.id')
+            ->get();
+        $bomData = [];
+        foreach ($productions as $prod) {
+            $bom = DB::table('item_bom')
+                ->leftJoin('items as material', 'item_bom.material_item_id', '=', 'material.id')
+                ->leftJoin('units', 'item_bom.unit_id', '=', 'units.id')
+                ->where('item_bom.item_id', $prod->item_id)
+                ->select('item_bom.*', 'material.name as material_name', 'units.name as unit_name')
+                ->get();
+            $bomData[$prod->item_id] = $bom;
+        }
+        return response()->json([
+            'header' => $header,
+            'productions' => $productions,
+            'outlet' => $outlet,
+            'warehouse_outlet' => $warehouse_outlet,
+            'stock_cards' => $stockCards,
+            'bom_data' => $bomData,
+        ]);
+    }
+
+    /**
+     * API: Report data untuk mobile app (JSON).
+     */
+    public function apiReport(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        $query = DB::table('outlet_wip_productions')
+            ->leftJoin('items', 'outlet_wip_productions.item_id', '=', 'items.id')
+            ->leftJoin('tbl_data_outlet as o', 'outlet_wip_productions.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'outlet_wip_productions.warehouse_outlet_id', '=', 'wo.id')
+            ->select(
+                'outlet_wip_productions.*',
+                'items.name as item_name',
+                'items.exp as item_exp',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            );
+        if ($user->id_outlet != 1) {
+            $query->where('outlet_wip_productions.outlet_id', $user->id_outlet);
+        }
+        if ($request->start_date && $request->end_date) {
+            $query->whereBetween('outlet_wip_productions.production_date', [$request->start_date, $request->end_date]);
+        }
+        $productions = $query->orderByDesc('outlet_wip_productions.production_date')->get();
+        $productions = $productions->map(function ($row) {
+            $exp_days = $row->item_exp ?? 0;
+            $prod_date = $row->production_date;
+            $exp_date = $prod_date ? (\Carbon\Carbon::parse($prod_date)->addDays($exp_days)->toDateString()) : null;
+            $row->exp_date = $exp_date;
+            return $row;
+        });
+        return response()->json([
+            'productions' => $productions,
+            'start_date' => $request->start_date,
+            'end_date' => $request->end_date,
+        ]);
+    }
+
     public function report(Request $request)
     {
         $user = auth()->user();

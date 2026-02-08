@@ -1409,6 +1409,7 @@ class StockCutController extends Controller
                 'scl.tanggal',
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as user_name',
+                'u.avatar as user_avatar',
                 'scl.type_filter',
                 'scl.created_at'
             );
