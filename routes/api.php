@@ -363,6 +363,14 @@ Route::prefix('approval-app')->group(function () {
         // Report Invoice Outlet (Approval App - Laporan Invoice Outlet)
         Route::get('/report-invoice-outlet', [\App\Http\Controllers\OutletPaymentController::class, 'apiReportInvoiceOutlet']);
 
+        // Stock Cut (Approval App - Potong Stock)
+        Route::get('/stock-cut/form-data', [\App\Http\Controllers\StockCutController::class, 'apiFormData']);
+        Route::get('/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
+        Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
+        Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
+        Route::post('/stock-cut/dispatch', [\App\Http\Controllers\StockCutController::class, 'dispatchStockCut']);
+        Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback'])->where('id', '[0-9]+');
+
         // Floor Order (Approval App)
         Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
         Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);

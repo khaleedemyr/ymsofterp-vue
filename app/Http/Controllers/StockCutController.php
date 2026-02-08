@@ -6,9 +6,45 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use App\Models\StockCutLog;
+use App\Models\Outlet;
 
 class StockCutController extends Controller
 {
+    /**
+     * API: Data untuk form stock cut (outlets + user) - dipakai oleh approval app.
+     */
+    public function apiFormData(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $outletsQuery = Outlet::select('id_outlet', 'nama_outlet');
+        if ($user->id_outlet && (int) $user->id_outlet !== 1) {
+            $outletsQuery->where('id_outlet', $user->id_outlet);
+        }
+        $outlets = $outletsQuery->get()
+            ->map(function ($o) {
+                return ['id' => $o->id_outlet, 'name' => $o->nama_outlet];
+            });
+
+        $outletName = '';
+        if ($user->id_outlet) {
+            $outlet = Outlet::where('id_outlet', $user->id_outlet)->first();
+            $outletName = $outlet ? $outlet->nama_outlet : '';
+        }
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'user' => [
+                'id_outlet' => $user->id_outlet ?? null,
+                'outlet_name' => $outletName,
+            ],
+        ]);
+    }
+
     /**
      * Potong stock berdasarkan order_items yang belum dipotong stock (stock_cut = 0)
      * - Kalkulasi kebutuhan bahan baku dari item_bom
