@@ -1563,10 +1563,11 @@ class OutletWIPController extends Controller
         $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $header->outlet_id)->first();
         $warehouse_outlet = DB::table('warehouse_outlets')->where('id', $header->warehouse_outlet_id)->first();
 
-        // Ambil kartu stok hasil produksi dengan nama item
+        // Ambil kartu stok hasil produksi dengan nama item dan unit
         $stockCards = DB::table('outlet_food_inventory_cards as sc')
             ->leftJoin('outlet_food_inventory_items as inv_item', 'sc.inventory_item_id', '=', 'inv_item.id')
             ->leftJoin('items', 'inv_item.item_id', '=', 'items.id')
+            ->leftJoin('units as item_unit', 'items.small_unit_id', '=', 'item_unit.id')
             ->where('sc.reference_type', 'outlet_wip_production')
             ->where('sc.reference_id', $id)
             ->select(
@@ -1595,7 +1596,8 @@ class OutletWIPController extends Controller
                 'sc.description',
                 'sc.created_at',
                 'sc.updated_at',
-                'items.name as item_name'
+                'items.name as item_name',
+                'item_unit.name as unit_name'
             )
             ->distinct()
             ->orderBy('sc.date')
@@ -2165,9 +2167,10 @@ class OutletWIPController extends Controller
         $stockCards = DB::table('outlet_food_inventory_cards as sc')
             ->leftJoin('outlet_food_inventory_items as inv_item', 'sc.inventory_item_id', '=', 'inv_item.id')
             ->leftJoin('items', 'inv_item.item_id', '=', 'items.id')
+            ->leftJoin('units as item_unit', 'items.small_unit_id', '=', 'item_unit.id')
             ->where('sc.reference_type', 'outlet_wip_production')
             ->where('sc.reference_id', $id)
-            ->select('sc.*', 'items.name as item_name')
+            ->select('sc.*', 'items.name as item_name', 'item_unit.name as unit_name')
             ->orderBy('sc.date')->orderBy('sc.id')
             ->get();
         $bomData = [];
