@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\MaintenancePurchaseOrderController;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\WarehouseTransferController;
+use App\Http\Controllers\OutletTransferController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\BirthdayController;
 use App\Http\Controllers\MaintenancePurchaseOrderInvoiceController;
@@ -306,6 +307,15 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/warehouse-transfers/{id}', [WarehouseTransferController::class, 'apiShow']);
         Route::post('/warehouse-transfers', [WarehouseTransferController::class, 'apiStore']);
 
+        // Outlet Transfer (Approval App / Pindah Outlet)
+        Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
+        Route::get('/outlet-transfers/create-data', [OutletTransferController::class, 'apiCreateData']);
+        Route::get('/outlet-transfers/{id}', [OutletTransferController::class, 'apiShow']);
+        Route::post('/outlet-transfers', [OutletTransferController::class, 'apiStore']);
+        Route::post('/outlet-transfers/{id}/submit', [OutletTransferController::class, 'submit']);
+        Route::post('/outlet-transfers/{id}/approve', [OutletTransferController::class, 'apiApprove']);
+        Route::get('/outlet-transfer/approvers', [OutletTransferController::class, 'getApprovers']);
+
         // Floor Order (Approval App)
         Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
         Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);
@@ -338,6 +348,36 @@ Route::prefix('approval-app')->group(function () {
             \App\Http\Controllers\OutletInventoryReportController::class,
             'apiWarehouseOutlets'
         ]);
+        Route::get('/outlet-inventory/stock', function (Request $request) {
+            $item_id = $request->get('item_id');
+            $warehouse_outlet_id = $request->get('warehouse_outlet_id');
+            if (!$item_id || !$warehouse_outlet_id) {
+                return response()->json(['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0, 'unit_small' => '', 'unit_medium' => '', 'unit_large' => ''], 400);
+            }
+            $stock = DB::table('outlet_food_inventory_stocks as ofis')
+                ->join('outlet_food_inventory_items as ofii', 'ofis.inventory_item_id', '=', 'ofii.id')
+                ->join('items as i', 'ofii.item_id', '=', 'i.id')
+                ->leftJoin('units as u_small', 'i.small_unit_id', '=', 'u_small.id')
+                ->leftJoin('units as u_medium', 'i.medium_unit_id', '=', 'u_medium.id')
+                ->leftJoin('units as u_large', 'i.large_unit_id', '=', 'u_large.id')
+                ->where('ofii.item_id', $item_id)
+                ->where('ofis.warehouse_outlet_id', $warehouse_outlet_id)
+                ->select(
+                    'ofis.qty_small', 'ofis.qty_medium', 'ofis.qty_large',
+                    'ofis.last_cost_small', 'ofis.last_cost_medium', 'ofis.last_cost_large',
+                    'u_small.name as unit_small', 'u_medium.name as unit_medium', 'u_large.name as unit_large',
+                    'i.small_conversion_qty', 'i.medium_conversion_qty'
+                )
+                ->first();
+            if (!$stock) {
+                return response()->json([
+                    'qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0,
+                    'unit_small' => '', 'unit_medium' => '', 'unit_large' => '',
+                    'small_conversion_qty' => 1, 'medium_conversion_qty' => 1,
+                ]);
+            }
+            return response()->json((array) $stock);
+        });
 
         // Outlet Stock Adjustment (Approval App)
         Route::get('/outlet-food-inventory-adjustments', [

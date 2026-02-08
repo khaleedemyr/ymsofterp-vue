@@ -1552,4 +1552,403 @@ class OutletTransferController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * API: List outlet transfers (for mobile app) with search & date filter
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $query = OutletTransfer::with([
+            'warehouseOutletFrom',
+            'warehouseOutletTo',
+            'creator',
+            'outlet',
+            'approver',
+            'approvalFlows.approver',
+        ]);
+
+        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
+        $userOutletId = $user->id_outlet ?? null;
+        if (!$isSuperadmin && $userOutletId) {
+            $query->where(function ($q) use ($userOutletId) {
+                $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
+                    $q2->where('outlet_id', $userOutletId);
+                })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
+                    $q2->where('outlet_id', $userOutletId);
+                });
+            });
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('transfer_number', 'like', "%$search%")
+                    ->orWhereHas('warehouseOutletFrom', function ($q2) use ($search) {
+                        $q2->where('name', 'like', "%$search%");
+                    })
+                    ->orWhereHas('warehouseOutletTo', function ($q2) use ($search) {
+                        $q2->where('name', 'like', "%$search%");
+                    })
+                    ->orWhere('notes', 'like', "%$search%")
+                    ->orWhereHas('creator', function ($q2) use ($search) {
+                        $q2->where('nama_lengkap', 'like', "%$search%");
+                    });
+            });
+        }
+        if ($request->from) {
+            $query->whereDate('transfer_date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('transfer_date', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->get('per_page', 20);
+        $transfers = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+        $transfers->getCollection()->transform(function ($tr) {
+            $tr->total_items = $tr->items()->count();
+            return $tr;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $transfers,
+        ]);
+    }
+
+    /**
+     * API: Data for create form (outlets, warehouse outlets)
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+
+        if ($user->id_outlet == 1) {
+            $outlets_from = \App\Models\Outlet::where('status', 'A')
+                ->select('id_outlet', 'nama_outlet')
+                ->orderBy('nama_outlet')
+                ->get();
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
+                ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->where('warehouse_outlets.status', 'active')
+                ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+                ->orderBy('tbl_data_outlet.nama_outlet')
+                ->orderBy('warehouse_outlets.name')
+                ->get();
+        } else {
+            $outlets_from = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet')
+                ->get();
+            $warehouse_outlets_from = DB::table('warehouse_outlets')
+                ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->where('warehouse_outlets.outlet_id', $user->id_outlet)
+                ->where('warehouse_outlets.status', 'active')
+                ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+                ->orderBy('warehouse_outlets.name')
+                ->get();
+        }
+
+        $outlets_to = \App\Models\Outlet::where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $warehouse_outlets_to = DB::table('warehouse_outlets')
+            ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+            ->where('warehouse_outlets.status', 'active')
+            ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+            ->orderBy('tbl_data_outlet.nama_outlet')
+            ->orderBy('warehouse_outlets.name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'outlets_from' => $outlets_from,
+            'outlets_to' => $outlets_to,
+            'warehouse_outlets_from' => $warehouse_outlets_from,
+            'warehouse_outlets_to' => $warehouse_outlets_to,
+            'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * API: Show single outlet transfer (for mobile app)
+     */
+    public function apiShow($id)
+    {
+        $transfer = OutletTransfer::with([
+            'items.item',
+            'items.unit',
+            'warehouseOutletFrom',
+            'warehouseOutletTo',
+            'creator',
+            'outlet',
+            'approver',
+            'approvalFlows.approver',
+            'approvalFlows.approver.jabatan',
+        ])->findOrFail($id);
+
+        $user = auth()->user();
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
+        $pendingFlow = null;
+        $canApprove = false;
+        if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+            $pendingFlow = $transfer->approvalFlows()
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+            if ($pendingFlow && $pendingFlow->approver_id == $user->id) {
+                $canApprove = true;
+            }
+        } else {
+            $canApprove = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+        }
+        if ($isSuperadmin) {
+            $canApprove = true;
+        }
+
+        return response()->json([
+            'success' => true,
+            'transfer' => $transfer,
+            'can_approve' => $canApprove,
+            'pending_flow' => $pendingFlow,
+        ]);
+    }
+
+    /**
+     * API: Store outlet transfer (for mobile app) - returns JSON
+     */
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'transfer_date' => 'required|date',
+            'outlet_from_id' => 'required|integer',
+            'warehouse_outlet_from_id' => 'required|integer|different:warehouse_outlet_to_id',
+            'outlet_to_id' => 'required|integer',
+            'warehouse_outlet_to_id' => 'required|integer|different:warehouse_outlet_from_id',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.unit' => 'required|string',
+            'items.*.note' => 'nullable|string',
+            'approvers' => 'nullable|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $dateStr = date('Ymd', strtotime($validated['transfer_date']));
+            $countToday = OutletTransfer::whereDate('transfer_date', $validated['transfer_date'])->count() + 1;
+            $transferNumber = 'OT-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
+
+            $warehouseFrom = DB::table('warehouse_outlets')->where('id', $validated['warehouse_outlet_from_id'])->first();
+            if (!$warehouseFrom || $warehouseFrom->outlet_id != $validated['outlet_from_id']) {
+                throw new \Exception('Warehouse outlet asal tidak valid');
+            }
+            $warehouseTo = DB::table('warehouse_outlets')->where('id', $validated['warehouse_outlet_to_id'])->first();
+            if (!$warehouseTo || $warehouseTo->outlet_id != $validated['outlet_to_id']) {
+                throw new \Exception('Warehouse outlet tujuan tidak valid');
+            }
+
+            $transfer = OutletTransfer::create([
+                'transfer_number' => $transferNumber,
+                'transfer_date' => $validated['transfer_date'],
+                'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
+                'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
+                'outlet_id' => $validated['outlet_to_id'],
+                'notes' => $validated['notes'] ?? null,
+                'status' => 'draft',
+                'created_by' => Auth::id(),
+            ]);
+
+            foreach ($validated['items'] as $item) {
+                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
+                if (!$inventoryItem) {
+                    throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);
+                }
+                $itemMaster = \App\Models\Item::find($item['item_id']);
+                $unit = $item['unit'];
+                $qty_input = $item['qty'];
+                $qty_small = $qty_medium = $qty_large = 0;
+                $unitSmall = optional($itemMaster->smallUnit)->name;
+                $unitMedium = optional($itemMaster->mediumUnit)->name;
+                $unitLarge = optional($itemMaster->largeUnit)->name;
+                $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+                if ($unit === $unitSmall) {
+                    $qty_small = $qty_input;
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+                } elseif ($unit === $unitMedium) {
+                    $qty_medium = $qty_input;
+                    $qty_small = $qty_medium * $smallConv;
+                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+                } elseif ($unit === $unitLarge) {
+                    $qty_large = $qty_input;
+                    $qty_medium = $qty_large * $mediumConv;
+                    $qty_small = $qty_medium * $smallConv;
+                } else {
+                    $qty_small = $qty_input;
+                }
+
+                OutletTransferItem::create([
+                    'outlet_transfer_id' => $transfer->id,
+                    'item_id' => $item['item_id'],
+                    'quantity' => $item['qty'],
+                    'unit_id' => $inventoryItem->small_unit_id,
+                    'qty_small' => $qty_small,
+                    'qty_medium' => $qty_medium,
+                    'qty_large' => $qty_large,
+                    'note' => $item['note'] ?? null,
+                ]);
+            }
+
+            if (!empty($validated['approvers']) && is_array($validated['approvers'])) {
+                $transfer->approvalFlows()->delete();
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    OutletTransferApprovalFlow::create([
+                        'outlet_transfer_id' => $transfer->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+                $transfer->update([
+                    'status' => 'submitted',
+                    'approval_by' => null,
+                    'approval_at' => null,
+                    'approval_notes' => null,
+                ]);
+                $this->sendNotificationToNextApprover($transfer);
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => !empty($validated['approvers']) ? 'Pindah Outlet berhasil disimpan dan di-submit.' : 'Pindah Outlet berhasil disimpan (draft).',
+                'transfer' => $transfer->fresh()->load(['items', 'warehouseOutletFrom', 'warehouseOutletTo']),
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error apiStore outlet transfer', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * API: Approve/Reject - returns JSON for mobile app
+     */
+    public function apiApprove(Request $request, $id)
+    {
+        $user = Auth::user();
+        $transfer = OutletTransfer::with(['approvalFlows', 'items'])->findOrFail($id);
+
+        $validated = $request->validate([
+            'action' => 'required|in:approve,reject',
+            'comments' => 'nullable|string',
+        ]);
+
+        if ($validated['action'] === 'reject') {
+            $request->validate(['comments' => 'required|string']);
+        }
+
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        $canApproveLegacy = $this->canUserApproveByWarehouse($user, $transfer->warehouse_outlet_to_id);
+
+        if ($transfer->status !== 'submitted') {
+            return response()->json(['success' => false, 'message' => 'Tidak bisa approve transfer ini'], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            $oldData = $transfer->toArray();
+
+            if ($transfer->approvalFlows && $transfer->approvalFlows->count() > 0) {
+                $nextFlow = $transfer->approvalFlows()
+                    ->where('status', 'PENDING')
+                    ->orderBy('approval_level')
+                    ->first();
+
+                if (!$nextFlow) {
+                    return response()->json(['success' => false, 'message' => 'Tidak ada approval pending'], 400);
+                }
+                if (!$isSuperadmin && $nextFlow->approver_id != $user->id) {
+                    return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+                }
+
+                if ($validated['action'] === 'approve') {
+                    $nextFlow->approve($validated['comments'] ?? null);
+                    $hasPending = $transfer->approvalFlows()->where('status', 'PENDING')->count() > 0;
+                    if (!$hasPending) {
+                        $transfer->update([
+                            'status' => 'approved',
+                            'approval_by' => $user->id,
+                            'approval_at' => now(),
+                            'approval_notes' => $validated['comments'] ?? null,
+                        ]);
+                        $this->processStockTransfer($transfer->fresh()->load('items'));
+                    } else {
+                        $this->sendNotificationToNextApprover($transfer);
+                    }
+                } else {
+                    $nextFlow->reject($validated['comments'] ?? null);
+                    $transfer->update([
+                        'status' => 'rejected',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? null,
+                    ]);
+                }
+            } else {
+                if (!($isSuperadmin || $canApproveLegacy)) {
+                    return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+                }
+                if ($validated['action'] === 'reject') {
+                    $transfer->update([
+                        'status' => 'rejected',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? null,
+                    ]);
+                } else {
+                    $transfer->update([
+                        'status' => 'approved',
+                        'approval_by' => $user->id,
+                        'approval_at' => now(),
+                        'approval_notes' => $validated['comments'] ?? null,
+                    ]);
+                    $this->processStockTransfer($transfer->fresh()->load('items'));
+                }
+            }
+
+            DB::table('activity_logs')->insert([
+                'user_id' => $user->id,
+                'activity_type' => 'approve',
+                'module' => 'outlet_transfer',
+                'description' => 'Approve transfer outlet: ' . $transfer->transfer_number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => json_encode($oldData),
+                'new_data' => json_encode($transfer->fresh()->toArray()),
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => $validated['action'] === 'approve' ? 'Transfer berhasil disetujui.' : 'Transfer ditolak.',
+                'transfer' => $transfer->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error apiApprove outlet transfer', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
 } 
