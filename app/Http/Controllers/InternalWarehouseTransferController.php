@@ -398,48 +398,36 @@ class InternalWarehouseTransferController extends Controller
                 'verified' => true,
             ]);
             
+            if ($request->expectsJson()) {
+                $savedTransfer = InternalWarehouseTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'outlet'])->find($transfer->id);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Internal Warehouse Transfer berhasil disimpan',
+                    'transfer' => $savedTransfer,
+                ]);
+            }
             return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Internal Warehouse Transfer berhasil disimpan!');
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollBack();
             
-            // Handle duplicate entry error secara khusus
-            if ($e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')) {
-                Log::error('Duplicate entry error saat menyimpan Internal Warehouse Transfer', [
-                    'error' => $e->getMessage(),
-                    'user_id' => Auth::id(),
-                    'request_data' => $request->except(['_token']),
-                ]);
-                
-                return redirect()->back()
-                    ->withInput()
-                    ->with('error', 'Nomor transfer sudah digunakan. Silakan refresh halaman dan coba lagi.');
-            }
-            
-            // Log error untuk debugging
+            $errMsg = $e->getCode() == 23000 || str_contains($e->getMessage(), 'Duplicate entry')
+                ? 'Nomor transfer sudah digunakan. Silakan refresh halaman dan coba lagi.'
+                : 'Gagal menyimpan data: ' . $e->getMessage();
             Log::error('Database error saat menyimpan Internal Warehouse Transfer', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'user_id' => Auth::id(),
-                'request_data' => $request->except(['_token']),
             ]);
-            
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => $errMsg], 500);
+            }
+            return redirect()->back()->withInput()->with('error', $errMsg);
         } catch (\Exception $e) {
             DB::rollBack();
-            
-            // Log error untuk debugging
-            Log::error('Gagal menyimpan Internal Warehouse Transfer', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => Auth::id(),
-                'request_data' => $request->except(['_token']),
-            ]);
-            
-            return redirect()->back()
-                ->withInput()
-                ->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
+            Log::error('Gagal menyimpan Internal Warehouse Transfer', ['error' => $e->getMessage(), 'user_id' => Auth::id()]);
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            }
+            return redirect()->back()->withInput()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }
 
@@ -1075,5 +1063,117 @@ class InternalWarehouseTransferController extends Controller
                 'items' => $formItems,
             ]
         ]);
+    }
+
+    /**
+     * API: List internal warehouse transfers (for mobile app)
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $query = InternalWarehouseTransfer::with(['warehouseOutletFrom', 'warehouseOutletTo', 'creator', 'outlet']);
+
+        if ($user->id_outlet != 1) {
+            $query->where('outlet_id', $user->id_outlet);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('transfer_number', 'like', "%$search%")
+                    ->orWhereHas('warehouseOutletFrom', fn($q2) => $q2->where('name', 'like', "%$search%"))
+                    ->orWhereHas('warehouseOutletTo', fn($q2) => $q2->where('name', 'like', "%$search%"))
+                    ->orWhere('notes', 'like', "%$search%")
+                    ->orWhereHas('creator', fn($q2) => $q2->where('nama_lengkap', 'like', "%$search%"));
+            });
+        }
+        if ($request->from) {
+            $query->whereDate('transfer_date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('transfer_date', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->get('per_page', 20);
+        $transfers = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'data' => $transfers,
+        ]);
+    }
+
+    /**
+     * API: Data for create form (outlets, warehouse outlets)
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+
+        if ($user->id_outlet == 1) {
+            $outlets = \App\Models\Outlet::where('status', 'A')
+                ->select('id_outlet', 'nama_outlet')
+                ->orderBy('nama_outlet')
+                ->get();
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->where('warehouse_outlets.status', 'active')
+                ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+                ->orderBy('tbl_data_outlet.nama_outlet')
+                ->orderBy('warehouse_outlets.name')
+                ->get();
+        } else {
+            $outlets = \App\Models\Outlet::where('id_outlet', $user->id_outlet)
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet')
+                ->get();
+            $warehouse_outlets = DB::table('warehouse_outlets')
+                ->join('tbl_data_outlet', 'warehouse_outlets.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->where('warehouse_outlets.outlet_id', $user->id_outlet)
+                ->where('warehouse_outlets.status', 'active')
+                ->select('warehouse_outlets.id', 'warehouse_outlets.name', 'warehouse_outlets.outlet_id', 'tbl_data_outlet.nama_outlet')
+                ->orderBy('warehouse_outlets.name')
+                ->get();
+        }
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'warehouse_outlets' => $warehouse_outlets,
+            'user_outlet_id' => $user->id_outlet,
+        ]);
+    }
+
+    /**
+     * API: Show single internal warehouse transfer (for mobile app)
+     */
+    public function apiShow($id)
+    {
+        $transfer = InternalWarehouseTransfer::with([
+            'items.item',
+            'items.unit',
+            'warehouseOutletFrom',
+            'warehouseOutletTo',
+            'creator',
+            'outlet',
+        ])->findOrFail($id);
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $transfer->outlet_id != $user->id_outlet) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'transfer' => $transfer,
+        ]);
+    }
+
+    /**
+     * API: Store internal warehouse transfer (for mobile app) - delegates to store() which returns JSON when Accept: application/json
+     */
+    public function apiStore(Request $request)
+    {
+        return $this->store($request);
     }
 } 

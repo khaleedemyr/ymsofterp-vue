@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\WarehouseTransferController;
 use App\Http\Controllers\OutletTransferController;
+use App\Http\Controllers\InternalWarehouseTransferController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\BirthdayController;
 use App\Http\Controllers\MaintenancePurchaseOrderInvoiceController;
@@ -307,6 +308,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/warehouse-transfers/{id}', [WarehouseTransferController::class, 'apiShow']);
         Route::post('/warehouse-transfers', [WarehouseTransferController::class, 'apiStore']);
 
+        // Internal Warehouse Transfer (Approval App - transfer antar gudang dalam 1 outlet)
+        Route::get('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiIndex']);
+        Route::get('/internal-warehouse-transfers/create-data', [InternalWarehouseTransferController::class, 'apiCreateData']);
+        Route::get('/internal-warehouse-transfers/{id}', [InternalWarehouseTransferController::class, 'apiShow']);
+        Route::post('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiStore']);
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
@@ -483,6 +490,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve']);
         Route::post('/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject']);
         
+        Route::get('/outlet-transfer/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
         Route::get('/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
         Route::get('/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
         Route::post('/contra-bon/{id}/approve', [\App\Http\Controllers\ContraBonController::class, 'approve']);

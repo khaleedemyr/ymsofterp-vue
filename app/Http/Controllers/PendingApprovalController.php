@@ -197,7 +197,7 @@ class PendingApprovalController extends Controller
                 $otResponse = $otController->getPendingApprovals();
                 if ($otResponse->getStatusCode() === 200) {
                     $otData = json_decode($otResponse->getContent(), true);
-                    $data['outlet_transfer'] = $otData['data'] ?? $otData['transfers'] ?? [];
+                    $data['outlet_transfer'] = $otData['outlet_transfers'] ?? $otData['data'] ?? $otData['transfers'] ?? [];
                     if ($limit > 0 && count($data['outlet_transfer']) > $limit) {
                         $data['outlet_transfer'] = array_slice($data['outlet_transfer'], 0, $limit);
                     }
