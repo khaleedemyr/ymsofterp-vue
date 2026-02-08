@@ -1309,13 +1309,12 @@ class StockOpnameController extends Controller
         }
         $warehouseOutlets = $warehouseOutletsQuery->get();
 
+        // Daftar user untuk approver: semua user aktif (agar list di app tidak kosong)
         $usersQuery = DB::table('users')
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
             ->where('users.status', 'active')
-            ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
-        if ($user->id_outlet != 1) {
-            $usersQuery->where('users.id_outlet', $user->id_outlet);
-        }
+            ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
+            ->orderBy('users.nama_lengkap');
         $users = $usersQuery->get()->map(function ($u) {
             return ['id' => $u->id, 'nama_lengkap' => $u->nama_lengkap, 'email' => $u->email ?? '', 'jabatan' => $u->jabatan ?? ''];
         });
