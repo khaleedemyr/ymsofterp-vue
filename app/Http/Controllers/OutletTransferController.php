@@ -1687,8 +1687,8 @@ class OutletTransferController extends Controller
         $transfer = OutletTransfer::with([
             'items.item',
             'items.unit',
-            'warehouseOutletFrom',
-            'warehouseOutletTo',
+            'warehouseOutletFrom.outlet',
+            'warehouseOutletTo.outlet',
             'creator',
             'outlet',
             'approver',
@@ -1714,6 +1714,13 @@ class OutletTransferController extends Controller
         if ($isSuperadmin) {
             $canApprove = true;
         }
+
+        $transfer->setAttribute('outlet_from_nama', $transfer->warehouseOutletFrom && $transfer->warehouseOutletFrom->outlet
+            ? $transfer->warehouseOutletFrom->outlet->nama_outlet
+            : null);
+        $transfer->setAttribute('outlet_to_nama', $transfer->warehouseOutletTo && $transfer->warehouseOutletTo->outlet
+            ? $transfer->warehouseOutletTo->outlet->nama_outlet
+            : null);
 
         return response()->json([
             'success' => true,
