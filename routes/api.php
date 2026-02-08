@@ -309,6 +309,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
+        Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
         Route::get('/outlet-transfers/create-data', [OutletTransferController::class, 'apiCreateData']);
         Route::get('/outlet-transfers/{id}', [OutletTransferController::class, 'apiShow']);
         Route::post('/outlet-transfers', [OutletTransferController::class, 'apiStore']);
