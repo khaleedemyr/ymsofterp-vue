@@ -1934,6 +1934,7 @@ class OutletWIPController extends Controller
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as created_by_name',
+                'u.avatar as user_avatar',
                 DB::raw("'header' as source_type")
             );
         if ($id_outlet && $id_outlet != 1) {
@@ -1978,6 +1979,7 @@ class OutletWIPController extends Controller
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as created_by_name',
+                'u.avatar as user_avatar',
                 DB::raw("'old' as source_type")
             );
         if ($id_outlet && $id_outlet != 1) {
