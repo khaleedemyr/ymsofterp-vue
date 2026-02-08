@@ -341,6 +341,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/stock-opnames/create-data', [\App\Http\Controllers\StockOpnameController::class, 'apiCreateData']);
         Route::get('/stock-opnames/get-inventory-items', [\App\Http\Controllers\StockOpnameController::class, 'apiGetInventoryItems']);
         Route::get('/stock-opnames/approvers', [\App\Http\Controllers\StockOpnameController::class, 'getApprovers']);
+        Route::get('/stock-opnames/pending-approvals', [\App\Http\Controllers\StockOpnameController::class, 'getPendingApprovals']);
         Route::get('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::post('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'apiStore']);
         Route::put('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameController::class, 'apiUpdate'])->where('id', '[0-9]+');
