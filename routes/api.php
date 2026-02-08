@@ -321,6 +321,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'apiShow']);
         Route::post('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiStore']);
 
+        // Retail Non Food (Approval App - Outlet Retail Non Food)
+        Route::get('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiIndex']);
+        Route::get('/retail-non-food/create-data', [\App\Http\Controllers\RetailNonFoodController::class, 'apiCreateData']);
+        Route::get('/retail-non-food/{id}', [\App\Http\Controllers\RetailNonFoodController::class, 'apiShow']);
+        Route::post('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiStore']);
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);

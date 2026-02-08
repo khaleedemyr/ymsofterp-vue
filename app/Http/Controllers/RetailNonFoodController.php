@@ -853,4 +853,115 @@ class RetailNonFoodController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * API: List retail non food for mobile app (approval-app)
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet;
+
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $outletId = $request->get('outlet_id');
+        $perPage = (int) $request->get('per_page', 20);
+
+        $query = RetailNonFood::query()
+            ->with(['outlet', 'creator', 'items', 'categoryBudget', 'supplier'])
+            ->orderByDesc('created_at');
+
+        if ($userOutletId != 1) {
+            $query->where('outlet_id', $userOutletId);
+        } elseif ($outletId !== null && $outletId !== '') {
+            $query->where('outlet_id', $outletId);
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('retail_number', 'like', "%{$search}%")
+                    ->orWhereHas('outlet', function ($oq) use ($search) {
+                        $oq->where('nama_outlet', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('supplier', function ($sq) use ($search) {
+                        $sq->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('transaction_date', '<=', $dateTo);
+        }
+
+        $list = $query->paginate($perPage)->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'data' => $list,
+        ]);
+    }
+
+    /**
+     * API: Create form data for mobile app (outlets, category_budgets, suppliers)
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet;
+
+        if ($userOutletId == 1) {
+            $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+        } else {
+            $outlets = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->get(['id_outlet', 'nama_outlet']);
+        }
+
+        $categoryBudgets = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')
+            ->orderBy('division', 'asc')
+            ->orderBy('name', 'asc')
+            ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description']);
+
+        $suppliers = DB::table('suppliers')
+            ->where('status', 'active')
+            ->select('id', 'name', 'code')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'category_budgets' => $categoryBudgets,
+            'suppliers' => $suppliers,
+            'user_outlet_id' => $userOutletId,
+        ]);
+    }
+
+    /**
+     * API: Show single retail non food for mobile app
+     */
+    public function apiShow($id)
+    {
+        $retailNonFood = RetailNonFood::with(['outlet', 'creator', 'items', 'categoryBudget', 'supplier', 'invoices'])->findOrFail($id);
+
+        $user = auth()->user();
+        if ($user->id_outlet != 1 && $retailNonFood->outlet_id != $user->id_outlet) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'retail_non_food' => $retailNonFood,
+        ]);
+    }
+
+    /**
+     * API: Store retail non food from mobile app (delegates to store)
+     */
+    public function apiStore(Request $request)
+    {
+        return $this->store($request);
+    }
 } 
