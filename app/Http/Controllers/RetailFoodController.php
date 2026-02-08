@@ -199,6 +199,13 @@ class RetailFoodController extends Controller
 
     public function store(Request $request)
     {
+        // Mobile app sends multipart with items as JSON string; decode to array for validation
+        if (is_string($request->items ?? null)) {
+            $decoded = json_decode($request->items, true);
+            if (is_array($decoded)) {
+                $request->merge(['items' => $decoded]);
+            }
+        }
 
         try {
             $request->validate([

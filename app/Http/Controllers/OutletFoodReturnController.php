@@ -197,7 +197,9 @@ class OutletFoodReturnController extends Controller
     public function getGoodReceiveItems(Request $request)
     {
         $request->validate([
-            'good_receive_id' => 'required|integer|exists:outlet_food_good_receives,id'
+            'good_receive_id' => 'required|integer|exists:outlet_food_good_receives,id',
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id'
         ]);
         
         $items = DB::table('outlet_food_good_receive_items as ofgri')
@@ -456,6 +458,143 @@ class OutletFoodReturnController extends Controller
                 'message' => 'Gagal approve return: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * API: List returns for mobile app (JSON paginated)
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet;
+
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $perPage = (int) $request->get('per_page', 20);
+        $page = (int) $request->get('page', 1);
+
+        $query = DB::table('outlet_food_returns as ofr')
+            ->leftJoin('outlet_food_good_receives as ofgr', 'ofr.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->leftJoin('tbl_data_outlet as o', 'ofr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'ofr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'ofr.created_by', '=', 'u.id')
+            ->select(
+                'ofr.id',
+                'ofr.return_number',
+                'ofr.return_date',
+                'ofr.status',
+                'ofr.notes',
+                'ofgr.number as gr_number',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as created_by_name',
+                'ofr.created_at'
+            )
+            ->orderByDesc('ofr.created_at');
+
+        if ($userOutletId != 1) {
+            $query->where('ofr.outlet_id', $userOutletId);
+        }
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ofr.return_number', 'like', "%{$search}%")
+                    ->orWhere('ofgr.number', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%");
+            });
+        }
+        if ($dateFrom) {
+            $query->whereDate('ofr.return_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('ofr.return_date', '<=', $dateTo);
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        return response()->json([
+            'success' => true,
+            'data' => $paginator->items(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
+    }
+
+    /**
+     * API: Create form data for mobile app
+     */
+    public function apiCreateData()
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet;
+
+        if ($userOutletId == 1) {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->orderBy('nama_outlet', 'asc')
+                ->get(['id_outlet', 'nama_outlet']);
+        } else {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $userOutletId)
+                ->where('status', 'A')
+                ->get(['id_outlet', 'nama_outlet']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'user_outlet_id' => $userOutletId,
+        ]);
+    }
+
+    /**
+     * API: Show single return for mobile app
+     */
+    public function apiShow($id)
+    {
+        $user = auth()->user();
+        $return = DB::table('outlet_food_returns as ofr')
+            ->leftJoin('outlet_food_good_receives as ofgr', 'ofr.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->leftJoin('tbl_data_outlet as o', 'ofr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'ofr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'ofr.created_by', '=', 'u.id')
+            ->select(
+                'ofr.*',
+                'ofgr.number as gr_number',
+                'o.nama_outlet',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as created_by_name'
+            )
+            ->where('ofr.id', $id)
+            ->first();
+
+        if (!$return) {
+            return response()->json(['success' => false, 'message' => 'Return tidak ditemukan'], 404);
+        }
+
+        if ($user->id_outlet != 1 && $return->outlet_id != $user->id_outlet) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $items = DB::table('outlet_food_return_items as ofri')
+            ->leftJoin('items as i', 'ofri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'ofri.unit_id', '=', 'u.id')
+            ->select(
+                'ofri.*',
+                'i.name as item_name',
+                'i.sku',
+                'u.name as unit_name'
+            )
+            ->where('ofri.outlet_food_return_id', $id)
+            ->get();
+
+        $return->items = $items;
+
+        return response()->json([
+            'success' => true,
+            'return' => $return,
+        ]);
     }
 
     public function show($id)

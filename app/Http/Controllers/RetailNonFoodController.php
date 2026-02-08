@@ -137,6 +137,15 @@ class RetailNonFoodController extends Controller
             'request_data' => $request->except(['invoices'])
         ]);
 
+        // Mobile app sends multipart with items as JSON string; decode to array for validation
+        $itemsInput = $request->input('items');
+        if (!is_array($itemsInput) && is_string($itemsInput)) {
+            $decoded = json_decode($itemsInput, true);
+            if (is_array($decoded)) {
+                $request->replace(array_merge($request->all(), ['items' => $decoded]));
+            }
+        }
+
         try {
             $request->validate([
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
