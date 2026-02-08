@@ -6,6 +6,7 @@ use App\Models\StockOpname;
 use App\Models\StockOpnameItem;
 use App\Models\StockOpnameApprovalFlow;
 use App\Models\StockOpnameAdjustment;
+use App\Models\User;
 use App\Services\NotificationService;
 use App\Exports\StockOpnameImportTemplateExport;
 use App\Exports\StockOpnameResultExport;
@@ -1309,10 +1310,10 @@ class StockOpnameController extends Controller
         }
         $warehouseOutlets = $warehouseOutletsQuery->get();
 
-        // Daftar user untuk approver: semua user aktif (agar list di app tidak kosong)
+        // Daftar user untuk approver: semua user aktif (status A, sama seperti menu lain)
         $usersQuery = DB::table('users')
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
-            ->where('users.status', 'active')
+            ->where('users.status', 'A')
             ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
             ->orderBy('users.nama_lengkap');
         $users = $usersQuery->get()->map(function ($u) {
@@ -1326,6 +1327,30 @@ class StockOpnameController extends Controller
             'users' => $users,
             'user_outlet_id' => $user->id_outlet ?? null,
         ]);
+    }
+
+    /**
+     * Get approvers for approval flow (sama seperti Outlet Stock Adjustment)
+     */
+    public function getApprovers(Request $request)
+    {
+        $search = $request->get('search', '');
+
+        $users = User::where('users.status', 'A')
+            ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('users.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('users.email', 'like', "%{$search}%")
+                        ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+                });
+            })
+            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->limit(50)
+            ->get();
+
+        return response()->json(['success' => true, 'users' => $users]);
     }
 
     public function apiGetInventoryItems(Request $request)
