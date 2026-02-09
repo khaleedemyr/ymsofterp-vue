@@ -233,7 +233,7 @@ class ReservationController extends Controller
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
                 'menu' => $reservation->menu,
                 'status' => $reservation->status,
-                'created_by' => $reservation->creator ? $reservation->creator->name : null,
+                'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name ?? null) : null,
                 'created_at' => $reservation->created_at?->toIso8601String(),
             ];
         });
@@ -289,7 +289,7 @@ class ReservationController extends Controller
             'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
             'menu' => $reservation->menu,
             'status' => $reservation->status,
-            'created_by' => $reservation->creator ? $reservation->creator->name : null,
+            'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name ?? null) : null,
             'created_at' => $reservation->created_at?->toIso8601String(),
         ]);
     }
