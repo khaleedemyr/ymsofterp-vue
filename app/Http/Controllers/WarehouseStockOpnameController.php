@@ -1269,4 +1269,552 @@ class WarehouseStockOpnameController extends Controller
             ], 500);
         }
     }
+
+    // ========== API for Mobile App (approval-app) ==========
+
+    public function apiIndex(Request $request)
+    {
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+        $warehouseId = $request->get('warehouse_id', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $perPage = (int) $request->get('per_page', 15);
+        $page = (int) $request->get('page', 1);
+
+        $query = WarehouseStockOpname::with([
+            'warehouse',
+            'warehouseDivision',
+            'creator',
+        ]);
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('opname_number', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%");
+            });
+        }
+        if ($status && $status !== 'all') {
+            $query->where('status', $status);
+        }
+        if ($warehouseId) {
+            $query->where('warehouse_id', $warehouseId);
+        }
+        if ($dateFrom) {
+            $query->whereDate('opname_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('opname_date', '<=', $dateTo);
+        }
+
+        $paginated = $query->orderBy('created_at', 'desc')->paginate($perPage, ['*'], 'page', $page);
+
+        $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'per_page' => $paginated->perPage(),
+            'total' => $paginated->total(),
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
+        $warehouseDivisions = DB::table('warehouse_division')->select('id', 'name', 'warehouse_id')->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+            'warehouse_divisions' => $warehouseDivisions,
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $stockOpname = WarehouseStockOpname::with([
+            'warehouse',
+            'warehouseDivision',
+            'creator',
+            'items.inventoryItem.item',
+            'items.inventoryItem.item.smallUnit',
+            'items.inventoryItem.item.mediumUnit',
+            'items.inventoryItem.item.largeUnit',
+            'approvalFlows.approver',
+        ])->find($id);
+
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $user = auth()->user();
+        $canApprove = false;
+        $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->orderBy('approval_level')->first();
+        if ($pendingFlow && $pendingFlow->approver_id == $user->id) {
+            $canApprove = true;
+        }
+        if ($user->id_role === '5af56935b011a') {
+            $canApprove = true;
+        }
+
+        $approvers = $stockOpname->approvalFlows()->with('approver')->orderBy('approval_level')->get()->map(function ($flow) {
+            return [
+                'id' => $flow->approver_id,
+                'name' => $flow->approver->nama_lengkap ?? '',
+                'email' => $flow->approver->email ?? '',
+                'approval_level' => $flow->approval_level,
+                'status' => $flow->status,
+                'comments' => $flow->comments,
+                'approved_at' => $flow->approved_at,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $stockOpname,
+            'can_approve' => $canApprove,
+            'pending_flow' => $pendingFlow,
+            'approvers' => $approvers,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'warehouse_id' => 'required|integer',
+            'warehouse_division_id' => 'nullable|integer',
+            'opname_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.inventory_item_id' => 'required|integer',
+            'items.*.qty_physical_small' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_large' => 'nullable|numeric|min:0',
+            'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
+        ]);
+
+        $user = auth()->user();
+
+        try {
+            DB::beginTransaction();
+            $opnameNumber = $this->generateOpnameNumber();
+            $stockOpname = WarehouseStockOpname::create([
+                'opname_number' => $opnameNumber,
+                'warehouse_id' => $validated['warehouse_id'],
+                'warehouse_division_id' => $validated['warehouse_division_id'] ?? null,
+                'opname_date' => $validated['opname_date'],
+                'status' => 'DRAFT',
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => $user->id,
+            ]);
+
+            foreach ($validated['items'] as $itemData) {
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $itemData['inventory_item_id'])
+                    ->where('warehouse_id', $validated['warehouse_id'])
+                    ->first();
+                if (! $stock) {
+                    continue;
+                }
+                $qtySystemSmall = $stock->qty_small ?? 0;
+                $qtySystemMedium = $stock->qty_medium ?? 0;
+                $qtySystemLarge = $stock->qty_large ?? 0;
+                $mac = $stock->last_cost_small ?? 0;
+                $qtyPhysicalSmall = (float) ($itemData['qty_physical_small'] ?? $qtySystemSmall);
+                $qtyPhysicalMedium = (float) ($itemData['qty_physical_medium'] ?? $qtySystemMedium);
+                $qtyPhysicalLarge = (float) ($itemData['qty_physical_large'] ?? $qtySystemLarge);
+                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $valueAdjustment = $qtyDiffSmall * $mac;
+
+                WarehouseStockOpnameItem::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small' => $qtyPhysicalSmall,
+                    'qty_physical_medium' => $qtyPhysicalMedium,
+                    'qty_physical_large' => $qtyPhysicalLarge,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $itemData['reason'] ?? null,
+                    'mac_before' => $mac,
+                    'mac_after' => $mac,
+                    'value_adjustment' => $valueAdjustment,
+                ]);
+            }
+
+            if (! empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    WarehouseStockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Warehouse Stock Opname berhasil dibuat',
+                'data' => $stockOpname->load(['warehouse', 'warehouseDivision', 'items']),
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $stockOpname = WarehouseStockOpname::find($id);
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+        if ($stockOpname->status !== 'DRAFT') {
+            return response()->json(['success' => false, 'message' => 'Hanya draft yang dapat diedit'], 422);
+        }
+
+        $validated = $request->validate([
+            'warehouse_id' => 'required|integer',
+            'warehouse_division_id' => 'nullable|integer',
+            'opname_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.inventory_item_id' => 'required|integer',
+            'items.*.qty_physical_small' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_medium' => 'nullable|numeric|min:0',
+            'items.*.qty_physical_large' => 'nullable|numeric|min:0',
+            'items.*.reason' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
+        ]);
+
+        $user = auth()->user();
+
+        try {
+            DB::beginTransaction();
+            $stockOpname->update([
+                'warehouse_id' => $validated['warehouse_id'],
+                'warehouse_division_id' => $validated['warehouse_division_id'] ?? null,
+                'opname_date' => $validated['opname_date'],
+                'notes' => $validated['notes'] ?? null,
+                'updated_by' => $user->id,
+            ]);
+
+            $stockOpname->items()->delete();
+
+            foreach ($validated['items'] as $itemData) {
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $itemData['inventory_item_id'])
+                    ->where('warehouse_id', $validated['warehouse_id'])
+                    ->first();
+                if (! $stock) {
+                    continue;
+                }
+                $qtySystemSmall = $stock->qty_small ?? 0;
+                $qtySystemMedium = $stock->qty_medium ?? 0;
+                $qtySystemLarge = $stock->qty_large ?? 0;
+                $mac = $stock->last_cost_small ?? 0;
+                $qtyPhysicalSmall = (float) ($itemData['qty_physical_small'] ?? $qtySystemSmall);
+                $qtyPhysicalMedium = (float) ($itemData['qty_physical_medium'] ?? $qtySystemMedium);
+                $qtyPhysicalLarge = (float) ($itemData['qty_physical_large'] ?? $qtySystemLarge);
+                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
+                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
+                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $valueAdjustment = $qtyDiffSmall * $mac;
+
+                WarehouseStockOpnameItem::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'inventory_item_id' => $itemData['inventory_item_id'],
+                    'qty_system_small' => $qtySystemSmall,
+                    'qty_system_medium' => $qtySystemMedium,
+                    'qty_system_large' => $qtySystemLarge,
+                    'qty_physical_small' => $qtyPhysicalSmall,
+                    'qty_physical_medium' => $qtyPhysicalMedium,
+                    'qty_physical_large' => $qtyPhysicalLarge,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $itemData['reason'] ?? null,
+                    'mac_before' => $mac,
+                    'mac_after' => $mac,
+                    'value_adjustment' => $valueAdjustment,
+                ]);
+            }
+
+            $stockOpname->approvalFlows()->delete();
+            if (! empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    WarehouseStockOpnameApprovalFlow::create([
+                        'stock_opname_id' => $stockOpname->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Berhasil di-update',
+                'data' => $stockOpname->fresh(['warehouse', 'warehouseDivision', 'items']),
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiSubmitForApproval(Request $request, $id)
+    {
+        $stockOpname = WarehouseStockOpname::find($id);
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+        if (! $stockOpname->canBeSubmitted()) {
+            return response()->json(['success' => false, 'message' => 'Tidak dapat di-submit. Pastikan status DRAFT dan ada items.'], 422);
+        }
+
+        $validated = $request->validate([
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ]);
+
+        try {
+            DB::beginTransaction();
+            $stockOpname->approvalFlows()->delete();
+            foreach ($validated['approvers'] as $index => $approverId) {
+                WarehouseStockOpnameApprovalFlow::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                ]);
+            }
+            $stockOpname->update(['status' => 'SUBMITTED']);
+            $this->sendNotificationToNextApprover($stockOpname);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Berhasil di-submit untuk approval',
+                'data' => $stockOpname->fresh(['approvalFlows']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiApprove(Request $request, $id)
+    {
+        $stockOpname = WarehouseStockOpname::with('approvalFlows')->find($id);
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $validated = $request->validate([
+            'action' => 'required|in:approve,reject',
+            'comments' => 'nullable|string',
+        ]);
+
+        $user = auth()->user();
+        $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->where('approver_id', $user->id)->orderBy('approval_level')->first();
+        if (! $pendingFlow && $user->id_role === '5af56935b011a') {
+            $pendingFlow = $stockOpname->approvalFlows()->where('status', 'PENDING')->orderBy('approval_level')->first();
+        }
+        if (! $pendingFlow) {
+            return response()->json(['success' => false, 'message' => 'Tidak ada approval pending'], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+            if ($validated['action'] === 'approve') {
+                $pendingFlow->approve($validated['comments'] ?? null);
+                $allApproved = $stockOpname->approvalFlows()->where('status', 'PENDING')->count() === 0;
+                if ($allApproved) {
+                    $stockOpname->update(['status' => 'APPROVED']);
+                } else {
+                    $this->sendNotificationToNextApprover($stockOpname);
+                }
+            } else {
+                $pendingFlow->reject($validated['comments'] ?? null);
+                $stockOpname->update(['status' => 'REJECTED']);
+            }
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $validated['action'] === 'approve' ? 'Berhasil di-approve' : 'Telah di-reject',
+                'data' => $stockOpname->fresh(['approvalFlows']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiProcess($id)
+    {
+        $stockOpname = WarehouseStockOpname::with('items.inventoryItem')->find($id);
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+        if (! $stockOpname->canBeProcessed()) {
+            return response()->json(['success' => false, 'message' => 'Belum di-approve'], 422);
+        }
+
+        $user = auth()->user();
+
+        try {
+            DB::beginTransaction();
+            foreach ($stockOpname->items as $item) {
+                if (! $item->hasDifference()) {
+                    continue;
+                }
+                $inventoryItemId = $item->inventory_item_id;
+                $warehouseId = $stockOpname->warehouse_id;
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                if (! $stock) {
+                    continue;
+                }
+                $qtyDiffSmall = $item->qty_diff_small;
+                $qtyDiffMedium = $item->qty_diff_medium;
+                $qtyDiffLarge = $item->qty_diff_large;
+                $newQtySmall = $stock->qty_small + $qtyDiffSmall;
+                $newQtyMedium = $stock->qty_medium + $qtyDiffMedium;
+                $newQtyLarge = $stock->qty_large + $qtyDiffLarge;
+                $valueAdjustment = $item->value_adjustment;
+                $newValue = $stock->value + $valueAdjustment;
+
+                DB::table('food_inventory_stocks')->where('id', $stock->id)->update([
+                    'qty_small' => $newQtySmall,
+                    'qty_medium' => $newQtyMedium,
+                    'qty_large' => $newQtyLarge,
+                    'value' => $newValue,
+                    'updated_at' => now(),
+                ]);
+
+                $lastCard = DB::table('food_inventory_cards')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('warehouse_id', $warehouseId)
+                    ->orderByDesc('date')->orderByDesc('id')
+                    ->first();
+
+                if ($lastCard) {
+                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
+                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
+                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
+                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
+                } else {
+                    $saldoQtySmall = $newQtySmall;
+                    $saldoQtyMedium = $newQtyMedium;
+                    $saldoQtyLarge = $newQtyLarge;
+                    $saldoValue = $newValue;
+                }
+
+                DB::table('food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $stockOpname->opname_date,
+                    'reference_type' => 'warehouse_stock_opname',
+                    'reference_id' => $stockOpname->id,
+                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+                    'cost_per_small' => $item->mac_before,
+                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
+                    'cost_per_large' => $stock->last_cost_large ?? 0,
+                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+                    'saldo_qty_small' => $saldoQtySmall,
+                    'saldo_qty_medium' => $saldoQtyMedium,
+                    'saldo_qty_large' => $saldoQtyLarge,
+                    'saldo_value' => $saldoValue,
+                    'description' => 'Warehouse Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                DB::table('food_inventory_cost_histories')->insert([
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'date' => $stockOpname->opname_date,
+                    'old_cost' => $item->mac_before,
+                    'new_cost' => $item->mac_after,
+                    'mac' => $item->mac_before,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                WarehouseStockOpnameAdjustment::create([
+                    'stock_opname_id' => $stockOpname->id,
+                    'stock_opname_item_id' => $item->id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'warehouse_id' => $warehouseId,
+                    'warehouse_division_id' => $stockOpname->warehouse_division_id,
+                    'qty_diff_small' => $qtyDiffSmall,
+                    'qty_diff_medium' => $qtyDiffMedium,
+                    'qty_diff_large' => $qtyDiffLarge,
+                    'reason' => $item->reason,
+                    'mac_before' => $item->mac_before,
+                    'mac_after' => $item->mac_after,
+                    'value_adjustment' => $valueAdjustment,
+                    'processed_at' => now(),
+                    'processed_by' => $user->id,
+                ]);
+            }
+
+            $stockOpname->update(['status' => 'COMPLETED']);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock opname berhasil di-process',
+                'data' => $stockOpname->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Gagal process: ' . $e->getMessage()], 500);
+        }
+    }
 }

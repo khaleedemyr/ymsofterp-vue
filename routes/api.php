@@ -360,6 +360,20 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'apiApprove'])->where('id', '[0-9]+');
         Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'apiProcess'])->where('id', '[0-9]+');
 
+        // Warehouse Stock Opname (Approval App - Stock Opname Gudang)
+        Route::get('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiIndex']);
+        Route::get('/warehouse-stock-opnames/create-data', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiCreateData']);
+        Route::get('/warehouse-stock-opnames/check-divisions', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'checkWarehouseDivisions']);
+        Route::get('/warehouse-stock-opnames/get-items', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getItems']);
+        Route::get('/warehouse-stock-opnames/approvers', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'getApprovers']);
+        Route::get('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiStore']);
+        Route::put('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/warehouse-stock-opnames/{id}', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'destroy'])->where('id', '[0-9]+');
+        Route::post('/warehouse-stock-opnames/{id}/submit-approval', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiSubmitForApproval'])->where('id', '[0-9]+');
+        Route::post('/warehouse-stock-opnames/{id}/approve', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiApprove'])->where('id', '[0-9]+');
+        Route::post('/warehouse-stock-opnames/{id}/process', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiProcess'])->where('id', '[0-9]+');
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
