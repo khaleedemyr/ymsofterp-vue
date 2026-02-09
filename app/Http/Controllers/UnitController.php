@@ -101,4 +101,103 @@ class UnitController extends Controller
         $unit->update(['status' => $request->status]);
         return response()->json(['success' => true]);
     }
+
+    // ---------- Approval App API (JSON) ----------
+
+    public function apiIndex(Request $request)
+    {
+        $query = Unit::query();
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%$search%")
+                    ->orWhere('name', 'like', "%$search%");
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        $perPage = (int) $request->get('per_page', 15);
+        $units = $query->orderBy('id', 'desc')->paginate($perPage)->withQueryString();
+        return response()->json($units);
+    }
+
+    public function apiShow($id)
+    {
+        $unit = Unit::findOrFail($id);
+        return response()->json($unit);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:units,code',
+            'name' => 'required|string|max:100',
+            'status' => 'required|in:active,inactive',
+        ]);
+        $unit = Unit::create($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'units',
+            'description' => 'Menambahkan unit baru: ' . $unit->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $unit->toArray(),
+        ]);
+        return response()->json(['success' => true, 'data' => $unit]);
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:units,code,' . $id,
+            'name' => 'required|string|max:100',
+            'status' => 'required|in:active,inactive',
+        ]);
+        $unit = Unit::findOrFail($id);
+        $oldData = $unit->toArray();
+        $unit->update($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'units',
+            'description' => 'Mengupdate unit: ' . $unit->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $unit->fresh()->toArray(),
+        ]);
+        return response()->json(['success' => true, 'data' => $unit->fresh()]);
+    }
+
+    public function apiToggleStatus(Request $request, $id)
+    {
+        $unit = Unit::findOrFail($id);
+        $newStatus = $request->get('status', $unit->status === 'active' ? 'inactive' : 'active');
+        if (!in_array($newStatus, ['active', 'inactive'])) {
+            return response()->json(['success' => false, 'message' => 'Invalid status'], 422);
+        }
+        $unit->update(['status' => $newStatus]);
+        return response()->json(['success' => true, 'data' => $unit->fresh()]);
+    }
+
+    public function apiDestroy($id)
+    {
+        $unit = Unit::findOrFail($id);
+        $oldData = $unit->toArray();
+        $unit->update(['status' => 'inactive']);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'units',
+            'description' => 'Menonaktifkan unit: ' . $unit->name,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $unit->fresh()->toArray(),
+        ]);
+        return response()->json(['success' => true]);
+    }
 } 

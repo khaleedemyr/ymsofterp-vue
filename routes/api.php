@@ -41,6 +41,7 @@ use App\Http\Controllers\OutletController;
 use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\SubCategoryController;
+use App\Http\Controllers\UnitController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -401,6 +402,14 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/sub-categories/{id}', [SubCategoryController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::patch('/sub-categories/{id}/toggle-status', [SubCategoryController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
         Route::delete('/sub-categories/{id}', [SubCategoryController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // Units (Master Data - Approval App)
+        Route::get('/units', [UnitController::class, 'apiIndex']);
+        Route::get('/units/{id}', [UnitController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/units', [UnitController::class, 'apiStore']);
+        Route::put('/units/{id}', [UnitController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/units/{id}/toggle-status', [UnitController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/units/{id}', [UnitController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Outlet Inventory Stock Position (Approval App)
         Route::get('/outlet-inventory/stock-position', [
