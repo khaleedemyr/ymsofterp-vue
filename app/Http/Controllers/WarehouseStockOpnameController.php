@@ -1066,6 +1066,17 @@ class WarehouseStockOpnameController extends Controller
     /**
      * Generate opname number
      */
+    /**
+     * Parse qty fisik dari request: null atau empty = 0 (untuk API app, tidak default ke system).
+     */
+    private function parsePhysicalQty($value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+        return (float) $value;
+    }
+
     private function generateOpnameNumber()
     {
         $date = now()->format('Ymd');
@@ -1434,9 +1445,10 @@ class WarehouseStockOpnameController extends Controller
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
-                $qtyPhysicalSmall = (float) ($itemData['qty_physical_small'] ?? $qtySystemSmall);
-                $qtyPhysicalMedium = (float) ($itemData['qty_physical_medium'] ?? $qtySystemMedium);
-                $qtyPhysicalLarge = (float) ($itemData['qty_physical_large'] ?? $qtySystemLarge);
+                // App: kosong = 0 fisik (tidak diisi otomatis system), supaya selisih sesuai input user
+                $qtyPhysicalSmall = $this->parsePhysicalQty($itemData['qty_physical_small'] ?? null);
+                $qtyPhysicalMedium = $this->parsePhysicalQty($itemData['qty_physical_medium'] ?? null);
+                $qtyPhysicalLarge = $this->parsePhysicalQty($itemData['qty_physical_large'] ?? null);
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
@@ -1545,9 +1557,10 @@ class WarehouseStockOpnameController extends Controller
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = $stock->last_cost_small ?? 0;
-                $qtyPhysicalSmall = (float) ($itemData['qty_physical_small'] ?? $qtySystemSmall);
-                $qtyPhysicalMedium = (float) ($itemData['qty_physical_medium'] ?? $qtySystemMedium);
-                $qtyPhysicalLarge = (float) ($itemData['qty_physical_large'] ?? $qtySystemLarge);
+                // App: kosong = 0 fisik (tidak diisi otomatis system)
+                $qtyPhysicalSmall = $this->parsePhysicalQty($itemData['qty_physical_small'] ?? null);
+                $qtyPhysicalMedium = $this->parsePhysicalQty($itemData['qty_physical_medium'] ?? null);
+                $qtyPhysicalLarge = $this->parsePhysicalQty($itemData['qty_physical_large'] ?? null);
                 $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
                 $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
                 $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
