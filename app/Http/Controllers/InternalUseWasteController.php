@@ -424,6 +424,7 @@ class InternalUseWasteController extends Controller
             ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
             ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
             ->leftJoin('tbl_data_ruko', 'internal_use_wastes.ruko_id', '=', 'tbl_data_ruko.id_ruko')
+            ->leftJoin('users as creator_user', 'internal_use_wastes.created_by', '=', 'creator_user.id')
             ->select(
                 'internal_use_wastes.id',
                 'internal_use_wastes.type',
@@ -438,7 +439,9 @@ class InternalUseWasteController extends Controller
                 'warehouses.name as warehouse_name',
                 'items.name as item_name',
                 'units.name as unit_name',
-                'tbl_data_ruko.nama_ruko'
+                'tbl_data_ruko.nama_ruko',
+                'creator_user.nama_lengkap as creator_name',
+                'creator_user.avatar as creator_avatar'
             )
             ->orderByDesc('internal_use_wastes.date')
             ->orderByDesc('internal_use_wastes.id');
@@ -497,12 +500,15 @@ class InternalUseWasteController extends Controller
             ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
             ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
             ->leftJoin('tbl_data_ruko', 'internal_use_wastes.ruko_id', '=', 'tbl_data_ruko.id_ruko')
+            ->leftJoin('users as creator_user', 'internal_use_wastes.created_by', '=', 'creator_user.id')
             ->select(
                 'internal_use_wastes.*',
                 'warehouses.name as warehouse_name',
                 'items.name as item_name',
                 'units.name as unit_name',
-                'tbl_data_ruko.nama_ruko'
+                'tbl_data_ruko.nama_ruko',
+                'creator_user.nama_lengkap as creator_name',
+                'creator_user.avatar as creator_avatar'
             )
             ->where('internal_use_wastes.id', $id)
             ->first();
