@@ -11,6 +11,63 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class InventoryReportController extends Controller
 {
+    /**
+     * API: Laporan Stok Akhir Warehouse untuk mobile app (JSON).
+     */
+    public function apiStockPosition(Request $request)
+    {
+        $warehouses = DB::table('warehouses')->where('status', 'active')->select('id', 'name')->orderBy('name')->get();
+
+        $query = DB::table('food_inventory_stocks as s')
+            ->join('food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->join('warehouses as w', 's.warehouse_id', '=', 'w.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->select(
+                'i.id as item_id',
+                'i.name as item_name',
+                'i.category_id as category_id',
+                'c.name as category_name',
+                'w.id as warehouse_id',
+                'w.name as warehouse_name',
+                's.qty_small',
+                's.qty_medium',
+                's.qty_large',
+                's.value',
+                's.last_cost_small',
+                's.last_cost_medium',
+                's.last_cost_large',
+                's.updated_at',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name'
+            )
+            ->orderBy('w.name')
+            ->orderBy('i.name');
+
+        if ($request->filled('warehouse_id')) {
+            $query->where('s.warehouse_id', $request->warehouse_id);
+        }
+
+        $data = $query->get()->map(function ($row) {
+            $row->display_small = $row->qty_small;
+            $row->display_medium = $row->qty_medium;
+            $row->display_large = $row->qty_large;
+            return $row;
+        });
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+            'stocks' => $data,
+        ]);
+    }
+
     // Laporan Stok Akhir
     public function stockPosition(Request $request)
     {
