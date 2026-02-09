@@ -1814,7 +1814,7 @@ class ItemController extends Controller
         }
     }
 
-    public function apiIndex()
+    public function apiItemsSimpleList()
     {
         $items = \App\Models\Item::with(['barcodes:id,item_id,barcode'])
             ->select('id', 'name')

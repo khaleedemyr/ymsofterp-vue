@@ -317,6 +317,13 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/internal-warehouse-transfers/{id}', [InternalWarehouseTransferController::class, 'apiShow']);
         Route::post('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiStore']);
 
+        // Reservations (Approval App - Reservasi)
+        Route::get('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiIndex']);
+        Route::get('/reservations/create-data', [\App\Http\Controllers\ReservationController::class, 'apiCreateData']);
+        Route::get('/reservations/{id}', [\App\Http\Controllers\ReservationController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiStore']);
+        Route::put('/reservations/{id}', [\App\Http\Controllers\ReservationController::class, 'apiUpdate'])->where('id', '[0-9]+');
+
         // Retail Food (Approval App - Outlet Retail Food)
         Route::get('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiIndex']);
         Route::get('/retail-food/create-data', [\App\Http\Controllers\RetailFoodController::class, 'apiCreateData']);
@@ -813,7 +820,7 @@ Route::get('/outlet-inventory/stock', function (Request $request) {
     return response()->json($stock);
 });
 
-Route::get('/items', [ItemController::class, 'apiIndex']);
+Route::get('/items', [ItemController::class, 'apiItemsSimpleList']);
 
 // PR Food routes (CRUD) - for mobile app
 Route::middleware(['approval.app.auth'])->group(function () {

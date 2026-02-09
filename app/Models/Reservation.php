@@ -19,6 +19,10 @@ class Reservation extends Model
         'number_of_guests',
         'smoking_preference',
         'special_requests',
+        'dp',
+        'from_sales',
+        'sales_user_id',
+        'menu',
         'status',
         'created_by',
     ];
@@ -27,6 +31,8 @@ class Reservation extends Model
         'reservation_date' => 'date',
         'reservation_time' => 'datetime',
         'number_of_guests' => 'integer',
+        'dp' => 'decimal:2',
+        'from_sales' => 'boolean',
     ];
 
     public function outlet()
@@ -37,5 +43,10 @@ class Reservation extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function salesUser()
+    {
+        return $this->belongsTo(User::class, 'sales_user_id');
     }
 } 
