@@ -659,7 +659,8 @@ class RetailWarehouseSaleController extends Controller
                 'c.code as customer_code',
                 'w.name as warehouse_name',
                 'wd.name as division_name',
-                'u.nama_lengkap as created_by_name'
+                'u.nama_lengkap as created_by_name',
+                'u.avatar as created_by_avatar'
             );
 
         if ($request->filled('search')) {
