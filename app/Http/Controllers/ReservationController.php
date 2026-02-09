@@ -314,6 +314,7 @@ class ReservationController extends Controller
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
             $validated['created_by'] = auth()->id();
+            $validated['email'] = $request->filled('email') ? trim((string) $request->input('email')) : null;
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
                 $validated['sales_user_id'] = null;
@@ -354,6 +355,7 @@ class ReservationController extends Controller
                 'menu' => 'nullable|string',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
+            $validated['email'] = $request->filled('email') ? trim((string) $request->input('email')) : null;
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
                 $validated['sales_user_id'] = null;
