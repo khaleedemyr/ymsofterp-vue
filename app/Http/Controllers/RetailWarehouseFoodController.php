@@ -30,6 +30,94 @@ class RetailWarehouseFoodController extends Controller
         return $prefix . $date . str_pad($sequence, 4, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * API: List for mobile app (JSON pagination).
+     */
+    public function apiIndex(Request $request)
+    {
+        $query = RetailWarehouseFood::query()
+            ->with(['warehouse', 'warehouseDivision', 'creator', 'items', 'supplier'])
+            ->leftJoin('warehouses as w', 'retail_warehouse_food.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'retail_warehouse_food.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('suppliers as s', 'retail_warehouse_food.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'retail_warehouse_food.created_by', '=', 'u.id')
+            ->select(
+                'retail_warehouse_food.*',
+                'w.name as warehouse_name',
+                'wd.name as warehouse_division_name',
+                's.name as supplier_name',
+                'u.nama_lengkap as created_by_name',
+                'u.avatar as created_by_avatar'
+            )
+            ->orderByDesc('retail_warehouse_food.created_at');
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('retail_warehouse_food.retail_number', 'like', $search)
+                    ->orWhere('s.name', 'like', $search)
+                    ->orWhere('w.name', 'like', $search)
+                    ->orWhere('wd.name', 'like', $search);
+            });
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('retail_warehouse_food.transaction_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('retail_warehouse_food.transaction_date', '<=', $request->date_to);
+        }
+        if ($request->filled('payment_method')) {
+            $query->where('retail_warehouse_food.payment_method', $request->payment_method);
+        }
+
+        $perPage = (int) $request->get('per_page', 10);
+        $paginated = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'per_page' => $paginated->perPage(),
+            'total' => $paginated->total(),
+        ]);
+    }
+
+    /**
+     * API: Create form data for mobile.
+     */
+    public function apiCreate()
+    {
+        $warehouses = DB::table('warehouses')->where('status', 'active')->select('id', 'name', 'code')->orderBy('name')->get();
+        $warehouseDivisions = DB::table('warehouse_division')->select('id', 'name')->orderBy('name')->get();
+        $suppliers = DB::table('suppliers')->where('status', 'active')->select('id', 'name', 'code')->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+            'warehouse_divisions' => $warehouseDivisions,
+            'suppliers' => $suppliers,
+        ]);
+    }
+
+    /**
+     * API: Show one record for mobile (JSON).
+     */
+    public function apiShow($id)
+    {
+        $retail = RetailWarehouseFood::with(['warehouse', 'warehouseDivision', 'creator', 'items', 'supplier'])
+            ->find($id);
+
+        if (! $retail) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $retail,
+        ]);
+    }
+
     public function index(Request $request)
     {
         $user = auth()->user();

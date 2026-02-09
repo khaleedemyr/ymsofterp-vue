@@ -517,6 +517,13 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-warehouse-sale/create-data', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiCreate']);
         Route::get('/retail-warehouse-sale/item-price', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
         Route::get('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiShow']);
+
+        // Warehouse Retail Food (mobile app)
+        Route::get('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiIndex']);
+        Route::get('/retail-warehouse-food/create-data', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiCreate']);
+        Route::get('/retail-warehouse-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'getItemUnits']);
+        Route::get('/retail-warehouse-food/{id}', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiShow']);
+        Route::post('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'store']);
         Route::post('/retail-warehouse-sale', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'store']);
         Route::post('/retail-warehouse-sale/search-items', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems']);
         Route::post('/retail-warehouse-sale/search-items-by-name', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName']);
