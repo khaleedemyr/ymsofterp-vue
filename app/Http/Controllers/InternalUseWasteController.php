@@ -411,4 +411,355 @@ class InternalUseWasteController extends Controller
             'filters' => $request->only(['from', 'to', 'warehouse_id'])
         ]);
     }
+
+    // ---------- API for mobile app (approval-app) ----------
+
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        $query = DB::table('internal_use_wastes')
+            ->leftJoin('warehouses', 'internal_use_wastes.warehouse_id', '=', 'warehouses.id')
+            ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
+            ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
+            ->leftJoin('tbl_data_ruko', 'internal_use_wastes.ruko_id', '=', 'tbl_data_ruko.id_ruko')
+            ->select(
+                'internal_use_wastes.id',
+                'internal_use_wastes.type',
+                'internal_use_wastes.date',
+                'internal_use_wastes.warehouse_id',
+                'internal_use_wastes.ruko_id',
+                'internal_use_wastes.item_id',
+                'internal_use_wastes.qty',
+                'internal_use_wastes.unit_id',
+                'internal_use_wastes.notes',
+                'internal_use_wastes.created_at',
+                'warehouses.name as warehouse_name',
+                'items.name as item_name',
+                'units.name as unit_name',
+                'tbl_data_ruko.nama_ruko'
+            )
+            ->orderByDesc('internal_use_wastes.date')
+            ->orderByDesc('internal_use_wastes.id');
+
+        if ($request->filled('type')) {
+            $query->where('internal_use_wastes.type', $request->type);
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('internal_use_wastes.date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('internal_use_wastes.date', '<=', $request->date_to);
+        }
+        if ($request->filled('warehouse_id')) {
+            $query->where('internal_use_wastes.warehouse_id', $request->warehouse_id);
+        }
+
+        $perPage = (int) $request->input('per_page', 15);
+        $perPage = $perPage > 0 && $perPage <= 100 ? $perPage : 15;
+        $data = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $data->items(),
+            'can_delete' => $canDelete,
+            'current_page' => $data->currentPage(),
+            'last_page' => $data->lastPage(),
+            'per_page' => $data->perPage(),
+            'total' => $data->total(),
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $warehouses = DB::table('warehouses')->where('status', 'active')->select('id', 'name')->orderBy('name')->get();
+        $items = DB::table('items')->where('status', 'active')->select('id', 'name')->orderBy('name')->get();
+        $units = DB::table('units')->select('id', 'name')->orderBy('name')->get();
+        $rukos = DB::table('tbl_data_ruko')->select('id_ruko as id', 'nama_ruko as name')->orderBy('nama_ruko')->get();
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+            'items' => $items,
+            'units' => $units,
+            'rukos' => $rukos,
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        $data = DB::table('internal_use_wastes')
+            ->leftJoin('warehouses', 'internal_use_wastes.warehouse_id', '=', 'warehouses.id')
+            ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
+            ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
+            ->leftJoin('tbl_data_ruko', 'internal_use_wastes.ruko_id', '=', 'tbl_data_ruko.id_ruko')
+            ->select(
+                'internal_use_wastes.*',
+                'warehouses.name as warehouse_name',
+                'items.name as item_name',
+                'units.name as unit_name',
+                'tbl_data_ruko.nama_ruko'
+            )
+            ->where('internal_use_wastes.id', $id)
+            ->first();
+
+        if (! $data) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'can_delete' => $canDelete,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'type' => 'required|in:internal_use,spoil,waste',
+            'date' => 'required|date',
+            'warehouse_id' => 'required|integer',
+            'ruko_id' => 'nullable|integer',
+            'item_id' => 'required|integer',
+            'qty' => 'required|numeric',
+            'unit_id' => 'required|integer',
+            'notes' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $internalUseWasteId = DB::table('internal_use_wastes')->insertGetId([
+                'type' => $request->type,
+                'date' => $request->date,
+                'warehouse_id' => $request->warehouse_id,
+                'ruko_id' => $request->type === 'internal_use' ? $request->ruko_id : null,
+                'item_id' => $request->item_id,
+                'qty' => $request->qty,
+                'unit_id' => $request->unit_id,
+                'notes' => $request->notes,
+                'created_by' => Auth::id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $request->item_id)->first();
+            if (! $inventoryItem) {
+                throw new \Exception('Inventory item not found for item_id: '.$request->item_id);
+            }
+            $inventory_item_id = $inventoryItem->id;
+
+            $itemMaster = DB::table('items')->where('id', $request->item_id)->first();
+            $unit = DB::table('units')->where('id', $request->unit_id)->value('name');
+            $qty_input = $request->qty;
+            $qty_small = 0;
+            $qty_medium = 0;
+            $qty_large = 0;
+
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            if ($unit === $unitSmall) {
+                $qty_small = $qty_input;
+                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+            } elseif ($unit === $unitMedium) {
+                $qty_medium = $qty_input;
+                $qty_small = $qty_medium * $smallConv;
+                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+            } elseif ($unit === $unitLarge) {
+                $qty_large = $qty_input;
+                $qty_medium = $qty_large * $mediumConv;
+                $qty_small = $qty_medium * $smallConv;
+            } else {
+                $qty_small = $qty_input;
+            }
+
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('warehouse_id', $request->warehouse_id)
+                ->first();
+            if (! $stock) {
+                throw new \Exception('Stok tidak ditemukan di gudang');
+            }
+            if ($qty_small > $stock->qty_small) {
+                throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$stock->qty_small} {$unitSmall}");
+            }
+
+            DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('warehouse_id', $request->warehouse_id)
+                ->update([
+                    'qty_small' => $stock->qty_small - $qty_small,
+                    'qty_medium' => $stock->qty_medium - $qty_medium,
+                    'qty_large' => $stock->qty_large - $qty_large,
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'warehouse_id' => $request->warehouse_id,
+                'date' => $request->date,
+                'reference_type' => 'internal_use_waste',
+                'reference_id' => $internalUseWasteId,
+                'out_qty_small' => $qty_small,
+                'out_qty_medium' => $qty_medium,
+                'out_qty_large' => $qty_large,
+                'cost_per_small' => $stock->last_cost_small,
+                'cost_per_medium' => $stock->last_cost_medium,
+                'cost_per_large' => $stock->last_cost_large,
+                'value_out' => $qty_small * $stock->last_cost_small,
+                'saldo_qty_small' => $stock->qty_small - $qty_small,
+                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                'saldo_qty_large' => $stock->qty_large - $qty_large,
+                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                'description' => 'Stock Out - '.$request->type,
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil disimpan',
+                'id' => $internalUseWasteId,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            throw $e;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        if (! $canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus'], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            $data = DB::table('internal_use_wastes')->where('id', $id)->first();
+            if (! $data) {
+                return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+            }
+
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $data->item_id)->first();
+            if (! $inventoryItem) {
+                throw new \Exception('Inventory item not found');
+            }
+            $inventory_item_id = $inventoryItem->id;
+
+            $itemMaster = DB::table('items')->where('id', $data->item_id)->first();
+            $unit = DB::table('units')->where('id', $data->unit_id)->value('name');
+            $qty_input = $data->qty;
+            $qty_small = 0;
+            $qty_medium = 0;
+            $qty_large = 0;
+
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            if ($unit === $unitSmall) {
+                $qty_small = $qty_input;
+                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+            } elseif ($unit === $unitMedium) {
+                $qty_medium = $qty_input;
+                $qty_small = $qty_medium * $smallConv;
+                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+            } elseif ($unit === $unitLarge) {
+                $qty_large = $qty_input;
+                $qty_medium = $qty_large * $mediumConv;
+                $qty_small = $qty_medium * $smallConv;
+            } else {
+                $qty_small = $qty_input;
+            }
+
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('warehouse_id', $data->warehouse_id)
+                ->first();
+            if ($stock) {
+                DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('warehouse_id', $data->warehouse_id)
+                    ->update([
+                        'qty_small' => $stock->qty_small + $qty_small,
+                        'qty_medium' => $stock->qty_medium + $qty_medium,
+                        'qty_large' => $stock->qty_large + $qty_large,
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            DB::table('food_inventory_cards')
+                ->where('reference_type', 'internal_use_waste')
+                ->where('reference_id', $id)
+                ->delete();
+
+            DB::table('internal_use_wastes')->where('id', $id)->delete();
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Data berhasil dihapus']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiStock(Request $request)
+    {
+        $warehouseId = $request->input('warehouse_id');
+        $itemId = $request->input('item_id');
+        if (! $warehouseId || ! $itemId) {
+            return response()->json(['success' => false, 'message' => 'warehouse_id dan item_id wajib'], 400);
+        }
+
+        $inv = DB::table('food_inventory_items')->where('item_id', $itemId)->first();
+        if (! $inv) {
+            return response()->json([
+                'success' => true,
+                'qty_small' => 0,
+                'qty_medium' => 0,
+                'qty_large' => 0,
+                'small_unit_name' => null,
+                'medium_unit_name' => null,
+                'large_unit_name' => null,
+            ]);
+        }
+
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inv->id)
+            ->where('warehouse_id', $warehouseId)
+            ->first();
+
+        $item = DB::table('items')->where('id', $itemId)->first();
+        $smallUnitName = $item && $item->small_unit_id ? DB::table('units')->where('id', $item->small_unit_id)->value('name') : null;
+        $mediumUnitName = $item && $item->medium_unit_id ? DB::table('units')->where('id', $item->medium_unit_id)->value('name') : null;
+        $largeUnitName = $item && $item->large_unit_id ? DB::table('units')->where('id', $item->large_unit_id)->value('name') : null;
+
+        return response()->json([
+            'success' => true,
+            'qty_small' => $stock ? (float) $stock->qty_small : 0,
+            'qty_medium' => $stock ? (float) $stock->qty_medium : 0,
+            'qty_large' => $stock ? (float) $stock->qty_large : 0,
+            'small_unit_name' => $smallUnitName,
+            'medium_unit_name' => $mediumUnitName,
+            'large_unit_name' => $largeUnitName,
+        ]);
+    }
 } 

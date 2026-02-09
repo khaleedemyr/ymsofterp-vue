@@ -614,7 +614,16 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);
         Route::post('/outlet-internal-use-waste/{id}/approve', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'approve']);
         Route::post('/outlet-internal-use-waste/{id}/reject', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reject']);
-        
+
+        // Warehouse Internal Use & Waste (approval-app)
+        Route::get('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiIndex']);
+        Route::get('/internal-use-waste/create-data', [\App\Http\Controllers\InternalUseWasteController::class, 'apiCreateData']);
+        Route::get('/internal-use-waste/stock', [\App\Http\Controllers\InternalUseWasteController::class, 'apiStock']);
+        Route::get('/internal-use-waste/item/{id}/units', [\App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
+        Route::get('/internal-use-waste/{id}', [\App\Http\Controllers\InternalUseWasteController::class, 'apiShow']);
+        Route::post('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiStore']);
+        Route::delete('/internal-use-waste/{id}', [\App\Http\Controllers\InternalUseWasteController::class, 'apiDestroy']);
+
         Route::get('/outlet-food-inventory-adjustment/pending-approvals', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'getPendingApprovals']);
         Route::get('/outlet-food-inventory-adjustment/{id}/approval-details', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'getApprovalDetails']);
         Route::post('/outlet-food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'approve']);
