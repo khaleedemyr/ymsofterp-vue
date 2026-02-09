@@ -1309,11 +1309,19 @@ class WarehouseStockOpnameController extends Controller
 
         $paginated = $query->orderBy('created_at', 'desc')->paginate($perPage, ['*'], 'page', $page);
 
+        $items = $paginated->getCollection()->map(function ($so) {
+            $arr = $so->toArray();
+            $arr['warehouse'] = $so->warehouse ? ['id' => $so->warehouse->id, 'name' => $so->warehouse->name] : null;
+            $arr['warehouse_division'] = $so->warehouseDivision ? ['id' => $so->warehouseDivision->id, 'name' => $so->warehouseDivision->name] : null;
+            $arr['creator'] = $so->creator ? ['id' => $so->creator->id, 'nama_lengkap' => $so->creator->nama_lengkap, 'avatar' => $so->creator->avatar] : null;
+            return $arr;
+        })->values()->all();
+
         $warehouses = DB::table('warehouses')->select('id', 'name')->orderBy('name')->get();
 
         return response()->json([
             'success' => true,
-            'data' => $paginated->items(),
+            'data' => $items,
             'current_page' => $paginated->currentPage(),
             'last_page' => $paginated->lastPage(),
             'per_page' => $paginated->perPage(),
