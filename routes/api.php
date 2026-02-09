@@ -533,6 +533,15 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiShow']);
         Route::delete('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiDestroy']);
 
+        // Penjualan Antar Gudang (Warehouse Sales - mobile app)
+        Route::get('/warehouse-sales', [\App\Http\Controllers\WarehouseSaleController::class, 'apiIndex']);
+        Route::get('/warehouse-sales/create-data', [\App\Http\Controllers\WarehouseSaleController::class, 'apiCreate']);
+        Route::get('/warehouse-sales/item-price', [\App\Http\Controllers\WarehouseSaleController::class, 'getItemPrice']);
+        Route::get('/warehouse-sales/search-items', [\App\Http\Controllers\WarehouseSaleController::class, 'apiSearchItems']);
+        Route::get('/warehouse-sales/{id}', [\App\Http\Controllers\WarehouseSaleController::class, 'apiShow']);
+        Route::post('/warehouse-sales', [\App\Http\Controllers\WarehouseSaleController::class, 'apiStore']);
+        Route::delete('/warehouse-sales/{id}', [\App\Http\Controllers\WarehouseSaleController::class, 'apiDestroy']);
+
         // Warehouse Retail Food (mobile app)
         Route::get('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiIndex']);
         Route::get('/retail-warehouse-food/create-data', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiCreate']);
