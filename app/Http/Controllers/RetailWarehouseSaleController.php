@@ -634,6 +634,130 @@ class RetailWarehouseSaleController extends Controller
         ]);
     }
 
+    /**
+     * API: List sales (for mobile app - JSON pagination)
+     */
+    public function apiIndex(Request $request)
+    {
+        $query = DB::table('retail_warehouse_sales as rws')
+            ->leftJoin('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('users as u', 'rws.created_by', '=', 'u.id')
+            ->select(
+                'rws.id',
+                'rws.number',
+                'rws.customer_id',
+                'rws.warehouse_id',
+                'rws.warehouse_division_id',
+                'rws.sale_date',
+                'rws.total_amount',
+                'rws.status',
+                'rws.notes',
+                'rws.created_at',
+                'c.name as customer_name',
+                'c.code as customer_code',
+                'w.name as warehouse_name',
+                'wd.name as division_name',
+                'u.nama_lengkap as created_by_name'
+            );
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('rws.number', 'like', $search)
+                    ->orWhere('c.name', 'like', $search)
+                    ->orWhere('c.code', 'like', $search)
+                    ->orWhere('w.name', 'like', $search)
+                    ->orWhere('wd.name', 'like', $search);
+            });
+        }
+        if ($request->filled('from')) {
+            $query->whereDate('rws.created_at', '>=', $request->from);
+        }
+        if ($request->filled('to')) {
+            $query->whereDate('rws.created_at', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        $sales = $query->orderByDesc('rws.created_at')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $sales->items(),
+            'current_page' => $sales->currentPage(),
+            'last_page' => $sales->lastPage(),
+            'per_page' => $sales->perPage(),
+            'total' => $sales->total(),
+        ]);
+    }
+
+    /**
+     * API: Create form data (warehouses, divisions, customers)
+     */
+    public function apiCreate()
+    {
+        $warehouses = DB::table('warehouses')->where('status', 'active')->get();
+        $warehouseDivisions = DB::table('warehouse_division')->get();
+        $customers = DB::table('customers')->where('status', 'active')->get();
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+            'warehouse_divisions' => $warehouseDivisions,
+            'customers' => $customers,
+        ]);
+    }
+
+    /**
+     * API: Show one sale with items (JSON)
+     */
+    public function apiShow($id)
+    {
+        $sale = DB::table('retail_warehouse_sales as rws')
+            ->leftJoin('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('users as u', 'rws.created_by', '=', 'u.id')
+            ->select(
+                'rws.*',
+                'c.name as customer_name',
+                'c.code as customer_code',
+                'c.phone as customer_phone',
+                'c.address as customer_address',
+                'w.name as warehouse_name',
+                'wd.name as division_name',
+                'u.nama_lengkap as created_by_name'
+            )
+            ->where('rws.id', $id)
+            ->first();
+
+        if (! $sale) {
+            return response()->json(['success' => false, 'message' => 'Penjualan tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('retail_warehouse_sale_items as rwsi')
+            ->leftJoin('items as i', 'rwsi.item_id', '=', 'i.id')
+            ->select(
+                'rwsi.id',
+                'rwsi.item_id',
+                'i.name as item_name',
+                'rwsi.barcode',
+                'rwsi.qty',
+                'rwsi.unit',
+                'rwsi.price',
+                'rwsi.subtotal'
+            )
+            ->where('rwsi.retail_warehouse_sale_id', $id)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'sale' => $sale,
+            'items' => $items,
+        ]);
+    }
+
     public function print($id)
     {
         $sale = DB::table('retail_warehouse_sales as rws')

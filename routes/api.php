@@ -512,6 +512,17 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy']);
         Route::get('/outlet-wip-report', [\App\Http\Controllers\OutletWIPController::class, 'apiReport']);
 
+        // Penjualan Warehouse Retail (mobile app) - specific routes before {id}
+        Route::get('/retail-warehouse-sale', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiIndex']);
+        Route::get('/retail-warehouse-sale/create-data', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiCreate']);
+        Route::get('/retail-warehouse-sale/item-price', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
+        Route::get('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiShow']);
+        Route::post('/retail-warehouse-sale', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'store']);
+        Route::post('/retail-warehouse-sale/search-items', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems']);
+        Route::post('/retail-warehouse-sale/search-items-by-name', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName']);
+        Route::post('/retail-warehouse-sale/search-customers', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchCustomers']);
+        Route::post('/retail-warehouse-sale/store-customer', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'storeCustomer']);
+
         // Device Token routes for Approval App
         Route::post('/device-token/register', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'register'])->name('api.approval-app.device-token.register');
         Route::post('/device-token/unregister', [\App\Http\Controllers\Mobile\ApprovalApp\DeviceTokenController::class, 'unregister'])->name('api.approval-app.device-token.unregister');
