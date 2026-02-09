@@ -531,6 +531,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-warehouse-sale/create-data', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiCreate']);
         Route::get('/retail-warehouse-sale/item-price', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'getItemPrice']);
         Route::get('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiShow']);
+        Route::delete('/retail-warehouse-sale/{id}', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiDestroy']);
 
         // Warehouse Retail Food (mobile app)
         Route::get('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiIndex']);

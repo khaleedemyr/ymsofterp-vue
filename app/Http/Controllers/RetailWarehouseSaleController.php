@@ -639,6 +639,9 @@ class RetailWarehouseSaleController extends Controller
      */
     public function apiIndex(Request $request)
     {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         $query = DB::table('retail_warehouse_sales as rws')
             ->leftJoin('customers as c', 'rws.customer_id', '=', 'c.id')
             ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
@@ -686,6 +689,7 @@ class RetailWarehouseSaleController extends Controller
         return response()->json([
             'success' => true,
             'data' => $sales->items(),
+            'can_delete' => $canDelete,
             'current_page' => $sales->currentPage(),
             'last_page' => $sales->lastPage(),
             'per_page' => $sales->perPage(),
@@ -737,6 +741,9 @@ class RetailWarehouseSaleController extends Controller
             return response()->json(['success' => false, 'message' => 'Penjualan tidak ditemukan'], 404);
         }
 
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         $items = DB::table('retail_warehouse_sale_items as rwsi')
             ->leftJoin('items as i', 'rwsi.item_id', '=', 'i.id')
             ->select(
@@ -756,7 +763,54 @@ class RetailWarehouseSaleController extends Controller
             'success' => true,
             'sale' => $sale,
             'items' => $items,
+            'can_delete' => $canDelete,
         ]);
+    }
+
+    /**
+     * API: Delete sale (for mobile app - rollback stock, return JSON)
+     */
+    public function apiDestroy($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        if (! $canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus'], 403);
+        }
+
+        $sale = DB::table('retail_warehouse_sales')->where('id', $id)->first();
+        if (! $sale) {
+            return response()->json(['success' => false, 'message' => 'Penjualan tidak ditemukan'], 404);
+        }
+
+        DB::beginTransaction();
+        try {
+            $items = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->get();
+            foreach ($items as $item) {
+                $this->rollbackInventoryStock($item, $sale->warehouse_id);
+            }
+            DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->delete();
+            DB::table('retail_warehouse_sales')->where('id', $id)->delete();
+
+            DB::table('activity_logs')->insert([
+                'user_id' => auth()->id(),
+                'activity_type' => 'delete',
+                'module' => 'retail_warehouse_sale',
+                'description' => 'Menghapus retail warehouse sale #' . $sale->number,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'old_data' => json_encode($sale),
+                'new_data' => null,
+                'created_at' => now(),
+            ]);
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Penjualan berhasil dihapus']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Gagal hapus Retail Warehouse Sale: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()], 500);
+        }
     }
 
     public function print($id)
