@@ -39,6 +39,7 @@ use App\Http\Controllers\ReportDailyRevenueForecastController;
 use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\FoodFloorOrderController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -381,6 +382,15 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/floor-orders/{id}', [FoodFloorOrderController::class, 'destroy']);
         Route::post('/floor-orders/{id}/submit', [FoodFloorOrderController::class, 'submit']);
         Route::get('/floor-orders/{id}/export-pdf', [FoodFloorOrderController::class, 'exportPdf']);
+
+        // Categories (Master Data - Approval App)
+        Route::get('/categories', [CategoryController::class, 'apiIndex']);
+        Route::get('/categories/create-data', [CategoryController::class, 'apiCreateData']);
+        Route::get('/categories/{id}', [CategoryController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/categories', [CategoryController::class, 'apiStore']);
+        Route::put('/categories/{id}', [CategoryController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/categories/{id}/toggle-status', [CategoryController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/categories/{id}', [CategoryController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Outlet Inventory Stock Position (Approval App)
         Route::get('/outlet-inventory/stock-position', [
