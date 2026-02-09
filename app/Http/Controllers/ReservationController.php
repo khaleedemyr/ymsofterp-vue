@@ -223,7 +223,7 @@ class ReservationController extends Controller
                 'outlet_id' => $reservation->outlet_id,
                 'outlet' => $reservation->outlet ? $reservation->outlet->nama_outlet : null,
                 'reservation_date' => $reservation->reservation_date?->format('Y-m-d'),
-                'reservation_time' => $reservation->reservation_time,
+                'reservation_time' => $reservation->reservation_time ? \Carbon\Carbon::parse($reservation->reservation_time)->format('H:i') : null,
                 'number_of_guests' => $reservation->number_of_guests,
                 'smoking_preference' => $reservation->smoking_preference,
                 'special_requests' => $reservation->special_requests,
@@ -234,6 +234,7 @@ class ReservationController extends Controller
                 'menu' => $reservation->menu,
                 'status' => $reservation->status,
                 'created_by' => $reservation->creator ? $reservation->creator->name : null,
+                'created_at' => $reservation->created_at?->toIso8601String(),
             ];
         });
 
@@ -278,7 +279,7 @@ class ReservationController extends Controller
             'outlet_id' => $reservation->outlet_id,
             'outlet' => $reservation->outlet ? $reservation->outlet->nama_outlet : null,
             'reservation_date' => $reservation->reservation_date?->format('Y-m-d'),
-            'reservation_time' => $reservation->reservation_time,
+            'reservation_time' => $reservation->reservation_time ? \Carbon\Carbon::parse($reservation->reservation_time)->format('H:i') : null,
             'number_of_guests' => $reservation->number_of_guests,
             'smoking_preference' => $reservation->smoking_preference,
             'special_requests' => $reservation->special_requests,
@@ -289,6 +290,7 @@ class ReservationController extends Controller
             'menu' => $reservation->menu,
             'status' => $reservation->status,
             'created_by' => $reservation->creator ? $reservation->creator->name : null,
+            'created_at' => $reservation->created_at?->toIso8601String(),
         ]);
     }
 
@@ -303,6 +305,7 @@ class ReservationController extends Controller
                 'reservation_date' => 'required|date',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
+                'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
                 'from_sales' => 'nullable|boolean',
@@ -343,6 +346,7 @@ class ReservationController extends Controller
                 'reservation_date' => 'required|date',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
+                'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
                 'from_sales' => 'nullable|boolean',
