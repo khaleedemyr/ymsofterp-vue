@@ -400,9 +400,9 @@ class WarehouseSaleController extends Controller
         return response()->json(['items' => $list]);
     }
 
-    public function apiShow(WarehouseSale $warehouseSale)
+    public function apiShow($id)
     {
-        $warehouseSale->load(['sourceWarehouse', 'targetWarehouse', 'creator', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit']);
+        $warehouseSale = WarehouseSale::with(['sourceWarehouse', 'targetWarehouse', 'creator', 'items.item.smallUnit', 'items.item.mediumUnit', 'items.item.largeUnit'])->findOrFail($id);
         $user = auth()->user();
         $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
         return response()->json([
