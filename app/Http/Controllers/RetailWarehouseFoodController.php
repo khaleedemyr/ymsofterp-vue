@@ -89,7 +89,7 @@ class RetailWarehouseFoodController extends Controller
     public function apiCreate()
     {
         $warehouses = DB::table('warehouses')->where('status', 'active')->select('id', 'name', 'code')->orderBy('name')->get();
-        $warehouseDivisions = DB::table('warehouse_division')->select('id', 'name')->orderBy('name')->get();
+        $warehouseDivisions = DB::table('warehouse_division')->select('id', 'name', 'warehouse_id')->orderBy('name')->get();
         $suppliers = DB::table('suppliers')->where('status', 'active')->select('id', 'name', 'code')->orderBy('name')->get();
 
         return response()->json([
