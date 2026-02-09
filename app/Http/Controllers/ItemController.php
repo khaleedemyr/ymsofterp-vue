@@ -2392,4 +2392,367 @@ class ItemController extends Controller
             ], 500);
         }
     }
+
+    // ---------- Approval App API ----------
+
+    public function apiIndex(Request $request)
+    {
+        $query = Item::with([
+            'category',
+            'subCategory',
+            'smallUnit',
+            'mediumUnit',
+            'largeUnit',
+            'images',
+        ]);
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%$search%")
+                    ->orWhere('sku', 'like', "%$search%");
+            });
+        }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $perPage = min((int) $request->get('per_page', 15), 50);
+        $items = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $items->items(),
+            'meta' => [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ],
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $categories = Category::all();
+        $subCategories = SubCategory::where('status', 'active')->get();
+        $units = Unit::all();
+        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
+        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
+        $regions = \DB::table('regions')->where('status', 'active')->get()->values();
+        $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->values();
+        $bomItems = Item::with('smallUnit')->where('status', 'active')->orderBy('name')->get();
+        $modifiers = Modifier::with('options')->get();
+
+        return response()->json([
+            'success' => true,
+            'categories' => $categories,
+            'sub_categories' => $subCategories,
+            'units' => $units,
+            'warehouse_divisions' => $warehouseDivisions,
+            'menu_types' => $menuTypes,
+            'regions' => $regions,
+            'outlets' => $outlets,
+            'bom_items' => $bomItems,
+            'modifiers' => $modifiers,
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $response = $this->show($id);
+        $content = $response->getData(true);
+        if (isset($content['error'])) {
+            return $response;
+        }
+        return response()->json(['success' => true, 'item' => $content['item'] ?? $content]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
+        if ($request->has('modifier_enabled')) {
+            $request->merge([
+                'modifier_enabled' => filter_var($request->modifier_enabled, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+        }
+        $validated = $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'sub_category_id' => 'nullable|exists:sub_categories,id',
+            'warehouse_division_id' => 'nullable',
+            'sku' => 'required|string|max:255|unique:items',
+            'type' => ['nullable', Rule::in(array_merge($allowedTypes, ['product', 'service']))],
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'specification' => 'nullable|string',
+            'small_unit_id' => 'required|exists:units,id',
+            'medium_unit_id' => 'nullable|exists:units,id',
+            'large_unit_id' => 'nullable|exists:units,id',
+            'medium_conversion_qty' => 'nullable|numeric|min:0',
+            'small_conversion_qty' => 'nullable|numeric|min:0',
+            'min_stock' => 'nullable|integer|min:0',
+            'status' => 'required|string|in:active,inactive',
+            'composition_type' => 'required|in:single,composed',
+            'modifier_enabled' => 'nullable|boolean',
+            'modifier_option_ids' => 'nullable|array',
+            'modifier_option_ids.*' => 'exists:modifier_options,id',
+            'prices' => 'nullable|array',
+            'prices.*.region_id' => 'nullable|exists:regions,id',
+            'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'prices.*.price' => 'required|numeric|min:0',
+            'availabilities' => 'nullable|array',
+            'availabilities.*.region_id' => 'nullable|exists:regions,id',
+            'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'bom' => 'nullable|array',
+            'bom.*.item_id' => 'required|exists:items,id',
+            'bom.*.qty' => 'required|numeric|min:0',
+            'bom.*.unit_id' => 'required|exists:units,id',
+            'exp' => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+            $item = Item::create(array_merge($validated, [
+                'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
+                'composition_type' => $request->composition_type,
+                'exp' => $request->exp ?? 0,
+                'min_stock' => $request->min_stock ?? 0,
+                'medium_unit_id' => $request->medium_unit_id ?? $request->small_unit_id,
+                'large_unit_id' => $request->large_unit_id ?? $request->small_unit_id,
+                'medium_conversion_qty' => $request->medium_conversion_qty ?? 0,
+                'small_conversion_qty' => $request->small_conversion_qty ?? 0,
+            ]));
+
+            if ($item->modifier_enabled && $request->modifier_option_ids) {
+                $item->modifierOptions()->sync($request->modifier_option_ids);
+            }
+            if ($request->composition_type === 'composed' && $request->bom) {
+                foreach ($request->bom as $bom) {
+                    $item->boms()->create([
+                        'material_item_id' => $bom['item_id'],
+                        'qty' => $bom['qty'],
+                        'unit_id' => $bom['unit_id'],
+                    ]);
+                }
+            }
+            if ($request->prices) {
+                foreach ($request->prices as $price) {
+                    $type = 'all';
+                    if (!empty($price['region_id']) && empty($price['outlet_id'])) {
+                        $type = 'region';
+                    } elseif (!empty($price['outlet_id'])) {
+                        $type = 'outlet';
+                    }
+                    $item->prices()->create([
+                        'region_id' => $price['region_id'] ?? null,
+                        'outlet_id' => $price['outlet_id'] ?? null,
+                        'price' => $price['price'],
+                        'availability_price_type' => $type,
+                    ]);
+                }
+            }
+            if ($request->availabilities) {
+                foreach ($request->availabilities as $availability) {
+                    $type = 'all';
+                    if (!empty($availability['region_id']) && empty($availability['outlet_id'])) {
+                        $type = 'region';
+                    } elseif (!empty($availability['outlet_id'])) {
+                        $type = 'outlet';
+                    }
+                    $item->availabilities()->create([
+                        'region_id' => $availability['region_id'] ?? null,
+                        'outlet_id' => $availability['outlet_id'] ?? null,
+                        'availability_type' => $type,
+                    ]);
+                }
+            }
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'create',
+                'module' => 'items',
+                'description' => 'Membuat item baru (App): ' . $item->name,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $item->toArray(),
+            ]);
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Item created.', 'item' => $item->load(['category', 'subCategory', 'smallUnit'])]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('ItemController@apiStore', ['message' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $item = Item::findOrFail($id);
+        $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
+        if ($request->has('modifier_enabled')) {
+            $request->merge([
+                'modifier_enabled' => filter_var($request->modifier_enabled, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
+            ]);
+        }
+        $validated = $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'sub_category_id' => 'nullable|exists:sub_categories,id',
+            'warehouse_division_id' => 'nullable',
+            'sku' => 'required|string|max:255|unique:items,sku,' . $item->id,
+            'type' => ['nullable', Rule::in(array_merge($allowedTypes, ['product', 'service']))],
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'specification' => 'nullable|string',
+            'small_unit_id' => 'required|exists:units,id',
+            'medium_unit_id' => 'nullable|exists:units,id',
+            'large_unit_id' => 'nullable|exists:units,id',
+            'medium_conversion_qty' => 'nullable|numeric|min:0',
+            'small_conversion_qty' => 'nullable|numeric|min:0',
+            'min_stock' => 'nullable|integer|min:0',
+            'status' => 'required|string|in:active,inactive',
+            'composition_type' => 'required|in:single,composed',
+            'modifier_enabled' => 'nullable|boolean',
+            'modifier_option_ids' => 'nullable|array',
+            'modifier_option_ids.*' => 'exists:modifier_options,id',
+            'prices' => 'nullable|array',
+            'prices.*.region_id' => 'nullable|exists:regions,id',
+            'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'prices.*.price' => 'required|numeric|min:0',
+            'availabilities' => 'nullable|array',
+            'availabilities.*.region_id' => 'nullable|exists:regions,id',
+            'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'bom' => 'nullable|array',
+            'bom.*.item_id' => 'required|exists:items,id',
+            'bom.*.qty' => 'required|numeric|min:0',
+            'bom.*.unit_id' => 'required|exists:units,id',
+            'exp' => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            DB::beginTransaction();
+            $item->update(array_merge($validated, [
+                'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
+                'composition_type' => $request->composition_type,
+                'exp' => $request->exp ?? 0,
+                'min_stock' => $request->min_stock ?? 0,
+                'medium_unit_id' => $request->medium_unit_id ?? $item->small_unit_id,
+                'large_unit_id' => $request->large_unit_id ?? $item->small_unit_id,
+                'medium_conversion_qty' => $request->medium_conversion_qty ?? 0,
+                'small_conversion_qty' => $request->small_conversion_qty ?? 0,
+            ]));
+
+            if ($request->has('prices')) {
+                $item->prices()->delete();
+                if ($request->prices) {
+                    foreach ($request->prices as $price) {
+                        $type = 'all';
+                        if (!empty($price['region_id']) && empty($price['outlet_id'])) {
+                            $type = 'region';
+                        } elseif (!empty($price['outlet_id'])) {
+                            $type = 'outlet';
+                        }
+                        $item->prices()->create([
+                            'region_id' => $price['region_id'] ?? null,
+                            'outlet_id' => $price['outlet_id'] ?? null,
+                            'price' => $price['price'],
+                            'availability_price_type' => $type,
+                        ]);
+                    }
+                }
+            }
+            if ($request->has('availabilities')) {
+                $item->availabilities()->delete();
+                if ($request->availabilities) {
+                    foreach ($request->availabilities as $availability) {
+                        $type = 'all';
+                        if (!empty($availability['region_id']) && empty($availability['outlet_id'])) {
+                            $type = 'region';
+                        } elseif (!empty($availability['outlet_id'])) {
+                            $type = 'outlet';
+                        }
+                        $item->availabilities()->create([
+                            'region_id' => $availability['region_id'] ?? null,
+                            'outlet_id' => $availability['outlet_id'] ?? null,
+                            'availability_type' => $type,
+                        ]);
+                    }
+                }
+            }
+            if ($request->has('bom')) {
+                $item->boms()->delete();
+                if ($request->composition_type === 'composed' && $request->bom) {
+                    foreach ($request->bom as $bom) {
+                        $item->boms()->create([
+                            'material_item_id' => $bom['item_id'],
+                            'qty' => $bom['qty'],
+                            'unit_id' => $bom['unit_id'],
+                        ]);
+                    }
+                }
+            }
+            if ($request->has('modifier_option_ids')) {
+                if ($item->modifier_enabled && $request->modifier_option_ids) {
+                    $item->modifierOptions()->sync($request->modifier_option_ids);
+                } else {
+                    $item->modifierOptions()->detach();
+                }
+            }
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => 'update',
+                'module' => 'items',
+                'description' => 'Mengupdate item (App): ' . $item->name,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $item->fresh()->toArray(),
+            ]);
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Item updated.', 'item' => $item->fresh()->load(['category', 'subCategory', 'smallUnit'])]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('ItemController@apiUpdate', ['message' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function apiToggleStatus(Request $request, $id)
+    {
+        $request->validate(['status' => 'required|in:active,inactive']);
+        $item = Item::findOrFail($id);
+        $item->status = $request->status;
+        $item->save();
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'items',
+            'description' => 'Mengubah status item (App): ' . $item->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $item->toArray(),
+        ]);
+        return response()->json(['success' => true, 'message' => 'Status updated.', 'item' => $item]);
+    }
+
+    public function apiDestroy($id)
+    {
+        $item = Item::findOrFail($id);
+        $item->status = 'inactive';
+        $item->save();
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'items',
+            'description' => 'Menonaktifkan item (App): ' . $item->name,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => null,
+            'new_data' => $item->toArray(),
+        ]);
+        return response()->json(['success' => true, 'message' => 'Item set to inactive.']);
+    }
 } 

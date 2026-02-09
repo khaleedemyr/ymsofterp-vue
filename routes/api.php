@@ -411,6 +411,15 @@ Route::prefix('approval-app')->group(function () {
         Route::patch('/units/{id}/toggle-status', [UnitController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
         Route::delete('/units/{id}', [UnitController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // Items (Master Data - Approval App)
+        Route::get('/items', [ItemController::class, 'apiIndex']);
+        Route::get('/items/create-data', [ItemController::class, 'apiCreateData']);
+        Route::get('/items/{id}', [ItemController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/items', [ItemController::class, 'apiStore']);
+        Route::put('/items/{id}', [ItemController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/items/{id}/toggle-status', [ItemController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/items/{id}', [ItemController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // Outlet Inventory Stock Position (Approval App)
         Route::get('/outlet-inventory/stock-position', [
             \App\Http\Controllers\OutletInventoryReportController::class,
