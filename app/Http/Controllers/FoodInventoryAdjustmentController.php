@@ -679,6 +679,138 @@ class FoodInventoryAdjustmentController extends Controller
         }
     }
 
+    /**
+     * API: List all adjustments (for mobile - same as web index, JSON)
+     */
+    public function apiIndex(Request $request)
+    {
+        $query = FoodInventoryAdjustment::with(['items', 'warehouse', 'creator']);
+        if ($request->search) {
+            $search = $request->search;
+            $query->whereHas('items', function ($q) use ($search) {
+                $q->where('item_id', $search);
+            });
+        }
+        if ($request->warehouse_id) {
+            $query->where('warehouse_id', $request->warehouse_id);
+        }
+        if ($request->from) {
+            $query->whereDate('date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('date', '<=', $request->to);
+        }
+        $perPage = (int) $request->get('per_page', 20);
+        $adjustments = $query->orderByDesc('date')->paginate($perPage);
+        return response()->json([
+            'success' => true,
+            'data' => $adjustments->items(),
+            'current_page' => $adjustments->currentPage(),
+            'last_page' => $adjustments->lastPage(),
+            'per_page' => $adjustments->perPage(),
+            'total' => $adjustments->total(),
+        ]);
+    }
+
+    /**
+     * API: List warehouses (for mobile create form)
+     */
+    public function apiWarehouses()
+    {
+        $warehouses = Warehouse::select('id', 'name')->orderBy('name')->get();
+        return response()->json(['success' => true, 'warehouses' => $warehouses]);
+    }
+
+    /**
+     * API: Search items for warehouse (for mobile create form)
+     */
+    public function apiSearchItems(Request $request)
+    {
+        return app(\App\Http\Controllers\ItemController::class)->searchForWarehouseTransfer($request);
+    }
+
+    /**
+     * API: Store new adjustment (for mobile - same as web store, return JSON)
+     */
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'type' => 'required|in:in,out',
+            'reason' => 'required|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.selected_unit' => 'required|string',
+        ]);
+        DB::beginTransaction();
+        try {
+            $number = $this->generateAdjustmentNumber();
+            $headerId = DB::table('food_inventory_adjustments')->insertGetId([
+                'number' => $number,
+                'date' => $request->date,
+                'warehouse_id' => $request->warehouse_id,
+                'type' => $request->type,
+                'reason' => $request->reason,
+                'status' => 'waiting_approval',
+                'created_by' => auth()->id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            foreach ($request->items as $item) {
+                DB::table('food_inventory_adjustment_items')->insert([
+                    'adjustment_id' => $headerId,
+                    'item_id' => $item['item_id'],
+                    'qty' => $item['qty'],
+                    'unit' => $item['selected_unit'],
+                    'note' => $item['note'] ?? null,
+                ]);
+            }
+            DB::table('activity_logs')->insert([
+                'user_id' => auth()->id(),
+                'activity_type' => 'create',
+                'module' => 'stock_adjustment',
+                'description' => 'Membuat stock adjustment baru: ' . $number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => json_encode($request->all()),
+                'created_at' => now(),
+            ]);
+            $warehouse = DB::table('warehouses')->where('id', $request->warehouse_id)->first();
+            $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+            if ($isMKWarehouse) {
+                $notifUsers = DB::table('users')->where('id_jabatan', 179)->where('status', 'A')->pluck('id');
+            } else {
+                $notifUsers = DB::table('users')->where('id_jabatan', 172)->where('status', 'A')->pluck('id');
+            }
+            foreach ($notifUsers as $uid) {
+                NotificationService::insert([
+                    'user_id' => $uid,
+                    'type' => 'stock_adjustment_approval',
+                    'message' => "Stock Adjustment #$number menunggu approval",
+                    'url' => '/food-inventory-adjustment/' . $headerId,
+                    'is_read' => 0,
+                ]);
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock adjustment berhasil disimpan!',
+                'id' => $headerId,
+                'number' => $number,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Food inventory adjustment apiStore error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
     // Helper untuk generate nomor adjustment
     private function generateAdjustmentNumber()
     {

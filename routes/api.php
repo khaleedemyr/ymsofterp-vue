@@ -588,6 +588,10 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'approve']);
         Route::post('/outlet-food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\OutletFoodInventoryAdjustmentController::class, 'reject']);
         
+        Route::get('/food-inventory-adjustment', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'apiIndex']);
+        Route::get('/food-inventory-adjustment/warehouses', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'apiWarehouses']);
+        Route::get('/food-inventory-adjustment/items/search', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'apiSearchItems']);
+        Route::post('/food-inventory-adjustment', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'apiStore']);
         Route::get('/food-inventory-adjustment/pending-approvals', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'getPendingApprovals']);
         Route::get('/food-inventory-adjustment/{id}/approval-details', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'getApprovalDetails']);
         Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve']);
