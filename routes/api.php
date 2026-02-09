@@ -40,6 +40,7 @@ use App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -391,6 +392,15 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/categories/{id}', [CategoryController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::patch('/categories/{id}/toggle-status', [CategoryController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
         Route::delete('/categories/{id}', [CategoryController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // Sub Categories (Master Data - Approval App)
+        Route::get('/sub-categories', [SubCategoryController::class, 'apiIndex']);
+        Route::get('/sub-categories/create-data', [SubCategoryController::class, 'apiCreateData']);
+        Route::get('/sub-categories/{id}', [SubCategoryController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/sub-categories', [SubCategoryController::class, 'apiStore']);
+        Route::put('/sub-categories/{id}', [SubCategoryController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/sub-categories/{id}/toggle-status', [SubCategoryController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/sub-categories/{id}', [SubCategoryController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Outlet Inventory Stock Position (Approval App)
         Route::get('/outlet-inventory/stock-position', [
