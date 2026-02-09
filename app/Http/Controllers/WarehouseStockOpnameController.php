@@ -1360,6 +1360,7 @@ class WarehouseStockOpnameController extends Controller
             'warehouseDivision',
             'creator',
             'items.inventoryItem.item',
+            'items.inventoryItem.item.category',
             'items.inventoryItem.item.smallUnit',
             'items.inventoryItem.item.mediumUnit',
             'items.inventoryItem.item.largeUnit',
