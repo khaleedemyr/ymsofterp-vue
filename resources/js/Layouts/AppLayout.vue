@@ -620,7 +620,7 @@ async function markAsRead(id) {
 
 async function markAllAsRead() {
     try {
-        await axios.post('/api/notifications/mark-all-read');
+        await axios.post('/api/notifications/read-all');
         await fetchUnreadCount();
         await fetchNotifications();
     } catch (error) {

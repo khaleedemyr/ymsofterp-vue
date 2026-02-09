@@ -70,11 +70,11 @@ class NotificationController extends Controller
 
     public function unreadCount()
     {
-        // Cache unread count for 30 seconds to reduce database load
+        // Cache unread count for 60 seconds (align with frontend polling) to reduce database load
         $userId = Auth::id();
         $cacheKey = "notifications_unread_count_{$userId}";
         
-        $count = Cache::remember($cacheKey, 30, function () use ($userId) {
+        $count = Cache::remember($cacheKey, 60, function () use ($userId) {
             return Notification::where('user_id', $userId)
                 ->where('is_read', false)
                 ->count();
