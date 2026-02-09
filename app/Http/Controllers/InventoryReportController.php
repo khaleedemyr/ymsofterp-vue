@@ -349,6 +349,221 @@ class InventoryReportController extends Controller
     }
 
     /**
+     * API: Laporan Kartu Stok Gudang untuk mobile app (JSON).
+     * Query: from, to, item_id, warehouse_id
+     */
+    public function apiStockCard(Request $request)
+    {
+        try {
+            ini_set('memory_limit', '512M');
+            ini_set('max_execution_time', 300);
+
+            $from = $request->input('from');
+            $to = $request->input('to');
+            $itemId = $request->input('item_id');
+            $warehouseId = $request->input('warehouse_id');
+
+            $warehouses = DB::table('warehouses')->where('status', 'active')->select('id', 'name')->orderBy('name')->get();
+            $items = DB::table('items')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('categories.show_pos', '0')
+                ->select('items.id', 'items.name')
+                ->orderBy('items.name')
+                ->get();
+
+            if (! $itemId) {
+                return response()->json([
+                    'success' => true,
+                    'warehouses' => $warehouses,
+                    'items' => $items,
+                    'cards' => [],
+                    'saldo_awal' => null,
+                ]);
+            }
+
+            if ($from && $to) {
+                $fromDate = \Carbon\Carbon::parse($from);
+                $toDate = \Carbon\Carbon::parse($to);
+                if ($fromDate->diffInDays($toDate) > 365) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Range tanggal maksimal 1 tahun',
+                        'warehouses' => $warehouses,
+                        'items' => $items,
+                        'cards' => [],
+                        'saldo_awal' => null,
+                    ]);
+                }
+            }
+
+            $query = DB::table('food_inventory_cards as c')
+                ->join('food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+                ->join('items as i', 'fi.item_id', '=', 'i.id')
+                ->join('warehouses as w', 'c.warehouse_id', '=', 'w.id')
+                ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+                ->leftJoin('food_good_receives as gr', function ($join) {
+                    $join->on('c.reference_id', '=', 'gr.id')
+                        ->where('c.reference_type', '=', 'good_receive');
+                })
+                ->leftJoin('warehouse_transfers as wt', function ($join) {
+                    $join->on('c.reference_id', '=', 'wt.id')
+                        ->where('c.reference_type', '=', 'warehouse_transfer');
+                })
+                ->leftJoin('delivery_orders as do', function ($join) {
+                    $join->on('c.reference_id', '=', 'do.id')
+                        ->where('c.reference_type', '=', 'delivery_order');
+                })
+                ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+                ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+                ->select(
+                    'c.id',
+                    'c.date',
+                    'i.id as item_id',
+                    'i.name as item_name',
+                    'w.id as warehouse_id',
+                    'w.name as warehouse_name',
+                    'c.in_qty_small',
+                    'c.in_qty_medium',
+                    'c.in_qty_large',
+                    'c.out_qty_small',
+                    'c.out_qty_medium',
+                    'c.out_qty_large',
+                    'c.value_in',
+                    'c.value_out',
+                    'c.saldo_value',
+                    'c.saldo_qty_small',
+                    'c.saldo_qty_medium',
+                    'c.saldo_qty_large',
+                    'c.reference_type',
+                    'c.reference_id',
+                    'c.description',
+                    'gr.gr_number as reference_number',
+                    'wt.transfer_number as transfer_number',
+                    'do.number as do_number',
+                    'o.nama_outlet as outlet_name',
+                    'wo.name as warehouse_outlet_name',
+                    'us.name as small_unit_name',
+                    'um.name as medium_unit_name',
+                    'ul.name as large_unit_name',
+                    'i.small_conversion_qty',
+                    'i.medium_conversion_qty'
+                );
+
+            if ($itemId) {
+                $query->where('i.id', $itemId);
+            }
+            if ($warehouseId) {
+                $query->where('w.id', $warehouseId);
+            }
+            if ($from) {
+                $query->whereDate('c.date', '>=', $from);
+            }
+            if ($to) {
+                $query->whereDate('c.date', '<=', $to);
+            }
+
+            $query->orderBy('c.date')->orderBy('c.id')->limit(10000);
+            $data = $query->get();
+
+            $data = $data->map(function ($row) {
+                if ($row->reference_type === 'delivery_order' && $row->do_number) {
+                    $row->description = 'Stock Out - Delivery Order';
+                    if ($row->outlet_name || $row->warehouse_outlet_name) {
+                        $row->description .= ' - DO: '.$row->do_number;
+                        if ($row->outlet_name) {
+                            $row->description .= ', Outlet: '.$row->outlet_name;
+                        }
+                        if ($row->warehouse_outlet_name) {
+                            $row->description .= ', Warehouse Outlet: '.$row->warehouse_outlet_name;
+                        }
+                    }
+                }
+                return $row;
+            });
+
+            $saldoAwal = null;
+            if ($from && $itemId) {
+                $saldoQuery = DB::table('food_inventory_cards as c')
+                    ->join('food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+                    ->join('items as i', 'fi.item_id', '=', 'i.id')
+                    ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+                    ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+                    ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+                    ->where('i.id', $itemId)
+                    ->whereDate('c.date', '<', $from);
+                if ($warehouseId) {
+                    $saldoQuery->where('c.warehouse_id', $warehouseId);
+                }
+                $last = $saldoQuery->orderByDesc('c.date')->orderByDesc('c.id')->first();
+                if ($last) {
+                    $saldoAwal = [
+                        'small' => $last->saldo_qty_small ?? 0,
+                        'medium' => $last->saldo_qty_medium ?? 0,
+                        'large' => $last->saldo_qty_large ?? 0,
+                        'small_unit_name' => $last->small_unit_name ?? '',
+                        'medium_unit_name' => $last->medium_unit_name ?? '',
+                        'large_unit_name' => $last->large_unit_name ?? '',
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'warehouses' => $warehouses,
+                'items' => $items,
+                'cards' => $data->values()->all(),
+                'saldo_awal' => $saldoAwal,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('API Stock Card Error', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat memuat data.',
+                'warehouses' => DB::table('warehouses')->where('status', 'active')->select('id', 'name')->orderBy('name')->get(),
+                'items' => DB::table('items')
+                    ->join('categories', 'items.category_id', '=', 'categories.id')
+                    ->where('categories.show_pos', '0')
+                    ->select('items.id', 'items.name')
+                    ->orderBy('items.name')
+                    ->get(),
+                'cards' => [],
+                'saldo_awal' => null,
+            ], 500);
+        }
+    }
+
+    /**
+     * API: Daftar item untuk search kartu stok gudang (kategori show_pos = 0).
+     */
+    public function apiStockCardItems(Request $request)
+    {
+        $search = $request->input('search');
+        $limit = (int) $request->input('limit', 100);
+
+        $query = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.show_pos', '0')
+            ->select('items.id', 'items.name')
+            ->orderBy('items.name')
+            ->limit($limit);
+
+        if ($search && trim($search) !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('items.name', 'like', '%'.trim($search).'%');
+            });
+        }
+
+        $items = $query->get();
+
+        return response()->json($items);
+    }
+
+    /**
      * Get stock card detail for a specific item (for expandable rows in stock position)
      */
     public function getStockCardDetail(Request $request)

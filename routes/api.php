@@ -682,6 +682,9 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/inventory/stock', [\App\Http\Controllers\ItemController::class, 'getStock']);
         // Laporan Stok Akhir Warehouse (approval app)
         Route::get('/inventory/stock-position', [\App\Http\Controllers\InventoryReportController::class, 'apiStockPosition']);
+        // Laporan Kartu Stok Gudang (approval app)
+        Route::get('/inventory/stock-card', [\App\Http\Controllers\InventoryReportController::class, 'apiStockCard']);
+        Route::get('/inventory/stock-card/items', [\App\Http\Controllers\InventoryReportController::class, 'apiStockCardItems']);
 
         // Item search route for approval app (FO/RO)
         Route::get('/items/search', [ItemController::class, 'search']);
