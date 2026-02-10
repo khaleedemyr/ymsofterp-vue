@@ -345,6 +345,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-food-return/get-good-receive-items', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceiveItems']);
         Route::get('/outlet-food-return/{id}', [\App\Http\Controllers\OutletFoodReturnController::class, 'apiShow']);
         Route::post('/outlet-food-return', [\App\Http\Controllers\OutletFoodReturnController::class, 'store']);
+        Route::post('/outlet-food-return/{id}/approve', [\App\Http\Controllers\OutletFoodReturnController::class, 'approve']);
+        Route::delete('/outlet-food-return/{id}', [\App\Http\Controllers\OutletFoodReturnController::class, 'destroy']);
 
         // Outlet Stock Opname (Approval App) — route statis dulu, {id} terakhir dengan constraint numerik
         Route::get('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'apiIndex']);

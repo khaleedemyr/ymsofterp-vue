@@ -512,6 +512,7 @@ class OutletFoodReturnController extends Controller
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
         return response()->json([
             'success' => true,
             'data' => $paginator->items(),
@@ -519,6 +520,7 @@ class OutletFoodReturnController extends Controller
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
             'total' => $paginator->total(),
+            'can_delete' => $canDelete,
         ]);
     }
 
@@ -591,10 +593,12 @@ class OutletFoodReturnController extends Controller
             ->get();
 
         $return->items = $items;
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         return response()->json([
             'success' => true,
             'return' => $return,
+            'can_delete' => $canDelete,
         ]);
     }
 
