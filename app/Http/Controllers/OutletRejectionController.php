@@ -1297,6 +1297,18 @@ class OutletRejectionController extends Controller
         return response()->json(['success' => false, 'message' => 'Gagal batalkan rejection'], 500);
     }
 
+    public function apiSubmit($id)
+    {
+        $rejection = OutletRejection::findOrFail($id);
+        if ($rejection->status !== 'draft') {
+            return response()->json(['success' => false, 'message' => 'Hanya rejection dengan status draft yang dapat disubmit'], 403);
+        }
+        if ($rejection->submit()) {
+            return response()->json(['success' => true, 'message' => 'Outlet Rejection berhasil disubmit']);
+        }
+        return response()->json(['success' => false, 'message' => 'Submit gagal. Pastikan ada minimal 1 item.'], 400);
+    }
+
     public function getItems(Request $request)
     {
         $items = Item::with(['smallUnit', 'mediumUnit', 'largeUnit', 'category'])

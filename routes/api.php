@@ -553,6 +553,7 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiUpdate']);
         Route::delete('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiDestroy']);
         Route::post('/outlet-rejections/{id}/cancel', [\App\Http\Controllers\OutletRejectionController::class, 'apiCancel']);
+        Route::post('/outlet-rejections/{id}/submit', [\App\Http\Controllers\OutletRejectionController::class, 'apiSubmit']);
 
         // Warehouse Retail Food (mobile app)
         Route::get('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiIndex']);
