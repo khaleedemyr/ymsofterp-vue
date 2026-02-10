@@ -14,11 +14,13 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
 {
     protected $outletId;
     protected $warehouseOutletId;
+    protected $search;
 
-    public function __construct($outletId = null, $warehouseOutletId = null)
+    public function __construct($outletId = null, $warehouseOutletId = null, $search = null)
     {
         $this->outletId = $outletId;
         $this->warehouseOutletId = $warehouseOutletId;
+        $this->search = $search;
     }
 
     public function collection()
@@ -63,6 +65,14 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
         }
         if ($this->warehouseOutletId) {
             $query->where('s.warehouse_outlet_id', $this->warehouseOutletId);
+        }
+        if ($this->search) {
+            $search = $this->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('i.name', 'like', "%{$search}%")
+                  ->orWhere('c.name', 'like', "%{$search}%")
+                  ->orWhere('o.nama_outlet', 'like', "%{$search}%");
+            });
         }
 
         return $query->get();

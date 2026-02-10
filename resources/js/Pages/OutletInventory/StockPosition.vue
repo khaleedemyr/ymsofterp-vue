@@ -40,7 +40,7 @@
             <label class="text-xs font-semibold text-gray-600">Tampilkan</label>
             <div class="flex items-center gap-2">
               <select v-model="perPage" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
-                <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
+                <option v-for="n in [10, 25, 50, 100, 500, 1000]" :key="n" :value="n">{{ n }}</option>
               </select>
               <span class="text-sm text-gray-500">data</span>
             </div>
@@ -516,15 +516,23 @@ function reloadData() {
   
   loadingReload.value = true
   
-  // Prepare parameters
+  // Saat pencarian berubah, reset ke halaman 1
+  if (search.value?.trim()) {
+    page.value = 1
+  }
+  
+  // Prepare parameters (termasuk search agar filter di server)
   const params = {
     outlet_id: selectedOutlet.value || '',
-    warehouse_outlet_id: selectedWarehouseOutlet.value || ''
+    warehouse_outlet_id: selectedWarehouseOutlet.value || '',
+    search: search.value?.trim() || '',
+    per_page: perPage.value,
+    page: page.value
   }
   
   // Remove empty parameters
   Object.keys(params).forEach(key => {
-    if (!params[key]) {
+    if (params[key] === '' || params[key] == null) {
       delete params[key]
     }
   })
@@ -558,15 +566,11 @@ function exportToExcel() {
   
   exporting.value = true;
   
-  // Prepare parameters
-  const params = new URLSearchParams({
-    outlet_id: selectedOutlet.value || '',
-    warehouse_outlet_id: selectedWarehouseOutlet.value || ''
-  });
-  
-  // Remove empty parameters
-  if (!selectedOutlet.value) params.delete('outlet_id');
-  if (!selectedWarehouseOutlet.value) params.delete('warehouse_outlet_id');
+  // Prepare parameters (sama dengan reload: outlet, warehouse, search)
+  const params = new URLSearchParams();
+  if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value);
+  if (selectedWarehouseOutlet.value) params.set('warehouse_outlet_id', selectedWarehouseOutlet.value);
+  if (search.value?.trim()) params.set('search', search.value.trim());
   
   // Create download link
   const url = `/outlet-inventory/stock-position/export?${params.toString()}`;

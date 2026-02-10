@@ -132,7 +132,8 @@ class OutletInventoryReportController extends Controller
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('i.name', 'like', "%{$search}%")
-                      ->orWhere('c.name', 'like', "%{$search}%");
+                      ->orWhere('c.name', 'like', "%{$search}%")
+                      ->orWhere('o.nama_outlet', 'like', "%{$search}%");
                 });
             }
 
@@ -311,6 +312,7 @@ class OutletInventoryReportController extends Controller
         $user = auth()->user();
         $outletId = $request->input('outlet_id');
         $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $search = $request->input('search');
         
         // Validasi akses outlet - user hanya bisa mengakses outlet mereka sendiri, kecuali superuser
         if ($user->id_outlet != 1 && $outletId && $user->id_outlet != $outletId) {
@@ -321,7 +323,7 @@ class OutletInventoryReportController extends Controller
         $filename = "laporan_stok_akhir_outlet_{$timestamp}.xlsx";
         
         return Excel::download(
-            new OutletStockPositionExport($outletId, $warehouseOutletId), 
+            new OutletStockPositionExport($outletId, $warehouseOutletId, $search), 
             $filename
         );
     }
