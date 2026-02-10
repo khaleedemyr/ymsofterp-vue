@@ -348,6 +348,12 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-food-return/{id}/approve', [\App\Http\Controllers\OutletFoodReturnController::class, 'approve']);
         Route::delete('/outlet-food-return/{id}', [\App\Http\Controllers\OutletFoodReturnController::class, 'destroy']);
 
+        // Kelola Return Outlet / Head Office Return (Approval App - hanya Head Office)
+        Route::get('/head-office-return', [\App\Http\Controllers\HeadOfficeReturnController::class, 'apiIndex']);
+        Route::get('/head-office-return/{id}', [\App\Http\Controllers\HeadOfficeReturnController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/head-office-return/{id}/approve', [\App\Http\Controllers\HeadOfficeReturnController::class, 'approve'])->where('id', '[0-9]+');
+        Route::post('/head-office-return/{id}/reject', [\App\Http\Controllers\HeadOfficeReturnController::class, 'reject'])->where('id', '[0-9]+');
+
         // Outlet Stock Opname (Approval App) — route statis dulu, {id} terakhir dengan constraint numerik
         Route::get('/stock-opnames', [\App\Http\Controllers\StockOpnameController::class, 'apiIndex']);
         Route::get('/stock-opnames/create-data', [\App\Http\Controllers\StockOpnameController::class, 'apiCreateData']);

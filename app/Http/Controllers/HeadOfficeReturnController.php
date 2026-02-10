@@ -89,6 +89,116 @@ class HeadOfficeReturnController extends Controller
         ]);
     }
 
+    /**
+     * API: List returns for mobile app (Head Office only).
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        if ($user->id_outlet != 1) {
+            return response()->json(['success' => false, 'message' => 'Akses ditolak. Menu ini hanya untuk Head Office.'], 403);
+        }
+
+        $search = $request->get('search', '');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $status = $request->get('status', '');
+        $perPage = (int) $request->get('per_page', 20);
+        $page = (int) $request->get('page', 1);
+
+        $query = DB::table('outlet_food_returns as ofr')
+            ->leftJoin('outlet_food_good_receives as ofgr', 'ofr.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->leftJoin('tbl_data_outlet as o', 'ofr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'ofr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as creator', 'ofr.created_by', '=', 'creator.id')
+            ->leftJoin('users as approver', 'ofr.approved_by', '=', 'approver.id')
+            ->leftJoin('users as rejector', 'ofr.rejection_by', '=', 'rejector.id')
+            ->select(
+                'ofr.id',
+                'ofr.return_number',
+                'ofr.return_date',
+                'ofr.status',
+                'ofr.notes',
+                'ofr.created_at',
+                'ofr.approved_at',
+                'ofr.rejection_at',
+                'ofr.rejection_reason',
+                'ofgr.number as gr_number',
+                'o.nama_outlet',
+                'wo.name as warehouse_name',
+                'creator.nama_lengkap as created_by_name',
+                'approver.nama_lengkap as approved_by_name',
+                'rejector.nama_lengkap as rejection_by_name'
+            )
+            ->orderByDesc('ofr.created_at');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ofr.return_number', 'like', "%{$search}%")
+                    ->orWhere('ofgr.number', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('wo.name', 'like', "%{$search}%");
+            });
+        }
+        if ($dateFrom) $query->whereDate('ofr.return_date', '>=', $dateFrom);
+        if ($dateTo) $query->whereDate('ofr.return_date', '<=', $dateTo);
+        if ($status) $query->where('ofr.status', $status);
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        return response()->json([
+            'success' => true,
+            'data' => $paginator->items(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
+    }
+
+    /**
+     * API: Show single return for mobile app.
+     */
+    public function apiShow($id)
+    {
+        $user = auth()->user();
+        if ($user->id_outlet != 1) {
+            return response()->json(['success' => false, 'message' => 'Akses ditolak. Menu ini hanya untuk Head Office.'], 403);
+        }
+
+        $return = DB::table('outlet_food_returns as ofr')
+            ->leftJoin('outlet_food_good_receives as ofgr', 'ofr.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->leftJoin('tbl_data_outlet as o', 'ofr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'ofr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as creator', 'ofr.created_by', '=', 'creator.id')
+            ->leftJoin('users as approver', 'ofr.approved_by', '=', 'approver.id')
+            ->leftJoin('users as rejector', 'ofr.rejection_by', '=', 'rejector.id')
+            ->select(
+                'ofr.*',
+                'ofgr.number as gr_number',
+                'o.nama_outlet',
+                'wo.name as warehouse_name',
+                'creator.nama_lengkap as created_by_name',
+                'approver.nama_lengkap as approved_by_name',
+                'rejector.nama_lengkap as rejection_by_name'
+            )
+            ->where('ofr.id', $id)
+            ->first();
+
+        if (!$return) {
+            return response()->json(['success' => false, 'message' => 'Return tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('outlet_food_return_items as ofri')
+            ->leftJoin('items as i', 'ofri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'ofri.unit_id', '=', 'u.id')
+            ->select('ofri.id', 'ofri.item_id', 'i.name as item_name', 'i.sku', 'ofri.return_qty', 'u.name as unit_name', 'ofri.unit_id')
+            ->where('ofri.outlet_food_return_id', $id)
+            ->get();
+
+        $return->items = $items;
+        return response()->json(['success' => true, 'return' => $return]);
+    }
+
     public function show($id)
     {
         $user = auth()->user();
