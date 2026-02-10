@@ -271,7 +271,7 @@ class JabatanController extends Controller
         try {
             $jabatans = Jabatan::where('status', 'A')->select('id_jabatan', 'nama_jabatan')->orderBy('nama_jabatan')->get();
             $divisis = Divisi::where('status', 'A')->select('id', 'nama_divisi')->orderBy('nama_divisi')->get();
-            $subDivisis = SubDivisi::where('status', 'A')->select('id', 'id_divisi', 'nama_sub_divisi')->orderBy('nama_sub_divisi')->get();
+            $subDivisis = SubDivisi::where('status', 'A')->select('id', 'nama_sub_divisi')->orderBy('nama_sub_divisi')->get();
             $levels = DataLevel::where('status', 'A')->select('id', 'nama_level')->orderBy('nama_level')->get();
             return response()->json([
                 'success' => true,
