@@ -124,6 +124,15 @@ Route::get('/', function () {
     ]);
 });
 
+// Kebijakan Privasi (public, untuk link Play Store & kebijakan aplikasi)
+Route::get('/privacy-policy', function () {
+    return response()->view('privacy-policy')->header('Content-Type', 'text/html; charset=UTF-8');
+})->name('privacy-policy');
+
+Route::get('/kebijakan-privasi', function () {
+    return response()->view('privacy-policy')->header('Content-Type', 'text/html; charset=UTF-8');
+})->name('kebijakan-privasi');
+
 Route::get('/dashboard', function () {
     return redirect('/home');
 })->middleware(['auth', 'verified'])->name('dashboard');
