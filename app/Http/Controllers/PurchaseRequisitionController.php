@@ -700,32 +700,21 @@ class PurchaseRequisitionController extends Controller
         }
 
         // Validate kasbon period
-        // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-        // Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-        // Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+        // Bisa ajukan: tanggal 10–20 bulan berjalan. Di-lock: 21 bulan sebelumnya s/d 9 bulan berjalan (dan 21 s/d 9 berikutnya).
         if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
             $user = auth()->user();
             $now = now();
             $currentYear = $now->year;
             $currentMonth = $now->month;
-            $currentDay = $now->day;
-            
-            // Tentukan periode berdasarkan tanggal sekarang
-            if ($currentDay < 20) {
-                // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
-                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
-            } else {
-                // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
-                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
-            }
-            
-            // Check if current date is within input period
+
+            // Periode buka ajuan: 10–20 bulan berjalan
+            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10)->startOfDay();
+            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20)->endOfDay();
+
             if ($now->lt($startDate) || $now->gt($endDate)) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 $errorMessage = "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}";
-                
+
                 if ($request->expectsJson() || $request->wantsJson()) {
                     return response()->json([
                         'success' => false,
@@ -735,12 +724,12 @@ class PurchaseRequisitionController extends Controller
                         'message' => $errorMessage
                     ], 400);
                 }
-                
+
                 return back()->withErrors([
                     'kasbon_period' => $errorMessage
                 ]);
             }
-            
+
             // Validasi duplikasi kasbon berdasarkan id_outlet
             // - User id_outlet = 1: bisa multi user dalam periode yang sama (skip validasi)
             // - User id_outlet != 1: hanya 1 user per outlet per periode (cek user lain)
@@ -1331,35 +1320,24 @@ class PurchaseRequisitionController extends Controller
         }
 
         // Validate kasbon period
-        // Validasi periode: tanggal 20 bulan berjalan - 10 bulan selanjutnya
-        // Jika tanggal sekarang < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-        // Jika tanggal sekarang >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
+        // Bisa ajukan: tanggal 10–20 bulan berjalan. Di-lock: 21 bulan sebelumnya s/d 9 bulan berjalan.
         if ($validated['mode'] === 'kasbon' && $validated['outlet_id']) {
             $user = auth()->user();
             $now = now();
             $currentYear = $now->year;
             $currentMonth = $now->month;
-            $currentDay = $now->day;
-            
-            // Tentukan periode berdasarkan tanggal sekarang
-            if ($currentDay < 20) {
-                // Jika tanggal < 20: periode = 20 bulan sebelumnya - 10 bulan berjalan
-                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth - 1, 20);
-                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10);
-            } else {
-                // Jika tanggal >= 20: periode = 20 bulan berjalan - 10 bulan selanjutnya
-                $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20);
-                $endDate = \Carbon\Carbon::create($currentYear, $currentMonth + 1, 10);
-            }
-            
-            // Check if current date is within input period
+
+            // Periode buka ajuan: 10–20 bulan berjalan
+            $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10)->startOfDay();
+            $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20)->endOfDay();
+
             if ($now->lt($startDate) || $now->gt($endDate)) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 return back()->withErrors([
                     'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}"
                 ]);
             }
-            
+
             // Validasi duplikasi kasbon berdasarkan id_outlet
             // - User id_outlet = 1: bisa multi user dalam periode yang sama (skip validasi)
             // - User id_outlet != 1: hanya 1 user per outlet per periode (cek user lain)

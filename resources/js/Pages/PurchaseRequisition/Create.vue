@@ -56,7 +56,7 @@
             <p class="text-sm text-blue-700">{{ getKasbonPeriodText() }}</p>
             </div>
             <p class="text-xs text-gray-600">
-              Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
+              Di-lock: 21 bulan sebelumnya s/d 9 bulan berjalan. Bisa ajukan: tanggal 10–20 bulan berjalan.
             </p>
             <button
               type="button"
@@ -2808,7 +2808,7 @@ watch(() => form.mode, (newMode) => {
               <p class="text-sm text-blue-700">${startStr} - ${endStr}</p>
             </div>
             <p class="text-xs text-gray-600 mt-3">
-              Periode kasbon: Tanggal 10 hingga tanggal 20 bulan berjalan
+              Di-lock: 21 bulan sebelumnya s/d 9 bulan berjalan. Bisa ajukan: tanggal 10–20 bulan berjalan.
             </p>
           `,
           confirmButtonText: 'OK',
@@ -3132,38 +3132,28 @@ const getKasbonDivisionName = () => {
   return division ? division.nama_divisi : 'Unknown Division'
 }
 
-// Get kasbon period (tanggal 10 hingga tanggal 20 bulan berjalan)
+// Get kasbon period — sama dengan backend: bisa ajukan hanya tanggal 10–20 bulan berjalan
+// Di-lock: 21 bulan sebelumnya s/d 9 bulan berjalan (dan 21 s/d 9 berikutnya)
 const getKasbonPeriod = () => {
   const now = new Date()
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() // 0-11
-  
-  // Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
+
   const startDate = new Date(currentYear, currentMonth, 10)
   const endDate = new Date(currentYear, currentMonth, 20)
-  
+
   return { startDate, endDate }
 }
 
-// Check if current date is within kasbon period
-// Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
-// Di luar periode ini (tanggal 21 bulan berjalan - 9 bulan selanjutnya) harus di-lock
+// Cek tanggal hari ini dalam periode buka ajuan (10–20 bulan berjalan)
 const isWithinKasbonPeriod = () => {
   const now = new Date()
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() // 0-11
-  const currentDay = now.getDate()
-  
-  // Periode aktif kasbon: tanggal 10 - 20 bulan berjalan
-  const startDate = new Date(currentYear, currentMonth, 10)
-  const endDate = new Date(currentYear, currentMonth, 20)
-  
-  // Set time to 00:00:00 for accurate date comparison
-  const nowDate = new Date(currentYear, currentMonth, currentDay)
+  const { startDate, endDate } = getKasbonPeriod()
+
+  const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
   const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())
-  
-  // Check if current date is within the period (10-20 bulan berjalan)
+
   return nowDate >= start && nowDate <= end
 }
 
