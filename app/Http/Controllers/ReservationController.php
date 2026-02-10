@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use App\Models\Reservation;
 use App\Models\Outlet;
@@ -99,6 +100,7 @@ class ReservationController extends Controller
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
+                'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
 
@@ -107,6 +109,11 @@ class ReservationController extends Controller
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
                 $validated['sales_user_id'] = null;
+            }
+            if ($request->hasFile('menu_file')) {
+                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+            } else {
+                unset($validated['menu_file']);
             }
 
             $reservation = Reservation::create($validated);
@@ -170,15 +177,24 @@ class ReservationController extends Controller
             'reservation_time' => 'required',
             'number_of_guests' => 'required|integer|min:1',
             'special_requests' => 'nullable|string',
-                'dp' => 'nullable|numeric|min:0',
-                'from_sales' => 'nullable|boolean',
-                'sales_user_id' => 'nullable|exists:users,id',
-                'menu' => 'nullable|string',
-                'status' => 'required|in:pending,confirmed,cancelled',
+            'dp' => 'nullable|numeric|min:0',
+            'from_sales' => 'nullable|boolean',
+            'sales_user_id' => 'nullable|exists:users,id',
+            'menu' => 'nullable|string',
+            'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
+            'status' => 'required|in:pending,confirmed,cancelled',
         ]);
         $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
         if (empty($validated['from_sales'])) {
             $validated['sales_user_id'] = null;
+        }
+        if ($request->hasFile('menu_file')) {
+            if ($reservation->menu_file && Storage::disk('public')->exists($reservation->menu_file)) {
+                Storage::disk('public')->delete($reservation->menu_file);
+            }
+            $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+        } else {
+            unset($validated['menu_file']);
         }
 
         $reservation->update($validated);
@@ -232,6 +248,8 @@ class ReservationController extends Controller
                 'sales_user_id' => $reservation->sales_user_id,
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
                 'menu' => $reservation->menu,
+                'menu_file' => $reservation->menu_file,
+                'menu_file_url' => $reservation->menu_file ? Storage::disk('public')->url($reservation->menu_file) : null,
                 'status' => $reservation->status,
                 'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name ?? null) : null,
                 'created_at' => $reservation->created_at?->toIso8601String(),
@@ -288,6 +306,8 @@ class ReservationController extends Controller
             'sales_user_id' => $reservation->sales_user_id,
             'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
             'menu' => $reservation->menu,
+            'menu_file' => $reservation->menu_file,
+            'menu_file_url' => $reservation->menu_file ? Storage::disk('public')->url($reservation->menu_file) : null,
             'status' => $reservation->status,
             'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name ?? null) : null,
             'created_at' => $reservation->created_at?->toIso8601String(),
@@ -311,6 +331,7 @@ class ReservationController extends Controller
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
+                'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
             $validated['created_by'] = auth()->id();
@@ -318,6 +339,11 @@ class ReservationController extends Controller
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
                 $validated['sales_user_id'] = null;
+            }
+            if ($request->hasFile('menu_file')) {
+                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+            } else {
+                unset($validated['menu_file']);
             }
             $reservation = Reservation::create($validated);
             return response()->json([
@@ -353,12 +379,21 @@ class ReservationController extends Controller
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
+                'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
             $validated['email'] = $request->filled('email') ? trim((string) $request->input('email')) : null;
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
                 $validated['sales_user_id'] = null;
+            }
+            if ($request->hasFile('menu_file')) {
+                if ($reservation->menu_file && Storage::disk('public')->exists($reservation->menu_file)) {
+                    Storage::disk('public')->delete($reservation->menu_file);
+                }
+                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+            } else {
+                unset($validated['menu_file']);
             }
             $reservation->update($validated);
             return response()->json(['message' => 'Reservasi berhasil diupdate']);

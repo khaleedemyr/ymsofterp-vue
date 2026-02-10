@@ -4,10 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Reservation extends Model
 {
     use HasFactory;
+
+    protected $appends = ['menu_file_url'];
 
     protected $fillable = [
         'name',
@@ -23,6 +26,7 @@ class Reservation extends Model
         'from_sales',
         'sales_user_id',
         'menu',
+        'menu_file',
         'status',
         'created_by',
     ];
@@ -48,5 +52,13 @@ class Reservation extends Model
     public function salesUser()
     {
         return $this->belongsTo(User::class, 'sales_user_id');
+    }
+
+    public function getMenuFileUrlAttribute()
+    {
+        if (empty($this->menu_file)) {
+            return null;
+        }
+        return Storage::disk('public')->url($this->menu_file);
     }
 } 

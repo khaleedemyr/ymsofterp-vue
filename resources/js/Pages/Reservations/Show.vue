@@ -124,8 +124,21 @@
               </span>
               <h2 class="font-semibold text-slate-800">Menu</h2>
             </div>
-            <div class="p-6">
+            <div class="p-6 space-y-4">
               <p class="text-slate-800 whitespace-pre-wrap">{{ reservation.menu || '–' }}</p>
+              <div v-if="reservation.menu_file_url" class="pt-2 border-t border-slate-100">
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">File menu</p>
+                <a
+                  :href="reservation.menu_file_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-2 text-rose-600 hover:text-rose-700 font-medium text-sm"
+                >
+                  <i class="fa-solid fa-file-arrow-down"></i>
+                  {{ menuFileName }}
+                  <i class="fa-solid fa-external-link-alt text-xs"></i>
+                </a>
+              </div>
             </div>
           </section>
 
@@ -182,6 +195,12 @@ const props = defineProps({
 });
 
 const reservation = computed(() => props.reservation || {});
+
+const menuFileName = computed(() => {
+  const path = reservation.value.menu_file;
+  if (!path || typeof path !== 'string') return 'Unduh file';
+  return path.split(/[/\\]/).pop() || 'Unduh file';
+});
 
 const creatorName = computed(() => {
   const c = reservation.value.creator;

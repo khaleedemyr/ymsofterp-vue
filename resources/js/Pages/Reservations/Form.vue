@@ -201,6 +201,34 @@
                 ></textarea>
               </div>
               <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">File menu (opsional)</label>
+                <p class="text-xs text-slate-500 mb-2">Foto, PDF, atau Excel. Maks. 10 MB.</p>
+                <div class="flex flex-wrap items-center gap-3">
+                  <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer transition text-sm font-medium">
+                    <i class="fa-solid fa-paperclip text-slate-500"></i>
+                    Pilih file
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.xls,.xlsx"
+                      class="hidden"
+                      @change="onMenuFileChange"
+                    />
+                  </label>
+                  <span v-if="menuFileName" class="text-sm text-slate-700 truncate max-w-[200px]" :title="menuFileName">
+                    {{ menuFileName }}
+                  </span>
+                  <button
+                    v-if="menuFileName"
+                    type="button"
+                    @click="clearMenuFile"
+                    class="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition"
+                    title="Hapus file"
+                  >
+                    <i class="fa-solid fa-times"></i>
+                  </button>
+                </div>
+              </div>
+              <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1.5">Status <span class="text-rose-500">*</span></label>
                 <select v-model="form.status" required class="input-field">
                   <option value="pending">Pending</option>
@@ -240,7 +268,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import VueTimepicker from 'vue3-timepicker';
 import 'vue3-timepicker/dist/VueTimepicker.css';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -265,8 +293,28 @@ const form = ref({
   from_sales: Boolean(props.reservation?.from_sales),
   sales_user_id: props.reservation?.sales_user_id ?? null,
   menu: props.reservation?.menu || '',
+  menu_file: null,
   status: props.reservation?.status || 'pending',
 });
+
+const menuFileName = computed(() => {
+  if (form.value.menu_file && form.value.menu_file.name) return form.value.menu_file.name;
+  const path = props.reservation?.menu_file;
+  if (path && typeof path === 'string') return path.split(/[/\\]/).pop() || '';
+  return '';
+});
+
+function onMenuFileChange(event) {
+  const file = event.target?.files?.[0];
+  if (file) {
+    form.value.menu_file = file;
+  }
+  event.target.value = '';
+}
+
+function clearMenuFile() {
+  form.value.menu_file = null;
+}
 
 function onFromSalesChange() {
   if (!form.value.from_sales) form.value.sales_user_id = null;
