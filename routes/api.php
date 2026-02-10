@@ -42,6 +42,7 @@ use App\Http\Controllers\FoodFloorOrderController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
+use App\Http\Controllers\DataLevelController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -439,6 +440,14 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/units/{id}', [UnitController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::patch('/units/{id}/toggle-status', [UnitController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
         Route::delete('/units/{id}', [UnitController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // Data Level (Master Data - Approval App)
+        Route::get('/data-levels', [DataLevelController::class, 'apiIndex']);
+        Route::get('/data-levels/{id}', [DataLevelController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/data-levels', [DataLevelController::class, 'apiStore']);
+        Route::put('/data-levels/{id}', [DataLevelController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/data-levels/{id}/toggle-status', [DataLevelController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/data-levels/{id}', [DataLevelController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Items (Master Data - Approval App)
         Route::get('/items', [ItemController::class, 'apiIndex']);
