@@ -1028,7 +1028,7 @@ class OutletRejectionController extends Controller
             'outlet',
             'warehouse',
             'deliveryOrder',
-            'createdBy:id,nama_lengkap',
+            'createdBy:id,nama_lengkap,avatar',
             'assistantSsdManager:id,nama_lengkap',
             'ssdManager:id,nama_lengkap'
         ])->orderBy('created_at', 'desc');
