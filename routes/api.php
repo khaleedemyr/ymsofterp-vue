@@ -43,6 +43,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\DataLevelController;
+use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
@@ -448,6 +449,15 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/data-levels/{id}', [DataLevelController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::patch('/data-levels/{id}/toggle-status', [DataLevelController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
         Route::delete('/data-levels/{id}', [DataLevelController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // Jabatan (Master Data - Approval App)
+        Route::get('/jabatans', [JabatanController::class, 'apiIndex']);
+        Route::get('/jabatans/create-data', [JabatanController::class, 'apiCreateData']);
+        Route::get('/jabatans/{id}', [JabatanController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/jabatans', [JabatanController::class, 'apiStore']);
+        Route::put('/jabatans/{id}', [JabatanController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::patch('/jabatans/{id}/toggle-status', [JabatanController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::delete('/jabatans/{id}', [JabatanController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Items (Master Data - Approval App)
         Route::get('/items', [ItemController::class, 'apiIndex']);
