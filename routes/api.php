@@ -542,6 +542,18 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/warehouse-sales', [\App\Http\Controllers\WarehouseSaleController::class, 'apiStore']);
         Route::delete('/warehouse-sales/{id}', [\App\Http\Controllers\WarehouseSaleController::class, 'apiDestroy']);
 
+        // Outlet Rejection (mobile app)
+        Route::get('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'apiIndex']);
+        Route::get('/outlet-rejections/create-data', [\App\Http\Controllers\OutletRejectionController::class, 'apiCreate']);
+        Route::get('/outlet-rejections/delivery-orders', [\App\Http\Controllers\OutletRejectionController::class, 'getFilteredDeliveryOrders']);
+        Route::get('/outlet-rejections/delivery-order-items', [\App\Http\Controllers\OutletRejectionController::class, 'getDeliveryOrderItems']);
+        Route::get('/outlet-rejections/items', [\App\Http\Controllers\OutletRejectionController::class, 'getItems']);
+        Route::get('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiShow']);
+        Route::post('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'apiStore']);
+        Route::put('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiUpdate']);
+        Route::delete('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiDestroy']);
+        Route::post('/outlet-rejections/{id}/cancel', [\App\Http\Controllers\OutletRejectionController::class, 'apiCancel']);
+
         // Warehouse Retail Food (mobile app)
         Route::get('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiIndex']);
         Route::get('/retail-warehouse-food/create-data', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiCreate']);

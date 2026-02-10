@@ -1020,6 +1020,283 @@ class OutletRejectionController extends Controller
         ]);
     }
 
+    // ---------- API for mobile app ----------
+
+    public function apiIndex(Request $request)
+    {
+        $query = OutletRejection::with([
+            'outlet',
+            'warehouse',
+            'deliveryOrder',
+            'createdBy:id,nama_lengkap',
+            'assistantSsdManager:id,nama_lengkap',
+            'ssdManager:id,nama_lengkap'
+        ])->orderBy('created_at', 'desc');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('number', 'like', "%{$search}%")
+                    ->orWhereHas('outlet', fn($o) => $o->where('nama_outlet', 'like', "%{$search}%"))
+                    ->orWhereHas('warehouse', fn($w) => $w->where('name', 'like', "%{$search}%"));
+            });
+        }
+        if ($request->filled('status')) $query->where('status', $request->status);
+        if ($request->filled('outlet_id')) $query->where('outlet_id', $request->outlet_id);
+        if ($request->filled('warehouse_id')) $query->where('warehouse_id', $request->warehouse_id);
+        if ($request->filled('date_from')) $query->where('rejection_date', '>=', $request->date_from);
+        if ($request->filled('date_to')) $query->where('rejection_date', '<=', $request->date_to);
+
+        $perPage = (int) $request->get('per_page', 15);
+        $rejections = $query->paginate($perPage);
+        $rejections->getCollection()->transform(function ($r) {
+            $r->approval_info = [
+                'created_by' => $r->createdBy ? $r->createdBy->nama_lengkap : null,
+                'created_at' => $r->created_at ? $r->created_at->format('Y-m-d H:i') : null,
+                'assistant_ssd_manager' => $r->assistantSsdManager ? $r->assistantSsdManager->nama_lengkap : null,
+                'ssd_manager' => $r->ssdManager ? $r->ssdManager->nama_lengkap : null,
+                'completed_at' => $r->completed_at ? $r->completed_at->format('Y-m-d H:i') : null,
+            ];
+            return $r;
+        });
+
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        $outlets = Outlet::select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
+        $warehouses = Warehouse::select('id', 'name')->orderBy('name')->get();
+
+        return response()->json([
+            'data' => $rejections->items(),
+            'current_page' => $rejections->currentPage(),
+            'last_page' => $rejections->lastPage(),
+            'per_page' => $rejections->perPage(),
+            'total' => $rejections->total(),
+            'can_delete' => $canDelete,
+            'outlets' => $outlets,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function apiCreate()
+    {
+        $outlets = Outlet::select('id_outlet', 'nama_outlet')->orderBy('nama_outlet')->get();
+        $warehouses = Warehouse::select('id', 'name')->orderBy('name')->get();
+        return response()->json([
+            'outlets' => $outlets,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $rejection = OutletRejection::with([
+            'outlet', 'warehouse', 'deliveryOrder',
+            'createdBy:id,nama_lengkap', 'completedBy:id,nama_lengkap',
+            'assistantSsdManager:id,nama_lengkap', 'ssdManager:id,nama_lengkap',
+            'items.item', 'items.unit'
+        ])->findOrFail($id);
+
+        $rejection->approval_info = [
+            'created_by' => $rejection->createdBy ? $rejection->createdBy->nama_lengkap : null,
+            'created_at' => $rejection->created_at ? $rejection->created_at->format('Y-m-d H:i') : null,
+            'assistant_ssd_manager' => $rejection->assistantSsdManager ? $rejection->assistantSsdManager->nama_lengkap : null,
+            'assistant_ssd_manager_at' => $rejection->assistant_ssd_manager_approved_at ? $rejection->assistant_ssd_manager_approved_at->format('Y-m-d H:i') : null,
+            'ssd_manager' => $rejection->ssdManager ? $rejection->ssdManager->nama_lengkap : null,
+            'ssd_manager_at' => $rejection->ssd_manager_approved_at ? $rejection->ssd_manager_approved_at->format('Y-m-d H:i') : null,
+            'completed_by' => $rejection->completedBy ? $rejection->completedBy->nama_lengkap : null,
+            'completed_at' => $rejection->completed_at ? $rejection->completed_at->format('Y-m-d H:i') : null,
+        ];
+
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        return response()->json([
+            'rejection' => $rejection,
+            'can_delete' => $canDelete,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'rejection_date' => 'required|date',
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|exists:items,id',
+            'items.*.unit_id' => 'required|exists:units,id',
+            'items.*.qty_rejected' => 'required|numeric|min:0.01',
+            'items.*.rejection_reason' => 'nullable|string',
+            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
+            'items.*.condition_notes' => 'nullable|string'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $rejection = OutletRejection::create([
+                'number' => OutletRejection::generateNumber(),
+                'rejection_date' => $request->rejection_date,
+                'outlet_id' => $request->outlet_id,
+                'warehouse_id' => $request->warehouse_id,
+                'delivery_order_id' => $request->delivery_order_id,
+                'status' => 'draft',
+                'notes' => $request->notes,
+                'created_by' => Auth::id()
+            ]);
+
+            foreach ($request->items as $item) {
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
+                $macCostSmallUnit = 0;
+                if ($inventoryItem) {
+                    $lastCostHistory = DB::table('food_inventory_cost_histories')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('warehouse_id', $request->warehouse_id)
+                        ->orderByDesc('date')->orderByDesc('created_at')->first();
+                    $macCostSmallUnit = $lastCostHistory ? $lastCostHistory->mac : 0;
+                }
+                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
+                $macCostConverted = $macCostSmallUnit;
+                if ($itemData && $macCostSmallUnit > 0) {
+                    $selectedUnitId = $item['unit_id'];
+                    if ($selectedUnitId == $itemData->medium_unit_id && $itemData->small_conversion_qty) {
+                        $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
+                    } elseif ($selectedUnitId == $itemData->large_unit_id && $itemData->small_conversion_qty) {
+                        $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
+                    }
+                }
+
+                OutletRejectionItem::create([
+                    'outlet_rejection_id' => $rejection->id,
+                    'item_id' => $item['item_id'],
+                    'unit_id' => $item['unit_id'],
+                    'qty_rejected' => $item['qty_rejected'],
+                    'qty_received' => 0,
+                    'rejection_reason' => $item['rejection_reason'] ?? null,
+                    'item_condition' => $item['item_condition'],
+                    'condition_notes' => $item['condition_notes'] ?? null,
+                    'mac_cost' => $macCostConverted
+                ]);
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Outlet Rejection berhasil dibuat',
+                'rejection' => $rejection->load(['outlet', 'warehouse', 'items.item', 'items.unit']),
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Validasi gagal', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('OutletRejection apiStore: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $rejection = OutletRejection::findOrFail($id);
+        if ($rejection->status !== 'draft') {
+            return response()->json(['success' => false, 'message' => 'Hanya rejection dengan status draft yang dapat diedit'], 403);
+        }
+
+        $request->validate([
+            'rejection_date' => 'required|date',
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|exists:items,id',
+            'items.*.unit_id' => 'required|exists:units,id',
+            'items.*.qty_rejected' => 'required|numeric|min:0.01',
+            'items.*.rejection_reason' => 'nullable|string',
+            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
+            'items.*.condition_notes' => 'nullable|string'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $rejection->update([
+                'rejection_date' => $request->rejection_date,
+                'outlet_id' => $request->outlet_id,
+                'warehouse_id' => $request->warehouse_id,
+                'delivery_order_id' => $request->delivery_order_id,
+                'notes' => $request->notes
+            ]);
+            $rejection->items()->delete();
+
+            foreach ($request->items as $item) {
+                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
+                $macCost = 0;
+                if ($inventoryItem) {
+                    $lastCostHistory = DB::table('food_inventory_cost_histories')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('warehouse_id', $request->warehouse_id)
+                        ->orderByDesc('date')->orderByDesc('created_at')->first();
+                    $macCost = $lastCostHistory ? $lastCostHistory->mac : 0;
+                }
+                OutletRejectionItem::create([
+                    'outlet_rejection_id' => $rejection->id,
+                    'item_id' => $item['item_id'],
+                    'unit_id' => $item['unit_id'],
+                    'qty_rejected' => $item['qty_rejected'],
+                    'qty_received' => 0,
+                    'rejection_reason' => $item['rejection_reason'] ?? null,
+                    'item_condition' => $item['item_condition'],
+                    'condition_notes' => $item['condition_notes'] ?? null,
+                    'mac_cost' => $macCost
+                ]);
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Outlet Rejection berhasil diupdate',
+                'rejection' => $rejection->fresh(['outlet', 'warehouse', 'items.item', 'items.unit']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        if (!$canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus'], 403);
+        }
+        $rejection = OutletRejection::findOrFail($id);
+        if ($rejection->status !== 'draft') {
+            return response()->json(['success' => false, 'message' => 'Hanya rejection dengan status draft yang dapat dihapus'], 403);
+        }
+        DB::beginTransaction();
+        try {
+            $rejection->items()->delete();
+            $rejection->delete();
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Outlet Rejection berhasil dihapus']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiCancel($id)
+    {
+        $rejection = OutletRejection::findOrFail($id);
+        if (!$rejection->canBeCancelled()) {
+            return response()->json(['success' => false, 'message' => 'Rejection tidak dapat dibatalkan'], 403);
+        }
+        if ($rejection->cancel()) {
+            return response()->json(['success' => true, 'message' => 'Rejection berhasil dibatalkan']);
+        }
+        return response()->json(['success' => false, 'message' => 'Gagal batalkan rejection'], 500);
+    }
+
     public function getItems(Request $request)
     {
         $items = Item::with(['smallUnit', 'mediumUnit', 'largeUnit', 'category'])
