@@ -17,6 +17,8 @@ use App\Exports\ModifierEngineeringSheetExport;
 use App\Exports\SalesPivotPerOutletSubCategoryExport;
 use App\Exports\SalesPivotSpecialExport;
 use App\Exports\ReportSalesAllItemAllOutletExport;
+use App\Exports\ReportRekapDiskonPromoExport;
+use App\Exports\ReportRekapDiskonGlobalExport;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ReportController extends Controller
@@ -172,6 +174,502 @@ class ReportController extends Controller
             'perPage' => $perPage,
             'page' => $page,
         ]);
+    }
+
+    /**
+     * Rekap diskon dari order_promos (status=active), join orders & promos.
+     */
+    public function reportRekapDiskon(Request $request)
+    {
+        $query = DB::table('order_promos as op')
+            ->where('op.status', 'active')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->leftJoin('tbl_data_outlet as outlet', 'op.kode_outlet', '=', 'outlet.qr_code')
+            ->select(
+                'op.id as order_promo_id',
+                'op.order_id',
+                'op.promo_id',
+                'op.kode_outlet',
+                DB::raw('COALESCE(outlet.nama_outlet, op.kode_outlet) as outlet_name'),
+                'op.created_at as order_promo_created_at',
+                'o.nomor as order_nomor',
+                'o.paid_number',
+                'o.created_at as order_created_at',
+                'o.total as order_total',
+                'o.discount as order_discount',
+                'o.grand_total as order_grand_total',
+                'p.name as promo_name',
+                'p.code as promo_code',
+                'p.type as promo_type',
+                'p.value as promo_value',
+                'p.discount_type as promo_discount_type',
+                'p.max_discount as promo_max_discount'
+            );
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $query->where('op.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('p.name', 'like', $search)
+                    ->orWhere('p.code', 'like', $search);
+            });
+        }
+
+        $query->orderBy('o.created_at', 'desc')->orderBy('op.id', 'desc');
+
+        $perPage = (int) $request->input('perPage', 25);
+        $page = (int) $request->input('page', 1);
+        $total = $query->count();
+        $detail = $query->offset(($page - 1) * $perPage)->limit($perPage)->get();
+
+        // Hitung jumlah promo per order (untuk alokasi diskon proporsional)
+        $orderPromoCounts = DB::table('order_promos')
+            ->where('status', 'active')
+            ->whereIn('order_id', $detail->pluck('order_id')->unique())
+            ->selectRaw('order_id, COUNT(*) as cnt')
+            ->groupBy('order_id')
+            ->pluck('cnt', 'order_id');
+
+        // Summary per promo: jumlah pemakaian & total diskon (alokasi proporsional)
+        $summaryQuery = DB::table('order_promos as op')
+            ->where('op.status', 'active')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->select(
+                'p.id as promo_id',
+                'p.name as promo_name',
+                'p.code as promo_code',
+                'p.type as promo_type',
+                'p.value as promo_value',
+                'p.discount_type as promo_discount_type',
+                'op.order_id',
+                'o.discount as order_discount'
+            );
+
+        if ($request->filled('date_from')) {
+            $summaryQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $summaryQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $summaryQuery->where('op.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $summaryQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('p.name', 'like', $search)
+                    ->orWhere('p.code', 'like', $search);
+            });
+        }
+
+        $summaryRows = $summaryQuery->get();
+
+        // Jumlah promo per order (untuk seluruh data summary)
+        $allOrderPromoCounts = DB::table('order_promos')
+            ->where('status', 'active')
+            ->whereIn('order_id', $summaryRows->pluck('order_id')->unique())
+            ->selectRaw('order_id, COUNT(*) as cnt')
+            ->groupBy('order_id')
+            ->pluck('cnt', 'order_id');
+
+        $summaryByPromo = [];
+        foreach ($summaryRows as $row) {
+            $key = $row->promo_id;
+            if (!isset($summaryByPromo[$key])) {
+                $summaryByPromo[$key] = [
+                    'promo_id' => $row->promo_id,
+                    'promo_name' => $row->promo_name,
+                    'promo_code' => $row->promo_code,
+                    'promo_type' => $row->promo_type,
+                    'promo_value' => $row->promo_value,
+                    'promo_discount_type' => $row->promo_discount_type ?? null,
+                    'jumlah_pemakaian' => 0,
+                    'total_discount' => 0,
+                ];
+            }
+            $summaryByPromo[$key]['jumlah_pemakaian']++;
+            $cnt = $allOrderPromoCounts[$row->order_id] ?? 1;
+            $summaryByPromo[$key]['total_discount'] += ($row->order_discount ?? 0) / $cnt;
+        }
+        $summary = array_values($summaryByPromo);
+
+        // Daftar outlet untuk filter: gabungan dari order_promos dan orders (manual discount)
+        $outletsRaw = DB::table('order_promos as op')
+            ->where('op.status', 'active')
+            ->leftJoin('tbl_data_outlet as outlet', 'op.kode_outlet', '=', 'outlet.qr_code')
+            ->select('op.kode_outlet', DB::raw('COALESCE(outlet.nama_outlet, op.kode_outlet) as nama_outlet'))
+            ->distinct();
+        $outletsGlobal = DB::table('orders as o')
+            ->whereNotNull('o.manual_discount_amount')
+            ->where('o.manual_discount_amount', '>', 0)
+            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->select('o.kode_outlet', DB::raw('COALESCE(outlet.nama_outlet, o.kode_outlet) as nama_outlet'))
+            ->distinct()
+            ->union($outletsRaw)
+            ->orderBy('nama_outlet')
+            ->get();
+        $outlets = $outletsGlobal->unique('kode_outlet')->values()->map(function ($r) {
+            return ['value' => $r->kode_outlet, 'label' => $r->nama_outlet ?? $r->kode_outlet ?? '(kosong)'];
+        })->values()->all();
+
+        // --- Tab 2: Diskon Bank & Lainnya (diskon global dari orders.manual_discount_amount) ---
+        $globalQuery = DB::table('orders as o')
+            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->whereNotNull('o.manual_discount_amount')
+            ->where('o.manual_discount_amount', '>', 0)
+            ->select(
+                'o.id',
+                'o.nomor',
+                'o.paid_number',
+                'o.created_at',
+                'o.kode_outlet',
+                DB::raw('COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name'),
+                'o.grand_total',
+                'o.manual_discount_amount',
+                'o.manual_discount_reason'
+            );
+
+        if ($request->filled('date_from')) {
+            $globalQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $globalQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $globalQuery->where('o.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $globalQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('o.manual_discount_reason', 'like', $search);
+            });
+        }
+
+        $globalQuery->orderBy('o.created_at', 'desc');
+        $totalGlobal = $globalQuery->count();
+        $perPageGlobal = (int) $request->input('perPageGlobal', 25);
+        $pageGlobal = (int) $request->input('pageGlobal', 1);
+        $detailGlobal = (clone $globalQuery)->offset(($pageGlobal - 1) * $perPageGlobal)->limit($perPageGlobal)->get();
+
+        // Summary diskon global: total transaksi & total nominal (query terpisah dengan filter sama)
+        $summaryGlobalQuery = DB::table('orders as o')
+            ->whereNotNull('o.manual_discount_amount')
+            ->where('o.manual_discount_amount', '>', 0);
+        if ($request->filled('date_from')) {
+            $summaryGlobalQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $summaryGlobalQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $summaryGlobalQuery->where('o.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $summaryGlobalQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('o.manual_discount_reason', 'like', $search);
+            });
+        }
+        $summaryGlobalRow = $summaryGlobalQuery->selectRaw('COUNT(*) as total_transaksi, COALESCE(SUM(o.manual_discount_amount), 0) as total_nominal')->first();
+        $summaryGlobal = [
+            'total_transaksi' => (int) ($summaryGlobalRow->total_transaksi ?? 0),
+            'total_nominal' => (float) ($summaryGlobalRow->total_nominal ?? 0),
+        ];
+
+        return Inertia::render('Report/ReportRekapDiskon', [
+            'detail' => $detail,
+            'summary' => $summary,
+            'detailGlobal' => $detailGlobal,
+            'summaryGlobal' => $summaryGlobal,
+            'outlets' => $outlets,
+            'filters' => [
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'kode_outlet' => $request->kode_outlet,
+                'search' => $request->search,
+                'perPage' => $perPage,
+                'page' => $page,
+                'perPageGlobal' => $perPageGlobal,
+                'pageGlobal' => $pageGlobal,
+            ],
+            'total' => $total,
+            'totalGlobal' => $totalGlobal,
+            'perPage' => $perPage,
+            'page' => $page,
+            'perPageGlobal' => $perPageGlobal,
+            'pageGlobal' => $pageGlobal,
+        ]);
+    }
+
+    /**
+     * API: detail order + items untuk modal (report rekap diskon).
+     */
+    public function getOrderDetailRekapDiskon(Request $request, string $orderId)
+    {
+        $order = DB::table('orders as o')
+            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->where('o.id', $orderId)
+            ->select('o.*', DB::raw('outlet.nama_outlet as nama_outlet'))
+            ->first();
+        if (!$order) {
+            return response()->json(['error' => 'Order tidak ditemukan'], 404);
+        }
+        $order = (array) $order;
+        $order['items'] = DB::table('order_items')
+            ->where('order_id', $orderId)
+            ->select('id', 'item_id', 'item_name', 'qty', 'price', 'subtotal', 'notes', 'b1g1_promo_id', 'b1g1_status')
+            ->get()
+            ->map(function ($i) {
+                return (array) $i;
+            })
+            ->all();
+        $order['payments'] = DB::table('order_payment')
+            ->where('order_id', $orderId)
+            ->select('payment_code', 'payment_type', 'amount', 'change')
+            ->get()
+            ->map(function ($p) {
+                return (array) $p;
+            })
+            ->all();
+        $promo = DB::table('order_promos as op')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->where('op.order_id', $orderId)
+            ->where('op.status', 'active')
+            ->select('p.id', 'p.name', 'p.code', 'p.type', 'p.value')
+            ->first();
+        $order['promo'] = $promo ? (array) $promo : null;
+        return response()->json($order);
+    }
+
+    /**
+     * Export Rekap Diskon - Tab Diskon Promo (semua data sesuai filter, tanpa pagination).
+     */
+    public function exportRekapDiskonPromo(Request $request)
+    {
+        $query = DB::table('order_promos as op')
+            ->where('op.status', 'active')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->leftJoin('tbl_data_outlet as outlet', 'op.kode_outlet', '=', 'outlet.qr_code')
+            ->select(
+                'op.id as order_promo_id',
+                'op.order_id',
+                'op.promo_id',
+                'op.kode_outlet',
+                DB::raw('COALESCE(outlet.nama_outlet, op.kode_outlet) as outlet_name'),
+                'op.created_at as order_promo_created_at',
+                'o.nomor as order_nomor',
+                'o.paid_number',
+                'o.created_at as order_created_at',
+                'o.total as order_total',
+                'o.discount as order_discount',
+                'o.grand_total as order_grand_total',
+                'p.name as promo_name',
+                'p.code as promo_code',
+                'p.type as promo_type',
+                'p.value as promo_value',
+                'p.discount_type as promo_discount_type',
+                'p.max_discount as promo_max_discount'
+            );
+        if ($request->filled('date_from')) {
+            $query->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $query->where('op.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('p.name', 'like', $search)
+                    ->orWhere('p.code', 'like', $search);
+            });
+        }
+        $query->orderBy('o.created_at', 'desc')->orderBy('op.id', 'desc');
+        $detail = $query->get();
+
+        $orderIds = $detail->pluck('order_id')->unique()->values()->all();
+        $orderPromoCounts = $orderIds ? DB::table('order_promos')
+            ->where('status', 'active')
+            ->whereIn('order_id', $orderIds)
+            ->selectRaw('order_id, COUNT(*) as cnt')
+            ->groupBy('order_id')
+            ->pluck('cnt', 'order_id')->all() : [];
+
+        foreach ($detail as $row) {
+            $row->allocated_discount = isset($orderPromoCounts[$row->order_id])
+                ? ($row->order_discount ?? 0) / $orderPromoCounts[$row->order_id]
+                : ($row->order_discount ?? 0);
+        }
+
+        $summaryQuery = DB::table('order_promos as op')
+            ->where('op.status', 'active')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->select(
+                'p.id as promo_id',
+                'p.name as promo_name',
+                'p.code as promo_code',
+                'p.type as promo_type',
+                'p.value as promo_value',
+                'p.discount_type as promo_discount_type',
+                'op.order_id',
+                'o.discount as order_discount'
+            );
+        if ($request->filled('date_from')) {
+            $summaryQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $summaryQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $summaryQuery->where('op.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $summaryQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('p.name', 'like', $search)
+                    ->orWhere('p.code', 'like', $search);
+            });
+        }
+        $summaryRows = $summaryQuery->get();
+        $allOrderPromoCounts = $summaryRows->pluck('order_id')->unique()->isEmpty()
+            ? []
+            : DB::table('order_promos')
+                ->where('status', 'active')
+                ->whereIn('order_id', $summaryRows->pluck('order_id')->unique())
+                ->selectRaw('order_id, COUNT(*) as cnt')
+                ->groupBy('order_id')
+                ->pluck('cnt', 'order_id')->all();
+        $summaryByPromo = [];
+        foreach ($summaryRows as $row) {
+            $key = $row->promo_id;
+            if (! isset($summaryByPromo[$key])) {
+                $summaryByPromo[$key] = [
+                    'promo_id' => $row->promo_id,
+                    'promo_name' => $row->promo_name,
+                    'promo_code' => $row->promo_code,
+                    'promo_type' => $row->promo_type,
+                    'promo_value' => $row->promo_value,
+                    'promo_discount_type' => $row->promo_discount_type ?? null,
+                    'jumlah_pemakaian' => 0,
+                    'total_discount' => 0,
+                ];
+            }
+            $summaryByPromo[$key]['jumlah_pemakaian']++;
+            $cnt = $allOrderPromoCounts[$row->order_id] ?? 1;
+            $summaryByPromo[$key]['total_discount'] += ($row->order_discount ?? 0) / $cnt;
+        }
+        $summary = array_values($summaryByPromo);
+
+        $export = new ReportRekapDiskonPromoExport(
+            $detail,
+            $summary,
+            $request->input('date_from', ''),
+            $request->input('date_to', ''),
+            $request->input('search', '')
+        );
+        return $export->toResponse($request);
+    }
+
+    /**
+     * Export Rekap Diskon - Tab Diskon Bank & Lainnya (semua data sesuai filter).
+     */
+    public function exportRekapDiskonGlobal(Request $request)
+    {
+        $globalQuery = DB::table('orders as o')
+            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->whereNotNull('o.manual_discount_amount')
+            ->where('o.manual_discount_amount', '>', 0)
+            ->select(
+                'o.id',
+                'o.nomor',
+                'o.paid_number',
+                'o.created_at',
+                'o.kode_outlet',
+                DB::raw('COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name'),
+                'o.grand_total',
+                'o.manual_discount_amount',
+                'o.manual_discount_reason'
+            );
+        if ($request->filled('date_from')) {
+            $globalQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $globalQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $globalQuery->where('o.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $globalQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('o.manual_discount_reason', 'like', $search);
+            });
+        }
+        $globalQuery->orderBy('o.created_at', 'desc');
+        $detailGlobal = $globalQuery->get();
+
+        $summaryGlobalQuery = DB::table('orders as o')
+            ->whereNotNull('o.manual_discount_amount')
+            ->where('o.manual_discount_amount', '>', 0);
+        if ($request->filled('date_from')) {
+            $summaryGlobalQuery->whereDate('o.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $summaryGlobalQuery->whereDate('o.created_at', '<=', $request->date_to);
+        }
+        if ($request->filled('kode_outlet')) {
+            $summaryGlobalQuery->where('o.kode_outlet', $request->kode_outlet);
+        }
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $summaryGlobalQuery->where(function ($q) use ($search) {
+                $q->where('o.nomor', 'like', $search)
+                    ->orWhere('o.paid_number', 'like', $search)
+                    ->orWhere('o.manual_discount_reason', 'like', $search);
+            });
+        }
+        $summaryGlobalRow = $summaryGlobalQuery->selectRaw('COUNT(*) as total_transaksi, COALESCE(SUM(o.manual_discount_amount), 0) as total_nominal')->first();
+        $summaryGlobal = [
+            'total_transaksi' => (int) ($summaryGlobalRow->total_transaksi ?? 0),
+            'total_nominal' => (float) ($summaryGlobalRow->total_nominal ?? 0),
+        ];
+
+        $export = new ReportRekapDiskonGlobalExport(
+            $detailGlobal,
+            $summaryGlobal,
+            $request->input('date_from', ''),
+            $request->input('date_to', ''),
+            $request->input('search', '')
+        );
+        return $export->toResponse($request);
     }
 
     public function reportSalesAllItemAllOutlet(Request $request)

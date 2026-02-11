@@ -373,6 +373,12 @@ const menuGroups = [
                 route: '/stock-opname-adjustment-report',
                 code: 'stock_opname_adjustment_report',
             },
+            {
+                name: () => 'Report Rekap Diskon',
+                icon: 'fa-solid fa-tags',
+                route: '/report-rekap-diskon',
+                code: 'report_rekap_diskon',
+            },
         ],
     },
     {

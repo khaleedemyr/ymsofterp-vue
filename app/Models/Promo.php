@@ -72,4 +72,9 @@ class Promo extends Model
     {
         return $this->hasMany(\App\Models\PromoBogoItem::class, 'promo_id');
     }
+
+    public function orderPromos()
+    {
+        return $this->hasMany(OrderPromo::class, 'promo_id');
+    }
 } 

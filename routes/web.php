@@ -1344,6 +1344,10 @@ Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Cont
 Route::get('/report-sales-pivot-special/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotSpecial'])->name('report.sales-pivot-special.export');
 Route::get('/report-rekap-fj', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotSpecial'])->name('report.rekap-fj');
 Route::get('/report-rekap-fj/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotSpecial'])->name('report.rekap-fj.export');
+    Route::get('/report-rekap-diskon', [ReportController::class, 'reportRekapDiskon'])->name('report.rekap-diskon');
+    Route::get('/api/report-rekap-diskon/order/{order_id}', [ReportController::class, 'getOrderDetailRekapDiskon'])->name('report.rekap-diskon.order-detail');
+    Route::get('/report-rekap-diskon/export-promo', [ReportController::class, 'exportRekapDiskonPromo'])->name('report.rekap-diskon.export-promo');
+    Route::get('/report-rekap-diskon/export-global', [ReportController::class, 'exportRekapDiskonGlobal'])->name('report.rekap-diskon.export-global');
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
     Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\Report\WarehouseReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
     Route::get('/report-receiving-sheet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
