@@ -1,0 +1,839 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Exports\CostReportExport;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Carbon\Carbon;
+use Maatwebsite\Excel\Facades\Excel;
+
+class CostReportController extends Controller
+{
+    /**
+     * Cost Report: kolom Outlet (is_outlet=1, status=A) dan Begin Inventory (Total MAC).
+     * Begin inventory logic sama seperti Outlet Stock Report, tapi nilai yang ditampilkan
+     * adalah total MAC (nilai rupiah) = sum(begin_qty_small * mac_per_small) per outlet.
+     */
+    public function index(Request $request)
+    {
+        $bulan = $request->input('bulan', date('Y-m'));
+        $data = $this->getReportData($bulan);
+        return Inertia::render('CostReport/Index', [
+            'outlets' => $data['outlets'],
+            'reportRows' => $data['reportRows'],
+            'cogsRows' => $data['cogsRows'],
+            'categoryCostRows' => $data['categoryCostRows'],
+            'filters' => ['bulan' => $bulan],
+        ]);
+    }
+
+    /**
+     * Export Cost Report to Excel (3 sheets: Cost Inventory, COGS, Category Cost).
+     */
+    public function export(Request $request)
+    {
+        $bulan = $request->input('bulan', date('Y-m'));
+        $data = $this->getReportData($bulan);
+        $fileName = 'cost_report_' . $bulan . '.xlsx';
+        return Excel::download(
+            new CostReportExport($data['reportRows'], $data['cogsRows'], $data['categoryCostRows'], $bulan),
+            $fileName
+        );
+    }
+
+    /**
+     * Build report data for the given month (shared by index and export).
+     */
+    private function getReportData(string $bulan): array
+    {
+        $bulanCarbon = Carbon::parse($bulan . '-01');
+        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
+        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
+        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
+        $tanggalAwalBulan = $bulanCarbon->format('Y-m-01');
+        $tanggalAkhirBulan = $bulanCarbon->format('Y-m-t');
+
+        // 1. Outlets: is_outlet=1, status='A'
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $reportRows = [];
+
+        foreach ($outlets as $outlet) {
+            $outletId = $outlet->id_outlet;
+            $warehouseOutlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $outletId)
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+
+            $totalBeginMacOutlet = 0;
+            $totalEndingMacOutlet = 0;
+
+            foreach ($warehouseOutlets as $wo) {
+                $warehouseOutletId = $wo->id;
+                $totalBeginMacWarehouse = $this->computeBeginInventoryTotalMac(
+                    $outletId,
+                    $warehouseOutletId,
+                    $bulanSebelumnya,
+                    $tanggalAkhirBulanSebelumnya,
+                    $tanggal1BulanIni
+                );
+                $totalBeginMacOutlet += $totalBeginMacWarehouse;
+
+                $totalEndingMacWarehouse = $this->computeEndingInventoryTotalMac(
+                    $outletId,
+                    $warehouseOutletId,
+                    $tanggalAwalBulan,
+                    $tanggalAkhirBulan
+                );
+                $totalEndingMacOutlet += $totalEndingMacWarehouse;
+            }
+
+            $reportRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'total_begin_mac' => round($totalBeginMacOutlet, 2),
+                'ending_inventory' => round($totalEndingMacOutlet, 2),
+                'official_cost' => 0, // filled below
+                'cost_rnd' => 0, // filled below
+                'outlet_transfer' => 0, // filled below: net = received - sent (bisa minus)
+                'sales_before_discount' => 0, // filled below
+                'discount' => 0, // filled below: total discount promo + manual (sumber: report rekap discount)
+            ];
+        }
+
+        // Official Cost per outlet: GR + Retail Food, exclude sub_category Stationary, Marketing, Chemical
+        $officialCostByOutlet = $this->computeOfficialCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        // Cost RND per outlet: Category Cost Outlet type RnD + Marketing (APPROVED), sum subtotal_mac
+        $costRndByOutlet = $this->computeCostRndByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        // Outlet Transfer: net per outlet = nilai diterima - nilai dikirim (sumber: menu Outlet Transfer, status approved)
+        $outletTransferByOutlet = $this->computeOutletTransferByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        // Sales Before Discount: sama seperti menu Engineering (orders + order_items, SUM(qty * price) per outlet)
+        $salesBeforeDiscountByOutlet = $this->computeSalesBeforeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        // Discount: total discount promo + manual, sama seperti report rekap discount (orders.discount + orders.manual_discount_amount)
+        $discountByOutlet = $this->computeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        foreach ($reportRows as &$row) {
+            $row['official_cost'] = round($officialCostByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['cost_rnd'] = round($costRndByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['outlet_transfer'] = round($outletTransferByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['sales_before_discount'] = round($salesBeforeDiscountByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['discount'] = round($discountByOutlet[$row['outlet_id']] ?? 0, 2);
+            // Sales After Discount = Sales Before Discount - Discount
+            $row['sales_after_discount'] = round(($row['sales_before_discount'] ?? 0) - ($row['discount'] ?? 0), 2);
+            // % Total Discount terhadap Sales = (Discount / Sales Before Discount) * 100
+            $salesBefore = (float) ($row['sales_before_discount'] ?? 0);
+            $row['pct_discount'] = $salesBefore > 0
+                ? round(((float) ($row['discount'] ?? 0) / $salesBefore) * 100, 2)
+                : 0;
+            // Total Barang Tersedia = Begin Inventory + Official Cost - Cost RND - Outlet Transfer
+            $row['total_barang_tersedia'] = round(
+                ($row['total_begin_mac'] ?? 0) + ($row['official_cost'] ?? 0) - ($row['cost_rnd'] ?? 0) - ($row['outlet_transfer'] ?? 0),
+                2
+            );
+            // COGS Aktual = Total Barang Tersedia - Ending Inventory
+            $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory'] ?? 0), 2);
+        }
+        unset($row);
+
+        // Tab COGS: outlet sama, kolom COGS + Category Cost + Meal Employees + COGS Pembanding + Deviasi
+        $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $categoryCostByOutlet = $this->computeCategoryCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $mealEmployeesByOutlet = $this->computeMealEmployeesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
+        $salesBeforeDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_before_discount'] ?? 0))->all();
+        $salesAfterDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_after_discount'] ?? 0))->all();
+        $cogsRows = [];
+        foreach ($outlets as $outlet) {
+            $cogs = round($cogsByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $categoryCost = round($categoryCostByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $mealEmployees = round($mealEmployeesByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $cogsPembanding = round($cogs + $categoryCost + $mealEmployees, 2);
+            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
+            $deviasi = round($cogsPembanding - $cogsAktual, 2);
+            $toleransi2Pct = round($cogsAktual * 0.02, 2);
+            $salesBeforeDiscount = $salesBeforeDiscountByOutlet[$outlet->id_outlet] ?? 0;
+            $salesAfterDiscount = $salesAfterDiscountByOutlet[$outlet->id_outlet] ?? 0;
+            $pctCogsPembanding = $salesBeforeDiscount > 0
+                ? round(($cogsPembanding / $salesBeforeDiscount) * 100, 2)
+                : null;
+            $pctCogsActualBeforeDisc = $salesBeforeDiscount > 0
+                ? round(($cogsAktual / $salesBeforeDiscount) * 100, 2)
+                : null;
+            $pctCogsActualAfterDisc = $salesAfterDiscount > 0
+                ? round(($cogsAktual / $salesAfterDiscount) * 100, 2)
+                : null;
+            // % COGS Foods = cogs / sales before discount
+            $pctCogsFoods = $salesBeforeDiscount > 0
+                ? round(($cogs / $salesBeforeDiscount) * 100, 2)
+                : null;
+            // % Deviasi = deviasi / cogs pembanding (persentase dari COGS Pembanding)
+            $pctDeviasi = $cogsPembanding > 0
+                ? round(($deviasi / $cogsPembanding) * 100, 2)
+                : null;
+            // % Category Cost = category cost / cogs actual
+            $pctCategoryCost = $cogsAktual > 0
+                ? round(($categoryCost / $cogsAktual) * 100, 2)
+                : null;
+            $cogsRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'cogs' => $cogs,
+                'category_cost' => $categoryCost,
+                'meal_employees' => $mealEmployees,
+                'cogs_pembanding' => $cogsPembanding,
+                'deviasi' => $deviasi,
+                'toleransi_2_pct' => $toleransi2Pct,
+                'pct_cogs_pembanding' => $pctCogsPembanding,
+                'pct_cogs_actual_before_disc' => $pctCogsActualBeforeDisc,
+                'pct_cogs_actual_after_disc' => $pctCogsActualAfterDisc,
+                'pct_cogs_foods' => $pctCogsFoods,
+                'pct_deviasi' => $pctDeviasi,
+                'pct_category_cost' => $pctCategoryCost,
+            ];
+        }
+
+        // Tab Category Cost: outlet + Guest Supplies, Spoilage, Waste, Non Commodity (masing-masing + %), Category Cost (total + %)
+        $guestSuppliesByOutlet = $this->computeGuestSuppliesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $spoilageByOutlet = $this->computeSpoilageByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $wasteByOutlet = $this->computeWasteByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $nonCommodityByOutlet = $this->computeNonCommodityByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $categoryCostRows = [];
+        foreach ($outlets as $outlet) {
+            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
+            $guestSupplies = round($guestSuppliesByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $spoilage = round($spoilageByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $waste = round($wasteByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $nonCommodity = round($nonCommodityByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $categoryCostTotal = round($guestSupplies + $spoilage + $waste + $nonCommodity, 2);
+            $pctGuestSupplies = $cogsAktual > 0 ? round(($guestSupplies / $cogsAktual) * 100, 2) : null;
+            $pctSpoilage = $cogsAktual > 0 ? round(($spoilage / $cogsAktual) * 100, 2) : null;
+            $pctWaste = $cogsAktual > 0 ? round(($waste / $cogsAktual) * 100, 2) : null;
+            $pctNonCommodity = $cogsAktual > 0 ? round(($nonCommodity / $cogsAktual) * 100, 2) : null;
+            $pctCategoryCost = $cogsAktual > 0 ? round(($categoryCostTotal / $cogsAktual) * 100, 2) : null;
+            $categoryCostRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'guest_supplies' => $guestSupplies,
+                'pct_guest_supplies' => $pctGuestSupplies,
+                'spoilage' => $spoilage,
+                'pct_spoilage' => $pctSpoilage,
+                'waste' => $waste,
+                'pct_waste' => $pctWaste,
+                'non_commodity' => $nonCommodity,
+                'pct_non_commodity' => $pctNonCommodity,
+                'category_cost' => $categoryCostTotal,
+                'pct_category_cost' => $pctCategoryCost,
+            ];
+        }
+
+        return [
+            'outlets' => $outlets,
+            'reportRows' => $reportRows,
+            'cogsRows' => $cogsRows,
+            'categoryCostRows' => $categoryCostRows,
+        ];
+    }
+
+    /**
+     * Hitung total MAC begin inventory untuk satu (outlet, warehouse).
+     * Logic mengikuti OutletStockReportController: begin = last stock opname bulan lalu
+     * atau fallback initial_balance. Nilai MAC = qty_small * mac (per small unit).
+     */
+    private function computeBeginInventoryTotalMac(
+        int $outletId,
+        int $warehouseOutletId,
+        Carbon $bulanSebelumnya,
+        string $tanggalAkhirBulanSebelumnya,
+        string $tanggal1BulanIni
+    ): float {
+        // Inventory items di outlet+warehouse ini
+        $inventoryItems = DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->where('s.id_outlet', $outletId)
+            ->where('s.warehouse_outlet_id', $warehouseOutletId)
+            ->select('fi.id as inventory_item_id', 'fi.item_id')
+            ->distinct()
+            ->get();
+
+        if ($inventoryItems->isEmpty()) {
+            return 0;
+        }
+
+        $inventoryItemIds = $inventoryItems->pluck('inventory_item_id')->toArray();
+
+        // Begin from opname bulan lalu (dengan mac_after untuk nilai MAC)
+        $beginInventoryFromOpname = [];
+        $beginOpnamePrevMonth = DB::table('outlet_stock_opname_items as soi')
+            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
+            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
+            ->where('so.outlet_id', $outletId)
+            ->where('so.warehouse_outlet_id', $warehouseOutletId)
+            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
+            ->where(function ($q) use ($bulanSebelumnya, $tanggal1BulanIni) {
+                $q->where(function ($q2) use ($bulanSebelumnya) {
+                    $q2->whereYear('so.opname_date', $bulanSebelumnya->year)
+                       ->whereMonth('so.opname_date', $bulanSebelumnya->month);
+                })->orWhereDate('so.opname_date', $tanggal1BulanIni);
+            })
+            ->select(
+                'fi.item_id',
+                'soi.qty_physical_small',
+                'soi.qty_physical_medium',
+                'soi.qty_physical_large',
+                'soi.mac_after',
+                'soi.mac_before',
+                'so.opname_date',
+                'so.id as so_id'
+            )
+            ->orderBy('so.opname_date', 'desc')
+            ->orderBy('so.id', 'desc')
+            ->get();
+
+        foreach ($beginOpnamePrevMonth as $d) {
+            if (isset($beginInventoryFromOpname[$d->item_id])) {
+                continue;
+            }
+            $mac = (float) ($d->mac_after ?? $d->mac_before ?? 0);
+            $beginInventoryFromOpname[$d->item_id] = [
+                'qty_small' => (float) ($d->qty_physical_small ?? 0),
+                'mac' => $mac,
+            ];
+        }
+
+        // Fallback: initial_balance dari outlet_food_inventory_cards
+        $beginFromUpload = [];
+        $uploadCards = DB::table('outlet_food_inventory_cards as card')
+            ->where('card.reference_type', 'initial_balance')
+            ->where('card.id_outlet', $outletId)
+            ->where('card.warehouse_outlet_id', $warehouseOutletId)
+            ->where('card.date', '<=', $tanggalAkhirBulanSebelumnya)
+            ->whereIn('card.inventory_item_id', $inventoryItemIds)
+            ->orderBy('card.date', 'desc')
+            ->orderBy('card.created_at', 'desc')
+            ->select('card.inventory_item_id', 'card.saldo_qty_small', 'card.saldo_qty_medium', 'card.saldo_qty_large')
+            ->get();
+
+        foreach ($uploadCards as $r) {
+            if (!isset($beginFromUpload[$r->inventory_item_id])) {
+                $beginFromUpload[$r->inventory_item_id] = [
+                    'qty_small' => (float) ($r->saldo_qty_small ?? 0),
+                ];
+            }
+        }
+
+        // Last cost (MAC) untuk item yang begin-nya dari upload - dari outlet_food_inventory_stocks
+        $lastCostByInventoryItem = [];
+        if (!empty($inventoryItemIds)) {
+            $stocks = DB::table('outlet_food_inventory_stocks')
+                ->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->whereIn('inventory_item_id', $inventoryItemIds)
+                ->select('inventory_item_id', 'last_cost_small')
+                ->get();
+            foreach ($stocks as $s) {
+                $lastCostByInventoryItem[$s->inventory_item_id] = (float) ($s->last_cost_small ?? 0);
+            }
+        }
+
+        $totalMac = 0;
+        foreach ($inventoryItems as $row) {
+            $itemId = $row->item_id;
+            $inventoryItemId = $row->inventory_item_id;
+
+            $fromOpname = $beginInventoryFromOpname[$itemId] ?? null;
+            $fromUpload = $beginFromUpload[$inventoryItemId] ?? null;
+
+            $beginQtySmall = 0;
+            $mac = 0;
+
+            if ($fromOpname !== null) {
+                $beginQtySmall = $fromOpname['qty_small'];
+                $mac = $fromOpname['mac'];
+            } elseif ($fromUpload !== null) {
+                $beginQtySmall = $fromUpload['qty_small'];
+                $mac = $lastCostByInventoryItem[$inventoryItemId] ?? 0;
+            }
+
+            $totalMac += $beginQtySmall * $mac;
+        }
+
+return $totalMac;
+        }
+
+    /**
+     * Hitung total MAC ending inventory untuk satu (outlet, warehouse).
+     * Hanya dari stock opname yang opname_date = tanggal terakhir bulan laporan (opname akhir bulan).
+     * Jika belum ada stock opname akhir bulan, ending = 0 (tidak pakai opname tengah bulan).
+     * Nilai MAC = qty_small * mac (per small unit).
+     */
+    private function computeEndingInventoryTotalMac(
+        int $outletId,
+        int $warehouseOutletId,
+        string $tanggalAwalBulan,
+        string $tanggalAkhirBulan
+    ): float {
+        $inventoryItems = DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->where('s.id_outlet', $outletId)
+            ->where('s.warehouse_outlet_id', $warehouseOutletId)
+            ->select('fi.id as inventory_item_id', 'fi.item_id')
+            ->distinct()
+            ->get();
+
+        if ($inventoryItems->isEmpty()) {
+            return 0;
+        }
+
+        // Hanya dari opname yang tanggalnya = akhir bulan laporan (stock opname akhir bulan)
+        $endingFromOpname = [];
+        $endingOpnameMonth = DB::table('outlet_stock_opname_items as soi')
+            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
+            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
+            ->where('so.outlet_id', $outletId)
+            ->where('so.warehouse_outlet_id', $warehouseOutletId)
+            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
+            ->where('so.opname_date', '=', $tanggalAkhirBulan)
+            ->select(
+                'fi.item_id',
+                'soi.qty_physical_small',
+                'soi.mac_after',
+                'soi.mac_before'
+            )
+            ->orderBy('so.id', 'desc')
+            ->get();
+
+        foreach ($endingOpnameMonth as $d) {
+            if (isset($endingFromOpname[$d->item_id])) {
+                continue;
+            }
+            $mac = (float) ($d->mac_after ?? $d->mac_before ?? 0);
+            $endingFromOpname[$d->item_id] = [
+                'qty_small' => (float) ($d->qty_physical_small ?? 0),
+                'mac' => $mac,
+            ];
+        }
+
+        $totalMac = 0;
+        foreach ($inventoryItems as $row) {
+            $fromOpname = $endingFromOpname[$row->item_id] ?? null;
+            if ($fromOpname === null) {
+                continue; // Belum ada opname bulan ini → item ini tidak masuk ending
+            }
+            $totalMac += $fromOpname['qty_small'] * $fromOpname['mac'];
+        }
+
+        return $totalMac;
+    }
+
+    /**
+     * Official Cost = nilai GR + Retail Food untuk bulan tertentu,
+     * EXCLUDE barang dengan sub_category: Stationary, Marketing, Chemical.
+     * Return array [ outlet_id => total_official_cost ].
+     */
+    private function computeOfficialCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        // 1. GR: outlet_food_good_receives + items, nilai = received_qty * COALESCE(fo.price, 0), exclude 3 sub_category
+        $grQuery = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->whereBetween('gr.receive_date', [$tanggalAwal, $tanggalAkhir])
+            ->whereNull('gr.deleted_at')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
+            ->groupBy('gr.outlet_id')
+            ->select('gr.outlet_id', DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as total_gr'));
+
+        $grByOutlet = $grQuery->get()->keyBy('outlet_id');
+
+        // 2. Retail Food: retail_food + retail_food_items, join items (by name) + sub_categories, exclude 3 sub_category, sum(rfi.subtotal)
+        $retailQuery = DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->whereBetween('rf.transaction_date', [$tanggalAwal, $tanggalAkhir])
+            ->where('rf.status', 'approved')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
+            ->groupBy('rf.outlet_id')
+            ->select('rf.outlet_id', DB::raw('SUM(rfi.subtotal) as total_retail'));
+
+        $retailByOutlet = $retailQuery->get()->keyBy('outlet_id');
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $gr = (float) ($grByOutlet->get($oid)?->total_gr ?? 0);
+            $retail = (float) ($retailByOutlet->get($oid)?->total_retail ?? 0);
+            $result[$oid] = $gr + $retail;
+        }
+        return $result;
+    }
+
+    /**
+     * Cost RND = total dari menu Category Cost Outlet dengan type RnD dan Marketing.
+     * Sumber: outlet_internal_use_waste_headers (type IN r_and_d, marketing), status APPROVED,
+     * date dalam bulan laporan. Nilai = SUM(subtotal_mac).
+     * Return array [ outlet_id => total_cost_rnd ].
+     */
+    private function computeCostRndByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('outlet_internal_use_waste_headers')
+            ->whereIn('type', ['r_and_d', 'marketing'])
+            ->whereIn('status', ['APPROVED', 'PROCESSED'])
+            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('outlet_id')
+            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_rnd'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_rnd ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Category Cost = total dari menu Category Cost Outlet dengan type spoil, waste, guest_supplies, non_commodity.
+     * Sumber: outlet_internal_use_waste_headers, status APPROVED, date dalam bulan laporan. Nilai = SUM(subtotal_mac).
+     * Return array [ outlet_id => total ].
+     */
+    private function computeCategoryCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('outlet_internal_use_waste_headers')
+            ->whereIn('type', ['spoil', 'waste', 'guest_supplies', 'non_commodity'])
+            ->whereIn('status', ['APPROVED', 'PROCESSED'])
+            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('outlet_id')
+            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Meal Employees = total dari menu Category Cost Outlet dengan type internal_use.
+     * Sumber: outlet_internal_use_waste_headers, status APPROVED, date dalam bulan laporan. Nilai = SUM(subtotal_mac).
+     * Return array [ outlet_id => total ].
+     */
+    private function computeMealEmployeesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('outlet_internal_use_waste_headers')
+            ->where('type', 'internal_use')
+            ->whereIn('status', ['APPROVED', 'PROCESSED'])
+            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('outlet_id')
+            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Guest Supplies = total dari menu Category Cost Outlet dengan type guest_supplies.
+     * Sumber: outlet_internal_use_waste_headers, status APPROVED/PROCESSED, date dalam bulan laporan. Nilai = SUM(subtotal_mac).
+     * Return array [ outlet_id => total ].
+     */
+    private function computeGuestSuppliesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('outlet_internal_use_waste_headers')
+            ->where('type', 'guest_supplies')
+            ->whereIn('status', ['APPROVED', 'PROCESSED'])
+            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('outlet_id')
+            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Spoilage = total dari menu Category Cost Outlet dengan type spoil.
+     * Return array [ outlet_id => total ].
+     */
+    private function computeSpoilageByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        return $this->computeCategoryCostTypeByOutlet('spoil', $tanggalAwal, $tanggalAkhir);
+    }
+
+    /**
+     * Waste = total dari menu Category Cost Outlet dengan type waste.
+     * Return array [ outlet_id => total ].
+     */
+    private function computeWasteByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        return $this->computeCategoryCostTypeByOutlet('waste', $tanggalAwal, $tanggalAkhir);
+    }
+
+    /**
+     * Non Commodity = total dari menu Category Cost Outlet dengan type non_commodity.
+     * Return array [ outlet_id => total ].
+     */
+    private function computeNonCommodityByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        return $this->computeCategoryCostTypeByOutlet('non_commodity', $tanggalAwal, $tanggalAkhir);
+    }
+
+    /**
+     * Helper: total per outlet untuk satu type dari outlet_internal_use_waste_headers.
+     * Return array [ outlet_id => total ].
+     */
+    private function computeCategoryCostTypeByOutlet(string $type, string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('outlet_internal_use_waste_headers')
+            ->where('type', $type)
+            ->whereIn('status', ['APPROVED', 'PROCESSED'])
+            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('outlet_id')
+            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Outlet Transfer = net per outlet dari menu Outlet Transfer (status approved).
+     * Outlet yang mengirim stock: nilai minus (pengurangan).
+     * Outlet yang menerima stock: nilai plus (penambahan).
+     * Return array [ outlet_id => net_value ] dengan net = received - sent.
+     */
+    private function computeOutletTransferByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+
+        // 1. Nilai diterima (receiver): dari outlet_food_inventory_cost_histories (reference_type=outlet_transfer)
+        //    join transfer items → sum(qty_small * mac) per id_outlet
+        $receivedRows = DB::table('outlet_food_inventory_cost_histories as h')
+            ->join('outlet_transfers as t', 't.id', '=', 'h.reference_id')
+            ->join('outlet_transfer_items as d', function ($j) {
+                $j->on('d.outlet_transfer_id', '=', 't.id');
+            })
+            ->join('outlet_food_inventory_items as ofii', function ($j) {
+                $j->on('ofii.id', '=', 'h.inventory_item_id')->on('ofii.item_id', '=', 'd.item_id');
+            })
+            ->where('h.reference_type', 'outlet_transfer')
+            ->where('t.status', 'approved')
+            ->whereBetween('h.date', [$tanggalAwal, $tanggalAkhir])
+            ->groupBy('h.id_outlet')
+            ->select('h.id_outlet', DB::raw('SUM(d.qty_small * COALESCE(h.mac, 0)) as total_received'))
+            ->get();
+        foreach ($receivedRows as $r) {
+            $result[$r->id_outlet] = (float) ($r->total_received ?? 0);
+        }
+
+        // 2. Nilai dikirim (sender): per transfer approved, outlet asal = warehouse_outlet_from → outlet_id
+        //    nilai = sum over items (qty_small * MAC di outlet asal pada transfer_date)
+        $transfers = DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wo_from', 'wo_from.id', '=', 't.warehouse_outlet_from_id')
+            ->where('t.status', 'approved')
+            ->whereBetween('t.transfer_date', [$tanggalAwal, $tanggalAkhir])
+            ->select('t.id', 't.transfer_date', 't.warehouse_outlet_from_id', 'wo_from.outlet_id as from_outlet_id')
+            ->get();
+
+        foreach ($transfers as $t) {
+            $items = DB::table('outlet_transfer_items')->where('outlet_transfer_id', $t->id)->get();
+            foreach ($items as $item) {
+                $qtySmall = (float) ($item->qty_small ?? 0);
+                if ($qtySmall <= 0) {
+                    continue;
+                }
+                $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
+                if (!$ofii) {
+                    continue;
+                }
+                $mac = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $ofii->id)
+                    ->where('id_outlet', $t->from_outlet_id)
+                    ->where('warehouse_outlet_id', $t->warehouse_outlet_from_id)
+                    ->where('date', '<=', $t->transfer_date)
+                    ->orderByDesc('date')
+                    ->orderByDesc('created_at')
+                    ->value('mac');
+                $valueSent = $qtySmall * (float) ($mac ?? 0);
+                $result[$t->from_outlet_id] -= $valueSent;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Sales Before Discount per outlet: sumber sama seperti menu Engineering (Item Engineering).
+     * orders + order_items, SUM(qty * price) per outlet, filter tanggal created_at dalam bulan laporan.
+     * Mapping outlet via orders.kode_outlet = tbl_data_outlet.qr_code.
+     * Return array [ outlet_id => total_sales_before_discount ].
+     */
+    private function computeSalesBeforeDiscountByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('orders')
+            ->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->join('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+            ->where('o.is_outlet', 1)
+            ->where('o.status', 'A')
+            ->whereDate('orders.created_at', '>=', $tanggalAwal)
+            ->whereDate('orders.created_at', '<=', $tanggalAkhir)
+            ->groupBy('o.id_outlet')
+            ->select('o.id_outlet', DB::raw('SUM(order_items.qty * order_items.price) as total_sales'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->id_outlet] = (float) ($r->total_sales ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * Total discount per outlet: discount promo + manual discount (sumber: report rekap discount).
+     * Promo = orders.discount, manual = orders.manual_discount_amount.
+     * Filter: orders.created_at dalam bulan laporan, outlet via kode_outlet = qr_code (is_outlet=1, status=A).
+     * Return array [ outlet_id => total_discount ].
+     */
+    private function computeDiscountByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('orders')
+            ->join('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+            ->where('o.is_outlet', 1)
+            ->where('o.status', 'A')
+            ->whereDate('orders.created_at', '>=', $tanggalAwal)
+            ->whereDate('orders.created_at', '<=', $tanggalAkhir)
+            ->groupBy('o.id_outlet')
+            ->select(
+                'o.id_outlet',
+                DB::raw('COALESCE(SUM(orders.discount), 0) + COALESCE(SUM(orders.manual_discount_amount), 0) as total_discount')
+            )
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->id_outlet] = (float) ($r->total_discount ?? 0);
+        }
+        return $result;
+    }
+
+    /**
+     * COGS dari hasil stock cut bulan tersebut (menu Stock Cut).
+     * Sumber: stock_cut_details join stock_cut_logs, SUM(value_out) per outlet.
+     * value_out = nilai cost yang keluar saat potong stock (qty * cost per small).
+     * Filter: scl.tanggal dalam bulan laporan, scl.status = 'success'.
+     * Return array [ outlet_id => total_cogs ].
+     */
+    private function computeCogsStockCutByOutlet(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $rows = DB::table('stock_cut_details as scd')
+            ->join('stock_cut_logs as scl', 'scd.stock_cut_log_id', '=', 'scl.id')
+            ->whereBetween('scl.tanggal', [$tanggalAwal, $tanggalAkhir])
+            ->where('scl.status', 'success')
+            ->groupBy('scl.outlet_id')
+            ->select('scl.outlet_id', DB::raw('SUM(COALESCE(scd.value_out, 0)) as total_cogs'))
+            ->get();
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = 0;
+        }
+        foreach ($rows as $r) {
+            $result[$r->outlet_id] = (float) ($r->total_cogs ?? 0);
+        }
+        return $result;
+    }
+}

@@ -332,6 +332,12 @@ const menuGroups = [
                 code: 'outlet_stock_report',
             },
             {
+                name: () => 'Cost Report',
+                icon: 'fa-solid fa-coins',
+                route: '/cost-report',
+                code: 'cost_report',
+            },
+            {
                 name: () => 'Report RnD, BM, WM',
                 icon: 'fa-solid fa-chart-line',
                 route: '/internal-use-waste-report',

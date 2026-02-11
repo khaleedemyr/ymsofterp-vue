@@ -817,6 +817,11 @@ Route::get('/inventory/stock-cost-report', [\App\Http\Controllers\StockCostRepor
 // Outlet Stock Report
 Route::get('/outlet-stock-report', [\App\Http\Controllers\OutletStockReportController::class, 'index'])->name('outlet-stock-report.index');
 Route::get('/outlet-stock-report/export', [\App\Http\Controllers\OutletStockReportController::class, 'export'])->name('outlet-stock-report.export');
+
+// Cost Report (outlet + begin inventory total MAC)
+Route::get('/cost-report', [\App\Http\Controllers\CostReportController::class, 'index'])->name('cost-report.index');
+Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
+
 Route::get('/internal-use-waste-report', [\App\Http\Controllers\InternalUseWasteReportController::class, 'index'])->name('internal-use-waste-report.index');
 Route::get('/internal-use-waste-report/export', [\App\Http\Controllers\InternalUseWasteReportController::class, 'export'])->name('internal-use-waste-report.export');
 Route::get('/internal-use-waste-report/summary', [\App\Http\Controllers\InternalUseWasteReportController::class, 'summary'])->name('internal-use-waste-report.summary');
