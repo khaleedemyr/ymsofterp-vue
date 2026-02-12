@@ -126,12 +126,13 @@
             </div>
             <div class="p-6 space-y-4">
               <p class="text-slate-800 whitespace-pre-wrap">{{ reservation.menu || '–' }}</p>
-              <div v-if="reservation.menu_file_url" class="pt-2 border-t border-slate-100">
+              <div v-if="reservation.menu_file || reservation.menu_file_url" class="pt-2 border-t border-slate-100">
                 <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">File menu</p>
                 <a
-                  :href="reservation.menu_file_url"
+                  :href="menuFileDownloadUrl"
                   target="_blank"
                   rel="noopener noreferrer"
+                  download
                   class="inline-flex items-center gap-2 text-rose-600 hover:text-rose-700 font-medium text-sm"
                 >
                   <i class="fa-solid fa-file-arrow-down"></i>
@@ -200,6 +201,12 @@ const menuFileName = computed(() => {
   const path = reservation.value.menu_file;
   if (!path || typeof path !== 'string') return 'Unduh file';
   return path.split(/[/\\]/).pop() || 'Unduh file';
+});
+
+/** URL untuk buka/unduh file menu via endpoint (lebih andal daripada direct storage link). */
+const menuFileDownloadUrl = computed(() => {
+  if (!reservation.value.id || !reservation.value.menu_file) return null;
+  return route('reservations.menu-file', { reservation: reservation.value.id });
 });
 
 const creatorName = computed(() => {

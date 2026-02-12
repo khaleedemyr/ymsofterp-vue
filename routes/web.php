@@ -1488,6 +1488,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/reservations', [ReservationController::class, 'index'])->name('reservations.index');
     Route::get('/reservations/create', [ReservationController::class, 'create'])->name('reservations.create');
     Route::post('/reservations', [ReservationController::class, 'store'])->name('reservations.store');
+    Route::get('/reservations/{reservation}/menu-file', [ReservationController::class, 'downloadMenuFile'])->name('reservations.menu-file');
     Route::get('/reservations/{reservation}', [ReservationController::class, 'show'])->name('reservations.show');
     Route::get('/reservations/{reservation}/edit', [ReservationController::class, 'edit'])->name('reservations.edit');
     Route::put('/reservations/{reservation}', [ReservationController::class, 'update'])->name('reservations.update');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Models\Reservation;
 use App\Models\Outlet;
@@ -13,7 +14,17 @@ class ReservationController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
+        $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
+
         $query = Reservation::with(['outlet', 'creator', 'salesUser'])
+            ->when(!$isAdminOutlet && $userOutletId, function ($query) use ($userOutletId) {
+                $query->where('outlet_id', $userOutletId);
+            })
+            ->when($isAdminOutlet && $request->outlet_id, function ($query, $outletId) {
+                $query->where('outlet_id', $outletId);
+            })
             ->when($request->search, function ($query, $search) {
                 $query->where('name', 'like', "%{$search}%");
             })
@@ -32,7 +43,7 @@ class ReservationController extends Controller
             return [
                 'id' => $reservation->id,
                 'name' => $reservation->name,
-                'outlet' => $reservation->outlet->nama_outlet,
+                'outlet' => $reservation->outlet?->nama_outlet ?? '–',
                 'reservation_date' => $reservation->reservation_date,
                 'reservation_time' => $reservation->reservation_time,
                 'number_of_guests' => $reservation->number_of_guests,
@@ -43,13 +54,31 @@ class ReservationController extends Controller
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
                 'menu' => $reservation->menu,
                 'status' => $reservation->status,
-                'created_by' => $reservation->creator ? $reservation->creator->name : '-',
+                'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name) : '–',
+                'created_at' => $reservation->created_at?->toIso8601String(),
             ];
         });
 
+        $outletsQuery = Outlet::where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '');
+        if (!$isAdminOutlet && $userOutletId) {
+            $outletsQuery->where('id_outlet', $userOutletId);
+        } else {
+            $outletsQuery->orderBy('nama_outlet');
+        }
+        $outlets = $outletsQuery->get(['id_outlet', 'nama_outlet'])
+            ->map(fn($o) => ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+            ->values();
+
+        $effectiveOutletId = $isAdminOutlet ? $request->outlet_id : $userOutletId;
+
         return Inertia::render('Reservations/Index', [
             'reservations' => $reservations,
+            'outlets' => $outlets,
+            'can_choose_outlet' => $isAdminOutlet,
             'search' => $request->search,
+            'outlet_id' => $effectiveOutletId,
             'status' => $request->status,
             'dateFrom' => $request->dateFrom,
             'dateTo' => $request->dateTo,
@@ -111,7 +140,11 @@ class ReservationController extends Controller
                 $validated['sales_user_id'] = null;
             }
             if ($request->hasFile('menu_file')) {
-                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+                $validated['menu_file'] = $request->file('menu_file')->storeAs(
+                    'reservations/menu',
+                    Str::uuid() . '.' . $request->file('menu_file')->getClientOriginalExtension(),
+                    'public'
+                );
             } else {
                 unset($validated['menu_file']);
             }
@@ -135,6 +168,46 @@ class ReservationController extends Controller
         return Inertia::render('Reservations/Show', [
             'reservation' => $reservation
         ]);
+    }
+
+    /**
+     * Download file menu reservasi (agar bisa dibuka/unduh meski tanpa symlink storage).
+     * Nama file pakai ekstensi asli (xlsx, pdf, jpg, dll) supaya tidak tersimpan sebagai .htm.
+     */
+    public function downloadMenuFile(Reservation $reservation)
+    {
+        if (empty($reservation->menu_file)) {
+            abort(404, 'File menu tidak ada.');
+        }
+        $path = Storage::disk('public')->path($reservation->menu_file);
+        if (!file_exists($path)) {
+            abort(404, 'File menu tidak ditemukan.');
+        }
+        $mime = \Illuminate\Support\Facades\File::mimeType($path);
+        $basename = basename($reservation->menu_file);
+        $ext = pathinfo($basename, PATHINFO_EXTENSION);
+        if ($ext === '') {
+            $ext = $this->mimeToExtension($mime);
+            $basename = 'menu.' . $ext;
+        }
+        return response()->download($path, $basename, [
+            'Content-Type' => $mime,
+        ]);
+    }
+
+    /** Map MIME ke ekstensi untuk file menu (image, pdf, excel). */
+    private function mimeToExtension(string $mime): string
+    {
+        $map = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+            'application/vnd.ms-excel' => 'xls',
+            'application/pdf' => 'pdf',
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+        ];
+        return $map[$mime] ?? 'bin';
     }
 
     public function edit(Reservation $reservation)
@@ -192,7 +265,11 @@ class ReservationController extends Controller
             if ($reservation->menu_file && Storage::disk('public')->exists($reservation->menu_file)) {
                 Storage::disk('public')->delete($reservation->menu_file);
             }
-            $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+            $validated['menu_file'] = $request->file('menu_file')->storeAs(
+                'reservations/menu',
+                Str::uuid() . '.' . $request->file('menu_file')->getClientOriginalExtension(),
+                'public'
+            );
         } else {
             unset($validated['menu_file']);
         }
@@ -341,7 +418,11 @@ class ReservationController extends Controller
                 $validated['sales_user_id'] = null;
             }
             if ($request->hasFile('menu_file')) {
-                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+                $validated['menu_file'] = $request->file('menu_file')->storeAs(
+                    'reservations/menu',
+                    Str::uuid() . '.' . $request->file('menu_file')->getClientOriginalExtension(),
+                    'public'
+                );
             } else {
                 unset($validated['menu_file']);
             }
@@ -391,7 +472,11 @@ class ReservationController extends Controller
                 if ($reservation->menu_file && Storage::disk('public')->exists($reservation->menu_file)) {
                     Storage::disk('public')->delete($reservation->menu_file);
                 }
-                $validated['menu_file'] = $request->file('menu_file')->store('reservations/menu', 'public');
+                $validated['menu_file'] = $request->file('menu_file')->storeAs(
+                    'reservations/menu',
+                    Str::uuid() . '.' . $request->file('menu_file')->getClientOriginalExtension(),
+                    'public'
+                );
             } else {
                 unset($validated['menu_file']);
             }

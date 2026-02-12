@@ -28,7 +28,7 @@
             <i class="fa-solid fa-filter text-rose-500"></i>
             <span class="font-semibold text-slate-700">Filter</span>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             <div class="lg:col-span-2">
               <label class="block text-xs font-medium text-slate-500 mb-1">Cari nama</label>
               <div class="relative">
@@ -41,6 +41,20 @@
                   @keyup.enter="applyFilters"
                 />
               </div>
+            </div>
+            <div v-if="canChooseOutlet">
+              <label class="block text-xs font-medium text-slate-500 mb-1">Outlet</label>
+              <select
+                v-model="outletId"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none transition text-sm bg-white"
+              >
+                <option value="">Semua Outlet</option>
+                <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+            </div>
+            <div v-else-if="outlets.length === 1" class="flex flex-col justify-end">
+              <label class="block text-xs font-medium text-slate-500 mb-1">Outlet</label>
+              <span class="py-2.5 text-sm text-slate-700">{{ outlets[0].name }}</span>
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-500 mb-1">Tanggal dari</label>
@@ -104,12 +118,13 @@
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Sales</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Area</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Dibuat oleh</th>
                   <th class="px-5 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Aksi</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="!reservations.length">
-                  <td colspan="10" class="px-5 py-16 text-center">
+                  <td colspan="11" class="px-5 py-16 text-center">
                     <div class="flex flex-col items-center gap-4">
                       <span class="flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 text-slate-400">
                         <i class="fa-solid fa-calendar-xmark text-2xl"></i>
@@ -160,6 +175,10 @@
                       {{ getStatusText(reservation.status) }}
                     </span>
                   </td>
+                  <td class="px-5 py-4">
+                    <div class="text-sm text-slate-700">{{ reservation.created_by || '–' }}</div>
+                    <div class="text-xs text-slate-500">{{ formatDateTime(reservation.created_at) }}</div>
+                  </td>
                   <td class="px-5 py-4 text-right">
                     <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition">
                       <Link
@@ -201,20 +220,27 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
   reservations: { type: Array, required: true, default: () => [] },
+  outlets: { type: Array, default: () => [] },
+  can_choose_outlet: { type: Boolean, default: true },
   search: String,
+  outlet_id: [String, Number],
   status: String,
   dateFrom: String,
   dateTo: String
 });
 
+const canChooseOutlet = computed(() => props.can_choose_outlet !== false);
+
 const search = ref(props.search || '');
+const outletId = ref(props.outlet_id ?? '');
 const status = ref(props.status || '');
 const dateFrom = ref(props.dateFrom || '');
 const dateTo = ref(props.dateTo || '');
+const outlets = ref(props.outlets || []);
 const loadingDeleteId = ref(null);
 
 function formatDate(date) {
@@ -225,6 +251,17 @@ function formatDate(date) {
 function formatTime(time) {
   if (!time) return '–';
   return new Date(time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTime(val) {
+  if (!val) return '–';
+  return new Date(val).toLocaleString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function formatDp(val) {
@@ -275,6 +312,7 @@ async function handleDelete(id) {
 function applyFilters() {
   router.get(route('reservations.index'), {
     search: search.value,
+    outlet_id: outletId.value || undefined,
     status: status.value,
     dateFrom: dateFrom.value,
     dateTo: dateTo.value
@@ -283,6 +321,7 @@ function applyFilters() {
 
 function resetFilters() {
   search.value = '';
+  outletId.value = canChooseOutlet.value ? '' : (props.outlet_id ?? '');
   status.value = '';
   dateFrom.value = '';
   dateTo.value = '';
