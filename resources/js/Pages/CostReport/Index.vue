@@ -253,6 +253,7 @@ function loadReport() {
   loading.value = true;
   router.get('/cost-report', {
     bulan: filters.value.bulan,
+    load: 1, // lazy load: server hanya hitung data saat user klik Load Data
   }, {
     preserveState: false,
     preserveScroll: true,

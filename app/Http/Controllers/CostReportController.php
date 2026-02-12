@@ -16,9 +16,30 @@ class CostReportController extends Controller
      * Begin inventory logic sama seperti Outlet Stock Report, tapi nilai yang ditampilkan
      * adalah total MAC (nilai rupiah) = sum(begin_qty_small * mac_per_small) per outlet.
      */
+    /**
+     * Lazy load: data tidak di-load saat pertama masuk. Load hanya saat user klik "Load Data".
+     */
     public function index(Request $request)
     {
         $bulan = $request->input('bulan', date('Y-m'));
+        $shouldLoadData = $request->boolean('load') || $request->input('load') === '1';
+
+        if (!$shouldLoadData) {
+            $outlets = \Illuminate\Support\Facades\DB::table('tbl_data_outlet')
+                ->where('is_outlet', 1)
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet as name')
+                ->orderBy('nama_outlet')
+                ->get();
+            return Inertia::render('CostReport/Index', [
+                'outlets' => $outlets,
+                'reportRows' => [],
+                'cogsRows' => [],
+                'categoryCostRows' => [],
+                'filters' => ['bulan' => $bulan],
+            ]);
+        }
+
         $data = $this->getReportData($bulan);
         return Inertia::render('CostReport/Index', [
             'outlets' => $data['outlets'],
