@@ -1434,38 +1434,108 @@ class PosSyncController extends Controller
     }
 
     /**
-     * Sync mode_transaksi (Dine In, Gofood, Investor, Officer Check, dll.)
+     * Sync retail_food
      */
-    public function syncModeTransaksi(Request $request)
+    public function syncRetailFood(Request $request)
     {
         try {
-            $modes = DB::table('mode_transaksi')
-                ->orderBy('mode')
+            $validator = Validator::make($request->all(), [
+                'kode_outlet' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 400);
+            }
+
+            $kodeOutlet = $request->input('kode_outlet');
+
+            // Get outlet ID
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('qr_code', $kodeOutlet)
+                ->first();
+
+            if (!$outlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet not found',
+                    'data' => []
+                ], 404);
+            }
+
+            $idOutlet = $outlet->id_outlet;
+
+            // Get retail_food for this outlet (approved and not deleted)
+            $retailFoods = DB::table('retail_food')
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'approved')
+                ->whereNull('deleted_at')
+                ->orderBy('transaction_date', 'desc')
+                ->orderBy('created_at', 'desc')
                 ->get();
 
-            $formatted = $modes->map(function ($m) {
+            $formatted = array_map(function($rf) {
                 return [
-                    'id' => $m->id,
-                    'mode' => $m->mode ?? '',
-                    'commfee' => $m->commfee ?? 0,
+                    'id' => $rf->id,
+                    'retail_number' => $rf->retail_number ?? '',
+                    'outlet_id' => $rf->outlet_id,
+                    'warehouse_outlet_id' => $rf->warehouse_outlet_id ?? null,
+                    'created_by' => $rf->created_by ?? null,
+                    'transaction_date' => $rf->transaction_date,
+                    'total_amount' => $rf->total_amount ?? 0,
+                    'notes' => $rf->notes ?? null,
+                    'status' => $rf->status ?? 'approved',
+                    'deleted_at' => $rf->deleted_at ?? null,
+                    'created_at' => $rf->created_at,
+                    'updated_at' => $rf->updated_at
                 ];
-            })->values()->all();
+            }, $retailFoods->toArray());
+
+            // Get retail_food_items
+            $retailFoodIds = $retailFoods->pluck('id')->toArray();
+            $retailFoodItems = [];
+            
+            if (count($retailFoodIds) > 0) {
+                $items = DB::table('retail_food_items')
+                    ->whereIn('retail_food_id', $retailFoodIds)
+                    ->get();
+                
+                $retailFoodItems = array_map(function($item) {
+                    return [
+                        'id' => $item->id,
+                        'retail_food_id' => $item->retail_food_id,
+                        'item_id' => $item->item_id ?? null,
+                        'item_name' => $item->item_name ?? '',
+                        'qty' => $item->qty ?? 0,
+                        'unit' => $item->unit ?? '',
+                        'price' => $item->price ?? 0,
+                        'subtotal' => $item->subtotal ?? 0,
+                        'created_at' => $item->created_at,
+                        'updated_at' => $item->updated_at
+                    ];
+                }, $items->toArray());
+            }
 
             return response()->json([
                 'success' => true,
                 'data' => $formatted,
-                'count' => count($formatted),
+                'items' => $retailFoodItems,
+                'count' => count($formatted)
             ]);
+
         } catch (\Exception $e) {
-            Log::error('POS Sync: Sync Mode Transaksi Error', [
+            Log::error('POS Sync: Sync Retail Food Error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to sync mode_transaksi: ' . $e->getMessage(),
-                'data' => [],
+                'message' => 'Failed to sync retail_food: ' . $e->getMessage(),
+                'data' => []
             ], 500);
         }
     }
