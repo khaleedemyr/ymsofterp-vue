@@ -296,7 +296,8 @@ class StockCutController extends Controller
                                         foreach ($modifierBom as $bomItem) {
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
-                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
+                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty);
                                             }
                                         }
                                     }
@@ -913,7 +914,8 @@ class StockCutController extends Controller
                                                 if (!isset($kebutuhanBahan[$key]['contributing_menus']) || !is_array($kebutuhanBahan[$key]['contributing_menus'])) {
                                                     $kebutuhanBahan[$key]['contributing_menus'] = [];
                                                 }
-                                                $kebutuhanBahan[$key]['qty'] += ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                // modifierQty dari POS = total porsi modifier; pakai = BOM × modifierQty (tidak × oi->qty)
+                                                $kebutuhanBahan[$key]['qty'] += ($bomItem['qty'] * $modifierQty);
                                                 
                                                 // Track menu yang berkontribusi (dengan modifier) - group by menu name + modifier
                                                 $menuKey = $oi->item_name . ' + ' . $modifierName;
@@ -927,7 +929,7 @@ class StockCutController extends Controller
                                                     if ($menu['menu_name'] === $menuKey && $menu['type'] === 'modifier') {
                                                         $menu['menu_qty'] += $oi->qty;
                                                         $menu['modifier_qty'] += $modifierQty;
-                                                        $menu['total_contributed'] += ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                        $menu['total_contributed'] += ($bomItem['qty'] * $modifierQty);
                                                         $foundMenu = true;
                                                         break;
                                                     }
@@ -940,7 +942,7 @@ class StockCutController extends Controller
                                                         'menu_qty' => $oi->qty,
                                                         'modifier_qty' => $modifierQty,
                                                         'bom_qty_per_modifier' => $bomItem['qty'],
-                                                        'total_contributed' => $bomItem['qty'] * $modifierQty * $oi->qty,
+                                                        'total_contributed' => $bomItem['qty'] * $modifierQty,
                                                         'type' => 'modifier'
                                                     ];
                                                 }
@@ -1243,7 +1245,8 @@ class StockCutController extends Controller
                                         foreach ($modifierBom as $bomItem) {
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
-                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty * $oi->qty);
+                                                // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
+                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty);
                                             }
                                         }
                                     }
@@ -1901,8 +1904,8 @@ class StockCutController extends Controller
                                     ];
                                 }
                                 
-                                // Accumulate total qty modifier (qty modifier * qty order_item)
-                                $allModifiersData[$modifierKey]['total_qty'] += (float) $modifierQty * (float) $oiIndividual->qty;
+                                // modifierQty dari POS = total porsi modifier untuk line ini; akumulasi total porsi
+                                $allModifiersData[$modifierKey]['total_qty'] += (float) $modifierQty;
                                 
                                 // Hitung cost modifier
                                 if ($modifierOption && $modifierOption->modifier_bom_json) {
@@ -1941,7 +1944,8 @@ class StockCutController extends Controller
                                                         
                                                         if ($stock) {
                                                             $costPerUnit = $stock->last_cost_small ?? 0;
-                                                            $qtyNeeded = $bomItem['qty'] * (float) $modifierQty * (float) $oiIndividual->qty;
+                                                            // modifierQty dari POS = total porsi modifier; qty pakai = BOM × modifierQty
+                                                            $qtyNeeded = $bomItem['qty'] * (float) $modifierQty;
                                                             $totalCostForModifier = $costPerUnit * $qtyNeeded;
                                                             
                                                             $materialName = DB::table('items')
