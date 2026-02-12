@@ -685,7 +685,7 @@ class PosSyncController extends Controller
                 })
                 ->select(
                     'i.*',
-                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price) as price'),
+                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price, i.price) as price'),
                     DB::raw('COALESCE(ip_outlet.region_id, ip_region.region_id, ip_all.region_id) as region_id')
                 )
                 ->distinct();
