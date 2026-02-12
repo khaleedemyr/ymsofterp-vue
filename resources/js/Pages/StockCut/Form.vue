@@ -376,15 +376,16 @@
                                   <td colspan="6" class="px-4 py-3">
                                     <div class="bg-white border rounded-lg p-3">
                                       <h6 class="font-semibold text-gray-800 mb-2">Menu yang Mengurangi Stock:</h6>
+                                      <p class="text-xs text-gray-500 mb-2">Angka di kanan = total pakai (gram/satuan). Untuk modifier: (qty pesanan × qty modifier × BOM/modifier) dijumlah per transaksi.</p>
                                       <div class="space-y-2">
                                         <div v-for="(menu, menuIdx) in item.contributing_menus" :key="menuIdx" class="flex justify-between items-center text-sm border-b pb-1">
                                           <div class="flex-1">
                                             <span class="font-medium text-gray-700">{{ menu.menu_name }}</span>
-                                            <span v-if="menu.type === 'menu'" class="text-gray-500 ml-2">
+                                            <span v-if="menu.type === 'menu'" class="text-gray-500 ml-2" :title="'Qty pesanan × BOM per porsi = ' + formatQuantity(menu.total_contributed)">
                                               (Total: {{ formatQuantity(menu.menu_qty) }} × {{ formatQuantity(menu.bom_qty_per_menu) }})
                                             </span>
-                                            <span v-else-if="menu.type === 'modifier'" class="text-gray-500 ml-2">
-                                              (Total: {{ formatQuantity(menu.menu_qty) }} × {{ formatQuantity(menu.modifier_qty) }} × {{ formatQuantity(menu.bom_qty_per_modifier) }})
+                                            <span v-else-if="menu.type === 'modifier'" class="text-gray-500 ml-2" :title="'Total pakai = Σ (qty pesanan × qty modifier × BOM/modifier) per transaksi. Bukan (32×32×30) karena tiap transaksi beda qty.'">
+                                              (Qty pesanan total: {{ formatQuantity(menu.menu_qty) }}, Qty modifier total: {{ formatQuantity(menu.modifier_qty) }}, BOM/modifier: {{ formatQuantity(menu.bom_qty_per_modifier) }})
                                             </span>
                                           </div>
                                           <div class="text-right">

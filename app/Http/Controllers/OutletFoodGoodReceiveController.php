@@ -634,6 +634,43 @@ class OutletFoodGoodReceiveController extends Controller
             if (!empty($inventoryItemsToInsert)) {
                 DB::table('outlet_food_inventory_items')->insert($inventoryItemsToInsert);
             }
+
+            // Resolve temp_ inventory_item_id to real integer ID (new rows just inserted)
+            $newItemIds = collect($inventoryItemsToInsert)->pluck('item_id')->unique()->toArray();
+            $tempToRealId = [];
+            if (!empty($newItemIds)) {
+                $newInventoryRows = DB::table('outlet_food_inventory_items')
+                    ->whereIn('item_id', $newItemIds)
+                    ->get()
+                    ->keyBy('item_id');
+                foreach ($newItemIds as $itemId) {
+                    $row = $newInventoryRows->get($itemId);
+                    if ($row) {
+                        $tempToRealId['temp_' . $itemId] = $row->id;
+                    }
+                }
+            }
+
+            $resolveInventoryId = function ($id) use ($tempToRealId) {
+                if (is_string($id) && isset($tempToRealId[$id])) {
+                    return $tempToRealId[$id];
+                }
+                return is_numeric($id) ? (int) $id : $id;
+            };
+
+            // Replace temp IDs in stockInserts, cardInserts, costHistoryInserts before DB insert
+            foreach ($stockInserts as &$row) {
+                $row['inventory_item_id'] = $resolveInventoryId($row['inventory_item_id']);
+            }
+            unset($row);
+            foreach ($cardInserts as &$row) {
+                $row['inventory_item_id'] = $resolveInventoryId($row['inventory_item_id']);
+            }
+            unset($row);
+            foreach ($costHistoryInserts as &$row) {
+                $row['inventory_item_id'] = $resolveInventoryId($row['inventory_item_id']);
+            }
+            unset($row);
             
             // Execute stock updates (must be done individually as each has different ID)
             foreach ($stockUpdates as $update) {
