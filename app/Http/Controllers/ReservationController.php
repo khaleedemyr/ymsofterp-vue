@@ -524,6 +524,7 @@ class ReservationController extends Controller
             }
             $breakdown[$name] += (float) $r->dp;
             $dpReservationsList[] = [
+                'id' => $r->id,
                 'name' => $r->name,
                 'reservation_date' => $r->reservation_date?->format('Y-m-d'),
                 'dp' => (float) $r->dp,
@@ -554,6 +555,7 @@ class ReservationController extends Controller
             }
             $dpFutureBreakdown[$name] += (float) $r->dp;
             $dpFutureReservationsList[] = [
+                'id' => $r->id,
                 'name' => $r->name,
                 'reservation_date' => $r->reservation_date?->format('Y-m-d'),
                 'dp' => (float) $r->dp,

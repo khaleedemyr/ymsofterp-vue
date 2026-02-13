@@ -582,13 +582,38 @@ async function fetchDpSummary() {
       merged.dp_future_reservations.push(...(data.dp_future_reservations || []));
       merged.orders_using_dp.push(...(data.orders_using_dp || []));
     }
+    // Deduplikasi reservasi (bisa duplikat kalau outlet yang sama dipanggil 2x, mis. outlet_id + kode_outlet)
+    const dedupeById = (arr) => {
+      const seen = new Set();
+      return arr.filter(r => {
+        const id = r?.id ?? `${r?.name}-${r?.reservation_date}-${r?.dp}`;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    };
+    const dpReservationsDeduped = dedupeById(merged.dp_reservations);
+    const dpFutureReservationsDeduped = dedupeById(merged.dp_future_reservations);
+    // Total & breakdown dihitung ulang dari list yang sudah dedupe agar tidak dobel
+    const totalDpFromList = dpReservationsDeduped.reduce((s, r) => s + (Number(r.dp) || 0), 0);
+    const dpFutureTotalFromList = dpFutureReservationsDeduped.reduce((s, r) => s + (Number(r.dp) || 0), 0);
+    const breakdownFromList = {};
+    dpReservationsDeduped.forEach(r => {
+      const n = r.payment_type_name || 'Lainnya';
+      breakdownFromList[n] = (breakdownFromList[n] || 0) + (Number(r.dp) || 0);
+    });
+    const dpFutureBreakdownFromList = {};
+    dpFutureReservationsDeduped.forEach(r => {
+      const n = r.payment_type_name || 'Lainnya';
+      dpFutureBreakdownFromList[n] = (dpFutureBreakdownFromList[n] || 0) + (Number(r.dp) || 0);
+    });
     dpSummary.value = {
-      total_dp: merged.total_dp,
-      breakdown: Object.entries(merged.breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
-      dp_reservations: merged.dp_reservations,
-      dp_future_total: merged.dp_future_total,
-      dp_future_breakdown: Object.entries(merged.dp_future_breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
-      dp_future_reservations: merged.dp_future_reservations,
+      total_dp: totalDpFromList,
+      breakdown: Object.entries(breakdownFromList).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      dp_reservations: dpReservationsDeduped,
+      dp_future_total: dpFutureTotalFromList,
+      dp_future_breakdown: Object.entries(dpFutureBreakdownFromList).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      dp_future_reservations: dpFutureReservationsDeduped,
       orders_using_dp: merged.orders_using_dp
     };
   } catch (e) {
