@@ -124,6 +124,41 @@
             </div>
           </section>
 
+          <!-- Transaksi POS terkait -->
+          <section v-if="linkedOrders && linkedOrders.length" class="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+              <span class="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600">
+                <i class="fa-solid fa-receipt text-lg"></i>
+              </span>
+              <h2 class="font-semibold text-slate-800">Transaksi POS Terkait</h2>
+            </div>
+            <div class="p-6">
+              <p class="text-sm text-slate-500 mb-4">Order yang di-link ke reservasi ini (dari POS, dengan atau tanpa DP).</p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-slate-200 text-left text-slate-500 font-medium">
+                      <th class="py-2 pr-4">No. Bayar</th>
+                      <th class="py-2 pr-4">Meja</th>
+                      <th class="py-2 pr-4">Total</th>
+                      <th class="py-2 pr-4">Waktu</th>
+                      <th class="py-2 pr-4">Outlet</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="ord in linkedOrders" :key="ord.id" class="border-b border-slate-100 hover:bg-slate-50/50">
+                      <td class="py-3 pr-4 font-medium text-slate-800">{{ ord.paid_number || '–' }}</td>
+                      <td class="py-3 pr-4 text-slate-700">{{ ord.table || '–' }}</td>
+                      <td class="py-3 pr-4 font-medium text-slate-800">{{ formatCurrency(ord.grand_total) }}</td>
+                      <td class="py-3 pr-4 text-slate-600">{{ formatDateTime(ord.created_at) }}</td>
+                      <td class="py-3 pr-4 text-slate-600">{{ ord.kode_outlet || '–' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
           <!-- Menu -->
           <section class="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
             <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
@@ -200,10 +235,12 @@ import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps({
-  reservation: Object
+  reservation: Object,
+  linked_orders: Array
 });
 
 const reservation = computed(() => props.reservation || {});
+const linkedOrders = computed(() => props.linked_orders || []);
 
 const menuFileName = computed(() => {
   const path = reservation.value.menu_file;
@@ -255,10 +292,17 @@ function formatDp(val) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(val));
 }
 
+function formatCurrency(val) {
+  if (val == null || val === '') return '–';
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(val));
+}
+
 function getStatusClass(status) {
   switch (status) {
     case 'confirmed': return 'bg-emerald-100 text-emerald-800';
+    case 'arrived': return 'bg-blue-100 text-blue-800';
     case 'cancelled': return 'bg-rose-100 text-rose-800';
+    case 'no_show': return 'bg-slate-100 text-slate-700';
     default: return 'bg-amber-100 text-amber-800';
   }
 }
@@ -266,7 +310,9 @@ function getStatusClass(status) {
 function getStatusText(status) {
   switch (status) {
     case 'confirmed': return 'Dikonfirmasi';
+    case 'arrived': return 'Datang';
     case 'cancelled': return 'Dibatalkan';
+    case 'no_show': return 'No Show';
     default: return 'Pending';
   }
 }

@@ -113,6 +113,7 @@ class PosOrderController extends Controller
                     'promo_discount_info' => $orderData['promo_discount_info'] ?? null,
                     'issync' => 1,
                     'kode_outlet' => $kodeOutlet,
+                    'reservation_id' => $orderData['reservation_id'] ?? null,
                 ];
 
                 // Use upsert to handle existing orders (insert or update)
@@ -123,7 +124,7 @@ class PosOrderController extends Controller
                     'commfee', 'rounding', 'sales_lead', 'redeem_amount',
                     'manual_discount_amount', 'manual_discount_reason', 
                     'voucher_info', 'inactive_promo_items', 'promo_discount_info',
-                    'issync', 'kode_outlet'
+                    'issync', 'kode_outlet', 'reservation_id'
                 ];
                 
                 DB::table('orders')->upsert(

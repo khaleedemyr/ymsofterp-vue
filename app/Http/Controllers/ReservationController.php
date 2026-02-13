@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Models\Reservation;
@@ -175,8 +176,29 @@ class ReservationController extends Controller
     public function show(Reservation $reservation)
     {
         $reservation->load(['outlet', 'creator', 'salesUser', 'paymentType']);
+
+        // Transaksi POS yang ter-link ke reservasi ini (order sync dari POS ke pusat)
+        $linkedOrders = DB::table('orders')
+            ->where('reservation_id', $reservation->id)
+            ->orderByDesc('created_at')
+            ->get(['id', 'paid_number', 'grand_total', 'status', 'table', 'created_at', 'kode_outlet'])
+            ->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'paid_number' => $row->paid_number,
+                    'grand_total' => $row->grand_total,
+                    'status' => $row->status,
+                    'table' => $row->table,
+                    'created_at' => $row->created_at ? \Carbon\Carbon::parse($row->created_at)->toIso8601String() : null,
+                    'kode_outlet' => $row->kode_outlet,
+                ];
+            })
+            ->values()
+            ->all();
+
         return Inertia::render('Reservations/Show', [
-            'reservation' => $reservation
+            'reservation' => $reservation,
+            'linked_orders' => $linkedOrders,
         ]);
     }
 
