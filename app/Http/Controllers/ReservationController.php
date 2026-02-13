@@ -487,8 +487,10 @@ class ReservationController extends Controller
             return response()->json(array_merge([
                 'total_dp' => 0,
                 'breakdown' => [],
+                'dp_reservations' => [],
                 'dp_future_total' => 0,
                 'dp_future_breakdown' => [],
+                'dp_future_reservations' => [],
                 'orders_using_dp' => [],
             ], $debug));
         }
@@ -514,12 +516,19 @@ class ReservationController extends Controller
 
         $totalDp = $reservations->sum(fn ($r) => (float) $r->dp);
         $breakdown = [];
+        $dpReservationsList = [];
         foreach ($reservations as $r) {
             $name = $r->paymentType ? $r->paymentType->name : 'Lainnya';
             if (!isset($breakdown[$name])) {
                 $breakdown[$name] = 0;
             }
             $breakdown[$name] += (float) $r->dp;
+            $dpReservationsList[] = [
+                'name' => $r->name,
+                'reservation_date' => $r->reservation_date?->format('Y-m-d'),
+                'dp' => (float) $r->dp,
+                'payment_type_name' => $name,
+            ];
         }
 
         // 2) DP diterima di tanggal yang dipilih untuk reservasi tanggal mendatang (created_at = date, reservation_date > date)
@@ -537,12 +546,19 @@ class ReservationController extends Controller
 
         $dpFutureTotal = $reservationsFuture->sum(fn ($r) => (float) $r->dp);
         $dpFutureBreakdown = [];
+        $dpFutureReservationsList = [];
         foreach ($reservationsFuture as $r) {
             $name = $r->paymentType ? $r->paymentType->name : 'Lainnya';
             if (!isset($dpFutureBreakdown[$name])) {
                 $dpFutureBreakdown[$name] = 0;
             }
             $dpFutureBreakdown[$name] += (float) $r->dp;
+            $dpFutureReservationsList[] = [
+                'name' => $r->name,
+                'reservation_date' => $r->reservation_date?->format('Y-m-d'),
+                'dp' => (float) $r->dp,
+                'payment_type_name' => $name,
+            ];
         }
 
         // 3) Transaksi hari tersebut yang menggunakan DP (order paid on date, punya reservation_id dengan DP)
@@ -584,8 +600,10 @@ class ReservationController extends Controller
         return response()->json(array_merge([
             'total_dp' => $totalDp,
             'breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $breakdown[$name]], array_keys($breakdown))),
+            'dp_reservations' => $dpReservationsList,
             'dp_future_total' => $dpFutureTotal,
             'dp_future_breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $dpFutureBreakdown[$name]], array_keys($dpFutureBreakdown))),
+            'dp_future_reservations' => $dpFutureReservationsList,
             'orders_using_dp' => $ordersUsingDp,
         ], $debug));
     }

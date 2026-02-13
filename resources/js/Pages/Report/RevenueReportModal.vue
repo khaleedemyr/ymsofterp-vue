@@ -72,10 +72,33 @@
         <template v-else>
           <!-- 1) DP jadwal hari ini -->
           <div class="mb-4">
-            <div class="text-sm font-semibold text-amber-800 mb-1">DP Reservasi (jadwal hari ini)</div>
+            <div class="flex items-center gap-2 mb-1">
+              <button v-if="(dpSummary.total_dp || 0) > 0" @click="toggleExpandDpSchedule" class="focus:outline-none text-amber-800">
+                <i :class="expandedDpSchedule ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+              </button>
+              <div class="text-sm font-semibold text-amber-800">DP Reservasi (jadwal hari ini)</div>
+            </div>
             <template v-if="(dpSummary.total_dp || 0) > 0">
               <div class="text-lg font-semibold text-amber-800 mb-1">{{ formatCurrency(dpSummary.total_dp) }}</div>
-              <table class="min-w-full text-sm rounded shadow">
+              <table v-if="expandedDpSchedule && dpReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
+                <thead>
+                  <tr class="bg-amber-100 text-amber-900">
+                    <th class="px-3 py-2 text-left">Atas Nama</th>
+                    <th class="px-3 py-2 text-left">Jadwal</th>
+                    <th class="px-3 py-2 text-right">DP</th>
+                    <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in dpReservationsList" :key="'dpr-' + idx" class="bg-white border-b last:border-b-0">
+                    <td class="px-3 py-2">{{ row.name || '-' }}</td>
+                    <td class="px-3 py-2">{{ row.reservation_date ? formatDateIndo(row.reservation_date) : '-' }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.dp) }}</td>
+                    <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <table v-else class="min-w-full text-sm rounded shadow">
                 <thead>
                   <tr class="bg-amber-100 text-amber-900">
                     <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
@@ -94,10 +117,33 @@
           </div>
           <!-- 2) DP diterima hari ini untuk reservasi tanggal mendatang -->
           <div class="mb-4">
-            <div class="text-sm font-semibold text-emerald-800 mb-1">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
+            <div class="flex items-center gap-2 mb-1">
+              <button v-if="dpFutureTotal > 0" @click="toggleExpandDpFuture" class="focus:outline-none text-emerald-800">
+                <i :class="expandedDpFuture ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+              </button>
+              <div class="text-sm font-semibold text-emerald-800">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
+            </div>
             <template v-if="dpFutureTotal > 0">
               <div class="text-lg font-semibold text-emerald-800 mb-1">{{ formatCurrency(dpFutureTotal) }}</div>
-              <table class="min-w-full text-sm rounded shadow">
+              <table v-if="expandedDpFuture && dpFutureReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
+                <thead>
+                  <tr class="bg-emerald-100 text-emerald-900">
+                    <th class="px-3 py-2 text-left">Atas Nama</th>
+                    <th class="px-3 py-2 text-left">Jadwal Reservasi</th>
+                    <th class="px-3 py-2 text-right">DP</th>
+                    <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in dpFutureReservationsList" :key="'dpfr-' + idx" class="bg-white border-b last:border-b-0">
+                    <td class="px-3 py-2">{{ row.name || '-' }}</td>
+                    <td class="px-3 py-2">{{ row.reservation_date ? formatDateIndo(row.reservation_date) : '-' }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.dp) }}</td>
+                    <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <table v-else class="min-w-full text-sm rounded shadow">
                 <thead>
                   <tr class="bg-emerald-100 text-emerald-900">
                     <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
@@ -260,16 +306,24 @@ const totalSales = computed(() => {
 const dpSummary = ref({
   total_dp: 0,
   breakdown: [],
+  dp_reservations: [],
   dp_future_total: 0,
   dp_future_breakdown: [],
+  dp_future_reservations: [],
   orders_using_dp: []
 });
 const loadingDp = ref(false);
+const expandedDpSchedule = ref(false);
+const expandedDpFuture = ref(false);
 const totalDp = computed(() => (Number(dpSummary.value.total_dp) || 0) + (Number(dpSummary.value.dp_future_total) || 0));
 const dpBreakdown = computed(() => dpSummary.value.breakdown || []);
+const dpReservationsList = computed(() => dpSummary.value.dp_reservations || []);
 const dpFutureTotal = computed(() => Number(dpSummary.value.dp_future_total) || 0);
 const dpFutureBreakdown = computed(() => dpSummary.value.dp_future_breakdown || []);
+const dpFutureReservationsList = computed(() => dpSummary.value.dp_future_reservations || []);
 const ordersUsingDp = computed(() => dpSummary.value.orders_using_dp || []);
+function toggleExpandDpSchedule() { expandedDpSchedule.value = !expandedDpSchedule.value; }
+function toggleExpandDpFuture() { expandedDpFuture.value = !expandedDpFuture.value; }
 const totalRevenue = computed(() => totalSales.value + totalDp.value);
 const totalCash = computed(() => {
   const entries = Object.entries(paymentBreakdown.value);
@@ -496,8 +550,10 @@ async function fetchDpSummary() {
     const merged = {
       total_dp: 0,
       breakdown: {},
+      dp_reservations: [],
       dp_future_total: 0,
       dp_future_breakdown: {},
+      dp_future_reservations: [],
       orders_using_dp: []
     };
     const toFetch = [];
@@ -517,23 +573,27 @@ async function fetchDpSummary() {
         const name = b.payment_type_name || 'Lainnya';
         merged.breakdown[name] = (merged.breakdown[name] || 0) + Number(b.total ?? 0);
       });
+      merged.dp_reservations.push(...(data.dp_reservations || []));
       merged.dp_future_total += Number(data.dp_future_total ?? 0);
       (data.dp_future_breakdown || []).forEach(b => {
         const name = b.payment_type_name || 'Lainnya';
         merged.dp_future_breakdown[name] = (merged.dp_future_breakdown[name] || 0) + Number(b.total ?? 0);
       });
+      merged.dp_future_reservations.push(...(data.dp_future_reservations || []));
       merged.orders_using_dp.push(...(data.orders_using_dp || []));
     }
     dpSummary.value = {
       total_dp: merged.total_dp,
       breakdown: Object.entries(merged.breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      dp_reservations: merged.dp_reservations,
       dp_future_total: merged.dp_future_total,
       dp_future_breakdown: Object.entries(merged.dp_future_breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      dp_future_reservations: merged.dp_future_reservations,
       orders_using_dp: merged.orders_using_dp
     };
   } catch (e) {
     console.error('fetchDpSummary error', e);
-    dpSummary.value = { total_dp: 0, breakdown: [], dp_future_total: 0, dp_future_breakdown: [], orders_using_dp: [] };
+    dpSummary.value = { total_dp: 0, breakdown: [], dp_reservations: [], dp_future_total: 0, dp_future_breakdown: [], dp_future_reservations: [], orders_using_dp: [] };
   } finally {
     loadingDp.value = false;
   }
