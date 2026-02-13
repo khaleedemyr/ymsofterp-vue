@@ -1282,6 +1282,8 @@ class PosSyncController extends Controller
                     'number_of_guests' => $res->number_of_guests ?? 0,
                     'special_requests' => $res->special_requests ?? null,
                     'dp' => $res->dp ?? null,
+                    'dp_code' => $res->dp_code ?? null,
+                    'dp_used_at' => $res->dp_used_at ?? null,
                     'from_sales' => (bool) ($res->from_sales ?? false),
                     'sales_user_id' => $res->sales_user_id ?? null,
                     'menu' => $res->menu ?? null,

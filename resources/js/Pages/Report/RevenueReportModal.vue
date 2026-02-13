@@ -15,7 +15,10 @@
       <div class="border-b border-gray-200 mb-4"></div>
       <div class="mb-6">
         <div class="font-bold text-blue-700 mb-2">Total Sales</div>
-        <div class="text-3xl font-extrabold text-blue-800 mb-4">{{ formatCurrency(totalSales) }}</div>
+        <div class="text-3xl font-extrabold text-blue-800 mb-2">{{ formatCurrency(totalSales) }}</div>
+        <div v-if="totalDp > 0" class="text-sm text-amber-700 mt-1">
+          + DP Reservasi {{ formatCurrency(totalDp) }} = <span class="font-bold text-slate-800">{{ formatCurrency(totalRevenue) }}</span> (Total Revenue)
+        </div>
       </div>
       <div>
         <div class="font-bold text-green-700 mb-2">Breakdown by Payment Method</div>
@@ -62,6 +65,26 @@
           </tbody>
         </table>
       </div>
+      <!-- DP Reservasi -->
+      <div v-if="totalDp > 0" class="mb-8">
+        <div class="font-bold text-amber-700 mb-2">DP Reservasi</div>
+        <div class="text-xl font-semibold text-amber-800 mb-2">{{ formatCurrency(totalDp) }}</div>
+        <table class="min-w-full text-sm rounded shadow">
+          <thead>
+            <tr class="bg-amber-100 text-amber-900">
+              <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+              <th class="px-3 py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in dpBreakdown" :key="row.payment_type_name" class="bg-white border-b last:border-b-0">
+              <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+              <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else-if="loadingDp" class="mb-8 text-gray-400 italic">Loading DP reservasi...</div>
       <!-- Pengeluaran Bahan Baku -->
       <div class="mb-8">
         <div class="font-bold text-red-700 mb-2">Pengeluaran Bahan Baku</div>
@@ -175,6 +198,11 @@ const props = defineProps({
 const totalSales = computed(() => {
   return (props.orders || []).reduce((sum, o) => sum + (Number(o.grand_total) || 0), 0);
 });
+const dpSummary = ref({ total_dp: 0, breakdown: [] });
+const loadingDp = ref(false);
+const totalDp = computed(() => Number(dpSummary.value.total_dp) || 0);
+const dpBreakdown = computed(() => dpSummary.value.breakdown || []);
+const totalRevenue = computed(() => totalSales.value + totalDp.value);
 const totalCash = computed(() => {
   const entries = Object.entries(paymentBreakdown.value);
   const found = entries.find(([k]) => k && k.toUpperCase() === 'CASH');
@@ -359,7 +387,47 @@ async function fetchExpenses() {
     loadingExpenses.value = false;
   }
 }
-watch(() => [props.tanggal, props.orders], fetchExpenses, { immediate: true });
+async function fetchDpSummary() {
+  if (!props.orders?.length || !props.tanggal) return;
+  const kodeOutlet = props.orders[0]?.kode_outlet;
+  let outletId = null;
+  if (kodeOutlet && props.outlets?.length) {
+    const found = props.outlets.find(o => o.qr_code === kodeOutlet);
+    outletId = found ? found.id : null;
+  }
+  if (!outletId && kodeOutlet) {
+    try {
+      const res = await fetch('/api/outlets/report');
+      if (res.ok) {
+        const data = await res.json();
+        const found = data.outlets?.find(o => o.qr_code === kodeOutlet);
+        outletId = found ? found.id : null;
+      }
+    } catch (e) {
+      console.error('Error fetching outlets for DP summary', e);
+    }
+  }
+  if (!outletId || !props.tanggal) return;
+  loadingDp.value = true;
+  try {
+    const res = await fetch(`/api/reservations/dp-summary?date=${encodeURIComponent(props.tanggal)}&outlet_id=${encodeURIComponent(outletId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      dpSummary.value = { total_dp: data.total_dp ?? 0, breakdown: data.breakdown ?? [] };
+    } else {
+      dpSummary.value = { total_dp: 0, breakdown: [] };
+    }
+  } catch (e) {
+    console.error('fetchDpSummary error', e);
+    dpSummary.value = { total_dp: 0, breakdown: [] };
+  } finally {
+    loadingDp.value = false;
+  }
+}
+watch(() => [props.tanggal, props.orders], () => {
+  fetchExpenses();
+  fetchDpSummary();
+}, { immediate: true });
 function formatCurrency(val) {
   if (typeof val === 'number') return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   if (!val) return '-';
@@ -429,6 +497,7 @@ async function exportToExcel() {
 
   const summaryData = [
     ['Total Sales', formatNumberForExcel(totalSales.value)],
+    ...(totalDp.value > 0 ? [['DP Reservasi', formatNumberForExcel(totalDp.value)], ['Total Revenue', formatNumberForExcel(totalRevenue.value)]] : []),
     ['Total Cash', formatNumberForExcel(totalCash.value)],
     ['Total Pengeluaran', formatNumberForExcel(totalExpenses.value)],
     ['Nilai Setor Cash', formatNumberForExcel(nilaiSetorCash.value)]
@@ -466,6 +535,24 @@ async function exportToExcel() {
     }
   });
   rowNum += 1;
+
+  if (totalDp.value > 0) {
+    ws.getCell(rowNum, 1).value = 'DP Reservasi';
+    ws.getCell(rowNum, 1).font = sectionFont;
+    rowNum += 1;
+    ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
+    styleHeaderRow(ws, rowNum);
+    rowNum += 1;
+    (dpBreakdown.value || []).forEach(row => {
+      ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
+      ws.getCell(rowNum, 3).numFmt = '#,##0';
+      rowNum += 1;
+    });
+    ws.getRow(rowNum).values = [null, 'Total DP', formatNumberForExcel(totalDp.value)];
+    ws.getCell(rowNum, 3).numFmt = '#,##0';
+    rowNum += 1;
+    rowNum += 1;
+  }
 
   // Section: Pengeluaran Bahan Baku
   ws.getCell(rowNum, 1).value = 'Pengeluaran Bahan Baku';
@@ -740,6 +827,16 @@ function printModal() {
                <div class="summary-label">Total Sales</div>
                <div class="summary-value">${formatCurrency(totalSales.value)}</div>
              </div>
+             ${totalDp.value > 0 ? `
+             <div class="summary-card">
+               <div class="summary-label">DP Reservasi</div>
+               <div class="summary-value">${formatCurrency(totalDp.value)}</div>
+             </div>
+             <div class="summary-card">
+               <div class="summary-label">Total Revenue</div>
+               <div class="summary-value">${formatCurrency(totalRevenue.value)}</div>
+             </div>
+             ` : ''}
            </div>
                      <!-- Payment Breakdown -->
            <div class="section-title">Breakdown by Payment Method</div>
@@ -774,6 +871,26 @@ function printModal() {
                }).join('')}
              </tbody>
            </table>
+          ${totalDp.value > 0 ? `
+          <div class="section-title">DP Reservasi</div>
+          <table>
+            <thead>
+              <tr><th>Jenis Pembayaran</th><th>Total</th></tr>
+            </thead>
+            <tbody>
+              ${(dpBreakdown.value || []).map(row => `
+                <tr>
+                  <td>${row.payment_type_name || '-'}</td>
+                  <td style="text-align:right">${formatCurrency(row.total)}</td>
+                </tr>
+              `).join('')}
+              <tr style="font-weight:bold">
+                <td>Total DP</td>
+                <td style="text-align:right">${formatCurrency(totalDp.value)}</td>
+              </tr>
+            </tbody>
+          </table>
+          ` : ''}
           <!-- Pengeluaran Bahan Baku -->
           <div class="section-title">Pengeluaran Bahan Baku</div>
           ${(expenses.value.retail_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran bahan baku.</div>' : ''}

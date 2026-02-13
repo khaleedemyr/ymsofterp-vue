@@ -162,6 +162,19 @@
                   class="input-field"
                 />
               </div>
+              <div v-if="hasDp" class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Jenis Pembayaran (DP)</label>
+                <select v-model="form.payment_type_id" class="input-field">
+                  <option :value="null">-- Pilih Jenis Pembayaran --</option>
+                  <option v-for="pt in paymentTypesForOutlet" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+                </select>
+                <p class="text-xs text-slate-500 mt-1">Jenis pembayaran mengikuti outlet/region yang dipilih</p>
+              </div>
+              <div v-if="hasDp && reservation?.dp_code" class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">Kode DP (untuk transaksi POS)</label>
+                <p class="font-mono text-lg font-bold text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200">{{ reservation.dp_code }}</p>
+                <p class="text-xs text-slate-500 mt-1">Berikan kode ini ke kasir untuk mengurangi pembayaran di POS</p>
+              </div>
               <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1.5">Dari Sales?</label>
                 <select v-model="form.from_sales" class="input-field" @change="onFromSalesChange">
@@ -268,13 +281,14 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import VueTimepicker from 'vue3-timepicker';
 import 'vue3-timepicker/dist/VueTimepicker.css';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
   reservation: Object,
   outlets: Array,
   salesUsers: { type: Array, default: () => [] },
+  paymentTypes: { type: Array, default: () => [] },
   isEdit: Boolean
 });
 
@@ -290,6 +304,7 @@ const form = ref({
   smoking_preference: props.reservation?.smoking_preference || '',
   special_requests: props.reservation?.special_requests || '',
   dp: props.reservation?.dp ?? null,
+  payment_type_id: props.reservation?.payment_type_id ?? null,
   from_sales: Boolean(props.reservation?.from_sales),
   sales_user_id: props.reservation?.sales_user_id ?? null,
   menu: props.reservation?.menu || '',
@@ -302,6 +317,29 @@ const menuFileName = computed(() => {
   const path = props.reservation?.menu_file;
   if (path && typeof path === 'string') return path.split(/[/\\]/).pop() || '';
   return '';
+});
+
+const hasDp = computed(() => (form.value.dp != null && form.value.dp !== '' && Number(form.value.dp) > 0));
+
+const selectedOutlet = computed(() => {
+  const id = form.value.outlet_id;
+  if (!id) return null;
+  return (props.outlets || []).find(o => o.id == id) || null;
+});
+
+const paymentTypesForOutlet = computed(() => {
+  const list = props.paymentTypes || [];
+  const outlet = selectedOutlet.value;
+  if (!outlet) return list;
+  const outletId = outlet.id;
+  const regionId = outlet.region_id;
+  return list.filter(pt => {
+    const outletIds = pt.outlet_ids || [];
+    const regionIds = pt.region_ids || [];
+    if (outletIds.includes(outletId)) return true;
+    if (regionId != null && regionIds.includes(regionId)) return true;
+    return false;
+  });
 });
 
 function onMenuFileChange(event) {
@@ -319,6 +357,10 @@ function clearMenuFile() {
 function onFromSalesChange() {
   if (!form.value.from_sales) form.value.sales_user_id = null;
 }
+
+watch(hasDp, (val) => {
+  if (!val) form.value.payment_type_id = null;
+});
 
 function submit() {
   loading.value = true;

@@ -115,6 +115,8 @@
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Tanggal & Waktu</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Tamu</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">DP</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Kode DP</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Jenis Pembayaran</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Sales</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Area</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
@@ -124,7 +126,7 @@
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="!reservations.length">
-                  <td colspan="11" class="px-5 py-16 text-center">
+                  <td colspan="13" class="px-5 py-16 text-center">
                     <div class="flex flex-col items-center gap-4">
                       <span class="flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 text-slate-400">
                         <i class="fa-solid fa-calendar-xmark text-2xl"></i>
@@ -159,6 +161,8 @@
                   </td>
                   <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.number_of_guests }} orang</td>
                   <td class="px-5 py-4 text-sm font-medium text-slate-700">{{ reservation.dp != null ? formatDp(reservation.dp) : '–' }}</td>
+                  <td class="px-5 py-4 font-mono text-sm font-semibold text-emerald-700">{{ reservation.dp_code || '–' }}</td>
+                  <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.payment_type_name || '–' }}</td>
                   <td class="px-5 py-4">
                     <span :class="reservation.from_sales ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium">
                       {{ reservation.from_sales ? 'Dari Sales' : 'Bukan' }}

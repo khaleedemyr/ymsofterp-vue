@@ -9,6 +9,7 @@ use Inertia\Inertia;
 use App\Models\Reservation;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Models\PaymentType;
 
 class ReservationController extends Controller
 {
@@ -18,7 +19,7 @@ class ReservationController extends Controller
         $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
         $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
 
-        $query = Reservation::with(['outlet', 'creator', 'salesUser'])
+        $query = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])
             ->when(!$isAdminOutlet && $userOutletId, function ($query) use ($userOutletId) {
                 $query->where('outlet_id', $userOutletId);
             })
@@ -49,6 +50,9 @@ class ReservationController extends Controller
                 'number_of_guests' => $reservation->number_of_guests,
                 'smoking_preference' => $reservation->smoking_preference,
                 'dp' => $reservation->dp,
+                'payment_type_id' => $reservation->payment_type_id,
+                'payment_type_name' => $reservation->paymentType?->name,
+                'dp_code' => $reservation->dp_code,
                 'from_sales' => $reservation->from_sales,
                 'sales_user_id' => $reservation->sales_user_id,
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
@@ -90,11 +94,12 @@ class ReservationController extends Controller
         $outlets = Outlet::where('status', 'A')
             ->whereNotNull('nama_outlet')
             ->where('nama_outlet', '!=', '')
-            ->get()
+            ->get(['id_outlet', 'nama_outlet', 'region_id'])
             ->map(function($o) {
                 return [
                     'id' => $o->id_outlet,
                     'name' => $o->nama_outlet,
+                    'region_id' => $o->region_id,
                 ];
             })
             ->values();
@@ -106,9 +111,12 @@ class ReservationController extends Controller
             ->map(fn($u) => ['id' => $u->id, 'name' => $u->nama_lengkap])
             ->values();
 
+        $paymentTypes = $this->getPaymentTypesForReservationForm();
+
         return Inertia::render('Reservations/Form', [
             'outlets' => $outlets,
             'salesUsers' => $salesUsers,
+            'paymentTypes' => $paymentTypes,
             'isEdit' => false
         ]);
     }
@@ -126,6 +134,7 @@ class ReservationController extends Controller
                 'number_of_guests' => 'required|integer|min:1',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
+                'payment_type_id' => 'nullable|exists:payment_types,id',
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
@@ -150,6 +159,7 @@ class ReservationController extends Controller
             }
 
             $reservation = Reservation::create($validated);
+            $this->syncDpCode($reservation, (float) ($request->input('dp') ?? 0));
 
             return redirect()->route('reservations.index')
                 ->with('success', 'Reservasi berhasil ditambahkan!');
@@ -164,7 +174,7 @@ class ReservationController extends Controller
 
     public function show(Reservation $reservation)
     {
-        $reservation->load(['outlet', 'creator', 'salesUser']);
+        $reservation->load(['outlet', 'creator', 'salesUser', 'paymentType']);
         return Inertia::render('Reservations/Show', [
             'reservation' => $reservation
         ]);
@@ -215,11 +225,12 @@ class ReservationController extends Controller
         $outlets = Outlet::where('status', 'A')
             ->whereNotNull('nama_outlet')
             ->where('nama_outlet', '!=', '')
-            ->get()
+            ->get(['id_outlet', 'nama_outlet', 'region_id'])
             ->map(function($o) {
                 return [
                     'id' => $o->id_outlet,
                     'name' => $o->nama_outlet,
+                    'region_id' => $o->region_id,
                 ];
             })
             ->values();
@@ -231,10 +242,13 @@ class ReservationController extends Controller
             ->map(fn($u) => ['id' => $u->id, 'name' => $u->nama_lengkap])
             ->values();
 
+        $paymentTypes = $this->getPaymentTypesForReservationForm();
+
         return Inertia::render('Reservations/Form', [
             'reservation' => $reservation,
             'outlets' => $outlets,
             'salesUsers' => $salesUsers,
+            'paymentTypes' => $paymentTypes,
             'isEdit' => true
         ]);
     }
@@ -251,6 +265,7 @@ class ReservationController extends Controller
             'number_of_guests' => 'required|integer|min:1',
             'special_requests' => 'nullable|string',
             'dp' => 'nullable|numeric|min:0',
+            'payment_type_id' => 'nullable|exists:payment_types,id',
             'from_sales' => 'nullable|boolean',
             'sales_user_id' => 'nullable|exists:users,id',
             'menu' => 'nullable|string',
@@ -275,9 +290,43 @@ class ReservationController extends Controller
         }
 
         $reservation->update($validated);
+        $this->syncDpCode($reservation, (float) ($request->input('dp') ?? 0));
 
         return redirect()->route('reservations.index')
             ->with('success', 'Reservasi berhasil diupdate!');
+    }
+
+    /**
+     * Set atau clear dp_code & dp_used_at berdasarkan nilai DP.
+     * Jika dp > 0: generate kode unik 8 karakter (angka+huruf). Jika dp 0/null: clear kode.
+     */
+    private function syncDpCode(Reservation $reservation, float $dp): void
+    {
+        if ($dp > 0) {
+            if (empty($reservation->dp_code)) {
+                $reservation->dp_code = $this->generateUniqueDpCode();
+                $reservation->dp_used_at = null;
+                $reservation->saveQuietly();
+            }
+        } else {
+            if ($reservation->dp_code !== null || $reservation->dp_used_at !== null) {
+                $reservation->dp_code = null;
+                $reservation->dp_used_at = null;
+                $reservation->saveQuietly();
+            }
+        }
+    }
+
+    private function generateUniqueDpCode(): string
+    {
+        $chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // tanpa I,O agar tidak bingung
+        do {
+            $code = '';
+            for ($i = 0; $i < 8; $i++) {
+                $code .= $chars[random_int(0, strlen($chars) - 1)];
+            }
+        } while (Reservation::where('dp_code', $code)->exists());
+        return $code;
     }
 
     public function destroy(Reservation $reservation)
@@ -292,7 +341,7 @@ class ReservationController extends Controller
 
     public function apiIndex(Request $request)
     {
-        $query = Reservation::with(['outlet', 'creator', 'salesUser'])
+        $query = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])
             ->when($request->search, function ($q, $search) {
                 $q->where('name', 'like', "%{$search}%");
             })
@@ -321,6 +370,8 @@ class ReservationController extends Controller
                 'smoking_preference' => $reservation->smoking_preference,
                 'special_requests' => $reservation->special_requests,
                 'dp' => $reservation->dp ? (float) $reservation->dp : null,
+                'payment_type_id' => $reservation->payment_type_id,
+                'payment_type_name' => $reservation->paymentType?->name,
                 'from_sales' => (bool) $reservation->from_sales,
                 'sales_user_id' => $reservation->sales_user_id,
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
@@ -360,9 +411,92 @@ class ReservationController extends Controller
         ]);
     }
 
+    /**
+     * Ringkasan DP reservasi per tanggal & outlet (untuk Revenue Report).
+     * GET /api/reservations/dp-summary?date=YYYY-MM-DD&outlet_id=123
+     */
+    public function apiDpSummary(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+            'outlet_id' => 'required',
+        ]);
+        $date = $request->date;
+        $outletId = $request->outlet_id;
+
+        $reservations = Reservation::with('paymentType')
+            ->whereDate('reservation_date', $date)
+            ->where('outlet_id', $outletId)
+            ->whereNotNull('dp')
+            ->where('dp', '>', 0)
+            ->get();
+
+        $totalDp = $reservations->sum(fn ($r) => (float) $r->dp);
+        $breakdown = [];
+        foreach ($reservations as $r) {
+            $name = $r->paymentType ? $r->paymentType->name : 'Lainnya';
+            if (!isset($breakdown[$name])) {
+                $breakdown[$name] = 0;
+            }
+            $breakdown[$name] += (float) $r->dp;
+        }
+        return response()->json([
+            'total_dp' => $totalDp,
+            'breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $breakdown[$name]], array_keys($breakdown))),
+        ]);
+    }
+
+    /**
+     * Validasi kode DP untuk transaksi POS. GET ?code=XXX&outlet_id=Y
+     * Return { valid, amount, reservation_id, message }.
+     */
+    public function apiValidateDpCode(Request $request)
+    {
+        $code = strtoupper(trim((string) $request->input('code', '')));
+        $outletId = $request->input('outlet_id');
+        if ($code === '' || !$outletId) {
+            return response()->json(['valid' => false, 'message' => 'Kode dan outlet wajib'], 400);
+        }
+        $reservation = Reservation::where('dp_code', $code)
+            ->where('outlet_id', $outletId)
+            ->whereNull('dp_used_at')
+            ->whereNotNull('dp')
+            ->where('dp', '>', 0)
+            ->first();
+        if (!$reservation) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Kode DP tidak valid atau sudah dipakai',
+            ]);
+        }
+        return response()->json([
+            'valid' => true,
+            'amount' => (float) $reservation->dp,
+            'reservation_id' => $reservation->id,
+        ]);
+    }
+
+    /**
+     * Tandai kode DP sudah dipakai di transaksi (dipanggil POS setelah bayar).
+     * POST { "dp_code": "XXXXXXXX" }
+     */
+    public function apiMarkDpUsed(Request $request)
+    {
+        $request->validate(['dp_code' => 'required|string|size:8']);
+        $code = strtoupper(trim($request->dp_code));
+        $updated = Reservation::where('dp_code', $code)
+            ->whereNull('dp_used_at')
+            ->where('dp', '>', 0)
+            ->update(['dp_used_at' => now()]);
+        if ($updated === 0) {
+            return response()->json(['success' => false, 'message' => 'Kode tidak ditemukan atau sudah dipakai'], 404);
+        }
+        return response()->json(['success' => true]);
+    }
+
     public function apiShow($id)
     {
-        $reservation = Reservation::with(['outlet', 'creator', 'salesUser'])->find($id);
+        $reservation = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])->find($id);
         if (!$reservation) {
             return response()->json(['message' => 'Reservasi tidak ditemukan'], 404);
         }
@@ -379,6 +513,10 @@ class ReservationController extends Controller
             'smoking_preference' => $reservation->smoking_preference,
             'special_requests' => $reservation->special_requests,
             'dp' => $reservation->dp ? (float) $reservation->dp : null,
+            'payment_type_id' => $reservation->payment_type_id,
+            'payment_type_name' => $reservation->paymentType?->name,
+            'dp_code' => $reservation->dp_code,
+            'dp_used_at' => $reservation->dp_used_at?->toIso8601String(),
             'from_sales' => (bool) $reservation->from_sales,
             'sales_user_id' => $reservation->sales_user_id,
             'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
@@ -405,6 +543,7 @@ class ReservationController extends Controller
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
+                'payment_type_id' => 'nullable|exists:payment_types,id',
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
@@ -457,6 +596,7 @@ class ReservationController extends Controller
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
+                'payment_type_id' => 'nullable|exists:payment_types,id',
                 'from_sales' => 'nullable|boolean',
                 'sales_user_id' => 'nullable|exists:users,id',
                 'menu' => 'nullable|string',
@@ -488,5 +628,27 @@ class ReservationController extends Controller
             \Log::error('Reservation apiUpdate: ' . $e->getMessage());
             return response()->json(['message' => 'Gagal mengupdate reservasi'], 500);
         }
+    }
+
+    /**
+     * Payment types untuk form reservasi: dipakai per outlet/region.
+     * Return array dengan id, name, code, outlet_ids, region_ids agar frontend bisa filter by outlet.
+     */
+    private function getPaymentTypesForReservationForm(): array
+    {
+        $paymentTypes = PaymentType::where('status', 'active')
+            ->with(['outlets:id_outlet', 'regions:id'])
+            ->orderBy('name')
+            ->get();
+
+        return $paymentTypes->map(function ($pt) {
+            return [
+                'id' => $pt->id,
+                'name' => $pt->name,
+                'code' => $pt->code,
+                'outlet_ids' => $pt->outlets->pluck('id_outlet')->values()->all(),
+                'region_ids' => $pt->regions->pluck('id')->values()->all(),
+            ];
+        })->values()->all();
     }
 } 

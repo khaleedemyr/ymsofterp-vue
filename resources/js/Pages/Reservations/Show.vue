@@ -106,6 +106,14 @@
                 <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">DP (Down Payment)</p>
                 <p class="text-slate-800 font-semibold">{{ formatDp(reservation.dp) }}</p>
               </div>
+              <div v-if="reservation.dp != null && reservation.dp > 0 && (reservation.dp_code)">
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Kode DP (untuk POS)</p>
+                <p class="font-mono text-lg font-bold text-emerald-700">{{ reservation.dp_code }}</p>
+              </div>
+              <div v-if="reservation.dp != null && reservation.dp > 0">
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Jenis Pembayaran</p>
+                <p class="text-slate-800">{{ (reservation.payment_type || reservation.paymentType)?.name || '–' }}</p>
+              </div>
               <div>
                 <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Sumber</p>
                 <span :class="reservation.from_sales ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-600'" class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium">

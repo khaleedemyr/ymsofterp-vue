@@ -23,6 +23,7 @@ class Reservation extends Model
         'smoking_preference',
         'special_requests',
         'dp',
+        'payment_type_id',
         'from_sales',
         'sales_user_id',
         'menu',
@@ -37,6 +38,7 @@ class Reservation extends Model
         'number_of_guests' => 'integer',
         'dp' => 'decimal:2',
         'from_sales' => 'boolean',
+        'dp_used_at' => 'datetime',
     ];
 
     public function outlet()
@@ -52,6 +54,11 @@ class Reservation extends Model
     public function salesUser()
     {
         return $this->belongsTo(User::class, 'sales_user_id');
+    }
+
+    public function paymentType()
+    {
+        return $this->belongsTo(PaymentType::class, 'payment_type_id');
     }
 
     public function getMenuFileUrlAttribute()

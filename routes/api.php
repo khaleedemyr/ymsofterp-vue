@@ -322,6 +322,9 @@ Route::prefix('approval-app')->group(function () {
         // Reservations (Approval App - Reservasi)
         Route::get('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiIndex']);
         Route::get('/reservations/create-data', [\App\Http\Controllers\ReservationController::class, 'apiCreateData']);
+        Route::get('/reservations/dp-summary', [\App\Http\Controllers\ReservationController::class, 'apiDpSummary']);
+        Route::get('/reservations/validate-dp-code', [\App\Http\Controllers\ReservationController::class, 'apiValidateDpCode']);
+        Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationController::class, 'apiMarkDpUsed']);
         Route::get('/reservations/{id}', [\App\Http\Controllers\ReservationController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiStore']);
         Route::put('/reservations/{id}', [\App\Http\Controllers\ReservationController::class, 'apiUpdate'])->where('id', '[0-9]+');
