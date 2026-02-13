@@ -503,6 +503,26 @@ class ReservationController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * Update status reservasi dari POS (mis. Set Datang -> arrived, Cancel -> cancelled).
+     * PATCH /api/reservations/{id}/status  body: { "status": "arrived" }
+     */
+    public function apiUpdateStatus(Request $request, $id)
+    {
+        $status = $request->input('status');
+        $allowed = ['pending', 'confirmed', 'arrived', 'cancelled', 'no_show'];
+        if (!$status || !in_array($status, $allowed, true)) {
+            return response()->json(['success' => false, 'message' => 'Status tidak valid. Gunakan: ' . implode(', ', $allowed)], 400);
+        }
+        $reservation = Reservation::find($id);
+        if (!$reservation) {
+            return response()->json(['success' => false, 'message' => 'Reservasi tidak ditemukan'], 404);
+        }
+        $reservation->status = $status;
+        $reservation->save();
+        return response()->json(['success' => true, 'status' => $reservation->status]);
+    }
+
     public function apiShow($id)
     {
         $reservation = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])->find($id);

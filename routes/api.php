@@ -1191,9 +1191,10 @@ Route::prefix('closing-shift')->group(function () {
     Route::get('/unsynced-orders-count', [ClosingShiftController::class, 'checkUnsyncedOrdersCount'])->name('api.closing-shift.unsynced-orders-count');
 });
 
-// POS – validasi & mark DP (tanpa auth, dipanggil dari POS desktop)
+// POS – validasi & mark DP & update status (tanpa auth, dipanggil dari POS desktop)
 Route::get('/reservations/validate-dp-code', [\App\Http\Controllers\ReservationController::class, 'apiValidateDpCode']);
 Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationController::class, 'apiMarkDpUsed']);
+Route::patch('/reservations/{id}/status', [\App\Http\Controllers\ReservationController::class, 'apiUpdateStatus']);
 
 // POS Sync Routes
 Route::prefix('pos/sync')->group(function () {
