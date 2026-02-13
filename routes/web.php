@@ -860,6 +860,7 @@ Route::middleware(['auth'])->group(function () {
     
     // Outlet Transfer Routes
     Route::get('/outlet-transfer', [\App\Http\Controllers\OutletTransferController::class, 'index'])->name('outlet-transfer.index');
+    Route::get('/outlet-transfer/report', [\App\Http\Controllers\OutletTransferReportController::class, 'index'])->name('outlet-transfer.report');
     Route::get('/outlet-transfer/create', [\App\Http\Controllers\OutletTransferController::class, 'create'])->name('outlet-transfer.create');
     Route::post('/outlet-transfer', [\App\Http\Controllers\OutletTransferController::class, 'store'])->name('outlet-transfer.store');
     Route::get('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'show'])->name('outlet-transfer.show');

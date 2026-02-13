@@ -5,12 +5,21 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-right-left"></i> Pindah Outlet
         </h1>
-        <Link
-          :href="route('outlet-transfer.create')"
-          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
-        >
-          + Buat Pindah Outlet
-        </Link>
+        <div class="flex gap-2">
+          <Link
+            v-if="canAccessReport"
+            :href="route('outlet-transfer.report')"
+            class="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl shadow hover:bg-gray-200 transition font-semibold"
+          >
+            <i class="fa-solid fa-file-lines mr-2"></i> Laporan
+          </Link>
+          <Link
+            :href="route('outlet-transfer.create')"
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+          >
+            + Buat Pindah Outlet
+          </Link>
+        </div>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
         <input
@@ -126,7 +135,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -166,6 +175,8 @@ function formatDate(date) {
   const d = new Date(date);
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+const canAccessReport = computed(() => (props.user?.id_outlet ?? null) == 1);
 
 function getOutletName(outletId) {
   if (!outletId || !props.outlets) return '-';
