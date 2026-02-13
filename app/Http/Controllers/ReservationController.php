@@ -453,7 +453,14 @@ class ReservationController extends Controller
         $date = $request->date;
         $outletId = $request->outlet_id;
         if (empty($outletId) && $request->filled('kode_outlet')) {
-            $outlet = Outlet::where('qr_code', $request->kode_outlet)->first();
+            $kode = $request->kode_outlet;
+            $outlet = Outlet::where('qr_code', $kode)->first();
+            if (! $outlet && is_numeric($kode)) {
+                $outlet = Outlet::where('id_outlet', $kode)->first();
+            }
+            if (! $outlet) {
+                $outlet = Outlet::where('nama_outlet', $kode)->first();
+            }
             $outletId = $outlet ? $outlet->id_outlet : null;
         }
         if (empty($outletId)) {
@@ -484,7 +491,7 @@ class ReservationController extends Controller
             $breakdown[$name] += (float) $r->dp;
         }
 
-        // 2) DP diterima hari ini untuk reservasi tanggal mendatang (created_at = date, reservation_date > date)
+        // 2) DP diterima di tanggal yang dipilih untuk reservasi tanggal mendatang (created_at = date, reservation_date > date)
         $reservationsFuture = Reservation::with('paymentType')
             ->whereDate('created_at', $date)
             ->where('reservation_date', '>', $date)
