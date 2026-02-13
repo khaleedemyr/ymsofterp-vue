@@ -1132,9 +1132,12 @@ class PosSyncController extends Controller
                 })
                 ->get();
 
-            $formatted = array_map(function($promo) {
-                return [
-                    'id' => $promo->id,
+            // Sama seperti ymsoftpos syncPromos: semua kolom + relasi (promo_items, promo_categories, promo_item_prices, promo_bogo_items)
+            $formatted = [];
+            foreach ($promos as $promo) {
+                $promoId = $promo->id;
+                $formatted[] = [
+                    'id' => $promoId,
                     'name' => $promo->name ?? '',
                     'code' => $promo->code ?? null,
                     'type' => $promo->type ?? null,
@@ -1147,16 +1150,22 @@ class PosSyncController extends Controller
                     'end_date' => $promo->end_date ?? null,
                     'start_time' => $promo->start_time ?? null,
                     'end_time' => $promo->end_time ?? null,
-                    'days' => $promo->days ?? null, // JSON field untuk hari
+                    'days' => $promo->days ?? null,
                     'status' => $promo->status ?? 'active',
                     'description' => $promo->description ?? null,
                     'terms' => $promo->terms ?? null,
                     'banner' => $promo->banner ?? null,
                     'need_member' => $promo->need_member ?? 'No',
+                    'all_tiers' => $promo->all_tiers ?? 0,
+                    'tiers' => $promo->tiers ?? null,
                     'created_at' => $promo->created_at,
-                    'updated_at' => $promo->updated_at
+                    'updated_at' => $promo->updated_at,
+                    'promo_items' => DB::table('promo_items')->where('promo_id', $promoId)->get()->toArray(),
+                    'promo_categories' => DB::table('promo_categories')->where('promo_id', $promoId)->get()->toArray(),
+                    'promo_item_prices' => DB::table('promo_item_prices')->where('promo_id', $promoId)->get()->toArray(),
+                    'promo_bogo_items' => DB::table('promo_bogo_items')->where('promo_id', $promoId)->get()->toArray(),
                 ];
-            }, $promos->toArray());
+            }
 
             return response()->json([
                 'success' => true,
