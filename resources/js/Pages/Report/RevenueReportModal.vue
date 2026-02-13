@@ -454,45 +454,70 @@ async function fetchExpenses() {
     loadingExpenses.value = false;
   }
 }
+function resolveOutletId(kodeOutlet, outlets) {
+  if (!kodeOutlet || !outlets?.length) return null;
+  const found = outlets.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
+  return found ? (found.id ?? found.id_outlet) : null;
+}
 async function fetchDpSummary() {
   if (!props.orders?.length || !props.tanggal) return;
-  const kodeOutlet = props.orders[0]?.kode_outlet;
-  let outletId = null;
-  if (kodeOutlet && props.outlets?.length) {
-    const found = props.outlets.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
-    outletId = found ? (found.id ?? found.id_outlet) : null;
-  }
-  if (!outletId && kodeOutlet) {
+  // Semua outlet unik dari orders (bukan cuma orders[0]), agar DP dari outlet mana pun ikut
+  const uniqueKodeOutlets = [...new Set((props.orders || []).map(o => o.kode_outlet).filter(Boolean))];
+  if (!uniqueKodeOutlets.length) { loadingDp.value = false; return; }
+
+  let outletsList = props.outlets || [];
+  if (!outletsList.length) {
     try {
       const res = await fetch('/api/outlets/report');
       if (res.ok) {
         const data = await res.json();
-        const found = data.outlets?.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
-        outletId = found ? (found.id ?? found.id_outlet) : null;
+        outletsList = data.outlets || [];
       }
     } catch (e) {
       console.error('Error fetching outlets for DP summary', e);
     }
   }
+
   loadingDp.value = true;
   try {
-    const params = new URLSearchParams({ date: props.tanggal });
-    if (outletId) params.set('outlet_id', String(outletId));
-    else if (kodeOutlet) params.set('kode_outlet', kodeOutlet);
-    if (!outletId && !kodeOutlet) { loadingDp.value = false; return; }
-    const res = await fetch(`/api/reservations/dp-summary?${params.toString()}`);
-    if (res.ok) {
-      const data = await res.json();
-      dpSummary.value = {
-        total_dp: data.total_dp ?? 0,
-        breakdown: data.breakdown ?? [],
-        dp_future_total: data.dp_future_total ?? 0,
-        dp_future_breakdown: data.dp_future_breakdown ?? [],
-        orders_using_dp: data.orders_using_dp ?? []
-      };
-    } else {
-      dpSummary.value = { total_dp: 0, breakdown: [], dp_future_total: 0, dp_future_breakdown: [], orders_using_dp: [] };
+    const merged = {
+      total_dp: 0,
+      breakdown: {},
+      dp_future_total: 0,
+      dp_future_breakdown: {},
+      orders_using_dp: []
+    };
+    const toFetch = [];
+    for (const kode of uniqueKodeOutlets) {
+      const outletId = resolveOutletId(kode, outletsList);
+      toFetch.push({ outletId, kodeOutlet: kode });
     }
+    for (const { outletId, kodeOutlet } of toFetch) {
+      const params = new URLSearchParams({ date: props.tanggal });
+      if (outletId) params.set('outlet_id', String(outletId));
+      else params.set('kode_outlet', kodeOutlet);
+      const res = await fetch(`/api/reservations/dp-summary?${params.toString()}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      merged.total_dp += Number(data.total_dp ?? 0);
+      (data.breakdown || []).forEach(b => {
+        const name = b.payment_type_name || 'Lainnya';
+        merged.breakdown[name] = (merged.breakdown[name] || 0) + Number(b.total ?? 0);
+      });
+      merged.dp_future_total += Number(data.dp_future_total ?? 0);
+      (data.dp_future_breakdown || []).forEach(b => {
+        const name = b.payment_type_name || 'Lainnya';
+        merged.dp_future_breakdown[name] = (merged.dp_future_breakdown[name] || 0) + Number(b.total ?? 0);
+      });
+      merged.orders_using_dp.push(...(data.orders_using_dp || []));
+    }
+    dpSummary.value = {
+      total_dp: merged.total_dp,
+      breakdown: Object.entries(merged.breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      dp_future_total: merged.dp_future_total,
+      dp_future_breakdown: Object.entries(merged.dp_future_breakdown).map(([payment_type_name, total]) => ({ payment_type_name, total })),
+      orders_using_dp: merged.orders_using_dp
+    };
   } catch (e) {
     console.error('fetchDpSummary error', e);
     dpSummary.value = { total_dp: 0, breakdown: [], dp_future_total: 0, dp_future_breakdown: [], orders_using_dp: [] };

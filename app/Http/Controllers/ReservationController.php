@@ -452,6 +452,7 @@ class ReservationController extends Controller
         ]);
         $date = $request->date;
         $outletId = $request->outlet_id;
+        $debugOutlet = null;
         if (empty($outletId) && $request->filled('kode_outlet')) {
             $kode = $request->kode_outlet;
             $outlet = Outlet::where('qr_code', $kode)->first();
@@ -462,14 +463,38 @@ class ReservationController extends Controller
                 $outlet = Outlet::where('nama_outlet', $kode)->first();
             }
             $outletId = $outlet ? $outlet->id_outlet : null;
+            if ($request->boolean('debug')) {
+                $debugOutlet = [
+                    'kode_dari_request' => $kode,
+                    'outlet_ditemukan' => $outlet ? ['id_outlet' => $outlet->id_outlet, 'qr_code' => $outlet->qr_code, 'nama_outlet' => $outlet->nama_outlet] : null,
+                ];
+            }
         }
         if (empty($outletId)) {
-            return response()->json([
+            $debug = $request->boolean('debug') ? [
+                'debug' => array_merge([
+                    'message' => 'outlet_id kosong setelah resolusi',
+                    'request_outlet_id' => $request->outlet_id,
+                    'request_kode_outlet' => $request->kode_outlet,
+                ], $debugOutlet ? ['outlet_resolution' => $debugOutlet] : []),
+            ] : [];
+            return response()->json(array_merge([
                 'total_dp' => 0,
                 'breakdown' => [],
                 'dp_future_total' => 0,
                 'dp_future_breakdown' => [],
                 'orders_using_dp' => [],
+            ], $debug));
+        }
+
+        $debug = [];
+        if ($request->boolean('debug')) {
+            $debug['debug'] = array_filter([
+                'resolved_outlet_id' => $outletId,
+                'request_date' => $date,
+                'request_kode_outlet' => $request->kode_outlet,
+                'request_outlet_id' => $request->outlet_id,
+                'outlet_resolution' => $debugOutlet,
             ]);
         }
 
@@ -492,13 +517,17 @@ class ReservationController extends Controller
         }
 
         // 2) DP diterima di tanggal yang dipilih untuk reservasi tanggal mendatang (created_at = date, reservation_date > date)
-        $reservationsFuture = Reservation::with('paymentType')
+        $queryFuture = Reservation::with('paymentType')
             ->whereDate('created_at', $date)
             ->where('reservation_date', '>', $date)
             ->where('outlet_id', $outletId)
             ->whereNotNull('dp')
-            ->where('dp', '>', 0)
-            ->get();
+            ->where('dp', '>', 0);
+        if ($request->boolean('debug')) {
+            $debug['debug']['query_dp_future_sql'] = $queryFuture->toSql();
+            $debug['debug']['query_dp_future_bindings'] = $queryFuture->getBindings();
+        }
+        $reservationsFuture = $queryFuture->get();
 
         $dpFutureTotal = $reservationsFuture->sum(fn ($r) => (float) $r->dp);
         $dpFutureBreakdown = [];
@@ -546,13 +575,13 @@ class ReservationController extends Controller
             }
         }
 
-        return response()->json([
+        return response()->json(array_merge([
             'total_dp' => $totalDp,
             'breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $breakdown[$name]], array_keys($breakdown))),
             'dp_future_total' => $dpFutureTotal,
             'dp_future_breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $dpFutureBreakdown[$name]], array_keys($dpFutureBreakdown))),
             'orders_using_dp' => $ordersUsingDp,
-        ]);
+        ], $debug));
     }
 
     /**
