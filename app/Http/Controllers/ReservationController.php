@@ -447,10 +447,24 @@ class ReservationController extends Controller
     {
         $request->validate([
             'date' => 'required|date',
-            'outlet_id' => 'required',
+            'outlet_id' => 'nullable',
+            'kode_outlet' => 'nullable|string',
         ]);
         $date = $request->date;
         $outletId = $request->outlet_id;
+        if (empty($outletId) && $request->filled('kode_outlet')) {
+            $outlet = Outlet::where('qr_code', $request->kode_outlet)->first();
+            $outletId = $outlet ? $outlet->id_outlet : null;
+        }
+        if (empty($outletId)) {
+            return response()->json([
+                'total_dp' => 0,
+                'breakdown' => [],
+                'dp_future_total' => 0,
+                'dp_future_breakdown' => [],
+                'orders_using_dp' => [],
+            ]);
+        }
 
         // 1) DP untuk reservasi yang jadwalnya di tanggal report (existing)
         $reservations = Reservation::with('paymentType')

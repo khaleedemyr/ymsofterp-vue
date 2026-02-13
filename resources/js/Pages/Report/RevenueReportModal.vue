@@ -65,69 +65,84 @@
           </tbody>
         </table>
       </div>
-      <!-- DP Reservasi (jadwal hari ini) -->
-      <div v-if="(dpSummary.total_dp || 0) > 0" class="mb-8">
-        <div class="font-bold text-amber-700 mb-2">DP Reservasi (jadwal hari ini)</div>
-        <div class="text-xl font-semibold text-amber-800 mb-2">{{ formatCurrency(dpSummary.total_dp) }}</div>
-        <table class="min-w-full text-sm rounded shadow">
-          <thead>
-            <tr class="bg-amber-100 text-amber-900">
-              <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
-              <th class="px-3 py-2 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in dpBreakdown" :key="'dp-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
-              <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
-              <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- DP Reservasi - selalu tampil setelah loading -->
+      <div class="mb-8">
+        <div class="font-bold text-amber-700 mb-3">DP Reservasi</div>
+        <div v-if="loadingDp" class="text-gray-400 italic">Loading DP reservasi...</div>
+        <template v-else>
+          <!-- 1) DP jadwal hari ini -->
+          <div class="mb-4">
+            <div class="text-sm font-semibold text-amber-800 mb-1">DP Reservasi (jadwal hari ini)</div>
+            <template v-if="(dpSummary.total_dp || 0) > 0">
+              <div class="text-lg font-semibold text-amber-800 mb-1">{{ formatCurrency(dpSummary.total_dp) }}</div>
+              <table class="min-w-full text-sm rounded shadow">
+                <thead>
+                  <tr class="bg-amber-100 text-amber-900">
+                    <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+                    <th class="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in dpBreakdown" :key="'dp-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
+                    <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <div v-else class="text-gray-500 text-sm italic">Tidak ada DP untuk reservasi dengan jadwal hari ini.</div>
+          </div>
+          <!-- 2) DP diterima hari ini untuk reservasi tanggal mendatang -->
+          <div class="mb-4">
+            <div class="text-sm font-semibold text-emerald-800 mb-1">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
+            <template v-if="dpFutureTotal > 0">
+              <div class="text-lg font-semibold text-emerald-800 mb-1">{{ formatCurrency(dpFutureTotal) }}</div>
+              <table class="min-w-full text-sm rounded shadow">
+                <thead>
+                  <tr class="bg-emerald-100 text-emerald-900">
+                    <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+                    <th class="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in dpFutureBreakdown" :key="'dpf-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
+                    <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <div v-else class="text-gray-500 text-sm italic">Tidak ada DP diterima hari ini untuk reservasi tanggal mendatang.</div>
+          </div>
+          <!-- 3) Transaksi hari ini yang menggunakan DP -->
+          <div>
+            <div class="text-sm font-semibold text-indigo-800 mb-1">Transaksi Hari Ini yang Menggunakan DP</div>
+            <template v-if="ordersUsingDp.length > 0">
+              <table class="min-w-full text-sm rounded shadow">
+                <thead>
+                  <tr class="bg-indigo-100 text-indigo-900">
+                    <th class="px-3 py-2 text-left">No. Bayar</th>
+                    <th class="px-3 py-2 text-left">Reservasi</th>
+                    <th class="px-3 py-2 text-right">Total</th>
+                    <th class="px-3 py-2 text-right">DP</th>
+                    <th class="px-3 py-2 text-left">Tanggal DP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in ordersUsingDp" :key="'ord-dp-' + idx" class="bg-white border-b last:border-b-0">
+                    <td class="px-3 py-2">{{ row.paid_number || '-' }}</td>
+                    <td class="px-3 py-2">{{ row.reservation_name || '-' }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.grand_total) }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(row.dp_amount) }}</td>
+                    <td class="px-3 py-2">{{ row.dp_paid_at ? formatDateIndo(row.dp_paid_at) : '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <div v-else class="text-gray-500 text-sm italic">Tidak ada transaksi hari ini yang menggunakan DP.</div>
+          </div>
+        </template>
       </div>
-      <!-- DP Diterima Hari Ini untuk Reservasi Tanggal Mendatang -->
-      <div v-if="dpFutureTotal > 0" class="mb-8">
-        <div class="font-bold text-emerald-700 mb-2">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
-        <div class="text-xl font-semibold text-emerald-800 mb-2">{{ formatCurrency(dpFutureTotal) }}</div>
-        <table class="min-w-full text-sm rounded shadow">
-          <thead>
-            <tr class="bg-emerald-100 text-emerald-900">
-              <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
-              <th class="px-3 py-2 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in dpFutureBreakdown" :key="'dpf-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
-              <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
-              <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <!-- Transaksi Hari Ini yang Menggunakan DP -->
-      <div v-if="ordersUsingDp.length > 0" class="mb-8">
-        <div class="font-bold text-indigo-700 mb-2">Transaksi Hari Ini yang Menggunakan DP</div>
-        <table class="min-w-full text-sm rounded shadow">
-          <thead>
-            <tr class="bg-indigo-100 text-indigo-900">
-              <th class="px-3 py-2 text-left">No. Bayar</th>
-              <th class="px-3 py-2 text-left">Reservasi</th>
-              <th class="px-3 py-2 text-right">Total</th>
-              <th class="px-3 py-2 text-right">DP</th>
-              <th class="px-3 py-2 text-left">Tanggal DP</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, idx) in ordersUsingDp" :key="'ord-dp-' + idx" class="bg-white border-b last:border-b-0">
-              <td class="px-3 py-2">{{ row.paid_number || '-' }}</td>
-              <td class="px-3 py-2">{{ row.reservation_name || '-' }}</td>
-              <td class="px-3 py-2 text-right">{{ formatCurrency(row.grand_total) }}</td>
-              <td class="px-3 py-2 text-right">{{ formatCurrency(row.dp_amount) }}</td>
-              <td class="px-3 py-2">{{ row.dp_paid_at ? formatDateIndo(row.dp_paid_at) : '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-if="loadingDp" class="mb-8 text-gray-400 italic">Loading DP reservasi...</div>
       <!-- Pengeluaran Bahan Baku -->
       <div class="mb-8">
         <div class="font-bold text-red-700 mb-2">Pengeluaran Bahan Baku</div>
@@ -444,25 +459,28 @@ async function fetchDpSummary() {
   const kodeOutlet = props.orders[0]?.kode_outlet;
   let outletId = null;
   if (kodeOutlet && props.outlets?.length) {
-    const found = props.outlets.find(o => o.qr_code === kodeOutlet);
-    outletId = found ? found.id : null;
+    const found = props.outlets.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
+    outletId = found ? (found.id ?? found.id_outlet) : null;
   }
   if (!outletId && kodeOutlet) {
     try {
       const res = await fetch('/api/outlets/report');
       if (res.ok) {
         const data = await res.json();
-        const found = data.outlets?.find(o => o.qr_code === kodeOutlet);
-        outletId = found ? found.id : null;
+        const found = data.outlets?.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
+        outletId = found ? (found.id ?? found.id_outlet) : null;
       }
     } catch (e) {
       console.error('Error fetching outlets for DP summary', e);
     }
   }
-  if (!outletId || !props.tanggal) return;
   loadingDp.value = true;
   try {
-    const res = await fetch(`/api/reservations/dp-summary?date=${encodeURIComponent(props.tanggal)}&outlet_id=${encodeURIComponent(outletId)}`);
+    const params = new URLSearchParams({ date: props.tanggal });
+    if (outletId) params.set('outlet_id', String(outletId));
+    else if (kodeOutlet) params.set('kode_outlet', kodeOutlet);
+    if (!outletId && !kodeOutlet) { loadingDp.value = false; return; }
+    const res = await fetch(`/api/reservations/dp-summary?${params.toString()}`);
     if (res.ok) {
       const data = await res.json();
       dpSummary.value = {
