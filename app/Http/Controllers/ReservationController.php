@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use App\Models\Reservation;
@@ -436,6 +437,11 @@ class ReservationController extends Controller
     /**
      * Ringkasan DP reservasi per tanggal & outlet (untuk Revenue Report).
      * GET /api/reservations/dp-summary?date=YYYY-MM-DD&outlet_id=123
+     *
+     * Return:
+     * - total_dp, breakdown: DP untuk reservasi yang jadwalnya di tanggal report.
+     * - dp_future_total, dp_future_breakdown: DP diterima hari ini untuk reservasi tanggal mendatang (created_at = date, reservation_date > date).
+     * - orders_using_dp: transaksi hari tersebut yang menggunakan DP (order paid + reservation dengan DP), plus tanggal DP.
      */
     public function apiDpSummary(Request $request)
     {
@@ -446,6 +452,7 @@ class ReservationController extends Controller
         $date = $request->date;
         $outletId = $request->outlet_id;
 
+        // 1) DP untuk reservasi yang jadwalnya di tanggal report (existing)
         $reservations = Reservation::with('paymentType')
             ->whereDate('reservation_date', $date)
             ->where('outlet_id', $outletId)
@@ -462,9 +469,68 @@ class ReservationController extends Controller
             }
             $breakdown[$name] += (float) $r->dp;
         }
+
+        // 2) DP diterima hari ini untuk reservasi tanggal mendatang (created_at = date, reservation_date > date)
+        $reservationsFuture = Reservation::with('paymentType')
+            ->whereDate('created_at', $date)
+            ->where('reservation_date', '>', $date)
+            ->where('outlet_id', $outletId)
+            ->whereNotNull('dp')
+            ->where('dp', '>', 0)
+            ->get();
+
+        $dpFutureTotal = $reservationsFuture->sum(fn ($r) => (float) $r->dp);
+        $dpFutureBreakdown = [];
+        foreach ($reservationsFuture as $r) {
+            $name = $r->paymentType ? $r->paymentType->name : 'Lainnya';
+            if (!isset($dpFutureBreakdown[$name])) {
+                $dpFutureBreakdown[$name] = 0;
+            }
+            $dpFutureBreakdown[$name] += (float) $r->dp;
+        }
+
+        // 3) Transaksi hari tersebut yang menggunakan DP (order paid on date, punya reservation_id dengan DP)
+        $kodeOutlet = Outlet::where('id_outlet', $outletId)->value('qr_code');
+        $ordersUsingDp = [];
+        if ($kodeOutlet && Schema::hasTable('orders') && Schema::hasColumn('orders', 'reservation_id')) {
+            $orderRows = DB::table('orders')
+                ->whereDate('updated_at', $date)
+                ->where('kode_outlet', $kodeOutlet)
+                ->where('status', 'paid')
+                ->whereNotNull('reservation_id')
+                ->get(['id', 'paid_number', 'grand_total', 'reservation_id']);
+
+            $reservationIds = $orderRows->pluck('reservation_id')->unique()->filter()->values()->all();
+            if (!empty($reservationIds)) {
+                $reservationsWithDp = Reservation::with('paymentType')
+                    ->whereIn('id', $reservationIds)
+                    ->whereNotNull('dp')
+                    ->where('dp', '>', 0)
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($orderRows as $row) {
+                    $res = $reservationsWithDp->get($row->reservation_id);
+                    if (!$res) {
+                        continue;
+                    }
+                    $ordersUsingDp[] = [
+                        'paid_number' => $row->paid_number,
+                        'grand_total' => (float) $row->grand_total,
+                        'reservation_name' => $res->name,
+                        'dp_amount' => (float) $res->dp,
+                        'dp_paid_at' => $res->created_at?->format('Y-m-d'),
+                    ];
+                }
+            }
+        }
+
         return response()->json([
             'total_dp' => $totalDp,
             'breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $breakdown[$name]], array_keys($breakdown))),
+            'dp_future_total' => $dpFutureTotal,
+            'dp_future_breakdown' => array_values(array_map(fn ($name) => ['payment_type_name' => $name, 'total' => $dpFutureBreakdown[$name]], array_keys($dpFutureBreakdown))),
+            'orders_using_dp' => $ordersUsingDp,
         ]);
     }
 

@@ -65,10 +65,10 @@
           </tbody>
         </table>
       </div>
-      <!-- DP Reservasi -->
-      <div v-if="totalDp > 0" class="mb-8">
-        <div class="font-bold text-amber-700 mb-2">DP Reservasi</div>
-        <div class="text-xl font-semibold text-amber-800 mb-2">{{ formatCurrency(totalDp) }}</div>
+      <!-- DP Reservasi (jadwal hari ini) -->
+      <div v-if="(dpSummary.total_dp || 0) > 0" class="mb-8">
+        <div class="font-bold text-amber-700 mb-2">DP Reservasi (jadwal hari ini)</div>
+        <div class="text-xl font-semibold text-amber-800 mb-2">{{ formatCurrency(dpSummary.total_dp) }}</div>
         <table class="min-w-full text-sm rounded shadow">
           <thead>
             <tr class="bg-amber-100 text-amber-900">
@@ -77,14 +77,57 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in dpBreakdown" :key="row.payment_type_name" class="bg-white border-b last:border-b-0">
+            <tr v-for="row in dpBreakdown" :key="'dp-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
               <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
               <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-else-if="loadingDp" class="mb-8 text-gray-400 italic">Loading DP reservasi...</div>
+      <!-- DP Diterima Hari Ini untuk Reservasi Tanggal Mendatang -->
+      <div v-if="dpFutureTotal > 0" class="mb-8">
+        <div class="font-bold text-emerald-700 mb-2">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
+        <div class="text-xl font-semibold text-emerald-800 mb-2">{{ formatCurrency(dpFutureTotal) }}</div>
+        <table class="min-w-full text-sm rounded shadow">
+          <thead>
+            <tr class="bg-emerald-100 text-emerald-900">
+              <th class="px-3 py-2 text-left">Jenis Pembayaran</th>
+              <th class="px-3 py-2 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in dpFutureBreakdown" :key="'dpf-' + (row.payment_type_name || '')" class="bg-white border-b last:border-b-0">
+              <td class="px-3 py-2">{{ row.payment_type_name || '-' }}</td>
+              <td class="px-3 py-2 text-right">{{ formatCurrency(row.total) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- Transaksi Hari Ini yang Menggunakan DP -->
+      <div v-if="ordersUsingDp.length > 0" class="mb-8">
+        <div class="font-bold text-indigo-700 mb-2">Transaksi Hari Ini yang Menggunakan DP</div>
+        <table class="min-w-full text-sm rounded shadow">
+          <thead>
+            <tr class="bg-indigo-100 text-indigo-900">
+              <th class="px-3 py-2 text-left">No. Bayar</th>
+              <th class="px-3 py-2 text-left">Reservasi</th>
+              <th class="px-3 py-2 text-right">Total</th>
+              <th class="px-3 py-2 text-right">DP</th>
+              <th class="px-3 py-2 text-left">Tanggal DP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, idx) in ordersUsingDp" :key="'ord-dp-' + idx" class="bg-white border-b last:border-b-0">
+              <td class="px-3 py-2">{{ row.paid_number || '-' }}</td>
+              <td class="px-3 py-2">{{ row.reservation_name || '-' }}</td>
+              <td class="px-3 py-2 text-right">{{ formatCurrency(row.grand_total) }}</td>
+              <td class="px-3 py-2 text-right">{{ formatCurrency(row.dp_amount) }}</td>
+              <td class="px-3 py-2">{{ row.dp_paid_at ? formatDateIndo(row.dp_paid_at) : '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="loadingDp" class="mb-8 text-gray-400 italic">Loading DP reservasi...</div>
       <!-- Pengeluaran Bahan Baku -->
       <div class="mb-8">
         <div class="font-bold text-red-700 mb-2">Pengeluaran Bahan Baku</div>
@@ -198,10 +241,19 @@ const props = defineProps({
 const totalSales = computed(() => {
   return (props.orders || []).reduce((sum, o) => sum + (Number(o.grand_total) || 0), 0);
 });
-const dpSummary = ref({ total_dp: 0, breakdown: [] });
+const dpSummary = ref({
+  total_dp: 0,
+  breakdown: [],
+  dp_future_total: 0,
+  dp_future_breakdown: [],
+  orders_using_dp: []
+});
 const loadingDp = ref(false);
-const totalDp = computed(() => Number(dpSummary.value.total_dp) || 0);
+const totalDp = computed(() => (Number(dpSummary.value.total_dp) || 0) + (Number(dpSummary.value.dp_future_total) || 0));
 const dpBreakdown = computed(() => dpSummary.value.breakdown || []);
+const dpFutureTotal = computed(() => Number(dpSummary.value.dp_future_total) || 0);
+const dpFutureBreakdown = computed(() => dpSummary.value.dp_future_breakdown || []);
+const ordersUsingDp = computed(() => dpSummary.value.orders_using_dp || []);
 const totalRevenue = computed(() => totalSales.value + totalDp.value);
 const totalCash = computed(() => {
   const entries = Object.entries(paymentBreakdown.value);
@@ -413,13 +465,19 @@ async function fetchDpSummary() {
     const res = await fetch(`/api/reservations/dp-summary?date=${encodeURIComponent(props.tanggal)}&outlet_id=${encodeURIComponent(outletId)}`);
     if (res.ok) {
       const data = await res.json();
-      dpSummary.value = { total_dp: data.total_dp ?? 0, breakdown: data.breakdown ?? [] };
+      dpSummary.value = {
+        total_dp: data.total_dp ?? 0,
+        breakdown: data.breakdown ?? [],
+        dp_future_total: data.dp_future_total ?? 0,
+        dp_future_breakdown: data.dp_future_breakdown ?? [],
+        orders_using_dp: data.orders_using_dp ?? []
+      };
     } else {
-      dpSummary.value = { total_dp: 0, breakdown: [] };
+      dpSummary.value = { total_dp: 0, breakdown: [], dp_future_total: 0, dp_future_breakdown: [], orders_using_dp: [] };
     }
   } catch (e) {
     console.error('fetchDpSummary error', e);
-    dpSummary.value = { total_dp: 0, breakdown: [] };
+    dpSummary.value = { total_dp: 0, breakdown: [], dp_future_total: 0, dp_future_breakdown: [], orders_using_dp: [] };
   } finally {
     loadingDp.value = false;
   }
@@ -536,8 +594,8 @@ async function exportToExcel() {
   });
   rowNum += 1;
 
-  if (totalDp.value > 0) {
-    ws.getCell(rowNum, 1).value = 'DP Reservasi';
+  if ((dpSummary.value.total_dp || 0) > 0) {
+    ws.getCell(rowNum, 1).value = 'DP Reservasi (jadwal hari ini)';
     ws.getCell(rowNum, 1).font = sectionFont;
     rowNum += 1;
     ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
@@ -548,9 +606,43 @@ async function exportToExcel() {
       ws.getCell(rowNum, 3).numFmt = '#,##0';
       rowNum += 1;
     });
-    ws.getRow(rowNum).values = [null, 'Total DP', formatNumberForExcel(totalDp.value)];
+    ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpSummary.value.total_dp)];
     ws.getCell(rowNum, 3).numFmt = '#,##0';
     rowNum += 1;
+    rowNum += 1;
+  }
+
+  if (dpFutureTotal.value > 0) {
+    ws.getCell(rowNum, 1).value = 'DP Diterima Hari Ini (untuk reservasi tanggal mendatang)';
+    ws.getCell(rowNum, 1).font = sectionFont;
+    rowNum += 1;
+    ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
+    styleHeaderRow(ws, rowNum);
+    rowNum += 1;
+    (dpFutureBreakdown.value || []).forEach(row => {
+      ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
+      ws.getCell(rowNum, 3).numFmt = '#,##0';
+      rowNum += 1;
+    });
+    ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpFutureTotal.value)];
+    ws.getCell(rowNum, 3).numFmt = '#,##0';
+    rowNum += 1;
+    rowNum += 1;
+  }
+
+  if (ordersUsingDp.value && ordersUsingDp.value.length > 0) {
+    ws.getCell(rowNum, 1).value = 'Transaksi Hari Ini yang Menggunakan DP';
+    ws.getCell(rowNum, 1).font = sectionFont;
+    rowNum += 1;
+    ws.getRow(rowNum).values = [null, 'No. Bayar', 'Reservasi', 'Total', 'DP', 'Tanggal DP'];
+    styleHeaderRow(ws, rowNum);
+    rowNum += 1;
+    ordersUsingDp.value.forEach(row => {
+      ws.getRow(rowNum).values = [null, row.paid_number || '-', row.reservation_name || '-', formatNumberForExcel(row.grand_total), formatNumberForExcel(row.dp_amount), row.dp_paid_at || '-'];
+      ws.getCell(rowNum, 4).numFmt = '#,##0';
+      ws.getCell(rowNum, 5).numFmt = '#,##0';
+      rowNum += 1;
+    });
     rowNum += 1;
   }
 
