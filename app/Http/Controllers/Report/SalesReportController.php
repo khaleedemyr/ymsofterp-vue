@@ -1653,6 +1653,7 @@ class SalesReportController extends Controller
             ->select([
                 'orders.id',
                 'orders.nomor',
+                'orders.paid_number',
                 'orders.table',
                 'orders.pax',
                 'orders.total',

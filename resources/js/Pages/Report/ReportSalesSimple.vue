@@ -143,7 +143,7 @@
                           <thead>
                             <tr class="bg-blue-200 text-blue-900">
                               <th class="px-3 py-2">No</th>
-                              <th class="px-3 py-2">Nomor Order</th>
+                              <th class="px-3 py-2">Nomor Order / Paid No</th>
                               <th class="px-3 py-2">Table</th>
                               <th class="px-3 py-2">Pax</th>
                               <th class="px-3 py-2">Total</th>
@@ -159,7 +159,7 @@
                           <tbody>
                             <tr v-for="(order, idx) in ordersByDate(tanggal)" :key="order.id" class="bg-white border-b last:border-b-0 hover:bg-blue-100">
                               <td class="px-3 py-2">{{ idx + 1 }}</td>
-                              <td class="px-3 py-2">{{ order.nomor }}</td>
+                              <td class="px-3 py-2">{{ order.nomor }}{{ order.paid_number ? ' | ' + order.paid_number : '' }}</td>
                               <td class="px-3 py-2">{{ order.table }}</td>
                               <td class="px-3 py-2">{{ order.pax }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.total) }}</td>
