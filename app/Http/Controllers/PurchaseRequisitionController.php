@@ -43,15 +43,15 @@ class PurchaseRequisitionController extends Controller
             $dateTo = date('Y-m-t'); // Last day of current month
         }
 
-        // Check if user has role with id '5af56935b011a' (can see all payments)
-        // Check from users table id_role column
+        // Check if user has role with id '5af56935b011a' or id_jabatan=160 (can see all payments)
+        // Check from users table id_role and id_jabatan columns
         $user = auth()->user();
         $canSeeAllPayments = false;
         
         // Check if user can delete purchase requisition
-        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11) || ($user->id_jabatan == 160);
         
-        if ($user && $user->id_role === '5af56935b011a') {
+        if ($user && ($user->id_role === '5af56935b011a' || $user->id_jabatan == 160)) {
             $canSeeAllPayments = true;
         }
 
@@ -1465,7 +1465,7 @@ class PurchaseRequisitionController extends Controller
         }
 
         $user = auth()->user();
-        $hasSpecialRole = $user && ($user->id_role === '5af56935b011a' || $user->division_id == 11);
+        $hasSpecialRole = $user && ($user->id_role === '5af56935b011a' || $user->division_id == 11 || $user->id_jabatan == 160);
         
         // Allow delete for DRAFT and SUBMITTED status (not yet approved/processed)
         // Also allow delete for APPROVED status if user has special role
@@ -1496,7 +1496,7 @@ class PurchaseRequisitionController extends Controller
         }
 
         // For DRAFT and SUBMITTED, check if user is the creator
-        // If user has special role (id_role='5af56935b011a' or division_id=11), allow delete all data without checking creator
+        // If user has special role (id_role='5af56935b011a', division_id=11, or id_jabatan=160), allow delete all data without checking creator
         if (in_array($purchaseRequisition->status, $deletableStatuses) && !$hasSpecialRole && $purchaseRequisition->created_by !== auth()->id()) {
             $errorMessage = 'You can only delete your own purchase requisitions.';
             if ($request->expectsJson() || $request->wantsJson()) {
@@ -1669,8 +1669,8 @@ class PurchaseRequisitionController extends Controller
             
             // Get current approver
             $currentApprover = auth()->user();
-            // Superadmin: user dengan id_role = '5af56935b011a' bisa approve semua
-            $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
+            // Superadmin: user dengan id_role = '5af56935b011a' atau id_jabatan = 160 bisa approve semua
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' || $currentApprover->id_jabatan == 160;
             
             // Get comment from request (for API calls)
             $comment = $request->input('comment');
@@ -1922,8 +1922,8 @@ class PurchaseRequisitionController extends Controller
         try {
             // Get current approver
             $currentApprover = auth()->user();
-            // Superadmin: user dengan id_role = '5af56935b011a' bisa reject semua
-            $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
+            // Superadmin: user dengan id_role = '5af56935b011a' atau id_jabatan = 160 bisa reject semua
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a' || $currentApprover->id_jabatan == 160;
             
             if ($isSuperadmin) {
                 // Superadmin can reject any pending level - reject the next pending level
@@ -2614,8 +2614,8 @@ class PurchaseRequisitionController extends Controller
                 ], 401);
             }
             
-            // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
-            $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+            // Superadmin: user dengan id_role = '5af56935b011a' atau id_jabatan = 160 bisa melihat semua approval
+            $isSuperadmin = $currentUser->id_role === '5af56935b011a' || $currentUser->id_jabatan == 160;
             
             if ($isSuperadmin) {
                 // Superadmin can see all pending approvals
@@ -2746,8 +2746,8 @@ class PurchaseRequisitionController extends Controller
     {
         try {
             $currentUser = auth()->user();
-            // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua
-            $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+            // Superadmin: user dengan id_role = '5af56935b011a' atau id_jabatan = 160 bisa melihat semua
+            $isSuperadmin = $currentUser->id_role === '5af56935b011a' || $currentUser->id_jabatan == 160;
             
             $search = $request->get('search', '');
             $fromDate = $request->get('from_date');
