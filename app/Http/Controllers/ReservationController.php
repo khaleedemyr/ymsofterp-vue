@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -445,6 +446,11 @@ class ReservationController extends Controller
      */
     public function apiDpSummary(Request $request)
     {
+        Log::info('apiDpSummary called', [
+            'date' => $request->date,
+            'outlet_id' => $request->outlet_id,
+            'kode_outlet' => $request->kode_outlet,
+        ]);
         $request->validate([
             'date' => 'required|date',
             'outlet_id' => 'nullable',

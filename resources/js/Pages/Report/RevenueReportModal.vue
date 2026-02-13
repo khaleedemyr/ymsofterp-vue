@@ -251,7 +251,8 @@ import ExcelJS from 'exceljs';
 const props = defineProps({
   tanggal: String,
   orders: Array,
-  outlets: Array
+  outlets: Array,
+  outletFilter: { type: String, default: '' }
 });
 const totalSales = computed(() => {
   return (props.orders || []).reduce((sum, o) => sum + (Number(o.grand_total) || 0), 0);
@@ -459,10 +460,22 @@ function resolveOutletId(kodeOutlet, outlets) {
   const found = outlets.find(o => (o.qr_code || o.kode_outlet) === kodeOutlet);
   return found ? (found.id ?? found.id_outlet) : null;
 }
+function getOrderKodeOutlet(order) {
+  return order?.kode_outlet ?? order?.kodeOutlet ?? null;
+}
 async function fetchDpSummary() {
   if (!props.orders?.length || !props.tanggal) return;
-  // Semua outlet unik dari orders (bukan cuma orders[0]), agar DP dari outlet mana pun ikut
-  const uniqueKodeOutlets = [...new Set((props.orders || []).map(o => o.kode_outlet).filter(Boolean))];
+  // Outlet dari filter report (prioritas) + semua outlet unik dari orders
+  const fromFilter = props.outletFilter ? [props.outletFilter] : [];
+  const fromOrders = [...new Set((props.orders || []).map(o => getOrderKodeOutlet(o)).filter(Boolean))];
+  let uniqueKodeOutlets = [...new Set([...fromFilter, ...fromOrders])];
+  // Fallback: kalau belum ada, pakai outlet dari order pertama (nama_outlet → lookup di outlets)
+  if (!uniqueKodeOutlets.length && props.orders?.length && props.outlets?.length) {
+    const first = props.orders[0];
+    const namaOutlet = first?.nama_outlet ?? first?.namaOutlet;
+    const out = namaOutlet ? props.outlets.find(o => (o.nama_outlet || o.name) === namaOutlet) : null;
+    if (out) uniqueKodeOutlets = [out.qr_code ?? out.id_outlet ?? out.id];
+  }
   if (!uniqueKodeOutlets.length) { loadingDp.value = false; return; }
 
   let outletsList = props.outlets || [];

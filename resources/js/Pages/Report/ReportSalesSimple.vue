@@ -189,7 +189,7 @@
         <EodModal v-if="showEodModal" :summary="selectedEodRow" :show="showEodModal" @close="showEodModal = false" />
         <OrderDetailModal v-if="showOrderDetailModal" :order="selectedOrderDetail" @close="showOrderDetailModal = false" />
         <PerModeModal v-if="showPerModeModal" :tanggal="selectedPerModeTanggal" :orders="ordersByDate(selectedPerModeTanggal)" @close="showPerModeModal = false" />
-        <RevenueReportModal v-if="showRevenueReportModal" :tanggal="selectedRevenueTanggal" :orders="selectedRevenueOrders" :outlets="outlets" @close="showRevenueReportModal = false" />
+        <RevenueReportModal v-if="showRevenueReportModal" :tanggal="selectedRevenueTanggal" :orders="selectedRevenueOrders" :outlets="outlets" :outlet-filter="filters.outlet" @close="showRevenueReportModal = false" />
       </div>
     </div>
   </div>

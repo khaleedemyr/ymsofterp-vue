@@ -1929,6 +1929,7 @@ Route::get('/report-monthly-fb-revenue-performance', function () {
 
 Route::get('/api/report/sales-simple', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesSimple']);
 Route::get('/api/outlet-expenses', [App\Http\Controllers\Report\EngineeringReportController::class, 'apiOutletExpenses']);
+Route::get('/api/reservations/dp-summary', [\App\Http\Controllers\ReservationController::class, 'apiDpSummary']);
 
 Route::get('/api/my-outlet-qr', [\App\Http\Controllers\Report\ReportHelperController::class, 'myOutletQr']);
 
