@@ -447,15 +447,24 @@ class ReservationController extends Controller
     }
 
     /**
-     * Validasi kode DP untuk transaksi POS. GET ?code=XXX&outlet_id=Y
+     * Validasi kode DP untuk transaksi POS.
+     * GET ?code=XXX&outlet_id=Y  atau  ?code=XXX&kode_outlet=ZZZ (kode outlet dari setup.json POS).
      * Return { valid, amount, reservation_id, message }.
      */
     public function apiValidateDpCode(Request $request)
     {
         $code = strtoupper(trim((string) $request->input('code', '')));
         $outletId = $request->input('outlet_id');
-        if ($code === '' || !$outletId) {
-            return response()->json(['valid' => false, 'message' => 'Kode dan outlet wajib'], 400);
+        $kodeOutlet = $request->input('kode_outlet');
+        if ($code === '') {
+            return response()->json(['valid' => false, 'message' => 'Kode wajib'], 400);
+        }
+        if (!$outletId && $kodeOutlet !== null && $kodeOutlet !== '') {
+            $outlet = Outlet::where('qr_code', $kodeOutlet)->first();
+            $outletId = $outlet ? $outlet->id_outlet : null;
+        }
+        if (!$outletId) {
+            return response()->json(['valid' => false, 'message' => 'Outlet wajib (outlet_id atau kode_outlet)'], 400);
         }
         $reservation = Reservation::where('dp_code', $code)
             ->where('outlet_id', $outletId)
