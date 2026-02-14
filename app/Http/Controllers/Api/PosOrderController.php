@@ -232,10 +232,14 @@ class PosOrderController extends Controller
                         }
 
                         $paymentDate = $convertDateTime($payment['created_at'] ?? null);
-                        
+                        // Id payment sama seperti ymsoftpos: VARCHAR(50), short id (base36 + random)
+                        $paymentId = isset($payment['id']) && (string) $payment['id'] !== ''
+                            ? \Illuminate\Support\Str::limit((string) $payment['id'], 50, '')
+                            : strtolower(base_convert((string) time(), 10, 36) . \Illuminate\Support\Str::random(5));
+
                         // Insert order_payment
                         DB::table('order_payment')->insert([
-                            'id' => $payment['id'] ?? null,
+                            'id' => $paymentId,
                             'order_id' => $orderData['id'],
                             'paid_number' => $payment['paid_number'] ?? null,
                             'payment_type' => $payment['payment_type'] ?? null,
@@ -257,7 +261,7 @@ class PosOrderController extends Controller
                             try {
                                 // Check if already exists to avoid duplicate
                                 $existingEntry = BankBook::where('reference_type', 'order_payment')
-                                    ->where('reference_id', $payment['id'] ?? null)
+                                    ->where('reference_id', $paymentId)
                                     ->where('bank_account_id', $bankId)
                                     ->first();
                                 
@@ -292,7 +296,7 @@ class PosOrderController extends Controller
                                         'description' => "Order Payment: {$orderData['nomor']} - {$payment['payment_type']}" . 
                                             ($payment['note'] ? " - {$payment['note']}" : ''),
                                         'reference_type' => 'order_payment',
-                                        'reference_id' => $payment['id'] ?? null,
+                                        'reference_id' => $paymentId,
                                         'balance' => $newBalance,
                                     ]);
                                     
@@ -303,7 +307,7 @@ class PosOrderController extends Controller
                                 // Log error but don't fail the order sync
                                 Log::warning('Failed to create bank book entry for order payment', [
                                     'order_id' => $orderData['id'],
-                                    'payment_id' => $payment['id'] ?? null,
+                                    'payment_id' => $paymentId,
                                     'bank_id' => $bankId,
                                     'error' => $e->getMessage()
                                 ]);
