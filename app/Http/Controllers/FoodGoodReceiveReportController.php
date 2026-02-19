@@ -270,4 +270,197 @@ class FoodGoodReceiveReportController extends Controller
         // Return Excel export using the Responsable interface
         return (new \App\Exports\FoodGoodReceiveReportExport(collect($exportData)))->toResponse($request);
     }
+
+    /**
+     * Report DO yang belum di GR by outlet
+     */
+    public function deliveryOrdersNotReceived(Request $request)
+    {
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('outlet_food_good_receives as gr', function($join) {
+                $join->on('gr.delivery_order_id', '=', 'do.id')
+                    ->whereNull('gr.deleted_at');
+            })
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->whereNull('gr.id') // DO yang belum di GR
+            ->select(
+                'do.id',
+                'do.number as do_number',
+                'do.created_at as do_date',
+                'o.id_outlet as outlet_id',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                DB::raw('COALESCE(wd.name, "Perishable") as division_name'),
+                DB::raw('DATEDIFF(NOW(), DATE(do.created_at)) as days_not_received'),
+                'fo.fo_mode',
+                'u.nama_lengkap as created_by'
+            );
+
+        // Filter berdasarkan tanggal DO
+        if ($request->filled('from_date')) {
+            $query->whereDate('do.created_at', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('do.created_at', '<=', $request->to_date);
+        }
+
+        // Filter berdasarkan outlet
+        if ($request->filled('outlet_id')) {
+            $query->where('o.id_outlet', $request->outlet_id);
+        }
+
+        // Filter berdasarkan warehouse outlet
+        if ($request->filled('warehouse_outlet_id')) {
+            $query->where('fo.warehouse_outlet_id', $request->warehouse_outlet_id);
+        }
+
+        // Filter minimal hari belum GR
+        if ($request->filled('min_days')) {
+            $query->havingRaw('DATEDIFF(NOW(), DATE(do.created_at)) >= ?', [$request->min_days]);
+        }
+
+        // Search
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('do.number', 'like', "%$search%")
+                    ->orWhere('o.nama_outlet', 'like', "%$search%")
+                    ->orWhere('wo.name', 'like', "%$search%");
+            });
+        }
+
+        $perPage = $request->get('per_page', 20);
+        $doResults = $query->orderBy('do.created_at', 'asc')
+            ->paginate($perPage)
+            ->appends($request->all());
+
+        // Get summary statistics
+        $summaryQuery = DB::table('delivery_orders as do')
+            ->leftJoin('outlet_food_good_receives as gr', function($join) {
+                $join->on('gr.delivery_order_id', '=', 'do.id')
+                    ->whereNull('gr.deleted_at');
+            })
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->whereNull('gr.id');
+
+        // Apply same filters to summary
+        if ($request->filled('from_date')) {
+            $summaryQuery->whereDate('do.created_at', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $summaryQuery->whereDate('do.created_at', '<=', $request->to_date);
+        }
+        if ($request->filled('outlet_id')) {
+            $summaryQuery->where('fo.id_outlet', $request->outlet_id);
+        }
+        if ($request->filled('warehouse_outlet_id')) {
+            $summaryQuery->where('fo.warehouse_outlet_id', $request->warehouse_outlet_id);
+        }
+
+        $summary = $summaryQuery->select(
+            DB::raw('COUNT(DISTINCT do.id) as total_do_not_received'),
+            DB::raw('MIN(DATEDIFF(NOW(), DATE(do.created_at))) as min_days'),
+            DB::raw('MAX(DATEDIFF(NOW(), DATE(do.created_at))) as max_days'),
+            DB::raw('AVG(DATEDIFF(NOW(), DATE(do.created_at))) as avg_days')
+        )->first();
+
+        // Get outlet list for filter
+        $outlets = DB::table('tbl_data_outlet')
+            ->select('id_outlet as id', 'nama_outlet as name')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        // Get warehouse outlet list
+        $warehouse_outlets = DB::table('warehouse_outlets')
+            ->select('id', 'name', 'outlet_id')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('FoodGoodReceive/DeliveryOrdersNotReceived', [
+            'results' => $doResults,
+            'summary' => $summary,
+            'outlets' => $outlets,
+            'warehouse_outlets' => $warehouse_outlets,
+            'filters' => $request->only(['from_date', 'to_date', 'outlet_id', 'warehouse_outlet_id', 'min_days', 'search', 'per_page']),
+        ]);
+    }
+
+    /**
+     * Export DO yang belum GR ke Excel
+     */
+    public function exportDeliveryOrdersNotReceived(Request $request)
+    {
+        $query = DB::table('delivery_orders as do')
+            ->leftJoin('outlet_food_good_receives as gr', function($join) {
+                $join->on('gr.delivery_order_id', '=', 'do.id')
+                    ->whereNull('gr.deleted_at');
+            })
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->whereNull('gr.id')
+            ->select(
+                'do.number as do_number',
+                'do.created_at as do_date',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                DB::raw('COALESCE(wd.name, "Perishable") as division_name'),
+                DB::raw('DATEDIFF(NOW(), DATE(do.created_at)) as days_not_received'),
+                'fo.fo_mode',
+                'u.nama_lengkap as created_by'
+            );
+
+        // Apply filters
+        if ($request->filled('from_date')) {
+            $query->whereDate('do.created_at', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('do.created_at', '<=', $request->to_date);
+        }
+        if ($request->filled('outlet_id')) {
+            $query->where('o.id_outlet', $request->outlet_id);
+        }
+        if ($request->filled('warehouse_outlet_id')) {
+            $query->where('fo.warehouse_outlet_id', $request->warehouse_outlet_id);
+        }
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('do.number', 'like', "%$search%")
+                    ->orWhere('o.nama_outlet', 'like', "%$search%")
+                    ->orWhere('wo.name', 'like', "%$search%");
+            });
+        }
+
+        $doResults = $query->orderBy('do.created_at', 'asc')->get();
+
+        // Prepare export data
+        $exportData = [];
+        foreach ($doResults as $do) {
+            $exportData[] = [
+                'do_number' => $do->do_number,
+                'do_date' => $do->do_date,
+                'outlet_name' => $do->outlet_name,
+                'warehouse_outlet_name' => $do->warehouse_outlet_name,
+                'division_name' => $do->division_name,
+                'days_not_received' => $do->days_not_received,
+                'fo_mode' => $do->fo_mode,
+                'created_by' => $do->created_by,
+            ];
+        }
+
+        // Return Excel export
+        return (new \App\Exports\DeliveryOrdersNotReceivedExport(collect($exportData)))->toResponse($request);
+    }
 }

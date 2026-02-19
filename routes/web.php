@@ -679,6 +679,10 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/food-good-receive-report', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'index'])->name('food-good-receive.report');
     Route::get('/food-good-receive-report/export', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'export'])->name('food-good-receive.report.export');
 
+    // Delivery Orders Not Received Report routes
+    Route::get('/delivery-orders-not-received', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'deliveryOrdersNotReceived'])->name('delivery-orders-not-received.report');
+    Route::get('/delivery-orders-not-received/export', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'exportDeliveryOrdersNotReceived'])->name('delivery-orders-not-received.export');
+
     // Food Payment
     Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');
     Route::get('/food-payments/create', [\App\Http\Controllers\FoodPaymentController::class, 'create'])->name('food-payments.create');

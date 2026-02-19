@@ -6,6 +6,11 @@
           <i class="fa-solid fa-truck text-blue-500"></i> Good Receive Outlet
         </h1>
         <div class="flex gap-2">
+          <template v-if="props.user_id_outlet === 1">
+            <Link href="/delivery-orders-not-received" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold inline-flex items-center gap-2">
+              <i class="fa-solid fa-chart-bar"></i> Report DO Belum GR
+            </Link>
+          </template>
           <button @click="goCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Baru
           </button>
@@ -125,7 +130,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { router } from '@inertiajs/vue3'
+import { router, Link } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
 import { ref, computed } from 'vue'
 
