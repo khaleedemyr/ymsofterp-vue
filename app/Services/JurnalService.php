@@ -241,6 +241,17 @@ class JurnalService
                 // Determine outlet_id for this jurnal line: prefer payment part outlet_id
                 $jurnalOutletId = $p->outlet_id ?? null;
 
+                // If still null, try direct linked PR outlet
+                if (empty($jurnalOutletId)) {
+                    try {
+                        if ($payment->purchaseRequisition && isset($payment->purchaseRequisition->outlet_id)) {
+                            $jurnalOutletId = $payment->purchaseRequisition->outlet_id;
+                        }
+                    } catch (\Exception $e) {
+                        // ignore
+                    }
+                }
+
                 // If still null, try purchaseOrderOps -> source PR -> outlet
                 if (empty($jurnalOutletId)) {
                     try {
@@ -267,10 +278,14 @@ class JurnalService
                     }
                 }
 
-                // If still null and payment type is cash, throw to force user to choose outlet
-                if (empty($jurnalOutletId) && in_array(strtolower($p->payment_type), ['cash', 'tunai'], true)) {
-                    Log::warning('NonFoodPayment missing outlet for cash payment, cannot create jurnal', ['payment_id' => $payment->id]);
-                    throw new \Exception('Outlet belum tersedia untuk jurnal. Untuk pembayaran tunai, silakan pilih outlet pada payment sebelum menandai sebagai dibayar.');
+                // If still null, fallback to default outlet (id_outlet = 1)
+                if (empty($jurnalOutletId)) {
+                    $jurnalOutletId = 1;
+                    Log::warning('NonFoodPayment outlet not found, fallback to default outlet', [
+                        'payment_id' => $payment->id,
+                        'fallback_outlet_id' => $jurnalOutletId,
+                        'payment_type' => $p->payment_type ?? null,
+                    ]);
                 }
 
                 $jurnal = Jurnal::create([
