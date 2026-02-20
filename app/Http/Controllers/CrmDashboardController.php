@@ -21,6 +21,7 @@ class CrmDashboardController extends Controller
         try {
         $startDate = $request->get('start_date');
         $endDate = $request->get('end_date');
+        $lazyLoad = $request->boolean('lazy_load', false);
         
             // Set max execution time for this request
             set_time_limit(120);
@@ -38,23 +39,123 @@ class CrmDashboardController extends Controller
             return $this->getTierDistribution();
         });
         
-        // Simplified initial load - heavy data loaded via AJAX
-        $spendingTrend = [];
-        $pointActivityTrend = [];
+        // Simplified initial load - heavy data loaded via lazy reload
         $latestMembers = $this->getLatestMembers();
         $latestPointTransactions = $this->getLatestPointTransactions();
+
+            if (!$lazyLoad) {
+                $activeChallenges = Cache::remember('crm_active_challenges', 300, function () {
+                    return $this->getActiveChallenges();
+                });
+
+                $activeRewards = Cache::remember('crm_active_rewards', 300, function () {
+                    return $this->getActiveRewards();
+                });
+
+                $genderDistribution = Cache::remember('crm_gender_distribution', 300, function () {
+                    return $this->getGenderDistribution();
+                });
+
+                $occupationDistribution = Cache::remember('crm_occupation_distribution', 300, function () {
+                    return $this->getOccupationDistribution();
+                });
+
+                $ageDistribution = Cache::remember('crm_age_distribution', 300, function () {
+                    return $this->getAgeDistribution();
+                });
+
+                $latestActivities = Cache::remember('crm_latest_activities', 60, function () {
+                    return $this->getLatestActivities();
+                });
+
+                return Inertia::render('Crm/Dashboard', [
+                    'stats' => $stats,
+                    'memberGrowth' => $memberGrowth,
+                    'tierDistribution' => $tierDistribution,
+                    'genderDistribution' => $genderDistribution,
+                    'occupationDistribution' => $occupationDistribution,
+                    'ageDistribution' => $ageDistribution,
+                    'latestMembers' => $latestMembers,
+                    'latestPointTransactions' => $latestPointTransactions,
+                    'latestActivities' => $latestActivities,
+                    'activeChallenges' => $activeChallenges,
+                    'activeRewards' => $activeRewards,
+                    'spendingTrend' => [],
+                    'pointActivityTrend' => [],
+                    'purchasingPowerByAge' => [],
+                    'purchasingPowerByAgeThisMonth' => [],
+                    'topSpenders' => [],
+                    'topSpendersDateRange' => null,
+                    'mostActiveMembers' => [],
+                    'mostActiveMembersDateRange' => null,
+                    'top10Points' => [],
+                    'top10VoucherOwners' => [],
+                    'top10PointRedemptions' => [],
+                    'memberFavouritePicks' => (object)['food' => [], 'beverages' => []],
+                    'activeVouchers' => [],
+                    'pointStats' => [],
+                    'engagementMetrics' => [],
+                    'memberSegmentation' => (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0],
+                    'memberLifetimeValue' => (object)['average' => 0, 'averageFormatted' => 'Rp 0', 'total' => 0, 'totalFormatted' => 'Rp 0', 'byTier' => (object)[]],
+                    'churnAnalysis' => (object)[],
+                    'conversionFunnel' => (object)['registered' => 0, 'emailVerified' => 0, 'emailVerificationRate' => 0, 'firstLogin' => 0, 'loginRate' => 0, 'firstTransaction' => 0, 'transactionRate' => 0, 'repeatCustomers' => 0, 'repeatRate' => 0],
+                    'regionalBreakdown' => (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']],
+                    'comparisonData' => (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]],
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                    ],
+                ]);
+            }
             
-            // Heavy data will be loaded via AJAX - return empty arrays for initial load
-            $topSpenders = [];
-            $topSpendersDateRange = null;
-            $mostActiveMembers = [];
-            $mostActiveMembersDateRange = null;
-            $top10Points = [];
-            $top10VoucherOwners = [];
-            $top10PointRedemptions = [];
-            $pointStats = [];
-            $memberFavouritePicks = [];
-            $activeVouchers = [];
+            $cacheSuffix = md5(($startDate ?? '') . '|' . ($endDate ?? ''));
+            $monthStart = $startDate ?: Carbon::now()->startOfMonth()->format('Y-m-d');
+            $monthEnd = $endDate ?: Carbon::now()->endOfMonth()->format('Y-m-d');
+
+            // Fast datasets: keep available on initial render
+            $spendingTrend = Cache::remember("crm_spending_trend_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                return $this->getSpendingTrend($startDate, $endDate);
+            });
+            $pointActivityTrend = Cache::remember("crm_point_activity_trend_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                return $this->getPointActivityTrend($startDate, $endDate);
+            });
+            $topSpendersPayload = Cache::remember('crm_top_spenders', 300, function () {
+                return $this->getTopSpenders();
+            });
+            $topSpenders = $topSpendersPayload['data'] ?? [];
+            $topSpendersDateRange = $topSpendersPayload['dateRange'] ?? null;
+
+            $mostActiveMembersPayload = Cache::remember('crm_most_active_members', 300, function () {
+                return $this->getMostActiveMembers();
+            });
+            $mostActiveMembers = $mostActiveMembersPayload['data'] ?? [];
+            $mostActiveMembersDateRange = $mostActiveMembersPayload['dateRange'] ?? null;
+
+            $top10Points = Cache::remember('crm_top10_points', 300, function () {
+                return $this->getTop10Points();
+            });
+
+            $top10VoucherOwners = Cache::remember('crm_top10_voucher_owners', 300, function () {
+                return $this->getTop10VoucherOwners();
+            });
+
+            $top10PointRedemptions = Cache::remember('crm_top10_point_redemptions', 300, function () {
+                return $this->getTop10PointRedemptions();
+            });
+            $memberFavouritePicks = Cache::remember('crm_member_favourite_picks', 300, function () {
+                return $this->getMemberFavouritePicks();
+            });
+            $activeVouchers = Cache::remember('crm_active_vouchers_v2', 300, function () {
+                return $this->getActiveVouchers();
+            });
+
+            $pointStats = Cache::remember("crm_point_stats_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                return $this->getPointStats($startDate, $endDate);
+            });
+
+            $engagementMetrics = Cache::remember('crm_engagement_metrics', 300, function () {
+                return $this->getEngagementMetrics();
+            });
             
             // Lightweight cached data
             $activeChallenges = Cache::remember('crm_active_challenges', 300, function () {
@@ -81,12 +182,10 @@ class CrmDashboardController extends Controller
                 return $this->getLatestActivities();
             });
             
-            // Skip heavy queries on initial load - will be loaded via AJAX
+            // Heavy datasets: load only when lazy request asks for those props
             $purchasingPowerByAge = [];
             $purchasingPowerByAgeThisMonth = [];
-            $memberSegmentation = [];
-            
-            // Skip heavy queries on initial load
+            $memberSegmentation = (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0];
             $memberLifetimeValue = (object)[
                 'average' => 0,
                 'averageFormatted' => 'Rp 0',
@@ -94,7 +193,6 @@ class CrmDashboardController extends Controller
                 'totalFormatted' => 'Rp 0',
                 'byTier' => (object)[],
             ];
-            
             $churnAnalysis = [];
             $conversionFunnel = (object)[
                 'registered' => 0,
@@ -107,13 +205,68 @@ class CrmDashboardController extends Controller
                 'repeatCustomers' => 0,
                 'repeatRate' => 0,
             ];
-            
-            $comparisonData = [];
-            $regionalBreakdown = [];
-            
-            // Skip other heavy queries for now - load only critical data
-            // These can be loaded via AJAX later if needed
-            $engagementMetrics = [];
+            $regionalBreakdown = (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']];
+            $comparisonData = (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]];
+
+            if ($lazyLoad) {
+                $requestedProps = collect(explode(',', (string) $request->header('X-Inertia-Partial-Data', '')))
+                    ->map(fn($item) => trim($item))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                $shouldLoad = function (string $prop) use ($requestedProps): bool {
+                    return empty($requestedProps) || in_array($prop, $requestedProps, true);
+                };
+
+                if ($shouldLoad('purchasingPowerByAge')) {
+                    $purchasingPowerByAge = Cache::remember("crm_purchasing_power_by_age_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                        return $this->getPurchasingPowerByAge($startDate, $endDate);
+                    });
+                }
+
+                if ($shouldLoad('purchasingPowerByAgeThisMonth')) {
+                    $purchasingPowerByAgeThisMonth = Cache::remember("crm_purchasing_power_by_age_month_{$cacheSuffix}", 300, function () use ($monthStart, $monthEnd) {
+                        return $this->getPurchasingPowerByAgeThisMonth($monthStart, $monthEnd);
+                    });
+                }
+
+                if ($shouldLoad('memberSegmentation')) {
+                    $memberSegmentation = Cache::remember('crm_member_segmentation', 300, function () {
+                        return $this->getMemberSegmentation();
+                    });
+                }
+
+                if ($shouldLoad('memberLifetimeValue')) {
+                    $memberLifetimeValue = Cache::remember('crm_member_lifetime_value', 300, function () {
+                        return $this->getMemberLifetimeValue();
+                    });
+                }
+
+                if ($shouldLoad('churnAnalysis')) {
+                    $churnAnalysis = Cache::remember('crm_churn_analysis', 300, function () {
+                        return $this->getChurnAnalysis();
+                    });
+                }
+
+                if ($shouldLoad('conversionFunnel')) {
+                    $conversionFunnel = Cache::remember('crm_conversion_funnel', 300, function () {
+                        return $this->getConversionFunnel();
+                    });
+                }
+
+                if ($shouldLoad('regionalBreakdown')) {
+                    $regionalBreakdown = Cache::remember('crm_regional_breakdown', 300, function () {
+                        return $this->getRegionalBreakdown();
+                    });
+                }
+
+                if ($shouldLoad('comparisonData')) {
+                    $comparisonData = Cache::remember("crm_comparison_data_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                        return $this->getComparisonData($startDate, $endDate);
+                    });
+                }
+            }
             
             // Simplified response - only critical data for initial page load
             $responseData = [
@@ -128,28 +281,27 @@ class CrmDashboardController extends Controller
                 'latestActivities' => $latestActivities,
                 'activeChallenges' => $activeChallenges,
                 'activeRewards' => $activeRewards,
-                // Empty arrays for heavy data - will be loaded via AJAX
-                'spendingTrend' => [],
-                'pointActivityTrend' => [],
-                'purchasingPowerByAge' => [],
-                'purchasingPowerByAgeThisMonth' => [],
-                'topSpenders' => [],
-                'topSpendersDateRange' => null,
-                'mostActiveMembers' => [],
-                'mostActiveMembersDateRange' => null,
-                'top10Points' => [],
-                'top10VoucherOwners' => [],
-                'top10PointRedemptions' => [],
-                'memberFavouritePicks' => (object)['food' => [], 'beverages' => []],
-                'activeVouchers' => [],
-                'pointStats' => [],
-                'engagementMetrics' => [],
-                'memberSegmentation' => (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0],
+                'spendingTrend' => $spendingTrend,
+                'pointActivityTrend' => $pointActivityTrend,
+                'purchasingPowerByAge' => $purchasingPowerByAge,
+                'purchasingPowerByAgeThisMonth' => $purchasingPowerByAgeThisMonth,
+                'topSpenders' => $topSpenders,
+                'topSpendersDateRange' => $topSpendersDateRange,
+                'mostActiveMembers' => $mostActiveMembers,
+                'mostActiveMembersDateRange' => $mostActiveMembersDateRange,
+                'top10Points' => $top10Points,
+                'top10VoucherOwners' => $top10VoucherOwners,
+                'top10PointRedemptions' => $top10PointRedemptions,
+                'memberFavouritePicks' => $memberFavouritePicks,
+                'activeVouchers' => $activeVouchers,
+                'pointStats' => $pointStats,
+                'engagementMetrics' => $engagementMetrics,
+                'memberSegmentation' => $memberSegmentation,
                 'memberLifetimeValue' => $memberLifetimeValue,
-                'churnAnalysis' => (object)[],
+                'churnAnalysis' => $churnAnalysis,
                 'conversionFunnel' => $conversionFunnel,
-                'regionalBreakdown' => (object)['currentMonth' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last60Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => ''], 'last90Days' => ['outlets' => [], 'regions' => [], 'period' => '', 'startDate' => '', 'endDate' => '']],
-                'comparisonData' => (object)['monthOverMonth' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]], 'yearOverYear' => ['members' => ['current' => 0, 'previous' => 0, 'growth' => 0], 'spending' => ['current' => 0, 'currentFormatted' => 'Rp 0', 'previous' => 0, 'previousFormatted' => 'Rp 0', 'growth' => 0]]],
+                'regionalBreakdown' => $regionalBreakdown,
+                'comparisonData' => $comparisonData,
             'filters' => [
                 'start_date' => $startDate,
                 'end_date' => $endDate,
@@ -665,15 +817,14 @@ class CrmDashboardController extends Controller
         // Optimized: Use subquery to limit orders first, then join
         $dbJustusName = DB::connection('db_justus')->getDatabaseName();
         
-        // Build date filter for orders subquery - Default to current year (year to date)
+        // Build date filter for orders subquery - Default to last 90 days for performance
         $orderDateFilter = '';
         if ($startDate && $endDate) {
             $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
         } else {
-            // Default to current year (year to date)
-            $yearStart = Carbon::now()->startOfYear()->format('Y-m-d 00:00:00');
-            $yearEnd = Carbon::now()->format('Y-m-d 23:59:59');
-            $orderDateFilter = "AND o.created_at BETWEEN '{$yearStart}' AND '{$yearEnd}'";
+            $rangeStart = Carbon::now()->subDays(90)->startOfDay()->format('Y-m-d H:i:s');
+            $rangeEnd = Carbon::now()->endOfDay()->format('Y-m-d H:i:s');
+            $orderDateFilter = "AND o.created_at BETWEEN '{$rangeStart}' AND '{$rangeEnd}'";
         }
         
         // Optimized query: First aggregate orders by member_id, then join with members

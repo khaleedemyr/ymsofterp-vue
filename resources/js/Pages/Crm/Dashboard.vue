@@ -153,6 +153,59 @@ const dateFilters = ref({
   end_date: props.filters?.end_date || '',
 });
 
+const isLazyLoading = ref(false);
+
+const reloadPartial = (only) => new Promise((resolve) => {
+  router.reload({
+    data: {
+      start_date: dateFilters.value.start_date,
+      end_date: dateFilters.value.end_date,
+      lazy_load: 1,
+    },
+    only,
+    preserveState: true,
+    preserveScroll: true,
+    replace: true,
+    onFinish: resolve,
+  });
+});
+
+const loadLazyDashboardData = async () => {
+  if (isLazyLoading.value) return;
+  isLazyLoading.value = true;
+
+  try {
+    try {
+      await reloadPartial([
+        'regionalBreakdown',
+        'comparisonData',
+      ]);
+    } catch (error) {
+      console.error('CRM lazy load phase 1 failed:', error);
+    }
+
+    try {
+      await reloadPartial([
+        'conversionFunnel',
+        'memberLifetimeValue',
+      ]);
+    } catch (error) {
+      console.error('CRM lazy load phase 2 failed:', error);
+    }
+
+    try {
+      await reloadPartial([
+        'purchasingPowerByAge',
+        'purchasingPowerByAgeThisMonth',
+      ]);
+    } catch (error) {
+      console.error('CRM lazy load phase 3 failed:', error);
+    }
+  } finally {
+    isLazyLoading.value = false;
+  }
+};
+
 // Contribution by outlet modal
 const showContributionModal = ref(false);
 const contributionModalPeriod = ref('today');
@@ -1213,6 +1266,10 @@ function getAgeGroupColor(ageGroup) {
   };
   return colors[ageGroup] || '#9ca3af';
 }
+
+onMounted(() => {
+  loadLazyDashboardData();
+});
 </script>
 
 <template>
@@ -2548,144 +2605,6 @@ function getAgeGroupColor(ageGroup) {
           </div>
         </div>
                 
-        <!-- Member Segmentation -->
-        <div class="mb-8">
-          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
-            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
-              <i class="fa-solid fa-users-slash text-purple-500"></i>
-              Segmentasi Member
-            </h3>
-            
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <!-- Chart Section -->
-              <div>
-                <div class="h-64 mb-4">
-                  <VueApexCharts
-                    v-if="segmentationChartSeries && segmentationChartSeries.length > 0 && segmentationChartSeries.some(s => s > 0)"
-                    type="donut"
-                    height="300"
-                    :options="segmentationChartOptions"
-                    :series="segmentationChartSeries"
-                  />
-                  <div v-else class="flex items-center justify-center h-full text-gray-400">
-                    <div class="text-center">
-                      <i class="fa-solid fa-chart-pie text-4xl mb-2"></i>
-                      <p>Tidak ada data</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Cards Section -->
-              <div class="space-y-3">
-                <div class="p-4 bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 hover:shadow-md transition-all">
-                  <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center text-white">
-                      <i class="fa-solid fa-crown"></i>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-600 mb-1">VIP</div>
-                      <div class="text-xl font-bold text-purple-600">{{ formatNumber(props.memberSegmentation?.vip || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-purple-100">
-                    Member aktif dengan tier Loyal/Elite dan memiliki point > 1.000
-                  </div>
-                </div>
-                
-                <div class="p-4 bg-gradient-to-r from-green-50 to-white rounded-xl border border-green-100 hover:shadow-md transition-all">
-                  <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center text-white">
-                      <i class="fa-solid fa-check-circle"></i>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-600 mb-1">Active</div>
-                      <div class="text-xl font-bold text-green-600">{{ formatNumber(props.memberSegmentation?.active || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-green-100">
-                    Member aktif yang melakukan transaksi point dalam 30 hari terakhir
-                  </div>
-                </div>
-                
-                <div class="p-4 bg-gradient-to-r from-blue-50 to-white rounded-xl border border-blue-100 hover:shadow-md transition-all">
-                  <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center text-white">
-                      <i class="fa-solid fa-user-plus"></i>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-600 mb-1">New</div>
-                      <div class="text-xl font-bold text-blue-600">{{ formatNumber(props.memberSegmentation?.new || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-blue-100">
-                    Member yang baru mendaftar dalam 30 hari terakhir
-                  </div>
-                </div>
-                
-                <div class="p-4 bg-gradient-to-r from-orange-50 to-white rounded-xl border border-orange-100 hover:shadow-md transition-all">
-                  <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 rounded-lg bg-orange-500 flex items-center justify-center text-white">
-                      <i class="fa-solid fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-600 mb-1">At Risk</div>
-                      <div class="text-xl font-bold text-orange-600">{{ formatNumber(props.memberSegmentation?.atRisk || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-orange-100">
-                    Member aktif dengan point ≤ 100 dan tidak login dalam 30 hari terakhir
-                  </div>
-                </div>
-                
-                <div class="p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:shadow-md transition-all">
-                  <div class="flex items-center gap-3 mb-2">
-                    <div class="w-10 h-10 rounded-lg bg-gray-500 flex items-center justify-center text-white">
-                      <i class="fa-solid fa-moon"></i>
-                    </div>
-                    <div class="flex-1">
-                      <div class="text-xs text-gray-600 mb-1">Dormant</div>
-                      <div class="text-xl font-bold text-gray-600">{{ formatNumber(props.memberSegmentation?.dormant || 0) }}</div>
-                    </div>
-                  </div>
-                  <div class="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
-                    Member aktif yang tidak login dalam 90 hari terakhir
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Churn Analysis -->
-        <div class="mb-8">
-          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
-            <div class="flex items-center justify-between mb-6">
-              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fa-solid fa-user-xmark text-red-500"></i>
-                Churn Analysis
-              </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div class="p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200">
-                <div class="text-sm font-medium text-red-700 mb-1">Churned Members</div>
-                <div class="text-3xl font-bold text-red-800">{{ formatNumber(props.churnAnalysis?.churned || 0) }}</div>
-                <div class="text-xs text-red-600 mt-1">No activity in last 90 days</div>
-              </div>
-              <div class="p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200">
-                <div class="text-sm font-medium text-orange-700 mb-1">At Risk of Churn</div>
-                <div class="text-2xl font-bold text-orange-800">{{ formatNumber(props.churnAnalysis?.atRiskChurn || 0) }}</div>
-                <div class="text-xs text-orange-600 mt-1">No activity in last 30-60 days</div>
-              </div>
-              <div class="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200">
-                <div class="text-sm font-medium text-green-700 mb-1">Retention Rate</div>
-                <div class="text-3xl font-bold text-green-800">{{ props.churnAnalysis?.retentionRate || 0 }}%</div>
-                <div class="text-xs text-green-600 mt-1">{{ formatNumber(props.churnAnalysis?.activeLast30Days || 0) }} / {{ formatNumber(props.churnAnalysis?.totalActive || 0) }} active</div>
-              </div>
-            </div>
-          </div>
-        </div>
-          
         <!-- Comparison Data (MoM & YoY) -->
         <div class="mb-8">
           <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
