@@ -826,6 +826,7 @@ Route::get('/outlet-stock-report/export', [\App\Http\Controllers\OutletStockRepo
 Route::get('/cost-report', [\App\Http\Controllers\CostReportController::class, 'index'])->name('cost-report.index');
 Route::get('/cost-report/tab-data', [\App\Http\Controllers\CostReportController::class, 'tabData'])->name('cost-report.tab-data');
 Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
+Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportController::class, 'clearCache'])->name('cost-report.clear-cache');
 
 Route::get('/internal-use-waste-report', [\App\Http\Controllers\InternalUseWasteReportController::class, 'index'])->name('internal-use-waste-report.index');
 Route::get('/internal-use-waste-report/export', [\App\Http\Controllers\InternalUseWasteReportController::class, 'export'])->name('internal-use-waste-report.export');

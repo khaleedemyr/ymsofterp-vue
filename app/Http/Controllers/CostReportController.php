@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\CostReportExport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -96,13 +97,17 @@ class CostReportController extends Controller
             ->get();
 
         if ($tab === 'cost_inventory') {
-            $reportRows = $this->buildCostInventoryRows(
-                $outlets,
-                $bulanSebelumnya,
-                $tanggalAkhirBulanSebelumnya,
-                $tanggal1BulanIni,
-                $tanggalAwalBulan,
-                $tanggalAkhirBulan
+            $reportRows = Cache::remember(
+                $this->getReportRowsCacheKey($bulan),
+                now()->addMinutes(10),
+                fn () => $this->buildCostInventoryRows(
+                    $outlets,
+                    $bulanSebelumnya,
+                    $tanggalAkhirBulanSebelumnya,
+                    $tanggal1BulanIni,
+                    $tanggalAwalBulan,
+                    $tanggalAkhirBulan
+                )
             );
 
             return response()->json([
@@ -112,13 +117,17 @@ class CostReportController extends Controller
             ]);
         }
 
-        $reportRows = $this->buildCostInventoryRows(
-            $outlets,
-            $bulanSebelumnya,
-            $tanggalAkhirBulanSebelumnya,
-            $tanggal1BulanIni,
-            $tanggalAwalBulan,
-            $tanggalAkhirBulan
+        $reportRows = Cache::remember(
+            $this->getReportRowsCacheKey($bulan),
+            now()->addMinutes(10),
+            fn () => $this->buildCostInventoryRows(
+                $outlets,
+                $bulanSebelumnya,
+                $tanggalAkhirBulanSebelumnya,
+                $tanggal1BulanIni,
+                $tanggalAwalBulan,
+                $tanggalAkhirBulan
+            )
         );
 
         if ($tab === 'cogs') {
@@ -140,38 +149,72 @@ class CostReportController extends Controller
         ]);
     }
 
+    /**
+     * Clear cached Cost Report rows for selected month.
+     */
+    public function clearCache(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+        ]);
+
+        $bulan = $validated['bulan'];
+        Cache::forget($this->getReportRowsCacheKey($bulan));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cache cost report berhasil dibersihkan.',
+            'bulan' => $bulan,
+        ]);
+    }
+
+    private function getReportRowsCacheKey(string $bulan): string
+    {
+        return 'cost_report:report_rows:' . $bulan;
+    }
+
     private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
     {
         $reportRows = [];
+        $outletIds = collect($outlets)->pluck('id_outlet')->map(fn ($id) => (int) $id)->all();
+
+        $warehouseOutlets = DB::table('warehouse_outlets')
+            ->whereIn('outlet_id', $outletIds)
+            ->where('status', 'active')
+            ->select('id', 'outlet_id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $warehouseOutletIds = $warehouseOutlets->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $stockRows = $this->loadOutletWarehouseStockRows($outletIds, $warehouseOutletIds);
+        $beginMacByWarehouse = $this->computeBeginInventoryTotalMacByWarehouse(
+            $stockRows,
+            $outletIds,
+            $warehouseOutletIds,
+            $bulanSebelumnya,
+            $tanggalAkhirBulanSebelumnya,
+            $tanggal1BulanIni
+        );
+        $endingMacByWarehouse = $this->computeEndingInventoryTotalMacByWarehouse(
+            $stockRows,
+            $outletIds,
+            $warehouseOutletIds,
+            $tanggalAkhirBulan
+        );
+
+        $warehouseIdsByOutlet = [];
+        foreach ($warehouseOutlets as $warehouseOutlet) {
+            $warehouseIdsByOutlet[(int) $warehouseOutlet->outlet_id][] = (int) $warehouseOutlet->id;
+        }
 
         foreach ($outlets as $outlet) {
             $outletId = $outlet->id_outlet;
-            $warehouseOutlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $outletId)
-                ->where('status', 'active')
-                ->select('id', 'name')
-                ->orderBy('name')
-                ->get();
-
             $totalBeginMacOutlet = 0;
             $totalEndingMacOutlet = 0;
 
-            foreach ($warehouseOutlets as $wo) {
-                $warehouseOutletId = $wo->id;
-                $totalBeginMacOutlet += $this->computeBeginInventoryTotalMac(
-                    $outletId,
-                    $warehouseOutletId,
-                    $bulanSebelumnya,
-                    $tanggalAkhirBulanSebelumnya,
-                    $tanggal1BulanIni
-                );
-
-                $totalEndingMacOutlet += $this->computeEndingInventoryTotalMac(
-                    $outletId,
-                    $warehouseOutletId,
-                    $tanggalAwalBulan,
-                    $tanggalAkhirBulan
-                );
+            foreach (($warehouseIdsByOutlet[$outletId] ?? []) as $warehouseOutletId) {
+                $totalBeginMacOutlet += (float) ($beginMacByWarehouse[$warehouseOutletId] ?? 0);
+                $totalEndingMacOutlet += (float) ($endingMacByWarehouse[$warehouseOutletId] ?? 0);
             }
 
             $reportRows[] = [
@@ -215,6 +258,198 @@ class CostReportController extends Controller
         unset($row);
 
         return $reportRows;
+    }
+
+    private function loadOutletWarehouseStockRows(array $outletIds, array $warehouseOutletIds)
+    {
+        if (empty($outletIds) || empty($warehouseOutletIds)) {
+            return collect();
+        }
+
+        return DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->whereIn('s.id_outlet', $outletIds)
+            ->whereIn('s.warehouse_outlet_id', $warehouseOutletIds)
+            ->select(
+                's.id_outlet',
+                's.warehouse_outlet_id',
+                'fi.id as inventory_item_id',
+                'fi.item_id',
+                's.last_cost_small'
+            )
+            ->distinct()
+            ->get();
+    }
+
+    private function computeBeginInventoryTotalMacByWarehouse(
+        $stockRows,
+        array $outletIds,
+        array $warehouseOutletIds,
+        Carbon $bulanSebelumnya,
+        string $tanggalAkhirBulanSebelumnya,
+        string $tanggal1BulanIni
+    ): array {
+        if ($stockRows->isEmpty() || empty($outletIds) || empty($warehouseOutletIds)) {
+            return [];
+        }
+
+        $beginInventoryFromOpname = [];
+        $beginOpnameRows = DB::table('outlet_stock_opname_items as soi')
+            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
+            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
+            ->whereIn('so.outlet_id', $outletIds)
+            ->whereIn('so.warehouse_outlet_id', $warehouseOutletIds)
+            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
+            ->where(function ($q) use ($bulanSebelumnya, $tanggal1BulanIni) {
+                $q->where(function ($q2) use ($bulanSebelumnya) {
+                    $q2->whereYear('so.opname_date', $bulanSebelumnya->year)
+                        ->whereMonth('so.opname_date', $bulanSebelumnya->month);
+                })->orWhereDate('so.opname_date', $tanggal1BulanIni);
+            })
+            ->select(
+                'so.outlet_id',
+                'so.warehouse_outlet_id',
+                'fi.item_id',
+                'soi.qty_physical_small',
+                'soi.mac_after',
+                'soi.mac_before',
+                'so.opname_date',
+                'so.id as so_id'
+            )
+            ->orderByDesc('so.opname_date')
+            ->orderByDesc('so.id')
+            ->get();
+
+        foreach ($beginOpnameRows as $row) {
+            $key = (int) $row->outlet_id . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->item_id;
+            if (isset($beginInventoryFromOpname[$key])) {
+                continue;
+            }
+
+            $beginInventoryFromOpname[$key] = [
+                'qty_small' => (float) ($row->qty_physical_small ?? 0),
+                'mac' => (float) ($row->mac_after ?? $row->mac_before ?? 0),
+            ];
+        }
+
+        $inventoryItemIds = $stockRows->pluck('inventory_item_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+
+        $beginFromUpload = [];
+        if (!empty($inventoryItemIds)) {
+            $uploadRows = DB::table('outlet_food_inventory_cards as card')
+                ->where('card.reference_type', 'initial_balance')
+                ->whereIn('card.id_outlet', $outletIds)
+                ->whereIn('card.warehouse_outlet_id', $warehouseOutletIds)
+                ->where('card.date', '<=', $tanggalAkhirBulanSebelumnya)
+                ->whereIn('card.inventory_item_id', $inventoryItemIds)
+                ->orderByDesc('card.date')
+                ->orderByDesc('card.created_at')
+                ->select(
+                    'card.id_outlet',
+                    'card.warehouse_outlet_id',
+                    'card.inventory_item_id',
+                    'card.saldo_qty_small'
+                )
+                ->get();
+
+            foreach ($uploadRows as $row) {
+                $key = (int) $row->id_outlet . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->inventory_item_id;
+                if (!isset($beginFromUpload[$key])) {
+                    $beginFromUpload[$key] = [
+                        'qty_small' => (float) ($row->saldo_qty_small ?? 0),
+                    ];
+                }
+            }
+        }
+
+        $totalsByWarehouse = [];
+        foreach ($stockRows as $row) {
+            $warehouseId = (int) $row->warehouse_outlet_id;
+            $itemKey = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->item_id;
+            $inventoryItemKey = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->inventory_item_id;
+
+            $fromOpname = $beginInventoryFromOpname[$itemKey] ?? null;
+            $fromUpload = $beginFromUpload[$inventoryItemKey] ?? null;
+
+            $beginQtySmall = 0.0;
+            $mac = 0.0;
+            if ($fromOpname !== null) {
+                $beginQtySmall = (float) ($fromOpname['qty_small'] ?? 0);
+                $mac = (float) ($fromOpname['mac'] ?? 0);
+            } elseif ($fromUpload !== null) {
+                $beginQtySmall = (float) ($fromUpload['qty_small'] ?? 0);
+                $mac = (float) ($row->last_cost_small ?? 0);
+            }
+
+            if (!isset($totalsByWarehouse[$warehouseId])) {
+                $totalsByWarehouse[$warehouseId] = 0;
+            }
+
+            $totalsByWarehouse[$warehouseId] += $beginQtySmall * $mac;
+        }
+
+        return $totalsByWarehouse;
+    }
+
+    private function computeEndingInventoryTotalMacByWarehouse(
+        $stockRows,
+        array $outletIds,
+        array $warehouseOutletIds,
+        string $tanggalAkhirBulan
+    ): array {
+        if ($stockRows->isEmpty() || empty($outletIds) || empty($warehouseOutletIds)) {
+            return [];
+        }
+
+        $endingFromOpname = [];
+        $endingRows = DB::table('outlet_stock_opname_items as soi')
+            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
+            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
+            ->whereIn('so.outlet_id', $outletIds)
+            ->whereIn('so.warehouse_outlet_id', $warehouseOutletIds)
+            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
+            ->whereDate('so.opname_date', '=', $tanggalAkhirBulan)
+            ->select(
+                'so.outlet_id',
+                'so.warehouse_outlet_id',
+                'fi.item_id',
+                'soi.qty_physical_small',
+                'soi.mac_after',
+                'soi.mac_before',
+                'so.id as so_id'
+            )
+            ->orderByDesc('so.id')
+            ->get();
+
+        foreach ($endingRows as $row) {
+            $key = (int) $row->outlet_id . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->item_id;
+            if (isset($endingFromOpname[$key])) {
+                continue;
+            }
+
+            $endingFromOpname[$key] = [
+                'qty_small' => (float) ($row->qty_physical_small ?? 0),
+                'mac' => (float) ($row->mac_after ?? $row->mac_before ?? 0),
+            ];
+        }
+
+        $totalsByWarehouse = [];
+        foreach ($stockRows as $row) {
+            $warehouseId = (int) $row->warehouse_outlet_id;
+            $key = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->item_id;
+            $opname = $endingFromOpname[$key] ?? null;
+            if ($opname === null) {
+                continue;
+            }
+
+            if (!isset($totalsByWarehouse[$warehouseId])) {
+                $totalsByWarehouse[$warehouseId] = 0;
+            }
+
+            $totalsByWarehouse[$warehouseId] += (float) ($opname['qty_small'] ?? 0) * (float) ($opname['mac'] ?? 0);
+        }
+
+        return $totalsByWarehouse;
     }
 
     private function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
@@ -326,85 +561,18 @@ class CostReportController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
-        $reportRows = [];
-
-        foreach ($outlets as $outlet) {
-            $outletId = $outlet->id_outlet;
-            $warehouseOutlets = DB::table('warehouse_outlets')
-                ->where('outlet_id', $outletId)
-                ->where('status', 'active')
-                ->select('id', 'name')
-                ->orderBy('name')
-                ->get();
-
-            $totalBeginMacOutlet = 0;
-            $totalEndingMacOutlet = 0;
-
-            foreach ($warehouseOutlets as $wo) {
-                $warehouseOutletId = $wo->id;
-                $totalBeginMacWarehouse = $this->computeBeginInventoryTotalMac(
-                    $outletId,
-                    $warehouseOutletId,
-                    $bulanSebelumnya,
-                    $tanggalAkhirBulanSebelumnya,
-                    $tanggal1BulanIni
-                );
-                $totalBeginMacOutlet += $totalBeginMacWarehouse;
-
-                $totalEndingMacWarehouse = $this->computeEndingInventoryTotalMac(
-                    $outletId,
-                    $warehouseOutletId,
-                    $tanggalAwalBulan,
-                    $tanggalAkhirBulan
-                );
-                $totalEndingMacOutlet += $totalEndingMacWarehouse;
-            }
-
-            $reportRows[] = [
-                'outlet_id' => $outlet->id_outlet,
-                'outlet_name' => $outlet->name,
-                'total_begin_mac' => round($totalBeginMacOutlet, 2),
-                'ending_inventory' => round($totalEndingMacOutlet, 2),
-                'official_cost' => 0, // filled below
-                'cost_rnd' => 0, // filled below
-                'outlet_transfer' => 0, // filled below: net = received - sent (bisa minus)
-                'sales_before_discount' => 0, // filled below
-                'discount' => 0, // filled below: total discount promo + manual (sumber: report rekap discount)
-            ];
-        }
-
-        // Official Cost per outlet: GR + Retail Food, exclude sub_category Stationary, Marketing, Chemical
-        $officialCostByOutlet = $this->computeOfficialCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        // Cost RND per outlet: Category Cost Outlet type RnD + Marketing (APPROVED), sum subtotal_mac
-        $costRndByOutlet = $this->computeCostRndByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        // Outlet Transfer: net per outlet = nilai diterima - nilai dikirim (sumber: menu Outlet Transfer, status approved)
-        $outletTransferByOutlet = $this->computeOutletTransferByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        // Sales Before Discount: sama seperti menu Engineering (orders + order_items, SUM(qty * price) per outlet)
-        $salesBeforeDiscountByOutlet = $this->computeSalesBeforeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        // Discount: total discount promo + manual, sama seperti report rekap discount (orders.discount + orders.manual_discount_amount)
-        $discountByOutlet = $this->computeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        foreach ($reportRows as &$row) {
-            $row['official_cost'] = round($officialCostByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['cost_rnd'] = round($costRndByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['outlet_transfer'] = round($outletTransferByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['sales_before_discount'] = round($salesBeforeDiscountByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['discount'] = round($discountByOutlet[$row['outlet_id']] ?? 0, 2);
-            // Sales After Discount = Sales Before Discount - Discount
-            $row['sales_after_discount'] = round(($row['sales_before_discount'] ?? 0) - ($row['discount'] ?? 0), 2);
-            // % Total Discount terhadap Sales = (Discount / Sales Before Discount) * 100
-            $salesBefore = (float) ($row['sales_before_discount'] ?? 0);
-            $row['pct_discount'] = $salesBefore > 0
-                ? round(((float) ($row['discount'] ?? 0) / $salesBefore) * 100, 2)
-                : 0;
-            // Total Barang Tersedia = Begin Inventory + Official Cost - Cost RND - Outlet Transfer
-            $row['total_barang_tersedia'] = round(
-                ($row['total_begin_mac'] ?? 0) + ($row['official_cost'] ?? 0) - ($row['cost_rnd'] ?? 0) - ($row['outlet_transfer'] ?? 0),
-                2
-            );
-            // COGS Aktual = Total Barang Tersedia - Ending Inventory
-            $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory'] ?? 0), 2);
-        }
-        unset($row);
+        $reportRows = Cache::remember(
+            $this->getReportRowsCacheKey($bulan),
+            now()->addMinutes(10),
+            fn () => $this->buildCostInventoryRows(
+                $outlets,
+                $bulanSebelumnya,
+                $tanggalAkhirBulanSebelumnya,
+                $tanggal1BulanIni,
+                $tanggalAwalBulan,
+                $tanggalAkhirBulan
+            )
+        );
 
         // Tab COGS: outlet sama, kolom COGS + Category Cost + Meal Employees + COGS Pembanding + Deviasi
         $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
@@ -977,17 +1145,55 @@ return $totalMac;
 
         $macHistories = [];
         foreach ($macQueryConditions as $key => $condition) {
-            $mac = DB::table('outlet_food_inventory_cost_histories')
-                ->where('inventory_item_id', $condition['inventory_item_id'])
-                ->where('id_outlet', $condition['id_outlet'])
-                ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
-                ->where('date', '<=', $condition['date'])
+            $macHistories[$key] = null;
+        }
+
+        if (!empty($macQueryConditions)) {
+            $inventoryItemIdsForMac = [];
+            $outletIdsForMac = [];
+            $warehouseIdsForMac = [];
+            $maxDate = null;
+
+            foreach ($macQueryConditions as $condition) {
+                $inventoryItemIdsForMac[] = (int) $condition['inventory_item_id'];
+                $outletIdsForMac[] = (int) $condition['id_outlet'];
+                $warehouseIdsForMac[] = (int) $condition['warehouse_outlet_id'];
+                $maxDate = $maxDate === null ? $condition['date'] : max($maxDate, $condition['date']);
+            }
+
+            $historyRows = DB::table('outlet_food_inventory_cost_histories')
+                ->whereIn('inventory_item_id', array_values(array_unique($inventoryItemIdsForMac)))
+                ->whereIn('id_outlet', array_values(array_unique($outletIdsForMac)))
+                ->whereIn('warehouse_outlet_id', array_values(array_unique($warehouseIdsForMac)))
+                ->where('date', '<=', $maxDate)
+                ->select('inventory_item_id', 'id_outlet', 'warehouse_outlet_id', 'date', 'id', 'mac')
+                ->orderBy('inventory_item_id')
+                ->orderBy('id_outlet')
+                ->orderBy('warehouse_outlet_id')
                 ->orderByDesc('date')
                 ->orderByDesc('id')
-                ->value('mac');
+                ->get();
 
-            if ($mac !== null) {
-                $macHistories[$key] = (float) $mac;
+            $historiesByTuple = [];
+            foreach ($historyRows as $historyRow) {
+                $tupleKey = (int) $historyRow->inventory_item_id . '|'
+                    . (int) $historyRow->id_outlet . '|'
+                    . (int) $historyRow->warehouse_outlet_id;
+                $historiesByTuple[$tupleKey][] = $historyRow;
+            }
+
+            foreach ($macQueryConditions as $key => $condition) {
+                $tupleKey = (int) $condition['inventory_item_id'] . '|'
+                    . (int) $condition['id_outlet'] . '|'
+                    . (int) $condition['warehouse_outlet_id'];
+                $targetDate = $condition['date'];
+
+                foreach (($historiesByTuple[$tupleKey] ?? []) as $historyRow) {
+                    if ($historyRow->date <= $targetDate) {
+                        $macHistories[$key] = (float) ($historyRow->mac ?? 0);
+                        break;
+                    }
+                }
             }
         }
 

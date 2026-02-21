@@ -23,12 +23,21 @@
           <div class="flex items-end gap-2">
             <button
               @click="loadReport"
-              :disabled="loading"
+              :disabled="loading || clearingCache"
               class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <i v-if="loading" class="fa-solid fa-spinner fa-spin mr-1"></i>
               <i v-else class="fa-solid fa-search mr-1"></i>
               {{ loading ? 'Loading...' : 'Load Data' }}
+            </button>
+            <button
+              @click="clearCacheAndReload"
+              :disabled="loading || clearingCache || !filters.bulan"
+              class="inline-flex items-center px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i v-if="clearingCache" class="fa-solid fa-spinner fa-spin mr-1"></i>
+              <i v-else class="fa-solid fa-rotate mr-1"></i>
+              {{ clearingCache ? 'Clearing...' : 'Clear Cache' }}
             </button>
             <a
               :href="exportUrl"
@@ -228,6 +237,7 @@ const props = defineProps({
 });
 
 const loading = ref(false);
+const clearingCache = ref(false);
 const filters = ref({ ...props.filters });
 const activeTab = ref('cost_inventory'); // 'cost_inventory' | 'cogs' | 'category_cost'
 const reportRowsData = ref(props.reportRows || []);
@@ -310,6 +320,25 @@ async function fetchTabData(tab, bulan, force = false) {
     console.error('Failed to load cost report tab data:', error);
   } finally {
     loading.value = false;
+  }
+}
+
+async function clearCacheAndReload() {
+  const bulan = filters.value.bulan || '';
+  if (!bulan) return;
+
+  clearingCache.value = true;
+  try {
+    await axios.post('/cost-report/clear-cache', { bulan });
+    loadedTabs.value = {};
+    reportRowsData.value = [];
+    cogsRowsData.value = [];
+    categoryCostRowsData.value = [];
+    await fetchTabData(activeTab.value, bulan, true);
+  } catch (error) {
+    console.error('Failed to clear cost report cache:', error);
+  } finally {
+    clearingCache.value = false;
   }
 }
 </script>
