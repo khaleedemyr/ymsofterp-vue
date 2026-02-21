@@ -514,27 +514,12 @@ return $totalMac;
      */
     private function computeCostRndByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        $rows = DB::table('outlet_internal_use_waste_headers')
-            ->whereIn('type', ['r_and_d', 'marketing'])
-            ->whereIn('status', ['APPROVED', 'PROCESSED'])
-            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('outlet_id')
-            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_rnd'))
-            ->get();
-
-        $outletIds = DB::table('tbl_data_outlet')
-            ->where('is_outlet', 1)
-            ->where('status', 'A')
-            ->pluck('id_outlet');
-
-        $result = [];
-        foreach ($outletIds as $oid) {
-            $result[$oid] = 0;
-        }
-        foreach ($rows as $r) {
-            $result[$r->outlet_id] = (float) ($r->total_rnd ?? 0);
-        }
-        return $result;
+        return $this->computeInternalUseWasteByOutletFromDetails(
+            ['r_and_d', 'marketing'],
+            $tanggalAwal,
+            $tanggalAkhir,
+            ['APPROVED']
+        );
     }
 
     /**
@@ -544,27 +529,12 @@ return $totalMac;
      */
     private function computeCategoryCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        $rows = DB::table('outlet_internal_use_waste_headers')
-            ->whereIn('type', ['spoil', 'waste', 'guest_supplies', 'non_commodity'])
-            ->whereIn('status', ['APPROVED', 'PROCESSED'])
-            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('outlet_id')
-            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
-            ->get();
-
-        $outletIds = DB::table('tbl_data_outlet')
-            ->where('is_outlet', 1)
-            ->where('status', 'A')
-            ->pluck('id_outlet');
-
-        $result = [];
-        foreach ($outletIds as $oid) {
-            $result[$oid] = 0;
-        }
-        foreach ($rows as $r) {
-            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
-        }
-        return $result;
+        return $this->computeInternalUseWasteByOutletFromDetails(
+            ['spoil', 'waste', 'guest_supplies', 'non_commodity'],
+            $tanggalAwal,
+            $tanggalAkhir,
+            ['APPROVED', 'PROCESSED']
+        );
     }
 
     /**
@@ -574,27 +544,12 @@ return $totalMac;
      */
     private function computeMealEmployeesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        $rows = DB::table('outlet_internal_use_waste_headers')
-            ->where('type', 'internal_use')
-            ->whereIn('status', ['APPROVED', 'PROCESSED'])
-            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('outlet_id')
-            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
-            ->get();
-
-        $outletIds = DB::table('tbl_data_outlet')
-            ->where('is_outlet', 1)
-            ->where('status', 'A')
-            ->pluck('id_outlet');
-
-        $result = [];
-        foreach ($outletIds as $oid) {
-            $result[$oid] = 0;
-        }
-        foreach ($rows as $r) {
-            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
-        }
-        return $result;
+        return $this->computeInternalUseWasteByOutletFromDetails(
+            ['internal_use'],
+            $tanggalAwal,
+            $tanggalAkhir,
+            ['APPROVED', 'PROCESSED']
+        );
     }
 
     /**
@@ -604,27 +559,12 @@ return $totalMac;
      */
     private function computeGuestSuppliesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        $rows = DB::table('outlet_internal_use_waste_headers')
-            ->where('type', 'guest_supplies')
-            ->whereIn('status', ['APPROVED', 'PROCESSED'])
-            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('outlet_id')
-            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
-            ->get();
-
-        $outletIds = DB::table('tbl_data_outlet')
-            ->where('is_outlet', 1)
-            ->where('status', 'A')
-            ->pluck('id_outlet');
-
-        $result = [];
-        foreach ($outletIds as $oid) {
-            $result[$oid] = 0;
-        }
-        foreach ($rows as $r) {
-            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
-        }
-        return $result;
+        return $this->computeInternalUseWasteByOutletFromDetails(
+            ['guest_supplies'],
+            $tanggalAwal,
+            $tanggalAkhir,
+            ['APPROVED', 'PROCESSED']
+        );
     }
 
     /**
@@ -660,14 +600,24 @@ return $totalMac;
      */
     private function computeCategoryCostTypeByOutlet(string $type, string $tanggalAwal, string $tanggalAkhir): array
     {
-        $rows = DB::table('outlet_internal_use_waste_headers')
-            ->where('type', $type)
-            ->whereIn('status', ['APPROVED', 'PROCESSED'])
-            ->whereBetween('date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('outlet_id')
-            ->select('outlet_id', DB::raw('SUM(COALESCE(subtotal_mac, 0)) as total_val'))
-            ->get();
+        return $this->computeInternalUseWasteByOutletFromDetails(
+            [$type],
+            $tanggalAwal,
+            $tanggalAkhir,
+            ['APPROVED', 'PROCESSED']
+        );
+    }
 
+    /**
+     * Hitung total nilai Category Cost per outlet dari detail + MAC history + konversi unit.
+     * Digunakan agar konsisten dengan report Category Cost Outlet (bukan hanya SUM header.subtotal_mac).
+     *
+     * @param array<int, string> $types
+     * @param array<int, string>|null $statuses
+     * @return array<int, float>
+     */
+    private function computeInternalUseWasteByOutletFromDetails(array $types, string $tanggalAwal, string $tanggalAkhir, ?array $statuses = null): array
+    {
         $outletIds = DB::table('tbl_data_outlet')
             ->where('is_outlet', 1)
             ->where('status', 'A')
@@ -677,9 +627,126 @@ return $totalMac;
         foreach ($outletIds as $oid) {
             $result[$oid] = 0;
         }
-        foreach ($rows as $r) {
-            $result[$r->outlet_id] = (float) ($r->total_val ?? 0);
+
+        if (empty($types)) {
+            return $result;
         }
+
+        $headersQuery = DB::table('outlet_internal_use_waste_headers as h')
+            ->whereIn('h.type', $types)
+            ->whereBetween('h.date', [$tanggalAwal, $tanggalAkhir]);
+
+        if (!empty($statuses)) {
+            $headersQuery->whereIn('h.status', $statuses);
+        }
+
+        $headers = $headersQuery
+            ->select('h.id', 'h.outlet_id', 'h.warehouse_outlet_id', 'h.date')
+            ->get();
+
+        if ($headers->isEmpty()) {
+            return $result;
+        }
+
+        $headerIds = $headers->pluck('id')->all();
+        $headersById = $headers->keyBy('id');
+
+        $details = DB::table('outlet_internal_use_waste_details as d')
+            ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->whereIn('d.header_id', $headerIds)
+            ->select(
+                'd.header_id',
+                'd.item_id',
+                'd.unit_id',
+                'd.qty',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty'
+            )
+            ->get();
+
+        if ($details->isEmpty()) {
+            return $result;
+        }
+
+        $itemIds = $details->pluck('item_id')->filter()->unique()->values()->all();
+        $inventoryItems = [];
+        if (!empty($itemIds)) {
+            $inventoryItems = DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $itemIds)
+                ->select('id', 'item_id')
+                ->get()
+                ->keyBy('item_id')
+                ->toArray();
+        }
+
+        $macQueryConditions = [];
+        foreach ($details as $detail) {
+            $header = $headersById->get($detail->header_id);
+            if (!$header || !isset($inventoryItems[$detail->item_id])) {
+                continue;
+            }
+
+            $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+            $key = "{$inventoryItemId}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+            if (!isset($macQueryConditions[$key])) {
+                $macQueryConditions[$key] = [
+                    'inventory_item_id' => $inventoryItemId,
+                    'id_outlet' => $header->outlet_id,
+                    'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                    'date' => $header->date,
+                ];
+            }
+        }
+
+        $macHistories = [];
+        foreach ($macQueryConditions as $key => $condition) {
+            $mac = DB::table('outlet_food_inventory_cost_histories')
+                ->where('inventory_item_id', $condition['inventory_item_id'])
+                ->where('id_outlet', $condition['id_outlet'])
+                ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
+                ->where('date', '<=', $condition['date'])
+                ->orderByDesc('date')
+                ->orderByDesc('id')
+                ->value('mac');
+
+            if ($mac !== null) {
+                $macHistories[$key] = (float) $mac;
+            }
+        }
+
+        foreach ($details as $detail) {
+            $header = $headersById->get($detail->header_id);
+            if (!$header || !isset($inventoryItems[$detail->item_id])) {
+                continue;
+            }
+
+            $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+            $macKey = "{$inventoryItemId}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+            $mac = $macHistories[$macKey] ?? null;
+            if ($mac === null) {
+                continue;
+            }
+
+            $macConverted = $mac;
+            if ((int) $detail->unit_id === (int) $detail->medium_unit_id && (float) $detail->small_conversion_qty > 0) {
+                $macConverted = $mac * (float) $detail->small_conversion_qty;
+            } elseif (
+                (int) $detail->unit_id === (int) $detail->large_unit_id
+                && (float) $detail->small_conversion_qty > 0
+                && (float) $detail->medium_conversion_qty > 0
+            ) {
+                $macConverted = $mac * (float) $detail->small_conversion_qty * (float) $detail->medium_conversion_qty;
+            }
+
+            $subtotalMac = $macConverted * (float) ($detail->qty ?? 0);
+            if (isset($result[$header->outlet_id])) {
+                $result[$header->outlet_id] += $subtotalMac;
+            }
+        }
+
         return $result;
     }
 
