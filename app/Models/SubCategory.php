@@ -12,7 +12,8 @@ class SubCategory extends Model
         'description',
         'status',
         'show_pos',
-        'category_id'
+        'category_id',
+        'coa_id'
     ];
 
     protected $casts = [
@@ -32,5 +33,10 @@ class SubCategory extends Model
     public function availabilities()
     {
         return $this->hasMany(SubCategoryAvailability::class, 'sub_category_id', 'id');
+    }
+
+    public function coa()
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'coa_id');
     }
 } 

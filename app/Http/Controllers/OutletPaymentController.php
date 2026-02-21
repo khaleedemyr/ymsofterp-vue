@@ -1100,6 +1100,8 @@ class OutletPaymentController extends Controller
         try {
             $items = DB::table('retail_warehouse_sale_items as rwsi')
                 ->join('items as i', 'rwsi.item_id', '=', 'i.id')
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->leftJoin('chart_of_accounts as coa', 'sc.coa_id', '=', 'coa.id')
                 ->where('rwsi.retail_warehouse_sale_id', $retailId)
                 ->select(
                     'rwsi.id as item_id',
@@ -1108,15 +1110,36 @@ class OutletPaymentController extends Controller
                     'rwsi.price as item_price',
                     'rwsi.unit as unit_name',
                     'i.name as item_name',
+                    'sc.name as sub_category_name',
+                    'coa.id as coa_id',
+                    'coa.code as coa_code',
+                    'coa.name as coa_name',
                     'rwsi.subtotal'
                 )
                 ->get();
 
             $totalAmount = $items->sum('subtotal');
+            $coaTotals = $items
+                ->groupBy(function ($item) {
+                    return $item->coa_id ?: 'no_coa';
+                })
+                ->map(function ($group, $coaKey) {
+                    $first = $group->first();
+
+                    return [
+                        'coa_id' => $coaKey !== 'no_coa' ? (int) $coaKey : null,
+                        'coa_code' => $first->coa_code,
+                        'coa_name' => $first->coa_name ?: 'Tanpa CoA',
+                        'total_amount' => (float) $group->sum('subtotal'),
+                    ];
+                })
+                ->sortByDesc('total_amount')
+                ->values();
 
             return response()->json([
                 'success' => true,
                 'total_amount' => $totalAmount,
+                'coa_totals' => $coaTotals,
                 'items' => $items->map(function($item) {
                     return [
                         'id' => $item->item_id,
@@ -1124,6 +1147,10 @@ class OutletPaymentController extends Controller
                         'received_qty' => $item->received_qty,
                         'price' => $item->item_price ?: 0,
                         'item_name' => $item->item_name,
+                        'sub_category_name' => $item->sub_category_name ?: 'Tanpa Sub Category',
+                        'coa_id' => $item->coa_id,
+                        'coa_code' => $item->coa_code,
+                        'coa_name' => $item->coa_name,
                         'unit' => $item->unit_name,
                         'subtotal' => $item->subtotal ?: 0
                     ];
@@ -1147,6 +1174,8 @@ class OutletPaymentController extends Controller
             // ULTRA OPTIMIZED: Single query with proper indexing
             $items = DB::table('outlet_food_good_receive_items as gri')
                 ->join('items as i', 'gri.item_id', '=', 'i.id')
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->leftJoin('chart_of_accounts as coa', 'sc.coa_id', '=', 'coa.id')
                 ->join('units as u', 'gri.unit_id', '=', 'u.id')
                 ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                 ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -1163,16 +1192,37 @@ class OutletPaymentController extends Controller
                     'gri.received_qty',
                     'foi.price as item_price',
                     'i.name as item_name',
+                    'sc.name as sub_category_name',
+                    'coa.id as coa_id',
+                    'coa.code as coa_code',
+                    'coa.name as coa_name',
                     'u.name as unit_name',
                     DB::raw('COALESCE(gri.received_qty * foi.price, 0) as subtotal')
                 )
                 ->get();
 
             $totalAmount = $items->sum('subtotal');
+            $coaTotals = $items
+                ->groupBy(function ($item) {
+                    return $item->coa_id ?: 'no_coa';
+                })
+                ->map(function ($group, $coaKey) {
+                    $first = $group->first();
+
+                    return [
+                        'coa_id' => $coaKey !== 'no_coa' ? (int) $coaKey : null,
+                        'coa_code' => $first->coa_code,
+                        'coa_name' => $first->coa_name ?: 'Tanpa CoA',
+                        'total_amount' => (float) $group->sum('subtotal'),
+                    ];
+                })
+                ->sortByDesc('total_amount')
+                ->values();
 
             return response()->json([
                 'success' => true,
                 'total_amount' => $totalAmount,
+                'coa_totals' => $coaTotals,
                 'items' => $items->map(function($item) {
                     return [
                         'id' => $item->item_id,
@@ -1181,6 +1231,10 @@ class OutletPaymentController extends Controller
                         'received_qty' => $item->received_qty,
                         'price' => $item->item_price ?: 0,
                         'item_name' => $item->item_name,
+                        'sub_category_name' => $item->sub_category_name ?: 'Tanpa Sub Category',
+                        'coa_id' => $item->coa_id,
+                        'coa_code' => $item->coa_code,
+                        'coa_name' => $item->coa_name,
                         'unit' => $item->unit_name,
                         'subtotal' => $item->subtotal ?: 0
                     ];
@@ -1775,8 +1829,58 @@ class OutletPaymentController extends Controller
      */
     private function createJurnalForOutletPayment($payment)
     {
-        // Skip if no COA selected
-        if (!$payment->coa_id) {
+        // Build COA amounts from manual coa_id (legacy) or from item -> sub_category -> coa_id
+        $coaAmounts = collect();
+
+        if ($payment->coa_id) {
+            $coaAmounts = collect([
+                ['coa_id' => (int) $payment->coa_id, 'total_amount' => (float) $payment->total_amount]
+            ]);
+        } elseif ($payment->gr_id) {
+            $coaAmounts = DB::table('outlet_food_good_receive_items as gri')
+                ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_order_items as foi', function($join) {
+                    $join->on('gri.item_id', '=', 'foi.item_id')
+                        ->on('do.floor_order_id', '=', 'foi.floor_order_id');
+                })
+                ->join('items as i', 'gri.item_id', '=', 'i.id')
+                ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->where('gri.outlet_food_good_receive_id', $payment->gr_id)
+                ->whereNotNull('sc.coa_id')
+                ->groupBy('sc.coa_id')
+                ->select(
+                    'sc.coa_id',
+                    DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
+                )
+                ->get();
+        } elseif ($payment->retail_sales_id) {
+            $coaAmounts = DB::table('retail_warehouse_sale_items as rwsi')
+                ->join('items as i', 'rwsi.item_id', '=', 'i.id')
+                ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->where('rwsi.retail_warehouse_sale_id', $payment->retail_sales_id)
+                ->whereNotNull('sc.coa_id')
+                ->groupBy('sc.coa_id')
+                ->select(
+                    'sc.coa_id',
+                    DB::raw('SUM(COALESCE(rwsi.subtotal, 0)) as total_amount')
+                )
+                ->get();
+        }
+
+        $coaAmounts = collect($coaAmounts)
+            ->map(function ($row) {
+                return (object) [
+                    'coa_id' => (int) data_get($row, 'coa_id'),
+                    'total_amount' => (float) data_get($row, 'total_amount'),
+                ];
+            })
+            ->filter(function ($row) {
+                return $row->coa_id > 0 && $row->total_amount > 0;
+            })
+            ->values();
+
+        if ($coaAmounts->isEmpty()) {
             return;
         }
         
@@ -1786,13 +1890,9 @@ class OutletPaymentController extends Controller
         // For simplicity, create jurnal for single payment (not grouped)
         // If you want to group by warehouse, need to collect all payments with same warehouse_id
         
-        $totalAmount = $payment->total_amount;
         $paymentNumber = $payment->payment_number ?? $payment->id;
-        
-        // Generate no jurnal
-        $noJurnal = \App\Models\Jurnal::generateNoJurnal();
         $tanggal = $payment->date;
-        $keterangan = "Outlet Payment: " . $paymentNumber;
+        $keteranganBase = "Outlet Payment: " . $paymentNumber;
         
         // Determine COA Kredit for OUTLET (uang keluar dari outlet)
         $coaKreditOutlet = null;
@@ -1822,82 +1922,86 @@ class OutletPaymentController extends Controller
             $coaDebitHO = 60;
         }
         
-        // JURNAL 1: OUTLET (Debit Expense, Kredit Kas/Bank Outlet)
-        // Note: warehouse_id TIDAK PERLU untuk jurnal outlet
-        \App\Models\Jurnal::create([
-            'no_jurnal' => $noJurnal,
-            'tanggal' => $tanggal,
-            'keterangan' => $keterangan . ' - Outlet',
-            'coa_debit_id' => $payment->coa_id, // User selected COA (expense)
-            'coa_kredit_id' => $coaKreditOutlet,
-            'jumlah_debit' => $totalAmount,
-            'jumlah_kredit' => $totalAmount,
-            'outlet_id' => $payment->outlet_id,
-            'reference_type' => 'outlet_payment',
-            'reference_id' => $payment->id,
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => auth()->id() ?? 1,
-            'created_by' => auth()->id() ?? 1,
-        ]);
-        
-        \App\Models\JurnalGlobal::create([
-            'no_jurnal' => $noJurnal,
-            'tanggal' => $tanggal,
-            'keterangan' => $keterangan . ' - Outlet',
-            'coa_debit_id' => $payment->coa_id,
-            'coa_kredit_id' => $coaKreditOutlet,
-            'jumlah_debit' => $totalAmount,
-            'jumlah_kredit' => $totalAmount,
-            'outlet_id' => $payment->outlet_id,
-            'reference_type' => 'outlet_payment',
-            'reference_id' => $payment->id,
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => auth()->id() ?? 1,
-            'created_by' => auth()->id() ?? 1,
-        ]);
-        
-        // JURNAL 2: HEAD OFFICE (Debit Kas/Bank HO, Kredit Piutang/Lawan)
-        // Generate no jurnal baru untuk HO
-        $noJurnalHO = \App\Models\Jurnal::generateNoJurnal();
-        
-        // Note: outlet_id = 1 untuk HO (bukan null), warehouse_id tetap diisi
-        \App\Models\Jurnal::create([
-            'no_jurnal' => $noJurnalHO,
-            'tanggal' => $tanggal,
-            'keterangan' => $keterangan . ' - HO',
-            'coa_debit_id' => $coaDebitHO, // Kas/Bank HO
-            'coa_kredit_id' => $payment->coa_id, // Same COA (lawan account)
-            'jumlah_debit' => $totalAmount,
-            'jumlah_kredit' => $totalAmount,
-            'outlet_id' => 1, // HO outlet_id = 1
-            'warehouse_id' => $warehouseId,
-            'reference_type' => 'outlet_payment',
-            'reference_id' => $payment->id,
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => auth()->id() ?? 1,
-            'created_by' => auth()->id() ?? 1,
-        ]);
-        
-        \App\Models\JurnalGlobal::create([
-            'no_jurnal' => $noJurnalHO,
-            'tanggal' => $tanggal,
-            'keterangan' => $keterangan . ' - HO',
-            'coa_debit_id' => $coaDebitHO,
-            'coa_kredit_id' => $payment->coa_id,
-            'jumlah_debit' => $totalAmount,
-            'jumlah_kredit' => $totalAmount,
-            'outlet_id' => 1, // HO outlet_id = 1
-            'warehouse_id' => $warehouseId,
-            'reference_type' => 'outlet_payment',
-            'reference_id' => $payment->id,
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => auth()->id() ?? 1,
-            'created_by' => auth()->id() ?? 1,
-        ]);
+        foreach ($coaAmounts as $coaAmount) {
+            $coaId = $coaAmount->coa_id;
+            $totalAmount = $coaAmount->total_amount;
+
+            // JURNAL 1: OUTLET (Debit Expense, Kredit Kas/Bank Outlet)
+            $noJurnal = \App\Models\Jurnal::generateNoJurnal();
+
+            \App\Models\Jurnal::create([
+                'no_jurnal' => $noJurnal,
+                'tanggal' => $tanggal,
+                'keterangan' => $keteranganBase . ' - Outlet',
+                'coa_debit_id' => $coaId,
+                'coa_kredit_id' => $coaKreditOutlet,
+                'jumlah_debit' => $totalAmount,
+                'jumlah_kredit' => $totalAmount,
+                'outlet_id' => $payment->outlet_id,
+                'reference_type' => 'outlet_payment',
+                'reference_id' => $payment->id,
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => auth()->id() ?? 1,
+                'created_by' => auth()->id() ?? 1,
+            ]);
+
+            \App\Models\JurnalGlobal::create([
+                'no_jurnal' => $noJurnal,
+                'tanggal' => $tanggal,
+                'keterangan' => $keteranganBase . ' - Outlet',
+                'coa_debit_id' => $coaId,
+                'coa_kredit_id' => $coaKreditOutlet,
+                'jumlah_debit' => $totalAmount,
+                'jumlah_kredit' => $totalAmount,
+                'outlet_id' => $payment->outlet_id,
+                'reference_type' => 'outlet_payment',
+                'reference_id' => $payment->id,
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => auth()->id() ?? 1,
+                'created_by' => auth()->id() ?? 1,
+            ]);
+
+            // JURNAL 2: HEAD OFFICE (Debit Kas/Bank HO, Kredit Piutang/Lawan)
+            $noJurnalHO = \App\Models\Jurnal::generateNoJurnal();
+
+            \App\Models\Jurnal::create([
+                'no_jurnal' => $noJurnalHO,
+                'tanggal' => $tanggal,
+                'keterangan' => $keteranganBase . ' - HO',
+                'coa_debit_id' => $coaDebitHO,
+                'coa_kredit_id' => $coaId,
+                'jumlah_debit' => $totalAmount,
+                'jumlah_kredit' => $totalAmount,
+                'outlet_id' => 1,
+                'warehouse_id' => $warehouseId,
+                'reference_type' => 'outlet_payment',
+                'reference_id' => $payment->id,
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => auth()->id() ?? 1,
+                'created_by' => auth()->id() ?? 1,
+            ]);
+
+            \App\Models\JurnalGlobal::create([
+                'no_jurnal' => $noJurnalHO,
+                'tanggal' => $tanggal,
+                'keterangan' => $keteranganBase . ' - HO',
+                'coa_debit_id' => $coaDebitHO,
+                'coa_kredit_id' => $coaId,
+                'jumlah_debit' => $totalAmount,
+                'jumlah_kredit' => $totalAmount,
+                'outlet_id' => 1,
+                'warehouse_id' => $warehouseId,
+                'reference_type' => 'outlet_payment',
+                'reference_id' => $payment->id,
+                'status' => 'posted',
+                'posted_at' => now(),
+                'posted_by' => auth()->id() ?? 1,
+                'created_by' => auth()->id() ?? 1,
+            ]);
+        }
     }
 
 } 

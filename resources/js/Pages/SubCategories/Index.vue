@@ -10,6 +10,7 @@ import { Switch } from '@headlessui/vue';
 const props = defineProps({
   subCategories: Array,
   categories: Array,
+  coas: Array,
   regions: Array,
   outlets: Array,
 });
@@ -144,6 +145,7 @@ const filteredSubCategories = computed(() => {
               <!-- <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Kode</th> -->
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">Nama</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Kategori</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">CoA</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Deskripsi</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Show POS</th>
@@ -153,12 +155,13 @@ const filteredSubCategories = computed(() => {
           </thead>
           <tbody>
             <tr v-if="filteredSubCategories.length === 0">
-              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data sub kategori.</td>
+              <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data sub kategori.</td>
             </tr>
             <tr v-for="subCategory in filteredSubCategories" :key="subCategory.id" class="hover:bg-blue-50 transition shadow-sm">
               <!-- <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ subCategory.code }}</td> -->
               <td class="px-6 py-3 font-semibold">{{ subCategory.name }}</td>
               <td class="px-6 py-3">{{ categories.find(c => c.id === subCategory.category_id)?.name || '-' }}</td>
+              <td class="px-6 py-3">{{ subCategory.coa ? `${subCategory.coa.code} - ${subCategory.coa.name}` : '-' }}</td>
               <td class="px-6 py-3 text-gray-500">{{ subCategory.description || '-' }}</td>
               <td class="px-6 py-3">
                 <button
@@ -226,6 +229,7 @@ const filteredSubCategories = computed(() => {
         :mode="modalMode"
         :sub-category="selectedSubCategory"
         :categories="categories"
+        :coas="coas"
         :regions="regions"
         :outlets="outlets"
         @close="closeModal"

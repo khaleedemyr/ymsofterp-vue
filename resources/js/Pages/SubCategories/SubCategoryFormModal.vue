@@ -11,6 +11,7 @@ const props = defineProps({
   mode: String, // 'create' | 'edit'
   subCategory: Object, // untuk edit
   categories: Array, // untuk dropdown kategori induk
+  coas: Array,
   regions: Array,
   outlets: Array,
 });
@@ -23,6 +24,7 @@ const form = useForm({
   status: 'active',
   show_pos: '1',
   category_id: '',
+  coa_id: '',
   availability_type: '',
   selected_regions: [],
   selected_outlets: [],
@@ -40,6 +42,7 @@ watch(() => props.show, (val) => {
     form.status = props.subCategory.status;
     form.show_pos = String(props.subCategory.show_pos);
     form.category_id = props.subCategory.category_id;
+    form.coa_id = props.subCategory.coa_id || '';
 
     // Ambil outlet yang sudah terhubung
     const selectedOutletObjs = props.subCategory.outlet_ids
@@ -61,6 +64,7 @@ watch(() => props.show, (val) => {
     form.status = 'active';
     form.show_pos = '1';
     form.category_id = '';
+    form.coa_id = '';
     selectedRegions.value = [];
     selectedOutlets.value = [];
     availabilityType.value = 'byRegion';
@@ -178,6 +182,19 @@ function closeModal() {
                 </option>
               </select>
               <div v-if="form.errors.category_id" class="text-xs text-red-500 mt-1">{{ form.errors.category_id }}</div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">CoA</label>
+              <select
+                v-model="form.coa_id"
+                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Pilih CoA (Opsional)</option>
+                <option v-for="coa in coas || []" :key="coa.id" :value="coa.id">
+                  {{ coa.code }} - {{ coa.name }}
+                </option>
+              </select>
+              <div v-if="form.errors.coa_id" class="text-xs text-red-500 mt-1">{{ form.errors.coa_id }}</div>
             </div>
             <div class="flex gap-4">
               <div class="flex-1">

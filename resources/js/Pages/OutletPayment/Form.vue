@@ -334,6 +334,41 @@
               </div>
             </div>
           </div>
+
+          <!-- CoA Summary Section -->
+          <div v-if="selectedGRs.length > 0 || selectedRetailSales.length > 0" class="mt-4">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fas fa-book mr-2"></i>Total per CoA (dari Sub Category)
+            </label>
+
+            <div v-if="coaSummaryLoading && coaSummary.length === 0" class="border border-green-200 rounded-lg bg-white p-4 text-sm text-gray-500">
+              <i class="fas fa-spinner fa-spin mr-2"></i>Memuat ringkasan CoA...
+            </div>
+
+            <div v-else-if="coaSummary.length > 0" class="border border-green-200 rounded-lg bg-white overflow-hidden">
+              <div
+                v-for="(coa, index) in coaSummary"
+                :key="coa.key"
+                :class="['px-4 py-3 flex items-center justify-between', index !== coaSummary.length - 1 ? 'border-b border-gray-200' : '']"
+              >
+                <div class="flex items-center">
+                  <i class="fas fa-tag text-green-500 mr-2"></i>
+                  <span class="text-sm font-medium text-gray-900">{{ coa.label }}</span>
+                </div>
+                <span class="text-sm font-semibold text-green-600">{{ formatCurrency(coa.total) }}</span>
+              </div>
+            </div>
+
+            <div v-if="hasNoCoaAmount" class="mt-2 border border-amber-300 bg-amber-50 rounded-lg p-3 text-amber-800 text-xs">
+              <i class="fas fa-triangle-exclamation mr-1"></i>
+              Ada nominal item yang belum ter-mapping CoA di Sub Category.
+              Silakan lengkapi CoA pada Sub Category terkait agar jurnal lengkap.
+            </div>
+
+            <div v-else class="border border-gray-200 rounded-lg bg-white p-4 text-sm text-gray-500">
+              Belum ada detail item untuk menghitung sub category.
+            </div>
+          </div>
         </div>
 
         <!-- Payment Method and Bank Section -->
@@ -389,30 +424,6 @@
               </p>
             </div>
           </div>
-
-          <!-- COA Selection -->
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">
-              <i class="fas fa-book mr-2"></i>Chart of Account (COA)
-            </label>
-            <Multiselect
-              v-model="selectedCoa"
-              :options="coas"
-              :searchable="true"
-              :close-on-select="true"
-              :show-labels="false"
-              placeholder="Pilih COA untuk pembayaran ini..."
-              label="display_name"
-              track-by="id"
-              @select="onCoaSelect"
-              @remove="onCoaRemove"
-              class="w-full"
-            />
-            <p class="text-xs text-gray-500 mt-1">
-              <i class="fas fa-info-circle mr-1"></i>
-              Pilih Chart of Account yang akan digunakan untuk mencatat pembayaran ini
-            </p>
-          </div>
         </div>
         <div class="flex justify-end gap-2 mt-8">
           <button type="button" @click="goBack" class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold shadow-sm">Batal</button>
@@ -434,10 +445,6 @@ const props = defineProps({
   outlets: Array,
   grList: Array,
   banks: {
-    type: Array,
-    default: () => []
-  },
-  coas: {
     type: Array,
     default: () => []
   }
@@ -477,7 +484,6 @@ const canLoadData = computed(() => {
 });
 const selectedBank = ref(null);
 const selectedReceiverBanks = ref([]);
-const selectedCoa = ref(null);
 
 const form = ref({
   outlet_id: '',
@@ -488,8 +494,7 @@ const form = ref({
   total_amount: 0,
   payment_method: 'cash',
   bank_id: null,
-  receiver_bank_ids: [],
-  coa_id: null
+  receiver_bank_ids: []
 });
 
 // Transform banks untuk Multiselect
@@ -519,16 +524,6 @@ function onReceiverBankSelect(bank) {
 function onReceiverBankRemove(bank) {
   // Update form dengan array bank IDs setelah remove
   form.value.receiver_bank_ids = selectedReceiverBanks.value.map(b => b.id);
-}
-
-// Handle COA selection
-function onCoaSelect(coa) {
-  form.value.coa_id = coa.id;
-}
-
-function onCoaRemove() {
-  form.value.coa_id = null;
-  selectedCoa.value = null;
 }
 
 // Watch payment_method to clear bank if changed to cash
@@ -713,6 +708,57 @@ const warehouseSummary = computed(() => {
     return a.name.localeCompare(b.name);
   });
 });
+
+// Computed for CoA summary from selected transaction items (mapped from sub category)
+const coaSummary = computed(() => {
+  const coaMap = {};
+
+  const addItemsToSummary = (items) => {
+    if (!Array.isArray(items)) return;
+
+    items.forEach(item => {
+      const coaId = item?.coa_id;
+      const coaCode = item?.coa_code;
+      const coaName = item?.coa_name;
+      const coaLabel = coaCode && coaName
+        ? `${coaCode} - ${coaName}`
+        : (coaName || 'Tanpa CoA');
+      const amount = parseFloat(item?.subtotal) || 0;
+      const key = coaId ? `coa_${coaId}` : `no_coa`;
+
+      if (!coaMap[key]) {
+        coaMap[key] = {
+          key,
+          label: coaLabel,
+          total: 0
+        };
+      }
+
+      coaMap[key].total += amount;
+    });
+  };
+
+  selectedGRs.value.forEach(grId => {
+    addItemsToSummary(grItems.value[grId] || []);
+  });
+
+  selectedRetailSales.value.forEach(retailId => {
+    addItemsToSummary(retailSalesItems.value[retailId] || []);
+  });
+
+  return Object.values(coaMap).sort((a, b) => b.total - a.total);
+});
+
+const coaSummaryLoading = computed(() => {
+  const loadingSelectedGR = selectedGRs.value.some(grId => loadingGRItems.value[grId]);
+  const loadingSelectedRetail = selectedRetailSales.value.some(retailId => loadingRetailSalesItems.value[retailId]);
+  return loadingSelectedGR || loadingSelectedRetail;
+});
+
+const hasNoCoaAmount = computed(() => {
+  return coaSummary.value.some(row => row.key === 'no_coa' && (parseFloat(row.total) || 0) > 0);
+});
+
 // Watch for selected GRs changes to update total amount
 watch(selectedGRs, (newSelectedGRs) => {
   form.value.gr_ids = newSelectedGRs;
@@ -729,6 +775,27 @@ watch(selectedRetailSales, (newSelectedRetailSales) => {
   
   // Update select all state
   selectAllRetailSales.value = newSelectedRetailSales.length === retailSalesListFiltered.value.length && retailSalesListFiltered.value.length > 0;
+}, { deep: true });
+
+// Auto-load item details for selected transactions to support sub category summary
+watch([selectedGRs, selectedRetailSales], async () => {
+  const loadTasks = [];
+
+  selectedGRs.value.forEach(grId => {
+    if (!grItems.value[grId] && !loadingGRItems.value[grId]) {
+      loadTasks.push(loadGRItems(grId));
+    }
+  });
+
+  selectedRetailSales.value.forEach(retailId => {
+    if (!retailSalesItems.value[retailId] && !loadingRetailSalesItems.value[retailId]) {
+      loadTasks.push(loadRetailSalesItems(retailId));
+    }
+  });
+
+  if (loadTasks.length > 0) {
+    await Promise.all(loadTasks);
+  }
 }, { deep: true });
 
 // Watch for changes in props.grList to update local list

@@ -12,12 +12,13 @@ use App\Models\SubCategoryAvailability;
 use Illuminate\Support\Facades\DB;
 use App\Models\Region;
 use App\Models\Outlet;
+use App\Models\ChartOfAccount;
 
 class SubCategoryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = SubCategory::with(['category', 'availabilities.region', 'availabilities.outlet'])
+        $query = SubCategory::with(['category', 'coa', 'availabilities.region', 'availabilities.outlet'])
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -33,12 +34,17 @@ class SubCategoryController extends Controller
 
         $subCategories = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
         $categories = Category::where('status', 'active')->get();
+        $coas = ChartOfAccount::query()
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
         $regions = Region::all();
         $outlets = Outlet::all();
 
         return Inertia::render('SubCategories/Index', [
             'subCategories' => $subCategories,
             'categories' => $categories,
+            'coas' => $coas,
             'regions' => $regions,
             'outlets' => $outlets,
             'filters' => [
@@ -56,6 +62,7 @@ class SubCategoryController extends Controller
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
             'category_id' => 'required|exists:categories,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
             'availability_type' => 'required_if:show_pos,1|in:byRegion,byOutlet',
             'selected_regions' => 'required_if:availability_type,byRegion|array',
             'selected_regions.*.id' => 'required_if:availability_type,byRegion|exists:regions,id',
@@ -69,6 +76,7 @@ class SubCategoryController extends Controller
             'status' => $request->status,
             'show_pos' => $request->show_pos,
             'category_id' => $request->category_id,
+            'coa_id' => $request->coa_id,
         ]);
 
         if ($request->show_pos === '1') {
@@ -119,6 +127,7 @@ class SubCategoryController extends Controller
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
             'category_id' => 'required|exists:categories,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
             'availability_type' => [
                 'nullable',
                 function($attribute, $value) use ($request) {
@@ -139,6 +148,7 @@ class SubCategoryController extends Controller
             'status' => $request->status,
             'show_pos' => $request->show_pos,
             'category_id' => $request->category_id,
+            'coa_id' => $request->coa_id,
         ]);
 
         $subCategory->refresh();
@@ -206,7 +216,7 @@ class SubCategoryController extends Controller
 
     public function apiIndex(Request $request)
     {
-        $query = SubCategory::with(['category', 'availabilities.region', 'availabilities.outlet']);
+        $query = SubCategory::with(['category', 'coa', 'availabilities.region', 'availabilities.outlet']);
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -228,10 +238,15 @@ class SubCategoryController extends Controller
     public function apiCreateData()
     {
         $categories = Category::where('status', 'active')->orderBy('name')->get(['id', 'code', 'name']);
+        $coas = ChartOfAccount::query()
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
         $regions = \DB::table('regions')->where('status', 'active')->select('id', 'code', 'name')->get();
         $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet as id', 'nama_outlet', 'region_id']);
         return response()->json([
             'categories' => $categories,
+            'coas' => $coas,
             'regions' => $regions,
             'outlets' => $outlets,
         ]);
@@ -239,7 +254,7 @@ class SubCategoryController extends Controller
 
     public function apiShow($id)
     {
-        $sub = SubCategory::with(['category', 'availabilities.region', 'availabilities.outlet'])->findOrFail($id);
+        $sub = SubCategory::with(['category', 'coa', 'availabilities.region', 'availabilities.outlet'])->findOrFail($id);
         return response()->json($sub);
     }
 
@@ -251,6 +266,7 @@ class SubCategoryController extends Controller
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
             'category_id' => 'required|exists:categories,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
             'availability_type' => 'nullable|in:byRegion,byOutlet',
             'region_ids' => 'array',
             'region_ids.*' => 'integer|exists:regions,id',
@@ -264,6 +280,7 @@ class SubCategoryController extends Controller
             'status' => $request->status,
             'show_pos' => (int) $request->show_pos,
             'category_id' => $request->category_id,
+            'coa_id' => $request->coa_id,
         ]);
 
         if ($request->show_pos == 1 && in_array($request->availability_type, ['byRegion', 'byOutlet'])) {
@@ -310,6 +327,7 @@ class SubCategoryController extends Controller
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
             'category_id' => 'required|exists:categories,id',
+            'coa_id' => 'nullable|exists:chart_of_accounts,id',
             'availability_type' => 'nullable|in:byRegion,byOutlet',
             'region_ids' => 'array',
             'region_ids.*' => 'integer|exists:regions,id',
@@ -324,6 +342,7 @@ class SubCategoryController extends Controller
             'status' => $request->status,
             'show_pos' => (int) $request->show_pos,
             'category_id' => $request->category_id,
+            'coa_id' => $request->coa_id,
         ]);
 
         $sub->availabilities()->delete();
