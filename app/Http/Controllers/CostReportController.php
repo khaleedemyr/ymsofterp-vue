@@ -67,6 +67,246 @@ class CostReportController extends Controller
     }
 
     /**
+     * Load data per tab (AJAX) to avoid heavy full-report computation on every request.
+     */
+    public function tabData(Request $request)
+    {
+        $bulan = $request->input('bulan', date('Y-m'));
+        $tab = $request->input('tab', 'cost_inventory');
+
+        if (!in_array($tab, ['cost_inventory', 'cogs', 'category_cost'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tab tidak valid.',
+            ], 422);
+        }
+
+        $bulanCarbon = Carbon::parse($bulan . '-01');
+        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
+        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
+        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
+        $tanggalAwalBulan = $bulanCarbon->format('Y-m-01');
+        $tanggalAkhirBulan = $bulanCarbon->format('Y-m-t');
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        if ($tab === 'cost_inventory') {
+            $reportRows = $this->buildCostInventoryRows(
+                $outlets,
+                $bulanSebelumnya,
+                $tanggalAkhirBulanSebelumnya,
+                $tanggal1BulanIni,
+                $tanggalAwalBulan,
+                $tanggalAkhirBulan
+            );
+
+            return response()->json([
+                'success' => true,
+                'tab' => $tab,
+                'reportRows' => $reportRows,
+            ]);
+        }
+
+        $reportRows = $this->buildCostInventoryRows(
+            $outlets,
+            $bulanSebelumnya,
+            $tanggalAkhirBulanSebelumnya,
+            $tanggal1BulanIni,
+            $tanggalAwalBulan,
+            $tanggalAkhirBulan
+        );
+
+        if ($tab === 'cogs') {
+            $cogsRows = $this->buildCogsRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
+
+            return response()->json([
+                'success' => true,
+                'tab' => $tab,
+                'cogsRows' => $cogsRows,
+            ]);
+        }
+
+        $categoryCostRows = $this->buildCategoryCostRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
+
+        return response()->json([
+            'success' => true,
+            'tab' => $tab,
+            'categoryCostRows' => $categoryCostRows,
+        ]);
+    }
+
+    private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
+    {
+        $reportRows = [];
+
+        foreach ($outlets as $outlet) {
+            $outletId = $outlet->id_outlet;
+            $warehouseOutlets = DB::table('warehouse_outlets')
+                ->where('outlet_id', $outletId)
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+
+            $totalBeginMacOutlet = 0;
+            $totalEndingMacOutlet = 0;
+
+            foreach ($warehouseOutlets as $wo) {
+                $warehouseOutletId = $wo->id;
+                $totalBeginMacOutlet += $this->computeBeginInventoryTotalMac(
+                    $outletId,
+                    $warehouseOutletId,
+                    $bulanSebelumnya,
+                    $tanggalAkhirBulanSebelumnya,
+                    $tanggal1BulanIni
+                );
+
+                $totalEndingMacOutlet += $this->computeEndingInventoryTotalMac(
+                    $outletId,
+                    $warehouseOutletId,
+                    $tanggalAwalBulan,
+                    $tanggalAkhirBulan
+                );
+            }
+
+            $reportRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'total_begin_mac' => round($totalBeginMacOutlet, 2),
+                'ending_inventory' => round($totalEndingMacOutlet, 2),
+                'official_cost' => 0,
+                'cost_rnd' => 0,
+                'outlet_transfer' => 0,
+                'sales_before_discount' => 0,
+                'discount' => 0,
+            ];
+        }
+
+        $officialCostByOutlet = $this->computeOfficialCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $costRndByOutlet = $this->computeCostRndByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $outletTransferByOutlet = $this->computeOutletTransferByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $salesBeforeDiscountByOutlet = $this->computeSalesBeforeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $discountByOutlet = $this->computeDiscountByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+
+        foreach ($reportRows as &$row) {
+            $row['official_cost'] = round($officialCostByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['cost_rnd'] = round($costRndByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['outlet_transfer'] = round($outletTransferByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['sales_before_discount'] = round($salesBeforeDiscountByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['discount'] = round($discountByOutlet[$row['outlet_id']] ?? 0, 2);
+            $row['sales_after_discount'] = round(($row['sales_before_discount'] ?? 0) - ($row['discount'] ?? 0), 2);
+
+            $salesBefore = (float) ($row['sales_before_discount'] ?? 0);
+            $row['pct_discount'] = $salesBefore > 0
+                ? round(((float) ($row['discount'] ?? 0) / $salesBefore) * 100, 2)
+                : 0;
+
+            $row['total_barang_tersedia'] = round(
+                ($row['total_begin_mac'] ?? 0) + ($row['official_cost'] ?? 0) - ($row['cost_rnd'] ?? 0) - ($row['outlet_transfer'] ?? 0),
+                2
+            );
+            $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory'] ?? 0), 2);
+        }
+        unset($row);
+
+        return $reportRows;
+    }
+
+    private function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
+    {
+        $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $categoryCostByOutlet = $this->computeCategoryCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $mealEmployeesByOutlet = $this->computeMealEmployeesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
+        $salesBeforeDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_before_discount'] ?? 0))->all();
+        $salesAfterDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_after_discount'] ?? 0))->all();
+
+        $cogsRows = [];
+        foreach ($outlets as $outlet) {
+            $cogs = round($cogsByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $categoryCost = round($categoryCostByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $mealEmployees = round($mealEmployeesByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $cogsPembanding = round($cogs + $categoryCost + $mealEmployees, 2);
+            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
+            $deviasi = round($cogsPembanding - $cogsAktual, 2);
+            $toleransi2Pct = round($cogsAktual * 0.02, 2);
+            $salesBeforeDiscount = $salesBeforeDiscountByOutlet[$outlet->id_outlet] ?? 0;
+            $salesAfterDiscount = $salesAfterDiscountByOutlet[$outlet->id_outlet] ?? 0;
+            $pctCogsPembanding = $salesBeforeDiscount > 0 ? round(($cogsPembanding / $salesBeforeDiscount) * 100, 2) : null;
+            $pctCogsActualBeforeDisc = $salesBeforeDiscount > 0 ? round(($cogsAktual / $salesBeforeDiscount) * 100, 2) : null;
+            $pctCogsActualAfterDisc = $salesAfterDiscount > 0 ? round(($cogsAktual / $salesAfterDiscount) * 100, 2) : null;
+            $pctCogsFoods = $salesBeforeDiscount > 0 ? round(($cogs / $salesBeforeDiscount) * 100, 2) : null;
+            $pctDeviasi = $cogsPembanding > 0 ? round(($deviasi / $cogsPembanding) * 100, 2) : null;
+            $pctCategoryCost = $cogsAktual > 0 ? round(($categoryCost / $cogsAktual) * 100, 2) : null;
+
+            $cogsRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'cogs' => $cogs,
+                'category_cost' => $categoryCost,
+                'meal_employees' => $mealEmployees,
+                'cogs_pembanding' => $cogsPembanding,
+                'deviasi' => $deviasi,
+                'toleransi_2_pct' => $toleransi2Pct,
+                'pct_cogs_pembanding' => $pctCogsPembanding,
+                'pct_cogs_actual_before_disc' => $pctCogsActualBeforeDisc,
+                'pct_cogs_actual_after_disc' => $pctCogsActualAfterDisc,
+                'pct_cogs_foods' => $pctCogsFoods,
+                'pct_deviasi' => $pctDeviasi,
+                'pct_category_cost' => $pctCategoryCost,
+            ];
+        }
+
+        return $cogsRows;
+    }
+
+    private function buildCategoryCostRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
+    {
+        $guestSuppliesByOutlet = $this->computeGuestSuppliesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $spoilageByOutlet = $this->computeSpoilageByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $wasteByOutlet = $this->computeWasteByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $nonCommodityByOutlet = $this->computeNonCommodityByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
+        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
+
+        $categoryCostRows = [];
+        foreach ($outlets as $outlet) {
+            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
+            $guestSupplies = round($guestSuppliesByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $spoilage = round($spoilageByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $waste = round($wasteByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $nonCommodity = round($nonCommodityByOutlet[$outlet->id_outlet] ?? 0, 2);
+            $categoryCostTotal = round($guestSupplies + $spoilage + $waste + $nonCommodity, 2);
+            $pctGuestSupplies = $cogsAktual > 0 ? round(($guestSupplies / $cogsAktual) * 100, 2) : null;
+            $pctSpoilage = $cogsAktual > 0 ? round(($spoilage / $cogsAktual) * 100, 2) : null;
+            $pctWaste = $cogsAktual > 0 ? round(($waste / $cogsAktual) * 100, 2) : null;
+            $pctNonCommodity = $cogsAktual > 0 ? round(($nonCommodity / $cogsAktual) * 100, 2) : null;
+            $pctCategoryCost = $cogsAktual > 0 ? round(($categoryCostTotal / $cogsAktual) * 100, 2) : null;
+
+            $categoryCostRows[] = [
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => $outlet->name,
+                'guest_supplies' => $guestSupplies,
+                'pct_guest_supplies' => $pctGuestSupplies,
+                'spoilage' => $spoilage,
+                'pct_spoilage' => $pctSpoilage,
+                'waste' => $waste,
+                'pct_waste' => $pctWaste,
+                'non_commodity' => $nonCommodity,
+                'pct_non_commodity' => $pctNonCommodity,
+                'category_cost' => $categoryCostTotal,
+                'pct_category_cost' => $pctCategoryCost,
+            ];
+        }
+
+        return $categoryCostRows;
+    }
+
+    /**
      * Build report data for the given month (shared by index and export).
      */
     private function getReportData(string $bulan): array

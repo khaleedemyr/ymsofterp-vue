@@ -48,7 +48,7 @@
         <nav class="flex gap-1" aria-label="Tabs">
           <button
             type="button"
-            @click="activeTab = 'cost_inventory'"
+            @click="switchTab('cost_inventory')"
             :class="activeTab === 'cost_inventory' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
@@ -56,7 +56,7 @@
           </button>
           <button
             type="button"
-            @click="activeTab = 'cogs'"
+            @click="switchTab('cogs')"
             :class="activeTab === 'cogs' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
@@ -64,7 +64,7 @@
           </button>
           <button
             type="button"
-            @click="activeTab = 'category_cost'"
+            @click="switchTab('category_cost')"
             :class="activeTab === 'category_cost' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
@@ -102,7 +102,7 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="(row, index) in (reportRows || [])" :key="row.outlet_id">
+            <tr v-for="(row, index) in (reportRowsData || [])" :key="row.outlet_id">
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ index + 1 }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.total_begin_mac) }}</td>
@@ -117,7 +117,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.sales_after_discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_discount != null ? (Number(row.pct_discount).toFixed(2) + '%') : '-' }}</td>
             </tr>
-            <tr v-if="!reportRows || reportRows.length === 0">
+            <tr v-if="!reportRowsData || reportRowsData.length === 0">
               <td colspan="13" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
             </tr>
           </tbody>
@@ -146,7 +146,7 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="(row, index) in (cogsRows || [])" :key="row.outlet_id">
+            <tr v-for="(row, index) in (cogsRowsData || [])" :key="row.outlet_id">
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ index + 1 }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs) }}</td>
@@ -162,7 +162,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.pct_deviasi || 0) < 0 ? 'text-red-600' : (row.pct_deviasi || 0) > 0 ? 'text-green-600' : 'text-gray-900'">{{ row.pct_deviasi != null ? (Number(row.pct_deviasi).toFixed(2) + '%') : '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_category_cost != null ? (Number(row.pct_category_cost).toFixed(2) + '%') : '-' }}</td>
             </tr>
-            <tr v-if="!cogsRows || cogsRows.length === 0">
+            <tr v-if="!cogsRowsData || cogsRowsData.length === 0">
               <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
             </tr>
           </tbody>
@@ -189,7 +189,7 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="(row, index) in (categoryCostRows || [])" :key="row.outlet_id">
+            <tr v-for="(row, index) in (categoryCostRowsData || [])" :key="row.outlet_id">
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ index + 1 }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.guest_supplies) }}</td>
@@ -203,7 +203,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.category_cost) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_category_cost != null ? (Number(row.pct_category_cost).toFixed(2) + '%') : '-' }}</td>
             </tr>
-            <tr v-if="!categoryCostRows || categoryCostRows.length === 0">
+            <tr v-if="!categoryCostRowsData || categoryCostRowsData.length === 0">
               <td colspan="12" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
             </tr>
           </tbody>
@@ -217,6 +217,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
   outlets: { type: Array, default: () => [] },
@@ -229,9 +230,25 @@ const props = defineProps({
 const loading = ref(false);
 const filters = ref({ ...props.filters });
 const activeTab = ref('cost_inventory'); // 'cost_inventory' | 'cogs' | 'category_cost'
+const reportRowsData = ref(props.reportRows || []);
+const cogsRowsData = ref(props.cogsRows || []);
+const categoryCostRowsData = ref(props.categoryCostRows || []);
+const loadedTabs = ref({});
 
 watch(() => props.filters, (v) => {
   filters.value = { ...v };
+}, { immediate: true });
+
+watch(() => props.reportRows, (v) => {
+  reportRowsData.value = v || [];
+}, { immediate: true });
+
+watch(() => props.cogsRows, (v) => {
+  cogsRowsData.value = v || [];
+}, { immediate: true });
+
+watch(() => props.categoryCostRows, (v) => {
+  categoryCostRowsData.value = v || [];
 }, { immediate: true });
 
 const exportUrl = computed(() => {
@@ -250,16 +267,49 @@ function formatNumber(value) {
 }
 
 function loadReport() {
+  const bulan = filters.value.bulan || '';
+  loadedTabs.value = {};
+  reportRowsData.value = [];
+  cogsRowsData.value = [];
+  categoryCostRowsData.value = [];
+  fetchTabData(activeTab.value, bulan, true);
+}
+
+function switchTab(tab) {
+  activeTab.value = tab;
+  const bulan = filters.value.bulan || '';
+  if (!bulan) return;
+  fetchTabData(tab, bulan, false);
+}
+
+async function fetchTabData(tab, bulan, force = false) {
+  if (!bulan) return;
+
+  const loadKey = `${bulan}:${tab}`;
+  if (!force && loadedTabs.value[loadKey]) {
+    return;
+  }
+
   loading.value = true;
-  router.get('/cost-report', {
-    bulan: filters.value.bulan,
-    load: 1, // lazy load: server hanya hitung data saat user klik Load Data
-  }, {
-    preserveState: false,
-    preserveScroll: true,
-    onFinish: () => {
-      loading.value = false;
-    },
-  });
+  try {
+    const response = await axios.get('/cost-report/tab-data', {
+      params: { bulan, tab },
+    });
+
+    if (response?.data?.success) {
+      if (tab === 'cost_inventory') {
+        reportRowsData.value = response.data.reportRows || [];
+      } else if (tab === 'cogs') {
+        cogsRowsData.value = response.data.cogsRows || [];
+      } else if (tab === 'category_cost') {
+        categoryCostRowsData.value = response.data.categoryCostRows || [];
+      }
+      loadedTabs.value[loadKey] = true;
+    }
+  } catch (error) {
+    console.error('Failed to load cost report tab data:', error);
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
