@@ -11,6 +11,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class CostReportController extends Controller
 {
+    private array $internalUseWasteAggregatesCache = [];
+
     /**
      * Cost Report: kolom Outlet (is_outlet=1, status=A) dan Begin Inventory (Total MAC).
      * Begin inventory logic sama seperti Outlet Stock Report, tapi nilai yang ditampilkan
@@ -514,12 +516,19 @@ return $totalMac;
      */
     private function computeCostRndByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        return $this->computeInternalUseWasteByOutletFromDetails(
-            ['r_and_d', 'marketing'],
-            $tanggalAwal,
-            $tanggalAkhir,
-            ['APPROVED']
-        );
+        $aggregates = $this->getInternalUseWasteAggregates($tanggalAwal, $tanggalAkhir);
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = (float) (($aggregates['r_and_d'][$oid] ?? 0) + ($aggregates['marketing'][$oid] ?? 0));
+        }
+
+        return $result;
     }
 
     /**
@@ -529,12 +538,24 @@ return $totalMac;
      */
     private function computeCategoryCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        return $this->computeInternalUseWasteByOutletFromDetails(
-            ['spoil', 'waste', 'guest_supplies', 'non_commodity'],
-            $tanggalAwal,
-            $tanggalAkhir,
-            ['APPROVED', 'PROCESSED']
-        );
+        $aggregates = $this->getInternalUseWasteAggregates($tanggalAwal, $tanggalAkhir);
+
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $result = [];
+        foreach ($outletIds as $oid) {
+            $result[$oid] = (float) (
+                ($aggregates['spoil'][$oid] ?? 0)
+                + ($aggregates['waste'][$oid] ?? 0)
+                + ($aggregates['guest_supplies'][$oid] ?? 0)
+                + ($aggregates['non_commodity'][$oid] ?? 0)
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -544,12 +565,7 @@ return $totalMac;
      */
     private function computeMealEmployeesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        return $this->computeInternalUseWasteByOutletFromDetails(
-            ['internal_use'],
-            $tanggalAwal,
-            $tanggalAkhir,
-            ['APPROVED', 'PROCESSED']
-        );
+        return $this->computeCategoryCostTypeByOutlet('internal_use', $tanggalAwal, $tanggalAkhir);
     }
 
     /**
@@ -559,12 +575,7 @@ return $totalMac;
      */
     private function computeGuestSuppliesByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        return $this->computeInternalUseWasteByOutletFromDetails(
-            ['guest_supplies'],
-            $tanggalAwal,
-            $tanggalAkhir,
-            ['APPROVED', 'PROCESSED']
-        );
+        return $this->computeCategoryCostTypeByOutlet('guest_supplies', $tanggalAwal, $tanggalAkhir);
     }
 
     /**
@@ -600,24 +611,8 @@ return $totalMac;
      */
     private function computeCategoryCostTypeByOutlet(string $type, string $tanggalAwal, string $tanggalAkhir): array
     {
-        return $this->computeInternalUseWasteByOutletFromDetails(
-            [$type],
-            $tanggalAwal,
-            $tanggalAkhir,
-            ['APPROVED', 'PROCESSED']
-        );
-    }
+        $aggregates = $this->getInternalUseWasteAggregates($tanggalAwal, $tanggalAkhir);
 
-    /**
-     * Hitung total nilai Category Cost per outlet dari detail + MAC history + konversi unit.
-     * Digunakan agar konsisten dengan report Category Cost Outlet (bukan hanya SUM header.subtotal_mac).
-     *
-     * @param array<int, string> $types
-     * @param array<int, string>|null $statuses
-     * @return array<int, float>
-     */
-    private function computeInternalUseWasteByOutletFromDetails(array $types, string $tanggalAwal, string $tanggalAkhir, ?array $statuses = null): array
-    {
         $outletIds = DB::table('tbl_data_outlet')
             ->where('is_outlet', 1)
             ->where('status', 'A')
@@ -625,27 +620,65 @@ return $totalMac;
 
         $result = [];
         foreach ($outletIds as $oid) {
-            $result[$oid] = 0;
+            $result[$oid] = (float) ($aggregates[$type][$oid] ?? 0);
         }
 
-        if (empty($types)) {
-            return $result;
+        return $result;
+    }
+
+    /**
+     * Hitung sekali nilai detail+MAC untuk semua type Category Cost yang dipakai Cost Report.
+     * Cache per periode untuk menghindari query berat berulang saat build tab.
+     *
+     * Rule status:
+     * - r_and_d, marketing: APPROVED saja
+     * - internal_use, spoil, waste, guest_supplies, non_commodity: APPROVED/PROCESSED
+     *
+     * @return array<string, array<int, float>>
+     */
+    private function getInternalUseWasteAggregates(string $tanggalAwal, string $tanggalAkhir): array
+    {
+        $cacheKey = $tanggalAwal . '|' . $tanggalAkhir;
+        if (isset($this->internalUseWasteAggregatesCache[$cacheKey])) {
+            return $this->internalUseWasteAggregatesCache[$cacheKey];
         }
 
-        $headersQuery = DB::table('outlet_internal_use_waste_headers as h')
-            ->whereIn('h.type', $types)
+        $outletIds = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->pluck('id_outlet');
+
+        $trackedTypes = ['r_and_d', 'marketing', 'internal_use', 'spoil', 'waste', 'guest_supplies', 'non_commodity'];
+
+        $aggregates = [];
+        foreach ($trackedTypes as $trackedType) {
+            $aggregates[$trackedType] = [];
+            foreach ($outletIds as $oid) {
+                $aggregates[$trackedType][$oid] = 0;
+            }
+        }
+
+        $headers = DB::table('outlet_internal_use_waste_headers as h')
+            ->whereIn('h.type', $trackedTypes)
             ->whereBetween('h.date', [$tanggalAwal, $tanggalAkhir]);
 
-        if (!empty($statuses)) {
-            $headersQuery->whereIn('h.status', $statuses);
-        }
+        $headers->where(function ($query) {
+            $query->where(function ($sub) {
+                $sub->whereIn('h.type', ['r_and_d', 'marketing'])
+                    ->where('h.status', 'APPROVED');
+            })->orWhere(function ($sub) {
+                $sub->whereIn('h.type', ['internal_use', 'spoil', 'waste', 'guest_supplies', 'non_commodity'])
+                    ->whereIn('h.status', ['APPROVED', 'PROCESSED']);
+            });
+        });
 
-        $headers = $headersQuery
-            ->select('h.id', 'h.outlet_id', 'h.warehouse_outlet_id', 'h.date')
+        $headers = $headers
+            ->select('h.id', 'h.type', 'h.outlet_id', 'h.warehouse_outlet_id', 'h.date')
             ->get();
 
         if ($headers->isEmpty()) {
-            return $result;
+            $this->internalUseWasteAggregatesCache[$cacheKey] = $aggregates;
+            return $aggregates;
         }
 
         $headerIds = $headers->pluck('id')->all();
@@ -668,7 +701,8 @@ return $totalMac;
             ->get();
 
         if ($details->isEmpty()) {
-            return $result;
+            $this->internalUseWasteAggregatesCache[$cacheKey] = $aggregates;
+            return $aggregates;
         }
 
         $itemIds = $details->pluck('item_id')->filter()->unique()->values()->all();
@@ -742,12 +776,15 @@ return $totalMac;
             }
 
             $subtotalMac = $macConverted * (float) ($detail->qty ?? 0);
-            if (isset($result[$header->outlet_id])) {
-                $result[$header->outlet_id] += $subtotalMac;
+            $headerType = $header->type ?? null;
+
+            if ($headerType && isset($aggregates[$headerType][$header->outlet_id])) {
+                $aggregates[$headerType][$header->outlet_id] += $subtotalMac;
             }
         }
 
-        return $result;
+        $this->internalUseWasteAggregatesCache[$cacheKey] = $aggregates;
+        return $aggregates;
     }
 
     /**
