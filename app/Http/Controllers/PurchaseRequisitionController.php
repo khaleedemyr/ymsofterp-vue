@@ -772,8 +772,8 @@ class PurchaseRequisitionController extends Controller
             $validated['amount'] = $validated['kasbon_amount'];
         }
         
-        // Generate PR number
-        $validated['pr_number'] = $this->generateRequisitionNumber();
+        // Generate PR number based on mode
+        $validated['pr_number'] = $this->generateRequisitionNumber($validated['mode'] ?? 'pr_ops');
         $validated['date'] = now()->toDateString();
         $validated['warehouse_id'] = 1; // Default warehouse
         $validated['requested_by'] = auth()->id();
@@ -6062,19 +6062,27 @@ class PurchaseRequisitionController extends Controller
     /**
      * Generate unique requisition number
      */
-    private function generateRequisitionNumber()
+    private function generateRequisitionNumber(?string $mode = 'pr_ops')
     {
         $year = now()->year;
         $month = now()->month;
+
+        $prefix = match ($mode) {
+            'purchase_payment' => 'PA',
+            'travel_application' => 'TA',
+            'kasbon' => 'KB',
+            default => 'PR',
+        };
+
+        $numberPrefix = "{$prefix}{$year}{$month}";
         
-        $lastPR = PurchaseRequisition::whereYear('created_at', $year)
-                                   ->whereMonth('created_at', $month)
-                                   ->orderBy('id', 'desc')
-                                   ->first();
+        $lastPR = PurchaseRequisition::where('pr_number', 'like', "{$numberPrefix}%")
+            ->orderBy('id', 'desc')
+            ->first();
         
         $sequence = $lastPR ? (int) substr($lastPR->pr_number, -4) + 1 : 1;
         
-        return "PR{$year}{$month}" . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+        return $numberPrefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
     }
 
     /**
