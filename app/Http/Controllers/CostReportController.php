@@ -871,8 +871,9 @@ return $totalMac;
      */
     private function computeOfficialCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        // 1. GR: outlet_food_good_receives + items, nilai = received_qty * COALESCE(fo.price, 0), exclude 3 sub_category
-        $grQuery = DB::table('outlet_food_good_receives as gr')
+        // 1) GR mengikuti pola Report Rekap FJ: group per outlet + item dulu, lalu dijumlah per outlet.
+        //    Ini menjaga konsistensi perhitungan dengan report rekap FJ.
+        $grItems = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
@@ -881,26 +882,51 @@ return $totalMac;
                 $join->on('i.item_id', '=', 'fo.item_id')
                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
             })
-            ->whereBetween('gr.receive_date', [$tanggalAwal, $tanggalAkhir])
+            ->whereDate('gr.receive_date', '>=', $tanggalAwal)
+            ->whereDate('gr.receive_date', '<=', $tanggalAkhir)
             ->whereNull('gr.deleted_at')
             ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
-            ->groupBy('gr.outlet_id')
-            ->select('gr.outlet_id', DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as total_gr'));
+            ->groupBy('gr.outlet_id', 'it.id', 'sc.name')
+            ->select(
+                'gr.outlet_id',
+                DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
+            )
+            ->get();
 
-        $grByOutlet = $grQuery->get()->keyBy('outlet_id');
+        $grByOutlet = [];
+        foreach ($grItems as $item) {
+            $outletId = (int) $item->outlet_id;
+            if (!isset($grByOutlet[$outletId])) {
+                $grByOutlet[$outletId] = 0;
+            }
+            $grByOutlet[$outletId] += (float) ($item->item_subtotal ?? 0);
+        }
 
-        // 2. Retail Food: retail_food + retail_food_items, join items (by name) + sub_categories, exclude 3 sub_category, sum(rfi.subtotal)
-        $retailQuery = DB::table('retail_food as rf')
+        // 2) Tambahan Retail Food (sesuai permintaan):
+        //    gunakan mapping nama item -> satu item master agar tidak double count jika nama item kembar.
+        $itemNameMap = DB::table('items as im')
+            ->select(DB::raw('MIN(im.id) as item_id'), DB::raw('TRIM(im.name) as item_name_key'))
+            ->groupBy(DB::raw('TRIM(im.name)'));
+
+        $retailRows = DB::table('retail_food as rf')
             ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
-            ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
-            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
-            ->whereBetween('rf.transaction_date', [$tanggalAwal, $tanggalAkhir])
+            ->joinSub($itemNameMap, 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->join('items as it', 'map_item.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->whereDate('rf.transaction_date', '>=', $tanggalAwal)
+            ->whereDate('rf.transaction_date', '<=', $tanggalAkhir)
             ->where('rf.status', 'approved')
             ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
             ->groupBy('rf.outlet_id')
-            ->select('rf.outlet_id', DB::raw('SUM(rfi.subtotal) as total_retail'));
+            ->select('rf.outlet_id', DB::raw('SUM(rfi.subtotal) as total_retail'))
+            ->get();
 
-        $retailByOutlet = $retailQuery->get()->keyBy('outlet_id');
+        $retailByOutlet = [];
+        foreach ($retailRows as $row) {
+            $retailByOutlet[(int) $row->outlet_id] = (float) ($row->total_retail ?? 0);
+        }
 
         $outletIds = DB::table('tbl_data_outlet')
             ->where('is_outlet', 1)
@@ -909,8 +935,8 @@ return $totalMac;
 
         $result = [];
         foreach ($outletIds as $oid) {
-            $gr = (float) ($grByOutlet->get($oid)?->total_gr ?? 0);
-            $retail = (float) ($retailByOutlet->get($oid)?->total_retail ?? 0);
+            $gr = (float) ($grByOutlet[(int) $oid] ?? 0);
+            $retail = (float) ($retailByOutlet[(int) $oid] ?? 0);
             $result[$oid] = $gr + $retail;
         }
         return $result;
