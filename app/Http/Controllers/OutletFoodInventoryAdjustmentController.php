@@ -13,6 +13,7 @@ use App\Models\OutletFoodInventoryCard;
 use App\Models\Outlet;
 use App\Models\Item;
 use App\Models\User;
+use App\Exports\OutletStockAdjustmentDetailExport;
 use App\Services\NotificationService;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -1795,6 +1796,50 @@ class OutletFoodInventoryAdjustmentController extends Controller
             'total_per_type' => $totalPerType,
             'user_outlet_id' => $user->id_outlet,
         ]);
+    }
+
+    /**
+     * Export Outlet Stock Adjustment Detail to Excel
+     */
+    public function exportDetail(Request $request)
+    {
+        $user = auth()->user();
+
+        $search = $request->input('search');
+        $from = $request->input('from');
+        $to = $request->input('to');
+
+        if (!$from || !$to) {
+            return redirect()->route('outlet-food-inventory-adjustment.index', [
+                'search' => $search,
+                'from' => $from,
+                'to' => $to,
+            ])->with('error', 'Filter tanggal (From Date dan To Date) wajib diisi untuk export detail.');
+        }
+
+        $fromDate = \Carbon\Carbon::parse($from);
+        $toDate = \Carbon\Carbon::parse($to);
+        $diffMonths = $fromDate->diffInMonths($toDate);
+
+        if ($diffMonths > 3) {
+            return redirect()->route('outlet-food-inventory-adjustment.index', [
+                'search' => $search,
+                'from' => $from,
+                'to' => $to,
+            ])->with('error', 'Range tanggal maksimal 3 bulan untuk export detail.');
+        }
+
+        $export = new OutletStockAdjustmentDetailExport(
+            $search,
+            $from,
+            $to,
+            $user->id_outlet
+        );
+
+        $dateSuffix = now()->format('Ymd_His');
+        $fileName = 'Outlet_Stock_Adjustment_Detail_' . $dateSuffix . '.xlsx';
+
+        return Excel::download($export, $fileName);
     }
 
     /**

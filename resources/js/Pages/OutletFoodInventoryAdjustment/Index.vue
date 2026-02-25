@@ -16,6 +16,15 @@
             <p class="text-gray-600 mt-2 ml-14">Kelola penyesuaian stok outlet dengan mudah</p>
           </div>
           <div class="flex gap-3">
+            <a
+              :href="exportDetailUrl"
+              @click.prevent="handleExportDetail"
+              class="group relative px-6 py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold flex items-center gap-2 overflow-hidden"
+            >
+              <span class="absolute inset-0 bg-gradient-to-r from-emerald-700 to-green-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+              <i class="fa fa-file-excel relative z-10"></i>
+              <span class="relative z-10">Export Detail</span>
+            </a>
             <Link
               :href="route('outlet-food-inventory-adjustment.report-universal')"
               class="group relative px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold flex items-center gap-2 overflow-hidden"
@@ -210,6 +219,40 @@ const filters = ref({
   from: props.filters.from || '',
   to: props.filters.to || ''
 })
+
+const exportDetailUrl = vComputed(() => route('outlet-food-inventory-adjustment.export-detail', {
+  search: search.value || '',
+  from: filters.value.from || '',
+  to: filters.value.to || '',
+}))
+
+const handleExportDetail = () => {
+  if (!filters.value.from || !filters.value.to) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Tanggal wajib diisi',
+      text: 'From Date dan To Date wajib diisi untuk export detail.',
+      confirmButtonText: 'OK',
+    })
+    return
+  }
+
+  const fromDate = new Date(filters.value.from)
+  const toDate = new Date(filters.value.to)
+  const diffMonths = (toDate.getFullYear() - fromDate.getFullYear()) * 12 + (toDate.getMonth() - fromDate.getMonth())
+
+  if (diffMonths > 3) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Range terlalu besar',
+      text: 'Range tanggal maksimal 3 bulan untuk export detail.',
+      confirmButtonText: 'OK',
+    })
+    return
+  }
+
+  window.location.href = exportDetailUrl.value
+}
 
 const selectedOutlet = ref('')
 

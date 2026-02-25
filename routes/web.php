@@ -1113,6 +1113,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'index'])->name('outlet-food-inventory-adjustment.index');
     Route::get('/outlet-food-inventory-adjustment/create', [OutletFoodInventoryAdjustmentController::class, 'create'])->name('outlet-food-inventory-adjustment.create');
     Route::post('/outlet-food-inventory-adjustment', [OutletFoodInventoryAdjustmentController::class, 'store'])->name('outlet-food-inventory-adjustment.store');
+    Route::get('/outlet-food-inventory-adjustment/export-detail', [OutletFoodInventoryAdjustmentController::class, 'exportDetail'])->name('outlet-food-inventory-adjustment.export-detail');
     Route::get('/outlet-food-inventory-adjustment/report-universal', [OutletFoodInventoryAdjustmentController::class, 'reportUniversal'])->name('outlet-food-inventory-adjustment.report-universal');
     Route::get('/outlet-food-inventory-adjustment/report-universal/export', [OutletFoodInventoryAdjustmentController::class, 'exportReportUniversal'])->name('outlet-food-inventory-adjustment.report-universal.export');
     Route::get('/api/outlet-food-inventory-adjustment/{id}/report-details', [OutletFoodInventoryAdjustmentController::class, 'getAdjustmentDetailsForReport'])->name('outlet-food-inventory-adjustment.report-details');
