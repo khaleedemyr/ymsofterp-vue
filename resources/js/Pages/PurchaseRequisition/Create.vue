@@ -1116,18 +1116,38 @@
             <!-- Nilai Kasbon -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Nilai Kasbon *</label>
-              <input
-                type="number"
+              <select
                 v-model.number="form.kasbon_amount"
-                min="0"
-                step="0.01"
                 required
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Masukkan nilai kasbon..."
-              />
+              >
+                <option :value="0">Pilih nilai kasbon</option>
+                <option
+                  v-for="amountOption in kasbonAmountOptions"
+                  :key="amountOption"
+                  :value="amountOption"
+                >
+                  {{ formatCurrency(amountOption) }}
+                </option>
+              </select>
               <p class="mt-1 text-xs text-gray-500">
                 Total: {{ formatCurrency(form.kasbon_amount || 0) }}
               </p>
+            </div>
+
+            <!-- Termin Kasbon -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Termin *</label>
+              <select
+                v-model.number="form.kasbon_termin"
+                required
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option :value="0">Pilih termin</option>
+                <option v-for="terminOption in kasbonTerminOptions" :key="terminOption" :value="terminOption">
+                  {{ terminOption }}x Termin
+                </option>
+              </select>
             </div>
 
             <!-- Reason Kasbon -->
@@ -2559,6 +2579,9 @@ function newOutlet() {
   }
 }
 
+const kasbonAmountOptions = [500000, 1000000, 1500000, 2000000, 2500000, 3000000]
+const kasbonTerminOptions = [1, 2, 3]
+
 const form = reactive({
   title: '',
   description: '',
@@ -2575,6 +2598,7 @@ const form = reactive({
   travel_agenda: '', // For travel_application mode: work agenda
   travel_notes: '', // For travel_application mode: notes
   kasbon_amount: 0, // For kasbon mode: nilai kasbon
+  kasbon_termin: 0, // For kasbon mode: termin 1-3x
   kasbon_reason: '', // For kasbon mode: reason/alasan kasbon
   approvers: [],
   mode: 'pr_ops'
@@ -2784,6 +2808,7 @@ watch(() => form.mode, (newMode) => {
       form.travel_agenda = ''
       form.travel_notes = ''
       form.kasbon_amount = 0
+      form.kasbon_termin = 0
       form.kasbon_reason = ''
       form.outlet_id = ''
       form.category_id = ''
@@ -2830,6 +2855,7 @@ watch(() => form.mode, (newMode) => {
     form.travel_agenda = ''
     form.travel_notes = ''
     form.kasbon_amount = 0
+    form.kasbon_termin = 1
     form.kasbon_reason = ''
     attachments.value = []
     
@@ -2864,6 +2890,7 @@ watch(() => form.mode, (newMode) => {
     form.travel_agenda = ''
     form.travel_notes = ''
     form.kasbon_amount = 0
+    form.kasbon_termin = 0
     form.kasbon_reason = ''
     attachments.value = []
   }
@@ -3471,12 +3498,25 @@ const submitForm = async () => {
     }
     
     // Validate kasbon amount
-    if (!form.kasbon_amount || form.kasbon_amount <= 0) {
+    if (!kasbonAmountOptions.includes(Number(form.kasbon_amount))) {
       loading.value = false
       await Swal.fire({
         icon: 'warning',
         title: 'Nilai Kasbon Diperlukan',
-        text: 'Silakan masukkan nilai kasbon yang valid (lebih dari 0)',
+        text: 'Silakan pilih nilai kasbon dari pilihan yang tersedia',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#F59E0B'
+      })
+      return
+    }
+
+    // Validate kasbon termin
+    if (!kasbonTerminOptions.includes(Number(form.kasbon_termin))) {
+      loading.value = false
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Termin Kasbon Diperlukan',
+        text: 'Silakan pilih termin kasbon (1x, 2x, atau 3x)',
         confirmButtonText: 'OK',
         confirmButtonColor: '#F59E0B'
       })
@@ -3609,6 +3649,7 @@ const submitForm = async () => {
     // Backend expects kasbon_amount and kasbon_reason directly
     // Keep kasbon_amount and kasbon_reason in formData for backend processing
     formData.kasbon_amount = form.kasbon_amount || 0
+    formData.kasbon_termin = form.kasbon_termin || 1
     formData.kasbon_reason = form.kasbon_reason || ''
     
     // Store kasbon_reason in description as well

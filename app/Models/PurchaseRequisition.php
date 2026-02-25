@@ -27,6 +27,7 @@ class PurchaseRequisition extends Model
         'status',
         'priority',
         'notes',
+        'kasbon_termin',
         'mode',
         'created_by',
         'updated_by',
@@ -43,6 +44,7 @@ class PurchaseRequisition extends Model
     protected $casts = [
         'date' => 'date',
         'amount' => 'decimal:2',
+        'kasbon_termin' => 'integer',
         'approved_ssd_at' => 'datetime',
         'approved_cc_at' => 'datetime',
         'is_held' => 'boolean',

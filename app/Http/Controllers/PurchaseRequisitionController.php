@@ -625,7 +625,8 @@ class PurchaseRequisitionController extends Controller
         // For kasbon mode, items are not required (will be auto-generated)
         // For other modes, items are required
         if ($isKasbon) {
-            $rules['kasbon_amount'] = 'required|numeric|min:0.01';
+            $rules['kasbon_amount'] = 'required|integer|in:500000,1000000,1500000,2000000,2500000,3000000';
+            $rules['kasbon_termin'] = 'required|integer|in:1,2,3';
             $rules['kasbon_reason'] = 'required|string';
             $rules['items'] = 'nullable|array'; // Optional for kasbon
         } else {
@@ -770,6 +771,9 @@ class PurchaseRequisitionController extends Controller
         // For kasbon mode, ensure amount is set from kasbon_amount
         if ($validated['mode'] === 'kasbon' && isset($validated['kasbon_amount'])) {
             $validated['amount'] = $validated['kasbon_amount'];
+            $validated['kasbon_termin'] = (int) ($validated['kasbon_termin'] ?? 1);
+        } else {
+            $validated['kasbon_termin'] = null;
         }
         
         // Generate PR number based on mode
@@ -947,6 +951,7 @@ class PurchaseRequisitionController extends Controller
                 $modeSpecificData = [
                     'kasbon_amount' => $kasbonItem->subtotal ?? 0,
                     'kasbon_reason' => $kasbonItem->item_name ?? '',
+                    'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
                 ];
             }
         }
@@ -1209,6 +1214,7 @@ class PurchaseRequisitionController extends Controller
                 $modeSpecificData = [
                     'kasbon_amount' => $kasbonItem->subtotal ?? 0,
                     'kasbon_reason' => $kasbonItem->item_name ?? '',
+                    'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
                 ];
             }
         }
@@ -1258,7 +1264,8 @@ class PurchaseRequisitionController extends Controller
             'travel_outlet_ids.*' => 'nullable|exists:tbl_data_outlet,id_outlet',
             'travel_agenda' => 'nullable|string',
             'travel_notes' => 'nullable|string',
-            'kasbon_amount' => 'nullable|numeric|min:0',
+            'kasbon_amount' => 'required_if:mode,kasbon|nullable|integer|in:500000,1000000,1500000,2000000,2500000,3000000',
+            'kasbon_termin' => 'required_if:mode,kasbon|nullable|integer|in:1,2,3',
             'kasbon_reason' => 'nullable|string',
             'approvers' => 'nullable|array',
             'approvers.*' => 'required|exists:users,id',
@@ -1269,8 +1276,10 @@ class PurchaseRequisitionController extends Controller
         $totalAmount = 0;
         if ($validated['mode'] === 'kasbon') {
             $totalAmount = $validated['kasbon_amount'] ?? 0;
+            $validated['kasbon_termin'] = (int) ($validated['kasbon_termin'] ?? 1);
         } else {
             $totalAmount = array_sum(array_column($validated['items'], 'subtotal'));
+            $validated['kasbon_termin'] = null;
         }
         $validated['amount'] = $totalAmount;
 
@@ -2958,6 +2967,7 @@ class PurchaseRequisitionController extends Controller
                     $modeSpecificData = [
                         'kasbon_amount' => $kasbonItem->subtotal ?? 0,
                         'kasbon_reason' => $kasbonItem->item_name ?? '',
+                        'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
                     ];
                 }
             }
