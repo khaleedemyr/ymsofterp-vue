@@ -869,6 +869,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/outlet-transfer/report', [\App\Http\Controllers\OutletTransferReportController::class, 'index'])->name('outlet-transfer.report');
     Route::get('/outlet-transfer/create', [\App\Http\Controllers\OutletTransferController::class, 'create'])->name('outlet-transfer.create');
     Route::post('/outlet-transfer', [\App\Http\Controllers\OutletTransferController::class, 'store'])->name('outlet-transfer.store');
+    Route::get('/outlet-transfer/{id}/print-pdf', [\App\Http\Controllers\OutletTransferController::class, 'printPdf'])->name('outlet-transfer.print-pdf');
     Route::get('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'show'])->name('outlet-transfer.show');
     Route::delete('/outlet-transfer/{id}', [\App\Http\Controllers\OutletTransferController::class, 'destroy'])->name('outlet-transfer.destroy');
     Route::get('/outlet-transfer/{id}/edit', [\App\Http\Controllers\OutletTransferController::class, 'edit'])->name('outlet-transfer.edit');

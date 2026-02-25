@@ -70,6 +70,13 @@
                   <button @click="goToDetail(tr.id)" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-eye mr-1"></i> Detail
                   </button>
+                  <a
+                    :href="route('outlet-transfer.print-pdf', tr.id)"
+                    target="_blank"
+                    class="inline-flex items-center btn btn-xs bg-purple-100 text-purple-800 hover:bg-purple-200 rounded px-2 py-1 font-semibold transition"
+                  >
+                    <i class="fa fa-print mr-1"></i> Print PDF
+                  </a>
                   <button v-if="tr.status === 'draft'" @click="submitTransfer(tr.id)" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition">
                     <i class="fa fa-paper-plane mr-1"></i> Submit
                   </button>

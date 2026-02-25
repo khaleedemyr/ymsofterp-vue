@@ -924,6 +924,93 @@ class OutletTransferController extends Controller
         ]);
     }
 
+    public function printPdf($id)
+    {
+        $user = auth()->user();
+
+        $transfer = OutletTransfer::with([
+            'items.item',
+            'warehouseOutletFrom.outlet',
+            'warehouseOutletTo.outlet',
+            'creator',
+            'approver',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
+        $userOutletId = $user->id_outlet ?? null;
+        $fromOutletId = $transfer->warehouseOutletFrom->outlet_id ?? null;
+        $toOutletId = $transfer->warehouseOutletTo->outlet_id ?? null;
+
+        if (!$isSuperadmin && $userOutletId && $fromOutletId != $userOutletId && $toOutletId != $userOutletId) {
+            abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
+        }
+
+        $items = [];
+        $totalValueOut = 0;
+
+        foreach ($transfer->items as $transferItem) {
+            $inventoryItem = DB::table('outlet_food_inventory_items')
+                ->where('item_id', $transferItem->item_id)
+                ->first();
+
+            $macOut = null;
+            $macIn = null;
+            $valueOut = 0;
+
+            if ($inventoryItem) {
+                $outCard = DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'outlet_transfer')
+                    ->where('reference_id', $transfer->id)
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $fromOutletId)
+                    ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($outCard) {
+                    $macOut = (float) ($outCard->cost_per_small ?? 0);
+                    $valueOut = (float) ($outCard->value_out ?? 0);
+                }
+
+                $costHistory = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('reference_type', 'outlet_transfer')
+                    ->where('reference_id', $transfer->id)
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $toOutletId)
+                    ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($costHistory) {
+                    $macIn = (float) ($costHistory->mac ?? 0);
+                }
+            }
+
+            $totalValueOut += $valueOut;
+
+            $items[] = [
+                'item_name' => $transferItem->item->name ?? '-',
+                'quantity' => (float) ($transferItem->quantity ?? 0),
+                'qty_small' => (float) ($transferItem->qty_small ?? 0),
+                'qty_medium' => (float) ($transferItem->qty_medium ?? 0),
+                'qty_large' => (float) ($transferItem->qty_large ?? 0),
+                'note' => $transferItem->note,
+                'mac_out' => $macOut,
+                'mac_in' => $macIn,
+                'value_out' => $valueOut,
+            ];
+        }
+
+        $pdf = \PDF::loadView('outlet-transfer.print-pdf', [
+            'transfer' => $transfer,
+            'items' => $items,
+            'totalValueOut' => $totalValueOut,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download('outlet-transfer-' . $transfer->transfer_number . '.pdf');
+    }
+
     public function destroy($id)
     {
         $user = auth()->user();
