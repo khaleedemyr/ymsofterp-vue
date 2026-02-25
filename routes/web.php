@@ -1206,6 +1206,7 @@ Route::get('/outlet-internal-use-waste/report-waste-spoil', [\App\Http\Controlle
 Route::get('/outlet-internal-use-waste/report-universal', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reportUniversal'])->name('outlet-internal-use-waste.report-universal');
 Route::get('/outlet-internal-use-waste/report-universal/export', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'exportReportUniversal'])->name('outlet-internal-use-waste.report-universal.export');
 Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits'])->name('outlet-internal-use-waste.get-item-units');
+Route::get('/outlet-internal-use-waste/stock-cut-items', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getStockCutItems'])->name('outlet-internal-use-waste.stock-cut-items');
 Route::get('/outlet-internal-use-waste/approvers', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovers'])->name('outlet-internal-use-waste.approvers')->middleware('auth');
 Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals'])->name('outlet-internal-use-waste.pending-approvals');
 Route::get('/api/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails'])->name('outlet-internal-use-waste.approval-details');

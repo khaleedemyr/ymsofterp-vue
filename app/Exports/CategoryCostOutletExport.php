@@ -385,6 +385,7 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
             'internal_use' => 'Internal Use',
             'spoil' => 'Spoil',
             'waste' => 'Waste',
+            'stock_cut' => 'Stock Cut',
             'r_and_d' => 'R & D',
             'marketing' => 'Marketing',
             'non_commodity' => 'Non Commodity',

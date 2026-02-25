@@ -55,6 +55,7 @@
               <option value="internal_use">Internal Use</option>
               <option value="spoil">Spoil</option>
               <option value="waste">Waste</option>
+              <option value="stock_cut">Stock Cut</option>
               <option value="r_and_d">R & D</option>
               <option value="marketing">Marketing</option>
               <option value="non_commodity">Non Commodity</option>
@@ -390,6 +391,7 @@ function typeLabel(type) {
   if (type === 'internal_use') return 'Internal Use';
   if (type === 'spoil') return 'Spoil';
   if (type === 'waste') return 'Waste';
+  if (type === 'stock_cut') return 'Stock Cut';
   if (type === 'r_and_d') return 'R & D';
   if (type === 'marketing') return 'Marketing';
   if (type === 'non_commodity') return 'Non Commodity';

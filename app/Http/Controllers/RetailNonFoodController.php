@@ -149,7 +149,7 @@ class RetailNonFoodController extends Controller
         try {
             $request->validate([
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-                'transaction_date' => 'required|date',
+                'transaction_date' => 'required|date|after_or_equal:today',
                 'category_budget_id' => 'required|exists:purchase_requisition_categories,id',
                 'payment_method' => 'required|in:cash,contra_bon',
                 'supplier_id' => 'required|exists:suppliers,id',
@@ -159,6 +159,8 @@ class RetailNonFoodController extends Controller
                 'items.*.unit' => 'required|string',
                 'items.*.price' => 'required|numeric|min:0',
                 'notes' => 'nullable|string',
+            ], [
+                'transaction_date.after_or_equal' => 'Tanggal transaksi tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('RETAIL_NON_FOOD_STORE: Validation failed', [

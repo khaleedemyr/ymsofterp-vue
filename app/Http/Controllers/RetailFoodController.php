@@ -210,7 +210,7 @@ class RetailFoodController extends Controller
         try {
             $request->validate([
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-                'transaction_date' => 'required|date',
+                'transaction_date' => 'required|date|after_or_equal:today',
                 'items' => 'required|array|min:1',
                 'items.*.item_name' => 'required|string',
                 'items.*.qty' => 'required|numeric|min:0',
@@ -219,6 +219,8 @@ class RetailFoodController extends Controller
                 'notes' => 'nullable|string',
                 'payment_method' => 'required|in:cash,contra_bon',
                 'supplier_id' => 'nullable|exists:suppliers,id',
+            ], [
+                'transaction_date.after_or_equal' => 'Tanggal transaksi tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
             ]);
 
             // Validasi tambahan untuk warehouse_outlet_id dan supplier_id

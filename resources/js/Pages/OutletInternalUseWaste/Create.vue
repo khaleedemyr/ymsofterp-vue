@@ -14,6 +14,7 @@
                 <option value="internal_use">Internal Use</option>
                 <option value="spoil">Spoil</option>
                 <option value="waste">Waste</option>
+                <option value="stock_cut">Stock Cut</option>
                 <option value="r_and_d">R & D</option>
                 <option value="marketing">Marketing</option>
                 <option value="non_commodity">Non Commodity</option>
@@ -49,21 +50,27 @@
                 type="button" 
                 @click="addItem" 
                 class="btn btn-sm btn-primary"
-                :disabled="!form.warehouse_outlet_id"
+                :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
               >
                 <i class="fa fa-plus mr-1"></i> Tambah Item
               </button>
             </div>
 
+            <div v-if="form.type === 'stock_cut' && loadingStockCutItems" class="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <i class="fa fa-spinner fa-spin mr-2"></i>Memuat item stock cut...
+            </div>
+
             <div v-if="form.items.length === 0" class="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
               <i class="fa fa-box-open text-4xl mb-2"></i>
-              <p>Belum ada item. Klik "Tambah Item" untuk menambahkan.</p>
+              <p v-if="form.type === 'stock_cut'">Tidak ada item stock cut dengan stok tersedia pada outlet dan warehouse ini.</p>
+              <p v-else>Belum ada item. Klik "Tambah Item" untuk menambahkan.</p>
             </div>
 
             <div v-for="(item, idx) in form.items" :key="item.id || idx" class="bg-white border rounded-lg p-4 space-y-4 relative">
               <div class="flex justify-between items-start mb-2">
                 <h4 class="font-medium text-gray-800">Item #{{ idx + 1 }}</h4>
                 <button 
+                  v-if="form.type !== 'stock_cut'"
                   type="button" 
                   @click="removeItem(idx)" 
                   class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
@@ -88,7 +95,7 @@
                     placeholder="Cari dan pilih item..."
                     label="name"
                     track-by="id"
-                    :disabled="!form.warehouse_outlet_id"
+                    :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
                     @select="(selectedItem) => onItemSelect(selectedItem, idx)"
                     @remove="() => onItemRemove(idx)"
                     class="multiselect-custom"
@@ -158,6 +165,7 @@
                     class="input input-bordered w-full" 
                     placeholder="Catatan item (opsional)"
                     rows="3"
+                    :disabled="form.type === 'stock_cut'"
                   ></textarea>
                 </div>
               </div>
@@ -169,7 +177,7 @@
                 type="button" 
                 @click="addItem" 
                 class="btn btn-sm btn-primary"
-                :disabled="!form.warehouse_outlet_id"
+                :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
               >
                 <i class="fa fa-plus mr-1"></i> Tambah Item
               </button>
@@ -390,6 +398,7 @@ const showApproverDropdown = ref(false)
 
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
+const loadingStockCutItems = ref(false)
 
 // Add watch function to monitor outlet changes
 watch(() => form.value.outlet_id, async (newOutletId) => {
@@ -427,6 +436,58 @@ onMounted(async () => {
     }
   }
 })
+
+async function loadStockCutItems() {
+  if (form.value.type !== 'stock_cut') return
+  if (!form.value.outlet_id || !form.value.warehouse_outlet_id) return
+
+  loadingStockCutItems.value = true
+  try {
+    const res = await axios.get(route('outlet-internal-use-waste.stock-cut-items'), {
+      params: {
+        outlet_id: form.value.outlet_id,
+        warehouse_outlet_id: form.value.warehouse_outlet_id,
+      }
+    })
+
+    const sourceItems = Array.isArray(res.data?.items) ? res.data.items : []
+    const mappedItems = sourceItems.map((row) => {
+      const selectedItem = props.items.find((item) => item.id == row.item_id) || {
+        id: row.item_id,
+        name: row.item_name,
+      }
+
+      return {
+        id: Date.now() + Math.random(),
+        item_id: row.item_id,
+        item_name: row.item_name,
+        selectedItem,
+        qty: '',
+        unit_id: row.unit_id || '',
+        unit_name: row.unit_name || '',
+        note: '',
+        stock: row.stock || null,
+      }
+    })
+
+    form.value.items = mappedItems
+  } catch (error) {
+    console.error('Error loading stock cut items:', error)
+    form.value.items = []
+  } finally {
+    loadingStockCutItems.value = false
+  }
+}
+
+watch(
+  () => [form.value.type, form.value.outlet_id, form.value.warehouse_outlet_id],
+  async ([type, outletId, warehouseOutletId]) => {
+    if (type === 'stock_cut' && outletId && warehouseOutletId) {
+      await loadStockCutItems()
+    }
+  },
+  { immediate: true }
+)
 
 function addItem() {
   form.value.items.push(newItem())

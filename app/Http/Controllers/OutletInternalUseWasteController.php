@@ -139,6 +139,10 @@ class OutletInternalUseWasteController extends Controller
     public function create()
     {
         $user = auth()->user();
+        if (!$user) {
+            return redirect()->route('login')->with('error', 'Sesi login berakhir. Silakan login kembali.');
+        }
+
         $outlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
             ->select('id_outlet', 'nama_outlet')
@@ -181,7 +185,7 @@ class OutletInternalUseWasteController extends Controller
             
             $request->validate([
                 'header_id' => 'nullable|integer',
-                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
+                'type' => 'required|in:internal_use,spoil,waste,stock_cut,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -1028,7 +1032,7 @@ class OutletInternalUseWasteController extends Controller
         
         try {
             $request->validate([
-                'type' => 'required|in:internal_use,spoil,waste,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
+                'type' => 'required|in:internal_use,spoil,waste,stock_cut,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -1719,6 +1723,71 @@ class OutletInternalUseWasteController extends Controller
         ]);
     }
 
+    public function getStockCutItems(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
+        ]);
+
+        $rows = DB::table('item_bom as ib')
+            ->join('items as i', 'i.id', '=', 'ib.material_item_id')
+            ->join('outlet_food_inventory_items as ofii', 'ofii.item_id', '=', 'i.id')
+            ->join('outlet_food_inventory_stocks as ofs', function ($join) use ($request) {
+                $join->on('ofs.inventory_item_id', '=', 'ofii.id')
+                    ->where('ofs.id_outlet', '=', $request->outlet_id)
+                    ->where('ofs.warehouse_outlet_id', '=', $request->warehouse_outlet_id);
+            })
+            ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
+            ->where('ib.stock_cut', 1)
+            ->where('i.status', 'active')
+            ->where(function ($query) {
+                $query->where('ofs.qty_small', '>', 0)
+                    ->orWhere('ofs.qty_medium', '>', 0)
+                    ->orWhere('ofs.qty_large', '>', 0);
+            })
+            ->select(
+                'i.id as item_id',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'us.name as unit_small',
+                'i.medium_unit_id',
+                'um.name as unit_medium',
+                'i.large_unit_id',
+                'ul.name as unit_large',
+                'ofs.qty_small',
+                'ofs.qty_medium',
+                'ofs.qty_large'
+            )
+            ->distinct()
+            ->orderBy('i.name')
+            ->get();
+
+        $items = $rows->map(function ($row) {
+            return [
+                'item_id' => (int) $row->item_id,
+                'item_name' => $row->item_name,
+                'unit_id' => $row->small_unit_id,
+                'unit_name' => $row->unit_small,
+                'stock' => [
+                    'qty_small' => (float) ($row->qty_small ?? 0),
+                    'qty_medium' => (float) ($row->qty_medium ?? 0),
+                    'qty_large' => (float) ($row->qty_large ?? 0),
+                    'unit_small' => $row->unit_small,
+                    'unit_medium' => $row->unit_medium,
+                    'unit_large' => $row->unit_large,
+                ],
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+        ]);
+    }
+
     public function items(Request $request)
     {
         $search = trim((string) $request->input('search', ''));
@@ -1843,6 +1912,7 @@ class OutletInternalUseWasteController extends Controller
                 ['value' => 'internal_use', 'label' => 'Internal Use'],
                 ['value' => 'spoil', 'label' => 'Spoil'],
                 ['value' => 'waste', 'label' => 'Waste'],
+                ['value' => 'stock_cut', 'label' => 'Stock Cut'],
                 ['value' => 'r_and_d', 'label' => 'R & D'],
                 ['value' => 'marketing', 'label' => 'Marketing'],
                 ['value' => 'non_commodity', 'label' => 'Non Commodity'],
@@ -2075,6 +2145,7 @@ class OutletInternalUseWasteController extends Controller
             ['value' => 'internal_use', 'label' => 'Internal Use'],
             ['value' => 'spoil', 'label' => 'Spoil'],
             ['value' => 'waste', 'label' => 'Waste'],
+            ['value' => 'stock_cut', 'label' => 'Stock Cut'],
             ['value' => 'r_and_d', 'label' => 'R & D'],
             ['value' => 'marketing', 'label' => 'Marketing'],
             ['value' => 'non_commodity', 'label' => 'Non Commodity'],

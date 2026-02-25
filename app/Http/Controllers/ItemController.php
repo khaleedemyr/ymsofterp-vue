@@ -89,6 +89,7 @@ class ItemController extends Controller
                     'qty' => $b['qty'],
                     'unit_id' => $b['unit_id'],
                     'unit_name' => $unitName,
+                    'stock_cut' => (bool) ($b['stock_cut'] ?? false),
                 ];
             })->toArray();
             // Map prices
@@ -236,6 +237,11 @@ class ItemController extends Controller
                 'availabilities.*.region_id' => 'nullable|exists:regions,id',
                 'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
                 'availabilities.*.status' => 'required|in:available,unavailable',
+                'bom' => 'nullable|array',
+                'bom.*.item_id' => 'required|exists:items,id',
+                'bom.*.qty' => 'required|numeric|min:0',
+                'bom.*.unit_id' => 'required|exists:units,id',
+                'bom.*.stock_cut' => 'nullable|boolean',
                 'exp' => 'nullable|integer|min:0',
             ]);
 
@@ -280,6 +286,7 @@ class ItemController extends Controller
                         'material_item_id' => $bom['item_id'],
                         'qty' => $bom['qty'],
                         'unit_id' => $bom['unit_id'],
+                        'stock_cut' => !empty($bom['stock_cut']) ? 1 : 0,
                     ]);
                 }
             }
@@ -431,6 +438,7 @@ class ItemController extends Controller
                 'qty' => $b['qty'],
                 'unit_id' => $b['unit_id'],
                 'unit_name' => $unitName,
+                'stock_cut' => (bool) ($b['stock_cut'] ?? false),
             ];
         })->toArray();
         // Modifier options with name
@@ -518,6 +526,11 @@ class ItemController extends Controller
             'availabilities' => 'nullable|array',
             'availabilities.*.region_id' => 'nullable|exists:regions,id',
             'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+            'bom' => 'nullable|array',
+            'bom.*.item_id' => 'required|exists:items,id',
+            'bom.*.qty' => 'required|numeric|min:0',
+            'bom.*.unit_id' => 'required|exists:units,id',
+            'bom.*.stock_cut' => 'nullable|boolean',
             'exp' => 'nullable|integer|min:0',
         ]);
 
@@ -602,6 +615,7 @@ class ItemController extends Controller
                                 'material_item_id' => $bom['item_id'],
                                 'qty' => $bom['qty'],
                                 'unit_id' => $bom['unit_id'],
+                                'stock_cut' => !empty($bom['stock_cut']) ? 1 : 0,
                             ]);
                         }
                     }
@@ -776,6 +790,7 @@ class ItemController extends Controller
                     'qty' => $b['qty'],
                     'unit_id' => $b['unit_id'],
                     'unit_name' => $unitName,
+                    'stock_cut' => (bool) ($b['stock_cut'] ?? false),
                 ];
             })->toArray(),
             'modifier_option_ids' => $item->modifierOptions->pluck('id')->toArray(),
@@ -2510,6 +2525,7 @@ class ItemController extends Controller
             'bom.*.item_id' => 'required|exists:items,id',
             'bom.*.qty' => 'required|numeric|min:0',
             'bom.*.unit_id' => 'required|exists:units,id',
+            'bom.*.stock_cut' => 'nullable|boolean',
             'exp' => 'nullable|integer|min:0',
         ]);
 
@@ -2535,6 +2551,7 @@ class ItemController extends Controller
                         'material_item_id' => $bom['item_id'],
                         'qty' => $bom['qty'],
                         'unit_id' => $bom['unit_id'],
+                        'stock_cut' => !empty($bom['stock_cut']) ? 1 : 0,
                     ]);
                 }
             }
@@ -2628,6 +2645,7 @@ class ItemController extends Controller
             'bom.*.item_id' => 'required|exists:items,id',
             'bom.*.qty' => 'required|numeric|min:0',
             'bom.*.unit_id' => 'required|exists:units,id',
+            'bom.*.stock_cut' => 'nullable|boolean',
             'exp' => 'nullable|integer|min:0',
         ]);
 
@@ -2689,6 +2707,7 @@ class ItemController extends Controller
                             'material_item_id' => $bom['item_id'],
                             'qty' => $bom['qty'],
                             'unit_id' => $bom['unit_id'],
+                            'stock_cut' => !empty($bom['stock_cut']) ? 1 : 0,
                         ]);
                     }
                 }

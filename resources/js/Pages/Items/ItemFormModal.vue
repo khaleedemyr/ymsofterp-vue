@@ -186,6 +186,10 @@
             </div>
             <input type="number" v-model="bom.qty" min="0" step="0.01" placeholder="Qty" class="rounded border-gray-300 w-24" required />
             <span v-if="getSmallUnit(bom.item_id)" class="text-gray-700">{{ getSmallUnit(bom.item_id).name }}</span>
+            <label class="inline-flex items-center gap-1 text-sm text-gray-700 whitespace-nowrap">
+              <input type="checkbox" v-model="bom.stock_cut" class="rounded border-gray-300" />
+              Stock Cut
+            </label>
             <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
           </div>
           <button type="button" @click="addBomRow" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded">
@@ -407,7 +411,10 @@
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <p class="text-sm text-gray-500">Material</p>
-                    <p class="font-medium">{{ bomItems.find(i => i.id === bom.item_id)?.name }}</p>
+                    <p class="font-medium">
+                      {{ bomItems.find(i => i.id === bom.item_id)?.name }}
+                      <span v-if="bom.stock_cut" class="ml-2 text-xs text-blue-700">(Stock Cut)</span>
+                    </p>
                   </div>
                   <div>
                     <p class="text-sm text-gray-500">Quantity</p>
@@ -680,7 +687,7 @@ const usedAvailRegionIds = computed(() => form.availabilities.map(a => a.region_
 const usedAvailOutletIds = computed(() => form.availabilities.map(a => a.outlet_id).filter(Boolean));
 
 const addBomRow = () => {
-  form.bom.push({ item_id: '', qty: '', unit_id: '', selectedItem: null });
+  form.bom.push({ item_id: '', qty: '', unit_id: '', stock_cut: false, selectedItem: null });
 };
 const removeBomRow = (idx) => {
   form.bom.splice(idx, 1);
@@ -838,7 +845,7 @@ const submit = () => {
 
 watch(currentStep, (val) => {
   if (val === 'bom' && form.bom.length === 0) {
-    form.bom.push({ item_id: '', qty: '', unit_id: '', selectedItem: null });
+    form.bom.push({ item_id: '', qty: '', unit_id: '', stock_cut: false, selectedItem: null });
   }
 });
 

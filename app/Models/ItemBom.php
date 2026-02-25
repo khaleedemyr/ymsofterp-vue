@@ -16,6 +16,11 @@ class ItemBom extends Model
         'material_item_id',
         'qty',
         'unit_id',
+        'stock_cut',
+    ];
+
+    protected $casts = [
+        'stock_cut' => 'boolean',
     ];
 
     public function item()

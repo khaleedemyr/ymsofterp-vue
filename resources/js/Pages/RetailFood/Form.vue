@@ -104,7 +104,7 @@
                      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
              <div>
                <label class="block text-xs font-bold text-gray-600 mb-2">Tanggal</label>
-               <input type="date" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required />
+               <input type="date" :min="todayDate" v-model="form.transaction_date" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-blue-300 transition-all duration-200" required />
              </div>
              <div>
                <label class="block text-xs font-bold text-gray-600 mb-2">Outlet</label>
@@ -318,6 +318,7 @@ const props = defineProps({
 
 const page = usePage()
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '')
+const todayDate = new Date().toISOString().split('T')[0]
 
 function newItem() {
   return {
@@ -605,6 +606,18 @@ function onFileChange(e) {
 
 async function submit() {
   if (loading.value) return
+
+  if (form.value.transaction_date && form.value.transaction_date < todayDate) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Tanggal Tidak Valid',
+      text: 'Tanggal transaksi tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    })
+    return
+  }
+
   const confirm = await Swal.fire({
     title: 'Simpan Data?',
     text: 'Apakah Anda yakin ingin menyimpan transaksi ini?',
