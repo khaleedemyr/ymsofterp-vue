@@ -62,6 +62,11 @@ class PaymentTypeController extends Controller
     {
         \Log::info('PaymentTypeController@store - Input', $request->all());
         try {
+            $request->merge([
+                'regions' => $this->normalizeIdArray($request->input('regions', [])),
+                'outlets' => $this->normalizeIdArray($request->input('outlets', [])),
+            ]);
+
             $validated = $request->validate([
                 'name' => 'required|string|max:100',
                 'code' => 'required|string|max:50|unique:payment_types,code',
@@ -69,8 +74,11 @@ class PaymentTypeController extends Controller
                 'bank_name' => 'required_if:is_bank,true|nullable|string|max:100',
                 'description' => 'nullable|string',
                 'status' => 'required|in:active,inactive',
+                'outlet_type' => 'required|in:region,outlet',
                 'outlets' => 'required_if:outlet_type,outlet|array',
-                'regions' => 'required_if:outlet_type,region|array'
+                'outlets.*' => 'integer|exists:tbl_data_outlet,id_outlet',
+                'regions' => 'required_if:outlet_type,region|array',
+                'regions.*' => 'integer|exists:regions,id'
             ]);
             \Log::info('PaymentTypeController@store - Validated', $validated);
 
@@ -79,12 +87,12 @@ class PaymentTypeController extends Controller
             $paymentType = PaymentType::create($validated);
             \Log::info('PaymentTypeController@store - Created', $paymentType->toArray());
 
-            if ($request->outlet_type === 'region') {
-                $paymentType->regions()->attach($request->regions);
-                \Log::info('PaymentTypeController@store - Attach regions', $request->regions);
+            if ($validated['outlet_type'] === 'region') {
+                $paymentType->regions()->attach($validated['regions'] ?? []);
+                \Log::info('PaymentTypeController@store - Attach regions', $validated['regions'] ?? []);
             } else {
-                $paymentType->outlets()->attach($request->outlets);
-                \Log::info('PaymentTypeController@store - Attach outlets', $request->outlets);
+                $paymentType->outlets()->attach($validated['outlets'] ?? []);
+                \Log::info('PaymentTypeController@store - Attach outlets', $validated['outlets'] ?? []);
             }
 
 
@@ -144,6 +152,11 @@ class PaymentTypeController extends Controller
     public function update(Request $request, PaymentType $paymentType)
     {
         try {
+            $request->merge([
+                'regions' => $this->normalizeIdArray($request->input('regions', [])),
+                'outlets' => $this->normalizeIdArray($request->input('outlets', [])),
+            ]);
+
             $validated = $request->validate([
                 'name' => 'required|string|max:100',
                 'code' => 'required|string|max:50|unique:payment_types,code,' . $paymentType->id,
@@ -151,19 +164,22 @@ class PaymentTypeController extends Controller
                 'bank_name' => 'required_if:is_bank,true|nullable|string|max:100',
                 'description' => 'nullable|string',
                 'status' => 'required|in:active,inactive',
+                'outlet_type' => 'required|in:region,outlet',
                 'outlets' => 'required_if:outlet_type,outlet|array',
-                'regions' => 'required_if:outlet_type,region|array'
+                'outlets.*' => 'integer|exists:tbl_data_outlet,id_outlet',
+                'regions' => 'required_if:outlet_type,region|array',
+                'regions.*' => 'integer|exists:regions,id'
             ]);
 
             DB::beginTransaction();
 
             $paymentType->update($validated);
 
-            if ($request->outlet_type === 'region') {
-                $paymentType->regions()->sync($request->regions);
+            if ($validated['outlet_type'] === 'region') {
+                $paymentType->regions()->sync($validated['regions'] ?? []);
                 $paymentType->outlets()->detach();
             } else {
-                $paymentType->outlets()->sync($request->outlets);
+                $paymentType->outlets()->sync($validated['outlets'] ?? []);
                 $paymentType->regions()->detach();
             }
 
@@ -386,5 +402,26 @@ class PaymentTypeController extends Controller
         $query->delete();
 
         return back()->with('success', 'Bank account berhasil dihapus');
+    }
+
+    private function normalizeIdArray($items): array
+    {
+        return collect($items)
+            ->map(function ($item) {
+                if (is_array($item)) {
+                    return $item['id'] ?? null;
+                }
+
+                if (is_object($item)) {
+                    return $item->id ?? null;
+                }
+
+                return $item;
+            })
+            ->filter(fn ($id) => $id !== null && $id !== '')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 } 

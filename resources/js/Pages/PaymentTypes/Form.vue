@@ -125,7 +125,9 @@ async function submit() {
   loading.value = true;
   const formData = {
     ...form.value,
-    outlet_type: outletType.value
+    outlet_type: outletType.value,
+    outlets: (form.value.outlets || []).map((item) => item?.id ?? item).filter((id) => id !== null && id !== undefined && id !== ''),
+    regions: (form.value.regions || []).map((item) => item?.id ?? item).filter((id) => id !== null && id !== undefined && id !== '')
   };
 
   if (outletType.value === 'region') {
