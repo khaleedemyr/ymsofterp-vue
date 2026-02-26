@@ -87,6 +87,8 @@ class PaymentTypeController extends Controller
             $paymentType = PaymentType::create($validated);
             \Log::info('PaymentTypeController@store - Created', $paymentType->toArray());
 
+            $this->cleanupOrphanedRegionLinks($paymentType->id);
+
             if ($validated['outlet_type'] === 'region') {
                 $paymentType->regions()->attach($validated['regions'] ?? []);
                 \Log::info('PaymentTypeController@store - Attach regions', $validated['regions'] ?? []);
@@ -121,6 +123,8 @@ class PaymentTypeController extends Controller
 
     public function edit(PaymentType $paymentType)
     {
+        $this->cleanupOrphanedRegionLinks($paymentType->id);
+
         $outlets = Outlet::where('status', 'A')
             ->whereNotNull('nama_outlet')
             ->where('nama_outlet', '!=', '')
@@ -174,6 +178,8 @@ class PaymentTypeController extends Controller
             DB::beginTransaction();
 
             $paymentType->update($validated);
+
+            $this->cleanupOrphanedRegionLinks($paymentType->id);
 
             if ($validated['outlet_type'] === 'region') {
                 $paymentType->regions()->sync($validated['regions'] ?? []);
@@ -423,5 +429,14 @@ class PaymentTypeController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function cleanupOrphanedRegionLinks(int $paymentTypeId): void
+    {
+        DB::table('payment_type_regions as ptr')
+            ->leftJoin('regions as r', 'r.id', '=', 'ptr.region_id')
+            ->where('ptr.payment_type_id', $paymentTypeId)
+            ->whereNull('r.id')
+            ->delete();
     }
 } 
