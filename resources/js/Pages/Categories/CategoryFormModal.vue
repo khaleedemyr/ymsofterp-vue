@@ -79,7 +79,6 @@ async function submit() {
   isSubmitting.value = true;
   if (props.mode === 'create') {
     form.post(route('categories.store'), {
-      forceFormData: true,
       onSuccess: () => {
         Swal.fire('Berhasil', 'Kategori berhasil ditambahkan!', 'success');
         emit('success');
@@ -92,9 +91,7 @@ async function submit() {
       onFinish: () => isSubmitting.value = false,
     });
   } else if (props.mode === 'edit' && props.category) {
-    form._method = 'PUT';
-    form.post(route('categories.update', props.category.id), {
-      forceFormData: true,
+    form.put(route('categories.update', props.category.id), {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Kategori berhasil diupdate!', 'success');
         emit('success');
