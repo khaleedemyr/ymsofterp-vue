@@ -219,6 +219,12 @@ function normalizedNotes(item) {
 }
 
 function normalizedModifiers(item) {
+  if (Array.isArray(item?.modifiers_formatted) && item.modifiers_formatted.length) {
+    return item.modifiers_formatted
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean);
+  }
+
   const raw = item?.modifiers;
   if (raw == null) return [];
 

@@ -1761,10 +1761,19 @@ class SalesReportController extends Controller
                 ->orderBy('id')
                 ->get();
 
+            $modifierOptionNames = DB::table('modifier_options')->pluck('name', 'id')->toArray();
+            $modifierNames = DB::table('modifiers')->pluck('name', 'id')->toArray();
+
             foreach ($itemsData as $item) {
                 if (!isset($orderItems[$item->order_id])) {
                     $orderItems[$item->order_id] = [];
                 }
+
+                $parsedModifiers = $this->parseOrderItemModifiers(
+                    $item->modifiers,
+                    $modifierOptionNames,
+                    $modifierNames
+                );
 
                 $orderItems[$item->order_id][] = [
                     'id' => $item->id,
@@ -1773,6 +1782,7 @@ class SalesReportController extends Controller
                     'price' => floatval($item->price ?? 0),
                     'subtotal' => floatval($item->subtotal ?? 0),
                     'modifiers' => $item->modifiers,
+                    'modifiers_formatted' => $parsedModifiers,
                     'notes' => $item->notes,
                 ];
             }
@@ -1896,6 +1906,112 @@ class SalesReportController extends Controller
             'per_day' => $perDay, // Object with date as key
             'orders' => $ordersArray, // Orders with payments attached
         ]);
+    }
+
+    private function parseOrderItemModifiers($rawModifiers, array $modifierOptionNames = [], array $modifierNames = []): array
+    {
+        if (empty($rawModifiers)) {
+            return [];
+        }
+
+        $data = is_array($rawModifiers) ? $rawModifiers : json_decode((string) $rawModifiers, true);
+        if (!is_array($data)) {
+            $text = trim((string) $rawModifiers);
+            return $text !== '' ? [$text] : [];
+        }
+
+        $result = [];
+        $append = function ($modifierName, $optionName, $qty = 1) use (&$result) {
+            $modifierName = trim((string) $modifierName);
+            $optionName = trim((string) $optionName);
+
+            if ($modifierName === '' && $optionName === '') {
+                return;
+            }
+
+            $label = $modifierName !== '' && $optionName !== ''
+                ? $modifierName . ': ' . $optionName
+                : ($modifierName !== '' ? $modifierName : $optionName);
+
+            if (is_numeric($qty) && (int) $qty > 1) {
+                $label .= ' x' . (int) $qty;
+            }
+
+            $result[] = $label;
+        };
+
+        if ($this->isAssocArray($data)) {
+            foreach ($data as $modifierKey => $options) {
+                $modifierName = is_numeric($modifierKey)
+                    ? ($modifierNames[(int) $modifierKey] ?? (string) $modifierKey)
+                    : (string) $modifierKey;
+
+                if (is_array($options)) {
+                    foreach ($options as $optionKey => $qty) {
+                        $optionName = is_numeric($optionKey)
+                            ? ($modifierOptionNames[(int) $optionKey] ?? (string) $optionKey)
+                            : (string) $optionKey;
+
+                        if (is_numeric($optionKey) && !isset($modifierOptionNames[(int) $optionKey]) && is_numeric($qty)) {
+                            $append($modifierName, '', 1);
+                        } else {
+                            $append($modifierName, $optionName, $qty);
+                        }
+                    }
+                } else {
+                    $optionName = is_numeric($options)
+                        ? ($modifierOptionNames[(int) $options] ?? '')
+                        : (string) $options;
+
+                    if ($optionName === '') {
+                        $append($modifierName, '', 1);
+                    } else {
+                        $append($modifierName, $optionName, 1);
+                    }
+                }
+            }
+        } else {
+            foreach ($data as $entry) {
+                if (is_array($entry)) {
+                    $modifierName = $entry['name'] ?? $entry['modifier_name'] ?? '';
+                    $options = $entry['options'] ?? $entry['option'] ?? [];
+
+                    if (is_array($options)) {
+                        foreach ($options as $option) {
+                            if (is_array($option)) {
+                                $optionName = $option['name'] ?? $option['option_name'] ?? '';
+                                $qty = $option['qty'] ?? 1;
+                                $append($modifierName, $optionName, $qty);
+                            } else {
+                                $optionName = is_numeric($option)
+                                    ? ($modifierOptionNames[(int) $option] ?? (string) $option)
+                                    : (string) $option;
+                                $append($modifierName, $optionName, 1);
+                            }
+                        }
+                    } else {
+                        $optionName = is_numeric($options)
+                            ? ($modifierOptionNames[(int) $options] ?? (string) $options)
+                            : (string) $options;
+                        $append($modifierName, $optionName, 1);
+                    }
+                } else {
+                    $optionName = is_numeric($entry)
+                        ? ($modifierOptionNames[(int) $entry] ?? (string) $entry)
+                        : (string) $entry;
+                    $append('', $optionName, 1);
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($result, function ($value) {
+            return trim((string) $value) !== '';
+        })));
+    }
+
+    private function isAssocArray(array $array): bool
+    {
+        return array_keys($array) !== range(0, count($array) - 1);
     }
     
     /**
