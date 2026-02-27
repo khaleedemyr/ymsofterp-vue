@@ -17,7 +17,12 @@
         <div class="font-bold text-blue-700 mb-2">Total Sales</div>
         <div class="text-3xl font-extrabold text-blue-800 mb-2">{{ formatCurrency(totalSales) }}</div>
         <div v-if="totalDp > 0" class="text-sm text-amber-700 mt-1">
-          + DP Reservasi {{ formatCurrency(totalDp) }} = <span class="font-bold text-slate-800">{{ formatCurrency(totalRevenue) }}</span> (Total Revenue)
+          <template v-if="dpAddedToRevenue > 0">
+            + DP Tambahan {{ formatCurrency(dpAddedToRevenue) }} = <span class="font-bold text-slate-800">{{ formatCurrency(totalRevenue) }}</span> (Total Revenue)
+          </template>
+          <template v-else>
+            DP reservasi sudah terhitung di Total Sales.
+          </template>
         </div>
       </div>
       <div>
@@ -321,10 +326,32 @@ const dpReservationsList = computed(() => dpSummary.value.dp_reservations || [])
 const dpFutureTotal = computed(() => Number(dpSummary.value.dp_future_total) || 0);
 const dpFutureBreakdown = computed(() => dpSummary.value.dp_future_breakdown || []);
 const dpFutureReservationsList = computed(() => dpSummary.value.dp_future_reservations || []);
-const ordersUsingDp = computed(() => dpSummary.value.orders_using_dp || []);
+const ordersUsingDp = computed(() => {
+  const seen = new Set();
+  return (dpSummary.value.orders_using_dp || []).filter((row) => {
+    const key = [
+      row?.paid_number || '',
+      row?.reservation_name || '',
+      Number(row?.grand_total) || 0,
+      Number(row?.dp_amount) || 0,
+      row?.dp_paid_at || '',
+    ].join('|');
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+});
 function toggleExpandDpSchedule() { expandedDpSchedule.value = !expandedDpSchedule.value; }
 function toggleExpandDpFuture() { expandedDpFuture.value = !expandedDpFuture.value; }
-const totalRevenue = computed(() => totalSales.value + totalDp.value);
+const dpUsedInTodaySales = computed(() => {
+  return ordersUsingDp.value.reduce((sum, row) => sum + (Number(row?.dp_amount) || 0), 0);
+});
+const dpAddedToRevenue = computed(() => {
+  const additionalDp = totalDp.value - dpUsedInTodaySales.value;
+  return additionalDp > 0 ? additionalDp : 0;
+});
+const totalRevenue = computed(() => totalSales.value + dpAddedToRevenue.value);
 const totalCash = computed(() => {
   const entries = Object.entries(paymentBreakdown.value);
   const found = entries.find(([k]) => k && k.toUpperCase() === 'CASH');
@@ -592,8 +619,25 @@ async function fetchDpSummary() {
         return true;
       });
     };
+    const dedupeOrdersUsingDp = (arr) => {
+      const seen = new Set();
+      return arr.filter((row) => {
+        const key = [
+          row?.paid_number || '',
+          row?.reservation_name || '',
+          Number(row?.grand_total) || 0,
+          Number(row?.dp_amount) || 0,
+          row?.dp_paid_at || '',
+        ].join('|');
+
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
     const dpReservationsDeduped = dedupeById(merged.dp_reservations);
     const dpFutureReservationsDeduped = dedupeById(merged.dp_future_reservations);
+    const ordersUsingDpDeduped = dedupeOrdersUsingDp(merged.orders_using_dp);
     // Total & breakdown dihitung ulang dari list yang sudah dedupe agar tidak dobel
     const totalDpFromList = dpReservationsDeduped.reduce((s, r) => s + (Number(r.dp) || 0), 0);
     const dpFutureTotalFromList = dpFutureReservationsDeduped.reduce((s, r) => s + (Number(r.dp) || 0), 0);
@@ -614,7 +658,7 @@ async function fetchDpSummary() {
       dp_future_total: dpFutureTotalFromList,
       dp_future_breakdown: Object.entries(dpFutureBreakdownFromList).map(([payment_type_name, total]) => ({ payment_type_name, total })),
       dp_future_reservations: dpFutureReservationsDeduped,
-      orders_using_dp: merged.orders_using_dp
+      orders_using_dp: ordersUsingDpDeduped
     };
   } catch (e) {
     console.error('fetchDpSummary error', e);
@@ -696,7 +740,14 @@ async function exportToExcel() {
 
   const summaryData = [
     ['Total Sales', formatNumberForExcel(totalSales.value)],
-    ...(totalDp.value > 0 ? [['DP Reservasi', formatNumberForExcel(totalDp.value)], ['Total Revenue', formatNumberForExcel(totalRevenue.value)]] : []),
+    ...(totalDp.value > 0
+      ? [
+          ['DP Reservasi', formatNumberForExcel(totalDp.value)],
+          ['DP Sudah Dipakai di Sales', formatNumberForExcel(dpUsedInTodaySales.value)],
+          ['DP Ditambahkan ke Revenue', formatNumberForExcel(dpAddedToRevenue.value)],
+        ]
+      : []),
+    ['Total Revenue', formatNumberForExcel(totalRevenue.value)],
     ['Total Cash', formatNumberForExcel(totalCash.value)],
     ['Total Pengeluaran', formatNumberForExcel(totalExpenses.value)],
     ['Nilai Setor Cash', formatNumberForExcel(nilaiSetorCash.value)]
@@ -1065,6 +1116,20 @@ function printModal() {
                <div class="summary-label">DP Reservasi</div>
                <div class="summary-value">${formatCurrency(totalDp.value)}</div>
              </div>
+             <div class="summary-card">
+               <div class="summary-label">DP Sudah Dipakai di Sales</div>
+               <div class="summary-value">${formatCurrency(dpUsedInTodaySales.value)}</div>
+             </div>
+             <div class="summary-card">
+               <div class="summary-label">DP Ditambahkan ke Revenue</div>
+               <div class="summary-value">${formatCurrency(dpAddedToRevenue.value)}</div>
+             </div>
+             <div class="summary-card">
+               <div class="summary-label">Total Revenue</div>
+               <div class="summary-value">${formatCurrency(totalRevenue.value)}</div>
+             </div>
+             ` : ''}
+             ${totalDp.value <= 0 ? `
              <div class="summary-card">
                <div class="summary-label">Total Revenue</div>
                <div class="summary-value">${formatCurrency(totalRevenue.value)}</div>
