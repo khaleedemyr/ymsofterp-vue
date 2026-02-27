@@ -18,7 +18,7 @@
         <div class="text-3xl font-extrabold text-blue-800 mb-2">{{ formatCurrency(totalSales) }}</div>
         <div v-if="totalDp > 0" class="text-sm text-amber-700 mt-1">
           <template v-if="dpAddedToRevenue > 0">
-            + DP Tambahan {{ formatCurrency(dpAddedToRevenue) }} = <span class="font-bold text-slate-800">{{ formatCurrency(totalRevenue) }}</span> (Total Revenue)
+            + DP Belum Masuk Sales {{ formatCurrency(dpAddedToRevenue) }} = <span class="font-bold text-slate-800">{{ formatCurrency(totalRevenue) }}</span> (Total Revenue)
           </template>
           <template v-else>
             DP reservasi sudah terhitung di Total Sales.
@@ -78,14 +78,11 @@
           <!-- 1) DP jadwal hari ini -->
           <div class="mb-4">
             <div class="flex items-center gap-2 mb-1">
-              <button v-if="(dpSummary.total_dp || 0) > 0" @click="toggleExpandDpSchedule" class="focus:outline-none text-amber-800">
-                <i :class="expandedDpSchedule ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
-              </button>
               <div class="text-sm font-semibold text-amber-800">DP Reservasi (jadwal hari ini)</div>
             </div>
             <template v-if="(dpSummary.total_dp || 0) > 0">
               <div class="text-lg font-semibold text-amber-800 mb-1">{{ formatCurrency(dpSummary.total_dp) }}</div>
-              <table v-if="expandedDpSchedule && dpReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
+              <table v-if="dpReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
                 <thead>
                   <tr class="bg-amber-100 text-amber-900">
                     <th class="px-3 py-2 text-left">Atas Nama</th>
@@ -123,14 +120,11 @@
           <!-- 2) DP diterima hari ini untuk reservasi tanggal mendatang -->
           <div class="mb-4">
             <div class="flex items-center gap-2 mb-1">
-              <button v-if="dpFutureTotal > 0" @click="toggleExpandDpFuture" class="focus:outline-none text-emerald-800">
-                <i :class="expandedDpFuture ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
-              </button>
               <div class="text-sm font-semibold text-emerald-800">DP Diterima Hari Ini (untuk reservasi tanggal mendatang)</div>
             </div>
             <template v-if="dpFutureTotal > 0">
               <div class="text-lg font-semibold text-emerald-800 mb-1">{{ formatCurrency(dpFutureTotal) }}</div>
-              <table v-if="expandedDpFuture && dpFutureReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
+              <table v-if="dpFutureReservationsList.length" class="min-w-full text-sm rounded shadow mb-2">
                 <thead>
                   <tr class="bg-emerald-100 text-emerald-900">
                     <th class="px-3 py-2 text-left">Atas Nama</th>
@@ -318,8 +312,6 @@ const dpSummary = ref({
   orders_using_dp: []
 });
 const loadingDp = ref(false);
-const expandedDpSchedule = ref(false);
-const expandedDpFuture = ref(false);
 const totalDp = computed(() => (Number(dpSummary.value.total_dp) || 0) + (Number(dpSummary.value.dp_future_total) || 0));
 const dpBreakdown = computed(() => dpSummary.value.breakdown || []);
 const dpReservationsList = computed(() => dpSummary.value.dp_reservations || []);
@@ -342,8 +334,6 @@ const ordersUsingDp = computed(() => {
     return true;
   });
 });
-function toggleExpandDpSchedule() { expandedDpSchedule.value = !expandedDpSchedule.value; }
-function toggleExpandDpFuture() { expandedDpFuture.value = !expandedDpFuture.value; }
 const dpUsedInTodaySales = computed(() => {
   return ordersUsingDp.value.reduce((sum, row) => sum + (Number(row?.dp_amount) || 0), 0);
 });
@@ -743,8 +733,8 @@ async function exportToExcel() {
     ...(totalDp.value > 0
       ? [
           ['DP Reservasi', formatNumberForExcel(totalDp.value)],
-          ['DP Sudah Dipakai di Sales', formatNumberForExcel(dpUsedInTodaySales.value)],
-          ['DP Ditambahkan ke Revenue', formatNumberForExcel(dpAddedToRevenue.value)],
+          ['DP Sudah Masuk Sales Hari Ini', formatNumberForExcel(dpUsedInTodaySales.value)],
+          ['DP Belum Masuk Sales (Penyesuaian Revenue)', formatNumberForExcel(dpAddedToRevenue.value)],
         ]
       : []),
     ['Total Revenue', formatNumberForExcel(totalRevenue.value)],
@@ -790,16 +780,35 @@ async function exportToExcel() {
     ws.getCell(rowNum, 1).value = 'DP Reservasi (jadwal hari ini)';
     ws.getCell(rowNum, 1).font = sectionFont;
     rowNum += 1;
-    ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
-    styleHeaderRow(ws, rowNum);
-    rowNum += 1;
-    (dpBreakdown.value || []).forEach(row => {
-      ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
-      ws.getCell(rowNum, 3).numFmt = '#,##0';
+    if ((dpReservationsList.value || []).length > 0) {
+      ws.getRow(rowNum).values = [null, 'Atas Nama', 'Jadwal', 'DP', 'Jenis Pembayaran'];
+      styleHeaderRow(ws, rowNum);
       rowNum += 1;
-    });
-    ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpSummary.value.total_dp)];
-    ws.getCell(rowNum, 3).numFmt = '#,##0';
+      (dpReservationsList.value || []).forEach((row) => {
+        ws.getRow(rowNum).values = [
+          null,
+          row.name || '-',
+          row.reservation_date ? formatDateIndo(row.reservation_date) : '-',
+          formatNumberForExcel(row.dp),
+          row.payment_type_name || '-',
+        ];
+        ws.getCell(rowNum, 4).numFmt = '#,##0';
+        rowNum += 1;
+      });
+      ws.getRow(rowNum).values = [null, 'Total DP', '', formatNumberForExcel(dpSummary.value.total_dp), ''];
+      ws.getCell(rowNum, 4).numFmt = '#,##0';
+    } else {
+      ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
+      styleHeaderRow(ws, rowNum);
+      rowNum += 1;
+      (dpBreakdown.value || []).forEach(row => {
+        ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
+        ws.getCell(rowNum, 3).numFmt = '#,##0';
+        rowNum += 1;
+      });
+      ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpSummary.value.total_dp)];
+      ws.getCell(rowNum, 3).numFmt = '#,##0';
+    }
     rowNum += 1;
     rowNum += 1;
   }
@@ -808,16 +817,35 @@ async function exportToExcel() {
     ws.getCell(rowNum, 1).value = 'DP Diterima Hari Ini (untuk reservasi tanggal mendatang)';
     ws.getCell(rowNum, 1).font = sectionFont;
     rowNum += 1;
-    ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
-    styleHeaderRow(ws, rowNum);
-    rowNum += 1;
-    (dpFutureBreakdown.value || []).forEach(row => {
-      ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
-      ws.getCell(rowNum, 3).numFmt = '#,##0';
+    if ((dpFutureReservationsList.value || []).length > 0) {
+      ws.getRow(rowNum).values = [null, 'Atas Nama', 'Jadwal Reservasi', 'DP', 'Jenis Pembayaran'];
+      styleHeaderRow(ws, rowNum);
       rowNum += 1;
-    });
-    ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpFutureTotal.value)];
-    ws.getCell(rowNum, 3).numFmt = '#,##0';
+      (dpFutureReservationsList.value || []).forEach((row) => {
+        ws.getRow(rowNum).values = [
+          null,
+          row.name || '-',
+          row.reservation_date ? formatDateIndo(row.reservation_date) : '-',
+          formatNumberForExcel(row.dp),
+          row.payment_type_name || '-',
+        ];
+        ws.getCell(rowNum, 4).numFmt = '#,##0';
+        rowNum += 1;
+      });
+      ws.getRow(rowNum).values = [null, 'Total DP', '', formatNumberForExcel(dpFutureTotal.value), ''];
+      ws.getCell(rowNum, 4).numFmt = '#,##0';
+    } else {
+      ws.getRow(rowNum).values = [null, 'Jenis Pembayaran', 'Total'];
+      styleHeaderRow(ws, rowNum);
+      rowNum += 1;
+      (dpFutureBreakdown.value || []).forEach(row => {
+        ws.getRow(rowNum).values = [null, row.payment_type_name || '-', formatNumberForExcel(row.total)];
+        ws.getCell(rowNum, 3).numFmt = '#,##0';
+        rowNum += 1;
+      });
+      ws.getRow(rowNum).values = [null, 'Total', formatNumberForExcel(dpFutureTotal.value)];
+      ws.getCell(rowNum, 3).numFmt = '#,##0';
+    }
     rowNum += 1;
     rowNum += 1;
   }
@@ -925,347 +953,53 @@ function printModal() {
       alert('Modal tidak ditemukan!');
       return;
     }
-    // Clone isi modal tanpa tombol
-    const cleanContent = modalContent.cloneNode(true);
-    const buttons = cleanContent.querySelectorAll('button, .fa-solid');
-    buttons.forEach(btn => btn.remove());
 
-    // Buka window baru
-    const printWindow = window.open('', '_blank', 'width=900,height=1200');
+    const clonedModal = modalContent.cloneNode(true);
+    clonedModal.querySelectorAll('button').forEach((button) => button.remove());
+    clonedModal.querySelectorAll('[title="Print PDF"], [title="Export to Excel"]').forEach((node) => node.remove());
+    clonedModal.style.maxHeight = 'none';
+    clonedModal.style.overflow = 'visible';
+
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((node) => node.outerHTML)
+      .join('\n');
+
+    const printWindow = window.open('', '_blank', 'width=1024,height=1400');
+    if (!printWindow) {
+      alert('Popup print diblokir browser. Izinkan popup lalu coba lagi.');
+      return;
+    }
+
     printWindow.document.write(`
       <html>
         <head>
           <title>Revenue Report</title>
-                     <style>
-             body {
-               font-family: 'Segoe UI', Arial, sans-serif;
-               margin: 0;
-               padding: 16px 12px;
-               background: #fff;
-               color: #222;
-               font-size: 10px;
-               line-height: 1.2;
-             }
-             .report-title {
-               font-size: 1.2rem;
-               font-weight: bold;
-               color: #2563eb;
-               margin-bottom: 0.25rem;
-               text-align: center;
-             }
-             .report-date {
-               font-size: 0.8rem;
-               color: #888;
-               text-align: center;
-               margin-bottom: 0.75rem;
-             }
-             .report-outlet {
-               font-size: 0.9rem;
-               color: #2563eb;
-               text-align: center;
-               margin-bottom: 0.5rem;
-               font-weight: 600;
-             }
-             .summary-section {
-               display: flex;
-               flex-wrap: wrap;
-               gap: 16px;
-               margin-bottom: 1rem;
-               justify-content: center;
-             }
-             .summary-card {
-               background: #f3f6fa;
-               border-radius: 6px;
-               box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-               padding: 8px 16px;
-               min-width: 120px;
-               text-align: center;
-             }
-             .summary-label {
-               font-size: 0.7rem;
-               color: #666;
-               margin-bottom: 0.1rem;
-             }
-             .summary-value {
-               font-size: 1rem;
-               font-weight: bold;
-               color: #2563eb;
-             }
-             table {
-               width: 100%;
-               border-collapse: collapse;
-               margin-bottom: 0.75rem;
-               font-size: 9px;
-             }
-             th, td {
-               padding: 4px 6px;
-               border-bottom: 1px solid #e5e7eb;
-             }
-             th {
-               background: #e0eaff;
-               color: #1e293b;
-               font-weight: bold;
-               font-size: 9px;
-             }
-             .section-title {
-               font-size: 0.9rem;
-               font-weight: bold;
-               color: #2563eb;
-               margin: 1rem 0 0.25rem 0;
-             }
-             .expense-block {
-               border: 1px solid #e5e7eb;
-               border-radius: 4px;
-               padding: 6px 10px;
-               margin-bottom: 0.5rem;
-               background: #f9fafb;
-               font-size: 9px;
-             }
-             .expense-title {
-               font-weight: bold;
-               color: #222;
-               font-size: 9px;
-             }
-             .expense-items {
-               margin: 0.25rem 0 0.25rem 0.5rem;
-             }
-             .expense-items ul {
-               margin: 0;
-               padding-left: 1rem;
-             }
-             .expense-items li {
-               margin-bottom: 0.1rem;
-             }
-             .expense-total {
-               font-weight: bold;
-               color: #2563eb;
-             }
-             .cash-section {
-               background: #e0eaff;
-               border-radius: 4px;
-               padding: 8px 12px;
-               margin-top: 1rem;
-               font-size: 0.9rem;
-             }
-             .cash-row {
-               display: flex;
-               justify-content: space-between;
-               margin-bottom: 0.25rem;
-             }
-             .cash-label {
-               color: #222;
-             }
-             .cash-value {
-               font-weight: bold;
-             }
-                           @media print {
-                body { 
-                  margin: 0; 
-                  padding: 8px 6px;
-                }
-                @page {
-                  margin: 0.25in;
-                  size: A4;
-                }
-                /* Pastikan semua konten muat dalam 1 halaman */
-                .section-title {
-                  page-break-after: avoid;
-                  page-break-inside: avoid;
-                }
-                .expense-block {
-                  page-break-inside: avoid;
-                }
-                .cash-section {
-                  page-break-inside: avoid;
-                }
-                table {
-                  page-break-inside: avoid;
-                }
-                /* Kompres spacing lebih lanjut untuk print */
-                .summary-section {
-                  gap: 8px;
-                  margin-bottom: 0.5rem;
-                }
-                .summary-card {
-                  padding: 4px 8px;
-                  min-width: 100px;
-                }
-                .expense-block {
-                  padding: 4px 6px;
-                  margin-bottom: 0.25rem;
-                }
-                .cash-section {
-                  padding: 6px 8px;
-                  margin-top: 0.5rem;
-                }
-              }
-           </style>
+          ${styles}
+          <style>
+            body { margin: 0; padding: 16px; background: #fff; }
+            .print-wrapper { max-width: 1100px; margin: 0 auto; }
+            .print-wrapper #revenue-report-modal {
+              width: 100% !important;
+              max-width: none !important;
+              border-radius: 0 !important;
+              box-shadow: none !important;
+              padding: 0 !important;
+            }
+            @page { size: A4; margin: 10mm; }
+          </style>
         </head>
         <body>
-          <div class="report-title">Revenue Report</div>
-          ${outletName.value ? `<div class="report-outlet">${outletName.value}</div>` : ''}
-          <div class="report-date">${props.tanggal || ''}</div>
-                     <!-- Summary Section -->
-           <div class="summary-section">
-             <div class="summary-card">
-               <div class="summary-label">Total Sales</div>
-               <div class="summary-value">${formatCurrency(totalSales.value)}</div>
-             </div>
-             ${totalDp.value > 0 ? `
-             <div class="summary-card">
-               <div class="summary-label">DP Reservasi</div>
-               <div class="summary-value">${formatCurrency(totalDp.value)}</div>
-             </div>
-             <div class="summary-card">
-               <div class="summary-label">DP Sudah Dipakai di Sales</div>
-               <div class="summary-value">${formatCurrency(dpUsedInTodaySales.value)}</div>
-             </div>
-             <div class="summary-card">
-               <div class="summary-label">DP Ditambahkan ke Revenue</div>
-               <div class="summary-value">${formatCurrency(dpAddedToRevenue.value)}</div>
-             </div>
-             <div class="summary-card">
-               <div class="summary-label">Total Revenue</div>
-               <div class="summary-value">${formatCurrency(totalRevenue.value)}</div>
-             </div>
-             ` : ''}
-             ${totalDp.value <= 0 ? `
-             <div class="summary-card">
-               <div class="summary-label">Total Revenue</div>
-               <div class="summary-value">${formatCurrency(totalRevenue.value)}</div>
-             </div>
-             ` : ''}
-           </div>
-                     <!-- Payment Breakdown -->
-           <div class="section-title">Breakdown by Payment Method</div>
-           <table>
-             <thead>
-               <tr>
-                 <th>Metode Pembayaran</th>
-                 <th>Payment Type</th>
-                 <th>Total</th>
-               </tr>
-             </thead>
-             <tbody>
-               ${Object.entries(paymentBreakdown.value).map(([paymode, total]) => {
-                 const paymentTypes = paymentTypeBreakdown.value[paymode] || {};
-                 const typeEntries = Object.entries(paymentTypes);
-                 
-                 if (typeEntries.length === 0) {
-                   return `<tr>
-                     <td>${paymode || '-'}</td>
-                     <td>-</td>
-                     <td style="text-align:right">${formatCurrency(total)}</td>
-                   </tr>`;
-                 }
-                 
-                 return typeEntries.map(([ptype, ptotal], index) => `
-                   <tr>
-                     <td>${index === 0 ? (paymode || '-') : ''}</td>
-                     <td>${ptype || '-'}</td>
-                     <td style="text-align:right">${formatCurrency(ptotal)}</td>
-                   </tr>
-                 `).join('');
-               }).join('')}
-             </tbody>
-           </table>
-          ${totalDp.value > 0 ? `
-          <div class="section-title">DP Reservasi</div>
-          <table>
-            <thead>
-              <tr><th>Jenis Pembayaran</th><th>Total</th></tr>
-            </thead>
-            <tbody>
-              ${(dpBreakdown.value || []).map(row => `
-                <tr>
-                  <td>${row.payment_type_name || '-'}</td>
-                  <td style="text-align:right">${formatCurrency(row.total)}</td>
-                </tr>
-              `).join('')}
-              <tr style="font-weight:bold">
-                <td>Total DP</td>
-                <td style="text-align:right">${formatCurrency(totalDp.value)}</td>
-              </tr>
-            </tbody>
-          </table>
-          ` : ''}
-          <!-- Pengeluaran Bahan Baku -->
-          <div class="section-title">Pengeluaran Bahan Baku</div>
-          ${(expenses.value.retail_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran bahan baku.</div>' : ''}
-                    ${(expenses.value.retail_food || []).map(trx => `
-            <div class="expense-block">
-              <div class="expense-title">No: ${trx.retail_number}</div>
-              <div class="expense-items">
-                <ul>
-                  ${(trx.items || []).map(item => `
-                    <li>${item.item_name} - ${item.qty} x ${formatCurrency(item.harga_barang)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
-                    `).join('')}
-                </ul>
-              </div>
-            </div>
-          `).join('')}
-          <!-- Pengeluaran Non Bahan Baku -->
-          <div class="section-title">Pengeluaran Non Bahan Baku</div>
-          ${(expenses.value.retail_non_food || []).length === 0 ? '<div style="color:#888">Tidak ada pengeluaran non bahan baku.</div>' : ''}
-                    ${(() => {
-                      // Group by category for print
-                      const grouped = {};
-                      (expenses.value.retail_non_food || []).forEach(trx => {
-                        const categoryId = trx.category_budget_id || 'no-category';
-                        if (!grouped[categoryId]) {
-                          grouped[categoryId] = {
-                            budget_info: trx.budget_info || null,
-                            transactions: []
-                          };
-                        }
-                        grouped[categoryId].transactions.push(trx);
-                      });
-                      
-                      return Object.entries(grouped).map(([categoryId, group]) => {
-                        let html = '';
-                        // Budget Info (show once per category) - Only Division and Category Name
-                        if (group.budget_info) {
-                          html += `
-                            <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: #e0eaff; border-radius: 4px; font-size: 9px;">
-                              ${group.budget_info.division_name ? `<div style="font-size: 8px; color: #000000; margin-bottom: 0.2rem; font-weight: 500;">${group.budget_info.division_name}</div>` : ''}
-                              <div style="font-weight: bold; color: #000000; font-size: 10px;">${group.budget_info.category_name || 'Category ' + categoryId}</div>
-                            </div>
-                          `;
-                        }
-                        // Transactions for this category
-                        group.transactions.forEach(trx => {
-                          html += `
-                            <div class="expense-block">
-                              <div class="expense-title">No: ${trx.retail_number}</div>
-                              <div class="expense-items">
-                                <ul>
-                                  ${(trx.items || []).map(item => `
-                                    <li>${item.item_name} - ${item.qty} ${item.unit} x ${formatCurrency(item.price)} = <span class="expense-total">${formatCurrency(item.subtotal)}</span></li>
-                                  `).join('')}
-                                </ul>
-                              </div>
-                            </div>
-                          `;
-                        });
-                        return html;
-                      }).join('');
-                    })()}
-           <!-- Summary Section -->
-           <div class="section-title">Summary</div>
-           <div class="cash-section">
-             <div class="cash-row"><span class="cash-label">Total Cash:</span><span class="cash-value">${formatCurrency(totalCash.value)}</span></div>
-             <div class="cash-row"><span class="cash-label">Total Pengeluaran:</span><span class="cash-value">${formatCurrency(totalExpenses.value)}</span></div>
-             <div class="cash-row" style="font-size:1rem;font-weight:bold;"><span class="cash-label">Nilai Setor Cash:</span><span class="cash-value">${formatCurrency(nilaiSetorCash.value)}</span></div>
-           </div>
+          <div class="print-wrapper">${clonedModal.outerHTML}</div>
         </body>
       </html>
     `);
+
     printWindow.document.close();
+    printWindow.focus();
     setTimeout(() => {
-      printWindow.focus();
       printWindow.print();
       printWindow.close();
-    }, 500);
+    }, 400);
   }, 100);
 }
 </script>
