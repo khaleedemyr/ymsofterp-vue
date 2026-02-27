@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 use Inertia\Inertia;
 use App\Models\Reservation;
 use App\Models\Outlet;
@@ -21,6 +22,11 @@ class ReservationController extends Controller
         $user = auth()->user();
         $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
         $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
+        $allowedPerPages = [10, 25, 50, 100];
+        $perPage = (int) $request->integer('per_page', 10);
+        if (!in_array($perPage, $allowedPerPages, true)) {
+            $perPage = 10;
+        }
 
         $query = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])
             ->when(!$isAdminOutlet && $userOutletId, function ($query) use ($userOutletId) {
@@ -43,8 +49,52 @@ class ReservationController extends Controller
             })
             ->latest();
 
-        $reservations = $query->get()->map(function ($reservation) {
-            return [
+        $paginatedReservations = $query
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $reservationIds = collect($paginatedReservations->items())
+            ->pluck('id')
+            ->filter()
+            ->values();
+
+        $orderByReservation = collect();
+        if ($reservationIds->isNotEmpty() && Schema::hasTable('orders') && Schema::hasColumn('orders', 'reservation_id')) {
+            $orderByReservation = DB::table('orders')
+                ->whereIn('reservation_id', $reservationIds)
+                ->whereNotNull('reservation_id')
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->get(['reservation_id', 'paid_number', 'status', 'updated_at'])
+                ->groupBy('reservation_id')
+                ->map(function ($rows) {
+                    $picked = $rows->first(function ($row) {
+                        return $row->status === 'paid' && !empty($row->paid_number);
+                    });
+
+                    if (!$picked) {
+                        $picked = $rows->first(function ($row) {
+                            return !empty($row->paid_number);
+                        });
+                    }
+
+                    if (!$picked) {
+                        return [
+                            'paid_number' => null,
+                            'used_order_at' => null,
+                        ];
+                    }
+
+                    return [
+                        'paid_number' => $picked->paid_number,
+                        'used_order_at' => $picked->updated_at ? Carbon::parse($picked->updated_at)->toIso8601String() : null,
+                    ];
+                });
+        }
+
+        $reservations = $paginatedReservations->through(function ($reservation) use ($orderByReservation) {
+                $orderRef = $orderByReservation->get($reservation->id, ['paid_number' => null, 'used_order_at' => null]);
+                return [
                 'id' => $reservation->id,
                 'name' => $reservation->name,
                 'outlet' => $reservation->outlet?->nama_outlet ?? '–',
@@ -61,10 +111,13 @@ class ReservationController extends Controller
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
                 'menu' => $reservation->menu,
                 'status' => $reservation->status,
+                'dp_used_at' => $reservation->dp_used_at?->toIso8601String(),
+                'dp_used_paid_number' => $orderRef['paid_number'] ?? null,
+                'dp_used_order_at' => $orderRef['used_order_at'] ?? null,
                 'created_by' => $reservation->creator ? ($reservation->creator->nama_lengkap ?? $reservation->creator->name) : '–',
                 'created_at' => $reservation->created_at?->toIso8601String(),
             ];
-        });
+            });
 
         $outletsQuery = Outlet::where('status', 'A')
             ->whereNotNull('nama_outlet')
@@ -89,6 +142,7 @@ class ReservationController extends Controller
             'status' => $request->status,
             'dateFrom' => $request->dateFrom,
             'dateTo' => $request->dateTo,
+            'per_page' => $perPage,
         ]);
     }
 

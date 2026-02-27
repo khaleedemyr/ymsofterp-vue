@@ -127,7 +127,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
-                <tr v-if="!reservations.length">
+                <tr v-if="!reservationRows.length">
                   <td colspan="13" class="px-5 py-16 text-center">
                     <div class="flex flex-col items-center gap-4">
                       <span class="flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 text-slate-400">
@@ -148,11 +148,11 @@
                   </td>
                 </tr>
                 <tr
-                  v-for="(reservation, idx) in reservations"
+                  v-for="(reservation, idx) in reservationRows"
                   :key="reservation.id"
                   class="hover:bg-rose-50/50 transition group"
                 >
-                  <td class="px-5 py-4 text-sm text-slate-500">{{ idx + 1 }}</td>
+                  <td class="px-5 py-4 text-sm text-slate-500">{{ rowNumber(idx) }}</td>
                   <td class="px-5 py-4">
                     <span class="font-medium text-slate-800">{{ reservation.name }}</span>
                   </td>
@@ -162,7 +162,21 @@
                     <div class="text-xs text-slate-500">{{ formatTime(reservation.reservation_time) }}</div>
                   </td>
                   <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.number_of_guests }} orang</td>
-                  <td class="px-5 py-4 text-sm font-medium text-slate-700">{{ reservation.dp != null ? formatDp(reservation.dp) : '–' }}</td>
+                  <td class="px-5 py-4">
+                    <div class="text-sm font-medium text-slate-700">{{ reservation.dp != null ? formatDp(reservation.dp) : '–' }}</div>
+                    <span
+                      v-if="reservation.dp_used_at"
+                      class="mt-1 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-100 text-rose-700"
+                    >
+                      DP sudah digunakan
+                    </span>
+                    <div v-if="reservation.dp_used_at" class="mt-1 text-xs text-slate-500">
+                      Dipakai: {{ formatDateTime(reservation.dp_used_at) }}
+                    </div>
+                    <div v-if="reservation.dp_used_at" class="text-xs text-slate-500">
+                      Bill: <span class="font-mono font-semibold text-slate-700">{{ reservation.dp_used_paid_number || '–' }}</span>
+                    </div>
+                  </td>
                   <td class="px-5 py-4 font-mono text-sm font-semibold text-emerald-700">{{ reservation.dp_code || '–' }}</td>
                   <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.payment_type_name || '–' }}</td>
                   <td class="px-5 py-4">
@@ -216,6 +230,29 @@
               </tbody>
             </table>
           </div>
+
+          <div v-if="reservationRows.length" class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 border-t border-slate-200 bg-slate-50/70">
+            <div class="flex items-center gap-3 text-sm text-slate-600">
+              <span>
+                Menampilkan {{ reservations.from || 0 }} - {{ reservations.to || 0 }} dari {{ reservations.total || 0 }} data
+              </span>
+              <div class="flex items-center gap-2">
+                <label class="text-xs font-medium text-slate-500">Per halaman</label>
+                <select
+                  v-model.number="perPage"
+                  @change="applyFilters"
+                  class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none"
+                >
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </div>
+            </div>
+
+            <Pagination :links="paginationLinks" @navigate="goToPage" />
+          </div>
         </div>
       </div>
     </div>
@@ -224,19 +261,25 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Pagination from '@/Components/Pagination.vue';
 import { Link, router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import { ref, computed } from 'vue';
 
 const props = defineProps({
-  reservations: { type: Array, required: true, default: () => [] },
+  reservations: {
+    type: Object,
+    required: true,
+    default: () => ({ data: [], links: [], current_page: 1, per_page: 10, total: 0, from: 0, to: 0 })
+  },
   outlets: { type: Array, default: () => [] },
   can_choose_outlet: { type: Boolean, default: true },
   search: String,
   outlet_id: [String, Number],
   status: String,
   dateFrom: String,
-  dateTo: String
+  dateTo: String,
+  per_page: Number
 });
 
 const canChooseOutlet = computed(() => props.can_choose_outlet !== false);
@@ -246,8 +289,17 @@ const outletId = ref(props.outlet_id ?? '');
 const status = ref(props.status || '');
 const dateFrom = ref(props.dateFrom || '');
 const dateTo = ref(props.dateTo || '');
+const perPage = ref(props.per_page || props.reservations?.per_page || 10);
 const outlets = ref(props.outlets || []);
 const loadingDeleteId = ref(null);
+const reservationRows = computed(() => props.reservations?.data || []);
+const paginationLinks = computed(() => props.reservations?.links || []);
+
+function rowNumber(idx) {
+  const currentPage = Number(props.reservations?.current_page || 1);
+  const currentPerPage = Number(props.reservations?.per_page || perPage.value || 10);
+  return ((currentPage - 1) * currentPerPage) + idx + 1;
+}
 
 function formatDate(date) {
   if (!date) return '–';
@@ -325,8 +377,15 @@ function applyFilters() {
     outlet_id: outletId.value || undefined,
     status: status.value,
     dateFrom: dateFrom.value,
-    dateTo: dateTo.value
+    dateTo: dateTo.value,
+    per_page: perPage.value,
+    page: 1,
   }, { preserveState: true, preserveScroll: true });
+}
+
+function goToPage(url) {
+  if (!url) return;
+  router.visit(url, { preserveState: true, preserveScroll: true });
 }
 
 function resetFilters() {
@@ -335,6 +394,7 @@ function resetFilters() {
   status.value = '';
   dateFrom.value = '';
   dateTo.value = '';
+  perPage.value = 10;
   applyFilters();
 }
 </script>
