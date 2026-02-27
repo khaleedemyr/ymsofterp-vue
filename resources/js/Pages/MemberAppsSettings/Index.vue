@@ -1368,11 +1368,15 @@
                   :options="memberOptions"
                   :multiple="true"
                   :searchable="true"
-                  placeholder="Select members"
+                  :loading="memberSearchLoading"
+                  :internal-search="false"
+                  @search-change="onMemberSearchChange"
+                  placeholder="Type at least 2 characters to search members"
                   label="name"
                   track-by="id"
                   :close-on-select="false"
                 ></Multiselect>
+                <p class="text-xs text-gray-500 mt-1">Type member name, member ID, phone, or email</p>
               </div>
             </div>
 
@@ -3511,6 +3515,9 @@ const distributionForm = ref({
 
 // Member options for multiselect
 const memberOptions = ref([])
+const memberSearchLoading = ref(false)
+let memberSearchTimeout = null
+let memberSearchRequestToken = 0
 
 // Voucher Members Modal
 const showVoucherMembersModal = ref(false)
@@ -5522,14 +5529,13 @@ const openDistributeVoucherModal = async (voucher) => {
       jenis_kelamin: ''
     }
   }
-  
-  // Load members for multiselect
-  if (props.members && props.members.data) {
-    memberOptions.value = props.members.data.map(member => ({
-      id: member.id,
-      name: `${member.nama_lengkap} (${member.mobile_phone})`
-    }))
+  memberOptions.value = []
+  memberSearchLoading.value = false
+  if (memberSearchTimeout) {
+    clearTimeout(memberSearchTimeout)
+    memberSearchTimeout = null
   }
+  memberSearchRequestToken = 0
   
   showDistributeVoucherModal.value = true
 }
@@ -5537,12 +5543,23 @@ const openDistributeVoucherModal = async (voucher) => {
 const closeDistributeVoucherModal = () => {
   showDistributeVoucherModal.value = false
   distributingVoucherData.value = null
+  memberOptions.value = []
+  memberSearchLoading.value = false
+  if (memberSearchTimeout) {
+    clearTimeout(memberSearchTimeout)
+    memberSearchTimeout = null
+  }
 }
 
 const onDistributionTypeChange = () => {
   // Reset form when type changes
   if (distributionForm.value.distribution_type !== 'specific') {
     distributionForm.value.member_ids = []
+    memberOptions.value = []
+    if (memberSearchTimeout) {
+      clearTimeout(memberSearchTimeout)
+      memberSearchTimeout = null
+    }
   }
   if (distributionForm.value.distribution_type !== 'filter') {
     distributionForm.value.filter_criteria = {
@@ -5559,6 +5576,70 @@ const onDistributionTypeChange = () => {
       jenis_kelamin: ''
     }
   }
+}
+
+const formatMemberOption = (member) => {
+  const identity = member.member_id ? `${member.member_id} • ` : ''
+  const phoneOrEmail = member.mobile_phone || member.email || '-'
+
+  return {
+    id: member.id,
+    name: `${identity}${member.nama_lengkap} (${phoneOrEmail})`
+  }
+}
+
+const searchMembersForDistribution = async (keyword = '') => {
+  const searchKeyword = (keyword || '').trim()
+
+  if (searchKeyword.length < 2) {
+    memberOptions.value = [...(distributionForm.value.member_ids || [])]
+    memberSearchLoading.value = false
+    return
+  }
+
+  const requestToken = ++memberSearchRequestToken
+  memberSearchLoading.value = true
+
+  try {
+    const response = await axios.get('/admin/member-apps-settings/members/search', {
+      params: {
+        q: searchKeyword,
+        limit: 30
+      }
+    })
+
+    if (requestToken !== memberSearchRequestToken) return
+
+    const fetchedOptions = (response.data?.data || []).map(formatMemberOption)
+    const selectedOptions = distributionForm.value.member_ids || []
+    const mergedOptions = [...selectedOptions]
+    const existingIds = new Set(selectedOptions.map(option => option?.id).filter(Boolean))
+
+    fetchedOptions.forEach(option => {
+      if (!existingIds.has(option.id)) {
+        mergedOptions.push(option)
+      }
+    })
+
+    memberOptions.value = mergedOptions
+  } catch (error) {
+    if (requestToken !== memberSearchRequestToken) return
+    console.error('Error searching members for voucher distribution:', error)
+  } finally {
+    if (requestToken === memberSearchRequestToken) {
+      memberSearchLoading.value = false
+    }
+  }
+}
+
+const onMemberSearchChange = (keyword) => {
+  if (memberSearchTimeout) {
+    clearTimeout(memberSearchTimeout)
+  }
+
+  memberSearchTimeout = setTimeout(() => {
+    searchMembersForDistribution(keyword)
+  }, 350)
 }
 
 const saveVoucher = () => {

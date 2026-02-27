@@ -1926,6 +1926,47 @@ class MemberAppsSettingsController extends Controller
         return redirect()->back()->with('success', 'Voucher berhasil dihapus');
     }
 
+    public function searchMembers(Request $request)
+    {
+        try {
+            $search = trim((string) $request->input('q', ''));
+            $limit = (int) $request->input('limit', 20);
+            $limit = max(1, min($limit, 50));
+
+            if ($search === '') {
+                return response()->json([
+                    'success' => true,
+                    'data' => []
+                ]);
+            }
+
+            $members = MemberAppsMember::query()
+                ->select('id', 'member_id', 'nama_lengkap', 'mobile_phone', 'email')
+                ->where('is_active', true)
+                ->where(function ($query) use ($search) {
+                    $query->where('member_id', 'like', "%{$search}%")
+                        ->orWhere('nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('mobile_phone', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                })
+                ->orderBy('nama_lengkap')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $members,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('SearchMembers - Error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search members: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function getVoucherMembers(Request $request, $id)
     {
         try {

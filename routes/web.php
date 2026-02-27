@@ -2936,6 +2936,7 @@ Route::delete('/member-apps-settings/whats-on-category/{id}', [App\Http\Controll
     
     // Voucher routes
     Route::post('/member-apps-settings/voucher', [App\Http\Controllers\MemberAppsSettingsController::class, 'storeVoucher'])->name('member-apps-settings.voucher.store');
+    Route::get('/member-apps-settings/members/search', [App\Http\Controllers\MemberAppsSettingsController::class, 'searchMembers'])->name('member-apps-settings.members.search');
     Route::post('/member-apps-settings/voucher/{id}/distribute', [App\Http\Controllers\MemberAppsSettingsController::class, 'distributeVoucher'])->name('member-apps-settings.voucher.distribute');
     Route::get('/member-apps-settings/voucher/{id}/members', [App\Http\Controllers\MemberAppsSettingsController::class, 'getVoucherMembers'])->name('member-apps-settings.voucher.members');
     Route::delete('/member-apps-settings/voucher/{id}', [App\Http\Controllers\MemberAppsSettingsController::class, 'deleteVoucher'])->name('member-apps-settings.voucher.delete');
