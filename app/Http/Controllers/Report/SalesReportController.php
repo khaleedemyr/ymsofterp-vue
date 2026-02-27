@@ -1671,6 +1671,8 @@ class SalesReportController extends Controller
                 'tdo.nama_outlet',
                 'orders.manual_discount_amount',
                 'orders.manual_discount_reason',
+                'orders.promo_discount_info',
+                'orders.promo_ids',
                 'orders.waiters',
                 'orders.mode',
             ])
@@ -1736,10 +1738,11 @@ class SalesReportController extends Controller
         $orderIds = $orders->pluck('id')->toArray();
         $payments = [];
         $orderItems = [];
+        $orderPromoNames = [];
         if (!empty($orderIds)) {
             $paymentsData = DB::table('order_payment')
                 ->whereIn('order_id', $orderIds)
-                ->select('order_id', 'payment_code', 'payment_type', 'amount', 'change')
+                ->select('order_id', 'payment_code', 'payment_type', 'amount', 'change', 'kasir')
                 ->get();
             
             // Group payments by order_id
@@ -1752,6 +1755,7 @@ class SalesReportController extends Controller
                     'payment_type' => $payment->payment_type,
                     'amount' => floatval($payment->amount ?? 0),
                     'change' => floatval($payment->change ?? 0),
+                    'kasir' => $payment->kasir,
                 ];
             }
 
@@ -1786,13 +1790,40 @@ class SalesReportController extends Controller
                     'notes' => $item->notes,
                 ];
             }
+
+            $orderPromos = DB::table('order_promos as op')
+                ->join('promos as p', 'op.promo_id', '=', 'p.id')
+                ->whereIn('op.order_id', $orderIds)
+                ->select('op.order_id', 'p.name as promo_name')
+                ->get();
+
+            foreach ($orderPromos as $promo) {
+                if (!isset($orderPromoNames[$promo->order_id])) {
+                    $orderPromoNames[$promo->order_id] = [];
+                }
+
+                if (!empty($promo->promo_name)) {
+                    $orderPromoNames[$promo->order_id][] = $promo->promo_name;
+                }
+            }
+
+            foreach ($orderPromoNames as $orderId => $promoNames) {
+                $orderPromoNames[$orderId] = array_values(array_unique($promoNames));
+            }
         }
         
         // Attach payments to each order
-        $ordersArray = $orders->map(function($order) use ($payments, $orderItems) {
+        $ordersArray = $orders->map(function($order) use ($payments, $orderItems, $orderPromoNames) {
             $orderArray = (array) $order;
-            $orderArray['payments'] = $payments[$order->id] ?? [];
+            $paymentRows = $payments[$order->id] ?? [];
+            $cashiers = array_values(array_unique(array_filter(array_map(function ($payment) {
+                return isset($payment['kasir']) ? trim((string) $payment['kasir']) : '';
+            }, $paymentRows))));
+
+            $orderArray['payments'] = $paymentRows;
             $orderArray['items'] = $orderItems[$order->id] ?? [];
+            $orderArray['cashier'] = !empty($cashiers) ? implode(', ', $cashiers) : null;
+            $orderArray['promo_names'] = $orderPromoNames[$order->id] ?? [];
             return $orderArray;
         })->toArray();
         

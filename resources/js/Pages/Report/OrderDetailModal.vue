@@ -48,7 +48,10 @@
 
         <!-- Manual Discount -->
         <section v-if="manualDiscountVisible" class="bg-amber-50 rounded-xl p-4">
-          <h3 class="text-sm font-semibold text-amber-800 uppercase tracking-wide mb-2">Diskon Manual</h3>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold text-amber-800 uppercase tracking-wide">Diskon Manual</h3>
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-200 text-amber-900">MANUAL</span>
+          </div>
           <div class="flex justify-between text-sm">
             <span class="text-slate-600">Nominal</span>
             <span class="font-semibold text-amber-900">{{ formatCurrency(order.manual_discount_amount) }}</span>
@@ -60,8 +63,17 @@
 
         <!-- Promo Discount (ringkas) -->
         <section v-if="promoDiscountVisible" class="bg-emerald-50 rounded-xl p-4">
-          <h3 class="text-sm font-semibold text-emerald-800 uppercase tracking-wide mb-1">Total Diskon Promo</h3>
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-sm font-semibold text-emerald-800 uppercase tracking-wide">Diskon Promo</h3>
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-200 text-emerald-900">PROMO</span>
+          </div>
           <p class="text-lg font-bold text-emerald-900">{{ formatCurrency(promoDiscountAmount) }}</p>
+          <div v-if="resolvedPromoNames.length" class="mt-2 text-sm text-slate-700">
+            <div class="font-medium mb-1">Promo:</div>
+            <ul class="list-disc pl-5 space-y-0.5">
+              <li v-for="(promoName, idx) in resolvedPromoNames" :key="`promo-name-${idx}`">{{ promoName }}</li>
+            </ul>
+          </div>
           <div v-if="parsedPromoDiscountInfo.length" class="mt-2 space-y-1 text-sm">
             <div v-for="(p, i) in parsedPromoDiscountInfo" :key="i" class="flex justify-between text-slate-700">
               <span>{{ p.promo_name }}</span>
@@ -147,6 +159,7 @@ const displayOrderKeys = [
   'nama_outlet',
   'kode_outlet',
   'table',
+  'cashier',
   'waiters',
   'mode',
   'pax',
@@ -178,6 +191,7 @@ function formatKey(key) {
     status: 'Status',
     kode_outlet: 'Kode Outlet',
     nama_outlet: 'Nama Outlet',
+    cashier: 'Kasir',
     member_name: 'Member',
   };
   return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
@@ -298,13 +312,22 @@ const manualDiscountVisible = computed(() => {
 });
 
 const promoDiscountAmount = computed(() => {
-  const discount = parseInt(props.order.discount, 10) || 0;
-  const manualDiscount = parseFloat(props.order.manual_discount_amount) || 0;
-  if (discount > 0 && manualDiscount > 0) return Math.max(discount, manualDiscount);
-  return discount + manualDiscount;
+  return parseFloat(props.order.discount) || 0;
 });
 
 const promoDiscountVisible = computed(() => promoDiscountAmount.value > 0);
+
+const resolvedPromoNames = computed(() => {
+  const fromDiscountInfo = (parsedPromoDiscountInfo.value || [])
+    .map((promo) => String(promo?.promo_name ?? '').trim())
+    .filter(Boolean);
+
+  const fromPromoNames = (props.order?.promo_names || [])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...fromDiscountInfo, ...fromPromoNames]));
+});
 
 // Parse promo_discount_info JSON agar tampil rapi (bukan raw string)
 const parsedPromoDiscountInfo = computed(() => {
