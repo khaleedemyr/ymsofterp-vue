@@ -1735,6 +1735,7 @@ class SalesReportController extends Controller
         // Load payments for all orders
         $orderIds = $orders->pluck('id')->toArray();
         $payments = [];
+        $orderItems = [];
         if (!empty($orderIds)) {
             $paymentsData = DB::table('order_payment')
                 ->whereIn('order_id', $orderIds)
@@ -1753,12 +1754,35 @@ class SalesReportController extends Controller
                     'change' => floatval($payment->change ?? 0),
                 ];
             }
+
+            $itemsData = DB::table('order_items')
+                ->whereIn('order_id', $orderIds)
+                ->select('id', 'order_id', 'item_name', 'qty', 'price', 'subtotal', 'modifiers', 'notes')
+                ->orderBy('id')
+                ->get();
+
+            foreach ($itemsData as $item) {
+                if (!isset($orderItems[$item->order_id])) {
+                    $orderItems[$item->order_id] = [];
+                }
+
+                $orderItems[$item->order_id][] = [
+                    'id' => $item->id,
+                    'item_name' => $item->item_name,
+                    'qty' => floatval($item->qty ?? 0),
+                    'price' => floatval($item->price ?? 0),
+                    'subtotal' => floatval($item->subtotal ?? 0),
+                    'modifiers' => $item->modifiers,
+                    'notes' => $item->notes,
+                ];
+            }
         }
         
         // Attach payments to each order
-        $ordersArray = $orders->map(function($order) use ($payments) {
+        $ordersArray = $orders->map(function($order) use ($payments, $orderItems) {
             $orderArray = (array) $order;
             $orderArray['payments'] = $payments[$order->id] ?? [];
+            $orderArray['items'] = $orderItems[$order->id] ?? [];
             return $orderArray;
         })->toArray();
         

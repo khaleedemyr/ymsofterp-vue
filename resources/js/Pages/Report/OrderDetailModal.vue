@@ -91,7 +91,21 @@
                   class="border-t border-sky-100 hover:bg-sky-50/50"
                 >
                   <td class="px-3 py-2">{{ idx + 1 }}</td>
-                  <td class="px-3 py-2 font-medium text-slate-800">{{ item.item_name || '-' }}</td>
+                  <td class="px-3 py-2">
+                    <div class="font-medium text-slate-800">{{ item.item_name || '-' }}</div>
+                    <div v-if="normalizedModifiers(item).length" class="mt-1 space-y-1">
+                      <div
+                        v-for="(modifier, mIdx) in normalizedModifiers(item)"
+                        :key="`mod-${idx}-${mIdx}`"
+                        class="text-xs text-slate-600"
+                      >
+                        • Modifier: {{ modifier }}
+                      </div>
+                    </div>
+                    <div v-if="normalizedNotes(item)" class="mt-1 text-xs text-amber-700">
+                      • Notes: {{ normalizedNotes(item) }}
+                    </div>
+                  </td>
                   <td class="px-3 py-2 text-right">{{ item.qty ?? 0 }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(item.price ?? 0) }}</td>
                   <td class="px-3 py-2 text-right font-medium">{{ formatCurrency(item.subtotal ?? 0) }}</td>
@@ -192,6 +206,78 @@ function paymentAmount(payment) {
   const amount = Number(payment.amount) || 0;
   const change = Number(payment.change) || 0;
   return amount - change;
+}
+
+function normalizedNotes(item) {
+  const note = item?.notes;
+  if (note == null) return '';
+
+  const text = String(note).trim();
+  if (!text || text.toLowerCase() === 'null') return '';
+
+  return text;
+}
+
+function normalizedModifiers(item) {
+  const raw = item?.modifiers;
+  if (raw == null) return [];
+
+  if (Array.isArray(raw)) {
+    return raw.map((value) => stringifyModifier(value)).filter(Boolean);
+  }
+
+  const rawString = String(raw).trim();
+  if (!rawString || rawString.toLowerCase() === 'null') return [];
+
+  try {
+    const parsed = JSON.parse(rawString);
+    if (Array.isArray(parsed)) {
+      return parsed.map((value) => stringifyModifier(value)).filter(Boolean);
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const flattened = [];
+      Object.entries(parsed).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((child) => {
+            const rendered = stringifyModifier(child);
+            if (rendered) flattened.push(`${key}: ${rendered}`);
+          });
+          return;
+        }
+
+        const rendered = stringifyModifier(value);
+        flattened.push(rendered ? `${key}: ${rendered}` : key);
+      });
+      return flattened.filter(Boolean);
+    }
+
+    const primitive = stringifyModifier(parsed);
+    return primitive ? [primitive] : [];
+  } catch (_) {
+    return [rawString];
+  }
+}
+
+function stringifyModifier(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
+  if (typeof value === 'object') {
+    if (value.name) return String(value.name);
+    if (value.label) return String(value.label);
+    if (value.option_name) return String(value.option_name);
+    if (value.option) return String(value.option);
+    if (value.title) return String(value.title);
+
+    return Object.values(value)
+      .map((v) => (v == null ? '' : String(v).trim()))
+      .filter(Boolean)
+      .join(' - ');
+  }
+
+  return '';
 }
 
 function isPromoEmpty(promo) {
