@@ -801,6 +801,12 @@ class WarehouseStockOpnameController extends Controller
         $user = auth()->user();
 
         if (!$stockOpname->canBeSubmitted()) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT dan ada items.'
+                ], 422);
+            }
             return back()->withErrors(['error' => 'Stock opname tidak dapat di-submit. Pastikan status adalah DRAFT dan ada items.']);
         }
 
@@ -833,10 +839,26 @@ class WarehouseStockOpnameController extends Controller
 
             DB::commit();
 
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Stock opname berhasil di-submit untuk approval!',
+                    'data' => $stockOpname->fresh(['approvalFlows'])
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock opname berhasil di-submit untuk approval!');
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal submit approval: ' . $e->getMessage()
+                ], 500);
+            }
+
             return back()->withErrors(['error' => 'Gagal submit approval: ' . $e->getMessage()]);
         }
     }
@@ -870,6 +892,12 @@ class WarehouseStockOpnameController extends Controller
         }
 
         if (!$pendingFlow) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki approval yang pending.'
+                ], 422);
+            }
             return back()->withErrors(['error' => 'Anda tidak memiliki approval yang pending.']);
         }
 
@@ -901,10 +929,26 @@ class WarehouseStockOpnameController extends Controller
                 ? 'Stock opname berhasil di-approve!' 
                 : 'Stock opname telah di-reject.';
 
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'data' => $stockOpname->fresh(['approvalFlows'])
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
                            ->with('success', $message);
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal proses approval: ' . $e->getMessage()
+                ], 500);
+            }
+
             return back()->withErrors(['error' => 'Gagal proses approval: ' . $e->getMessage()]);
         }
     }
@@ -912,12 +956,18 @@ class WarehouseStockOpnameController extends Controller
     /**
      * Process approved warehouse stock opname (update inventory)
      */
-    public function process($id)
+    public function process(Request $request, $id)
     {
         $stockOpname = WarehouseStockOpname::with('items.inventoryItem')->findOrFail($id);
         $user = auth()->user();
 
         if (!$stockOpname->canBeProcessed()) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stock opname belum di-approve.'
+                ], 422);
+            }
             return back()->withErrors(['error' => 'Stock opname belum di-approve.']);
         }
 
@@ -1055,10 +1105,26 @@ class WarehouseStockOpnameController extends Controller
 
             DB::commit();
 
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Stock opname berhasil di-process!',
+                    'data' => $stockOpname->fresh()
+                ]);
+            }
+
             return redirect()->route('warehouse-stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock opname berhasil di-process!');
         } catch (\Exception $e) {
             DB::rollBack();
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal process stock opname: ' . $e->getMessage()
+                ], 500);
+            }
+
             return back()->withErrors(['error' => 'Gagal process stock opname: ' . $e->getMessage()]);
         }
     }

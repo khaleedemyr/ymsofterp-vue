@@ -422,17 +422,25 @@ async function submitForApproval() {
 
   submitting.value = true;
   try {
-    await axios.post(route('warehouse-stock-opnames.submit-approval', props.stockOpname.id), {
+    const response = await axios.post(route('warehouse-stock-opnames.submit-approval', props.stockOpname.id), {
       approvers: approvers,
+    });
+
+    await Swal.fire({
+      title: 'Berhasil',
+      text: response?.data?.message || 'Stock opname berhasil di-submit untuk approval.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6'
     });
 
     showSubmitModal.value = false;
     router.reload();
   } catch (error) {
     console.error('Error submitting:', error);
+    const errorMessage = error?.response?.data?.message || 'Gagal submit untuk approval. Silakan coba lagi.';
     Swal.fire({
       title: 'Error',
-      text: 'Gagal submit untuk approval. Silakan coba lagi.',
+      text: errorMessage,
       icon: 'error',
       confirmButtonColor: '#3085d6'
     });
@@ -454,9 +462,16 @@ async function approveStockOpname(action) {
 
   approving.value = true;
   try {
-    await axios.post(route('warehouse-stock-opnames.approve', props.stockOpname.id), {
+    const response = await axios.post(route('warehouse-stock-opnames.approve', props.stockOpname.id), {
       action: action,
       comments: action === 'approve' ? approvalComments.value : rejectComments.value,
+    });
+
+    await Swal.fire({
+      title: 'Berhasil',
+      text: response?.data?.message || 'Proses approval berhasil.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6'
     });
 
     showApproveModal.value = false;
@@ -466,9 +481,10 @@ async function approveStockOpname(action) {
     router.reload();
   } catch (error) {
     console.error('Error approving:', error);
+    const errorMessage = error?.response?.data?.message || 'Gagal proses approval. Silakan coba lagi.';
     Swal.fire({
       title: 'Error',
-      text: 'Gagal proses approval. Silakan coba lagi.',
+      text: errorMessage,
       icon: 'error',
       confirmButtonColor: '#3085d6'
     });
@@ -495,13 +511,22 @@ async function processStockOpname() {
 
   processing.value = true;
   try {
-    await axios.post(route('warehouse-stock-opnames.process', props.stockOpname.id));
+    const response = await axios.post(route('warehouse-stock-opnames.process', props.stockOpname.id));
+
+    await Swal.fire({
+      title: 'Berhasil',
+      text: response?.data?.message || 'Stock opname berhasil di-process.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6'
+    });
+
     router.reload();
   } catch (error) {
     console.error('Error processing:', error);
+    const errorMessage = error?.response?.data?.message || 'Gagal process stock opname. Silakan coba lagi.';
     Swal.fire({
       title: 'Error',
-      text: 'Gagal process stock opname. Silakan coba lagi.',
+      text: errorMessage,
       icon: 'error',
       confirmButtonColor: '#3085d6'
     });
@@ -543,16 +568,24 @@ async function submitForApprovalDirect() {
 
   submitting.value = true;
   try {
-    await axios.post(route('warehouse-stock-opnames.submit-approval', props.stockOpname.id), {
+    const response = await axios.post(route('warehouse-stock-opnames.submit-approval', props.stockOpname.id), {
       approvers: approvers,
+    });
+
+    await Swal.fire({
+      title: 'Berhasil',
+      text: response?.data?.message || 'Stock opname berhasil di-submit untuk approval.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6'
     });
 
     router.reload();
   } catch (error) {
     console.error('Error submitting:', error);
+    const errorMessage = error?.response?.data?.message || 'Gagal submit untuk approval. Silakan coba lagi.';
     Swal.fire({
       title: 'Error',
-      text: 'Gagal submit untuk approval. Silakan coba lagi.',
+      text: errorMessage,
       icon: 'error',
       confirmButtonColor: '#3085d6'
     });
