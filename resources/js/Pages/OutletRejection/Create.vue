@@ -94,6 +94,13 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                       Delivery Order (Optional)
                     </label>
+                    <input
+                      v-model="deliveryOrderSearch"
+                      type="text"
+                      class="w-full mb-2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="Search delivery order..."
+                      :disabled="!form.outlet_id || !form.warehouse_id"
+                    />
                     <select
                       v-model="form.delivery_order_id"
                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -104,10 +111,13 @@
                       <option v-if="!form.outlet_id || !form.warehouse_id" value="" disabled>
                         Please select outlet and warehouse first
                       </option>
-                                                                    <option v-for="deliveryOrder in deliveryOrders" :key="deliveryOrder.id" :value="deliveryOrder.id">
+                      <option v-if="form.outlet_id && form.warehouse_id && filteredDeliveryOrders.length === 0" value="" disabled>
+                        No delivery order found
+                      </option>
+                      <option v-for="deliveryOrder in filteredDeliveryOrders" :key="deliveryOrder.id" :value="deliveryOrder.id">
                           {{ deliveryOrder.display_text || deliveryOrder.number }}
                           (FO: {{ deliveryOrder.floor_order_number }} [{{ deliveryOrder.floor_order_mode }}], PL: {{ deliveryOrder.packing_number }}, GR: {{ deliveryOrder.good_receive_number }})
-                        </option>
+                      </option>
                     </select>
                     <p v-if="errors.delivery_order_id" class="text-red-500 text-xs mt-1">
                       {{ errors.delivery_order_id }}
@@ -461,7 +471,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { Link, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
@@ -476,11 +486,36 @@ const props = defineProps({
 })
 
 const deliveryOrders = ref(props.deliveryOrders || [])
+const deliveryOrderSearch = ref('')
 const documentFlowInfo = ref(props.documentFlowInfo || null)
 const itemsWithQuantityFlow = ref(props.itemsWithQuantityFlow || {})
 
 const isSubmitting = ref(false)
 const loading = ref(false)
+
+const filteredDeliveryOrders = computed(() => {
+  const keyword = deliveryOrderSearch.value?.trim().toLowerCase()
+
+  if (!keyword) {
+    return deliveryOrders.value
+  }
+
+  return deliveryOrders.value.filter((deliveryOrder) => {
+    const haystack = [
+      deliveryOrder.display_text,
+      deliveryOrder.number,
+      deliveryOrder.floor_order_number,
+      deliveryOrder.floor_order_mode,
+      deliveryOrder.packing_number,
+      deliveryOrder.good_receive_number
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+
+    return haystack.includes(keyword)
+  })
+})
 
 const form = useForm({
   rejection_date: new Date().toISOString().split('T')[0],
@@ -605,6 +640,7 @@ const loadFilteredDeliveryOrders = async () => {
 // Watch for changes in outlet and warehouse
 watch([() => form.outlet_id, () => form.warehouse_id], () => {
   form.delivery_order_id = '' // Reset delivery order selection
+  deliveryOrderSearch.value = ''
   loadFilteredDeliveryOrders()
 })
 

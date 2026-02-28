@@ -1543,11 +1543,12 @@ class OutletRejectionController extends Controller
             ->where('wd.warehouse_id', $warehouseId) // Use warehouse_id from warehouse_division table
             ->where('gri.remaining_qty', '>', 0) // Only items with remaining qty
             ->whereNotExists(function($query) {
-                // Exclude delivery orders that already have outlet rejections
+                // Exclude delivery orders that are still being processed in active rejection flow
+                // Completed/rejected/cancelled historical rejections should not block reuse
                 $query->select(DB::raw(1))
                       ->from('outlet_rejections as or')
                       ->whereRaw('or.delivery_order_id = do.id')
-                      ->where('or.status', '!=', 'cancelled'); // Allow cancelled rejections to be reused
+                    ->whereIn('or.status', ['draft', 'submitted', 'approved']);
             })
             ->select(
                 'do.*',
