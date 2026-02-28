@@ -1078,7 +1078,6 @@ class WarehouseStockOpnameController extends Controller
                     'new_cost' => $mac, // MAC tidak berubah
                     'mac' => $mac,
                     'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
 
                 // Insert adjustment record to new table
@@ -1871,7 +1870,6 @@ class WarehouseStockOpnameController extends Controller
                     'new_cost' => $item->mac_after,
                     'mac' => $item->mac_before,
                     'created_at' => now(),
-                    'updated_at' => now(),
                 ]);
 
                 WarehouseStockOpnameAdjustment::create([
