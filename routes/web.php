@@ -1330,6 +1330,8 @@ Route::get('/good-receive-outlet-supplier/create', [GoodReceiveOutletSupplierCon
 // MAC Report Routes
 Route::get('/mac-report', [App\Http\Controllers\MacReportController::class, 'index'])->name('mac-report.index');
 Route::post('/mac-report/export', [App\Http\Controllers\MacReportController::class, 'export'])->name('mac-report.export');
+Route::get('/mac-anomaly-tracking', [App\Http\Controllers\MacAnomalyTrackingController::class, 'index'])->name('mac-anomaly-tracking.index');
+Route::get('/api/mac-anomaly-tracking', [App\Http\Controllers\MacAnomalyTrackingController::class, 'data'])->name('mac-anomaly-tracking.data');
     Route::get('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'show'])->name('good-receive-outlet-supplier.show');
     Route::post('/good-receive-outlet-supplier', [GoodReceiveOutletSupplierController::class, 'store'])->name('good-receive-outlet-supplier.store');
     Route::delete('/good-receive-outlet-supplier/{id}', [GoodReceiveOutletSupplierController::class, 'destroy'])->name('good-receive-outlet-supplier.destroy');

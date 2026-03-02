@@ -326,6 +326,12 @@ const menuGroups = [
                 code: 'mac_report',
             },
             {
+                name: () => 'MAC Tracking',
+                icon: 'fa-solid fa-triangle-exclamation',
+                route: '/mac-anomaly-tracking',
+                code: 'mac_anomaly_tracking',
+            },
+            {
                 name: () => 'Outlet Stock Report',
                 icon: 'fa-solid fa-chart-line',
                 route: '/outlet-stock-report',
