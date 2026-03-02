@@ -59,6 +59,15 @@ class MacAnomalyTrackingController extends Controller
         $idOutlet = (int) $request->input('id_outlet');
         $warehouseOutletId = (int) $request->input('warehouse_outlet_id');
         $itemId = (int) $request->input('item_id');
+        $page = max(1, (int) $request->input('page', 1));
+        $perPage = (int) $request->input('per_page', 20);
+
+        if ($perPage < 1) {
+            $perPage = 20;
+        }
+        if ($perPage > 100) {
+            $perPage = 100;
+        }
 
         if (!$idOutlet) {
             return response()->json([
@@ -94,15 +103,17 @@ class MacAnomalyTrackingController extends Controller
                     'current_mac' => null,
                     'previous_mac' => null,
                     'last_update_date' => null,
-                    'current_qty_small' => '0.0000',
+                    'current_qty_small' => '0.00',
+                    'current_qty_small_unit' => null,
                 ],
                 'message' => 'Inventory item tidak ditemukan untuk barang ini',
             ]);
         }
 
         $item = DB::table('items')
-            ->where('id', $itemId)
-            ->select('id', 'name', 'sku')
+            ->leftJoin('units as u', 'items.small_unit_id', '=', 'u.id')
+            ->where('items.id', $itemId)
+            ->select('items.id', 'items.name', 'items.sku', 'u.name as small_unit_name')
             ->first();
 
         $warehouse = DB::table('warehouse_outlets')
@@ -110,14 +121,26 @@ class MacAnomalyTrackingController extends Controller
             ->select('id', 'name')
             ->first();
 
-        $historyRows = DB::table('outlet_food_inventory_cost_histories')
+        $historyBaseQuery = DB::table('outlet_food_inventory_cost_histories')
             ->where('id_outlet', $idOutlet)
             ->where('warehouse_outlet_id', $warehouseOutletId)
             ->where('inventory_item_id', $inventoryItemId)
             ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->limit(200)
+            ->orderByDesc('id');
+
+        $totalUpdates = (clone $historyBaseQuery)->count();
+        $lastPage = max(1, (int) ceil($totalUpdates / $perPage));
+        $page = min($page, $lastPage);
+
+        $historyRows = (clone $historyBaseQuery)
+            ->forPage($page, $perPage)
             ->get();
+
+        $latestTwo = (clone $historyBaseQuery)
+            ->limit(2)
+            ->get();
+
+        $transactionNumberMap = $this->buildTransactionNumberMap($historyRows);
 
         $qtySmall = (float) (DB::table('outlet_food_inventory_stocks')
             ->where('id_outlet', $idOutlet)
@@ -132,6 +155,7 @@ class MacAnomalyTrackingController extends Controller
                     'item_id' => $itemId,
                     'item_name' => $item->name ?? '-',
                     'item_code' => $item->sku ?? null,
+                    'small_unit_name' => $item->small_unit_name ?? null,
                 ],
                 'warehouse' => [
                     'warehouse_outlet_id' => $warehouseOutletId,
@@ -143,16 +167,25 @@ class MacAnomalyTrackingController extends Controller
                     'current_mac' => null,
                     'previous_mac' => null,
                     'last_update_date' => null,
-                    'current_qty_small' => number_format($qtySmall, 4, '.', ''),
+                    'current_qty_small' => number_format($qtySmall, 2, '.', ''),
+                    'current_qty_small_unit' => $item->small_unit_name ?? null,
+                ],
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                    'last_page' => 1,
                 ],
                 'message' => 'Belum ada histori MAC untuk kombinasi outlet, warehouse, dan barang ini',
             ]);
         }
 
-        $macChanges = $historyRows->map(function ($row) {
+        $macChanges = $historyRows->map(function ($row) use ($transactionNumberMap) {
             $oldCost = (float) ($row->old_cost ?? 0);
             $newCost = (float) ($row->new_cost ?? 0);
             $changePercent = null;
+            $referenceKey = ($row->reference_type ?? '') . ':' . ($row->reference_id ?? '');
+            $transactionNumber = $transactionNumberMap[$referenceKey] ?? null;
 
             if ($oldCost > 0) {
                 $changePercent = (($newCost - $oldCost) / $oldCost) * 100;
@@ -169,11 +202,12 @@ class MacAnomalyTrackingController extends Controller
                 'type' => $row->type,
                 'reference_type' => $row->reference_type,
                 'reference_id' => $row->reference_id,
+                'transaction_number' => $transactionNumber,
             ];
         })->values();
 
-        $latest = $historyRows->first();
-        $previous = $historyRows->count() > 1 ? $historyRows->get(1) : null;
+        $latest = $latestTwo->first();
+        $previous = $latestTwo->count() > 1 ? $latestTwo->get(1) : null;
 
         return response()->json([
             'status' => 'success',
@@ -181,6 +215,7 @@ class MacAnomalyTrackingController extends Controller
                 'item_id' => $itemId,
                 'item_name' => $item->name ?? '-',
                 'item_code' => $item->sku ?? null,
+                'small_unit_name' => $item->small_unit_name ?? null,
             ],
             'warehouse' => [
                 'warehouse_outlet_id' => $warehouseOutletId,
@@ -188,12 +223,104 @@ class MacAnomalyTrackingController extends Controller
             ],
             'mac_changes' => $macChanges,
             'summary' => [
-                'total_updates' => $historyRows->count(),
+                'total_updates' => $totalUpdates,
                 'current_mac' => number_format((float) ($latest->new_cost ?? 0), 4, '.', ''),
                 'previous_mac' => $previous ? number_format((float) ($previous->new_cost ?? 0), 4, '.', '') : null,
                 'last_update_date' => $latest->date,
-                'current_qty_small' => number_format($qtySmall, 4, '.', ''),
+                'current_qty_small' => number_format($qtySmall, 2, '.', ''),
+                'current_qty_small_unit' => $item->small_unit_name ?? null,
+            ],
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $totalUpdates,
+                'last_page' => $lastPage,
             ],
         ]);
+    }
+
+    private function buildTransactionNumberMap($historyRows): array
+    {
+        $map = [];
+
+        $idsByType = [];
+        foreach ($historyRows as $row) {
+            if (empty($row->reference_type) || empty($row->reference_id)) {
+                continue;
+            }
+
+            $idsByType[$row->reference_type][] = (int) $row->reference_id;
+        }
+
+        foreach ($idsByType as $type => $ids) {
+            $ids = array_values(array_unique(array_filter($ids)));
+            if (empty($ids)) {
+                continue;
+            }
+
+            $pairs = [];
+
+            switch ($type) {
+                case 'good_receive_outlet':
+                    $pairs = DB::table('outlet_food_good_receives')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'good_receive_supplier':
+                case 'good_receive_outlet_supplier':
+                    $pairs = DB::table('good_receive_outlet_suppliers')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'gr_number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'outlet_transfer':
+                    $pairs = DB::table('outlet_transfers')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'transfer_number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'internal_warehouse_transfer':
+                    $pairs = DB::table('internal_warehouse_transfers')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'transfer_number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'warehouse_transfer':
+                    $pairs = DB::table('warehouse_transfers')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'transfer_number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'stock_opname':
+                    $pairs = DB::table('outlet_stock_opnames')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'opname_number as transaction_number')
+                        ->get();
+                    break;
+
+                case 'warehouse_stock_opname':
+                    $pairs = DB::table('warehouse_stock_opnames')
+                        ->whereIn('id', $ids)
+                        ->select('id', 'opname_number as transaction_number')
+                        ->get();
+                    break;
+
+                default:
+                    $pairs = [];
+                    break;
+            }
+
+            foreach ($pairs as $pair) {
+                $map[$type . ':' . $pair->id] = $pair->transaction_number;
+            }
+        }
+
+        return $map;
     }
 }

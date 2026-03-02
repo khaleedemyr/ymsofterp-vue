@@ -3,7 +3,7 @@
     <div class="w-full py-8 px-4 md:px-6 lg:px-8">
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold flex items-center gap-2 text-gray-900">
-          <i class="fa-solid fa-clock-rotate-left text-blue-500"></i> MAC Change Tracking
+          <i class="fa-solid fa-clock-rotate-left text-blue-500"></i> Outlet MAC Tracking
         </h1>
       </div>
 
@@ -63,7 +63,7 @@
           <p class="text-xl font-bold text-indigo-900">{{ summary.previous_mac ?? '-' }}</p>
         </div>
         <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 shadow-sm">
-          <p class="text-xs text-emerald-700">Qty Small Saat Ini</p>
+          <p class="text-xs text-emerald-700">Qty Small Saat Ini ({{ summary.current_qty_small_unit || '-' }})</p>
           <p class="text-xl font-bold text-emerald-900">{{ summary.current_qty_small }}</p>
         </div>
         <div class="bg-amber-50 rounded-xl p-4 border border-amber-200 shadow-sm">
@@ -77,6 +77,7 @@
           Barang:
           <span class="font-semibold text-gray-900">{{ selectedInfo.item_name }}</span>
           <span v-if="selectedInfo.item_code" class="text-gray-500">({{ selectedInfo.item_code }})</span>
+          <span class="text-gray-500"> • Unit kecil: {{ selectedInfo.small_unit_name || '-' }}</span>
           • Warehouse:
           <span class="font-semibold text-gray-900">{{ selectedInfo.warehouse_name }}</span>
         </p>
@@ -84,7 +85,19 @@
 
       <div v-if="macChanges.length > 0" class="bg-white rounded-2xl border border-gray-200 shadow-sm w-full">
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
+          <div>
+            <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
+            <p class="text-xs text-gray-500 mt-1">MAC (Weighted) = harga rata-rata tertimbang setelah transaksi (moving average cost).</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-600">Per Page</span>
+            <select v-model.number="pagination.per_page" @change="handlePerPageChange" class="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+          </div>
         </div>
 
         <div class="overflow-x-auto w-full">
@@ -111,11 +124,50 @@
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ row.mac }}</td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ row.type || '-' }}</td>
-                <td class="px-4 py-3 text-sm text-gray-900">{{ row.reference_type || '-' }}{{ row.reference_id ? ' #' + row.reference_id : '' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">
+                  <div class="font-medium text-gray-900">{{ row.transaction_number || '-' }}</div>
+                  <div class="text-xs text-gray-500">{{ row.reference_type || '-' }}{{ row.reference_id ? ' #' + row.reference_id : '' }}</div>
+                </td>
                 <td class="px-4 py-3 text-sm text-gray-900">{{ row.created_at || '-' }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="px-6 py-4 border-t border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <p class="text-sm text-gray-600">
+            Menampilkan {{ pageRange.start }} - {{ pageRange.end }} dari {{ pagination.total }} data
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              @click="changePage(pagination.current_page - 1)"
+              :disabled="pagination.current_page <= 1 || loading"
+              class="px-3 py-1.5 text-sm rounded-md border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Prev
+            </button>
+            <button
+              v-for="pageItem in visiblePages"
+              :key="`page-${pageItem}`"
+              @click="typeof pageItem === 'number' ? changePage(pageItem) : null"
+              :disabled="loading || pageItem === '...'"
+              :class="[
+                'px-3 py-1.5 text-sm rounded-md border disabled:opacity-50 disabled:cursor-not-allowed',
+                pageItem === pagination.current_page
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              {{ pageItem }}
+            </button>
+            <button
+              @click="changePage(pagination.current_page + 1)"
+              :disabled="pagination.current_page >= pagination.last_page || loading"
+              class="px-3 py-1.5 text-sm rounded-md border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -152,6 +204,12 @@ const loading = ref(false)
 const hasSearched = ref(false)
 const itemSearch = ref('')
 const selectedInfo = ref(null)
+const pagination = ref({
+  current_page: 1,
+  per_page: 20,
+  total: 0,
+  last_page: 1
+})
 
 const filteredItems = computed(() => {
   const keyword = itemSearch.value.toLowerCase().trim()
@@ -164,6 +222,35 @@ const filteredItems = computed(() => {
     const itemCode = (item.item_code || '').toLowerCase()
     return itemName.includes(keyword) || itemCode.includes(keyword)
   })
+})
+
+const pageRange = computed(() => {
+  if (pagination.value.total === 0) {
+    return { start: 0, end: 0 }
+  }
+
+  const start = (pagination.value.current_page - 1) * pagination.value.per_page + 1
+  const end = Math.min(pagination.value.current_page * pagination.value.per_page, pagination.value.total)
+  return { start, end }
+})
+
+const visiblePages = computed(() => {
+  const current = pagination.value.current_page
+  const last = pagination.value.last_page
+
+  if (last <= 7) {
+    return Array.from({ length: last }, (_, index) => index + 1)
+  }
+
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', last]
+  }
+
+  if (current >= last - 3) {
+    return [1, '...', last - 4, last - 3, last - 2, last - 1, last]
+  }
+
+  return [1, '...', current - 1, current, current + 1, '...', last]
 })
 
 onMounted(async () => {
@@ -180,7 +267,7 @@ async function loadOutlets() {
   }
 }
 
-async function loadData() {
+async function loadData(page = 1) {
   if (!filters.value.outlet_id || !filters.value.warehouse_outlet_id || !filters.value.item_id) {
     alert('Silakan pilih outlet, warehouse outlet, dan barang terlebih dahulu')
     return
@@ -194,31 +281,53 @@ async function loadData() {
       params: {
         id_outlet: filters.value.outlet_id,
         warehouse_outlet_id: filters.value.warehouse_outlet_id,
-        item_id: filters.value.item_id
+        item_id: filters.value.item_id,
+        page,
+        per_page: pagination.value.per_page
       }
     })
 
     if (response.data.status === 'success') {
       macChanges.value = response.data.mac_changes || []
       summary.value = response.data.summary || null
+      pagination.value = {
+        current_page: response.data.pagination?.current_page || 1,
+        per_page: response.data.pagination?.per_page || pagination.value.per_page,
+        total: response.data.pagination?.total || 0,
+        last_page: response.data.pagination?.last_page || 1
+      }
       selectedInfo.value = {
         item_name: response.data.item?.item_name || '-',
         item_code: response.data.item?.item_code || null,
+        small_unit_name: response.data.item?.small_unit_name || null,
         warehouse_name: response.data.warehouse?.warehouse_name || '-'
       }
     } else {
       macChanges.value = []
       summary.value = null
       selectedInfo.value = null
+      pagination.value = { current_page: 1, per_page: pagination.value.per_page, total: 0, last_page: 1 }
     }
   } catch (error) {
     console.error('Error loading anomaly tracking:', error)
     macChanges.value = []
     summary.value = null
     selectedInfo.value = null
+    pagination.value = { current_page: 1, per_page: pagination.value.per_page, total: 0, last_page: 1 }
   } finally {
     loading.value = false
   }
+}
+
+function changePage(page) {
+  if (page < 1 || page > pagination.value.last_page) {
+    return
+  }
+  loadData(page)
+}
+
+function handlePerPageChange() {
+  loadData(1)
 }
 
 async function loadOptions() {
@@ -257,6 +366,7 @@ async function handleOutletChange() {
   macChanges.value = []
   summary.value = null
   selectedInfo.value = null
+  pagination.value = { current_page: 1, per_page: pagination.value.per_page, total: 0, last_page: 1 }
   await loadOptions()
 }
 
@@ -266,6 +376,7 @@ async function handleWarehouseChange() {
   macChanges.value = []
   summary.value = null
   selectedInfo.value = null
+  pagination.value = { current_page: 1, per_page: pagination.value.per_page, total: 0, last_page: 1 }
   await loadOptions()
 }
 
