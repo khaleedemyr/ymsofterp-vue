@@ -1,118 +1,132 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-2">
+    <div class="w-full py-8 px-4 md:px-6 lg:px-8">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold flex items-center gap-2">
-          <i class="fa-solid fa-triangle-exclamation text-red-500"></i> MAC Anomaly Tracking
+        <h1 class="text-2xl font-bold flex items-center gap-2 text-gray-900">
+          <i class="fa-solid fa-clock-rotate-left text-blue-500"></i> MAC Change Tracking
         </h1>
       </div>
 
-      <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
-            <select v-model="filters.outlet_id" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select v-model="filters.outlet_id" @change="handleOutletChange" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Pilih Outlet</option>
               <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.id">{{ outlet.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Threshold Perubahan MAC (%)</label>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              v-model.number="filters.jump_threshold_percent"
-              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+            <label class="block text-sm font-medium text-gray-700 mb-2">Warehouse Outlet</label>
+            <select v-model="filters.warehouse_outlet_id" @change="handleWarehouseChange" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Pilih Warehouse</option>
+              <option v-for="warehouse in warehouseOutlets" :key="warehouse.id" :value="warehouse.id">{{ warehouse.name }}</option>
+            </select>
           </div>
-          <div class="md:col-span-2 flex items-end">
-            <button @click="loadData" class="w-full bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition">
-              <i class="fa-solid fa-magnifying-glass mr-1"></i> Cek Anomali
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Barang</label>
+            <input
+              v-model="itemSearch"
+              type="text"
+              placeholder="Cari nama / kode barang..."
+              class="w-full border border-gray-300 rounded-md px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+            <select v-model="filters.item_id" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Pilih Barang</option>
+              <option v-for="item in filteredItems" :key="item.item_id" :value="item.item_id">{{ item.item_name }}{{ item.item_code ? ' (' + item.item_code + ')' : '' }}</option>
+            </select>
+            <p v-if="items.length > 0 && filteredItems.length === 0" class="text-xs text-gray-500 mt-1">Tidak ada barang yang cocok dengan kata kunci.</p>
+          </div>
+          <div class="flex items-end">
+            <button
+              @click="loadData"
+              :disabled="loading"
+              class="w-full bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md hover:bg-blue-700 transition"
+            >
+              <i class="fa-solid fa-magnifying-glass mr-1"></i> Lihat Perubahan MAC
             </button>
           </div>
         </div>
       </div>
 
-      <div v-if="summary" class="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6">
-        <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
-          <p class="text-xs text-gray-600">Total Dicek</p>
-          <p class="text-xl font-bold text-gray-900">{{ summary.total_checked }}</p>
+      <div v-if="summary" class="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6 w-full">
+        <div class="bg-gray-50 rounded-xl p-4 border border-gray-200 shadow-sm">
+          <p class="text-xs text-gray-600">Total Update MAC</p>
+          <p class="text-xl font-bold text-gray-900">{{ summary.total_updates }}</p>
         </div>
-        <div class="bg-red-50 rounded-xl p-4 border border-red-200">
-          <p class="text-xs text-red-600">Critical</p>
-          <p class="text-xl font-bold text-red-900">{{ summary.critical }}</p>
+        <div class="bg-blue-50 rounded-xl p-4 border border-blue-200 shadow-sm">
+          <p class="text-xs text-blue-600">MAC Saat Ini</p>
+          <p class="text-xl font-bold text-blue-900">{{ summary.current_mac ?? '-' }}</p>
         </div>
-        <div class="bg-orange-50 rounded-xl p-4 border border-orange-200">
-          <p class="text-xs text-orange-600">High</p>
-          <p class="text-xl font-bold text-orange-900">{{ summary.high }}</p>
+        <div class="bg-indigo-50 rounded-xl p-4 border border-indigo-200 shadow-sm">
+          <p class="text-xs text-indigo-600">MAC Sebelumnya</p>
+          <p class="text-xl font-bold text-indigo-900">{{ summary.previous_mac ?? '-' }}</p>
         </div>
-        <div class="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
-          <p class="text-xs text-yellow-700">Medium</p>
-          <p class="text-xl font-bold text-yellow-900">{{ summary.medium }}</p>
+        <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 shadow-sm">
+          <p class="text-xs text-emerald-700">Qty Small Saat Ini</p>
+          <p class="text-xl font-bold text-emerald-900">{{ summary.current_qty_small }}</p>
         </div>
-        <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
-          <p class="text-xs text-blue-600">Total Anomali</p>
-          <p class="text-xl font-bold text-blue-900">{{ summary.total_anomalies }}</p>
+        <div class="bg-amber-50 rounded-xl p-4 border border-amber-200 shadow-sm">
+          <p class="text-xs text-amber-700">Tanggal Update Terakhir</p>
+          <p class="text-xl font-bold text-amber-900">{{ summary.last_update_date ?? '-' }}</p>
         </div>
       </div>
 
-      <div v-if="anomalies.length > 0" class="bg-white rounded-xl shadow-xl p-6">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-semibold text-gray-800">Daftar Anomali MAC</h2>
-          <input
-            v-model="search"
-            type="text"
-            placeholder="Cari item / kode item..."
-            class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+      <div v-if="selectedInfo" class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6 w-full">
+        <p class="text-sm text-gray-600">
+          Barang:
+          <span class="font-semibold text-gray-900">{{ selectedInfo.item_name }}</span>
+          <span v-if="selectedInfo.item_code" class="text-gray-500">({{ selectedInfo.item_code }})</span>
+          • Warehouse:
+          <span class="font-semibold text-gray-900">{{ selectedInfo.warehouse_name }}</span>
+        </p>
+      </div>
+
+      <div v-if="macChanges.length > 0" class="bg-white rounded-2xl border border-gray-200 shadow-sm w-full">
+        <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+        <div class="overflow-x-auto w-full">
+          <table class="w-full min-w-[1300px] divide-y divide-gray-200">
+            <thead class="bg-gray-50 sticky top-0">
               <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Warehouse</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC Lama</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC Baru</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Perubahan</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Small</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alasan</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC (Weighted)</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="row in filteredAnomalies" :key="row.history_id" class="hover:bg-gray-50">
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <span class="px-2 py-1 rounded text-xs font-semibold" :class="severityClass(row.severity)">{{ row.severity.toUpperCase() }}</span>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="text-sm font-medium text-gray-900">{{ row.item_name }}</div>
-                  <div class="text-xs text-gray-500">{{ row.item_code || '-' }}</div>
-                </td>
-                <td class="px-4 py-3 text-sm text-gray-900">{{ row.warehouse_name }}</td>
-                <td class="px-4 py-3 text-sm text-gray-900">{{ row.previous_mac ?? '-' }}</td>
-                <td class="px-4 py-3 text-sm font-semibold text-gray-900">{{ row.current_mac }}</td>
+              <tr v-for="row in macChanges" :key="row.history_id" class="hover:bg-gray-50 transition-colors">
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.date || '-' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.old_cost }}</td>
+                <td class="px-4 py-3 text-sm font-semibold text-gray-900">{{ row.new_cost }}</td>
                 <td class="px-4 py-3 text-sm" :class="changeClass(row.change_percent)">
                   {{ row.change_percent !== null ? row.change_percent + '%' : '-' }}
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-900">{{ row.current_qty_small }}</td>
-                <td class="px-4 py-3 text-sm text-gray-900">{{ row.reasons.join('; ') }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.mac }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.type || '-' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.reference_type || '-' }}{{ row.reference_id ? ' #' + row.reference_id : '' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-900">{{ row.created_at || '-' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div v-if="!loading && hasSearched && anomalies.length === 0" class="bg-white rounded-xl shadow-xl p-6 text-center text-gray-500">
+      <div v-if="!loading && hasSearched && macChanges.length === 0" class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center text-gray-500 w-full">
         <i class="fa-solid fa-circle-check text-4xl mb-3 text-green-500"></i>
-        <p class="text-lg font-medium">Tidak ada anomali MAC pada outlet ini</p>
+        <p class="text-lg font-medium">Belum ada riwayat perubahan MAC untuk barang yang dipilih</p>
       </div>
 
-      <div v-if="loading" class="bg-white rounded-xl shadow-xl p-6 text-center text-gray-500">
+      <div v-if="loading" class="bg-white rounded-2xl border border-gray-200 shadow-sm p-8 text-center text-gray-500 w-full">
         <i class="fa-solid fa-spinner fa-spin text-4xl mb-3"></i>
-        <p class="text-lg font-medium">Memuat data anomali...</p>
+        <p class="text-lg font-medium">Memuat riwayat MAC...</p>
       </div>
     </div>
   </AppLayout>
@@ -125,15 +139,32 @@ import axios from 'axios'
 
 const filters = ref({
   outlet_id: '',
-  jump_threshold_percent: 50
+  warehouse_outlet_id: '',
+  item_id: ''
 })
 
 const outlets = ref([])
-const anomalies = ref([])
+const warehouseOutlets = ref([])
+const items = ref([])
+const macChanges = ref([])
 const summary = ref(null)
 const loading = ref(false)
 const hasSearched = ref(false)
-const search = ref('')
+const itemSearch = ref('')
+const selectedInfo = ref(null)
+
+const filteredItems = computed(() => {
+  const keyword = itemSearch.value.toLowerCase().trim()
+  if (!keyword) {
+    return items.value
+  }
+
+  return items.value.filter((item) => {
+    const itemName = (item.item_name || '').toLowerCase()
+    const itemCode = (item.item_code || '').toLowerCase()
+    return itemName.includes(keyword) || itemCode.includes(keyword)
+  })
+})
 
 onMounted(async () => {
   await loadOutlets()
@@ -150,8 +181,8 @@ async function loadOutlets() {
 }
 
 async function loadData() {
-  if (!filters.value.outlet_id) {
-    alert('Silakan pilih outlet terlebih dahulu')
+  if (!filters.value.outlet_id || !filters.value.warehouse_outlet_id || !filters.value.item_id) {
+    alert('Silakan pilih outlet, warehouse outlet, dan barang terlebih dahulu')
     return
   }
 
@@ -162,44 +193,80 @@ async function loadData() {
     const response = await axios.get('/api/mac-anomaly-tracking', {
       params: {
         id_outlet: filters.value.outlet_id,
-        jump_threshold_percent: filters.value.jump_threshold_percent
+        warehouse_outlet_id: filters.value.warehouse_outlet_id,
+        item_id: filters.value.item_id
       }
     })
 
     if (response.data.status === 'success') {
-      anomalies.value = response.data.anomalies || []
+      macChanges.value = response.data.mac_changes || []
       summary.value = response.data.summary || null
+      selectedInfo.value = {
+        item_name: response.data.item?.item_name || '-',
+        item_code: response.data.item?.item_code || null,
+        warehouse_name: response.data.warehouse?.warehouse_name || '-'
+      }
     } else {
-      anomalies.value = []
+      macChanges.value = []
       summary.value = null
+      selectedInfo.value = null
     }
   } catch (error) {
     console.error('Error loading anomaly tracking:', error)
-    anomalies.value = []
+    macChanges.value = []
     summary.value = null
+    selectedInfo.value = null
   } finally {
     loading.value = false
   }
 }
 
-const filteredAnomalies = computed(() => {
-  const keyword = search.value.toLowerCase().trim()
-  if (!keyword) {
-    return anomalies.value
+async function loadOptions() {
+  if (!filters.value.outlet_id) {
+    warehouseOutlets.value = []
+    items.value = []
+    return
   }
 
-  return anomalies.value.filter((row) => {
-    const itemName = (row.item_name || '').toLowerCase()
-    const itemCode = (row.item_code || '').toLowerCase()
-    const warehouse = (row.warehouse_name || '').toLowerCase()
-    return itemName.includes(keyword) || itemCode.includes(keyword) || warehouse.includes(keyword)
-  })
-})
+  try {
+    const response = await axios.get('/api/mac-anomaly-tracking/options', {
+      params: {
+        id_outlet: filters.value.outlet_id,
+        warehouse_outlet_id: filters.value.warehouse_outlet_id || undefined
+      }
+    })
 
-function severityClass(severity) {
-  if (severity === 'critical') return 'bg-red-100 text-red-700'
-  if (severity === 'high') return 'bg-orange-100 text-orange-700'
-  return 'bg-yellow-100 text-yellow-800'
+    if (response.data.status === 'success') {
+      warehouseOutlets.value = response.data.warehouses || []
+      items.value = response.data.items || []
+    } else {
+      warehouseOutlets.value = []
+      items.value = []
+    }
+  } catch (error) {
+    console.error('Error loading options:', error)
+    warehouseOutlets.value = []
+    items.value = []
+  }
+}
+
+async function handleOutletChange() {
+  filters.value.warehouse_outlet_id = ''
+  filters.value.item_id = ''
+  itemSearch.value = ''
+  macChanges.value = []
+  summary.value = null
+  selectedInfo.value = null
+  await loadOptions()
+}
+
+async function handleWarehouseChange() {
+  filters.value.item_id = ''
+  itemSearch.value = ''
+  macChanges.value = []
+  summary.value = null
+  selectedInfo.value = null
+  await loadOptions()
 }
 
 function changeClass(changePercent) {
