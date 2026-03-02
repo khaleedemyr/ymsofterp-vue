@@ -11,6 +11,7 @@
       <div class="text-center mb-4">
         <div class="text-xl font-bold text-gray-800">Revenue Report</div>
         <div class="text-xs text-gray-400 mt-1">{{ tanggal }}</div>
+        <div v-if="outletName" class="text-sm text-gray-600 mt-1 font-semibold">Outlet: {{ outletName }}</div>
       </div>
       <div class="border-b border-gray-200 mb-4"></div>
       <div class="mb-6">
@@ -290,7 +291,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import ExcelJS from 'exceljs';
 const props = defineProps({
@@ -356,15 +357,55 @@ const nilaiSetorCash = computed(() => {
   return totalCash.value - totalExpenses.value;
 });
 
-// Get outlet name from orders and outlets
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getOutletDisplayName(outlet) {
+  return outlet?.name || outlet?.nama_outlet || '';
+}
+
+function resolveOutletNameByKode(kodeOutlet) {
+  if (!kodeOutlet || !props.outlets?.length) return '';
+  const found = props.outlets.find((outlet) => {
+    const qrCode = outlet?.qr_code ?? outlet?.kode_outlet ?? outlet?.id_outlet ?? outlet?.id;
+    return String(qrCode || '') === String(kodeOutlet);
+  });
+  return found ? getOutletDisplayName(found) : '';
+}
+
+// Get outlet name for modal/PDF header (robust fallback)
 const outletName = computed(() => {
-  if (!props.orders || !props.orders.length) return '';
-  
-  const kodeOutlet = props.orders[0]?.kode_outlet;
-  if (!kodeOutlet || !props.outlets) return '';
-  
-  const found = props.outlets.find(o => o.qr_code === kodeOutlet);
-  return found ? found.name : '';
+  if (props.outletFilter) {
+    const fromFilter = resolveOutletNameByKode(props.outletFilter);
+    if (fromFilter) return fromFilter;
+  }
+
+  const firstOrder = (props.orders || [])[0];
+  if (!firstOrder) return '';
+
+  const kodeFromOrder = firstOrder?.kode_outlet ?? firstOrder?.kodeOutlet ?? null;
+  if (kodeFromOrder) {
+    const fromKode = resolveOutletNameByKode(kodeFromOrder);
+    if (fromKode) return fromKode;
+  }
+
+  const nameFromOrder = firstOrder?.nama_outlet ?? firstOrder?.namaOutlet ?? '';
+  if (nameFromOrder) {
+    const normalizedOrderName = normalizeText(nameFromOrder);
+    const foundByName = (props.outlets || []).find((outlet) => {
+      const outletNameValue = getOutletDisplayName(outlet);
+      return normalizeText(outletNameValue) === normalizedOrderName;
+    });
+
+    if (foundByName) {
+      return getOutletDisplayName(foundByName);
+    }
+
+    return nameFromOrder;
+  }
+
+  return '';
 });
 const paymentBreakdown = computed(() => {
   const result = {};
@@ -946,8 +987,17 @@ async function exportToExcel() {
   URL.revokeObjectURL(url);
 }
 
-function printModal() {
-  setTimeout(() => {
+async function printModal() {
+  const originalExpanded = { ...expandedPaymode.value };
+
+  try {
+    const expandedAll = {};
+    Object.keys(paymentBreakdown.value || {}).forEach((paymode) => {
+      expandedAll[paymode] = true;
+    });
+    expandedPaymode.value = expandedAll;
+    await nextTick();
+
     const modalContent = document.getElementById('revenue-report-modal');
     if (!modalContent) {
       alert('Modal tidak ditemukan!');
@@ -1000,7 +1050,9 @@ function printModal() {
       printWindow.print();
       printWindow.close();
     }, 400);
-  }, 100);
+  } finally {
+    expandedPaymode.value = originalExpanded;
+  }
 }
 </script>
 
