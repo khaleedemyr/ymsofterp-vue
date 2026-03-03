@@ -2540,6 +2540,7 @@ const activeTutorialTab = ref('pr_ops') // Active tab in tutorial modal
 const categoryBudgetInfo = ref({}) // Budget info per category: { 'outletIdx-categoryIdx': budgetInfo }
 const categoryDetails = ref({}) // Category details per category: { 'outletIdx-categoryIdx': details }
 const kasbonOutOfPeriod = ref(false) // Flag to hide form when kasbon is out of period
+const bypassKasbonDateValidation = false // Temporary bypass, keep validation function for easy rollback
 
 function newItem() {
   return {
@@ -2795,7 +2796,7 @@ watch(() => form.mode, (newMode) => {
     outletAttachments.value = {}
   } else if (newMode === 'kasbon') {
     // Validate kasbon period
-    if (!isWithinKasbonPeriod()) {
+    if (!bypassKasbonDateValidation && !isWithinKasbonPeriod()) {
       const { startDate, endDate } = getKasbonPeriod()
       const startStr = startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
       const endStr = endDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -3472,7 +3473,7 @@ const submitForm = async () => {
   // Validate kasbon mode structure
   if (form.mode === 'kasbon') {
     // Validate kasbon period first
-    if (!isWithinKasbonPeriod()) {
+    if (!bypassKasbonDateValidation && !isWithinKasbonPeriod()) {
       loading.value = false
       const { startDate, endDate } = getKasbonPeriod()
       const startStr = startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })

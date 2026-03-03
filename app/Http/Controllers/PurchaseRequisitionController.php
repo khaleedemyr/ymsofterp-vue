@@ -712,7 +712,7 @@ class PurchaseRequisitionController extends Controller
             $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10)->startOfDay();
             $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20)->endOfDay();
 
-            if ($now->lt($startDate) || $now->gt($endDate)) {
+            if (!$this->shouldBypassKasbonDateValidation() && ($now->lt($startDate) || $now->gt($endDate))) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 $errorMessage = "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}";
 
@@ -1340,7 +1340,7 @@ class PurchaseRequisitionController extends Controller
             $startDate = \Carbon\Carbon::create($currentYear, $currentMonth, 10)->startOfDay();
             $endDate = \Carbon\Carbon::create($currentYear, $currentMonth, 20)->endOfDay();
 
-            if ($now->lt($startDate) || $now->gt($endDate)) {
+            if (!$this->shouldBypassKasbonDateValidation() && ($now->lt($startDate) || $now->gt($endDate))) {
                 $periodText = $startDate->format('d F Y') . ' - ' . $endDate->format('d F Y');
                 return back()->withErrors([
                     'kasbon_period' => "Anda tidak dapat menginput kasbon di luar periode yang ditentukan. Periode kasbon: {$periodText}"
@@ -6505,6 +6505,11 @@ class PurchaseRequisitionController extends Controller
             'valid' => true,
             'message' => 'Budget validation passed'
         ];
+    }
+
+    private function shouldBypassKasbonDateValidation(): bool
+    {
+        return false;
     }
 
     /**
