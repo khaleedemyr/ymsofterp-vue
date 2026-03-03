@@ -14,7 +14,18 @@
       <div v-if="!selectedPO" class="space-y-6">
         <!-- Available Purchase Orders -->
         <div v-if="mappedPOs.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
-          <h2 class="text-xl font-bold text-gray-800 mb-4">Pilih Purchase Order untuk Dibayar</h2>
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Pilih Purchase Order untuk Dibayar</h2>
+            <div class="relative">
+              <input
+                type="text"
+                v-model="searchPO"
+                placeholder="Cari PO number, supplier, atau source PR..."
+                class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 w-80"
+              />
+              <i class="fa fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+          </div>
           <div class="space-y-4">
             <div v-for="po in mappedPOs" :key="po.id" 
                  class="border rounded-lg p-4 transition" 
@@ -72,6 +83,17 @@
               />
               <p class="mt-1 text-xs text-gray-500">Opsional: pilih akun untuk jurnal pembayaran</p>
             </div>
+          </div>
+        </div>
+
+        <!-- Show message if search returns no results for Purchase Orders -->
+        <div v-if="(props.availablePOs || []).length > 0 && mappedPOs.length === 0" class="bg-white rounded-2xl shadow-2xl p-6 text-center">
+          <div class="text-gray-500">
+            <i class="fa fa-search text-4xl mb-4"></i>
+            <p>Tidak ada Purchase Order yang ditemukan untuk pencarian "{{ searchPO }}".</p>
+            <button @click="searchPO = ''" class="mt-4 text-blue-600 hover:text-blue-800 underline">
+              Hapus filter pencarian
+            </button>
           </div>
         </div>
 
@@ -1392,12 +1414,29 @@ const props = defineProps({
 });
 
 // Map PO data to ensure is_held is boolean
+const searchPO = ref('');
+
 const mappedPOs = computed(() => {
-  return (props.availablePOs || []).map(po => ({
+  const pos = (props.availablePOs || []).map(po => ({
     ...po,
     is_held: po.is_held === true || po.is_held === 1 || po.is_held === '1' || po.is_held === 'true',
     hold_reason: po.hold_reason || null
   }));
+
+  if (!searchPO.value) {
+    return pos;
+  }
+
+  const searchTerm = searchPO.value.toLowerCase();
+  return pos.filter(po => {
+    const poNumber = (po.number || '').toLowerCase();
+    const supplierName = (po.supplier_name || '').toLowerCase();
+    const sourcePrNumber = (po.source_pr_number || '').toLowerCase();
+
+    return poNumber.includes(searchTerm)
+      || supplierName.includes(searchTerm)
+      || sourcePrNumber.includes(searchTerm);
+  });
 });
 
 // Search for Purchase Requisitions

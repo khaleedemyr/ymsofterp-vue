@@ -334,7 +334,6 @@ class NonFoodPaymentController extends Controller
         }
 
         $allPOs = $poQuery->orderBy('poo.date', 'desc')
-            ->limit(100) // Get more to filter
             ->get();
 
         // Filter PO based on payment status
@@ -369,7 +368,7 @@ class NonFoodPaymentController extends Controller
                 ->whereNotIn('status', ['cancelled', 'rejected'])
                 ->exists();
             return !$hasPayment;
-        })->take(50)->values();
+        })->values();
 
         // Get available Purchase Requisitions (mode purchase_payment, travel_application, kasbon) that don't have payments yet
         // Exclude PRs that have any payment (except cancelled) or are fully paid
