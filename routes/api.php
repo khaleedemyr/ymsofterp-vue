@@ -45,6 +45,7 @@ use App\Http\Controllers\UnitController;
 use App\Http\Controllers\DataLevelController;
 use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\Api\PosOrderController;
+use App\Http\Controllers\Api\PosDummySyncController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
@@ -1178,6 +1179,12 @@ Route::prefix('pos')->group(function () {
     Route::get('/orders/check-exists', [PosOrderController::class, 'checkOrderExists'])->name('api.pos.orders.check-exists');
     Route::post('/orders/rollback-member', [PosOrderController::class, 'rollbackMemberTransaction'])->name('api.pos.orders.rollback-member');
     Route::post('/orders/void', [PosOrderController::class, 'voidOrder'])->name('api.pos.orders.void');
+});
+
+// POS Dummy Sync Routes (isolated from main pos order controller)
+Route::prefix('pos-dummy')->group(function () {
+    Route::post('/orders/sync', [PosDummySyncController::class, 'syncOrder'])->name('api.pos-dummy.orders.sync');
+    Route::get('/orders/check-exists', [PosDummySyncController::class, 'checkOrderExists'])->name('api.pos-dummy.orders.check-exists');
 });
 
 // Closing Shift Routes
