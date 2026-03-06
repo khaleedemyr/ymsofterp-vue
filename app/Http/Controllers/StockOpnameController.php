@@ -1157,7 +1157,7 @@ class StockOpnameController extends Controller
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
                     'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'reference_type' => 'stock_opname',
                     'reference_id' => $stockOpname->id,
                     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
@@ -1186,7 +1186,7 @@ class StockOpnameController extends Controller
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
                     'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'old_cost' => $mac,
                     'new_cost' => $mac, // MAC tidak berubah
                     'mac' => $mac,
@@ -1801,7 +1801,7 @@ class StockOpnameController extends Controller
                 $saldoValue = $lastCard ? $lastCard->saldo_value + $valueAdjustment : $newValue;
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date, 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
+                    'date' => now()->toDateString(), 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
                     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0, 'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0, 'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
                     'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0, 'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0, 'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
                     'cost_per_small' => $mac, 'cost_per_medium' => $stock->last_cost_medium ?? 0, 'cost_per_large' => $stock->last_cost_large ?? 0,
@@ -1811,7 +1811,7 @@ class StockOpnameController extends Controller
                 ]);
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => $stockOpname->opname_date, 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac, 'created_at' => now(), 'updated_at' => now(),
+                    'date' => now()->toDateString(), 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac, 'created_at' => now(), 'updated_at' => now(),
                 ]);
                 StockOpnameAdjustment::create([
                     'stock_opname_id' => $stockOpname->id, 'stock_opname_item_id' => $item->id, 'inventory_item_id' => $inventoryItemId,

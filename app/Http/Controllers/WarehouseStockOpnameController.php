@@ -1045,7 +1045,7 @@ class WarehouseStockOpnameController extends Controller
                 DB::table('food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'reference_type' => 'warehouse_stock_opname',
                     'reference_id' => $stockOpname->id,
                     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
@@ -1073,7 +1073,7 @@ class WarehouseStockOpnameController extends Controller
                 DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'old_cost' => $mac,
                     'new_cost' => $mac, // MAC tidak berubah
                     'mac' => $mac,
@@ -1839,7 +1839,7 @@ class WarehouseStockOpnameController extends Controller
                 DB::table('food_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'reference_type' => 'warehouse_stock_opname',
                     'reference_id' => $stockOpname->id,
                     'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
@@ -1865,7 +1865,7 @@ class WarehouseStockOpnameController extends Controller
                 DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId,
                     'warehouse_id' => $warehouseId,
-                    'date' => $stockOpname->opname_date,
+                    'date' => now()->toDateString(),
                     'old_cost' => $item->mac_before,
                     'new_cost' => $item->mac_after,
                     'mac' => $item->mac_before,
