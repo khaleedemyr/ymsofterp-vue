@@ -797,6 +797,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/attendance-report', [\App\Http\Controllers\AttendanceReportController::class, 'index'])->name('api.approval-app.attendance-report');
         Route::get('/attendance-report/filters', [\App\Http\Controllers\AttendanceReportController::class, 'filters'])->name('api.approval-app.attendance-report.filters');
         Route::get('/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees'])->name('api.approval-app.attendance-report.employees');
+        Route::get('/attendance-report/detail', [\App\Http\Controllers\AttendanceReportController::class, 'detail'])->name('api.approval-app.attendance-report.detail');
+        Route::get('/attendance-report/shift-info', [\App\Http\Controllers\AttendanceReportController::class, 'shiftInfo'])->name('api.approval-app.attendance-report.shift-info');
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
         Route::post('/employee-resignation/{id}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject']);
