@@ -448,7 +448,7 @@ class AttendanceReportController extends Controller
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
         $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
 
-        return Inertia::render('AttendanceReport/Index', [
+        $payload = [
             'data' => $rows,
             'outlets' => $outlets,
             'divisions' => $divisions,
@@ -460,7 +460,13 @@ class AttendanceReportController extends Controller
                 'tahun' => $tahun,
             ],
             'summary' => $summary,
-        ]);
+        ];
+
+        if ($request->wantsJson()) {
+            return response()->json($payload);
+        }
+
+        return Inertia::render('AttendanceReport/Index', $payload);
     }
 
     // Endpoint detail absensi per user per tanggal

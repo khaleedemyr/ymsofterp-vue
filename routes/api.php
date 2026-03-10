@@ -625,6 +625,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers']);
         Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo']);
         Route::get('/purchase-requisitions/check-kasbon-period', [\App\Http\Controllers\PurchaseRequisitionController::class, 'checkKasbonPeriod']);
+        Route::get('/purchase-requisitions/next-number', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getNextPrNumber']);
         Route::get('/purchase-requisitions/attachments/{attachmentId}/view', [\App\Http\Controllers\PurchaseRequisitionController::class, 'viewAttachmentApi']);
         // Routes with {id} parameter must come after specific routes
         Route::get('/purchase-requisitions/{id}', [\App\Http\Controllers\PurchaseRequisitionController::class, 'show']);
@@ -793,6 +794,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.approval-app.attendance.absent-request');
         Route::get('/attendance/approvers', [\App\Http\Controllers\AttendanceController::class, 'getApprovers'])->name('api.approval-app.attendance.approvers');
         Route::post('/attendance/cancel-leave/{id}', [\App\Http\Controllers\AttendanceController::class, 'cancelLeaveRequest'])->name('api.approval-app.attendance.cancel-leave');
+        Route::get('/attendance-report', [\App\Http\Controllers\AttendanceReportController::class, 'index'])->name('api.approval-app.attendance-report');
+        Route::get('/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees'])->name('api.approval-app.attendance-report.employees');
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
         Route::post('/employee-resignation/{id}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject']);

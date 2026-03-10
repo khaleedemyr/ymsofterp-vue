@@ -6070,6 +6070,21 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * API: Get next PR number (preview) - same logic as store(), so web and app show the same format.
+     */
+    public function getNextPrNumber(Request $request)
+    {
+        $mode = $request->input('mode', 'pr_ops');
+        if (!in_array($mode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon'])) {
+            $mode = 'pr_ops';
+        }
+        return response()->json([
+            'success' => true,
+            'next_number' => $this->generateRequisitionNumber($mode),
+        ]);
+    }
+
+    /**
      * Generate unique requisition number
      */
     private function generateRequisitionNumber(?string $mode = 'pr_ops')
