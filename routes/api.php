@@ -406,6 +406,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
         Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
         Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
+        Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
+        Route::get('/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
         Route::post('/stock-cut/dispatch', [\App\Http\Controllers\StockCutController::class, 'dispatchStockCut']);
         Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback'])->where('id', '[0-9]+');
 
