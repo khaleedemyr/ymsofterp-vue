@@ -162,7 +162,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             }
         }
         
-        return Inertia::render('ScheduleAttendanceCorrection/Index', [
+        $payload = [
             'outlets' => $outlets,
             'divisions' => $divisions,
             'users' => $users,
@@ -177,7 +177,13 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'user_id' => $userId,
                 'correction_type' => $correctionType,
             ],
-        ]);
+        ];
+
+        if ($request->wantsJson()) {
+            return response()->json($payload);
+        }
+
+        return Inertia::render('ScheduleAttendanceCorrection/Index', $payload);
     }
     
     /**

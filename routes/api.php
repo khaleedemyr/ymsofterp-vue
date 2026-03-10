@@ -714,6 +714,11 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/coaching/{id}/approve', [\App\Http\Controllers\CoachingController::class, 'approve']);
         Route::post('/coaching/{id}/reject', [\App\Http\Controllers\CoachingController::class, 'reject']);
         
+        Route::get('/schedule-attendance-correction', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'index'])->name('api.approval-app.schedule-attendance-correction.index');
+        Route::post('/schedule-attendance-correction/schedule', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'updateSchedule'])->name('api.approval-app.schedule-attendance-correction.schedule');
+        Route::post('/schedule-attendance-correction/attendance', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'updateAttendance'])->name('api.approval-app.schedule-attendance-correction.attendance');
+        Route::post('/schedule-attendance-correction/manual-attendance', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'submitManualAttendance'])->name('api.approval-app.schedule-attendance-correction.manual-attendance');
+        Route::get('/schedule-attendance-correction/check-manual-limit', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'checkManualAttendanceLimit'])->name('api.approval-app.schedule-attendance-correction.check-manual-limit');
         Route::get('/schedule-attendance-correction/pending-approvals', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getPendingApprovals']);
         Route::get('/schedule-attendance-correction/{id}', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getApprovalDetail']);
         Route::post('/schedule-attendance-correction/{id}/approve', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'approveCorrection']);
