@@ -469,6 +469,19 @@ class AttendanceReportController extends Controller
         return Inertia::render('AttendanceReport/Index', $payload);
     }
 
+    /**
+     * API: return only outlets and divisions for report filter dropdowns (no report data).
+     */
+    public function filters(Request $request)
+    {
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+        return response()->json([
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+        ]);
+    }
+
     // Endpoint detail absensi per user per tanggal
     public function detail(Request $request)
     {
