@@ -27,7 +27,27 @@ class PrFoodController extends Controller
             'viceCoo:id,nama_lengkap'
         ])->orderByDesc('id');
         if ($request->search) {
-            $query->where('pr_number', 'like', "%{$request->search}%");
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('pr_number', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhereHas('requester', function ($sub) use ($search) {
+                        $sub->where('nama_lengkap', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('warehouse', function ($sub) use ($search) {
+                        $sub->where('code', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('location', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('warehouseDivision', function ($sub) use ($search) {
+                        $sub->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('items.item', function ($sub) use ($search) {
+                        $sub->where('name', 'like', "%{$search}%");
+                    });
+            });
         }
         if ($request->status) {
             $query->where('status', $request->status);
