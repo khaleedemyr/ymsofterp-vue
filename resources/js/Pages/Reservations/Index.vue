@@ -13,13 +13,22 @@
             </h1>
             <p class="mt-2 text-slate-500 text-sm">Kelola booking dan reservasi pelanggan</p>
           </div>
-          <Link
-            :href="route('reservations.create')"
-            class="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-lg shadow-pink-500/25 hover:shadow-pink-500/40 transition-all duration-200"
-          >
-            <i class="fa-solid fa-plus text-sm"></i>
-            Buat Reservasi
-          </Link>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              @click="exportExcel"
+              class="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all duration-200"
+            >
+              <i class="fa-solid fa-file-excel text-sm"></i>
+              Export Excel
+            </button>
+            <Link
+              :href="route('reservations.create')"
+              class="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-lg shadow-pink-500/25 hover:shadow-pink-500/40 transition-all duration-200"
+            >
+              <i class="fa-solid fa-plus text-sm"></i>
+              Buat Reservasi
+            </Link>
+          </div>
         </div>
 
         <!-- Filter Card -->
@@ -396,5 +405,18 @@ function resetFilters() {
   dateTo.value = '';
   perPage.value = 10;
   applyFilters();
+}
+
+function exportExcel() {
+  const params = new URLSearchParams();
+
+  if (search.value) params.append('search', search.value);
+  if (outletId.value) params.append('outlet_id', String(outletId.value));
+  if (status.value) params.append('status', status.value);
+  if (dateFrom.value) params.append('dateFrom', dateFrom.value);
+  if (dateTo.value) params.append('dateTo', dateTo.value);
+
+  const url = `${route('reservations.export')}${params.toString() ? `?${params.toString()}` : ''}`;
+  window.location.href = url;
 }
 </script>

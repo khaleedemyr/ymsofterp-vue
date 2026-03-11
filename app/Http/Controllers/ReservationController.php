@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\ReservationsExport;
 use App\Models\Reservation;
 use App\Models\Outlet;
 use App\Models\User;
@@ -176,6 +178,42 @@ class ReservationController extends Controller
             'paymentTypes' => $paymentTypes,
             'isEdit' => false
         ]);
+    }
+
+    public function export(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
+        $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
+
+        $query = Reservation::with(['outlet', 'creator', 'salesUser', 'paymentType'])
+            ->when(!$isAdminOutlet && $userOutletId, function ($q) use ($userOutletId) {
+                $q->where('outlet_id', $userOutletId);
+            })
+            ->when($isAdminOutlet && $request->outlet_id, function ($q, $outletId) {
+                $q->where('outlet_id', $outletId);
+            })
+            ->when($request->search, function ($q, $search) {
+                $q->where('name', 'like', "%{$search}%");
+            })
+            ->when($request->status, function ($q, $status) {
+                $q->where('status', $status);
+            })
+            ->when($request->dateFrom, function ($q, $dateFrom) {
+                $q->whereDate('reservation_date', '>=', $dateFrom);
+            })
+            ->when($request->dateTo, function ($q, $dateTo) {
+                $q->whereDate('reservation_date', '<=', $dateTo);
+            })
+            ->latest();
+
+        $rows = $query->get();
+        $timestamp = now()->format('Ymd_His');
+
+        return Excel::download(
+            new ReservationsExport($rows),
+            "reservasi_{$timestamp}.xlsx"
+        );
     }
 
     public function store(Request $request)
