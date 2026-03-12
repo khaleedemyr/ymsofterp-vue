@@ -99,6 +99,7 @@ class ReservationController extends Controller
                 return [
                 'id' => $reservation->id,
                 'name' => $reservation->name,
+                'phone' => $reservation->phone ?? '–',
                 'outlet' => $reservation->outlet?->nama_outlet ?? '–',
                 'reservation_date' => $reservation->reservation_date,
                 'reservation_time' => $reservation->reservation_time,

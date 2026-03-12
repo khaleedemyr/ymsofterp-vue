@@ -26,6 +26,7 @@ class ReservationsExport implements FromCollection, WithHeadings, WithMapping, S
     {
         return [
             'Nama',
+            'No. Telepon',
             'Outlet',
             'Tanggal Reservasi',
             'Jam Reservasi',
@@ -45,6 +46,7 @@ class ReservationsExport implements FromCollection, WithHeadings, WithMapping, S
     {
         return [
             $reservation->name,
+            $reservation->phone ?? '-',
             $reservation->outlet?->nama_outlet ?? '-',
             $reservation->reservation_date ? Carbon::parse($reservation->reservation_date)->format('Y-m-d') : '-',
             $reservation->reservation_time ? Carbon::parse($reservation->reservation_time)->format('H:i') : '-',
@@ -65,7 +67,7 @@ class ReservationsExport implements FromCollection, WithHeadings, WithMapping, S
     public function columnFormats(): array
     {
         return [
-            'G' => '[$Rp-421] #,##0',
+            'H' => '[$Rp-421] #,##0',
         ];
     }
 

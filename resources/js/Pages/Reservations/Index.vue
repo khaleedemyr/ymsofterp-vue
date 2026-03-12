@@ -122,6 +122,7 @@
                 <tr class="bg-slate-50 border-b border-slate-200">
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">No</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Nama</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">No. Telepon</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Outlet</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Tanggal & Waktu</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Tamu</th>
@@ -137,7 +138,7 @@
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="!reservationRows.length">
-                  <td colspan="13" class="px-5 py-16 text-center">
+                  <td colspan="14" class="px-5 py-16 text-center">
                     <div class="flex flex-col items-center gap-4">
                       <span class="flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 text-slate-400">
                         <i class="fa-solid fa-calendar-xmark text-2xl"></i>
@@ -165,6 +166,7 @@
                   <td class="px-5 py-4">
                     <span class="font-medium text-slate-800">{{ reservation.name }}</span>
                   </td>
+                  <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.phone || '–' }}</td>
                   <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.outlet }}</td>
                   <td class="px-5 py-4">
                     <div class="text-sm text-slate-700">{{ formatDate(reservation.reservation_date) }}</div>
