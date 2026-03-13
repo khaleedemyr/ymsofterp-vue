@@ -1553,7 +1553,8 @@ class NonFoodPaymentController extends Controller
     {
         $nonFoodPayment->load([
             'purchaseOrderOps.supplier',
-            'purchaseOrderOps.items',
+            'purchaseOrderOps.items.outlet',
+            'purchaseOrderOps.items.prOpsItem.outlet',
             'purchaseOrderOps.source_pr.outlet',
             'purchaseRequisition.division',
             'purchaseRequisition.creator',

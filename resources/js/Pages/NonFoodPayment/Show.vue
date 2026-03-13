@@ -210,38 +210,67 @@
               </div>
             </div>
 
-            <!-- PO Items -->
+            <!-- PO Items (grouped by outlet when multi-outlet, like PO Ops Show) -->
             <div v-if="payment.purchase_order_ops.items && payment.purchase_order_ops.items.length > 0" class="mt-6">
               <h3 class="text-lg font-semibold text-gray-800 mb-3">PO Items</h3>
-              <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                  <thead class="bg-gray-50">
-                    <tr>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody class="bg-white divide-y divide-gray-200">
-                    <tr v-for="item in payment.purchase_order_ops.items" :key="item.id">
-                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
-                        <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
-                          <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
-                          <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
-                        </div>
-                        <span v-else class="text-gray-400">-</span>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="space-y-5">
+                <div
+                  v-for="group in poItemsByOutlet"
+                  :key="group.outlet_id ?? 'HO'"
+                  class="border border-gray-200 rounded-xl overflow-hidden"
+                >
+                  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-3 bg-gray-50">
+                    <div class="text-sm text-gray-700 flex items-center gap-2">
+                      <i class="fa fa-store text-blue-600"></i>
+                      <span class="font-medium">Outlet:</span>
+                      <span class="font-semibold text-gray-900">{{ group.outlet_name }}</span>
+                      <span class="text-xs text-gray-500">({{ group.items.length }} item)</span>
+                    </div>
+                    <div class="text-sm text-gray-700">
+                      <span class="font-medium">Subtotal Outlet:</span>
+                      <span class="font-semibold text-gray-900">{{ formatCurrency(group.subtotal) }}</span>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                      <thead class="bg-gray-50">
+                        <tr>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Diskon</th>
+                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-gray-200">
+                        <tr v-for="item in group.items" :key="item.id">
+                          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.quantity }}</td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.unit }}</td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatCurrency(item.price) }}</td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-xs">
+                            <div v-if="item.discount_percent > 0 || item.discount_amount > 0" class="text-red-600">
+                              <div v-if="item.discount_percent > 0">{{ item.discount_percent }}%</div>
+                              <div v-if="item.discount_amount > 0">{{ formatCurrency(item.discount_amount) }}</div>
+                            </div>
+                            <span v-else class="text-gray-400">-</span>
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{{ formatCurrency(item.total) }}</td>
+                        </tr>
+                        <tr class="bg-gray-50">
+                          <td colspan="5" class="px-6 py-3 text-right text-sm font-semibold text-gray-700">
+                            Subtotal Outlet
+                          </td>
+                          <td class="px-6 py-3 text-right text-sm font-bold text-gray-900">
+                            {{ formatCurrency(group.subtotal) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -551,7 +580,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
@@ -564,14 +593,51 @@ const props = defineProps({
 });
 
 const payment = props.payment;
+
+// Group PO Ops items by outlet (same logic as Purchase Order Ops Show - multi-outlet)
+function getItemOutletId(item) {
+  return item?.outlet_id ?? item?.pr_ops_item?.outlet_id ?? null;
+}
+
+function getItemOutletName(item) {
+  return (
+    item?.outlet?.nama_outlet ??
+    item?.pr_ops_item?.outlet?.nama_outlet ??
+    (getItemOutletId(item) == null ? 'Head Office' : 'Unknown Outlet')
+  );
+}
+
+const poItemsByOutlet = computed(() => {
+  const groups = new Map();
+  const items = Array.isArray(payment?.purchase_order_ops?.items) ? payment.purchase_order_ops.items : [];
+
+  items.forEach((item) => {
+    const outletId = getItemOutletId(item);
+    const outletName = getItemOutletName(item);
+    const key = outletId == null ? 'HO' : String(outletId);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        outlet_id: outletId,
+        outlet_name: outletName,
+        items: [],
+        subtotal: 0,
+      });
+    }
+
+    const group = groups.get(key);
+    group.items.push(item);
+    group.subtotal += Number(item?.total || 0);
+  });
+
+  return Array.from(groups.values()).sort((a, b) =>
+    String(a.outlet_name || '').localeCompare(String(b.outlet_name || ''), 'id-ID')
+  );
+});
 const lightboxImage = ref(null);
 const lightboxVisible = ref(false);
 const paymentInfo = ref(null);
 const loadingPaymentInfo = ref(false);
-
-// Debug: Log retail non food attachments
-console.log('Retail Non Food Attachments:', props.retail_non_food_attachments);
-console.log('Payment Retail Non Food ID:', props.payment?.retail_non_food_id);
 
 function formatDate(date) {
   if (!date) return '-';
