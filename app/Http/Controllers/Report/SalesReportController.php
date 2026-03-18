@@ -664,6 +664,7 @@ class SalesReportController extends Controller
         // Ambil semua sub kategori dengan show_pos = '0'
         $subCategories = DB::table('sub_categories')
             ->where('show_pos', '0')
+            ->whereNotIn('category_id', [163, 164, 165])
             ->orderBy('name')
             ->get();
 
@@ -682,6 +683,7 @@ class SalesReportController extends Controller
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('sc.show_pos', '0')
+            ->whereNotIn('sc.category_id', [163, 164, 165])
             ->select(
                 'o.nama_outlet as customer',
                 'o.is_outlet',
@@ -726,6 +728,7 @@ class SalesReportController extends Controller
             })
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('sc.show_pos', '0')
+            ->whereNotIn('sc.category_id', [163, 164, 165])
             ->select(
                 'o.nama_outlet as customer',
                 'o.is_outlet',
@@ -859,6 +862,7 @@ class SalesReportController extends Controller
             // Ambil semua sub kategori dengan show_pos = '0'
             $subCategories = DB::table('sub_categories')
                 ->where('show_pos', '0')
+                ->whereNotIn('category_id', [163, 164, 165])
                 ->orderBy('name')
                 ->get();
                 
@@ -881,6 +885,7 @@ class SalesReportController extends Controller
                 ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('sc.show_pos', '0')
+                ->whereNotIn('sc.category_id', [163, 164, 165])
                 ->whereDate('gr.receive_date', '>=', $from)
                 ->whereDate('gr.receive_date', '<=', $to)
                 ->whereNull('gr.deleted_at')
@@ -911,6 +916,7 @@ class SalesReportController extends Controller
                 })
                 ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
                 ->where('sc.show_pos', '0')
+                ->whereNotIn('sc.category_id', [163, 164, 165])
                 ->whereDate('gr.receive_date', '>=', $from)
                 ->whereDate('gr.receive_date', '<=', $to)
                 ->select(
