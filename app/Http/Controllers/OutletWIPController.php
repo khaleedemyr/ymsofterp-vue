@@ -827,6 +827,7 @@ class OutletWIPController extends Controller
                             'qty_small' => $saldo_qty_small,
                             'qty_medium' => $saldo_qty_medium,
                             'qty_large' => $saldo_qty_large,
+                            'value' => $saldo_value,
                             'updated_at' => now(),
                         ]);
                     
@@ -1272,6 +1273,7 @@ class OutletWIPController extends Controller
                             'qty_small' => $saldo_qty_small,
                             'qty_medium' => $saldo_qty_medium,
                             'qty_large' => $saldo_qty_large,
+                            'value' => $saldo_value,
                             'updated_at' => now(),
                         ]);
                     
@@ -1808,6 +1810,7 @@ class OutletWIPController extends Controller
                     'qty_small' => DB::raw('qty_small + ' . $qty_small),
                     'qty_medium' => DB::raw('qty_medium + ' . $qty_medium),
                     'qty_large' => DB::raw('qty_large + ' . $qty_large),
+                    'value' => DB::raw('value + ' . ($qty_small * $stock->last_cost_small)),
                     'updated_at' => now(),
                 ]);
             
