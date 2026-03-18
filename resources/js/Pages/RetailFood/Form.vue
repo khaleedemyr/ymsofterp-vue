@@ -215,7 +215,7 @@
                       </div>
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
-                      <input type="number" min="0.01" step="0.01" v-model.number="item.qty" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                      <input type="number" min="0.001" step="0.001" v-model.number="item.qty" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
                     </td>
                     <td class="px-3 py-2 min-w-[100px]">
                       <div class="relative">
