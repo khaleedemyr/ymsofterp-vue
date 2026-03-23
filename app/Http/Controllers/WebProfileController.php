@@ -12,6 +12,7 @@ use App\Models\WebProfileBanner;
 use App\Models\WebProfileBrand;
 use App\Models\WebProfileHomeBlock;
 use App\Models\WebProfileHomeServicePackage;
+use App\Models\WebProfileJustusAppsBlock;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
@@ -1200,6 +1201,192 @@ class WebProfileController extends Controller
         return response()->json([
             'packages' => $packages,
             'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+        ]);
+    }
+
+    // ========== JUSTUS APPS PAGE (Company profile web) ==========
+
+    public function justusAppsIndex(Request $request)
+    {
+        $blocks = WebProfileJustusAppsBlock::orderBy('sort_order')
+            ->when($request->search, function ($query, $search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->paginate(20);
+
+        $heroPath = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
+        $heroUrl = $heroPath ? $this->publicStorageUrl($heroPath) : null;
+        $playstoreUrl = WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value');
+        $appstoreUrl = WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value');
+
+        return Inertia::render('WebProfile/JustusApps/Index', [
+            'blocks' => $blocks,
+            'hero_image_path' => $heroPath,
+            'hero_image_url' => $heroUrl,
+            'playstore_url' => $playstoreUrl,
+            'appstore_url' => $appstoreUrl,
+        ]);
+    }
+
+    public function justusAppsCreate()
+    {
+        return Inertia::render('WebProfile/JustusApps/Create');
+    }
+
+    public function justusAppsStore(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'nullable|string|max:255',
+            'body' => 'nullable|string',
+            'sort_order' => 'integer|min:0',
+            'image' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'is_active' => 'boolean',
+        ]);
+
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            $fileName = time().'_justus_apps_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $validated['image_path'] = $file->storeAs('web-profile/justus-apps', $fileName, 'public');
+        }
+
+        $validated['sort_order'] = $validated['sort_order'] ?? 0;
+        $validated['is_active'] = $request->boolean('is_active', true);
+        unset($validated['image']);
+
+        WebProfileJustusAppsBlock::create($validated);
+
+        return redirect()->route('web-profile.justus-apps.index')
+            ->with('success', 'Konten Justus Apps berhasil ditambahkan.');
+    }
+
+    public function justusAppsEdit($id)
+    {
+        $block = WebProfileJustusAppsBlock::findOrFail($id);
+
+        return Inertia::render('WebProfile/JustusApps/Edit', [
+            'block' => [
+                'id' => $block->id,
+                'title' => $block->title,
+                'body' => $block->body,
+                'sort_order' => $block->sort_order,
+                'is_active' => $block->is_active,
+                'image_path' => $block->image_path,
+                'image_url' => $block->image_url,
+            ],
+        ]);
+    }
+
+    public function justusAppsUpdate(Request $request, $id)
+    {
+        $block = WebProfileJustusAppsBlock::findOrFail($id);
+
+        $validated = $request->validate([
+            'title' => 'nullable|string|max:255',
+            'body' => 'nullable|string',
+            'sort_order' => 'integer|min:0',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'is_active' => 'boolean',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($block->image_path) {
+                Storage::disk('public')->delete($block->image_path);
+            }
+            $file = $request->file('image');
+            $fileName = time().'_justus_apps_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $validated['image_path'] = $file->storeAs('web-profile/justus-apps', $fileName, 'public');
+        }
+
+        $validated['is_active'] = $request->boolean('is_active', true);
+        unset($validated['image']);
+        $block->update($validated);
+
+        return redirect()->route('web-profile.justus-apps.index')
+            ->with('success', 'Konten Justus Apps berhasil diperbarui.');
+    }
+
+    public function justusAppsDestroy($id)
+    {
+        $block = WebProfileJustusAppsBlock::findOrFail($id);
+        if ($block->image_path) {
+            Storage::disk('public')->delete($block->image_path);
+        }
+        $block->delete();
+
+        return redirect()->route('web-profile.justus-apps.index')
+            ->with('success', 'Konten Justus Apps berhasil dihapus.');
+    }
+
+    public function justusAppsSettingsStore(Request $request)
+    {
+        $request->validate([
+            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'playstore_url' => 'nullable|url|max:255',
+            'appstore_url' => 'nullable|url|max:255',
+        ]);
+
+        if ($request->boolean('remove_hero')) {
+            $old = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+            WebProfileSetting::where('key', 'justus_apps_hero_image')->delete();
+        }
+
+        if ($request->hasFile('hero_image')) {
+            $old = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+            $file = $request->file('hero_image');
+            $fileName = time().'_justus_apps_hero.'.$file->getClientOriginalExtension();
+            $path = $file->storeAs('web-profile/justus-apps', $fileName, 'public');
+            WebProfileSetting::updateOrCreate(
+                ['key' => 'justus_apps_hero_image'],
+                ['value' => $path, 'type' => 'image']
+            );
+        }
+
+        WebProfileSetting::updateOrCreate(
+            ['key' => 'justus_apps_playstore_url'],
+            ['value' => $request->input('playstore_url', ''), 'type' => 'text']
+        );
+        WebProfileSetting::updateOrCreate(
+            ['key' => 'justus_apps_appstore_url'],
+            ['value' => $request->input('appstore_url', ''), 'type' => 'text']
+        );
+
+        return redirect()->route('web-profile.justus-apps.index')
+            ->with('success', 'Pengaturan Justus Apps berhasil disimpan.');
+    }
+
+    /**
+     * API: Justus Apps page (hero + content blocks + store links)
+     */
+    public function apiJustusAppsPage()
+    {
+        $blocks = WebProfileJustusAppsBlock::where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function ($block) {
+                return [
+                    'id' => $block->id,
+                    'title' => $block->title,
+                    'body' => $block->body,
+                    'image_url' => $block->image_url,
+                    'sort_order' => $block->sort_order,
+                ];
+            });
+
+        $heroPath = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
+        $playstoreUrl = WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value');
+        $appstoreUrl = WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value');
+
+        return response()->json([
+            'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'playstore_url' => $playstoreUrl,
+            'appstore_url' => $appstoreUrl,
+            'blocks' => $blocks,
         ]);
     }
 

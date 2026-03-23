@@ -74,6 +74,19 @@
             </div>
           </div>
         </Link>
+
+        <!-- Justus Apps Page -->
+        <Link href="/web-profile/justus-apps" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-indigo-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Justus Apps</h3>
+              <p class="text-sm text-gray-500">Banner, content block & link store download</p>
+            </div>
+            <div class="bg-indigo-100 p-3 rounded-full">
+              <i class="fa-solid fa-mobile-screen text-indigo-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <!-- Quick Actions -->

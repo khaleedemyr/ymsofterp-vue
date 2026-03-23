@@ -1295,6 +1295,7 @@ Route::prefix('web-profile')->group(function () {
     Route::get('/brands', [\App\Http\Controllers\WebProfileController::class, 'apiBrands'])->name('api.web-profile.brands');
     Route::get('/home-blocks', [\App\Http\Controllers\WebProfileController::class, 'apiHomeBlocks'])->name('api.web-profile.home-blocks');
     Route::get('/home-service-packages', [\App\Http\Controllers\WebProfileController::class, 'apiHomeServicePackages'])->name('api.web-profile.home-service-packages');
+    Route::get('/justus-apps-page', [\App\Http\Controllers\WebProfileController::class, 'apiJustusAppsPage'])->name('api.web-profile.justus-apps-page');
     Route::get('/settings', [\App\Http\Controllers\WebProfileController::class, 'apiSettings'])->name('api.web-profile.settings');
     Route::post('/contact', [\App\Http\Controllers\WebProfileController::class, 'apiContact'])->name('api.web-profile.contact');
 });

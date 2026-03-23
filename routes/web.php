@@ -2240,6 +2240,16 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesUpdate'])->name('update');
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesDestroy'])->name('destroy');
     });
+
+    Route::prefix('web-profile/justus-apps')->name('web-profile.justus-apps.')->group(function () {
+        Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'justusAppsSettingsStore'])->name('settings');
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'justusAppsIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'justusAppsCreate'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'justusAppsStore'])->name('store');
+        Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'justusAppsEdit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'justusAppsUpdate'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'justusAppsDestroy'])->name('destroy');
+    });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');
