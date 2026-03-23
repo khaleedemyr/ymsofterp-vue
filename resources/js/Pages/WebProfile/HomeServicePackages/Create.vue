@@ -103,6 +103,7 @@ Caesar dressing and thousand island"
           />
           <p class="mt-2 text-xs text-gray-500">
             Tidak perlu HTML. Cukup tulis per baris; baris kosong jadi pemisah antar bagian.
+            Untuk bold, pakai format <code>**teks**</code> (contoh: <code>**SALAD BAR**</code>).
           </p>
           <InputError class="mt-1" :message="errors.body_html" />
         </div>
