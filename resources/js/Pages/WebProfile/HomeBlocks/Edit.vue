@@ -32,6 +32,19 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 
+function showSavingSpinner() {
+  Swal.fire({
+    title: 'Menyimpan...',
+    text: 'Mohon tunggu sebentar.',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    },
+  });
+}
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -136,20 +149,26 @@ function submit() {
     fd.append('video', form.value.video);
   }
 
+  showSavingSpinner();
+
   router.post(`/web-profile/home-blocks/${props.block.id}`, fd, {
     forceFormData: true,
     preserveScroll: true,
     onError: (e) => {
+      Swal.close();
       errors.value = e || {};
       isSubmitting.value = false;
       const msgs = Object.values(e || {}).flat().filter(Boolean);
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal menyimpan',
-        html: msgs.length ? msgs.join('<br>') : 'Validasi gagal atau file terlalu besar.',
+      queueMicrotask(() => {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal menyimpan',
+          html: msgs.length ? msgs.join('<br>') : 'Validasi gagal atau file terlalu besar.',
+        });
       });
     },
     onFinish: () => {
+      Swal.close();
       isSubmitting.value = false;
     },
   });
