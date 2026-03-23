@@ -93,6 +93,12 @@ async function deleteBrand(id) {
           
           <!-- Content -->
           <div class="p-4">
+            <div v-if="brand.logo_cp_url" class="mb-3 flex items-center gap-3">
+              <div class="h-12 w-12 rounded-lg border border-gray-200 bg-white p-1">
+                <img :src="brand.logo_cp_url" :alt="`${brand.title} logo`" class="h-full w-full object-contain" />
+              </div>
+              <span class="text-xs text-gray-500">Logo CP</span>
+            </div>
             <h3 class="text-lg font-semibold text-gray-900 mb-2">{{ brand.title }}</h3>
             <p v-if="brand.slug" class="text-sm text-gray-500 mb-3">{{ brand.slug }}</p>
             

@@ -21,6 +21,7 @@ const form = ref({
   link_menu: props.brand.link_menu || '',
   menu_pdf: null,
   thumbnail: null,
+  logo_cp: null,
   image: null,
   content: props.brand.content || ''
 });
@@ -28,6 +29,7 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 const thumbnailPreview = ref(props.brand.thumbnail_url || null);
+const logoCpPreview = ref(props.brand.logo_cp_url || null);
 const imagePreview = ref(props.brand.image_url || null);
 
 function handleThumbnailChange(event) {
@@ -49,6 +51,18 @@ function handleImageChange(event) {
     const reader = new FileReader();
     reader.onload = (e) => {
       imagePreview.value = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function handleLogoCpChange(event) {
+  const file = event.target.files[0];
+  if (file) {
+    form.value.logo_cp = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      logoCpPreview.value = e.target.result;
     };
     reader.readAsDataURL(file);
   }
@@ -76,6 +90,9 @@ function submit() {
   }
   if (form.value.image) {
     formData.append('image', form.value.image);
+  }
+  if (form.value.logo_cp) {
+    formData.append('logo_cp', form.value.logo_cp);
   }
   if (form.value.menu_pdf) {
     formData.append('menu_pdf', form.value.menu_pdf);
@@ -187,6 +204,23 @@ function cancel() {
             <p class="mt-1 text-sm text-gray-500">Leave empty to keep current image</p>
             <div v-if="imagePreview" class="mt-4">
               <img :src="imagePreview" alt="Image preview" class="w-64 h-48 object-cover rounded-lg border-2 border-gray-300" />
+            </div>
+          </div>
+
+          <!-- Logo Company Profile -->
+          <div>
+            <InputLabel for="logo_cp" value="Logo Company Profile (Optional)" />
+            <input
+              id="logo_cp"
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              @change="handleLogoCpChange"
+            />
+            <InputError :message="errors.logo_cp" class="mt-2" />
+            <p class="mt-1 text-sm text-gray-500">Leave empty to keep current logo company profile</p>
+            <div v-if="logoCpPreview" class="mt-4">
+              <img :src="logoCpPreview" alt="Logo company profile preview" class="w-40 h-40 object-contain rounded-lg border-2 border-gray-300 bg-white p-2" />
             </div>
           </div>
 

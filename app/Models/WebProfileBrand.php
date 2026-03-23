@@ -17,6 +17,7 @@ class WebProfileBrand extends Model
         'link_menu',
         'menu_pdf',
         'thumbnail',
+        'logo_cp',
         'image',
         'content',
         'created_by',
@@ -25,6 +26,7 @@ class WebProfileBrand extends Model
 
     protected $appends = [
         'thumbnail_url',
+        'logo_cp_url',
         'image_url',
         'menu_pdf_url'
     ];
@@ -79,6 +81,32 @@ class WebProfileBrand extends Model
         }, $pathParts);
         $encodedPath = implode('/', $encodedParts);
         
+        return $baseUrl . '/storage/' . $encodedPath;
+    }
+
+    public function getLogoCpUrlAttribute()
+    {
+        if (!$this->logo_cp) {
+            return null;
+        }
+
+        $path = $this->logo_cp;
+        if (strpos($path, 'storage/') === 0) {
+            $path = substr($path, 8);
+        }
+
+        if (request() && request()->getSchemeAndHttpHost()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        } else {
+            $baseUrl = rtrim(config('app.url', 'http://localhost:8000'), '/');
+        }
+
+        $pathParts = explode('/', $path);
+        $encodedParts = array_map(function ($part) {
+            return rawurlencode($part);
+        }, $pathParts);
+        $encodedPath = implode('/', $encodedParts);
+
         return $baseUrl . '/storage/' . $encodedPath;
     }
 

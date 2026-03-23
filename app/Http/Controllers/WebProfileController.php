@@ -538,6 +538,8 @@ class WebProfileController extends Controller
                 'menu_pdf_url' => $brand->menu_pdf_url,
                 'thumbnail' => $brand->thumbnail,
                 'thumbnail_url' => $brand->thumbnail_url,
+                'logo_cp' => $brand->logo_cp,
+                'logo_cp_url' => $brand->logo_cp_url,
                 'image' => $brand->image,
                 'image_url' => $brand->image_url,
                 'content' => $brand->content,
@@ -571,11 +573,13 @@ class WebProfileController extends Controller
                 'link_menu' => 'nullable|url|max:255',
                 'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
                 'thumbnail' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'content' => 'nullable|string',
             ], [
                 'thumbnail.required' => 'Thumbnail image is required',
                 'thumbnail.image' => 'Thumbnail must be an image file',
+                'logo_cp.image' => 'Logo CP must be an image file',
                 'menu_pdf.file' => 'Menu PDF must be a file',
                 'menu_pdf.mimes' => 'Menu PDF must be a PDF file',
             ]);
@@ -613,6 +617,20 @@ class WebProfileController extends Controller
                     }
                     
                     $validated['image'] = $path;
+                    $uploadedFiles[] = $path;
+                }
+
+                // Upload company profile logo
+                if ($request->hasFile('logo_cp')) {
+                    $file = $request->file('logo_cp');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_logo_cp.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+
+                    if (!$path) {
+                        throw new \Exception('Failed to upload company profile logo');
+                    }
+
+                    $validated['logo_cp'] = $path;
                     $uploadedFiles[] = $path;
                 }
 
@@ -679,6 +697,8 @@ class WebProfileController extends Controller
                 'menu_pdf_url' => $brand->menu_pdf_url,
                 'thumbnail' => $brand->thumbnail,
                 'thumbnail_url' => $brand->thumbnail_url,
+                'logo_cp' => $brand->logo_cp,
+                'logo_cp_url' => $brand->logo_cp_url,
                 'image' => $brand->image,
                 'image_url' => $brand->image_url,
                 'content' => $brand->content,
@@ -700,6 +720,7 @@ class WebProfileController extends Controller
                 'link_menu' => 'nullable|url|max:255',
                 'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
                 'thumbnail' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+                'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'content' => 'nullable|string',
             ]);
@@ -745,6 +766,26 @@ class WebProfileController extends Controller
                     $uploadedFiles[] = $path;
                 } else {
                     unset($validated['image']);
+                }
+
+                // Upload new company profile logo if provided
+                if ($request->hasFile('logo_cp')) {
+                    if ($brand->logo_cp) {
+                        Storage::disk('public')->delete($brand->logo_cp);
+                    }
+
+                    $file = $request->file('logo_cp');
+                    $fileName = time() . '_' . Str::slug($validated['title']) . '_logo_cp.' . $file->getClientOriginalExtension();
+                    $path = $file->storeAs('web-profile/brands', $fileName, 'public');
+
+                    if (!$path) {
+                        throw new \Exception('Failed to upload company profile logo');
+                    }
+
+                    $validated['logo_cp'] = $path;
+                    $uploadedFiles[] = $path;
+                } else {
+                    unset($validated['logo_cp']);
                 }
 
                 // Upload new menu PDF if provided
@@ -798,6 +839,9 @@ class WebProfileController extends Controller
         if ($brand->thumbnail) {
             Storage::disk('public')->delete($brand->thumbnail);
         }
+        if ($brand->logo_cp) {
+            Storage::disk('public')->delete($brand->logo_cp);
+        }
         if ($brand->image) {
             Storage::disk('public')->delete($brand->image);
         }
@@ -826,6 +870,7 @@ class WebProfileController extends Controller
                     'link_menu' => $brand->link_menu,
                     'menu_pdf_url' => $brand->menu_pdf_url,
                     'thumbnail_url' => $brand->thumbnail_url,
+                    'logo_cp_url' => $brand->logo_cp_url,
                     'image_url' => $brand->image_url,
                     'content' => $brand->content,
                 ];
