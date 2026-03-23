@@ -1405,6 +1405,7 @@ class WebProfileController extends Controller
             'about_our_story_content',
             'about_brand_philosophy_quote',
             'about_brand_philosophy_content',
+            'about_profile_role',
             'about_vision_title',
             'about_vision_content',
             'about_mission_title',
@@ -1423,6 +1424,7 @@ class WebProfileController extends Controller
                 'about_our_story_content' => $settings->get('about_our_story_content')->value ?? '',
                 'about_brand_philosophy_quote' => $settings->get('about_brand_philosophy_quote')->value ?? '',
                 'about_brand_philosophy_content' => $settings->get('about_brand_philosophy_content')->value ?? '',
+                'about_profile_role' => $settings->get('about_profile_role')->value ?? 'Founder & CEO Justus Group',
                 'about_vision_title' => $settings->get('about_vision_title')->value ?? 'VISION',
                 'about_vision_content' => $settings->get('about_vision_content')->value ?? '',
                 'about_mission_title' => $settings->get('about_mission_title')->value ?? 'MISSION',
@@ -1451,6 +1453,7 @@ class WebProfileController extends Controller
             'about_our_story_content' => 'nullable|string',
             'about_brand_philosophy_quote' => 'nullable|string|max:255',
             'about_brand_philosophy_content' => 'nullable|string',
+            'about_profile_role' => 'nullable|string|max:255',
             'about_vision_title' => 'nullable|string|max:255',
             'about_vision_content' => 'nullable|string',
             'about_mission_title' => 'nullable|string|max:255',
@@ -1511,6 +1514,7 @@ class WebProfileController extends Controller
             'about_our_story_content',
             'about_brand_philosophy_quote',
             'about_brand_philosophy_content',
+            'about_profile_role',
             'about_vision_title',
             'about_vision_content',
             'about_mission_title',
@@ -1536,6 +1540,7 @@ class WebProfileController extends Controller
             'about_our_story_content',
             'about_brand_philosophy_quote',
             'about_brand_philosophy_content',
+            'about_profile_role',
             'about_vision_title',
             'about_vision_content',
             'about_mission_title',
@@ -1575,6 +1580,7 @@ class WebProfileController extends Controller
                 [
                     'id' => 'vision-mission',
                     'title' => 'Yudi Boim',
+                    'subtitle' => $settings->get('about_profile_role')->value ?? 'Founder & CEO Justus Group',
                     'content' => trim(
                         ($settings->get('about_vision_title')->value ?? 'VISION')."\n".
                         ($settings->get('about_vision_content')->value ?? '')."\n\n".

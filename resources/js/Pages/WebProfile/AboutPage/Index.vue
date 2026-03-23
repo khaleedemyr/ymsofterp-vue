@@ -22,6 +22,7 @@ const form = ref({
   about_our_story_content: props.about.about_our_story_content || '',
   about_brand_philosophy_quote: props.about.about_brand_philosophy_quote || '',
   about_brand_philosophy_content: props.about.about_brand_philosophy_content || '',
+  about_profile_role: props.about.about_profile_role || 'Founder & CEO Justus Group',
   about_vision_title: props.about.about_vision_title || 'VISION',
   about_vision_content: props.about.about_vision_content || '',
   about_mission_title: props.about.about_mission_title || 'MISSION',
@@ -54,6 +55,7 @@ function submit() {
   fd.append('about_our_story_content', form.value.about_our_story_content || '');
   fd.append('about_brand_philosophy_quote', form.value.about_brand_philosophy_quote || '');
   fd.append('about_brand_philosophy_content', form.value.about_brand_philosophy_content || '');
+  fd.append('about_profile_role', form.value.about_profile_role || '');
   fd.append('about_vision_title', form.value.about_vision_title || 'VISION');
   fd.append('about_vision_content', form.value.about_vision_content || '');
   fd.append('about_mission_title', form.value.about_mission_title || 'MISSION');
@@ -145,6 +147,10 @@ function submit() {
 
         <section class="space-y-4 border-t border-gray-200 pt-6">
           <h2 class="text-lg font-semibold text-gray-800">Section: Vision & Mission</h2>
+          <div>
+            <InputLabel value="Jabatan/Nama role (di bawah YUDI BOIM)" />
+            <TextInput v-model="form.about_profile_role" class="mt-1 w-full" />
+          </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <InputLabel value="Judul Vision" />
