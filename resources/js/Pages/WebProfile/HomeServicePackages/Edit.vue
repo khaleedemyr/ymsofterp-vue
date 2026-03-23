@@ -86,13 +86,22 @@ function submit() {
         </div>
 
         <div>
-          <InputLabel for="body_html" value="Detail menu (HTML)" />
+          <InputLabel for="body_html" value="Detail menu (teks biasa)" />
           <textarea
             id="body_html"
             v-model="form.body_html"
             rows="12"
-            class="mt-1 block w-full rounded-md border-gray-300 font-mono text-sm"
+            class="mt-1 block w-full rounded-md border-gray-300 text-sm"
+            placeholder="Contoh:
+SALAD BAR
+Curly lettuce, romaine lettuce, lolorosa
+
+DRESSING
+Caesar dressing and thousand island"
           />
+          <p class="mt-2 text-xs text-gray-500">
+            Tidak perlu HTML. Cukup tulis per baris; baris kosong jadi pemisah antar bagian.
+          </p>
         </div>
 
         <div class="flex items-center gap-2">
