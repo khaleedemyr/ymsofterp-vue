@@ -10,6 +10,7 @@ use App\Models\WebProfileSetting;
 use App\Models\WebProfileContact;
 use App\Models\WebProfileBanner;
 use App\Models\WebProfileBrand;
+use App\Models\WebProfileHomeBlock;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
@@ -877,6 +878,150 @@ class WebProfileController extends Controller
             });
 
         return response()->json($brands);
+    }
+
+    // ========== HOME PAGE BLOCKS (Company Profile) ==========
+
+    public function homeBlocksIndex(Request $request)
+    {
+        $blocks = WebProfileHomeBlock::orderBy('sort_order')
+            ->when($request->search, function ($query, $search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->paginate(20);
+
+        return Inertia::render('WebProfile/HomeBlocks/Index', [
+            'blocks' => $blocks,
+        ]);
+    }
+
+    public function homeBlocksCreate()
+    {
+        return Inertia::render('WebProfile/HomeBlocks/Create');
+    }
+
+    public function homeBlocksStore(Request $request)
+    {
+        $validated = $request->validate([
+            'block_type' => 'required|in:text,video',
+            'sort_order' => 'integer|min:0',
+            'title' => 'nullable|string|max:255',
+            'body' => 'nullable|string',
+            'caption' => 'nullable|string',
+            'bg_variant' => 'required|in:dark,light,video_dark',
+            'video' => 'nullable|file|mimes:mp4,webm|max:102400',
+            'is_active' => 'boolean',
+        ]);
+
+        if ($validated['block_type'] === 'video' && ! $request->hasFile('video')) {
+            return redirect()->back()
+                ->withErrors(['video' => 'Video wajib diupload untuk blok tipe video.'])
+                ->withInput();
+        }
+
+        $validated['sort_order'] = $validated['sort_order'] ?? 0;
+        $validated['is_active'] = $request->boolean('is_active', true);
+
+        if ($request->hasFile('video')) {
+            $file = $request->file('video');
+            $fileName = time().'_home_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $validated['video_path'] = $file->storeAs('web-profile/home-blocks', $fileName, 'public');
+        }
+
+        unset($validated['video']);
+
+        WebProfileHomeBlock::create($validated);
+
+        return redirect()->route('web-profile.home-blocks.index')
+            ->with('success', 'Blok berhasil ditambahkan.');
+    }
+
+    public function homeBlocksEdit($id)
+    {
+        $block = WebProfileHomeBlock::findOrFail($id);
+
+        return Inertia::render('WebProfile/HomeBlocks/Edit', [
+            'block' => [
+                'id' => $block->id,
+                'block_type' => $block->block_type,
+                'sort_order' => $block->sort_order,
+                'title' => $block->title,
+                'body' => $block->body,
+                'caption' => $block->caption,
+                'video_path' => $block->video_path,
+                'video_url' => $block->video_url,
+                'bg_variant' => $block->bg_variant,
+                'is_active' => $block->is_active,
+            ],
+        ]);
+    }
+
+    public function homeBlocksUpdate(Request $request, $id)
+    {
+        $block = WebProfileHomeBlock::findOrFail($id);
+
+        $validated = $request->validate([
+            'block_type' => 'required|in:text,video',
+            'sort_order' => 'integer|min:0',
+            'title' => 'nullable|string|max:255',
+            'body' => 'nullable|string',
+            'caption' => 'nullable|string',
+            'bg_variant' => 'required|in:dark,light,video_dark',
+            'video' => 'nullable|file|mimes:mp4,webm|max:102400',
+            'is_active' => 'boolean',
+        ]);
+
+        $validated['is_active'] = $request->boolean('is_active', true);
+
+        if ($request->hasFile('video')) {
+            if ($block->video_path) {
+                Storage::disk('public')->delete($block->video_path);
+            }
+            $file = $request->file('video');
+            $fileName = time().'_home_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $validated['video_path'] = $file->storeAs('web-profile/home-blocks', $fileName, 'public');
+        }
+
+        unset($validated['video']);
+
+        $block->update($validated);
+
+        return redirect()->back()->with('success', 'Blok berhasil diperbarui.');
+    }
+
+    public function homeBlocksDestroy($id)
+    {
+        $block = WebProfileHomeBlock::findOrFail($id);
+        if ($block->video_path) {
+            Storage::disk('public')->delete($block->video_path);
+        }
+        $block->delete();
+
+        return redirect()->route('web-profile.home-blocks.index')
+            ->with('success', 'Blok berhasil dihapus.');
+    }
+
+    /**
+     * API: Home page blocks for company profile frontend
+     */
+    public function apiHomeBlocks()
+    {
+        $blocks = WebProfileHomeBlock::where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function ($block) {
+                return [
+                    'id' => $block->id,
+                    'block_type' => $block->block_type,
+                    'title' => $block->title,
+                    'body' => $block->body,
+                    'caption' => $block->caption,
+                    'video_url' => $block->video_url,
+                    'bg_variant' => $block->bg_variant,
+                ];
+            });
+
+        return response()->json($blocks);
     }
 }
 

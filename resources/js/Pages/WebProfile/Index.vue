@@ -9,7 +9,7 @@
       </div>
 
       <!-- Dashboard Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Pages Card -->
         <Link href="/web-profile/pages" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-blue-500">
           <div class="flex items-center justify-between">
@@ -45,6 +45,19 @@
             </div>
             <div class="bg-yellow-100 p-3 rounded-full">
               <i class="fa-solid fa-store text-yellow-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
+
+        <!-- Home blocks (company profile) -->
+        <Link href="/web-profile/home-blocks" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-purple-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Home Blocks</h3>
+              <p class="text-sm text-gray-500">Blok teks &amp; video company profile</p>
+            </div>
+            <div class="bg-purple-100 p-3 rounded-full">
+              <i class="fa-solid fa-table-cells-large text-purple-600 text-2xl"></i>
             </div>
           </div>
         </Link>
