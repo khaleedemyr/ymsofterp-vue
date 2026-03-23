@@ -53,6 +53,24 @@ function handleContentImageChange(event) {
 
 function submit() {
   if (!form.value.background_image) {
+    if (form.value.content_image) {
+      Swal.fire({
+        icon: 'question',
+        title: 'Gunakan file Content sebagai Head Banner?',
+        text: 'Head Banner kosong, tapi Content Overlay terisi. Mau pakai file Content sebagai Head Banner utama?',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, gunakan',
+        cancelButtonText: 'Tidak',
+      }).then((result) => {
+        if (result.isConfirmed) {
+          form.value.background_image = form.value.content_image;
+          backgroundMediaType.value = 'image';
+          submit();
+        }
+      });
+      return;
+    }
+
     Swal.fire({
       icon: 'warning',
       title: 'Head Banner wajib diisi',
