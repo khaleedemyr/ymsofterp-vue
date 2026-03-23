@@ -61,6 +61,19 @@
             </div>
           </div>
         </Link>
+
+        <!-- Home Service Menu (web) -->
+        <Link href="/web-profile/home-service-packages" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-rose-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Home Service Menu</h3>
+              <p class="text-sm text-gray-500">Paket per brand &amp; gambar header halaman</p>
+            </div>
+            <div class="bg-rose-100 p-3 rounded-full">
+              <i class="fa-solid fa-utensils text-rose-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <!-- Quick Actions -->

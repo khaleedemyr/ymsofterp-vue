@@ -11,6 +11,7 @@ use App\Models\WebProfileContact;
 use App\Models\WebProfileBanner;
 use App\Models\WebProfileBrand;
 use App\Models\WebProfileHomeBlock;
+use App\Models\WebProfileHomeServicePackage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
@@ -1022,6 +1023,205 @@ class WebProfileController extends Controller
             });
 
         return response()->json($blocks);
+    }
+
+    // ========== HOME SERVICE PACKAGES (Company profile web) ==========
+
+    public function homeServicePackagesIndex(Request $request)
+    {
+        $packages = WebProfileHomeServicePackage::with('brand')
+            ->orderBy('sort_order')
+            ->when($request->search, function ($query, $search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->paginate(20);
+
+        $heroPath = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
+        $heroUrl = $heroPath ? $this->publicStorageUrl($heroPath) : null;
+
+        return Inertia::render('WebProfile/HomeServicePackages/Index', [
+            'packages' => $packages,
+            'hero_image_path' => $heroPath,
+            'hero_image_url' => $heroUrl,
+        ]);
+    }
+
+    public function homeServicePackagesCreate()
+    {
+        $brands = WebProfileBrand::orderBy('title')->get(['id', 'title']);
+
+        return Inertia::render('WebProfile/HomeServicePackages/Create', [
+            'brands' => $brands,
+        ]);
+    }
+
+    public function homeServicePackagesStore(Request $request)
+    {
+        $validated = $request->validate([
+            'web_profile_brand_id' => 'required|exists:web_profile_brands,id',
+            'title' => 'required|string|max:255',
+            'price_label' => 'nullable|string|max:255',
+            'body_html' => 'nullable|string',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+
+        WebProfileHomeServicePackage::create([
+            'web_profile_brand_id' => $validated['web_profile_brand_id'],
+            'title' => $validated['title'],
+            'price_label' => $validated['price_label'] ?? null,
+            'body_html' => $validated['body_html'] ?? null,
+            'sort_order' => $validated['sort_order'] ?? 0,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        return redirect()->route('web-profile.home-service-packages.index')
+            ->with('success', 'Paket Home Service berhasil ditambahkan.');
+    }
+
+    public function homeServicePackagesEdit($id)
+    {
+        $pkg = WebProfileHomeServicePackage::with('brand')->findOrFail($id);
+        $brands = WebProfileBrand::orderBy('title')->get(['id', 'title']);
+
+        return Inertia::render('WebProfile/HomeServicePackages/Edit', [
+            'package' => [
+                'id' => $pkg->id,
+                'web_profile_brand_id' => $pkg->web_profile_brand_id,
+                'title' => $pkg->title,
+                'price_label' => $pkg->price_label,
+                'body_html' => $pkg->body_html,
+                'sort_order' => $pkg->sort_order,
+                'is_active' => $pkg->is_active,
+            ],
+            'brands' => $brands,
+        ]);
+    }
+
+    public function homeServicePackagesUpdate(Request $request, $id)
+    {
+        $pkg = WebProfileHomeServicePackage::findOrFail($id);
+
+        $validated = $request->validate([
+            'web_profile_brand_id' => 'required|exists:web_profile_brands,id',
+            'title' => 'required|string|max:255',
+            'price_label' => 'nullable|string|max:255',
+            'body_html' => 'nullable|string',
+            'sort_order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+
+        $pkg->update([
+            'web_profile_brand_id' => $validated['web_profile_brand_id'],
+            'title' => $validated['title'],
+            'price_label' => $validated['price_label'] ?? null,
+            'body_html' => $validated['body_html'] ?? null,
+            'sort_order' => $validated['sort_order'] ?? 0,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        return redirect()->route('web-profile.home-service-packages.index')
+            ->with('success', 'Paket berhasil diperbarui.');
+    }
+
+    public function homeServicePackagesDestroy($id)
+    {
+        WebProfileHomeServicePackage::findOrFail($id)->delete();
+
+        return redirect()->route('web-profile.home-service-packages.index')
+            ->with('success', 'Paket berhasil dihapus.');
+    }
+
+    public function homeServiceHeroStore(Request $request)
+    {
+        $request->validate([
+            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+        ]);
+
+        if ($request->boolean('remove_hero')) {
+            $old = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+            WebProfileSetting::where('key', 'home_service_hero_image')->delete();
+        }
+
+        if ($request->hasFile('hero_image')) {
+            $old = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+
+            $file = $request->file('hero_image');
+            $fileName = time().'_home_service_hero.'.$file->getClientOriginalExtension();
+            $path = $file->storeAs('web-profile/home-service', $fileName, 'public');
+
+            WebProfileSetting::updateOrCreate(
+                ['key' => 'home_service_hero_image'],
+                ['value' => $path, 'type' => 'image']
+            );
+        }
+
+        return redirect()->route('web-profile.home-service-packages.index')
+            ->with('success', 'Pengaturan header Home Service disimpan.');
+    }
+
+    /**
+     * API: Home Service packages + hero for Justus Group web frontend
+     */
+    public function apiHomeServicePackages()
+    {
+        $packages = WebProfileHomeServicePackage::where('is_active', true)
+            ->with('brand')
+            ->orderBy('sort_order')
+            ->get()
+            ->map(function ($p) {
+                $b = $p->brand;
+
+                return [
+                    'id' => $p->id,
+                    'title' => $p->title,
+                    'price_label' => $p->price_label,
+                    'body_html' => $p->body_html,
+                    'sort_order' => $p->sort_order,
+                    'brand' => $b ? [
+                        'id' => $b->id,
+                        'title' => $b->title,
+                        'slug' => $b->slug,
+                        'logo_cp_url' => $b->logo_cp_url,
+                        'thumbnail_url' => $b->thumbnail_url,
+                        'image_url' => $b->image_url,
+                    ] : null,
+                ];
+            });
+
+        $heroPath = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
+
+        return response()->json([
+            'packages' => $packages,
+            'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+        ]);
+    }
+
+    private function publicStorageUrl(string $path): string
+    {
+        if (strpos($path, 'storage/') === 0) {
+            $path = substr($path, 8);
+        }
+
+        if (request() && request()->getSchemeAndHttpHost()) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        } else {
+            $baseUrl = rtrim(config('app.url', 'http://localhost:8000'), '/');
+        }
+
+        $pathParts = explode('/', $path);
+        $encodedParts = array_map(static function ($part) {
+            return rawurlencode($part);
+        }, $pathParts);
+        $encodedPath = implode('/', $encodedParts);
+
+        return $baseUrl.'/storage/'.$encodedPath;
     }
 }
 

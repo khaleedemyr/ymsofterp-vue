@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class WebProfileBrand extends Model
 {
@@ -134,6 +135,11 @@ class WebProfileBrand extends Model
         $encodedPath = implode('/', $encodedParts);
         
         return $baseUrl . '/storage/' . $encodedPath;
+    }
+
+    public function homeServicePackages(): HasMany
+    {
+        return $this->hasMany(WebProfileHomeServicePackage::class, 'web_profile_brand_id');
     }
 }
 

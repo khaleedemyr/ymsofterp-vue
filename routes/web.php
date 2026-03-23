@@ -2230,6 +2230,16 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeBlocksUpdate'])->name('update');
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeBlocksDestroy'])->name('destroy');
     });
+
+    Route::prefix('web-profile/home-service-packages')->name('web-profile.home-service-packages.')->group(function () {
+        Route::post('/hero', [\App\Http\Controllers\WebProfileController::class, 'homeServiceHeroStore'])->name('hero');
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesCreate'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesStore'])->name('store');
+        Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesEdit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesUpdate'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesDestroy'])->name('destroy');
+    });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');
