@@ -11,6 +11,7 @@ const props = defineProps({
   blocks: { type: Object, default: () => ({ data: [] }) },
   hero_image_url: { type: String, default: null },
   hero_image_path: { type: String, default: null },
+  hero_media_type: { type: String, default: null },
   playstore_url: { type: String, default: '' },
   appstore_url: { type: String, default: '' },
 });
@@ -89,7 +90,15 @@ async function destroyBlock(id) {
       <div class="bg-white rounded-lg shadow p-6 mb-8 space-y-5">
         <h2 class="text-lg font-semibold text-gray-800">Pengaturan Header & Link Store</h2>
         <div v-if="hero_image_url" class="mb-2">
-          <img :src="hero_image_url" alt="Hero" class="max-h-56 rounded border border-gray-200" />
+          <video
+            v-if="hero_media_type === 'video'"
+            :src="hero_image_url"
+            controls
+            muted
+            playsinline
+            class="max-h-56 rounded border border-gray-200"
+          />
+          <img v-else :src="hero_image_url" alt="Hero" class="max-h-56 rounded border border-gray-200" />
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -108,7 +117,7 @@ async function destroyBlock(id) {
             <InputLabel value="Upload head banner" />
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.mp4,.webm"
               class="mt-1 block text-sm"
               @change="(e) => { heroFile = e.target.files?.[0] || null; removeHero = false; }"
             />

@@ -1216,6 +1216,7 @@ class WebProfileController extends Controller
 
         $heroPath = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
         $heroUrl = $heroPath ? $this->publicStorageUrl($heroPath) : null;
+        $heroMediaType = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('type');
         $playstoreUrl = WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value');
         $appstoreUrl = WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value');
 
@@ -1223,6 +1224,7 @@ class WebProfileController extends Controller
             'blocks' => $blocks,
             'hero_image_path' => $heroPath,
             'hero_image_url' => $heroUrl,
+            'hero_media_type' => $heroMediaType,
             'playstore_url' => $playstoreUrl,
             'appstore_url' => $appstoreUrl,
         ]);
@@ -1320,7 +1322,7 @@ class WebProfileController extends Controller
     public function justusAppsSettingsStore(Request $request)
     {
         $request->validate([
-            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'hero_image' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
             'playstore_url' => 'nullable|url|max:255',
             'appstore_url' => 'nullable|url|max:255',
         ]);
@@ -1341,9 +1343,10 @@ class WebProfileController extends Controller
             $file = $request->file('hero_image');
             $fileName = time().'_justus_apps_hero.'.$file->getClientOriginalExtension();
             $path = $file->storeAs('web-profile/justus-apps', $fileName, 'public');
+            $isVideo = str_starts_with((string) $file->getMimeType(), 'video/');
             WebProfileSetting::updateOrCreate(
                 ['key' => 'justus_apps_hero_image'],
-                ['value' => $path, 'type' => 'image']
+                ['value' => $path, 'type' => $isVideo ? 'video' : 'image']
             );
         }
 
@@ -1379,11 +1382,13 @@ class WebProfileController extends Controller
             });
 
         $heroPath = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value');
+        $heroMediaType = WebProfileSetting::where('key', 'justus_apps_hero_image')->value('type');
         $playstoreUrl = WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value');
         $appstoreUrl = WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value');
 
         return response()->json([
             'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'hero_media_type' => $heroMediaType,
             'playstore_url' => $playstoreUrl,
             'appstore_url' => $appstoreUrl,
             'blocks' => $blocks,
