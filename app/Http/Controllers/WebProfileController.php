@@ -1395,6 +1395,198 @@ class WebProfileController extends Controller
         ]);
     }
 
+    // ========== ABOUT PAGE (Company profile web) ==========
+
+    public function aboutPageIndex()
+    {
+        $keys = [
+            'about_title',
+            'about_subtitle',
+            'about_our_story_content',
+            'about_brand_philosophy_quote',
+            'about_brand_philosophy_content',
+            'about_vision_title',
+            'about_vision_content',
+            'about_mission_title',
+            'about_mission_content',
+            'about_hero_image',
+            'about_logo_image',
+            'about_profile_image',
+        ];
+
+        $settings = WebProfileSetting::whereIn('key', $keys)->get()->keyBy('key');
+
+        return Inertia::render('WebProfile/AboutPage/Index', [
+            'about' => [
+                'about_title' => $settings->get('about_title')->value ?? 'OUR STORY',
+                'about_subtitle' => $settings->get('about_subtitle')->value ?? 'Elevating Culinary Experiences Since 2005',
+                'about_our_story_content' => $settings->get('about_our_story_content')->value ?? '',
+                'about_brand_philosophy_quote' => $settings->get('about_brand_philosophy_quote')->value ?? '',
+                'about_brand_philosophy_content' => $settings->get('about_brand_philosophy_content')->value ?? '',
+                'about_vision_title' => $settings->get('about_vision_title')->value ?? 'VISION',
+                'about_vision_content' => $settings->get('about_vision_content')->value ?? '',
+                'about_mission_title' => $settings->get('about_mission_title')->value ?? 'MISSION',
+                'about_mission_content' => $settings->get('about_mission_content')->value ?? '',
+                'about_hero_image_path' => $settings->get('about_hero_image')->value ?? null,
+                'about_hero_image_url' => ($settings->get('about_hero_image')->value ?? null)
+                    ? $this->publicStorageUrl($settings->get('about_hero_image')->value)
+                    : null,
+                'about_logo_image_path' => $settings->get('about_logo_image')->value ?? null,
+                'about_logo_image_url' => ($settings->get('about_logo_image')->value ?? null)
+                    ? $this->publicStorageUrl($settings->get('about_logo_image')->value)
+                    : null,
+                'about_profile_image_path' => $settings->get('about_profile_image')->value ?? null,
+                'about_profile_image_url' => ($settings->get('about_profile_image')->value ?? null)
+                    ? $this->publicStorageUrl($settings->get('about_profile_image')->value)
+                    : null,
+            ],
+        ]);
+    }
+
+    public function aboutPageStore(Request $request)
+    {
+        $validated = $request->validate([
+            'about_title' => 'nullable|string|max:255',
+            'about_subtitle' => 'nullable|string|max:255',
+            'about_our_story_content' => 'nullable|string',
+            'about_brand_philosophy_quote' => 'nullable|string|max:255',
+            'about_brand_philosophy_content' => 'nullable|string',
+            'about_vision_title' => 'nullable|string|max:255',
+            'about_vision_content' => 'nullable|string',
+            'about_mission_title' => 'nullable|string|max:255',
+            'about_mission_content' => 'nullable|string',
+            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'logo_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'profile_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'remove_hero' => 'nullable|boolean',
+            'remove_logo' => 'nullable|boolean',
+            'remove_profile' => 'nullable|boolean',
+        ]);
+
+        $imageConfig = [
+            'about_hero_image' => [
+                'input' => 'hero_image',
+                'remove' => 'remove_hero',
+                'name' => 'about_hero',
+            ],
+            'about_logo_image' => [
+                'input' => 'logo_image',
+                'remove' => 'remove_logo',
+                'name' => 'about_logo',
+            ],
+            'about_profile_image' => [
+                'input' => 'profile_image',
+                'remove' => 'remove_profile',
+                'name' => 'about_profile',
+            ],
+        ];
+
+        foreach ($imageConfig as $settingKey => $cfg) {
+            if ($request->boolean($cfg['remove'])) {
+                $old = WebProfileSetting::where('key', $settingKey)->value('value');
+                if ($old) {
+                    Storage::disk('public')->delete($old);
+                }
+                WebProfileSetting::where('key', $settingKey)->delete();
+            }
+
+            if ($request->hasFile($cfg['input'])) {
+                $old = WebProfileSetting::where('key', $settingKey)->value('value');
+                if ($old) {
+                    Storage::disk('public')->delete($old);
+                }
+                $file = $request->file($cfg['input']);
+                $fileName = time().'_'.$cfg['name'].'.'.$file->getClientOriginalExtension();
+                $path = $file->storeAs('web-profile/about-page', $fileName, 'public');
+                WebProfileSetting::updateOrCreate(
+                    ['key' => $settingKey],
+                    ['value' => $path, 'type' => 'image']
+                );
+            }
+        }
+
+        $textKeys = [
+            'about_title',
+            'about_subtitle',
+            'about_our_story_content',
+            'about_brand_philosophy_quote',
+            'about_brand_philosophy_content',
+            'about_vision_title',
+            'about_vision_content',
+            'about_mission_title',
+            'about_mission_content',
+        ];
+
+        foreach ($textKeys as $key) {
+            WebProfileSetting::updateOrCreate(
+                ['key' => $key],
+                ['value' => $validated[$key] ?? '', 'type' => 'text']
+            );
+        }
+
+        return redirect()->route('web-profile.about-page.index')
+            ->with('success', 'Pengaturan About Page berhasil disimpan.');
+    }
+
+    public function apiAboutPage()
+    {
+        $keys = [
+            'about_title',
+            'about_subtitle',
+            'about_our_story_content',
+            'about_brand_philosophy_quote',
+            'about_brand_philosophy_content',
+            'about_vision_title',
+            'about_vision_content',
+            'about_mission_title',
+            'about_mission_content',
+            'about_hero_image',
+            'about_logo_image',
+            'about_profile_image',
+        ];
+
+        $settings = WebProfileSetting::whereIn('key', $keys)->get()->keyBy('key');
+
+        $heroPath = $settings->get('about_hero_image')->value ?? null;
+        $logoPath = $settings->get('about_logo_image')->value ?? null;
+        $profilePath = $settings->get('about_profile_image')->value ?? null;
+
+        return response()->json([
+            'title' => $settings->get('about_title')->value ?? 'OUR STORY',
+            'subtitle' => $settings->get('about_subtitle')->value ?? 'Elevating Culinary Experiences Since 2005',
+            'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'sections' => [
+                [
+                    'id' => 'our-story',
+                    'title' => 'About Justus Group',
+                    'content' => $settings->get('about_our_story_content')->value ?? '',
+                    'image_url' => null,
+                ],
+                [
+                    'id' => 'brand-philosophy',
+                    'title' => 'Brand Philosophy',
+                    'content' => trim(
+                        ($settings->get('about_brand_philosophy_quote')->value ?? '').
+                        (($settings->get('about_brand_philosophy_quote')->value ?? '') ? "\n\n" : '').
+                        ($settings->get('about_brand_philosophy_content')->value ?? '')
+                    ),
+                    'image_url' => $logoPath ? $this->publicStorageUrl($logoPath) : null,
+                ],
+                [
+                    'id' => 'vision-mission',
+                    'title' => 'Yudi Boim',
+                    'content' => trim(
+                        ($settings->get('about_vision_title')->value ?? 'VISION')."\n".
+                        ($settings->get('about_vision_content')->value ?? '')."\n\n".
+                        ($settings->get('about_mission_title')->value ?? 'MISSION')."\n".
+                        ($settings->get('about_mission_content')->value ?? '')
+                    ),
+                    'image_url' => $profilePath ? $this->publicStorageUrl($profilePath) : null,
+                ],
+            ],
+        ]);
+    }
+
     private function publicStorageUrl(string $path): string
     {
         if (strpos($path, 'storage/') === 0) {

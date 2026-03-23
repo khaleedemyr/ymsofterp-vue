@@ -2250,6 +2250,11 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'justusAppsUpdate'])->name('update');
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'justusAppsDestroy'])->name('destroy');
     });
+
+    Route::prefix('web-profile/about-page')->name('web-profile.about-page.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'aboutPageIndex'])->name('index');
+        Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'aboutPageStore'])->name('settings');
+    });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');

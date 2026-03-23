@@ -87,6 +87,19 @@
             </div>
           </div>
         </Link>
+
+        <!-- About Page -->
+        <Link href="/web-profile/about-page" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-cyan-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">About Page</h3>
+              <p class="text-sm text-gray-500">Hero, subtitle, section text & gambar</p>
+            </div>
+            <div class="bg-cyan-100 p-3 rounded-full">
+              <i class="fa-solid fa-address-card text-cyan-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <!-- Quick Actions -->
