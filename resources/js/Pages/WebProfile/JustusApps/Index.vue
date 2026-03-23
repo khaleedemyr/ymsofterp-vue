@@ -121,6 +121,10 @@ async function destroyBlock(id) {
               class="mt-1 block text-sm"
               @change="(e) => { heroFile = e.target.files?.[0] || null; removeHero = false; }"
             />
+            <p class="mt-1 text-xs text-gray-500">
+              Rekomendasi ukuran: <strong>1920x1080</strong> (16:9), minimal 1280x720.
+              Video: MP4/WEBM maksimal 50 MB.
+            </p>
           </div>
           <label v-if="hero_image_path" class="flex items-center gap-2 text-sm text-gray-700">
             <input v-model="removeHero" type="checkbox" />

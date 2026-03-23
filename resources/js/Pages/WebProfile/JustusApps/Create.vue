@@ -64,6 +64,9 @@ function submit() {
         <div>
           <InputLabel value="Gambar blok *" />
           <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => form.image = e.target.files?.[0] || null" />
+          <p class="mt-1 text-xs text-gray-500">
+            Rekomendasi ukuran gambar blok: <strong>1200x900</strong> (rasio 4:3), minimal 1000x750.
+          </p>
           <InputError class="mt-1" :message="errors.image" />
         </div>
         <div class="flex items-center gap-2">
