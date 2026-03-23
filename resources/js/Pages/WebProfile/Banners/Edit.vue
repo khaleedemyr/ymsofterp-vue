@@ -28,12 +28,14 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 const backgroundImagePreview = ref(props.banner.background_image ? `/storage/${props.banner.background_image}` : null);
+const backgroundMediaType = ref(props.banner.background_is_video ? 'video' : 'image');
 const contentImagePreview = ref(props.banner.content_image ? `/storage/${props.banner.content_image}` : null);
 
 function handleBackgroundImageChange(event) {
   const file = event.target.files[0];
   if (file) {
     form.value.background_image = file;
+    backgroundMediaType.value = file.type.startsWith('video/') ? 'video' : 'image';
     const reader = new FileReader();
     reader.onload = (e) => {
       backgroundImagePreview.value = e.target.result;
@@ -107,11 +109,11 @@ function cancel() {
       <!-- Requirements Info -->
       <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <h3 class="font-semibold text-yellow-800 mb-2">
-          <i class="fa-solid fa-exclamation-triangle mr-2"></i> Image Requirements
+          <i class="fa-solid fa-exclamation-triangle mr-2"></i> Head Banner Requirements
         </h3>
         <div class="text-sm text-yellow-700 space-y-2">
           <div>
-            <strong>Background Image:</strong> Min 1920x1080px, Max 5MB, Formats: JPG/PNG/WEBP
+            <strong>Head Banner:</strong> Format JPG/PNG/WEBP/MP4/WEBM, rasio 16:9, maksimal 50MB
           </div>
           <div>
             <strong>Content Image:</strong> Min 800x600px, Max 5MB, Formats: JPG/PNG/WEBP
@@ -164,31 +166,49 @@ function cancel() {
             <InputError :message="errors.description" class="mt-2" />
           </div>
 
-          <!-- Background Image -->
+          <!-- Head Banner -->
           <div>
-            <InputLabel for="background_image" value="Background Image" />
-            <p class="text-xs text-gray-500 mb-2">Current image:</p>
-            <img 
+            <InputLabel for="background_image" value="Head Banner (Image/Video)" />
+            <p class="text-xs text-gray-500 mb-2">Current media:</p>
+            <img
               v-if="banner.background_image && !form.background_image" 
+              v-show="!banner.background_is_video"
               :src="`/storage/${banner.background_image}`" 
-              alt="Current background" 
+              alt="Current head banner" 
               class="mb-2 max-w-full h-48 object-cover rounded-lg border border-gray-300" 
+            />
+            <video
+              v-if="banner.background_image && banner.background_is_video && !form.background_image"
+              :src="`/storage/${banner.background_image}`"
+              controls
+              class="mb-2 max-w-full h-48 rounded-lg border border-gray-300 bg-black"
             />
             <input
               id="background_image"
               type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
+              accept="image/jpeg,image/jpg,image/png,image/webp,video/mp4,video/webm"
               @change="handleBackgroundImageChange"
               class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               :class="{ 'border-red-500': errors.background_image }"
             />
             <InputError :message="errors.background_image" class="mt-2" />
-            <p class="mt-1 text-xs text-gray-500">Leave empty to keep current image. Min: 1920x1080px, Max: 5MB</p>
+            <p class="mt-1 text-xs text-gray-500">Leave empty to keep current media. Recommended: 1920x1080 (16:9), Max: 50MB</p>
             
             <!-- New Preview -->
             <div v-if="form.background_image" class="mt-4">
               <p class="text-sm font-medium text-gray-700 mb-2">New preview:</p>
-              <img :src="backgroundImagePreview" alt="New background preview" class="max-w-full h-48 object-cover rounded-lg border border-gray-300" />
+              <img
+                v-if="backgroundMediaType === 'image'"
+                :src="backgroundImagePreview"
+                alt="New head banner preview"
+                class="max-w-full h-48 object-cover rounded-lg border border-gray-300"
+              />
+              <video
+                v-else
+                :src="backgroundImagePreview"
+                controls
+                class="max-w-full h-48 rounded-lg border border-gray-300 bg-black"
+              />
             </div>
           </div>
 

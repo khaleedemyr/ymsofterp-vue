@@ -61,6 +61,14 @@ async function deleteBanner(id) {
 }
 
 function openLightbox(banner, imageType = 'background') {
+  if (imageType === 'background' && isBackgroundVideo(banner)) {
+    const videoUrl = getImageSrc(banner, 'background');
+    if (videoUrl) {
+      window.open(videoUrl, '_blank');
+    }
+    return;
+  }
+
   const images = [];
   
   // Add background image
@@ -111,6 +119,15 @@ function getImageSrc(banner, type = 'background') {
   }
 }
 
+function isBackgroundVideo(banner) {
+  if (banner.background_media_type) {
+    return banner.background_media_type === 'video';
+  }
+
+  const src = banner.background_image || '';
+  return /\.(mp4|webm)$/i.test(src);
+}
+
 function getImageUrl(banner, type = 'background') {
   const src = getImageSrc(banner, type);
   return src || '/images/placeholder.jpg';
@@ -139,10 +156,12 @@ function handleImageError(event) {
       <!-- Info Box -->
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
         <h3 class="font-semibold text-blue-800 mb-2">
-          <i class="fa-solid fa-info-circle mr-2"></i> Banner Requirements
+          <i class="fa-solid fa-info-circle mr-2"></i> Head Banner Requirements
         </h3>
         <ul class="text-sm text-blue-700 space-y-1">
-          <li>• <strong>Background Image:</strong> Min 1920x1080px (16:9), Max 5MB, Format: JPG/PNG/WEBP</li>
+          <li>• <strong>Head Banner (Image/Video):</strong> Format JPG/PNG/WEBP/MP4/WEBM, rasio 16:9 agar fit layar full width</li>
+          <li>• <strong>Image:</strong> Min 1920x1080px (recommended 1920x1080 atau 2560x1440), Max 50MB</li>
+          <li>• <strong>Video:</strong> Recommended 1920x1080px, durasi 10-30 detik, Max 50MB</li>
           <li>• <strong>Content Image:</strong> Min 800x600px, Max 5MB, Format: JPG/PNG/WEBP</li>
           <li>• <strong>Maximum:</strong> 5 active banners will be displayed on homepage</li>
         </ul>
@@ -181,16 +200,24 @@ function handleImageError(event) {
                 <div class="flex gap-2 items-center">
                   <!-- Background Image Preview -->
                   <div v-if="(banner.background_image_url && banner.background_image_url !== '') || (banner.background_image && banner.background_image !== '')" class="relative group">
-                    <img 
+                    <img
+                      v-if="!isBackgroundVideo(banner)"
                       :src="getImageSrc(banner, 'background')" 
                       :alt="`${banner.title} - Background`"
                       class="w-24 h-16 object-cover rounded cursor-pointer hover:opacity-90 transition-opacity border-2 border-gray-300 shadow-sm"
                       @click="openLightbox(banner, 'background')"
                       @error="handleImageError($event)"
                     />
+                    <video
+                      v-else
+                      :src="getImageSrc(banner, 'background')"
+                      class="w-24 h-16 object-cover rounded cursor-pointer border-2 border-gray-300 shadow-sm bg-black"
+                      muted
+                      @click="openLightbox(banner, 'background')"
+                    />
                     <span class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs px-1 py-0.5 text-center rounded-b font-semibold">BG</span>
                     <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all rounded flex items-center justify-center">
-                      <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 transition-opacity text-sm"></i>
+                      <i :class="isBackgroundVideo(banner) ? 'fa-solid fa-play' : 'fa-solid fa-expand'" class="text-white opacity-0 group-hover:opacity-100 transition-opacity text-sm"></i>
                     </div>
                   </div>
                   <!-- Content Image Preview -->

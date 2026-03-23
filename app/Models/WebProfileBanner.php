@@ -27,7 +27,9 @@ class WebProfileBanner extends Model
 
     protected $appends = [
         'background_image_url',
-        'content_image_url'
+        'content_image_url',
+        'background_media_type',
+        'background_is_video'
     ];
 
     // Accessor untuk full URL
@@ -99,6 +101,23 @@ class WebProfileBanner extends Model
         $url = $baseUrl . '/storage/' . $encodedPath;
         
         return $url;
+    }
+
+    public function getBackgroundMediaTypeAttribute()
+    {
+        if (!$this->background_image) {
+            return null;
+        }
+
+        $extension = strtolower(pathinfo($this->background_image, PATHINFO_EXTENSION));
+        $videoExtensions = ['mp4', 'webm'];
+
+        return in_array($extension, $videoExtensions, true) ? 'video' : 'image';
+    }
+
+    public function getBackgroundIsVideoAttribute()
+    {
+        return $this->background_media_type === 'video';
     }
 }
 

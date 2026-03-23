@@ -252,6 +252,8 @@ class WebProfileController extends Controller
                 'content_image' => $banner->content_image,
                 'background_image_url' => $banner->background_image_url,
                 'content_image_url' => $banner->content_image_url,
+                'background_media_type' => $banner->background_media_type,
+                'background_is_video' => $banner->background_is_video,
                 'order' => $banner->order,
                 'is_active' => $banner->is_active,
                 'created_at' => $banner->created_at,
@@ -282,16 +284,36 @@ class WebProfileController extends Controller
                 'title' => 'required|string|max:255',
                 'subtitle' => 'nullable|string|max:255',
                 'description' => 'nullable|string',
-                'background_image' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=1920,min_height=1080',
+                'background_image' => [
+                    'required',
+                    'file',
+                    'mimes:jpeg,jpg,png,webp,mp4,webm',
+                    'max:51200',
+                    function ($attribute, $value, $fail) {
+                        if (!$value || !str_starts_with((string) $value->getMimeType(), 'image/')) {
+                            return;
+                        }
+
+                        $imageInfo = @getimagesize($value->getPathname());
+                        if (!$imageInfo) {
+                            $fail('Head banner image tidak valid.');
+                            return;
+                        }
+
+                        $width = $imageInfo[0] ?? 0;
+                        $height = $imageInfo[1] ?? 0;
+                        if ($width < 1920 || $height < 1080) {
+                            $fail('Head banner image minimal 1920x1080 piksel agar fit ke layar.');
+                        }
+                    },
+                ],
                 'content_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=800,min_height=600',
                 'order' => 'integer|min:0',
                 'is_active' => 'boolean'
             ], [
-                'background_image.required' => 'Background image is required',
-                'background_image.image' => 'Background must be an image file',
-                'background_image.mimes' => 'Background image must be JPG, PNG, or WEBP',
-                'background_image.max' => 'Background image must not exceed 5MB',
-                'background_image.dimensions' => 'Background image must be at least 1920x1080 pixels',
+                'background_image.required' => 'Head banner wajib diupload',
+                'background_image.mimes' => 'Head banner harus berformat JPG, PNG, WEBP, MP4, atau WEBM',
+                'background_image.max' => 'Head banner maksimal 50MB',
                 'content_image.image' => 'Content must be an image file',
                 'content_image.mimes' => 'Content image must be JPG, PNG, or WEBP',
                 'content_image.max' => 'Content image must not exceed 5MB',
@@ -383,7 +405,29 @@ class WebProfileController extends Controller
             'title' => 'required|string|max:255',
             'subtitle' => 'nullable|string|max:255',
             'description' => 'nullable|string',
-            'background_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=1920,min_height=1080',
+            'background_image' => [
+                'nullable',
+                'file',
+                'mimes:jpeg,jpg,png,webp,mp4,webm',
+                'max:51200',
+                function ($attribute, $value, $fail) {
+                    if (!$value || !str_starts_with((string) $value->getMimeType(), 'image/')) {
+                        return;
+                    }
+
+                    $imageInfo = @getimagesize($value->getPathname());
+                    if (!$imageInfo) {
+                        $fail('Head banner image tidak valid.');
+                        return;
+                    }
+
+                    $width = $imageInfo[0] ?? 0;
+                    $height = $imageInfo[1] ?? 0;
+                    if ($width < 1920 || $height < 1080) {
+                        $fail('Head banner image minimal 1920x1080 piksel agar fit ke layar.');
+                    }
+                },
+            ],
             'content_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120|dimensions:min_width=800,min_height=600',
             'order' => 'integer|min:0',
             'is_active' => 'boolean'
@@ -461,6 +505,8 @@ class WebProfileController extends Controller
                     'subtitle' => $banner->subtitle,
                     'description' => $banner->description,
                     'image' => $banner->background_image_url,
+                    'headMediaType' => $banner->background_media_type,
+                    'headIsVideo' => $banner->background_is_video,
                     'contentImage' => $banner->content_image_url,
                 ];
             });

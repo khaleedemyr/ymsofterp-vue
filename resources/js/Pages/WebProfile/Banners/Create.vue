@@ -21,12 +21,14 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 const backgroundImagePreview = ref(null);
+const backgroundMediaType = ref('image');
 const contentImagePreview = ref(null);
 
 function handleBackgroundImageChange(event) {
   const file = event.target.files[0];
   if (file) {
     form.value.background_image = file;
+    backgroundMediaType.value = file.type.startsWith('video/') ? 'video' : 'image';
     // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -116,16 +118,17 @@ function cancel() {
       <!-- Requirements Info -->
       <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <h3 class="font-semibold text-yellow-800 mb-2">
-          <i class="fa-solid fa-exclamation-triangle mr-2"></i> Image Requirements
+          <i class="fa-solid fa-exclamation-triangle mr-2"></i> Head Banner Requirements
         </h3>
         <div class="text-sm text-yellow-700 space-y-2">
           <div>
-            <strong>Background Image (Required):</strong>
+            <strong>Head Banner (Required - Image/Video):</strong>
             <ul class="ml-4 mt-1 list-disc">
-              <li>Minimum dimensions: 1920 x 1080 pixels (16:9 ratio)</li>
-              <li>Maximum file size: 5MB</li>
-              <li>Formats: JPG, PNG, WEBP</li>
-              <li>Recommended: 1920x1080px for best quality</li>
+              <li>Formats: JPG, PNG, WEBP, MP4, WEBM</li>
+              <li>Landscape 16:9 agar fit full screen website</li>
+              <li>Image minimum 1920 x 1080 pixels</li>
+              <li>Video recommended 1920 x 1080 pixels (durasi pendek 10-30 detik)</li>
+              <li>Maximum file size: 50MB</li>
             </ul>
           </div>
           <div>
@@ -182,25 +185,36 @@ function cancel() {
             <InputError :message="errors.description" class="mt-2" />
           </div>
 
-          <!-- Background Image -->
+          <!-- Head Banner -->
           <div>
-            <InputLabel for="background_image" value="Background Image *" />
+            <InputLabel for="background_image" value="Head Banner (Image/Video) *" />
             <input
               id="background_image"
               type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
+              accept="image/jpeg,image/jpg,image/png,image/webp,video/mp4,video/webm"
               @change="handleBackgroundImageChange"
               class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               :class="{ 'border-red-500': errors.background_image }"
               required
             />
             <InputError :message="errors.background_image" class="mt-2" />
-            <p class="mt-1 text-xs text-gray-500">Min: 1920x1080px, Max: 5MB, Formats: JPG/PNG/WEBP</p>
+            <p class="mt-1 text-xs text-gray-500">Recommended: 1920x1080 (16:9), Max: 50MB, Formats: JPG/PNG/WEBP/MP4/WEBM</p>
             
             <!-- Preview -->
             <div v-if="backgroundImagePreview" class="mt-4">
               <p class="text-sm font-medium text-gray-700 mb-2">Preview:</p>
-              <img :src="backgroundImagePreview" alt="Background preview" class="max-w-full h-48 object-cover rounded-lg border border-gray-300" />
+              <img
+                v-if="backgroundMediaType === 'image'"
+                :src="backgroundImagePreview"
+                alt="Head banner preview"
+                class="max-w-full h-48 object-cover rounded-lg border border-gray-300"
+              />
+              <video
+                v-else
+                :src="backgroundImagePreview"
+                controls
+                class="max-w-full h-48 rounded-lg border border-gray-300 bg-black"
+              />
             </div>
           </div>
 
