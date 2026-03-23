@@ -8,6 +8,11 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import Swal from 'sweetalert2';
 
+/** Sama dengan Laravel: max:102400 → kilobyte → 100 MB */
+const MAX_VIDEO_KB = 102400;
+const MAX_VIDEO_BYTES = MAX_VIDEO_KB * 1024;
+const ALLOWED_VIDEO_EXT = ['mp4', 'webm'];
+
 const form = ref({
   block_type: 'text',
   sort_order: 0,
@@ -22,8 +27,75 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function validateVideoFile(file) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  if (!ALLOWED_VIDEO_EXT.includes(ext)) {
+    return {
+      ok: false,
+      message: 'Format video harus <strong>MP4</strong> atau <strong>WEBM</strong>.',
+    };
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    return {
+      ok: false,
+      message: `Ukuran maksimal <strong>100 MB</strong> (sesuai batas server).<br>File Anda: <strong>${formatFileSize(file.size)}</strong>`,
+    };
+  }
+  return { ok: true };
+}
+
+function onVideoChange(event) {
+  const input = event.target;
+  const file = input.files?.[0] || null;
+  errors.value = { ...errors.value, video: undefined };
+
+  if (!file) {
+    form.value.video = null;
+    return;
+  }
+
+  const result = validateVideoFile(file);
+  if (!result.ok) {
+    Swal.fire({
+      icon: 'error',
+      title: 'File tidak valid',
+      html: result.message,
+      confirmButtonText: 'OK',
+    });
+    input.value = '';
+    form.value.video = null;
+    return;
+  }
+
+  form.value.video = file;
+}
+
 function submit() {
+  if (form.value.block_type === 'video') {
+    if (!form.value.video) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Video wajib',
+        text: 'Pilih file video (MP4/WEBM, maks. 100 MB).',
+      });
+      return;
+    }
+    const check = validateVideoFile(form.value.video);
+    if (!check.ok) {
+      Swal.fire({ icon: 'error', title: 'File tidak valid', html: check.message });
+      return;
+    }
+  }
+
   isSubmitting.value = true;
+  errors.value = {};
+
   const fd = new FormData();
   fd.append('block_type', form.value.block_type);
   fd.append('sort_order', String(form.value.sort_order));
@@ -38,11 +110,15 @@ function submit() {
 
   router.post('/web-profile/home-blocks', fd, {
     forceFormData: true,
-    onSuccess: () => Swal.fire('Berhasil', 'Blok ditambahkan.', 'success'),
     onError: (e) => {
       errors.value = e || {};
       isSubmitting.value = false;
-      Swal.fire('Error', 'Validasi gagal.', 'error');
+      const msgs = Object.values(e || {}).flat().filter(Boolean);
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menyimpan',
+        html: msgs.length ? msgs.join('<br>') : 'Validasi gagal atau file terlalu besar.',
+      });
     },
     onFinish: () => {
       isSubmitting.value = false;
@@ -78,9 +154,16 @@ function submit() {
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Video (mp4/webm) *" />
-          <input type="file" accept="video/mp4,video/webm" class="mt-1 block w-full text-sm" @change="(e) => { form.video = e.target.files?.[0] || null }" />
+          <input
+            type="file"
+            accept="video/mp4,video/webm,.mp4,.webm"
+            class="mt-1 block w-full text-sm"
+            @change="onVideoChange"
+          />
           <InputError :message="errors.video" class="mt-1" />
-          <p class="text-xs text-gray-500 mt-1">Max ~100MB. Caption tampil di atas video.</p>
+          <p class="text-xs text-gray-500 mt-1">
+            Format: MP4 / WEBM. Maksimal <strong>100 MB</strong> (lebih besar akan ditolak sebelum upload).
+          </p>
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Caption (teks besar di tengah)" />

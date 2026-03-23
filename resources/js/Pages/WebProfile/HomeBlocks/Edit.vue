@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -8,9 +8,15 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import Swal from 'sweetalert2';
 
+const MAX_VIDEO_KB = 102400;
+const MAX_VIDEO_BYTES = MAX_VIDEO_KB * 1024;
+const ALLOWED_VIDEO_EXT = ['mp4', 'webm'];
+
 const props = defineProps({
   block: { type: Object, required: true },
 });
+
+const page = usePage();
 
 const form = ref({
   block_type: props.block.block_type,
@@ -26,8 +32,97 @@ const form = ref({
 const errors = ref({});
 const isSubmitting = ref(false);
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function validateVideoFile(file) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  if (!ALLOWED_VIDEO_EXT.includes(ext)) {
+    return {
+      ok: false,
+      message: 'Format video harus <strong>MP4</strong> atau <strong>WEBM</strong>.',
+    };
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    return {
+      ok: false,
+      message: `Ukuran maksimal <strong>100 MB</strong>.<br>File Anda: <strong>${formatFileSize(file.size)}</strong>`,
+    };
+  }
+  return { ok: true };
+}
+
+function onVideoChange(event) {
+  const input = event.target;
+  const file = input.files?.[0] || null;
+  errors.value = { ...errors.value, video: undefined };
+
+  if (!file) {
+    form.value.video = null;
+    return;
+  }
+
+  const result = validateVideoFile(file);
+  if (!result.ok) {
+    Swal.fire({
+      icon: 'error',
+      title: 'File tidak valid',
+      html: result.message,
+      confirmButtonText: 'OK',
+    });
+    input.value = '';
+    form.value.video = null;
+    return;
+  }
+
+  form.value.video = file;
+}
+
+watch(
+  () => page.props.flash?.success,
+  (msg) => {
+    if (msg) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: msg,
+        confirmButtonText: 'OK',
+      });
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => page.props.flash?.error,
+  (msg) => {
+    if (msg) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: msg,
+        confirmButtonText: 'OK',
+      });
+    }
+  },
+  { immediate: true },
+);
+
 function submit() {
+  if (form.value.block_type === 'video' && form.value.video) {
+    const check = validateVideoFile(form.value.video);
+    if (!check.ok) {
+      Swal.fire({ icon: 'error', title: 'File tidak valid', html: check.message });
+      return;
+    }
+  }
+
   isSubmitting.value = true;
+  errors.value = {};
+
   const fd = new FormData();
   fd.append('block_type', form.value.block_type);
   fd.append('sort_order', String(form.value.sort_order));
@@ -44,11 +139,15 @@ function submit() {
   router.post(`/web-profile/home-blocks/${props.block.id}`, fd, {
     forceFormData: true,
     preserveScroll: true,
-    onSuccess: () => Swal.fire('Berhasil', 'Blok diperbarui.', 'success'),
     onError: (e) => {
       errors.value = e || {};
       isSubmitting.value = false;
-      Swal.fire('Error', 'Validasi gagal.', 'error');
+      const msgs = Object.values(e || {}).flat().filter(Boolean);
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menyimpan',
+        html: msgs.length ? msgs.join('<br>') : 'Validasi gagal atau file terlalu besar.',
+      });
     },
     onFinish: () => {
       isSubmitting.value = false;
@@ -61,7 +160,7 @@ function submit() {
   <AppLayout title="Edit Home Block">
     <div class="max-w-3xl mx-auto py-8 px-4">
       <h1 class="text-2xl font-bold mb-6">Edit Blok</h1>
-      <div class="bg-white rounded-lg shadow p-6 space-y-4">
+      <form class="bg-white rounded-lg shadow p-6 space-y-4" @submit.prevent="submit">
         <div v-if="block.video_url && block.block_type === 'video'" class="text-sm text-gray-600">
           <p class="mb-2">Video saat ini:</p>
           <video :src="block.video_url" controls class="max-h-48 w-full rounded border"></video>
@@ -87,8 +186,14 @@ function submit() {
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Ganti video (opsional)" />
-          <input type="file" accept="video/mp4,video/webm" class="mt-1 block w-full text-sm" @change="(e) => { form.video = e.target.files?.[0] || null }" />
+          <input
+            type="file"
+            accept="video/mp4,video/webm,.mp4,.webm"
+            class="mt-1 block w-full text-sm"
+            @change="onVideoChange"
+          />
           <InputError :message="errors.video" class="mt-1" />
+          <p class="text-xs text-gray-500 mt-1">MP4 / WEBM, maks. <strong>100 MB</strong>.</p>
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Caption" />
@@ -108,9 +213,9 @@ function submit() {
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" class="px-4 py-2 border rounded" @click="router.visit('/web-profile/home-blocks')">Kembali</button>
-          <PrimaryButton :disabled="isSubmitting" @click="submit">Simpan</PrimaryButton>
+          <PrimaryButton type="submit" :disabled="isSubmitting">Simpan</PrimaryButton>
         </div>
-      </div>
+      </form>
     </div>
   </AppLayout>
 </template>

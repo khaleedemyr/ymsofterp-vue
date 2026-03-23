@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router, Link } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
+import { router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -8,6 +8,28 @@ import Swal from 'sweetalert2';
 
 const props = defineProps({
   blocks: { type: Object, default: () => ({ data: [] }) },
+});
+
+const page = usePage();
+
+onMounted(() => {
+  const flash = page.props.flash || {};
+  if (flash.success) {
+    Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: flash.success,
+      confirmButtonText: 'OK',
+    });
+  }
+  if (flash.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: flash.error,
+      confirmButtonText: 'OK',
+    });
+  }
 });
 
 const search = ref('');

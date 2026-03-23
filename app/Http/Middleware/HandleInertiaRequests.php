@@ -87,7 +87,9 @@ class HandleInertiaRequests extends Middleware
             ],
             'result' => fn () => $request->session()->get('result'),
             'flash' => [
-                'message' => fn () => $request->session()->get('message')
+                'message' => fn () => $request->session()->get('message'),
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
             ],
             'allowedMenus' => $allowedMenus,
         ]);
