@@ -52,6 +52,15 @@ function handleContentImageChange(event) {
 }
 
 function submit() {
+  if (!form.value.background_image) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Head Banner wajib diisi',
+      text: 'Pilih 1 file untuk Head Banner utama (boleh image ATAU video).',
+    });
+    return;
+  }
+
   isSubmitting.value = true;
   
   const formData = new FormData();
@@ -122,8 +131,9 @@ function cancel() {
         </h3>
         <div class="text-sm text-yellow-700 space-y-2">
           <div>
-            <strong>Head Banner (Required - Image/Video):</strong>
+            <strong>Head Banner Utama (Wajib - pilih salah satu):</strong>
             <ul class="ml-4 mt-1 list-disc">
+              <li>Image atau video (cukup salah satu, tidak perlu keduanya)</li>
               <li>Formats: JPG, PNG, WEBP, MP4, WEBM</li>
               <li>Landscape 16:9 agar fit full screen website</li>
               <li>Image minimum 1920 x 1080 pixels</li>
@@ -187,7 +197,7 @@ function cancel() {
 
           <!-- Head Banner -->
           <div>
-            <InputLabel for="background_image" value="Head Banner (Image/Video) *" />
+            <InputLabel for="background_image" value="Head Banner Utama * (Image ATAU Video)" />
             <input
               id="background_image"
               type="file"
@@ -195,10 +205,9 @@ function cancel() {
               @change="handleBackgroundImageChange"
               class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               :class="{ 'border-red-500': errors.background_image }"
-              required
             />
             <InputError :message="errors.background_image" class="mt-2" />
-            <p class="mt-1 text-xs text-gray-500">Recommended: 1920x1080 (16:9), Max: 50MB, Formats: JPG/PNG/WEBP/MP4/WEBM</p>
+            <p class="mt-1 text-xs text-gray-500">Wajib isi 1 file (image atau video). Recommended: 1920x1080 (16:9), Max: 50MB</p>
             
             <!-- Preview -->
             <div v-if="backgroundImagePreview" class="mt-4">
@@ -220,7 +229,7 @@ function cancel() {
 
           <!-- Content Image -->
           <div>
-            <InputLabel for="content_image" value="Content Image (Optional)" />
+            <InputLabel for="content_image" value="Content Overlay Image (Optional)" />
             <input
               id="content_image"
               type="file"
@@ -230,7 +239,7 @@ function cancel() {
               :class="{ 'border-red-500': errors.content_image }"
             />
             <InputError :message="errors.content_image" class="mt-2" />
-            <p class="mt-1 text-xs text-gray-500">Min: 800x600px, Max: 5MB, Formats: JPG/PNG/WEBP</p>
+            <p class="mt-1 text-xs text-gray-500">Opsional. Ini bukan pengganti Head Banner. Min: 800x600px, Max: 5MB</p>
             
             <!-- Preview -->
             <div v-if="contentImagePreview" class="mt-4">
