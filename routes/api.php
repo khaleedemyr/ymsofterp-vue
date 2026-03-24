@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\PosOrderController;
 use App\Http\Controllers\Api\PosDummySyncController;
 use App\Http\Controllers\Api\ClosingShiftController;
 use App\Http\Controllers\Api\PosSyncController;
+use App\Http\Controllers\Api\PosDesignSyncController;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
 use App\Http\Middleware\ApprovalAppAuth;
@@ -1219,6 +1220,7 @@ Route::patch('/reservations/{id}/status', [\App\Http\Controllers\ReservationCont
 // POS Sync Routes
 Route::prefix('pos/sync')->group(function () {
     Route::post('/check-changes', [PosSyncController::class, 'checkChanges'])->name('api.pos.sync.check-changes');
+    Route::post('/pos-design', [PosDesignSyncController::class, 'syncSnapshot'])->name('api.pos.sync.pos-design');
     Route::get('/users', [PosSyncController::class, 'syncUsers'])->name('api.pos.sync.users');
     Route::get('/categories', [PosSyncController::class, 'syncCategories'])->name('api.pos.sync.categories');
     Route::get('/sub-categories', [PosSyncController::class, 'syncSubCategories'])->name('api.pos.sync.sub-categories');

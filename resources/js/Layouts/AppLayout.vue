@@ -188,6 +188,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: 'Dashboard Sales Outlet', route: '/outlet-dashboard', icon: 'fa-store', group: 'Outlet Management', order: 0 },
+            { name: () => 'POS Design Sync Monitor', icon: 'fa-solid fa-arrows-rotate', route: '/admin/pos-design-sync-monitor', code: 'pos_design_sync_monitor' },
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
             { name: () => 'Outlet Good Receive', icon: 'fa-solid fa-truck-loading', route: '/outlet-food-good-receives', code: 'outlet_food_good_receive' },
             { name: () => 'Good Receive Outlet Supplier', icon: 'fa-solid fa-truck-arrow-right', route: '/good-receive-outlet-supplier', code: 'good_receive_outlet_supplier' },

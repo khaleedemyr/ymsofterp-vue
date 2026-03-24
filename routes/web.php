@@ -113,6 +113,7 @@ use App\Http\Controllers\JabatanTrainingController;
 use App\Http\Controllers\TrainingComplianceController;
 use App\Http\Controllers\LeaveManagementController;
 use App\Http\Controllers\CctvAccessRequestController;
+use App\Http\Controllers\PosDesignSyncMonitorController;
 
 
 Route::get('/', function () {
@@ -233,6 +234,10 @@ Route::middleware('auth')->group(function () {
     Route::get('coaching/search-users', [\App\Http\Controllers\CoachingController::class, 'searchUsers'])->name('coaching.search-users');
     Route::post('coaching/{coaching}/approve', [\App\Http\Controllers\CoachingController::class, 'approve'])->name('coaching.approve');
     Route::post('coaching/{coaching}/reject', [\App\Http\Controllers\CoachingController::class, 'reject'])->name('coaching.reject');
+
+    // Monitoring sync POS Design (snapshot per outlet + histori)
+    Route::get('/admin/pos-design-sync-monitor', [PosDesignSyncMonitorController::class, 'index'])
+        ->name('admin.pos-design-sync-monitor.index');
 });
 
 // API routes for coaching (outside middleware group)
