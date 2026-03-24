@@ -629,7 +629,7 @@ class MenuBookController extends Controller
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
                 ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
 
-            $this->applyPosVisibilityFilter($itemsQuery);
+            $this->applyPosVisibilityFilter($itemsQuery, (int) $outlet->id_outlet, $outlet->region_id ? (int) $outlet->region_id : null);
 
             $items = $itemsQuery->select(
                     'i.id',
@@ -914,7 +914,7 @@ class MenuBookController extends Controller
         $itemsQuery = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
             ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
             ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
-        $this->applyPosVisibilityFilter($itemsQuery);
+        $this->applyPosVisibilityFilter($itemsQuery, (int) $outlet->id_outlet, $outlet->region_id ? (int) $outlet->region_id : null);
 
         $items = $itemsQuery->select(
                 'i.id',
@@ -937,7 +937,7 @@ class MenuBookController extends Controller
             $fallbackQuery = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
                 ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
-            $this->applyPosVisibilityFilter($fallbackQuery);
+            $this->applyPosVisibilityFilter($fallbackQuery, (int) $outlet->id_outlet, $outlet->region_id ? (int) $outlet->region_id : null);
 
             $items = $fallbackQuery->select(
                     'i.id',
@@ -1213,23 +1213,61 @@ class MenuBookController extends Controller
             ->where('i.status', 'active');
     }
 
-    private function applyPosVisibilityFilter($query): void
+    private function applyPosVisibilityFilter($query, int $outletId, ?int $regionId): void
     {
         if (Schema::hasColumn('categories', 'show_pos')) {
-            $query->where(function ($q) {
+            $query->where(function ($q) use ($outletId) {
                 $q->whereNull('i.category_id')
-                    ->orWhere('c.show_pos', 1)
-                    // Backward-compatible: data lama sering NULL.
+                    // Pola PosSync: show_pos=0 (dan legacy null) selalu tampil.
+                    ->orWhereIn('c.show_pos', [0, '0'])
                     ->orWhereNull('c.show_pos');
+
+                if (Schema::hasTable('category_outlet')) {
+                    // Pola PosSync: show_pos=1 tampil bila terdaftar di outlet ini.
+                    $q->orWhere(function ($q1) use ($outletId) {
+                        $q1->whereIn('c.show_pos', [1, '1'])
+                            ->whereExists(function ($qe) use ($outletId) {
+                                $qe->select(DB::raw(1))
+                                    ->from('category_outlet')
+                                    ->whereColumn('category_outlet.category_id', 'c.id')
+                                    ->where('category_outlet.outlet_id', $outletId);
+                            });
+                    });
+                }
             });
         }
 
         if (Schema::hasColumn('sub_categories', 'show_pos')) {
-            $query->where(function ($q) {
+            $query->where(function ($q) use ($outletId, $regionId) {
                 $q->whereNull('i.sub_category_id')
-                    ->orWhere('sc.show_pos', 1)
-                    // Backward-compatible: data lama sering NULL.
+                    // Pola PosSync: show_pos=0 (dan legacy null) selalu tampil.
+                    ->orWhereIn('sc.show_pos', [0, '0'])
                     ->orWhereNull('sc.show_pos');
+
+                if (Schema::hasTable('sub_category_availabilities')) {
+                    // Pola PosSync: show_pos=1 tampil jika byRegion/byOutlet match.
+                    $q->orWhere(function ($q1) use ($outletId, $regionId) {
+                        $q1->whereIn('sc.show_pos', [1, '1'])
+                            ->whereExists(function ($qe) use ($outletId, $regionId) {
+                                $qe->select(DB::raw(1))
+                                    ->from('sub_category_availabilities')
+                                    ->whereColumn('sub_category_availabilities.sub_category_id', 'sc.id')
+                                    ->where(function ($w) use ($regionId, $outletId) {
+                                        if (!is_null($regionId)) {
+                                            $w->where(function ($w2) use ($regionId) {
+                                                $w2->where('sub_category_availabilities.availability_type', 'byRegion')
+                                                    ->where('sub_category_availabilities.region_id', $regionId);
+                                            });
+                                        }
+
+                                        $w->orWhere(function ($w2) use ($outletId) {
+                                            $w2->where('sub_category_availabilities.availability_type', 'byOutlet')
+                                                ->where('sub_category_availabilities.outlet_id', $outletId);
+                                        });
+                                    });
+                            });
+                    });
+                }
             });
         }
     }
