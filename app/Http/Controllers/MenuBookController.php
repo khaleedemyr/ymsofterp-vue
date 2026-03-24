@@ -1218,14 +1218,18 @@ class MenuBookController extends Controller
         if (Schema::hasColumn('categories', 'show_pos')) {
             $query->where(function ($q) {
                 $q->whereNull('i.category_id')
-                    ->orWhere('c.show_pos', 1);
+                    ->orWhere('c.show_pos', 1)
+                    // Backward-compatible: data lama sering NULL.
+                    ->orWhereNull('c.show_pos');
             });
         }
 
         if (Schema::hasColumn('sub_categories', 'show_pos')) {
             $query->where(function ($q) {
                 $q->whereNull('i.sub_category_id')
-                    ->orWhere('sc.show_pos', 1);
+                    ->orWhere('sc.show_pos', 1)
+                    // Backward-compatible: data lama sering NULL.
+                    ->orWhereNull('sc.show_pos');
             });
         }
     }
