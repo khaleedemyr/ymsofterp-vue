@@ -889,5 +889,307 @@ class MenuBookController extends Controller
 
         return 'SO-' . $datePrefix . '-' . strtoupper(substr((string) uniqid('', true), -6));
     }
+
+    // API untuk frontend company profile (Next.js): ambil menu self-order by outlet
+    public function apiSelfOrderMenuByOutlet(Request $request)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer',
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        $menuBook = MenuBook::where('status', 'active')
+            ->whereHas('outlets', function ($q) use ($outletId) {
+                $q->where('id_outlet', $outletId);
+            })
+            ->whereHas('pages', function ($q) {
+                $q->where('status', 'active');
+            })
+            ->orderBy('id')
+            ->first();
+
+        if (!$menuBook) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Menu self-order belum tersedia untuk outlet ini.',
+            ], 404);
+        }
+
+        $outlet = $this->getMenuBookOutletByOutletId($menuBook->id, $outletId);
+        if (!$outlet) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Outlet tidak ditemukan untuk menu book ini.',
+            ], 404);
+        }
+
+        $pages = $menuBook->pages()
+            ->where('status', 'active')
+            ->with(['items:id,name,category_id,sub_category_id,status', 'categories'])
+            ->orderBy('page_order', 'asc')
+            ->get();
+
+        $directItemIds = $pages->flatMap(function ($page) {
+            return $page->items->pluck('id');
+        })->unique()->values();
+
+        $categoryFilters = $pages->flatMap(function ($page) {
+            return $page->categories->map(function ($category) {
+                return [
+                    'category_id' => $category->id,
+                    'sub_category_id' => $category->pivot->sub_category_id,
+                ];
+            });
+        })->values();
+
+        $categoryItemIds = collect();
+        if ($categoryFilters->isNotEmpty()) {
+            $categoryItemIds = DB::table('items')
+                ->where('status', 'active')
+                ->where(function ($query) use ($categoryFilters) {
+                    foreach ($categoryFilters as $filter) {
+                        $query->orWhere(function ($subQuery) use ($filter) {
+                            $subQuery->where('category_id', $filter['category_id']);
+
+                            if (!empty($filter['sub_category_id'])) {
+                                $subQuery->where('sub_category_id', $filter['sub_category_id']);
+                            }
+                        });
+                    }
+                })
+                ->pluck('id');
+        }
+
+        $itemIds = $directItemIds->merge($categoryItemIds)->unique()->values();
+        $items = collect();
+        if ($itemIds->isNotEmpty()) {
+            $items = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
+                ->whereIn('i.id', $itemIds->all())
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->select(
+                    'i.id',
+                    'i.name',
+                    'i.description',
+                    'i.category_id',
+                    'i.sub_category_id',
+                    'i.status',
+                    'c.name as category_name',
+                    'sc.name as sub_category_name',
+                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price) as price')
+                )
+                ->orderBy('i.name')
+                ->distinct()
+                ->get()
+                ->values();
+
+            $imageMap = DB::table('item_images')
+                ->whereIn('item_id', $items->pluck('id')->all())
+                ->select('item_id', DB::raw('MIN(COALESCE(image_path, path)) as image_path'))
+                ->groupBy('item_id')
+                ->pluck('image_path', 'item_id');
+
+            $items = $items
+                ->map(function ($item) {
+                    $item->price = (float) ($item->price ?? 0);
+                    return $item;
+                })
+                ->map(function ($item) use ($imageMap) {
+                    $item->image_path = $imageMap[$item->id] ?? null;
+                    return $item;
+                })
+                ->values();
+        }
+
+        $categories = $items
+            ->filter(fn ($item) => !empty($item->category_id) && !empty($item->category_name))
+            ->map(fn ($item) => [
+                'id' => $item->category_id,
+                'name' => $item->category_name,
+            ])
+            ->unique('id')
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'menu_book' => [
+                    'id' => $menuBook->id,
+                    'name' => $menuBook->name,
+                ],
+                'outlet' => [
+                    'id_outlet' => $outlet->id_outlet,
+                    'nama_outlet' => $outlet->nama_outlet,
+                    'qr_code' => $outlet->qr_code,
+                ],
+                'categories' => $categories,
+                'items' => $items,
+            ],
+        ]);
+    }
+
+    // API checkout self-order by menu_book_id (tanpa route model binding)
+    public function apiSelfOrderCheckout(Request $request)
+    {
+        if (!Schema::hasTable('self_orders') || !Schema::hasTable('self_order_items')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Self order table belum tersedia. Jalankan SQL create table terlebih dahulu.',
+            ], 500);
+        }
+
+        $validated = $request->validate([
+            'menu_book_id' => 'required|integer|exists:menu_books,id',
+            'customer_name' => 'required|string|max:100',
+            'customer_phone' => 'nullable|string|max:30',
+            'order_type' => 'required|in:dine_in,take_away',
+            'notes' => 'nullable|string|max:500',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer',
+            'items.*.qty' => 'required|integer|min:1|max:99',
+            'items.*.notes' => 'nullable|string|max:255',
+            'items.*.modifiers' => 'nullable|array',
+        ]);
+
+        $menuBook = MenuBook::find($validated['menu_book_id']);
+        if (!$menuBook || $menuBook->status !== 'active') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Menu book tidak aktif.',
+            ], 404);
+        }
+
+        $outlet = $this->getMenuBookOutlet($menuBook->id);
+        if (!$outlet) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Outlet tidak ditemukan untuk menu book ini.',
+            ], 404);
+        }
+
+        $requestItemIds = collect($validated['items'])
+            ->pluck('item_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $availableItems = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
+            ->whereIn('i.id', $requestItemIds->all())
+            ->select(
+                'i.id',
+                'i.name',
+                DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price) as price')
+            )
+            ->distinct()
+            ->get()
+            ->keyBy('id');
+
+        $missingItemIds = $requestItemIds
+            ->reject(fn ($itemId) => $availableItems->has($itemId))
+            ->values();
+
+        if ($missingItemIds->isNotEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ada item yang tidak tersedia untuk outlet ini.',
+                'invalid_item_ids' => $missingItemIds,
+            ], 422);
+        }
+
+        $normalizedItems = [];
+        $subtotal = 0;
+        $totalQty = 0;
+
+        foreach ($validated['items'] as $itemInput) {
+            $itemId = (int) $itemInput['item_id'];
+            $qty = (int) $itemInput['qty'];
+            $itemMaster = $availableItems->get($itemId);
+            $price = (float) ($itemMaster->price ?? 0);
+            $lineSubtotal = $price * $qty;
+
+            $normalizedItems[] = [
+                'item_id' => $itemId,
+                'item_name' => $itemMaster->name,
+                'qty' => $qty,
+                'price' => $price,
+                'modifiers' => !empty($itemInput['modifiers']) ? json_encode($itemInput['modifiers'], JSON_UNESCAPED_UNICODE) : null,
+                'subtotal' => $lineSubtotal,
+                'notes' => $itemInput['notes'] ?? null,
+            ];
+
+            $subtotal += $lineSubtotal;
+            $totalQty += $qty;
+        }
+
+        DB::beginTransaction();
+        try {
+            $now = now();
+            $orderNo = $this->generateSelfOrderNumber();
+
+            $selfOrderId = DB::table('self_orders')->insertGetId([
+                'order_no' => $orderNo,
+                'menu_book_id' => $menuBook->id,
+                'outlet_id' => $outlet->id_outlet,
+                'kode_outlet' => $outlet->qr_code,
+                'customer_name' => $validated['customer_name'],
+                'customer_phone' => $validated['customer_phone'] ?? null,
+                'order_type' => $validated['order_type'],
+                'notes' => $validated['notes'] ?? null,
+                'status' => 'pending',
+                'total_item' => $totalQty,
+                'subtotal' => $subtotal,
+                'grand_total' => $subtotal,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $rows = array_map(function ($item) use ($selfOrderId, $now) {
+                return [
+                    'self_order_id' => $selfOrderId,
+                    'item_id' => $item['item_id'],
+                    'item_name' => $item['item_name'],
+                    'qty' => $item['qty'],
+                    'price' => $item['price'],
+                    'modifiers' => $item['modifiers'],
+                    'subtotal' => $item['subtotal'],
+                    'notes' => $item['notes'],
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }, $normalizedItems);
+
+            DB::table('self_order_items')->insert($rows);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Self order berhasil dibuat.',
+                'data' => [
+                    'id' => $selfOrderId,
+                    'order_no' => $orderNo,
+                    'total_item' => $totalQty,
+                    'grand_total' => $subtotal,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat self order: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function getMenuBookOutletByOutletId(int $menuBookId, int $outletId)
+    {
+        return DB::table('tbl_data_outlet as o')
+            ->join('menu_book_outlets as mbo', 'o.id_outlet', '=', 'mbo.outlet_id')
+            ->where('mbo.menu_book_id', $menuBookId)
+            ->where('o.id_outlet', $outletId)
+            ->where('o.status', 'A')
+            ->select('o.id_outlet', 'o.nama_outlet', 'o.qr_code', 'o.region_id')
+            ->first();
+    }
 }
 
