@@ -643,11 +643,7 @@ class MenuBookController extends Controller
                 ->distinct()
                 ->get();
 
-            $imageMap = DB::table('item_images')
-                ->whereIn('item_id', $items->pluck('id')->all())
-                ->select('item_id', DB::raw('MIN(COALESCE(image_path, path)) as image_path'))
-                ->groupBy('item_id')
-                ->pluck('image_path', 'item_id');
+            $imageMap = $this->buildItemImageMap($items->pluck('id')->all());
 
             $items = $items->map(function ($item) use ($imageMap) {
                 $item->image_path = $imageMap[$item->id] ?? null;
@@ -960,11 +956,7 @@ class MenuBookController extends Controller
 
         $imageMap = collect();
         if ($items->isNotEmpty()) {
-            $imageMap = DB::table('item_images')
-                ->whereIn('item_id', $items->pluck('id')->all())
-                ->select('item_id', DB::raw('MIN(COALESCE(image_path, path)) as image_path'))
-                ->groupBy('item_id')
-                ->pluck('image_path', 'item_id');
+            $imageMap = $this->buildItemImageMap($items->pluck('id')->all());
         }
 
         $items = $items
@@ -1206,6 +1198,36 @@ class MenuBookController extends Controller
                     ->where('ip_all.availability_price_type', 'all');
             })
             ->where('i.status', 'active');
+    }
+
+    private function buildItemImageMap(array $itemIds)
+    {
+        if (empty($itemIds) || !Schema::hasTable('item_images')) {
+            return collect();
+        }
+
+        $hasImagePath = Schema::hasColumn('item_images', 'image_path');
+        $hasPath = Schema::hasColumn('item_images', 'path');
+
+        if (!$hasImagePath && !$hasPath) {
+            return collect();
+        }
+
+        $query = DB::table('item_images')->whereIn('item_id', $itemIds);
+
+        if ($hasImagePath && $hasPath) {
+            return $query
+                ->select('item_id', DB::raw('MIN(COALESCE(image_path, path)) as image_path'))
+                ->groupBy('item_id')
+                ->pluck('image_path', 'item_id');
+        }
+
+        $column = $hasImagePath ? 'image_path' : 'path';
+
+        return $query
+            ->select('item_id', DB::raw("MIN($column) as image_path"))
+            ->groupBy('item_id')
+            ->pluck('image_path', 'item_id');
     }
 
     private function getMenuBookOutletByOutletId(int $menuBookId, int $outletId)
