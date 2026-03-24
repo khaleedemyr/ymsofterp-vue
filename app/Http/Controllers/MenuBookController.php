@@ -999,6 +999,33 @@ class MenuBookController extends Controller
                     return $item;
                 })
                 ->values();
+
+            if ($items->isEmpty()) {
+                $items = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
+                    ->whereIn('i.id', $itemIds->all())
+                    ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                    ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                    ->select(
+                        'i.id',
+                        'i.name',
+                        'i.description',
+                        'i.category_id',
+                        'i.sub_category_id',
+                        'i.status',
+                        'c.name as category_name',
+                        'sc.name as sub_category_name',
+                        DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price, 0) as price')
+                    )
+                    ->orderBy('i.name')
+                    ->distinct()
+                    ->get()
+                    ->map(function ($item) use ($imageMap) {
+                        $item->price = (float) ($item->price ?? 0);
+                        $item->image_path = $imageMap[$item->id] ?? null;
+                        return $item;
+                    })
+                    ->values();
+            }
         }
 
         $categories = $items
@@ -1087,6 +1114,26 @@ class MenuBookController extends Controller
         $missingItemIds = $requestItemIds
             ->reject(fn ($itemId) => $availableItems->has($itemId))
             ->values();
+
+        if ($missingItemIds->isNotEmpty()) {
+            $fallbackItems = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
+                ->whereIn('i.id', $missingItemIds->all())
+                ->select(
+                    'i.id',
+                    'i.name',
+                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price, 0) as price')
+                )
+                ->distinct()
+                ->get()
+                ->keyBy('id');
+
+            if ($fallbackItems->isNotEmpty()) {
+                $availableItems = $availableItems->merge($fallbackItems);
+                $missingItemIds = $requestItemIds
+                    ->reject(fn ($itemId) => $availableItems->has($itemId))
+                    ->values();
+            }
+        }
 
         if ($missingItemIds->isNotEmpty()) {
             return response()->json([
@@ -1179,6 +1226,26 @@ class MenuBookController extends Controller
                 'message' => 'Gagal membuat self order: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function buildFallbackItemPriceQuery($outletId, $regionId)
+    {
+        return DB::table('items as i')
+            ->leftJoin('item_prices as ip_outlet', function ($join) use ($outletId) {
+                $join->on('ip_outlet.item_id', '=', 'i.id')
+                    ->where('ip_outlet.availability_price_type', 'outlet')
+                    ->where('ip_outlet.outlet_id', $outletId);
+            })
+            ->leftJoin('item_prices as ip_region', function ($join) use ($regionId) {
+                $join->on('ip_region.item_id', '=', 'i.id')
+                    ->where('ip_region.availability_price_type', 'region')
+                    ->where('ip_region.region_id', $regionId);
+            })
+            ->leftJoin('item_prices as ip_all', function ($join) {
+                $join->on('ip_all.item_id', '=', 'i.id')
+                    ->where('ip_all.availability_price_type', 'all');
+            })
+            ->where('i.status', 'active');
     }
 
     private function getMenuBookOutletByOutletId(int $menuBookId, int $outletId)
