@@ -624,11 +624,14 @@ class MenuBookController extends Controller
 
         $items = collect();
         if ($itemIds->isNotEmpty()) {
-            $items = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
+            $itemsQuery = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
                 ->whereIn('i.id', $itemIds->all())
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
-                ->select(
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
+
+            $this->applyPosVisibilityFilter($itemsQuery);
+
+            $items = $itemsQuery->select(
                     'i.id',
                     'i.name',
                     'i.description',
@@ -908,10 +911,12 @@ class MenuBookController extends Controller
 
         // Referensi item by outlet/region mengikuti pola PosSyncController::syncItems.
         // Menu book hanya dipakai untuk konteks checkout (menu_book_id), bukan filter daftar item.
-        $items = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
+        $itemsQuery = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
             ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
-            ->select(
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
+        $this->applyPosVisibilityFilter($itemsQuery);
+
+        $items = $itemsQuery->select(
                 'i.id',
                 'i.name',
                 'i.description',
@@ -929,10 +934,12 @@ class MenuBookController extends Controller
 
         // Fallback: jika availability belum rapi, tetap tampilkan item active yang punya harga.
         if ($items->isEmpty()) {
-            $items = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
+            $fallbackQuery = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
-                ->select(
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id');
+            $this->applyPosVisibilityFilter($fallbackQuery);
+
+            $items = $fallbackQuery->select(
                     'i.id',
                     'i.name',
                     'i.description',
@@ -955,8 +962,10 @@ class MenuBookController extends Controller
         }
 
         $imageMap = collect();
+        $modifierMap = collect();
         if ($items->isNotEmpty()) {
             $imageMap = $this->buildItemImageMap($items->pluck('id')->all());
+            $modifierMap = $this->buildItemModifierMap($items->pluck('id')->all());
         }
 
         $items = $items
@@ -966,6 +975,10 @@ class MenuBookController extends Controller
             })
             ->map(function ($item) use ($imageMap) {
                 $item->image_path = $imageMap[$item->id] ?? null;
+                return $item;
+            })
+            ->map(function ($item) use ($modifierMap) {
+                $item->modifiers = $modifierMap[$item->id] ?? [];
                 return $item;
             })
             ->values();
@@ -1200,6 +1213,23 @@ class MenuBookController extends Controller
             ->where('i.status', 'active');
     }
 
+    private function applyPosVisibilityFilter($query): void
+    {
+        if (Schema::hasColumn('categories', 'show_pos')) {
+            $query->where(function ($q) {
+                $q->whereNull('i.category_id')
+                    ->orWhere('c.show_pos', 1);
+            });
+        }
+
+        if (Schema::hasColumn('sub_categories', 'show_pos')) {
+            $query->where(function ($q) {
+                $q->whereNull('i.sub_category_id')
+                    ->orWhere('sc.show_pos', 1);
+            });
+        }
+    }
+
     private function buildItemImageMap(array $itemIds)
     {
         if (empty($itemIds) || !Schema::hasTable('item_images')) {
@@ -1228,6 +1258,73 @@ class MenuBookController extends Controller
             ->select('item_id', DB::raw("MIN($column) as image_path"))
             ->groupBy('item_id')
             ->pluck('image_path', 'item_id');
+    }
+
+    private function buildItemModifierMap(array $itemIds)
+    {
+        if (empty($itemIds)) {
+            return collect();
+        }
+
+        if (
+            !Schema::hasTable('item_modifiers') ||
+            !Schema::hasTable('modifiers') ||
+            !Schema::hasTable('modifier_options')
+        ) {
+            return collect();
+        }
+
+        $rows = DB::table('item_modifiers as im')
+            ->join('modifiers as m', 'im.modifier_id', '=', 'm.id')
+            ->join('modifier_options as mo', 'im.modifier_option_id', '=', 'mo.id')
+            ->whereIn('im.item_id', $itemIds)
+            ->select(
+                'im.item_id',
+                'im.modifier_id',
+                'm.name as modifier_name',
+                'im.modifier_option_id',
+                'mo.name as option_name'
+            )
+            ->orderBy('im.item_id')
+            ->orderBy('m.name')
+            ->orderBy('mo.name')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $row) {
+            $itemId = (int) $row->item_id;
+            $modifierId = (int) $row->modifier_id;
+            $optionId = (int) $row->modifier_option_id;
+
+            if (!isset($map[$itemId])) {
+                $map[$itemId] = [];
+            }
+
+            if (!isset($map[$itemId][$modifierId])) {
+                $map[$itemId][$modifierId] = [
+                    'modifier_id' => $modifierId,
+                    'modifier_name' => (string) $row->modifier_name,
+                    'options' => [],
+                ];
+            }
+
+            $exists = collect($map[$itemId][$modifierId]['options'])->contains(function ($option) use ($optionId) {
+                return (int) ($option['id'] ?? 0) === $optionId;
+            });
+
+            if (!$exists) {
+                $map[$itemId][$modifierId]['options'][] = [
+                    'id' => $optionId,
+                    'name' => (string) $row->option_name,
+                ];
+            }
+        }
+
+        foreach ($map as $itemId => $modifierGroups) {
+            $map[$itemId] = array_values($modifierGroups);
+        }
+
+        return collect($map);
     }
 
     private function getMenuBookOutletByOutletId(int $menuBookId, int $outletId)
