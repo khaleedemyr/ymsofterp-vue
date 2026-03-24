@@ -945,6 +945,7 @@ class ReservationController extends Controller
                 ]);
 
             $availableCount = 0;
+            $eligibleTablesForCombination = collect();
             $tablesBySection = $allTables
                 ->map(function ($table) use ($reservationSettings, $guestCount, $smokingPreference, &$availableCount) {
                     $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
@@ -954,7 +955,8 @@ class ReservationController extends Controller
                     $isReservableType = (($table->tipe ?? 'biasa') === 'biasa');
                     $smokingMatch = !$smokingPreference || $tableSmokingType === $smokingPreference;
                     $capacityMatch = $seatingCapacity >= $guestCount;
-                    $isAvailable = $isReservableType && $allowReservation && $smokingMatch && $capacityMatch;
+                    $isSelectable = $isReservableType && $allowReservation && $smokingMatch && $seatingCapacity > 0;
+                    $isAvailable = $isSelectable && $capacityMatch;
 
                     if ($isAvailable) {
                         $availableCount++;
@@ -963,6 +965,7 @@ class ReservationController extends Controller
                     $table->allow_reservation = $allowReservation;
                     $table->smoking_type = $tableSmokingType;
                     $table->seating_capacity = $seatingCapacity;
+                    $table->selectable = $isSelectable;
                     $table->available = $isAvailable;
 
                     return $table;
@@ -971,6 +974,88 @@ class ReservationController extends Controller
                 ->map(function ($items) {
                     return $items->values();
                 });
+
+            $eligibleTablesForCombination = $allTables
+                ->map(function ($table) use ($reservationSettings, $smokingPreference) {
+                    $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
+                    $allowReservation = $setting ? ((int) $setting->allow_reservation === 1) : true;
+                    $tableSmokingType = ($setting && !empty($setting->smoking_type)) ? $setting->smoking_type : 'non_smoking';
+                    $seatingCapacity = max(0, (int) ($table->jumlah_kursi ?? 0));
+                    $isReservableType = (($table->tipe ?? 'biasa') === 'biasa');
+                    $smokingMatch = !$smokingPreference || $tableSmokingType === $smokingPreference;
+
+                    return (object) [
+                        'source_table_id' => (int) $table->source_table_id,
+                        'source_section_id' => (int) $table->source_section_id,
+                        'nama' => $table->nama,
+                        'seating_capacity' => $seatingCapacity,
+                        'is_candidate' => $isReservableType && $allowReservation && $smokingMatch && $seatingCapacity > 0,
+                    ];
+                })
+                ->filter(function ($table) {
+                    return $table->is_candidate;
+                })
+                ->sortByDesc('seating_capacity')
+                ->values();
+
+            $tableCombinations = [];
+            $maxCandidates = min(24, $eligibleTablesForCombination->count());
+            $candidate = $eligibleTablesForCombination->take($maxCandidates)->values();
+
+            $pushCombination = function (array $tables) use (&$tableCombinations, $guestCount) {
+                $totalSeats = array_sum(array_map(function ($table) {
+                    return (int) $table->seating_capacity;
+                }, $tables));
+                if ($totalSeats < $guestCount) {
+                    return;
+                }
+
+                $tableIds = array_map(function ($table) {
+                    return (int) $table->source_table_id;
+                }, $tables);
+                sort($tableIds);
+                $key = implode('-', $tableIds);
+                if (isset($tableCombinations[$key])) {
+                    return;
+                }
+
+                $tableCombinations[$key] = [
+                    'table_ids' => $tableIds,
+                    'table_names' => array_values(array_map(function ($table) {
+                        return (string) ($table->nama ?: ('T-' . $table->source_table_id));
+                    }, $tables)),
+                    'total_seats' => $totalSeats,
+                    'table_count' => count($tableIds),
+                    'seat_excess' => $totalSeats - $guestCount,
+                ];
+            };
+
+            for ($i = 0; $i < $maxCandidates; $i++) {
+                $t1 = $candidate[$i];
+                $pushCombination([$t1]);
+                for ($j = $i + 1; $j < $maxCandidates; $j++) {
+                    $t2 = $candidate[$j];
+                    $pushCombination([$t1, $t2]);
+                    for ($k = $j + 1; $k < $maxCandidates; $k++) {
+                        $t3 = $candidate[$k];
+                        $pushCombination([$t1, $t2, $t3]);
+                    }
+                }
+            }
+
+            $tableCombinations = collect($tableCombinations)
+                ->values()
+                ->sort(function ($a, $b) {
+                    if ($a['seat_excess'] !== $b['seat_excess']) {
+                        return $a['seat_excess'] <=> $b['seat_excess'];
+                    }
+                    if ($a['table_count'] !== $b['table_count']) {
+                        return $a['table_count'] <=> $b['table_count'];
+                    }
+                    return $a['total_seats'] <=> $b['total_seats'];
+                })
+                ->take(8)
+                ->values();
 
             return response()->json([
                 'message' => $availableCount > 0 ? 'Table tersedia' : 'Tidak ada meja yang cocok',
@@ -990,6 +1075,7 @@ class ReservationController extends Controller
                     'tables_by_section' => $tablesBySection,
                     'accessories_by_section' => $accessoriesBySection,
                     'available_table_count' => $availableCount,
+                    'table_combinations' => $tableCombinations,
                 ],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
