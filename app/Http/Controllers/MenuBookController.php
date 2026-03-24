@@ -994,12 +994,15 @@ class MenuBookController extends Controller
             ->unique('id')
             ->values();
 
+        $menuBookId = $menuBook ? $menuBook->id : null;
+        $menuBookName = $menuBook ? $menuBook->name : 'Self Order';
+
         return response()->json([
             'success' => true,
             'data' => [
                 'menu_book' => [
-                    'id' => $menuBook?->id,
-                    'name' => $menuBook?->name ?? 'Self Order',
+                    'id' => $menuBookId,
+                    'name' => $menuBookName,
                 ],
                 'outlet' => [
                     'id_outlet' => $outlet->id_outlet,
