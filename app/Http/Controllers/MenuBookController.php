@@ -1218,34 +1218,28 @@ class MenuBookController extends Controller
         if (Schema::hasColumn('categories', 'show_pos')) {
             $query->where(function ($q) use ($outletId) {
                 $q->whereNull('i.category_id')
-                    // Pola PosSync: show_pos=0 (dan legacy null) selalu tampil.
-                    ->orWhereIn('c.show_pos', [0, '0'])
-                    ->orWhereNull('c.show_pos');
+                    ->orWhere(function ($q1) use ($outletId) {
+                        // Self-order: category harus show_pos=1 dan terdaftar di outlet ini.
+                        $q1->whereIn('c.show_pos', [1, '1']);
 
-                if (Schema::hasTable('category_outlet')) {
-                    // Pola PosSync: show_pos=1 tampil bila terdaftar di outlet ini.
-                    $q->orWhere(function ($q1) use ($outletId) {
-                        $q1->whereIn('c.show_pos', [1, '1'])
-                            ->whereExists(function ($qe) use ($outletId) {
+                        if (Schema::hasTable('category_outlet')) {
+                            $q1->whereExists(function ($qe) use ($outletId) {
                                 $qe->select(DB::raw(1))
                                     ->from('category_outlet')
                                     ->whereColumn('category_outlet.category_id', 'c.id')
                                     ->where('category_outlet.outlet_id', $outletId);
                             });
+                        }
                     });
-                }
             });
         }
 
         if (Schema::hasColumn('sub_categories', 'show_pos')) {
             $query->where(function ($q) use ($outletId, $regionId) {
-                $q->whereNull('i.sub_category_id')
-                    // Pola PosSync: show_pos=0 (dan legacy null) selalu tampil.
-                    ->orWhereIn('sc.show_pos', [0, '0'])
-                    ->orWhereNull('sc.show_pos');
+                $q->whereNull('i.sub_category_id');
 
                 if (Schema::hasTable('sub_category_availabilities')) {
-                    // Pola PosSync: show_pos=1 tampil jika byRegion/byOutlet match.
+                    // Self-order: sub-category harus show_pos=1 dan match byRegion/byOutlet.
                     $q->orWhere(function ($q1) use ($outletId, $regionId) {
                         $q1->whereIn('sc.show_pos', [1, '1'])
                             ->whereExists(function ($qe) use ($outletId, $regionId) {
