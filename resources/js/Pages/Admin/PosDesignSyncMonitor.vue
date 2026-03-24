@@ -93,11 +93,12 @@ const statusClass = (status) => {
                   <th class="px-4 py-3 text-left">Last Success Sync</th>
                   <th class="px-4 py-3 text-left">Last Status</th>
                   <th class="px-4 py-3 text-left">Last Message</th>
+                  <th class="px-4 py-3 text-left">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="summary.length === 0">
-                  <td colspan="7" class="px-4 py-8 text-center text-slate-400">Belum ada data sinkronisasi</td>
+                  <td colspan="8" class="px-4 py-8 text-center text-slate-400">Belum ada data sinkronisasi</td>
                 </tr>
                 <tr v-for="row in summary" :key="row.kode_outlet" class="border-t border-slate-100 hover:bg-slate-50">
                   <td class="px-4 py-3 font-semibold text-slate-800">{{ row.kode_outlet }}</td>
@@ -111,6 +112,14 @@ const statusClass = (status) => {
                     </span>
                   </td>
                   <td class="px-4 py-3 text-slate-600">{{ row.last_message || '-' }}</td>
+                  <td class="px-4 py-3">
+                    <Link
+                      :href="`/admin/pos-design-sync-layout?kode_outlet=${encodeURIComponent(row.kode_outlet)}`"
+                      class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                    >
+                      Lihat Layout
+                    </Link>
+                  </td>
                 </tr>
               </tbody>
             </table>

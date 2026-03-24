@@ -238,6 +238,10 @@ Route::middleware('auth')->group(function () {
     // Monitoring sync POS Design (snapshot per outlet + histori)
     Route::get('/admin/pos-design-sync-monitor', [PosDesignSyncMonitorController::class, 'index'])
         ->name('admin.pos-design-sync-monitor.index');
+
+    // Viewer layout POS Design hasil sinkronisasi
+    Route::get('/admin/pos-design-sync-layout', [PosDesignSyncMonitorController::class, 'layout'])
+        ->name('admin.pos-design-sync-layout.index');
 });
 
 // API routes for coaching (outside middleware group)
