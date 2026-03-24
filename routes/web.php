@@ -2453,6 +2453,8 @@ Route::get('/api/job-vacancies', [\App\Http\Controllers\JobVacancyController::cl
 Route::get('/menu', [MenuBookController::class, 'customerIndex'])->name('menu.customer.index');
 Route::get('/menu/outlet/{outlet}', [MenuBookController::class, 'customerOutlet'])->name('menu.customer.outlet');
 Route::get('/menu/book/{menuBook}', [MenuBookController::class, 'customerShow'])->name('menu.customer.show');
+Route::get('/menu/book/{menuBook}/self-order', [MenuBookController::class, 'customerSelfOrder'])->name('menu.customer.self-order');
+Route::post('/menu/book/{menuBook}/self-order/checkout', [MenuBookController::class, 'customerSelfOrderCheckout'])->name('menu.customer.self-order.checkout');
 
 Route::get('/payroll/master', [PayrollController::class, 'index'])->name('payroll.master');
 Route::post('/payroll/master', [PayrollController::class, 'store'])->name('payroll.master.store');

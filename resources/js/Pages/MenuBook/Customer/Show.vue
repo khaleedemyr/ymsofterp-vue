@@ -27,7 +27,13 @@
             <p v-if="outlet" class="text-gray-400 text-sm mt-1">{{ outlet.nama_outlet }}</p>
           </div>
 
-          <div class="w-24"></div> <!-- Spacer for centering -->
+          <button
+            @click="openSelfOrder"
+            class="inline-flex items-center gap-2 rounded-xl border border-yellow-400/50 bg-yellow-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-yellow-200 transition hover:bg-yellow-500/20"
+          >
+            <i class="fa-solid fa-basket-shopping"></i>
+            Self Order
+          </button>
         </div>
       </div>
     </div>
@@ -281,6 +287,10 @@ const goBack = () => {
   } else {
     router.visit('/menu');
   }
+};
+
+const openSelfOrder = () => {
+  router.visit(`/menu/book/${props.menuBook.id}/self-order`);
 };
 
 // Keyboard navigation
