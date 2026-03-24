@@ -1267,28 +1267,58 @@ class MenuBookController extends Controller
         }
 
         if (
-            !Schema::hasTable('item_modifiers') ||
             !Schema::hasTable('modifiers') ||
             !Schema::hasTable('modifier_options')
         ) {
             return collect();
         }
 
-        $rows = DB::table('item_modifiers as im')
-            ->join('modifiers as m', 'im.modifier_id', '=', 'm.id')
-            ->join('modifier_options as mo', 'im.modifier_option_id', '=', 'mo.id')
-            ->whereIn('im.item_id', $itemIds)
-            ->select(
-                'im.item_id',
-                'im.modifier_id',
-                'm.name as modifier_name',
-                'im.modifier_option_id',
-                'mo.name as option_name'
-            )
-            ->orderBy('im.item_id')
-            ->orderBy('m.name')
-            ->orderBy('mo.name')
-            ->get();
+        $rows = collect();
+
+        // Variasi skema produksi bisa beda: item_modifiers atau item_modifier_options
+        if (
+            Schema::hasTable('item_modifiers') &&
+            Schema::hasColumn('item_modifiers', 'item_id') &&
+            Schema::hasColumn('item_modifiers', 'modifier_option_id')
+        ) {
+            $rows = DB::table('item_modifiers as im')
+                ->join('modifiers as m', 'im.modifier_id', '=', 'm.id')
+                ->join('modifier_options as mo', 'im.modifier_option_id', '=', 'mo.id')
+                ->whereIn('im.item_id', $itemIds)
+                ->select(
+                    'im.item_id',
+                    'im.modifier_id',
+                    'm.name as modifier_name',
+                    'im.modifier_option_id',
+                    'mo.name as option_name'
+                )
+                ->orderBy('im.item_id')
+                ->orderBy('m.name')
+                ->orderBy('mo.name')
+                ->get();
+        } elseif (
+            Schema::hasTable('item_modifier_options') &&
+            Schema::hasColumn('item_modifier_options', 'item_id') &&
+            Schema::hasColumn('item_modifier_options', 'modifier_option_id')
+        ) {
+            $rows = DB::table('item_modifier_options as im')
+                ->join('modifier_options as mo', 'im.modifier_option_id', '=', 'mo.id')
+                ->join('modifiers as m', 'mo.modifier_id', '=', 'm.id')
+                ->whereIn('im.item_id', $itemIds)
+                ->select(
+                    'im.item_id',
+                    'm.id as modifier_id',
+                    'm.name as modifier_name',
+                    'im.modifier_option_id',
+                    'mo.name as option_name'
+                )
+                ->orderBy('im.item_id')
+                ->orderBy('m.name')
+                ->orderBy('mo.name')
+                ->get();
+        } else {
+            return collect();
+        }
 
         $map = [];
         foreach ($rows as $row) {
