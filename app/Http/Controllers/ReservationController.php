@@ -19,6 +19,8 @@ use App\Models\PaymentType;
 
 class ReservationController extends Controller
 {
+    private const DEFAULT_RESERVATION_DURATION_MINUTES = 120;
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -826,6 +828,8 @@ class ReservationController extends Controller
                 'reservation_date' => 'required|date',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
+                'selected_table_ids' => 'nullable|array|min:1',
+                'selected_table_ids.*' => 'integer|min:1',
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
                 'dp' => 'nullable|numeric|min:0',
@@ -876,6 +880,7 @@ class ReservationController extends Controller
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
+                'reservation_duration_minutes' => 'nullable|integer|min:30|max:360',
             ]);
 
             $outlet = Outlet::where('id_outlet', $validated['outlet_id'])->first();
@@ -890,8 +895,15 @@ class ReservationController extends Controller
 
             $guestCount = (int) $validated['number_of_guests'];
             $smokingPreference = $validated['smoking_preference'] ?? null;
+            $durationMinutes = (int) ($validated['reservation_duration_minutes'] ?? self::DEFAULT_RESERVATION_DURATION_MINUTES);
             $hasSettingTable = Schema::hasTable('pos_design_table_reservation_settings');
             $hasSmokingTypeColumn = $hasSettingTable && Schema::hasColumn('pos_design_table_reservation_settings', 'smoking_type');
+            $occupiedTableIds = $this->getOccupiedTableIdsForWindow(
+                (int) $validated['outlet_id'],
+                (string) $validated['reservation_date'],
+                (string) $validated['reservation_time'],
+                $durationMinutes
+            );
 
             $sections = DB::table('pos_design_sections_sync')
                 ->where('kode_outlet', $kodeOutlet)
@@ -1057,6 +1069,37 @@ class ReservationController extends Controller
                 ->take(8)
                 ->values();
 
+            $tablesBySection = $tablesBySection->map(function ($items) use ($occupiedTableIds) {
+                return $items->map(function ($table) use ($occupiedTableIds) {
+                    $tableId = (int) $table->source_table_id;
+                    $isOccupied = in_array($tableId, $occupiedTableIds, true);
+                    if ($isOccupied) {
+                        $table->available = false;
+                        $table->selectable = false;
+                    }
+                    $table->occupied = $isOccupied;
+                    return $table;
+                })->values();
+            });
+
+            $tableCombinations = $tableCombinations
+                ->filter(function ($combo) use ($occupiedTableIds) {
+                    foreach ($combo['table_ids'] as $tableId) {
+                        if (in_array((int) $tableId, $occupiedTableIds, true)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
+                ->values();
+
+            $availableCount = $tablesBySection
+                ->flatten(1)
+                ->filter(function ($table) {
+                    return (bool) ($table->available ?? false);
+                })
+                ->count();
+
             return response()->json([
                 'message' => $availableCount > 0 ? 'Table tersedia' : 'Tidak ada meja yang cocok',
                 'data' => [
@@ -1070,6 +1113,7 @@ class ReservationController extends Controller
                         'reservation_time' => $validated['reservation_time'],
                         'number_of_guests' => $guestCount,
                         'smoking_preference' => $smokingPreference,
+                        'reservation_duration_minutes' => $durationMinutes,
                     ],
                     'sections' => $sections,
                     'tables_by_section' => $tablesBySection,
@@ -1084,6 +1128,51 @@ class ReservationController extends Controller
             \Log::error('Reservation apiAvailabilityLayout: ' . $e->getMessage());
             return response()->json(['message' => 'Gagal cek ketersediaan meja'], 500);
         }
+    }
+
+    private function getOccupiedTableIdsForWindow(
+        int $outletId,
+        string $reservationDate,
+        string $reservationTime,
+        int $durationMinutes
+    ): array {
+        if (!Schema::hasTable('reservations') || !Schema::hasColumn('reservations', 'selected_table_ids')) {
+            return [];
+        }
+
+        $windowStart = Carbon::parse($reservationDate . ' ' . $reservationTime);
+        $windowEnd = (clone $windowStart)->addMinutes($durationMinutes);
+
+        $rows = DB::table('reservations')
+            ->where('outlet_id', $outletId)
+            ->whereDate('reservation_date', $reservationDate)
+            ->whereIn('status', ['pending', 'confirmed', 'arrived'])
+            ->whereNotNull('selected_table_ids')
+            ->get(['reservation_time', 'selected_table_ids']);
+
+        $occupied = [];
+        foreach ($rows as $row) {
+            $rowStart = Carbon::parse($reservationDate . ' ' . (string) $row->reservation_time);
+            $rowEnd = (clone $rowStart)->addMinutes(self::DEFAULT_RESERVATION_DURATION_MINUTES);
+
+            $isOverlap = $windowStart < $rowEnd && $rowStart < $windowEnd;
+            if (!$isOverlap) {
+                continue;
+            }
+
+            $tableIds = json_decode((string) $row->selected_table_ids, true);
+            if (!is_array($tableIds)) {
+                continue;
+            }
+            foreach ($tableIds as $tableId) {
+                $id = (int) $tableId;
+                if ($id > 0) {
+                    $occupied[$id] = true;
+                }
+            }
+        }
+
+        return array_map('intval', array_keys($occupied));
     }
 
     public function apiUpdate(Request $request, $id)
