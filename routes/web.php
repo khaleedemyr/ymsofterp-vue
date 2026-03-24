@@ -242,6 +242,10 @@ Route::middleware('auth')->group(function () {
     // Viewer layout POS Design hasil sinkronisasi
     Route::get('/admin/pos-design-sync-layout', [PosDesignSyncMonitorController::class, 'layout'])
         ->name('admin.pos-design-sync-layout.index');
+
+    // Update setting reservasi meja hasil sinkronisasi
+    Route::post('/admin/pos-design-sync-layout/reservation-setting', [PosDesignSyncMonitorController::class, 'updateReservationSetting'])
+        ->name('admin.pos-design-sync-layout.reservation-setting');
 });
 
 // API routes for coaching (outside middleware group)

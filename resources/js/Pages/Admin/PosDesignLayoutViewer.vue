@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Head } from '@inertiajs/vue3';
 
@@ -34,6 +35,11 @@ const canvasWidth = 1200;
 const canvasHeight = 900;
 
 const activeSectionId = ref(props.sections[0]?.source_section_id ?? null);
+const selectedTableId = ref(null);
+const reservationDraft = ref(true);
+const smokingTypeDraft = ref('non_smoking');
+const isSavingReservation = ref(false);
+const reservationMessage = ref({ type: '', text: '' });
 
 watch(
   () => props.sections,
@@ -61,6 +67,35 @@ const currentAccessories = computed(() => {
   return props.accessoriesBySection?.[activeSectionId.value] || props.accessoriesBySection?.[String(activeSectionId.value)] || [];
 });
 
+watch(
+  () => currentTables.value,
+  (tables) => {
+    if (!tables.length) {
+      selectedTableId.value = null;
+      reservationDraft.value = true;
+      smokingTypeDraft.value = 'non_smoking';
+      return;
+    }
+
+    const exists = tables.some((table) => Number(table.source_table_id) === Number(selectedTableId.value));
+    if (!exists) {
+      selectedTableId.value = Number(tables[0].source_table_id);
+      reservationDraft.value = !!tables[0].allow_reservation;
+      smokingTypeDraft.value = tables[0].smoking_type || 'non_smoking';
+    }
+  },
+  { immediate: true }
+);
+
+const selectedTable = computed(() => {
+  return currentTables.value.find((table) => Number(table.source_table_id) === Number(selectedTableId.value)) || null;
+});
+
+const selectedOutletLabel = computed(() => {
+  const found = props.outletOptions.find((outlet) => outlet.code === props.selectedOutlet);
+  return found?.label || props.selectedOutlet;
+});
+
 const tableStyle = (table) => ({
   position: 'absolute',
   left: `${Number(table.x || 0)}px`,
@@ -76,6 +111,44 @@ const accessoryStyle = (accessory) => ({
   left: `${Number(accessory.x || 0)}px`,
   top: `${Number(accessory.y || 0)}px`,
 });
+
+const isTableSelected = (table) => Number(table.source_table_id) === Number(selectedTableId.value);
+
+const selectTable = (table) => {
+  selectedTableId.value = Number(table.source_table_id);
+  reservationDraft.value = !!table.allow_reservation;
+  smokingTypeDraft.value = table.smoking_type || 'non_smoking';
+  reservationMessage.value = { type: '', text: '' };
+};
+
+const saveReservationSetting = async () => {
+  if (!props.selectedOutlet || !selectedTable.value) {
+    return;
+  }
+
+  isSavingReservation.value = true;
+  reservationMessage.value = { type: '', text: '' };
+
+  try {
+    await axios.post('/admin/pos-design-sync-layout/reservation-setting', {
+      kode_outlet: props.selectedOutlet,
+      source_table_id: Number(selectedTable.value.source_table_id),
+      allow_reservation: !!reservationDraft.value,
+      smoking_type: smokingTypeDraft.value,
+    });
+
+    selectedTable.value.allow_reservation = !!reservationDraft.value;
+    selectedTable.value.smoking_type = smokingTypeDraft.value;
+    reservationMessage.value = { type: 'success', text: 'Setting meja berhasil disimpan.' };
+  } catch (error) {
+    reservationMessage.value = {
+      type: 'error',
+      text: error?.response?.data?.message || 'Gagal menyimpan setting reservasi.',
+    };
+  } finally {
+    isSavingReservation.value = false;
+  }
+};
 
 const renderTableSvg = (table) => {
   const warna = table.warna || '#2563eb';
@@ -304,20 +377,91 @@ const renderAccessorySvg = (accessory) => {
                 v-for="table in currentTables"
                 :key="`table-${table.source_table_id}`"
                 :style="tableStyle(table)"
-                class="pointer-events-none"
+                class="cursor-pointer"
+                @click="selectTable(table)"
               >
-                <div v-html="renderTableSvg(table)" />
+                <div
+                  class="rounded-xl transition"
+                  :class="isTableSelected(table) ? 'ring-4 ring-blue-300 ring-offset-2' : ''"
+                  v-html="renderTableSvg(table)"
+                />
                 <div class="rounded-md bg-white/95 px-2 py-1 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200">
                   {{ table.nama || '-' }}
                 </div>
+                <span
+                  class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                  :class="table.allow_reservation ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                >
+                  Reservasi {{ table.allow_reservation ? 'ON' : 'OFF' }}
+                </span>
+                <span
+                  class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                  :class="(table.smoking_type || 'non_smoking') === 'smoking' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'"
+                >
+                  {{ (table.smoking_type || 'non_smoking') === 'smoking' ? 'Smoking' : 'Non Smoking' }}
+                </span>
               </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 class="text-sm font-bold uppercase tracking-wide text-slate-700">Setting Reservasi Meja</h3>
+            <p class="mt-1 text-xs text-slate-500">Klik meja di canvas, lalu aktifkan/nonaktifkan reservasi.</p>
+
+            <div v-if="selectedTable" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <div><span class="font-semibold">Outlet:</span> {{ selectedOutletLabel }}</div>
+                <div><span class="font-semibold">Meja:</span> {{ selectedTable.nama || '-' }}</div>
+                <div><span class="font-semibold">Source Table ID:</span> {{ selectedTable.source_table_id }}</div>
+              </div>
+
+              <div class="rounded-lg border border-slate-200 p-3">
+                <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input v-model="reservationDraft" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  Izinkan reservasi untuk meja ini
+                </label>
+
+                <div class="mt-3">
+                  <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Kategori Area</label>
+                  <select
+                    v-model="smokingTypeDraft"
+                    class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    <option value="non_smoking">Non Smoking</option>
+                    <option value="smoking">Smoking</option>
+                  </select>
+                </div>
+
+                <div class="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                    :disabled="isSavingReservation"
+                    @click="saveReservationSetting"
+                  >
+                    {{ isSavingReservation ? 'Menyimpan...' : 'Simpan Setting' }}
+                  </button>
+                </div>
+
+                <p
+                  v-if="reservationMessage.text"
+                  class="mt-2 text-xs font-semibold"
+                  :class="reservationMessage.type === 'success' ? 'text-emerald-600' : 'text-rose-600'"
+                >
+                  {{ reservationMessage.text }}
+                </p>
+              </div>
+            </div>
+
+            <div v-else class="mt-3 rounded-lg border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+              Belum ada meja yang dipilih.
             </div>
           </div>
 
           <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs uppercase tracking-wide text-slate-500">Outlet</div>
-              <div class="mt-1 text-lg font-bold text-slate-800">{{ selectedOutlet }}</div>
+              <div class="mt-1 text-lg font-bold text-slate-800">{{ selectedOutletLabel }}</div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs uppercase tracking-wide text-slate-500">Total Meja di Section</div>

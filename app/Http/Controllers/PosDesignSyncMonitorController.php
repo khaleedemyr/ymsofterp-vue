@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 
 class PosDesignSyncMonitorController extends Controller
@@ -181,6 +182,21 @@ class PosDesignSyncMonitorController extends Controller
         $sections = collect();
         $tablesBySection = collect();
         $accessoriesBySection = collect();
+        $reservationSettings = collect();
+        $hasSmokingTypeColumn = Schema::hasTable('pos_design_table_reservation_settings')
+            && Schema::hasColumn('pos_design_table_reservation_settings', 'smoking_type');
+
+        if ($selectedOutlet && Schema::hasTable('pos_design_table_reservation_settings')) {
+            $settingColumns = ['source_table_id', 'allow_reservation'];
+            if ($hasSmokingTypeColumn) {
+                $settingColumns[] = 'smoking_type';
+            }
+
+            $reservationSettings = DB::table('pos_design_table_reservation_settings')
+                ->where('kode_outlet', $selectedOutlet)
+                ->get($settingColumns)
+                ->keyBy('source_table_id');
+        }
 
         if ($selectedOutlet) {
             $sections = DB::table('pos_design_sections_sync')
@@ -203,6 +219,12 @@ class PosDesignSyncMonitorController extends Controller
                     'x',
                     'y',
                 ])
+                ->map(function ($table) use ($reservationSettings) {
+                    $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
+                    $table->allow_reservation = $setting ? ((int) $setting->allow_reservation === 1) : true;
+                    $table->smoking_type = $setting && $setting->smoking_type ? $setting->smoking_type : 'non_smoking';
+                    return $table;
+                })
                 ->groupBy('source_section_id')
                 ->map(function ($items) {
                     return $items->values();
@@ -233,6 +255,82 @@ class PosDesignSyncMonitorController extends Controller
             'sections' => $sections,
             'tablesBySection' => $tablesBySection,
             'accessoriesBySection' => $accessoriesBySection,
+        ]);
+    }
+
+    public function updateReservationSetting(Request $request)
+    {
+        if (!Schema::hasTable('pos_design_table_reservation_settings')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Table setting reservasi belum tersedia. Jalankan SQL create table terlebih dahulu.',
+            ], 500);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'kode_outlet' => 'required|string|max:50',
+            'source_table_id' => 'required|integer',
+            'allow_reservation' => 'required|boolean',
+            'smoking_type' => 'required|in:smoking,non_smoking',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $kodeOutlet = $request->input('kode_outlet');
+        $sourceTableId = (int) $request->input('source_table_id');
+        $allowReservation = (bool) $request->input('allow_reservation');
+        $smokingType = $request->input('smoking_type');
+        $hasSmokingTypeColumn = Schema::hasColumn('pos_design_table_reservation_settings', 'smoking_type');
+
+        $existing = DB::table('pos_design_table_reservation_settings')
+            ->where('kode_outlet', $kodeOutlet)
+            ->where('source_table_id', $sourceTableId)
+            ->first();
+
+        if ($existing) {
+            $updatePayload = [
+                'allow_reservation' => $allowReservation ? 1 : 0,
+                'updated_by' => auth()->id(),
+                'updated_at' => now(),
+            ];
+            if ($hasSmokingTypeColumn) {
+                $updatePayload['smoking_type'] = $smokingType;
+            }
+
+            DB::table('pos_design_table_reservation_settings')
+                ->where('id', $existing->id)
+                ->update($updatePayload);
+        } else {
+            $insertPayload = [
+                'kode_outlet' => $kodeOutlet,
+                'source_table_id' => $sourceTableId,
+                'allow_reservation' => $allowReservation ? 1 : 0,
+                'updated_by' => auth()->id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            if ($hasSmokingTypeColumn) {
+                $insertPayload['smoking_type'] = $smokingType;
+            }
+
+            DB::table('pos_design_table_reservation_settings')->insert($insertPayload);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Setting reservasi berhasil disimpan.',
+            'data' => [
+                'kode_outlet' => $kodeOutlet,
+                'source_table_id' => $sourceTableId,
+                'allow_reservation' => $allowReservation,
+                'smoking_type' => $smokingType,
+            ],
         ]);
     }
 }
