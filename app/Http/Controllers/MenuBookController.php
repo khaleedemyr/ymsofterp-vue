@@ -898,73 +898,42 @@ class MenuBookController extends Controller
         ]);
 
         $outletId = (int) $validated['outlet_id'];
-        $menuBook = MenuBook::where('status', 'active')
-            ->whereHas('outlets', function ($q) use ($outletId) {
-                $q->where('id_outlet', $outletId);
-            })
-            ->whereHas('pages', function ($q) {
-                $q->where('status', 'active');
-            })
-            ->orderBy('id')
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet', 'qr_code', 'region_id')
             ->first();
-
-        if (!$menuBook) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Menu self-order belum tersedia untuk outlet ini.',
-            ], 404);
-        }
-
-        $outlet = $this->getMenuBookOutletByOutletId($menuBook->id, $outletId);
         if (!$outlet) {
             return response()->json([
                 'success' => false,
-                'message' => 'Outlet tidak ditemukan untuk menu book ini.',
+                'message' => 'Outlet tidak ditemukan.',
             ], 404);
         }
 
-        $pages = $menuBook->pages()
-            ->where('status', 'active')
-            ->with(['items:id,name,category_id,sub_category_id,status', 'categories'])
-            ->orderBy('page_order', 'asc')
-            ->get();
+        // Referensi item by outlet/region mengikuti pola PosSyncController::syncItems.
+        // Menu book hanya dipakai untuk konteks checkout (menu_book_id), bukan filter daftar item.
+        $items = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->select(
+                'i.id',
+                'i.name',
+                'i.description',
+                'i.category_id',
+                'i.sub_category_id',
+                'i.status',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
+                DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price) as price')
+            )
+            ->orderBy('i.name')
+            ->distinct()
+            ->get()
+            ->values();
 
-        $directItemIds = $pages->flatMap(function ($page) {
-            return $page->items->pluck('id');
-        })->unique()->values();
-
-        $categoryFilters = $pages->flatMap(function ($page) {
-            return $page->categories->map(function ($category) {
-                return [
-                    'category_id' => $category->id,
-                    'sub_category_id' => $category->pivot->sub_category_id,
-                ];
-            });
-        })->values();
-
-        $categoryItemIds = collect();
-        if ($categoryFilters->isNotEmpty()) {
-            $categoryItemIds = DB::table('items')
-                ->where('status', 'active')
-                ->where(function ($query) use ($categoryFilters) {
-                    foreach ($categoryFilters as $filter) {
-                        $query->orWhere(function ($subQuery) use ($filter) {
-                            $subQuery->where('category_id', $filter['category_id']);
-
-                            if (!empty($filter['sub_category_id'])) {
-                                $subQuery->where('sub_category_id', $filter['sub_category_id']);
-                            }
-                        });
-                    }
-                })
-                ->pluck('id');
-        }
-
-        $itemIds = $directItemIds->merge($categoryItemIds)->unique()->values();
-        $items = collect();
-        if ($itemIds->isNotEmpty()) {
-            $items = $this->buildAvailableItemQuery($outlet->id_outlet, $outlet->region_id)
-                ->whereIn('i.id', $itemIds->all())
+        // Fallback: jika availability belum rapi, tetap tampilkan item active yang punya harga.
+        if ($items->isEmpty()) {
+            $items = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
                 ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
                 ->select(
@@ -976,57 +945,45 @@ class MenuBookController extends Controller
                     'i.status',
                     'c.name as category_name',
                     'sc.name as sub_category_name',
-                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price) as price')
+                    DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price, 0) as price')
                 )
+                ->where(function ($query) {
+                    $query->whereNotNull('ip_outlet.id')
+                        ->orWhereNotNull('ip_region.id')
+                        ->orWhereNotNull('ip_all.id');
+                })
                 ->orderBy('i.name')
                 ->distinct()
                 ->get()
                 ->values();
+        }
 
+        $imageMap = collect();
+        if ($items->isNotEmpty()) {
             $imageMap = DB::table('item_images')
                 ->whereIn('item_id', $items->pluck('id')->all())
                 ->select('item_id', DB::raw('MIN(COALESCE(image_path, path)) as image_path'))
                 ->groupBy('item_id')
                 ->pluck('image_path', 'item_id');
-
-            $items = $items
-                ->map(function ($item) {
-                    $item->price = (float) ($item->price ?? 0);
-                    return $item;
-                })
-                ->map(function ($item) use ($imageMap) {
-                    $item->image_path = $imageMap[$item->id] ?? null;
-                    return $item;
-                })
-                ->values();
-
-            if ($items->isEmpty()) {
-                $items = $this->buildFallbackItemPriceQuery($outlet->id_outlet, $outlet->region_id)
-                    ->whereIn('i.id', $itemIds->all())
-                    ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-                    ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
-                    ->select(
-                        'i.id',
-                        'i.name',
-                        'i.description',
-                        'i.category_id',
-                        'i.sub_category_id',
-                        'i.status',
-                        'c.name as category_name',
-                        'sc.name as sub_category_name',
-                        DB::raw('COALESCE(ip_outlet.price, ip_region.price, ip_all.price, 0) as price')
-                    )
-                    ->orderBy('i.name')
-                    ->distinct()
-                    ->get()
-                    ->map(function ($item) use ($imageMap) {
-                        $item->price = (float) ($item->price ?? 0);
-                        $item->image_path = $imageMap[$item->id] ?? null;
-                        return $item;
-                    })
-                    ->values();
-            }
         }
+
+        $items = $items
+            ->map(function ($item) {
+                $item->price = (float) ($item->price ?? 0);
+                return $item;
+            })
+            ->map(function ($item) use ($imageMap) {
+                $item->image_path = $imageMap[$item->id] ?? null;
+                return $item;
+            })
+            ->values();
+
+        $menuBook = MenuBook::where('status', 'active')
+            ->whereHas('outlets', function ($q) use ($outletId) {
+                $q->where('id_outlet', $outletId);
+            })
+            ->orderBy('id')
+            ->first();
 
         $categories = $items
             ->filter(fn ($item) => !empty($item->category_id) && !empty($item->category_name))
@@ -1041,8 +998,8 @@ class MenuBookController extends Controller
             'success' => true,
             'data' => [
                 'menu_book' => [
-                    'id' => $menuBook->id,
-                    'name' => $menuBook->name,
+                    'id' => $menuBook?->id,
+                    'name' => $menuBook?->name ?? 'Self Order',
                 ],
                 'outlet' => [
                     'id_outlet' => $outlet->id_outlet,
