@@ -864,6 +864,142 @@ class ReservationController extends Controller
         }
     }
 
+    /**
+     * Check availability + return table layout snapshot for reservation flow (public website).
+     */
+    public function apiAvailabilityLayout(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+                'reservation_date' => 'required|date|after:today',
+                'reservation_time' => 'required',
+                'number_of_guests' => 'required|integer|min:1',
+                'smoking_preference' => 'nullable|in:smoking,non_smoking',
+            ]);
+
+            $outlet = Outlet::where('id_outlet', $validated['outlet_id'])->first();
+            if (!$outlet) {
+                return response()->json(['message' => 'Outlet tidak ditemukan'], 404);
+            }
+
+            $kodeOutlet = trim((string) ($outlet->qr_code ?? ''));
+            if ($kodeOutlet === '') {
+                return response()->json(['message' => 'Outlet belum memiliki kode outlet (qr_code)'], 422);
+            }
+
+            $guestCount = (int) $validated['number_of_guests'];
+            $smokingPreference = $validated['smoking_preference'] ?? null;
+            $hasSettingTable = Schema::hasTable('pos_design_table_reservation_settings');
+            $hasSmokingTypeColumn = $hasSettingTable && Schema::hasColumn('pos_design_table_reservation_settings', 'smoking_type');
+
+            $sections = DB::table('pos_design_sections_sync')
+                ->where('kode_outlet', $kodeOutlet)
+                ->orderBy('source_section_id')
+                ->get(['source_section_id', 'nama'])
+                ->values();
+
+            $accessoriesBySection = DB::table('pos_design_accessories_sync')
+                ->where('kode_outlet', $kodeOutlet)
+                ->orderBy('source_accessory_id')
+                ->get([
+                    'source_accessory_id',
+                    'source_section_id',
+                    'type',
+                    'x',
+                    'y',
+                    'panjang',
+                    'orientasi',
+                ])
+                ->groupBy('source_section_id')
+                ->map(function ($items) {
+                    return $items->values();
+                });
+
+            $reservationSettings = collect();
+            if ($hasSettingTable) {
+                $settingColumns = ['source_table_id', 'allow_reservation'];
+                if ($hasSmokingTypeColumn) {
+                    $settingColumns[] = 'smoking_type';
+                }
+                $reservationSettings = DB::table('pos_design_table_reservation_settings')
+                    ->where('kode_outlet', $kodeOutlet)
+                    ->get($settingColumns)
+                    ->keyBy('source_table_id');
+            }
+
+            $allTables = DB::table('pos_design_tables_sync')
+                ->where('kode_outlet', $kodeOutlet)
+                ->orderBy('source_table_id')
+                ->get([
+                    'source_table_id',
+                    'source_section_id',
+                    'nama',
+                    'tipe',
+                    'bentuk',
+                    'orientasi',
+                    'jumlah_kursi',
+                    'warna',
+                    'x',
+                    'y',
+                ]);
+
+            $availableCount = 0;
+            $tablesBySection = $allTables
+                ->map(function ($table) use ($reservationSettings, $guestCount, $smokingPreference, &$availableCount) {
+                    $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
+                    $allowReservation = $setting ? ((int) $setting->allow_reservation === 1) : true;
+                    $tableSmokingType = ($setting && !empty($setting->smoking_type)) ? $setting->smoking_type : 'non_smoking';
+                    $seatingCapacity = max(0, (int) ($table->jumlah_kursi ?? 0));
+                    $isReservableType = (($table->tipe ?? 'biasa') === 'biasa');
+                    $smokingMatch = !$smokingPreference || $tableSmokingType === $smokingPreference;
+                    $capacityMatch = $seatingCapacity >= $guestCount;
+                    $isAvailable = $isReservableType && $allowReservation && $smokingMatch && $capacityMatch;
+
+                    if ($isAvailable) {
+                        $availableCount++;
+                    }
+
+                    $table->allow_reservation = $allowReservation;
+                    $table->smoking_type = $tableSmokingType;
+                    $table->seating_capacity = $seatingCapacity;
+                    $table->available = $isAvailable;
+
+                    return $table;
+                })
+                ->groupBy('source_section_id')
+                ->map(function ($items) {
+                    return $items->values();
+                });
+
+            return response()->json([
+                'message' => $availableCount > 0 ? 'Table tersedia' : 'Tidak ada meja yang cocok',
+                'data' => [
+                    'outlet' => [
+                        'id' => (int) $outlet->id_outlet,
+                        'kode_outlet' => $kodeOutlet,
+                        'name' => $outlet->nama_outlet,
+                    ],
+                    'filters' => [
+                        'reservation_date' => $validated['reservation_date'],
+                        'reservation_time' => $validated['reservation_time'],
+                        'number_of_guests' => $guestCount,
+                        'smoking_preference' => $smokingPreference,
+                    ],
+                    'sections' => $sections,
+                    'tables_by_section' => $tablesBySection,
+                    'accessories_by_section' => $accessoriesBySection,
+                    'available_table_count' => $availableCount,
+                ],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Reservation apiAvailabilityLayout: ' . $e->getMessage());
+            return response()->json(['message' => 'Gagal cek ketersediaan meja'], 500);
+        }
+    }
+
     public function apiUpdate(Request $request, $id)
     {
         $reservation = Reservation::find($id);
