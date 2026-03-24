@@ -26,6 +26,11 @@ class PosDesignSyncMonitorController extends Controller
             ->groupBy('kode_outlet')
             ->pluck('total_tables', 'kode_outlet');
 
+        $seatingCapacityTotals = DB::table('pos_design_tables_sync')
+            ->select('kode_outlet', DB::raw('COALESCE(SUM(CASE WHEN tipe = "biasa" THEN jumlah_kursi ELSE 0 END), 0) as total_seating_capacity'))
+            ->groupBy('kode_outlet')
+            ->pluck('total_seating_capacity', 'kode_outlet');
+
         $accessoryCounts = DB::table('pos_design_accessories_sync')
             ->select('kode_outlet', DB::raw('COUNT(*) as total_accessories'))
             ->groupBy('kode_outlet')
@@ -64,14 +69,23 @@ class PosDesignSyncMonitorController extends Controller
             ->sort()
             ->values();
 
+        $outletNameMap = collect();
+        if (Schema::hasTable('tbl_data_outlet') && Schema::hasColumn('tbl_data_outlet', 'qr_code') && Schema::hasColumn('tbl_data_outlet', 'nama_outlet')) {
+            $outletNameMap = DB::table('tbl_data_outlet')
+                ->whereIn('qr_code', $allOutletCodes->all())
+                ->pluck('nama_outlet', 'qr_code');
+        }
+
         $summary = $allOutletCodes
-            ->map(function ($kodeOutlet) use ($sectionCounts, $tableCounts, $accessoryCounts, $lastSuccessSync, $lastStatusByOutlet) {
+            ->map(function ($kodeOutlet) use ($sectionCounts, $tableCounts, $seatingCapacityTotals, $accessoryCounts, $lastSuccessSync, $lastStatusByOutlet, $outletNameMap) {
                 $lastStatus = $lastStatusByOutlet->get($kodeOutlet);
 
                 return [
                     'kode_outlet' => $kodeOutlet,
+                    'nama_outlet' => $outletNameMap[$kodeOutlet] ?? null,
                     'sections_count' => (int) ($sectionCounts[$kodeOutlet] ?? 0),
                     'tables_count' => (int) ($tableCounts[$kodeOutlet] ?? 0),
+                    'total_seating_capacity' => (int) ($seatingCapacityTotals[$kodeOutlet] ?? 0),
                     'accessories_count' => (int) ($accessoryCounts[$kodeOutlet] ?? 0),
                     'last_synced_at' => $lastSuccessSync[$kodeOutlet] ?? null,
                     'last_status' => $lastStatus->status ?? null,
@@ -88,6 +102,7 @@ class PosDesignSyncMonitorController extends Controller
             ->select(
                 DB::raw('NULL as id'),
                 DB::raw('NULL as kode_outlet'),
+                DB::raw('NULL as nama_outlet'),
                 DB::raw('NULL as status'),
                 DB::raw('0 as sections_count'),
                 DB::raw('0 as tables_count'),
@@ -101,22 +116,27 @@ class PosDesignSyncMonitorController extends Controller
             ->withQueryString();
 
         if ($hasSyncLogTable) {
-            $logsQuery = DB::table('pos_design_sync_logs')
+            $logsQuery = DB::table('pos_design_sync_logs as logs')
+                ->leftJoin('tbl_data_outlet as outlet', 'logs.kode_outlet', '=', 'outlet.qr_code')
                 ->select(
-                    'id',
-                    'kode_outlet',
-                    'status',
-                    'sections_count',
-                    'tables_count',
-                    'accessories_count',
-                    'message',
-                    'synced_at',
-                    'created_at'
+                    'logs.id',
+                    'logs.kode_outlet',
+                    'outlet.nama_outlet',
+                    'logs.status',
+                    'logs.sections_count',
+                    'logs.tables_count',
+                    'logs.accessories_count',
+                    'logs.message',
+                    'logs.synced_at',
+                    'logs.created_at'
                 )
-                ->orderByDesc('id');
+                ->orderByDesc('logs.id');
 
             if ($outletFilter) {
-                $logsQuery->where('kode_outlet', 'like', '%' . $outletFilter . '%');
+                $logsQuery->where(function ($query) use ($outletFilter) {
+                    $query->where('logs.kode_outlet', 'like', '%' . $outletFilter . '%')
+                        ->orWhere('outlet.nama_outlet', 'like', '%' . $outletFilter . '%');
+                });
             }
 
             if ($statusFilter) {

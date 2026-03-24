@@ -87,8 +87,10 @@ const statusClass = (status) => {
               <thead class="bg-slate-100 text-slate-600 uppercase text-xs">
                 <tr>
                   <th class="px-4 py-3 text-left">Kode Outlet</th>
+                  <th class="px-4 py-3 text-left">Nama Outlet</th>
                   <th class="px-4 py-3 text-right">Sections</th>
                   <th class="px-4 py-3 text-right">Tables</th>
+                  <th class="px-4 py-3 text-right">Total Seating Capacity</th>
                   <th class="px-4 py-3 text-right">Accessories</th>
                   <th class="px-4 py-3 text-left">Last Success Sync</th>
                   <th class="px-4 py-3 text-left">Last Status</th>
@@ -98,12 +100,14 @@ const statusClass = (status) => {
               </thead>
               <tbody>
                 <tr v-if="summary.length === 0">
-                  <td colspan="8" class="px-4 py-8 text-center text-slate-400">Belum ada data sinkronisasi</td>
+                  <td colspan="10" class="px-4 py-8 text-center text-slate-400">Belum ada data sinkronisasi</td>
                 </tr>
                 <tr v-for="row in summary" :key="row.kode_outlet" class="border-t border-slate-100 hover:bg-slate-50">
                   <td class="px-4 py-3 font-semibold text-slate-800">{{ row.kode_outlet }}</td>
+                  <td class="px-4 py-3 text-slate-700">{{ row.nama_outlet || '-' }}</td>
                   <td class="px-4 py-3 text-right">{{ row.sections_count }}</td>
                   <td class="px-4 py-3 text-right">{{ row.tables_count }}</td>
+                  <td class="px-4 py-3 text-right font-semibold text-slate-800">{{ row.total_seating_capacity }}</td>
                   <td class="px-4 py-3 text-right">{{ row.accessories_count }}</td>
                   <td class="px-4 py-3">{{ row.last_synced_at || '-' }}</td>
                   <td class="px-4 py-3">
@@ -136,6 +140,7 @@ const statusClass = (status) => {
                 <tr>
                   <th class="px-4 py-3 text-left">Waktu</th>
                   <th class="px-4 py-3 text-left">Kode Outlet</th>
+                  <th class="px-4 py-3 text-left">Nama Outlet</th>
                   <th class="px-4 py-3 text-left">Status</th>
                   <th class="px-4 py-3 text-right">Sections</th>
                   <th class="px-4 py-3 text-right">Tables</th>
@@ -145,11 +150,12 @@ const statusClass = (status) => {
               </thead>
               <tbody>
                 <tr v-if="logs.data.length === 0">
-                  <td colspan="7" class="px-4 py-8 text-center text-slate-400">Belum ada histori sync</td>
+                  <td colspan="8" class="px-4 py-8 text-center text-slate-400">Belum ada histori sync</td>
                 </tr>
                 <tr v-for="log in logs.data" :key="log.id" class="border-t border-slate-100 hover:bg-slate-50">
                   <td class="px-4 py-3">{{ log.synced_at || log.created_at }}</td>
                   <td class="px-4 py-3 font-semibold text-slate-800">{{ log.kode_outlet }}</td>
+                  <td class="px-4 py-3 text-slate-700">{{ log.nama_outlet || '-' }}</td>
                   <td class="px-4 py-3">
                     <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="statusClass(log.status)">
                       {{ log.status }}

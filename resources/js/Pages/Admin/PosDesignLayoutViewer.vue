@@ -70,18 +70,20 @@ const currentAccessories = computed(() => {
 watch(
   () => currentTables.value,
   (tables) => {
-    if (!tables.length) {
+    const clickableTables = tables.filter((table) => isBiasaTable(table));
+
+    if (!clickableTables.length) {
       selectedTableId.value = null;
       reservationDraft.value = true;
       smokingTypeDraft.value = 'non_smoking';
       return;
     }
 
-    const exists = tables.some((table) => Number(table.source_table_id) === Number(selectedTableId.value));
+    const exists = clickableTables.some((table) => Number(table.source_table_id) === Number(selectedTableId.value));
     if (!exists) {
-      selectedTableId.value = Number(tables[0].source_table_id);
-      reservationDraft.value = !!tables[0].allow_reservation;
-      smokingTypeDraft.value = tables[0].smoking_type || 'non_smoking';
+      selectedTableId.value = Number(clickableTables[0].source_table_id);
+      reservationDraft.value = !!clickableTables[0].allow_reservation;
+      smokingTypeDraft.value = clickableTables[0].smoking_type || 'non_smoking';
     }
   },
   { immediate: true }
@@ -96,6 +98,29 @@ const selectedOutletLabel = computed(() => {
   return found?.label || props.selectedOutlet;
 });
 
+const getTableSeatingCapacity = (table) => {
+  if ((table?.tipe || 'biasa') !== 'biasa') {
+    return 0;
+  }
+
+  const capacity = Number(table?.jumlah_kursi || 0);
+  return Number.isFinite(capacity) && capacity > 0 ? capacity : 0;
+};
+
+function isBiasaTable(table) {
+  return (table?.tipe || 'biasa') === 'biasa';
+}
+
+const currentSectionSeatingCapacity = computed(() => {
+  return currentTables.value.reduce((sum, table) => sum + getTableSeatingCapacity(table), 0);
+});
+
+const totalOutletSeatingCapacity = computed(() => {
+  return Object.values(props.tablesBySection || {})
+    .flat()
+    .reduce((sum, table) => sum + getTableSeatingCapacity(table), 0);
+});
+
 const tableStyle = (table) => ({
   position: 'absolute',
   left: `${Number(table.x || 0)}px`,
@@ -103,7 +128,7 @@ const tableStyle = (table) => ({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
-  gap: '6px',
+  gap: '2px',
 });
 
 const accessoryStyle = (accessory) => ({
@@ -115,6 +140,10 @@ const accessoryStyle = (accessory) => ({
 const isTableSelected = (table) => Number(table.source_table_id) === Number(selectedTableId.value);
 
 const selectTable = (table) => {
+  if (!isBiasaTable(table)) {
+    return;
+  }
+
   selectedTableId.value = Number(table.source_table_id);
   reservationDraft.value = !!table.allow_reservation;
   smokingTypeDraft.value = table.smoking_type || 'non_smoking';
@@ -377,29 +406,45 @@ const renderAccessorySvg = (accessory) => {
                 v-for="table in currentTables"
                 :key="`table-${table.source_table_id}`"
                 :style="tableStyle(table)"
-                class="cursor-pointer"
+                :class="isBiasaTable(table) ? 'cursor-pointer' : 'pointer-events-none'"
                 @click="selectTable(table)"
               >
                 <div
-                  class="rounded-xl transition"
+                  class="relative inline-block rounded-xl transition"
                   :class="isTableSelected(table) ? 'ring-4 ring-blue-300 ring-offset-2' : ''"
-                  v-html="renderTableSvg(table)"
-                />
-                <div class="rounded-md bg-white/95 px-2 py-1 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200">
-                  {{ table.nama || '-' }}
+                >
+                  <div v-html="renderTableSvg(table)" />
+                  <div v-if="isBiasaTable(table)" class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <span
+                      class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                      :class="getTableSeatingCapacity(table) > 0 ? 'bg-violet-100/95 text-violet-700 ring-1 ring-violet-200' : 'bg-slate-100/95 text-slate-500 ring-1 ring-slate-200'"
+                    >
+                      Seat {{ getTableSeatingCapacity(table) > 0 ? getTableSeatingCapacity(table) : '-' }}
+                    </span>
+                  </div>
                 </div>
-                <span
-                  class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                  :class="table.allow_reservation ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
-                >
-                  Reservasi {{ table.allow_reservation ? 'ON' : 'OFF' }}
-                </span>
-                <span
-                  class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                  :class="(table.smoking_type || 'non_smoking') === 'smoking' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'"
-                >
-                  {{ (table.smoking_type || 'non_smoking') === 'smoking' ? 'Smoking' : 'Non Smoking' }}
-                </span>
+
+                <div class="flex items-center gap-1 rounded-md bg-white/95 px-2 py-0.5 text-xs font-bold text-slate-800 shadow-sm ring-1 ring-slate-200">
+                  <span>{{ table.nama || '-' }}</span>
+
+                  <span
+                    v-if="isBiasaTable(table)"
+                    class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-black leading-none"
+                    :class="table.allow_reservation ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                    :title="table.allow_reservation ? 'Reservasi ON' : 'Reservasi OFF'"
+                  >
+                    {{ table.allow_reservation ? 'R' : 'NR' }}
+                  </span>
+
+                  <span
+                    v-if="isBiasaTable(table)"
+                    class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-black leading-none"
+                    :class="(table.smoking_type || 'non_smoking') === 'smoking' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'"
+                    :title="(table.smoking_type || 'non_smoking') === 'smoking' ? 'Smoking' : 'Non Smoking'"
+                  >
+                    {{ (table.smoking_type || 'non_smoking') === 'smoking' ? 'S' : 'NS' }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -413,6 +458,7 @@ const renderAccessorySvg = (accessory) => {
                 <div><span class="font-semibold">Outlet:</span> {{ selectedOutletLabel }}</div>
                 <div><span class="font-semibold">Meja:</span> {{ selectedTable.nama || '-' }}</div>
                 <div><span class="font-semibold">Source Table ID:</span> {{ selectedTable.source_table_id }}</div>
+                <div><span class="font-semibold">Seating Capacity:</span> {{ getTableSeatingCapacity(selectedTable) > 0 ? getTableSeatingCapacity(selectedTable) : '-' }}</div>
               </div>
 
               <div class="rounded-lg border border-slate-200 p-3">
@@ -458,7 +504,7 @@ const renderAccessorySvg = (accessory) => {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs uppercase tracking-wide text-slate-500">Outlet</div>
               <div class="mt-1 text-lg font-bold text-slate-800">{{ selectedOutletLabel }}</div>
@@ -468,9 +514,17 @@ const renderAccessorySvg = (accessory) => {
               <div class="mt-1 text-lg font-bold text-slate-800">{{ currentTables.length }}</div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="text-xs uppercase tracking-wide text-slate-500">Total Aksesoris di Section</div>
-              <div class="mt-1 text-lg font-bold text-slate-800">{{ currentAccessories.length }}</div>
+              <div class="text-xs uppercase tracking-wide text-slate-500">Seating Capacity Section</div>
+              <div class="mt-1 text-lg font-bold text-slate-800">{{ currentSectionSeatingCapacity }}</div>
             </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div class="text-xs uppercase tracking-wide text-slate-500">Seating Capacity Outlet</div>
+              <div class="mt-1 text-lg font-bold text-slate-800">{{ totalOutletSeatingCapacity }}</div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500 shadow-sm">
+            Catatan: perhitungan seating capacity hanya menghitung meja dengan tipe = biasa.
           </div>
         </div>
       </div>
