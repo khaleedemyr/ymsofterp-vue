@@ -40,9 +40,12 @@ class ChallengeController extends Controller
                 // Include all others (no end_date, or end_date in future, or start_date in future)
                 return true;
             });
-            
+            // Penting: reset key collection jadi 0,1,2… Supaya json_encode jadi JSON array [], bukan object {}.
+            // Object membuat Flutter (List.from) gagal parse → challenge tidak muncul di member app.
+            $challenges = $challenges->values();
+
             \Log::info('Challenges API - After date filter: ' . $challenges->count() . ' challenges');
-            
+
             $challenges = $challenges
                 ->map(function ($challenge) {
                     // Build full URL for image
