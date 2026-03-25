@@ -297,7 +297,9 @@ class StockCutController extends Controller
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
                                                 // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
-                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty);
+                                                $bomQty = $this->toNumeric($bomItem['qty']);
+                                                $modifierQtyValue = $this->toNumeric($modifierQty);
+                                                $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomQty * $modifierQtyValue);
                                             }
                                         }
                                     }
@@ -915,7 +917,9 @@ class StockCutController extends Controller
                                                     $kebutuhanBahan[$key]['contributing_menus'] = [];
                                                 }
                                                 // modifierQty dari POS = total porsi modifier; pakai = BOM × modifierQty (tidak × oi->qty)
-                                                $kebutuhanBahan[$key]['qty'] += ($bomItem['qty'] * $modifierQty);
+                                                $bomQty = $this->toNumeric($bomItem['qty']);
+                                                $modifierQtyValue = $this->toNumeric($modifierQty);
+                                                $kebutuhanBahan[$key]['qty'] += ($bomQty * $modifierQtyValue);
                                                 
                                                 // Track menu yang berkontribusi (dengan modifier) - group by menu name + modifier
                                                 $menuKey = $oi->item_name . ' + ' . $modifierName;
@@ -928,8 +932,8 @@ class StockCutController extends Controller
                                                 foreach ($kebutuhanBahan[$key]['contributing_menus'] as &$menu) {
                                                     if ($menu['menu_name'] === $menuKey && $menu['type'] === 'modifier') {
                                                         $menu['menu_qty'] += $oi->qty;
-                                                        $menu['modifier_qty'] += $modifierQty;
-                                                        $menu['total_contributed'] += ($bomItem['qty'] * $modifierQty);
+                                                        $menu['modifier_qty'] += $modifierQtyValue;
+                                                        $menu['total_contributed'] += ($bomQty * $modifierQtyValue);
                                                         $foundMenu = true;
                                                         break;
                                                     }
@@ -940,9 +944,9 @@ class StockCutController extends Controller
                                                     $kebutuhanBahan[$key]['contributing_menus'][] = [
                                                         'menu_name' => $oi->item_name . ' + ' . $modifierName,
                                                         'menu_qty' => $oi->qty,
-                                                        'modifier_qty' => $modifierQty,
-                                                        'bom_qty_per_modifier' => $bomItem['qty'],
-                                                        'total_contributed' => $bomItem['qty'] * $modifierQty,
+                                                        'modifier_qty' => $modifierQtyValue,
+                                                        'bom_qty_per_modifier' => $bomQty,
+                                                        'total_contributed' => $bomQty * $modifierQtyValue,
                                                         'type' => 'modifier'
                                                     ];
                                                 }
@@ -2191,4 +2195,28 @@ class StockCutController extends Controller
             'outlet_id' => $id_outlet
         ]);
     }
-} 
+    private function toNumeric($value): float
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return 0.0;
+            }
+
+            $normalized = str_replace(',', '.', $value);
+            if (is_numeric($normalized)) {
+                return (float) $normalized;
+            }
+
+            if (preg_match('/-?\d+(?:[.,]\d+)?/', $value, $matches) === 1) {
+                return (float) str_replace(',', '.', $matches[0]);
+            }
+        }
+
+        return 0.0;
+    }
+}
