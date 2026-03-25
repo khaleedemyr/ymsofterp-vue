@@ -106,7 +106,8 @@ class ChallengeController extends Controller
                         'start_date' => $startDate,
                         'end_date' => $endDate,
                         'valid_until' => $validUntil,
-                        'challenge_type_id' => $challenge->challenge_type_id,
+                        // String agar kompatibel dengan parser mobile lama (Dart cast ke String)
+                        'challenge_type_id' => $this->challengeTypeIdForApi($challenge->challenge_type_id),
                         'validity_period_days' => $challenge->validity_period_days,
                         'rules' => $enrichedRules,
                         'challenge_all_outlets' => $challengeAllOutlets,
@@ -239,7 +240,7 @@ class ChallengeController extends Controller
                     'start_date' => $startDate,
                     'end_date' => $endDate,
                     'valid_until' => $validUntil,
-                    'challenge_type_id' => $challenge->challenge_type_id,
+                    'challenge_type_id' => $this->challengeTypeIdForApi($challenge->challenge_type_id),
                     'validity_period_days' => $challenge->validity_period_days,
                     'rules' => $enrichedRules,
                     'progress' => $progress,
@@ -556,6 +557,19 @@ class ChallengeController extends Controller
         }
 
         return $rules;
+    }
+
+    /**
+     * Mobile member app (Flutter) mem-parse challenge_type_id sebagai String.
+     * JSON number menyebabkan cast gagal dan seluruh daftar challenge kosong.
+     */
+    private function challengeTypeIdForApi($value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (string) $value;
     }
 }
 
