@@ -18,6 +18,10 @@ class GooglePlacesService
 
     public function getPlaceDetails($placeId)
     {
+        if (!is_string($this->apiKey) || trim($this->apiKey) === '') {
+            throw new \Exception('Google Places API key is not configured (GOOGLE_PLACES_API_KEY).');
+        }
+
         $cacheKey = "place_details_{$placeId}";
         
         return Cache::remember($cacheKey, now()->addHours(24), function () use ($placeId) {
@@ -27,14 +31,25 @@ class GooglePlacesService
                 'key' => $this->apiKey
             ]);
 
-            if ($response->successful()) {
-                $data = $response->json();
-                if ($data['status'] === 'OK') {
-                    return $this->formatPlaceDetails($data['result']);
-                }
+            $data = $response->json();
+
+            if ($response->successful() && ($data['status'] ?? null) === 'OK') {
+                return $this->formatPlaceDetails($data['result'] ?? []);
             }
 
-            throw new \Exception('Failed to fetch place details: ' . ($data['status'] ?? 'Unknown error'));
+            $status = $data['status'] ?? 'Unknown';
+            $errorMessage = $data['error_message'] ?? null;
+
+            \Log::error('GooglePlacesService: place details request failed', [
+                'http_status' => $response->status(),
+                'google_status' => $status,
+                'google_error_message' => $errorMessage,
+                'place_id' => $placeId,
+                'verify' => $this->resolveVerifyOption(),
+            ]);
+
+            $suffix = $errorMessage ? " ({$errorMessage})" : '';
+            throw new \Exception("Failed to fetch place details: {$status}{$suffix}");
         });
     }
 
