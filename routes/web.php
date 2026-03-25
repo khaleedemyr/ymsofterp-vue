@@ -48,7 +48,6 @@ use App\Http\Controllers\FoodStockBalanceController;
 use App\Http\Controllers\RepackController;
 use App\Http\Controllers\ButcherProcessController;
 use App\Http\Controllers\MKProductionController;
-use App\Http\Controllers\ScrapperGoogleReviewController;
 use App\Http\Controllers\GoogleReviewController;
 use App\Http\Controllers\ButcherReportController;
 use App\Http\Controllers\StockCostReportController;
@@ -149,6 +148,14 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile/documents', [ProfileController::class, 'updateDocuments'])->name('profile.update-documents');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
+
+    // Google Review scraper routes
+    Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');
+    Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeReviews'])->name('google-review.fetch');
+    Route::get('/scraped-reviews', [GoogleReviewController::class, 'getScrapedReviews'])->name('google-review.scraped');
+
+    // Backward-compatibility for old menu/link path
+    Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
     
     // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
     Route::get('/api/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals'])->name('pending-approvals.all');

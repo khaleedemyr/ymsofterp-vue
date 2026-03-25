@@ -21,7 +21,7 @@ class GooglePlacesService
         $cacheKey = "place_details_{$placeId}";
         
         return Cache::remember($cacheKey, now()->addHours(24), function () use ($placeId) {
-            $response = Http::get("{$this->baseUrl}/details/json", [
+            $response = $this->httpClient()->get("{$this->baseUrl}/details/json", [
                 'place_id' => $placeId,
                 'fields' => 'name,rating,reviews,formatted_address,geometry',
                 'key' => $this->apiKey
@@ -117,7 +117,7 @@ class GooglePlacesService
     protected function getPlaceIdFromCoordinates($lat, $lng)
     {
         // Use Places API to get place ID from coordinates
-        $response = Http::get("{$this->baseUrl}/nearbysearch/json", [
+        $response = $this->httpClient()->get("{$this->baseUrl}/nearbysearch/json", [
             'location' => "{$lat},{$lng}",
             'radius' => 50, // 50 meters
             'key' => $this->apiKey
@@ -156,5 +156,39 @@ class GooglePlacesService
             ],
             'reviews' => $reviews
         ];
+    }
+
+    protected function httpClient()
+    {
+        return Http::withOptions([
+            'verify' => $this->resolveVerifyOption(),
+        ]);
+    }
+
+    protected function resolveVerifyOption()
+    {
+        $curlCaInfo = ini_get('curl.cainfo');
+        $opensslCaFile = ini_get('openssl.cafile');
+
+        if ($this->isReadableFile($curlCaInfo)) {
+            return $curlCaInfo;
+        }
+
+        if ($this->isReadableFile($opensslCaFile)) {
+            return $opensslCaFile;
+        }
+
+        // Fallback for local environments with broken CA path configuration.
+        \Log::warning('GooglePlacesService: CA file not found, disabling SSL verify for this request.', [
+            'curl.cainfo' => $curlCaInfo,
+            'openssl.cafile' => $opensslCaFile,
+        ]);
+
+        return false;
+    }
+
+    protected function isReadableFile($path)
+    {
+        return is_string($path) && $path !== '' && file_exists($path) && is_readable($path);
     }
 } 
