@@ -65,6 +65,97 @@ class ApifyGoogleReviewsService
         ];
     }
 
+    public function startScrapeByPlaceId(string $placeId, int $maxReviews = 200, string $sort = 'newest'): array
+    {
+        if (trim($this->token) === '') {
+            throw new \Exception('APIFY_TOKEN belum diset di .env');
+        }
+
+        $url = "https://www.google.com/maps/place/?q=place_id:{$placeId}";
+        $run = $this->runActor([
+            'startUrls' => [
+                ['url' => $url],
+            ],
+            'maxReviews' => $maxReviews,
+            'reviewsSort' => $sort,
+        ]);
+
+        $datasetId = $run['defaultDatasetId'] ?? null;
+        if (!$datasetId) {
+            throw new \Exception('Apify run tidak mengembalikan defaultDatasetId');
+        }
+
+        $datasetInfo = $this->getDatasetInfo($datasetId);
+        $place = $this->getPlaceFromDataset($datasetId);
+
+        return [
+            'datasetId' => $datasetId,
+            'itemCount' => (int)($datasetInfo['itemCount'] ?? 0),
+            'place' => $place,
+        ];
+    }
+
+    public function getReviewsPageFromDataset(string $datasetId, int $page = 1, int $perPage = 20): array
+    {
+        $page = max(1, $page);
+        $perPage = max(1, min(200, $perPage));
+        $offset = ($page - 1) * $perPage;
+
+        $datasetInfo = $this->getDatasetInfo($datasetId);
+        $items = $this->getDatasetItems($datasetId, $offset, $perPage);
+
+        $reviews = collect($items)->map(function ($item) {
+            $time = 0;
+            if (!empty($item['publishedAtDate'])) {
+                $time = strtotime($item['publishedAtDate']) ?: 0;
+            }
+
+            return [
+                'author' => (string)($item['name'] ?? ''),
+                'rating' => (string)($item['stars'] ?? ''),
+                'date' => (string)($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
+                'text' => (string)($item['text'] ?? ''),
+                'profile_photo' => (string)($item['reviewerPhotoUrl'] ?? ''),
+                'time' => (int)$time,
+            ];
+        })->values()->all();
+
+        $total = (int)($datasetInfo['itemCount'] ?? 0);
+        $lastPage = (int) max(1, (int) ceil($total / $perPage));
+
+        return [
+            'reviews' => $reviews,
+            'meta' => [
+                'page' => $page,
+                'perPage' => $perPage,
+                'total' => $total,
+                'lastPage' => $lastPage,
+            ],
+        ];
+    }
+
+    public function exportDatasetReviewsToCsv(string $datasetId, callable $writer): void
+    {
+        $datasetInfo = $this->getDatasetInfo($datasetId);
+        $total = (int)($datasetInfo['itemCount'] ?? 0);
+
+        $writer(['Author', 'Rating', 'Date', 'Text', 'Profile Photo']);
+
+        $limit = 200;
+        for ($offset = 0; $offset < $total; $offset += $limit) {
+            $items = $this->getDatasetItems($datasetId, $offset, $limit);
+            foreach ($items as $item) {
+                $writer([
+                    (string)($item['name'] ?? ''),
+                    (string)($item['stars'] ?? ''),
+                    (string)($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
+                    (string)($item['text'] ?? ''),
+                    (string)($item['reviewerPhotoUrl'] ?? ''),
+                ]);
+            }
+        }
+    }
+
     protected function runActorAndGetDatasetItems(array $input): array
     {
         $run = $this->runActor($input);
@@ -91,7 +182,7 @@ class ApifyGoogleReviewsService
         return $data['data'] ?? [];
     }
 
-    protected function getDatasetItems(string $datasetId): array
+    protected function getDatasetItems(string $datasetId, int $offset = 0, int $limit = 0): array
     {
         $response = $this->httpClient()
             ->timeout(180)
@@ -99,6 +190,8 @@ class ApifyGoogleReviewsService
             'token' => $this->token,
             'clean' => 1,
             'format' => 'json',
+            'offset' => max(0, $offset),
+            'limit' => $limit > 0 ? min(200, $limit) : null,
         ]);
 
         if (!$response->successful()) {
@@ -107,6 +200,39 @@ class ApifyGoogleReviewsService
 
         $items = $response->json();
         return is_array($items) ? $items : [];
+    }
+
+    protected function getDatasetInfo(string $datasetId): array
+    {
+        $response = $this->httpClient()
+            ->timeout(60)
+            ->get("https://api.apify.com/v2/datasets/{$datasetId}", [
+                'token' => $this->token,
+            ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("Gagal ambil info dataset Apify ({$response->status()})");
+        }
+
+        $data = $response->json();
+        return $data['data'] ?? [];
+    }
+
+    protected function getPlaceFromDataset(string $datasetId): array
+    {
+        $items = $this->getDatasetItems($datasetId, 0, 1);
+
+        $placeName = (string)($items[0]['title'] ?? 'Apify Google Reviews');
+        $address = (string)($items[0]['address'] ?? '');
+        $rating = $items[0]['totalScore'] ?? '';
+        $location = $items[0]['location'] ?? null;
+
+        return [
+            'name' => $placeName,
+            'address' => $address,
+            'rating' => $rating,
+            'location' => $location,
+        ];
     }
 
     protected function httpClient()

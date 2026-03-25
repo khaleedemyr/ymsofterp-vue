@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\GooglePlacesService;
 use App\Services\ApifyGoogleReviewsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class GoogleReviewController extends Controller
 {
@@ -25,7 +26,7 @@ class GoogleReviewController extends Controller
             ->get();
 
         return inertia('google-review/Index', [
-            'outlets' => $outlets
+            'outlets' => $outlets,
         ]);
     }
 
@@ -153,15 +154,27 @@ class GoogleReviewController extends Controller
             $placeId = $request->input('place_id');
             $maxReviews = (int)($request->input('max_reviews') ?? 200);
 
-            $result = $this->apifyService->fetchReviewsByPlaceId($placeId, $maxReviews, 'newest');
+            $started = $this->apifyService->startScrapeByPlaceId($placeId, $maxReviews, 'newest');
+
+            $userId = optional($request->user())->id ?? 'guest';
+            $cacheKey = $this->apifyCacheKey($userId, $placeId);
+            Cache::put($cacheKey, [
+                'datasetId' => $started['datasetId'],
+                'placeId' => $placeId,
+                'place' => $started['place'],
+                'itemCount' => $started['itemCount'],
+            ], now()->addHours(6));
 
             $payload = [
                 'success' => true,
-                'place' => $result['place'],
-                'reviews' => $result['reviews'],
+                'place_id' => $placeId,
+                'dataset_id' => $started['datasetId'],
+                'place' => $started['place'],
+                'item_count' => $started['itemCount'],
             ];
 
             if ($request->hasHeader('X-Inertia')) {
+                // Do NOT flash large review payload into session (DB session payload can overflow).
                 return redirect()->back()->with('result', $payload);
             }
 
@@ -180,5 +193,63 @@ class GoogleReviewController extends Controller
 
             return response()->json($payload, 500);
         }
+    }
+
+    public function apifyItems(Request $request)
+    {
+        $request->validate([
+            'dataset_id' => 'required|string',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        try {
+            $datasetId = $request->input('dataset_id');
+            $page = (int)($request->input('page') ?? 1);
+            $perPage = (int)($request->input('per_page') ?? 20);
+
+            $data = $this->apifyService->getReviewsPageFromDataset($datasetId, $page, $perPage);
+            return response()->json([
+                'success' => true,
+                'reviews' => $data['reviews'],
+                'meta' => $data['meta'],
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching Apify dataset items: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function exportApify(Request $request)
+    {
+        $request->validate([
+            'dataset_id' => 'required|string',
+        ]);
+
+        $datasetId = $request->input('dataset_id');
+        $filename = 'google-reviews-' . date('Ymd-His') . '.csv';
+
+        return response()->streamDownload(function () use ($datasetId) {
+            $out = fopen('php://output', 'w');
+            if ($out === false) {
+                return;
+            }
+
+            $this->apifyService->exportDatasetReviewsToCsv($datasetId, function (array $row) use ($out) {
+                fputcsv($out, $row);
+            });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    protected function apifyCacheKey($userId, string $placeId): string
+    {
+        return 'google-review:apify:' . $userId . ':' . $placeId;
     }
 } 

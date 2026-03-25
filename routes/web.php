@@ -153,6 +153,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');
     Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeReviews'])->name('google-review.fetch');
     Route::post('/google-review/fetch-apify', [GoogleReviewController::class, 'scrapeReviewsApify'])->name('google-review.fetch-apify');
+    Route::get('/google-review/apify/items', [GoogleReviewController::class, 'apifyItems'])->name('google-review.apify.items');
+    Route::get('/google-review/apify/export', [GoogleReviewController::class, 'exportApify'])->name('google-review.apify.export');
     Route::get('/scraped-reviews', [GoogleReviewController::class, 'getScrapedReviews'])->name('google-review.scraped');
 
     // Backward-compatibility for old menu/link path
