@@ -48,6 +48,7 @@ class ChallengeController extends Controller
 
             $challenges = $challenges
                 ->map(function ($challenge) {
+                    try {
                     // Build full URL for image
                     $imageUrl = null;
                     if ($challenge->image) {
@@ -116,7 +117,16 @@ class ChallengeController extends Controller
                         'challenge_all_outlets' => $challengeAllOutlets,
                         'challenge_outlets' => $challengeOutlets,
                     ];
-                });
+                    } catch (\Throwable $e) {
+                        \Log::warning('Challenges API index: skipped row', [
+                            'challenge_id' => $challenge->id ?? null,
+                            'error' => $e->getMessage(),
+                        ]);
+                        return null;
+                    }
+                })
+                ->filter(fn ($row) => $row !== null)
+                ->values();
 
             $result = $challenges->toArray();
             \Log::info('Challenges API - Returning ' . count($result) . ' challenges');
