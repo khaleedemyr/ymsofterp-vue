@@ -54,7 +54,10 @@
             </div>
           </div>
 
-          <div v-if="loading" class="notice">Proses scrape berjalan…</div>
+          <div v-if="loading" class="notice notice-loading">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Proses scrape berjalan…</span>
+          </div>
           <div v-if="error" class="notice notice-error">{{ error }}</div>
         </div>
 
@@ -84,7 +87,10 @@
             </div>
           </div>
 
-          <div v-if="loadingItems" class="notice">Loading halaman review…</div>
+          <div v-if="loadingItems" class="notice notice-loading">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Loading halaman review…</span>
+          </div>
 
           <div class="review-list">
             <div v-for="review in reviews" :key="reviewKey(review)" class="review-card">
@@ -396,6 +402,25 @@ function initials(name) {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   padding: 10px 12px;
+}
+.notice-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(17, 24, 39, 0.18);
+  border-top-color: rgba(37, 99, 235, 0.9);
+  animation: spin 0.85s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .notice-error {
   background: #fef2f2;
