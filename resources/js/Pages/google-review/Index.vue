@@ -12,6 +12,7 @@
           </select>
           <button type="submit" class="btn">Ambil Review API</button>
           <button type="button" class="btn btn-scraper" @click="fetchScrapedReviews">Ambil Review Scraper</button>
+          <button type="button" class="btn btn-apify" @click="fetchApifyReviews">Ambil Review Apify</button>
         </form>
 
         <div v-if="loading" class="mt-4">Loading...</div>
@@ -110,6 +111,22 @@ function fetchScrapedReviews() {
       loading.value = false
     })
 }
+
+function fetchApifyReviews() {
+  loading.value = true
+  error.value = ''
+  router.post(
+    '/google-review/fetch-apify',
+    { place_id: selectedOutlet.value, max_reviews: 500 },
+    {
+      preserveState: true,
+      onError: (err) => {
+        error.value = err.error || 'Gagal ambil review Apify'
+        loading.value = false
+      }
+    }
+  )
+}
 </script>
 
 <style scoped>
@@ -129,6 +146,9 @@ function fetchScrapedReviews() {
 }
 .btn-scraper {
   background: #059669;
+}
+.btn-apify {
+  background: #7c3aed;
 }
 .review-list {
   margin-top: 1.5rem;

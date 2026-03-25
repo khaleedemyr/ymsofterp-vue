@@ -3,15 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Services\GooglePlacesService;
+use App\Services\ApifyGoogleReviewsService;
 use Illuminate\Http\Request;
 
 class GoogleReviewController extends Controller
 {
     protected $placesService;
+    protected $apifyService;
 
-    public function __construct(GooglePlacesService $placesService)
+    public function __construct(GooglePlacesService $placesService, ApifyGoogleReviewsService $apifyService)
     {
         $this->placesService = $placesService;
+        $this->apifyService = $apifyService;
     }
 
     public function index()
@@ -131,5 +134,51 @@ class GoogleReviewController extends Controller
             'success' => true,
             'reviews' => $reviews,
         ]);
+    }
+
+    public function scrapeReviewsApify(Request $request)
+    {
+        $request->validate([
+            'place_id' => 'required|string',
+            'max_reviews' => 'nullable|integer|min:1|max:2000',
+        ]);
+
+        \Log::info('GoogleReviewController@scrapeReviewsApify', [
+            'place_id' => $request->input('place_id'),
+            'max_reviews' => $request->input('max_reviews'),
+            'is_inertia' => $request->hasHeader('X-Inertia'),
+        ]);
+
+        try {
+            $placeId = $request->input('place_id');
+            $maxReviews = (int)($request->input('max_reviews') ?? 200);
+
+            $result = $this->apifyService->fetchReviewsByPlaceId($placeId, $maxReviews, 'newest');
+
+            $payload = [
+                'success' => true,
+                'place' => $result['place'],
+                'reviews' => $result['reviews'],
+            ];
+
+            if ($request->hasHeader('X-Inertia')) {
+                return redirect()->back()->with('result', $payload);
+            }
+
+            return response()->json($payload);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching Apify reviews: ' . $e->getMessage());
+
+            $payload = [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+
+            if ($request->hasHeader('X-Inertia')) {
+                return redirect()->back()->with('result', $payload);
+            }
+
+            return response()->json($payload, 500);
+        }
     }
 } 
