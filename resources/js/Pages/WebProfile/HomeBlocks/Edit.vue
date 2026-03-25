@@ -213,6 +213,9 @@ function submit() {
           />
           <InputError :message="errors.video" class="mt-1" />
           <p class="text-xs text-gray-500 mt-1">MP4 / WEBM, maks. <strong>100 MB</strong>.</p>
+          <p class="text-xs text-gray-500 mt-1">
+            Justus Nest: tampilan <strong>16:9</strong>, video memenuhi kotak (pinggir bisa terpotong). Disarankan <strong>1920×1080</strong> atau minimal <strong>1280×720</strong> (16:9); subjek penting di tengah.
+          </p>
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Caption" />

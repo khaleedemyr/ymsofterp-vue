@@ -64,8 +64,9 @@ function submit() {
         <div>
           <InputLabel value="Gambar blok *" />
           <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => form.image = e.target.files?.[0] || null" />
-          <p class="mt-1 text-xs text-gray-500">
-            Rekomendasi ukuran gambar blok: <strong>1200x900</strong> (rasio 4:3), minimal 1000x750.
+          <p class="mt-1 max-w-3xl text-xs text-gray-500">
+            Justus Nest — blok gambar: di desktop kolom ±setengah lebar layar, tinggi baris 340px (md) / 380px (lg); di mobile tinggi 260px, lebar penuh. Ditampilkan memenuhi kotak (crop dari tengah).
+            Disarankan landscape min. 1600×900 atau 1920×1080; hindari portrait; fokus di tengah. JPG/PNG/WEBP, maks. 5 MB (batas upload).
           </p>
           <InputError class="mt-1" :message="errors.image" />
         </div>

@@ -121,9 +121,10 @@ async function destroyBlock(id) {
               class="mt-1 block text-sm"
               @change="(e) => { heroFile = e.target.files?.[0] || null; removeHero = false; }"
             />
-            <p class="mt-1 text-xs text-gray-500">
-              Rekomendasi ukuran: <strong>1920x1080</strong> (16:9), minimal 1280x720.
-              Video: MP4/WEBM maksimal 50 MB.
+            <p class="mt-2 max-w-3xl text-xs text-gray-500">
+              Justus Nest — header: lebar penuh layar, tinggi minimal sekitar 56% viewport; gambar atau video memenuhi area (crop dari tengah), lalu overlay gelap.
+              Gambar: landscape disarankan 1920×1080 atau 2560×1440 (retina), minimal 1280×720; titik penting di tengah frame.
+              Video: MP4/WEBM, disarankan 16:9 (mis. 1920×1080), pinggir bisa terpotong; maks. 50 MB (batas upload).
             </p>
           </div>
           <label v-if="hero_image_path" class="flex items-center gap-2 text-sm text-gray-700">

@@ -221,7 +221,10 @@ function cancel() {
               @change="handleLogoCpChange"
             />
             <InputError :message="errors.logo_cp" class="mt-2" />
-            <p class="mt-1 text-sm text-gray-500">Digunakan untuk logo brand di company profile. Recommended: PNG transparan, Max 5MB.</p>
+            <p class="mt-1 text-sm text-gray-500">
+              Dipakai di company profile dan logo hover menu BRAND di Justus Nest (lingkaran ~130×130 px di layar; area gambar terlihat ~90×90 px, proporsi dipertahankan).
+              Disarankan: gambar persegi, min. 256×256 px (512×512 untuk retina), PNG transparan, logo di tengah dengan sedikit margin. Max 5MB.
+            </p>
             <div v-if="logoCpPreview" class="mt-4">
               <img :src="logoCpPreview" alt="Logo company profile preview" class="w-40 h-40 object-contain rounded-lg border-2 border-gray-300 bg-white p-2" />
             </div>

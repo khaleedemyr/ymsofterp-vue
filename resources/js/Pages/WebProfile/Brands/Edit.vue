@@ -218,7 +218,10 @@ function cancel() {
               @change="handleLogoCpChange"
             />
             <InputError :message="errors.logo_cp" class="mt-2" />
-            <p class="mt-1 text-sm text-gray-500">Leave empty to keep current logo company profile</p>
+            <p class="mt-1 text-sm text-gray-500">Leave empty to keep current logo company profile.</p>
+            <p class="mt-1 text-sm text-gray-500">
+              Justus Nest (navbar BRAND hover): lingkaran ~130×130 px di layar; area gambar terlihat ~90×90 px (object-contain). Disarankan persegi min. 256×256 px (512×512 untuk retina), PNG transparan, logo di tengah dengan margin. Max 5MB.
+            </p>
             <div v-if="logoCpPreview" class="mt-4">
               <img :src="logoCpPreview" alt="Logo company profile preview" class="w-40 h-40 object-contain rounded-lg border-2 border-gray-300 bg-white p-2" />
             </div>

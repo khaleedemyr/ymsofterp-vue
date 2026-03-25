@@ -105,6 +105,11 @@ async function destroyPkg(id) {
               class="mt-1 block text-sm"
               @change="(e) => { heroFile = e.target.files?.[0] || null; removeHero = false; }"
             />
+            <p class="mt-2 max-w-3xl text-xs text-gray-500">
+              Justus Nest: gambar memenuhi area header (lebar penuh layar, tinggi mengikuti blok judul &amp; logo) dengan crop dari tengah; ada overlay gelap di atasnya.
+              Disarankan landscape <strong>1920×1080</strong> atau <strong>2560×1440</strong> (retina), minimal lebar <strong>1920 px</strong>; titik fokus di tengah frame.
+              JPG/PNG/WEBP, maks. <strong>10 MB</strong> (batas upload).
+            </p>
           </div>
           <label v-if="hero_image_path" class="flex items-center gap-2 text-sm text-gray-700">
             <input v-model="removeHero" type="checkbox" />

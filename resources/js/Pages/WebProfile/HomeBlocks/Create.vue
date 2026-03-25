@@ -183,6 +183,9 @@ function submit() {
           <p class="text-xs text-gray-500 mt-1">
             Format: MP4 / WEBM. Maksimal <strong>100 MB</strong> (lebih besar akan ditolak sebelum upload).
           </p>
+          <p class="text-xs text-gray-500 mt-1">
+            Justus Nest: kotak tampilan <strong>16:9</strong> (lebar penuh blok); video di-zoom memenuhi kotak sehingga pinggir bisa terpotong. Disarankan ekspor <strong>1920×1080</strong> atau minimal <strong>1280×720</strong>, rasio 16:9; subjek penting di tengah frame.
+          </p>
         </div>
         <div v-if="form.block_type === 'video'">
           <InputLabel value="Caption (teks besar di tengah)" />
