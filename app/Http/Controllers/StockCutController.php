@@ -400,7 +400,8 @@ class StockCutController extends Controller
             [
                 'total_items_cut' => 0,
                 'total_modifiers_cut' => 0,
-                'status' => 'processing',
+                // Keep value compatible with existing DB enum (success/failed)
+                'status' => 'success',
                 'error_message' => null,
                 'created_by' => auth()->id()
             ]
