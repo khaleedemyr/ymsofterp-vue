@@ -115,12 +115,21 @@
                   {{ formatDate(transaction.expires_at) }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <Link
-                    :href="`/manual-point/${transaction.id}`"
-                    class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-                  >
-                    <i class="fa-solid fa-eye mr-1"></i> Detail
-                  </Link>
+                  <div class="flex items-center gap-2">
+                    <Link
+                      :href="`/manual-point/${transaction.id}`"
+                      class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                    >
+                      <i class="fa-solid fa-eye mr-1"></i> Detail
+                    </Link>
+                    <button
+                      v-if="transaction.can_delete"
+                      @click="confirmDelete(transaction)"
+                      class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                    >
+                      <i class="fa-solid fa-trash mr-1"></i> Hapus
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -211,6 +220,18 @@ const resetFilters = () => {
     date_to: '',
   };
   applyFilters();
+};
+
+const confirmDelete = (transaction) => {
+  const confirmed = window.confirm(
+    `Yakin ingin menghapus injection #${transaction.id}? Point member akan otomatis dikurangi kembali.`
+  );
+
+  if (!confirmed) return;
+
+  router.delete(`/manual-point/${transaction.id}`, {
+    preserveScroll: true,
+  });
 };
 
 const formatDate = (date) => {

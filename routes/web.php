@@ -2216,6 +2216,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('manual-point/search-members', [\App\Http\Controllers\ManualPointController::class, 'searchMembers'])->name('manual-point.search-members');
     Route::post('manual-point', [\App\Http\Controllers\ManualPointController::class, 'store'])->name('manual-point.store');
     Route::get('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'show'])->name('manual-point.show');
+    Route::delete('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'destroy'])->name('manual-point.destroy');
     
     // Web Profile Routes
     Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);

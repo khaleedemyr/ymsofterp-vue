@@ -14,6 +14,21 @@
             <i class="fa-solid fa-coins"></i> Detail Point Injection
           </h1>
         </div>
+        <button
+          v-if="canDelete"
+          @click="confirmDelete"
+          class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+        >
+          <i class="fa-solid fa-trash mr-2"></i> Hapus Injection
+        </button>
+      </div>
+
+      <div
+        v-if="!canDelete && deleteBlockReason"
+        class="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg"
+      >
+        <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+        {{ deleteBlockReason }}
       </div>
 
       <!-- Transaction Info -->
@@ -110,12 +125,30 @@
 </template>
 
 <script setup>
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   transaction: Object,
+  canDelete: {
+    type: Boolean,
+    default: false,
+  },
+  deleteBlockReason: {
+    type: String,
+    default: null,
+  },
 });
+
+const confirmDelete = () => {
+  const confirmed = window.confirm(
+    `Yakin ingin menghapus injection #${props.transaction.id}? Point member akan otomatis dikurangi kembali.`
+  );
+
+  if (!confirmed) return;
+
+  router.delete(`/manual-point/${props.transaction.id}`);
+};
 
 const formatDate = (date) => {
   if (!date) return '-';
