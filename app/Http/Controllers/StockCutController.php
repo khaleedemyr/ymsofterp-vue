@@ -388,6 +388,24 @@ class StockCutController extends Controller
             'sample_items' => array_slice($kebutuhanBahan, 0, 3, true)
         ]);
         
+        // Buat/ambil log stock cut lebih awal agar semua kartu stok bisa di-link ke log ini
+        // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
+        $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
+        $stockCutLog = StockCutLog::updateOrCreate(
+            [
+                'outlet_id' => $id_outlet,
+                'tanggal' => $tanggal,
+                'type_filter' => $normalizedTypeFilterForSave
+            ],
+            [
+                'total_items_cut' => 0,
+                'total_modifiers_cut' => 0,
+                'status' => 'processing',
+                'error_message' => null,
+                'created_by' => auth()->id()
+            ]
+        );
+
         // 4. Potong stock & catat kartu stok (mengikuti pola OutletInternalUseWasteController)
         // Simpan detail stock cut untuk insert ke stock_cut_details
         $stockCutDetails = [];
@@ -514,6 +532,7 @@ class StockCutController extends Controller
                 'inventory_item_id' => $inventory_item_id,
                 'id_outlet' => $id_outlet,
                 'warehouse_outlet_id' => $warehouse_id,
+                'stock_cut_log_id' => $stockCutLog ? $stockCutLog->id : null,
                 'date' => $tanggal,
                 'reference_type' => 'order_items',
                 'reference_id' => null,
@@ -564,7 +583,7 @@ class StockCutController extends Controller
                 ->update(['stock_cut' => 1]);
         }
 
-        // 6. Catat log stock cut
+        // 6. Finalisasi log stock cut
         $totalItemsCut = count($orderItems);
         $totalModifiersCut = 0;
         
@@ -593,24 +612,15 @@ class StockCutController extends Controller
             }
         }
 
-        // Insert atau update log stock cut
-        // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
-        $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
-        
-        $stockCutLog = StockCutLog::updateOrCreate(
-            [
-                'outlet_id' => $id_outlet,
-                'tanggal' => $tanggal,
-                'type_filter' => $normalizedTypeFilterForSave
-            ],
-            [
+        if ($stockCutLog) {
+            $stockCutLog->update([
                 'total_items_cut' => $totalItemsCut,
                 'total_modifiers_cut' => $totalModifiersCut,
                 'status' => 'success',
                 'error_message' => null,
                 'created_by' => auth()->id()
-            ]
-        );
+            ]);
+        }
         
         // Insert detail stock cut ke stock_cut_details
         if (!empty($stockCutDetails) && $stockCutLog) {
@@ -1448,72 +1458,150 @@ class StockCutController extends Controller
     /**
      * API: Rollback potong stock (hapus log dan kembalikan stock)
      */
-    public function rollback($id)
+    public function rollback(Request $request, $id)
     {
-        $log = \DB::table('stock_cut_logs')->where('id', $id)->first();
-        if (!$log) {
-            return response()->json(['error' => 'Log tidak ditemukan'], 404);
-        }
-        $tanggal = $log->tanggal;
-        $id_outlet = $log->outlet_id;
-        // Ambil semua kartu stok out pada tanggal & outlet tsb
-        $cards = \DB::table('outlet_food_inventory_cards')
-            ->where('id_outlet', $id_outlet)
-            ->where('date', $tanggal)
-            ->where('reference_type', 'order_items')
-            ->get();
-        // Rollback: tambahkan kembali qty yang sudah dipotong
-        foreach ($cards as $card) {
-            \DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $card->inventory_item_id)
-                ->where('id_outlet', $id_outlet)
-                ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
-                ->increment('qty_small', $card->out_qty_small);
-        }
-        // Hapus kartu stok
-        \DB::table('outlet_food_inventory_cards')
-            ->where('id_outlet', $id_outlet)
-            ->where('date', $tanggal)
-            ->where('reference_type', 'order_items')
-            ->delete();
-        // Ambil qr_code dari tbl_data_outlet untuk rollback
-        $qr_code = \DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
-        
-        // Reset flag stock_cut di order_items berdasarkan type_filter dari log
-        $typeFilter = $log->type_filter;
-        
-        if ($typeFilter === null || $typeFilter === 'all') {
-            // Jika type_filter null atau 'all', reset semua order_items
-            \DB::table('order_items')
-                ->whereDate('created_at', $tanggal)
-                ->where('kode_outlet', $qr_code)
-                ->where('stock_cut', 1)
-                ->update(['stock_cut' => 0]);
-        } else {
-            // Filter berdasarkan type menggunakan subquery
-            $itemIdsQuery = \DB::table('items')
-                ->select('id');
-            
-            if ($typeFilter === 'food') {
-                $itemIdsQuery->whereIn('type', ['Food Asian', 'Food Western', 'Food']);
-            } elseif ($typeFilter === 'beverages') {
-                $itemIdsQuery->where('type', 'Beverages');
+        try {
+            DB::beginTransaction();
+
+            $log = DB::table('stock_cut_logs')->where('id', $id)->lockForUpdate()->first();
+            if (!$log) {
+                DB::rollBack();
+                return response()->json(['error' => 'Log tidak ditemukan'], 404);
             }
-            
-            $itemIds = $itemIdsQuery->pluck('id')->toArray();
-            
-            if (!empty($itemIds)) {
-                \DB::table('order_items')
+
+            $tanggal = $log->tanggal;
+            $id_outlet = $log->outlet_id;
+
+            // Ambil kartu stok hanya milik stock_cut_log_id ini (safe rollback)
+            $cards = DB::table('outlet_food_inventory_cards')
+                ->where('stock_cut_log_id', $id)
+                ->where('reference_type', 'order_items')
+                ->lockForUpdate()
+                ->get();
+
+            // Fallback untuk data lama yang belum punya stock_cut_log_id
+            $isLegacyFallback = false;
+            if ($cards->isEmpty()) {
+                $isLegacyFallback = true;
+                $cards = DB::table('outlet_food_inventory_cards')
+                    ->where('id_outlet', $id_outlet)
+                    ->where('date', $tanggal)
+                    ->where('reference_type', 'order_items')
+                    ->lockForUpdate()
+                    ->get();
+            }
+
+            // Rollback: tambahkan kembali qty yang sudah dipotong
+            foreach ($cards as $card) {
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('id_outlet', $id_outlet)
+                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->increment('qty_small', $card->out_qty_small);
+            }
+
+            // Hapus kartu stok
+            if ($isLegacyFallback) {
+                DB::table('outlet_food_inventory_cards')
+                    ->where('id_outlet', $id_outlet)
+                    ->where('date', $tanggal)
+                    ->where('reference_type', 'order_items')
+                    ->delete();
+            } else {
+                DB::table('outlet_food_inventory_cards')
+                    ->where('stock_cut_log_id', $id)
+                    ->where('reference_type', 'order_items')
+                    ->delete();
+            }
+
+            // Hapus detail stock cut untuk menjaga konsistensi data
+            DB::table('stock_cut_details')->where('stock_cut_log_id', $id)->delete();
+
+            // Ambil qr_code dari tbl_data_outlet untuk rollback
+            $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
+
+            // Reset flag stock_cut di order_items berdasarkan type_filter dari log
+            $typeFilter = $log->type_filter;
+
+            if ($typeFilter === null || $typeFilter === 'all') {
+                DB::table('order_items')
                     ->whereDate('created_at', $tanggal)
                     ->where('kode_outlet', $qr_code)
                     ->where('stock_cut', 1)
-                    ->whereIn('item_id', $itemIds)
                     ->update(['stock_cut' => 0]);
+            } else {
+                $itemIdsQuery = DB::table('items')->select('id');
+
+                if ($typeFilter === 'food') {
+                    $itemIdsQuery->whereIn('type', ['Food Asian', 'Food Western', 'Food']);
+                } elseif ($typeFilter === 'beverages') {
+                    $itemIdsQuery->where('type', 'Beverages');
+                }
+
+                $itemIds = $itemIdsQuery->pluck('id')->toArray();
+
+                if (!empty($itemIds)) {
+                    DB::table('order_items')
+                        ->whereDate('created_at', $tanggal)
+                        ->where('kode_outlet', $qr_code)
+                        ->where('stock_cut', 1)
+                        ->whereIn('item_id', $itemIds)
+                        ->update(['stock_cut' => 0]);
+                }
             }
+
+            $cardsCount = $cards->count();
+            $reason = $request->input('reason');
+
+            // Activity log rollback
+            try {
+                DB::table('activity_logs')->insert([
+                    'user_id' => auth()->id(),
+                    'activity_type' => 'delete',
+                    'module' => 'stock_cut',
+                    'description' => "Rollback stock cut log #{$id} untuk outlet {$id_outlet} tanggal {$tanggal}",
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'old_data' => json_encode([
+                        'stock_cut_log_id' => $id,
+                        'outlet_id' => $id_outlet,
+                        'tanggal' => $tanggal,
+                        'type_filter' => $typeFilter,
+                        'cards_affected' => $cardsCount,
+                    ]),
+                    'new_data' => json_encode([
+                        'status' => 'rolled_back',
+                        'rollback_reason' => $reason,
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            } catch (\Exception $logError) {
+                \Log::warning('StockCut rollback - activity log failed', [
+                    'stock_cut_log_id' => $id,
+                    'error' => $logError->getMessage()
+                ]);
+            }
+
+            // Hapus log stock cut terakhir
+            DB::table('stock_cut_logs')->where('id', $id)->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'cards_affected' => $cardsCount
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('StockCut rollback failed', [
+                'stock_cut_log_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'error' => 'Rollback gagal: ' . $e->getMessage()
+            ], 500);
         }
-        // Hapus log
-        \DB::table('stock_cut_logs')->where('id', $id)->delete();
-        return response()->json(['success' => true]);
     }
 
     /**
