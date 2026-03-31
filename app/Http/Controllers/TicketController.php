@@ -7,18 +7,518 @@ use App\Models\TicketCategory;
 use App\Models\TicketPriority;
 use App\Models\TicketStatus;
 use App\Models\TicketAttachment;
+use App\Models\TicketAssignment;
+use App\Models\PurchaseRequisition;
 use App\Models\Departemen;
 use App\Models\Divisi;
 use App\Models\Outlet;
 use App\Models\User;
 use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\WithMultipleSheets;
+use Maatwebsite\Excel\Concerns\WithTitle;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class TicketController extends Controller
 {
+    /**
+     * @return array{categories: \Illuminate\Support\Collection, priorities: \Illuminate\Support\Collection, divisions: \Illuminate\Support\Collection, outlets: \Illuminate\Support\Collection, issueTypes: array<int, array{excel_value: string, label: string, notes: string}>}
+     */
+    private function ticketImportMasterPayload(): array
+    {
+        $categories = TicketCategory::active()->orderBy('name')->get(['id', 'name', 'description']);
+        $priorities = TicketPriority::active()->orderBy('level')->orderBy('name')->get(['id', 'name', 'description', 'max_days', 'level']);
+        $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
+        $outlets = Outlet::active()->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet', 'lokasi', 'keterangan']);
+
+        $issueTypes = [
+            [
+                'excel_value' => 'Defect',
+                'label' => 'Defect',
+                'notes' => 'Ketik persis: Defect (huruf besar D, sisanya kecil).',
+            ],
+            [
+                'excel_value' => 'Ops Issue',
+                'label' => 'Ops Issue',
+                'notes' => 'Ketik persis: Ops Issue — ada spasi, huruf O dan I kapital.',
+            ],
+        ];
+
+        return compact('categories', 'priorities', 'divisions', 'outlets', 'issueTypes');
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    private function ticketImportReferenceExcelSheets(): array
+    {
+        $m = $this->ticketImportMasterPayload();
+
+        $categoryRows = $m['categories']->map(fn ($c) => [
+            $c->name,
+            $c->description ?? '',
+        ])->all();
+
+        $priorityRows = $m['priorities']->map(fn ($p) => [
+            $p->name,
+            $p->description ?? '',
+            (string) ($p->max_days ?? ''),
+            (string) ($p->level ?? ''),
+        ])->all();
+
+        $divisionRows = $m['divisions']->map(fn ($d) => [
+            $d->nama_divisi,
+        ])->all();
+
+        $outletRows = $m['outlets']->map(fn ($o) => [
+            $o->nama_outlet,
+            $o->lokasi ?? '',
+            $o->keterangan ?? '',
+        ])->all();
+
+        $issueRows = collect($m['issueTypes'])->map(fn ($it) => [
+            $it['excel_value'],
+            $it['notes'],
+        ])->all();
+
+        return [
+            $this->makeTicketImportReferenceSheet(
+                'Ref Category',
+                ['nilai_category (salin persis)', 'deskripsi'],
+                $categoryRows
+            ),
+            $this->makeTicketImportReferenceSheet(
+                'Ref Priority',
+                ['nilai_priority (salin persis)', 'deskripsi', 'max_days', 'level'],
+                $priorityRows
+            ),
+            $this->makeTicketImportReferenceSheet(
+                'Ref Division',
+                ['nilai_division (salin persis)'],
+                $divisionRows
+            ),
+            $this->makeTicketImportReferenceSheet(
+                'Ref Outlet',
+                ['nilai_outlet (salin persis)', 'lokasi', 'keterangan'],
+                $outletRows
+            ),
+            $this->makeTicketImportReferenceSheet(
+                'Issue Type',
+                ['nilai_issue_type (salin persis)', 'cara mengetik'],
+                $issueRows
+            ),
+        ];
+    }
+
+    private function makeTicketImportReferenceSheet(string $title, array $headings, array $rows): object
+    {
+        return new class($title, $headings, $rows) implements FromArray, WithHeadings, WithTitle, ShouldAutoSize, WithEvents {
+            public function __construct(
+                private string $sheetTitle,
+                private array $headingsArr,
+                private array $dataRows,
+            ) {}
+
+            public function title(): string
+            {
+                return $this->sheetTitle;
+            }
+
+            public function headings(): array
+            {
+                return $this->headingsArr;
+            }
+
+            public function array(): array
+            {
+                return $this->dataRows;
+            }
+
+            public function registerEvents(): array
+            {
+                $headingsCount = count($this->headingsArr);
+
+                return [
+                    AfterSheet::class => function (AfterSheet $event) use ($headingsCount) {
+                        $sheet = $event->sheet;
+                        $sheet->freezePane('A2');
+                        $lastCol = Coordinate::stringFromColumnIndex(max(1, $headingsCount));
+                        $sheet->getStyle('A1:' . $lastCol . '1')->applyFromArray([
+                            'font' => [
+                                'bold' => true,
+                                'color' => ['rgb' => 'FFFFFF'],
+                            ],
+                            'fill' => [
+                                'fillType' => 'solid',
+                                'color' => ['rgb' => '059669'],
+                            ],
+                            'alignment' => [
+                                'horizontal' => 'center',
+                                'vertical' => 'center',
+                            ],
+                        ]);
+                    },
+                ];
+            }
+        };
+    }
+
+    private function buildTicketImportTemplateDataSheet(): object
+    {
+        return new class implements FromArray, WithHeadings, WithTitle, ShouldAutoSize, WithEvents {
+            public function title(): string
+            {
+                return 'Template Data';
+            }
+
+            public function headings(): array
+            {
+                return [
+                    'title',
+                    'description',
+                    'category',
+                    'priority',
+                    'division',
+                    'outlet',
+                    'due_date',
+                    'issue_type',
+                ];
+            }
+
+            public function array(): array
+            {
+                return [
+                    [
+                        'Mesin Kasir Error',
+                        'Mesin kasir tidak bisa print struk saat jam sibuk',
+                        'IT Support',
+                        'HIGH',
+                        'IT',
+                        'Outlet A',
+                        '2026-04-10',
+                        'Defect',
+                    ],
+                    [
+                        'Stok Bahan Baku Minus',
+                        'Selisih stok tepung dan gula, perlu cek gudang',
+                        'Operasional',
+                        'MEDIUM',
+                        'OPERASIONAL',
+                        'Outlet B',
+                        '',
+                        'Ops Issue',
+                    ],
+                ];
+            }
+
+            public function registerEvents(): array
+            {
+                return [
+                    AfterSheet::class => function (AfterSheet $event) {
+                        $sheet = $event->sheet;
+                        $sheet->freezePane('A2');
+
+                        $sheet->getStyle('A1:H1')->applyFromArray([
+                            'font' => [
+                                'bold' => true,
+                                'color' => ['rgb' => 'FFFFFF'],
+                            ],
+                            'fill' => [
+                                'fillType' => 'solid',
+                                'color' => ['rgb' => '2563EB'],
+                            ],
+                            'alignment' => [
+                                'horizontal' => 'center',
+                                'vertical' => 'center',
+                            ],
+                        ]);
+
+                        $sheet->getStyle('A2:H3')->applyFromArray([
+                            'fill' => [
+                                'fillType' => 'solid',
+                                'color' => ['rgb' => 'EFF6FF'],
+                            ],
+                        ]);
+
+                        $sheet->getStyle('A1:H3')->applyFromArray([
+                            'borders' => [
+                                'allBorders' => [
+                                    'borderStyle' => 'thin',
+                                    'color' => ['rgb' => 'D1D5DB'],
+                                ],
+                            ],
+                        ]);
+
+                        $sheet->setCellValue('A5', 'Catatan:');
+                        $sheet->setCellValue('A6', '- Silakan hapus baris contoh (baris 2-3) sebelum import data final.');
+                        $sheet->setCellValue('A7', '- Kolom wajib: title, description, category, priority, division, outlet.');
+                        $sheet->setCellValue('A8', '- due_date opsional (format YYYY-MM-DD), issue_type opsional — lihat sheet "Issue Type".');
+                        $sheet->setCellValue('A9', '- Nilai category/priority/division/outlet harus sama persis dengan sheet "Ref …" di file workbook ini.');
+                        $sheet->mergeCells('A5:H5');
+                        $sheet->mergeCells('A6:H6');
+                        $sheet->mergeCells('A7:H7');
+                        $sheet->mergeCells('A8:H8');
+                        $sheet->mergeCells('A9:H9');
+                        $sheet->getStyle('A5:A9')->getFont()->setBold(true);
+                        $sheet->getStyle('A5:H9')->getAlignment()->setWrapText(true);
+                    },
+                ];
+            }
+        };
+    }
+
+    private function buildTicketImportGuideSheet(): object
+    {
+        return new class implements FromArray, WithTitle, ShouldAutoSize, WithEvents {
+            public function title(): string
+            {
+                return 'Panduan';
+            }
+
+            public function array(): array
+            {
+                return [
+                    ['PANDUAN IMPORT TICKET DARI EXCEL'],
+                    [''],
+                    ['1. Langkah Umum'],
+                    ['1) Download template dari tombol "Download Template".'],
+                    ['2) Isi data di sheet "Template Data".'],
+                    ['3) Pastikan nama category, priority, division, dan outlet sama persis dengan master (sheet Ref … di workbook template ini).'],
+                    ['4) Upload file lewat tombol "Import Excel" di menu Ticket.'],
+                    [''],
+                    ['2. Format Kolom'],
+                    ['title', 'Wajib', 'Text singkat judul ticket'],
+                    ['description', 'Wajib', 'Deskripsi detail issue'],
+                    ['category', 'Wajib', 'Salin dari sheet Ref Category — persis termasuk huruf besar/kecil'],
+                    ['priority', 'Wajib', 'Salin dari sheet Ref Priority (kolom nilai_priority)'],
+                    ['division', 'Wajib', 'Salin dari sheet Ref Division'],
+                    ['outlet', 'Wajib', 'Salin dari sheet Ref Outlet (kolom nilai_outlet)'],
+                    ['due_date', 'Opsional', 'Format: YYYY-MM-DD (contoh: 2026-04-10)'],
+                    ['issue_type', 'Opsional', 'Salin dari sheet Issue Type — hanya nilai yang terdaftar'],
+                    [''],
+                    ['3. Tips Agar Import Sukses'],
+                    ['- Jangan ubah nama header kolom di baris pertama sheet "Template Data".'],
+                    ['- Hapus baris contoh sebelum import final.'],
+                    ['- Gunakan sheet Ref … untuk copy-paste supaya tidak typo.'],
+                    ['- Jika ada error validasi, perbaiki baris yang disebutkan lalu import ulang.'],
+                ];
+            }
+
+            public function registerEvents(): array
+            {
+                return [
+                    AfterSheet::class => function (AfterSheet $event) {
+                        $sheet = $event->sheet;
+                        $sheet->mergeCells('A1:C1');
+                        $sheet->getStyle('A1:C1')->applyFromArray([
+                            'font' => [
+                                'bold' => true,
+                                'size' => 14,
+                                'color' => ['rgb' => '1D4ED8'],
+                            ],
+                        ]);
+                        $sheet->getStyle('A1:C40')->getAlignment()->setWrapText(true);
+                        $sheet->getStyle('A10:C17')->applyFromArray([
+                            'borders' => [
+                                'allBorders' => [
+                                    'borderStyle' => 'thin',
+                                    'color' => ['rgb' => 'D1D5DB'],
+                                ],
+                            ],
+                        ]);
+                        $sheet->getStyle('A10:C10')->getFont()->setBold(true);
+                        $sheet->getStyle('A10:C10')->applyFromArray([
+                            'fill' => [
+                                'fillType' => 'solid',
+                                'color' => ['rgb' => 'DBEAFE'],
+                            ],
+                        ]);
+                    },
+                ];
+            }
+        };
+    }
+
+    public function downloadImportTemplate()
+    {
+        $sheets = array_merge(
+            [
+                $this->buildTicketImportTemplateDataSheet(),
+                $this->buildTicketImportGuideSheet(),
+            ],
+            $this->ticketImportReferenceExcelSheets()
+        );
+
+        $export = new class($sheets) implements WithMultipleSheets {
+            public function __construct(private array $allSheets) {}
+
+            public function sheets(): array
+            {
+                return $this->allSheets;
+            }
+        };
+
+        return Excel::download($export, 'ticket_import_template.xlsx');
+    }
+
+    public function importFromExcel(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls|max:10240',
+        ]);
+
+        $statusOpen = TicketStatus::where('slug', 'open')->first() ?? TicketStatus::active()->first() ?? TicketStatus::first();
+        if (!$statusOpen) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Status ticket tidak ditemukan. Mohon cek data master ticket status.',
+            ], 422);
+        }
+
+        $filePath = $request->file('file')->getRealPath();
+        $spreadsheet = IOFactory::load($filePath);
+        $sheet = $spreadsheet->getActiveSheet();
+        $rows = $sheet->toArray(null, true, true, true);
+
+        if (count($rows) < 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'File import kosong. Mohon isi data minimal 1 baris.',
+            ], 422);
+        }
+
+        $headerRow = array_shift($rows);
+        $headers = [];
+        foreach ($headerRow as $column => $value) {
+            $headers[$column] = strtolower(trim((string) $value));
+        }
+
+        $requiredHeaders = ['title', 'description', 'category', 'priority', 'division', 'outlet'];
+        $headerMap = [];
+        foreach ($requiredHeaders as $requiredHeader) {
+            $column = array_search($requiredHeader, $headers, true);
+            if ($column === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Header '{$requiredHeader}' tidak ditemukan di template import.",
+                ], 422);
+            }
+            $headerMap[$requiredHeader] = $column;
+        }
+
+        $optionalHeaders = ['due_date', 'issue_type'];
+        foreach ($optionalHeaders as $optionalHeader) {
+            $column = array_search($optionalHeader, $headers, true);
+            if ($column !== false) {
+                $headerMap[$optionalHeader] = $column;
+            }
+        }
+
+        $categories = TicketCategory::active()->get()->keyBy(fn($item) => strtolower(trim($item->name)));
+        $priorities = TicketPriority::active()->get()->keyBy(fn($item) => strtolower(trim($item->name)));
+        $divisions = Divisi::active()->get()->keyBy(fn($item) => strtolower(trim($item->nama_divisi)));
+        $outlets = Outlet::active()->get()->keyBy(fn($item) => strtolower(trim($item->nama_outlet)));
+
+        $errors = [];
+        $createdCount = 0;
+
+        DB::beginTransaction();
+        try {
+            foreach ($rows as $rowIndex => $row) {
+                $excelRowNumber = $rowIndex + 2; // +1 header, +1 array index
+                $title = trim((string) ($row[$headerMap['title']] ?? ''));
+                $description = trim((string) ($row[$headerMap['description']] ?? ''));
+                $categoryName = strtolower(trim((string) ($row[$headerMap['category']] ?? '')));
+                $priorityName = strtolower(trim((string) ($row[$headerMap['priority']] ?? '')));
+                $divisionName = strtolower(trim((string) ($row[$headerMap['division']] ?? '')));
+                $outletName = strtolower(trim((string) ($row[$headerMap['outlet']] ?? '')));
+                $dueDateRaw = isset($headerMap['due_date']) ? trim((string) ($row[$headerMap['due_date']] ?? '')) : '';
+
+                if ($title === '' && $description === '' && $categoryName === '' && $priorityName === '' && $divisionName === '' && $outletName === '') {
+                    continue;
+                }
+
+                $rowErrors = [];
+                if ($title === '') $rowErrors[] = 'title wajib diisi';
+                if ($description === '') $rowErrors[] = 'description wajib diisi';
+                if ($categoryName === '' || !$categories->has($categoryName)) $rowErrors[] = 'category tidak valid';
+                if ($priorityName === '' || !$priorities->has($priorityName)) $rowErrors[] = 'priority tidak valid';
+                if ($divisionName === '' || !$divisions->has($divisionName)) $rowErrors[] = 'division tidak valid';
+                if ($outletName === '' || !$outlets->has($outletName)) $rowErrors[] = 'outlet tidak valid';
+
+                $dueDate = null;
+                if ($dueDateRaw !== '') {
+                    try {
+                        $dueDate = Carbon::parse($dueDateRaw);
+                    } catch (\Throwable $th) {
+                        $rowErrors[] = 'due_date tidak valid (gunakan format YYYY-MM-DD)';
+                    }
+                }
+
+                if (!empty($rowErrors)) {
+                    $errors[] = "Baris {$excelRowNumber}: " . implode(', ', $rowErrors);
+                    continue;
+                }
+
+                $category = $categories->get($categoryName);
+                $priority = $priorities->get($priorityName);
+                $division = $divisions->get($divisionName);
+                $outlet = $outlets->get($outletName);
+
+                Ticket::create([
+                    'ticket_number' => Ticket::generateTicketNumber(),
+                    'title' => $title,
+                    'description' => $description,
+                    'category_id' => $category->id,
+                    'priority_id' => $priority->id,
+                    'status_id' => $statusOpen->id,
+                    'divisi_id' => $division->id,
+                    'outlet_id' => $outlet->id_outlet,
+                    'created_by' => auth()->id(),
+                    'due_date' => $dueDate ? $dueDate : now()->addDays($priority->max_days ?? 7),
+                    'source' => 'manual',
+                ]);
+
+                $createdCount++;
+            }
+
+            if ($createdCount === 0) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada data yang berhasil diimport.',
+                    'errors' => $errors,
+                ], 422);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Import berhasil. {$createdCount} ticket ditambahkan.",
+                'created_count' => $createdCount,
+                'errors' => $errors,
+            ]);
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal import ticket: ' . $th->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * Display a listing of tickets
      */
@@ -30,6 +530,7 @@ class TicketController extends Controller
         $category = $request->get('category', 'all');
         $division = $request->get('division', 'all');
         $outlet = $request->get('outlet', 'all');
+        $paymentStatus = $request->get('payment_status', 'all');
         $perPage = $request->get('per_page', 15);
 
         $query = Ticket::with([
@@ -38,7 +539,8 @@ class TicketController extends Controller
             'status',
             'divisi',
             'outlet',
-            'creator'
+            'creator',
+            'assignedUsers:id,nama_lengkap,avatar'
         ])->withCount('comments');
 
         // Apply filters
@@ -72,9 +574,107 @@ class TicketController extends Controller
             $query->where('outlet_id', $outlet);
         }
 
+        if ($paymentStatus !== 'all') {
+            $paidCondition = function ($prQuery) {
+                $prQuery->where(function ($q) {
+                    $q->whereRaw("UPPER(status) = 'PAID'")
+                        ->orWhereExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('non_food_payments as nfp')
+                                ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                                ->whereIn('nfp.status', ['paid', 'approved'])
+                                ->where('nfp.status', '!=', 'cancelled');
+                        });
+                });
+            };
+
+            $hasAnyPaymentCondition = function ($prQuery) {
+                $prQuery->whereExists(function ($subQuery) {
+                    $subQuery->select(DB::raw(1))
+                        ->from('non_food_payments as nfp')
+                        ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                        ->where('nfp.status', '!=', 'cancelled');
+                });
+            };
+
+            if ($paymentStatus === 'paid') {
+                $query->whereHas('purchaseRequisitions', $paidCondition);
+            } elseif ($paymentStatus === 'on_process') {
+                $query->whereDoesntHave('purchaseRequisitions', $paidCondition)
+                    ->whereHas('purchaseRequisitions', $hasAnyPaymentCondition);
+            } elseif ($paymentStatus === 'no_pr') {
+                $query->whereDoesntHave('purchaseRequisitions');
+            } elseif ($paymentStatus === 'with_pr') {
+                $query->whereHas('purchaseRequisitions');
+            }
+        }
+
         $tickets = $query->orderBy('created_at', 'desc')
                         ->paginate($perPage)
                         ->withQueryString();
+
+        $ticketIds = $tickets->getCollection()->pluck('id')->toArray();
+        $prsByTicket = collect();
+        $paymentStatsByPr = collect();
+
+        if (!empty($ticketIds)) {
+            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
+                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $prsByTicket = $prs->groupBy('ticket_id');
+
+            $prIds = $prs->pluck('id')->toArray();
+            if (!empty($prIds)) {
+                $paymentStatsByPr = DB::table('non_food_payments')
+                    ->whereIn('purchase_requisition_id', $prIds)
+                    ->select(
+                        'purchase_requisition_id as pr_id',
+                        DB::raw('COUNT(*) as total_payments'),
+                        DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+                    )
+                    ->groupBy('purchase_requisition_id')
+                    ->get()
+                    ->keyBy('pr_id');
+            }
+        }
+
+        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr) {
+            $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
+
+            $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
+                $paymentStat = $paymentStatsByPr->get($pr->id);
+                $totalPayments = (int) ($paymentStat->total_payments ?? 0);
+                $paidPayments = (int) ($paymentStat->paid_payments ?? 0);
+
+                $paymentStatus = 'NO_PAYMENT';
+                if (strtoupper((string) $pr->status) === 'PAID' || $paidPayments > 0) {
+                    $paymentStatus = 'PAID';
+                } elseif ($totalPayments > 0) {
+                    $paymentStatus = 'ON_PROCESS';
+                }
+
+                return [
+                    'id' => $pr->id,
+                    'pr_number' => $pr->pr_number,
+                    'mode' => $pr->mode,
+                    'status' => $pr->status,
+                    'payment_status' => $paymentStatus,
+                    'total_payments' => $totalPayments,
+                    'paid_payments' => $paidPayments,
+                ];
+            })->values();
+
+            $ticket->payment_info = [
+                'total_pr' => $prSummaries->count(),
+                'total_paid_pr' => $prSummaries->where('payment_status', 'PAID')->count(),
+                'total_processing_pr' => $prSummaries->where('payment_status', 'ON_PROCESS')->count(),
+                'prs' => $prSummaries,
+            ];
+
+            return $ticket;
+        });
 
         // Get filter options
         $categories = TicketCategory::active()->orderBy('name')->get();
@@ -85,6 +685,9 @@ class TicketController extends Controller
         $divisis = Divisi::whereHas('tickets')->active()->orderBy('nama_divisi')->get();
         
         $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $assignableUsers = User::where('status', 'A')
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
 
         // Statistics
         $statistics = [
@@ -104,6 +707,7 @@ class TicketController extends Controller
                 'category' => $category,
                 'division' => $division,
                 'outlet' => $outlet,
+                'payment_status' => $paymentStatus,
                 'per_page' => $perPage,
             ],
             'filterOptions' => [
@@ -114,6 +718,7 @@ class TicketController extends Controller
                 'outlets' => $outlets,
             ],
             'statistics' => $statistics,
+            'assignableUsers' => $assignableUsers,
         ]);
     }
 
@@ -243,6 +848,7 @@ class TicketController extends Controller
             'outlet',
             'creator',
             'comments.user',
+            'comments.attachments',
             'attachments',
             'history.user'
         ])->findOrFail($id);
@@ -306,6 +912,49 @@ class TicketController extends Controller
         // Convert attachments collection to array for proper frontend serialization
         $ticketData = $ticket->toArray();
         $ticketData['attachments'] = $ticket->attachments->toArray();
+
+        $relatedPrs = PurchaseRequisition::where('ticket_id', $ticket->id)
+            ->select('id', 'pr_number', 'status', 'mode', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $paymentStatsByPr = collect();
+        if ($relatedPrs->isNotEmpty()) {
+            $paymentStatsByPr = DB::table('non_food_payments')
+                ->whereIn('purchase_requisition_id', $relatedPrs->pluck('id')->toArray())
+                ->select(
+                    'purchase_requisition_id as pr_id',
+                    DB::raw('COUNT(*) as total_payments'),
+                    DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+                )
+                ->groupBy('purchase_requisition_id')
+                ->get()
+                ->keyBy('pr_id');
+        }
+
+        $ticketData['payment_info'] = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
+            $paymentStat = $paymentStatsByPr->get($pr->id);
+            $totalPayments = (int) ($paymentStat->total_payments ?? 0);
+            $paidPayments = (int) ($paymentStat->paid_payments ?? 0);
+
+            $paymentStatus = 'NO_PAYMENT';
+            if (strtoupper((string) $pr->status) === 'PAID' || $paidPayments > 0) {
+                $paymentStatus = 'PAID';
+            } elseif ($totalPayments > 0) {
+                $paymentStatus = 'ON_PROCESS';
+            }
+
+            return [
+                'id' => $pr->id,
+                'pr_number' => $pr->pr_number,
+                'mode' => $pr->mode,
+                'status' => $pr->status,
+                'created_at' => $pr->created_at,
+                'payment_status' => $paymentStatus,
+                'total_payments' => $totalPayments,
+                'paid_payments' => $paidPayments,
+            ];
+        })->values();
 
         return Inertia::render('Tickets/Show', [
             'ticket' => $ticketData,
@@ -407,6 +1056,71 @@ class TicketController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal memperbarui ticket: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Quick status change from ticket list (no full edit form).
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        $ticket = Ticket::with('status')->findOrFail($id);
+
+        $validator = Validator::make($request->all(), [
+            'status_id' => 'required|exists:ticket_statuses,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $newStatus = TicketStatus::active()->where('id', $request->status_id)->first();
+        if (!$newStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Status tidak valid atau tidak aktif.',
+            ], 422);
+        }
+
+        if ((int) $ticket->status_id === (int) $newStatus->id) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Status tidak berubah.',
+                'data' => $ticket->load(['category', 'priority', 'status', 'divisi', 'outlet', 'creator']),
+            ]);
+        }
+
+        $oldLabel = $ticket->status?->name ?? '-';
+        $previousStatusId = $ticket->status_id;
+
+        DB::beginTransaction();
+        try {
+            $ticket->update(['status_id' => $newStatus->id]);
+            $this->createTicketHistory(
+                $ticket,
+                'updated',
+                'status_id',
+                (string) $previousStatusId,
+                'Status diubah dari ' . $oldLabel . ' ke ' . $newStatus->name
+            );
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status ticket diperbarui.',
+                'data' => $ticket->fresh()->load(['category', 'priority', 'status', 'divisi', 'outlet', 'creator']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui status: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -536,7 +1250,9 @@ class TicketController extends Controller
         $ticket = Ticket::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'comment' => 'required|string|max:1000',
+            'comment' => 'nullable|string|max:1000|required_without:attachments',
+            'attachments' => 'nullable|array|max:5',
+            'attachments.*' => 'file|max:10240|mimes:jpg,jpeg,png,webp,pdf,doc,docx',
         ]);
 
         if ($validator->fails()) {
@@ -547,32 +1263,72 @@ class TicketController extends Controller
             ], 422);
         }
 
+        DB::beginTransaction();
         try {
             $comment = \App\Models\TicketComment::create([
                 'ticket_id' => $ticket->id,
                 'user_id' => auth()->id(),
-                'comment' => $request->comment,
+                'comment' => trim((string) $request->comment),
                 'is_internal' => false,
             ]);
 
+            if ($request->hasFile('attachments')) {
+                foreach ($request->file('attachments') as $file) {
+                    $path = $file->store('ticket-comment-attachments', 'public');
+                    TicketAttachment::create([
+                        'ticket_id' => $ticket->id,
+                        'comment_id' => $comment->id,
+                        'uploaded_by' => auth()->id(),
+                        'file_path' => $path,
+                        'file_name' => $file->getClientOriginalName(),
+                        'mime_type' => $file->getMimeType(),
+                        'file_size' => $file->getSize(),
+                    ]);
+                }
+            }
+
             // Create ticket history
-            $this->createTicketHistory($ticket, 'comment_added', null, null, 'Comment added: ' . substr($request->comment, 0, 50) . '...');
+            $historyDescription = trim((string) $request->comment) !== ''
+                ? 'Comment added: ' . substr(trim((string) $request->comment), 0, 50) . '...'
+                : 'Comment with attachment added';
+            $this->createTicketHistory($ticket, 'comment_added', null, null, $historyDescription);
 
             // Send notifications for new comment
             $this->sendCommentNotifications($ticket, $comment);
 
+            DB::commit();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Komentar berhasil ditambahkan',
-                'data' => $comment->load('user')
+                'data' => $comment->load(['user', 'attachments'])
             ]);
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menambahkan komentar: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Get ticket comments for index modal
+     */
+    public function getComments($id)
+    {
+        $ticket = Ticket::findOrFail($id);
+
+        $comments = \App\Models\TicketComment::with(['user', 'attachments'])
+            ->where('ticket_id', $ticket->id)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $comments,
+        ]);
     }
 
     /**
@@ -648,6 +1404,78 @@ class TicketController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menghapus komentar: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Assign team members to ticket
+     */
+    public function assignTeam(Request $request, $id)
+    {
+        $ticket = Ticket::findOrFail($id);
+
+        $validator = Validator::make($request->all(), [
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'required|integer|exists:users,id',
+            'primary_user_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $userIds = collect($request->user_ids)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $primaryUserId = $request->primary_user_id ? (int) $request->primary_user_id : null;
+        if (!$primaryUserId || !$userIds->contains($primaryUserId)) {
+            $primaryUserId = $userIds->first();
+        }
+
+        DB::beginTransaction();
+        try {
+            TicketAssignment::where('ticket_id', $ticket->id)->delete();
+
+            foreach ($userIds as $userId) {
+                TicketAssignment::create([
+                    'ticket_id' => $ticket->id,
+                    'user_id' => $userId,
+                    'assigned_by' => auth()->id(),
+                    'assigned_at' => now(),
+                    'is_primary' => $userId === $primaryUserId,
+                ]);
+            }
+
+            $assignedUsers = User::whereIn('id', $userIds)->pluck('nama_lengkap')->toArray();
+            $this->createTicketHistory(
+                $ticket,
+                'assigned',
+                'assigned_users',
+                null,
+                'Assigned team: ' . implode(', ', $assignedUsers)
+            );
+
+            $this->sendTicketAssignmentNotifications($ticket, $userIds->all(), $primaryUserId);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Team ticket berhasil di-assign',
+                'data' => $ticket->fresh()->load(['assignedUsers:id,nama_lengkap,avatar']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal assign team: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -765,6 +1593,59 @@ class TicketController extends Controller
                 'comment_id' => $comment->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Send notifications to assigned team members
+     */
+    private function sendTicketAssignmentNotifications($ticket, array $userIds, ?int $primaryUserId = null)
+    {
+        try {
+            if (empty($userIds)) {
+                return;
+            }
+
+            $ticket->loadMissing(['divisi', 'outlet']);
+            $assignerName = auth()->user()->nama_lengkap ?? 'System';
+            $outletName = $ticket->outlet->nama_outlet ?? '-';
+            $divisiName = $ticket->divisi->nama_divisi ?? '-';
+
+            foreach ($userIds as $userId) {
+                $isPrimary = $primaryUserId && ((int) $userId === (int) $primaryUserId);
+                $roleLabel = $isPrimary ? 'PIC Utama' : 'Team Support';
+
+                $message = "Anda di-assign ke ticket:\n\n";
+                $message .= "No: {$ticket->ticket_number}\n";
+                $message .= "Judul: {$ticket->title}\n";
+                $message .= "Peran: {$roleLabel}\n";
+                $message .= "Divisi: {$divisiName}\n";
+                $message .= "Outlet: {$outletName}\n";
+                $message .= "Assigned by: {$assignerName}";
+
+                NotificationService::insert([
+                    'user_id' => $userId,
+                    'task_id' => $ticket->id,
+                    'type' => 'ticket_assigned',
+                    'message' => $message,
+                    'url' => config('app.url') . '/tickets/' . $ticket->id,
+                    'is_read' => 0,
+                ]);
+            }
+
+            \Log::info('Ticket assignment notifications sent', [
+                'ticket_id' => $ticket->id,
+                'ticket_number' => $ticket->ticket_number,
+                'assigned_user_ids' => $userIds,
+                'primary_user_id' => $primaryUserId,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send ticket assignment notifications', [
+                'ticket_id' => $ticket->id ?? null,
+                'assigned_user_ids' => $userIds,
+                'primary_user_id' => $primaryUserId,
+                'error' => $e->getMessage(),
             ]);
         }
     }

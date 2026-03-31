@@ -381,6 +381,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Ticketing System routes
     Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'index'])->name('tickets.index');
+    Route::get('/tickets/import/template', [\App\Http\Controllers\TicketController::class, 'downloadImportTemplate'])->name('tickets.import.template');
+    Route::post('/tickets/import', [\App\Http\Controllers\TicketController::class, 'importFromExcel'])->name('tickets.import');
     Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
     Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store'])->name('tickets.store');
     Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'show'])->name('tickets.show');
@@ -388,9 +390,12 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->name('tickets.update');
     Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');
     Route::post('/tickets/from-daily-report', [\App\Http\Controllers\TicketController::class, 'createFromDailyReport'])->name('tickets.from-daily-report');
+    Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->name('tickets.assign-team');
+    Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
     
     // Ticket Comments routes
     Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->name('tickets.comments.store');
+    Route::get('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'getComments'])->name('tickets.comments.index');
     Route::put('/tickets/comments/{id}', [\App\Http\Controllers\TicketController::class, 'updateComment'])->name('tickets.comments.update');
     Route::delete('/tickets/comments/{id}', [\App\Http\Controllers\TicketController::class, 'deleteComment'])->name('tickets.comments.destroy');
     

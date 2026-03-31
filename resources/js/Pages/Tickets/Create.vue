@@ -27,6 +27,22 @@
               <p v-if="errors.title" class="text-red-500 text-xs mt-1">{{ errors.title[0] }}</p>
             </div>
 
+            <!-- Jenis Issue -->
+            <div>
+              <label for="issue_type" class="block text-sm font-medium text-gray-700 mb-1">Jenis Issue</label>
+              <select
+                id="issue_type"
+                v-model="issueType"
+                @change="onIssueTypeChange"
+                class="w-full px-4 py-2 rounded-xl border border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+              >
+                <option value="">Pilih Jenis Issue</option>
+                <option value="defect">Defect</option>
+                <option value="ops_issue">Ops Issue</option>
+              </select>
+              <p class="text-xs text-gray-500 mt-1">Pemilihan jenis issue akan membantu memilih category yang sesuai.</p>
+            </div>
+
             <!-- Category -->
             <div>
               <label for="category_id" class="block text-sm font-medium text-gray-700 mb-1">Category *</label>
@@ -256,6 +272,7 @@ const errors = ref({});
 const calculatedDueDate = ref('');
 const attachments = ref([]);
 const fileInput = ref(null);
+const issueType = ref('');
 
 // Calculate due date based on priority
 function calculateDueDate() {
@@ -273,6 +290,32 @@ function calculateDueDate() {
     }
   } else {
     calculatedDueDate.value = '';
+  }
+}
+
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+}
+
+function findCategoryByIssueType(type) {
+  const normalizedType = normalizeText(type);
+  return (props.categories || []).find((category) => {
+    const categoryName = normalizeText(category?.name);
+    if (normalizedType === 'defect') {
+      return categoryName.includes('defect');
+    }
+    if (normalizedType === 'ops issue') {
+      return categoryName.includes('ops issue') || categoryName.includes('ops') || categoryName.includes('operation');
+    }
+    return false;
+  });
+}
+
+function onIssueTypeChange() {
+  if (!issueType.value) return;
+  const matchedCategory = findCategoryByIssueType(issueType.value);
+  if (matchedCategory) {
+    form.value.category_id = matchedCategory.id;
   }
 }
 

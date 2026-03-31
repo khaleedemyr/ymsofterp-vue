@@ -6,6 +6,9 @@
           <i class="fa-solid fa-ticket-alt text-blue-500"></i> {{ ticket.ticket_number }}
         </h1>
         <div class="flex gap-2">
+          <button @click="openCreatePayment" class="bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors">
+            <i class="fa-solid fa-money-bill-wave mr-2"></i> Create Payment
+          </button>
           <button @click="editTicket" class="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors">
             <i class="fa-solid fa-edit mr-2"></i> Edit
           </button>
@@ -23,6 +26,49 @@
             <h2 class="text-xl font-bold text-gray-800 mb-4">{{ ticket.title }}</h2>
             <div class="prose max-w-none">
               <p class="text-gray-700 whitespace-pre-wrap">{{ ticket.description }}</p>
+            </div>
+          </div>
+
+          <!-- Payment Information -->
+          <div class="bg-white rounded-2xl shadow-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold text-gray-800">Informasi Payment</h3>
+              <button
+                @click="openCreatePayment"
+                class="inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-semibold hover:bg-emerald-200"
+              >
+                <i class="fa-solid fa-plus mr-1"></i> Create Payment
+              </button>
+            </div>
+
+            <div v-if="ticket.payment_info && ticket.payment_info.length" class="space-y-3">
+              <div
+                v-for="pr in ticket.payment_info"
+                :key="`payment-info-${pr.id}`"
+                class="border border-gray-200 rounded-lg p-3 bg-gray-50"
+              >
+                <div class="flex flex-wrap items-center gap-2 justify-between">
+                  <a :href="`/purchase-requisitions/${pr.id}`" class="text-sm font-semibold text-blue-700 hover:text-blue-900">
+                    {{ pr.pr_number }}
+                  </a>
+                  <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold', getPaymentStatusClass(pr.payment_status)]">
+                    {{ getPaymentStatusLabel(pr.payment_status) }}
+                  </span>
+                </div>
+                <div class="mt-1 text-xs text-gray-600">
+                  PR Status: {{ pr.status || '-' }} | Mode: {{ pr.mode || '-' }}
+                </div>
+                <div class="mt-1 text-xs text-gray-500">
+                  Paid {{ pr.paid_payments || 0 }} dari {{ pr.total_payments || 0 }} payment
+                </div>
+                <div class="mt-1 text-xs text-gray-500">
+                  Dibuat: {{ formatDateTime(pr.created_at) }}
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="text-sm text-gray-500">
+              Belum ada Purchase Requisition / Payment yang terhubung ke ticket ini.
             </div>
           </div>
 
@@ -68,10 +114,57 @@
                     class="w-full px-3 py-2 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     rows="2"
                   ></textarea>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      @click="openCommentFileUpload"
+                      class="inline-flex items-center px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 text-xs hover:bg-gray-200"
+                    >
+                      <i class="fas fa-upload mr-1"></i> Upload
+                    </button>
+                    <button
+                      type="button"
+                      @click="openCommentCamera"
+                      class="inline-flex items-center px-3 py-1.5 rounded-md bg-blue-100 text-blue-700 text-xs hover:bg-blue-200"
+                    >
+                      <i class="fas fa-camera mr-1"></i> Camera
+                    </button>
+                    <input
+                      ref="commentFileInput"
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx"
+                      class="hidden"
+                      @change="handleCommentFileUpload"
+                    />
+                  </div>
+                  <div v-if="commentAttachments.length > 0" class="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <div
+                      v-for="(attachment, index) in commentAttachments"
+                      :key="`new-comment-attachment-${index}`"
+                      class="relative border border-gray-200 rounded-lg p-2 bg-white"
+                    >
+                      <button
+                        type="button"
+                        @click="removeCommentAttachment(index)"
+                        class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px]"
+                      >
+                        <i class="fas fa-times"></i>
+                      </button>
+                      <div v-if="attachment.type.startsWith('image/')" class="space-y-1">
+                        <img :src="attachment.preview" :alt="attachment.name" class="w-full h-20 object-cover rounded" />
+                        <p class="text-[10px] text-gray-600 break-words">{{ attachment.name }}</p>
+                      </div>
+                      <div v-else class="flex items-center gap-2">
+                        <i class="fas fa-file-alt text-gray-500"></i>
+                        <p class="text-[10px] text-gray-600 break-words">{{ attachment.name }}</p>
+                      </div>
+                    </div>
+                  </div>
                   <div class="flex justify-end mt-2">
                     <button
                       @click="addComment"
-                      :disabled="!newComment?.trim()"
+                      :disabled="!canSubmitComment"
                       class="bg-blue-600 text-white px-4 py-1 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                     >
                       <i class="fa-solid fa-paper-plane mr-1"></i>
@@ -103,7 +196,34 @@
                         <span class="font-medium text-sm text-gray-800">{{ comment.user?.nama_lengkap || 'Unknown' }}</span>
                         <span class="text-xs text-gray-500">{{ formatTimeAgo(comment.created_at) }}</span>
                       </div>
-                      <p class="text-sm text-gray-700">{{ comment.comment }}</p>
+                      <p v-if="comment.comment" class="text-sm text-gray-700">{{ comment.comment }}</p>
+                      <div v-if="comment.attachments && comment.attachments.length > 0" class="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+                        <div
+                          v-for="attachment in comment.attachments"
+                          :key="`comment-attachment-${attachment.id}`"
+                          class="border border-gray-200 rounded-lg p-2 bg-white"
+                        >
+                          <a
+                            :href="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                            target="_blank"
+                            class="block"
+                          >
+                            <img
+                              v-if="attachment.mime_type && attachment.mime_type.startsWith('image/')"
+                              :src="attachment.file_path.startsWith('/storage/') ? attachment.file_path : `/storage/${attachment.file_path}`"
+                              :alt="attachment.file_name"
+                              class="w-full h-20 object-cover rounded"
+                            />
+                            <div v-else class="flex items-center gap-2 text-xs text-gray-700">
+                              <i class="fas fa-file-alt text-gray-500"></i>
+                              <span class="break-words">{{ attachment.file_name }}</span>
+                            </div>
+                            <p v-if="attachment.mime_type && attachment.mime_type.startsWith('image/')" class="text-[10px] text-gray-600 mt-1 break-words">
+                              {{ attachment.file_name }}
+                            </p>
+                          </a>
+                        </div>
+                      </div>
                     </div>
                     
                     <!-- Comment Actions -->
@@ -371,7 +491,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -384,6 +504,11 @@ const props = defineProps({
 
 
 const newComment = ref('');
+const commentAttachments = ref([]);
+const commentFileInput = ref(null);
+const canSubmitComment = computed(() => {
+  return !!newComment.value?.trim() || commentAttachments.value.length > 0;
+});
 
 // Lightbox state for VueEasyLightbox
 const visibleRef = ref(false);
@@ -429,12 +554,22 @@ function editTicket() {
   router.visit(`/tickets/${props.ticket.id}/edit`);
 }
 
+function openCreatePayment() {
+  router.visit(`/purchase-requisitions/create?mode=purchase_payment&ticket_id=${encodeURIComponent(props.ticket.id)}`);
+}
+
 async function addComment() {
-  if (!newComment.value?.trim()) return;
+  if (!canSubmitComment.value) return;
   
   try {
-    const response = await axios.post(`/tickets/${props.ticket.id}/comments`, {
-      comment: newComment.value.trim()
+    const formData = new FormData();
+    formData.append('comment', newComment.value?.trim() || '');
+    commentAttachments.value.forEach((attachment, index) => {
+      formData.append(`attachments[${index}]`, attachment.file);
+    });
+
+    const response = await axios.post(`/tickets/${props.ticket.id}/comments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
     });
     
     if (response.data.success) {
@@ -444,12 +579,119 @@ async function addComment() {
       }
       props.ticket.comments.unshift(response.data.data);
       newComment.value = '';
+      commentAttachments.value = [];
       
       Swal.fire('Berhasil', 'Komentar berhasil ditambahkan', 'success');
     }
   } catch (error) {
     Swal.fire('Error', error.response?.data?.message || 'Gagal menambahkan komentar', 'error');
   }
+}
+
+function openCommentFileUpload() {
+  commentFileInput.value?.click();
+}
+
+function handleCommentFileUpload(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach((file) => {
+    if (file.size > 10 * 1024 * 1024) {
+      return;
+    }
+
+    const attachment = {
+      file,
+      name: file.name,
+      type: file.type || '',
+      preview: null
+    };
+
+    if (file.type?.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        attachment.preview = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    commentAttachments.value.push(attachment);
+  });
+
+  event.target.value = '';
+}
+
+function removeCommentAttachment(index) {
+  commentAttachments.value.splice(index, 1);
+}
+
+function openCommentCamera() {
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold">Capture Camera</h3>
+        <button id="comment-camera-close" class="text-gray-500 hover:text-gray-700">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="space-y-4">
+        <video id="comment-camera-video" class="w-full h-64 bg-gray-200 rounded" autoplay></video>
+        <div class="flex gap-2">
+          <button id="comment-camera-capture" class="flex-1 bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">
+            <i class="fas fa-camera mr-2"></i>Capture
+          </button>
+          <button id="comment-camera-cancel" class="flex-1 bg-gray-500 text-white py-2 px-4 rounded hover:bg-gray-600">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  let streamRef = null;
+  const closeModal = () => {
+    if (streamRef) {
+      streamRef.getTracks().forEach((track) => track.stop());
+    }
+    modal.remove();
+  };
+
+  modal.querySelector('#comment-camera-close')?.addEventListener('click', closeModal);
+  modal.querySelector('#comment-camera-cancel')?.addEventListener('click', closeModal);
+
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then((stream) => {
+      streamRef = stream;
+      const video = modal.querySelector('#comment-camera-video');
+      video.srcObject = stream;
+
+      modal.querySelector('#comment-camera-capture')?.addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const file = new File([blob], `comment-camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          commentAttachments.value.push({
+            file,
+            name: file.name,
+            type: file.type,
+            preview: canvas.toDataURL('image/jpeg', 0.8)
+          });
+          closeModal();
+        }, 'image/jpeg', 0.8);
+      });
+    })
+    .catch(() => {
+      Swal.fire('Error', 'Camera tidak dapat diakses', 'error');
+      closeModal();
+    });
 }
 
 // Comment helper methods
@@ -590,6 +832,30 @@ function formatTimeAgo(dateString) {
       year: 'numeric'
     });
   }
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  return date.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getPaymentStatusLabel(status) {
+  if (status === 'PAID') return 'Sudah Paid';
+  if (status === 'ON_PROCESS') return 'Payment Proses';
+  return 'Belum Payment';
+}
+
+function getPaymentStatusClass(status) {
+  if (status === 'PAID') return 'bg-emerald-100 text-emerald-700';
+  if (status === 'ON_PROCESS') return 'bg-amber-100 text-amber-700';
+  return 'bg-gray-100 text-gray-700';
 }
 
 function getChangeDescription(history) {

@@ -360,8 +360,8 @@
               </p>
             </div>
 
-            <!-- Ticket (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Ticket (Hidden for travel_application and kasbon mode) -->
+            <div v-if="form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Related Ticket</label>
               <select
                 v-model="form.ticket_id"
@@ -2495,6 +2495,14 @@ const props = defineProps({
   outlets: Array,
   tickets: Array,
   divisions: Array,
+  initialMode: {
+    type: String,
+    default: null,
+  },
+  initialTicketId: {
+    type: [Number, String],
+    default: null,
+  },
 })
 
 // Search query for category
@@ -2643,6 +2651,14 @@ watch(() => form.mode, () => {
 let clickOutsideHandler = null
 
 onMounted(() => {
+  if (props.initialMode) {
+    form.mode = props.initialMode
+  }
+
+  if (props.initialTicketId) {
+    form.ticket_id = String(props.initialTicketId)
+  }
+
   clickOutsideHandler = (event) => {
     const target = event.target
     // Check if click is outside all category dropdown containers

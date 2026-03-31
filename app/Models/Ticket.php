@@ -99,6 +99,11 @@ class Ticket extends Model
                     ->withTimestamps();
     }
 
+    public function purchaseRequisitions()
+    {
+        return $this->hasMany(PurchaseRequisition::class, 'ticket_id');
+    }
+
     // Scopes
     public function scopeOpen($query)
     {

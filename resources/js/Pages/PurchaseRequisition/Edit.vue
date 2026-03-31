@@ -370,8 +370,8 @@
               </p>
             </div>
 
-            <!-- Ticket (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Ticket (Hidden for travel_application and kasbon mode) -->
+            <div v-if="form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Related Ticket</label>
               <select
                 v-model="form.ticket_id"

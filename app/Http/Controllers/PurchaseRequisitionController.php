@@ -33,6 +33,7 @@ class PurchaseRequisitionController extends Controller
         $division = $request->get('division', 'all');
         $category = $request->get('category', 'all');
         $isHeld = $request->get('is_held', 'all');
+        $hasTicket = $request->get('has_ticket', 'all');
         $dateFrom = $request->get('date_from', '');
         $dateTo = $request->get('date_to', '');
         $perPage = $request->get('per_page', 15);
@@ -58,7 +59,7 @@ class PurchaseRequisitionController extends Controller
         $query = PurchaseRequisition::with([
             'division',
             'outlet',
-            'ticket',
+            'ticket.status',
             'category',
             'creator',
             'heldBy', // Load user who held the PR
@@ -176,6 +177,12 @@ class PurchaseRequisitionController extends Controller
             } elseif ($isHeld === 'not_held') {
                 $query->where('is_held', false);
             }
+        }
+
+        if ($hasTicket === 'yes') {
+            $query->whereNotNull('ticket_id');
+        } elseif ($hasTicket === 'no') {
+            $query->whereNull('ticket_id');
         }
 
         // Date range filter
@@ -530,6 +537,7 @@ class PurchaseRequisitionController extends Controller
                     'division' => $division,
                     'category' => $category,
                     'is_held' => $isHeld,
+                    'has_ticket' => $hasTicket,
                     'date_from' => $dateFrom,
                     'date_to' => $dateTo,
                     'per_page' => $perPage,
@@ -552,6 +560,7 @@ class PurchaseRequisitionController extends Controller
                 'division' => $division,
                 'category' => $category,
                 'is_held' => $isHeld,
+                'has_ticket' => $hasTicket,
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'per_page' => $perPage,
@@ -572,8 +581,18 @@ class PurchaseRequisitionController extends Controller
     /**
      * Show the form for creating a new purchase requisition
      */
-    public function create()
+    public function create(Request $request)
     {
+        $initialMode = $request->query('mode');
+        if (!in_array($initialMode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon'])) {
+            $initialMode = null;
+        }
+
+        $initialTicketId = $request->query('ticket_id');
+        if ($initialTicketId !== null) {
+            $initialTicketId = (int) $initialTicketId;
+        }
+
         $categories = PurchaseRequisitionCategory::orderBy('name')->get();
         $outlets = Outlet::active()->orderBy('nama_outlet')->get();
         $tickets = Ticket::whereHas('status', function($query) {
@@ -583,6 +602,14 @@ class PurchaseRequisitionController extends Controller
                     ->orderBy('created_at', 'desc')
                     ->limit(100)
                     ->get();
+
+        if ($initialTicketId && !$tickets->contains('id', $initialTicketId)) {
+            $initialTicket = Ticket::with(['outlet', 'category', 'status'])->find($initialTicketId);
+            if ($initialTicket) {
+                $tickets->prepend($initialTicket);
+            }
+        }
+
         $divisions = Divisi::active()->orderBy('nama_divisi')->get();
 
         return Inertia::render('PurchaseRequisition/Create', [
@@ -590,6 +617,8 @@ class PurchaseRequisitionController extends Controller
             'outlets' => $outlets,
             'tickets' => $tickets,
             'divisions' => $divisions,
+            'initialMode' => $initialMode,
+            'initialTicketId' => $initialTicketId,
         ]);
     }
 

@@ -465,8 +465,8 @@
             </div>
           </div>
 
-          <!-- Related Ticket (hidden for certain modes) -->
-          <div v-if="purchaseRequisition.ticket && !['pr_ops', 'purchase_payment', 'travel_application', 'kasbon'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
+          <!-- Related Ticket (hidden for travel_application and kasbon modes) -->
+          <div v-if="purchaseRequisition.ticket && !['travel_application', 'kasbon'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Related Ticket</h2>
             <div class="p-4 bg-blue-50 rounded-lg">
               <Link

@@ -119,6 +119,15 @@
             <option value="not_held">Tidak Hold</option>
           </select>
           <select
+            v-model="hasTicket"
+            @change="debouncedSearch"
+            class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+          >
+            <option value="all">Semua Relasi Ticket</option>
+            <option value="yes">Related ke Ticket</option>
+            <option value="no">Tanpa Ticket</option>
+          </select>
+          <select
             v-model="perPage"
             @change="debouncedSearch"
             class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
@@ -172,6 +181,7 @@
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PR Number</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Related Ticket</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
@@ -193,6 +203,24 @@
                   <div class="max-w-xs truncate" :title="pr.title">
                     {{ pr.title }}
                   </div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  <div v-if="pr.ticket" class="space-y-1">
+                    <a
+                      :href="`/tickets/${pr.ticket.id}`"
+                      class="text-blue-600 hover:text-blue-800 font-semibold"
+                    >
+                      {{ pr.ticket.ticket_number }}
+                    </a>
+                    <div class="text-xs text-gray-600 max-w-[220px] whitespace-normal break-words">{{ pr.ticket.title || '-' }}</div>
+                    <span
+                      v-if="pr.ticket.status?.name"
+                      class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700"
+                    >
+                      {{ pr.ticket.status.name }}
+                    </span>
+                  </div>
+                  <span v-else class="text-gray-400">-</span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <span v-if="pr.division" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -919,6 +947,7 @@ const division = ref(props.filters?.division || 'all');
 const category = ref(props.filters?.category || 'all');
 const outlet = ref(props.filters?.outlet || 'all');
 const isHeld = ref(props.filters?.is_held || 'all');
+const hasTicket = ref(props.filters?.has_ticket || 'all');
 // Set default date range to current month if not provided
 const getDefaultDateFrom = () => {
   if (props.filters?.date_from) return props.filters.date_from;
@@ -1444,6 +1473,7 @@ const debouncedSearch = debounce(() => {
     category: category.value,
     outlet: outlet.value,
     is_held: isHeld.value,
+    has_ticket: hasTicket.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,
     per_page: perPage.value,
@@ -1458,6 +1488,7 @@ function loadData() {
     category: category.value,
     outlet: outlet.value,
     is_held: isHeld.value,
+    has_ticket: hasTicket.value,
     date_from: dateFrom.value,
     date_to: dateTo.value,
     per_page: perPage.value,
@@ -1482,6 +1513,7 @@ function goToPage(url) {
     urlObj.searchParams.set('division', division.value);
     urlObj.searchParams.set('category', category.value);
     urlObj.searchParams.set('is_held', isHeld.value);
+    urlObj.searchParams.set('has_ticket', hasTicket.value);
     urlObj.searchParams.set('date_from', dateFrom.value);
     urlObj.searchParams.set('date_to', dateTo.value);
     urlObj.searchParams.set('per_page', perPage.value);
@@ -1956,7 +1988,7 @@ function printPreview() {
 }
 
 // Watch for changes
-watch([search, status, division, category, isHeld, perPage], () => {
+watch([search, status, division, category, isHeld, hasTicket, perPage], () => {
   debouncedSearch();
 });
 

@@ -35,6 +35,7 @@ const existingTickets = ref([]);
 const ticketForm = ref({
   title: '',
   description: '',
+  issue_type: '',
   category_id: '',
   priority_id: '',
   divisi_id: '',
@@ -267,7 +268,7 @@ async function saveArea() {
               saveData.create_ticket = true;
               saveData.ticket_data = {
                 ...ticketForm.value,
-                title: `${currentArea.value?.nama_area} - ${form.value.finding_problem.substring(0, 50)}...`,
+                title: `${currentArea.value?.nama_area} - ${form.value.finding_problem}`,
                 description: form.value.finding_problem,
                 divisi_id: form.value.dept_concern_id
               };
@@ -316,6 +317,7 @@ async function saveArea() {
               ticketForm.value = {
                 title: '',
                 description: '',
+                issue_type: '',
                 category_id: '',
                 priority_id: '',
                 divisi_id: '',
@@ -518,6 +520,32 @@ function onCategoryChange() {
   // Category changed, no specific action needed
 }
 
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+}
+
+function findCategoryByIssueType(type) {
+  const normalizedType = normalizeText(type);
+  return (props.categories || []).find((category) => {
+    const categoryName = normalizeText(category?.name);
+    if (normalizedType === 'defect') {
+      return categoryName.includes('defect');
+    }
+    if (normalizedType === 'ops issue') {
+      return categoryName.includes('ops issue') || categoryName.includes('ops') || categoryName.includes('operation');
+    }
+    return false;
+  });
+}
+
+function onIssueTypeChange() {
+  if (!ticketForm.value.issue_type) return;
+  const matchedCategory = findCategoryByIssueType(ticketForm.value.issue_type);
+  if (matchedCategory) {
+    ticketForm.value.category_id = matchedCategory.id;
+  }
+}
+
 function onPriorityChange() {
   if (ticketForm.value.priority_id) {
     const priority = props.priorities.find(p => p.id == ticketForm.value.priority_id);
@@ -528,6 +556,11 @@ function onPriorityChange() {
       ticketForm.value.due_date = dueDate.toISOString().slice(0, 10);
     }
   }
+}
+
+function getSelectedPriority() {
+  if (!ticketForm.value.priority_id) return null;
+  return props.priorities.find((p) => String(p.id) === String(ticketForm.value.priority_id)) || null;
 }
 
 function viewTicket(ticketId) {
@@ -737,7 +770,16 @@ onUnmounted(() => {
                 </h4>
                 
                 <!-- Category and Priority -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Jenis Issue</label>
+                    <select v-model="ticketForm.issue_type" class="form-select" @change="onIssueTypeChange">
+                      <option value="">Select Issue Type</option>
+                      <option value="defect">Defect</option>
+                      <option value="ops_issue">Ops Issue</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
                     <select v-model="ticketForm.category_id" class="form-select" @change="onCategoryChange">
@@ -756,6 +798,14 @@ onUnmounted(() => {
                         {{ priority.name }}
                       </option>
                     </select>
+                    <div v-if="getSelectedPriority()" class="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                      <p class="text-xs font-semibold text-blue-800">
+                        Max Days: {{ getSelectedPriority().max_days ?? '-' }} hari
+                      </p>
+                      <p v-if="getSelectedPriority().description" class="mt-1 text-xs text-blue-700">
+                        {{ getSelectedPriority().description }}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 
