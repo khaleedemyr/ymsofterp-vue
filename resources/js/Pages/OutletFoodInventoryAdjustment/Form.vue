@@ -540,6 +540,40 @@ function getDropdownStyle(idx) {
   };
 }
 
+function showSaveErrorSwal(message) {
+  const fallbackMessage = 'Gagal menyimpan data.';
+  const rawMessage = String(message || fallbackMessage);
+  const normalizedMessage = rawMessage.replace(/\n/g, '<br>');
+  const isStockIssue = rawMessage.toLowerCase().includes('stok tidak cukup');
+
+  if (isStockIssue) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Stok Tidak Mencukupi',
+      html: `
+        <div style="text-align:left">
+          <p style="margin-bottom:8px;">${normalizedMessage}</p>
+          <hr style="margin:10px 0;" />
+          <p style="margin:0;">Silakan kurangi qty stock out, ganti unit, atau lakukan stock in terlebih dahulu.</p>
+        </div>
+      `,
+      confirmButtonText: 'Mengerti',
+      confirmButtonColor: '#F59E0B',
+      width: '640px'
+    });
+    return;
+  }
+
+  Swal.fire({
+    icon: 'error',
+    title: 'Gagal Menyimpan Data',
+    html: normalizedMessage,
+    confirmButtonText: 'OK',
+    confirmButtonColor: '#EF4444',
+    width: '600px'
+  });
+}
+
 function validateAndSubmit() {
   if (loading.value) return;
   if (!form.date || !form.outlet_id || !form.warehouse_outlet_id || !form.type || !form.reason) {
@@ -585,14 +619,7 @@ function validateAndSubmit() {
         onSuccess: (page) => {
           // Check for error in flash message (in case of validation errors)
           if (page.props.flash?.error) {
-            Swal.fire({
-              icon: 'error',
-              title: 'Gagal Menyimpan Data',
-              html: page.props.flash.error,
-              confirmButtonText: 'OK',
-              confirmButtonColor: '#EF4444',
-              width: '600px'
-            });
+            showSaveErrorSwal(page.props.flash.error);
             loading.value = false;
             return;
           }
@@ -620,15 +647,8 @@ function validateAndSubmit() {
               errorMessage = errorMessages.join('<br>');
             }
           }
-          
-          Swal.fire({
-            icon: 'error',
-            title: 'Gagal Menyimpan Data',
-            html: errorMessage,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#EF4444',
-            width: '600px'
-          });
+
+          showSaveErrorSwal(errorMessage);
         },
         onFinish: () => {
           loading.value = false;
@@ -642,14 +662,7 @@ function validateAndSubmit() {
 // Handle flash messages from backend
 watch(() => page.props.flash, (flash) => {
   if (flash?.error) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Gagal Menyimpan Data',
-      html: flash.error,
-      confirmButtonText: 'OK',
-      confirmButtonColor: '#EF4444',
-      width: '600px'
-    });
+    showSaveErrorSwal(flash.error);
   }
 }, { immediate: true })
 </script>

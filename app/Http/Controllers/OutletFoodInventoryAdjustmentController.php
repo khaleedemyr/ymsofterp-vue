@@ -19,6 +19,91 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
+    private function convertToSmallQty($itemMaster, string $selectedUnit, float $qty): float
+    {
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        $unitSmall = optional($itemMaster->smallUnit)->name;
+        $unitMedium = optional($itemMaster->mediumUnit)->name;
+        $unitLarge = optional($itemMaster->largeUnit)->name;
+
+        if ($selectedUnit === $unitSmall) {
+            return $qty;
+        }
+        if ($selectedUnit === $unitMedium) {
+            return $qty * $smallConv;
+        }
+        if ($selectedUnit === $unitLarge) {
+            return $qty * $smallConv * $mediumConv;
+        }
+
+        // Fallback: treat as small unit if unit mapping not found
+        return $qty;
+    }
+
+    private function convertSmallToSelectedUnit($itemMaster, string $selectedUnit, float $qtySmall): float
+    {
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        $unitSmall = optional($itemMaster->smallUnit)->name;
+        $unitMedium = optional($itemMaster->mediumUnit)->name;
+        $unitLarge = optional($itemMaster->largeUnit)->name;
+
+        if ($selectedUnit === $unitSmall) {
+            return $qtySmall;
+        }
+        if ($selectedUnit === $unitMedium) {
+            return $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+        }
+        if ($selectedUnit === $unitLarge) {
+            $divisor = $smallConv * $mediumConv;
+            return $divisor > 0 ? ($qtySmall / $divisor) : 0;
+        }
+
+        return $qtySmall;
+    }
+
+    private function validateOutStockAvailability(Request $request): void
+    {
+        if ($request->type !== 'out') {
+            return;
+        }
+
+        foreach ($request->items as $index => $item) {
+            $itemMaster = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])
+                ->find($item['item_id']);
+
+            if (!$itemMaster) {
+                throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($index + 1));
+            }
+
+            $selectedUnit = (string) $item['selected_unit'];
+            $requestedQty = (float) $item['qty'];
+            $requestedSmallQty = $this->convertToSmallQty($itemMaster, $selectedUnit, $requestedQty);
+
+            $inventoryItem = OutletFoodInventoryItem::where('item_id', $item['item_id'])->first();
+            $availableSmallQty = 0.0;
+
+            if ($inventoryItem) {
+                $stock = OutletFoodInventoryStock::where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $request->outlet_id)
+                    ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
+                    ->first();
+
+                $availableSmallQty = (float) ($stock->qty_small ?? 0);
+            }
+
+            if ($requestedSmallQty > $availableSmallQty) {
+                $availableInSelectedUnit = $this->convertSmallToSelectedUnit($itemMaster, $selectedUnit, $availableSmallQty);
+                throw new \Exception(
+                    "Stok tidak cukup untuk item '{$itemMaster->name}' (item ke-" . ($index + 1) . "). " .
+                    "Qty diminta: {$requestedQty} {$selectedUnit}, tersedia: " .
+                    number_format($availableInSelectedUnit, 2, '.', '') . " {$selectedUnit}."
+                );
+            }
+        }
+    }
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -279,6 +364,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 ], 401);
             }
 
+            $this->validateOutStockAvailability($request);
+
             DB::beginTransaction();
 
             $status = 'waiting_approval';
@@ -418,6 +505,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 \Log::error('OutletFoodInventoryAdjustment store - No user ID found!');
                 throw new \Exception('User tidak terautentikasi. Silakan login ulang.');
             }
+
+            $this->validateOutStockAvailability($request);
             
             DB::beginTransaction();
             
