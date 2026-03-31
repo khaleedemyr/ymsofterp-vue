@@ -221,6 +221,7 @@ class InternalWarehouseTransferController extends Controller
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_from_id'])
+                    ->lockForUpdate()
                     ->first();
 
                 if (!$stockFrom) {
@@ -240,6 +241,7 @@ class InternalWarehouseTransferController extends Controller
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_to_id'])
+                    ->lockForUpdate()
                     ->first();
 
                 if (!$stockTo) {
@@ -352,7 +354,7 @@ class InternalWarehouseTransferController extends Controller
                     ->orderByDesc('date')
                     ->orderByDesc('created_at')
                     ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                $old_cost = $stockTo->last_cost_small ?? 0;
 
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventory_item_id,
@@ -360,7 +362,7 @@ class InternalWarehouseTransferController extends Controller
                     'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
+                    'new_cost' => $mac,
                     'mac' => $mac,
                     'type' => 'internal_warehouse_transfer',
                     'reference_type' => 'internal_warehouse_transfer',
@@ -796,6 +798,7 @@ class InternalWarehouseTransferController extends Controller
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_from_id'])
+                    ->lockForUpdate()
                     ->first();
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
@@ -811,6 +814,7 @@ class InternalWarehouseTransferController extends Controller
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $validated['outlet_id'])
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_to_id'])
+                    ->lockForUpdate()
                     ->first();
                 
                 if (!$stockTo) {
@@ -921,7 +925,7 @@ class InternalWarehouseTransferController extends Controller
                     ->orderByDesc('date')
                     ->orderByDesc('created_at')
                     ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                $old_cost = $stockTo->last_cost_small ?? 0;
                 
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventory_item_id,
@@ -929,10 +933,10 @@ class InternalWarehouseTransferController extends Controller
                     'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
+                    'new_cost' => $mac,
                     'mac' => $mac,
-                    'type' => 'outlet_transfer',
-                    'reference_type' => 'outlet_transfer',
+                    'type' => 'internal_warehouse_transfer',
+                    'reference_type' => 'internal_warehouse_transfer',
                     'reference_id' => $transfer->id,
                     'created_at' => now(),
                 ]);
