@@ -15,11 +15,24 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 
 class StockOpnameController extends Controller
 {
+    private function filterFilledItems(array $items): array
+    {
+        return array_values(array_filter($items, function ($itemData) {
+            $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
+            $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
+            $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
+            $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
+
+            return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
+        }));
+    }
+
     /**
      * Display a listing of stock opnames
      */
@@ -255,24 +268,12 @@ class StockOpnameController extends Controller
             ]);
 
             // Create items (skip if items array is empty for autosave)
-            $items = $validated['items'] ?? [];
-            
-            // For autosave, only save items that have been filled in
-            // Item is considered "filled in" if:
-            // 1. Has at least one physical qty field with a value (not null, not empty string, or 0 is valid)
-            // 2. Has reason filled in
-            // 3. Or has been explicitly set (field exists in request, even if value is null/empty - means user clicked "=" button)
-            if ($request->has('autosave') && $request->autosave) {
-                $items = array_filter($items, function($itemData) {
-                    // Check if any physical qty field has been explicitly set (including 0)
-                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
-                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
-                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
-                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
-                    
-                    // Item is filled if any qty field is set OR reason is filled
-                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
-                });
+            $items = $this->filterFilledItems($validated['items'] ?? []);
+
+            if ((!$request->has('autosave') || !$request->autosave) && empty($items)) {
+                throw ValidationException::withMessages([
+                    'items' => 'Minimal harus mengisi 1 item stock opname.',
+                ]);
             }
             
             // PERFORMANCE OPTIMIZATION: Batch query untuk stocks (fix N+1 query problem)
@@ -447,6 +448,16 @@ class StockOpnameController extends Controller
         if ($user->id_role === '5af56935b011a') {
             $canApprove = true;
         }
+
+        // Hide legacy rows that were auto-saved without explicit input
+        $stockOpname->setRelation('items', $stockOpname->items->filter(function ($item) {
+            $hasReason = $item->reason !== null && trim((string) $item->reason) !== '';
+            $hasDiff = ((float) $item->qty_diff_small) !== 0.0
+                || ((float) $item->qty_diff_medium) !== 0.0
+                || ((float) $item->qty_diff_large) !== 0.0;
+
+            return $hasReason || $hasDiff;
+        })->values());
 
         // Get users for approver selection
         $usersQuery = DB::table('users')
@@ -677,17 +688,12 @@ class StockOpnameController extends Controller
             $existingItems = $stockOpname->items()->get()->keyBy('inventory_item_id');
 
             // Process new items (skip if items array is empty for autosave)
-            $items = $validated['items'] ?? [];
-            
-            // For autosave, only save items that have been filled in
-            if ($request->has('autosave') && $request->autosave) {
-                $items = array_filter($items, function($itemData) {
-                    $hasQtySmall = array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '';
-                    $hasQtyMedium = array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '';
-                    $hasQtyLarge = array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '';
-                    $hasReason = isset($itemData['reason']) && $itemData['reason'] !== null && trim($itemData['reason']) !== '';
-                    return $hasQtySmall || $hasQtyMedium || $hasQtyLarge || $hasReason;
-                });
+            $items = $this->filterFilledItems($validated['items'] ?? []);
+
+            if ((!$request->has('autosave') || !$request->autosave) && empty($items)) {
+                throw ValidationException::withMessages([
+                    'items' => 'Minimal harus mengisi 1 item stock opname.',
+                ]);
             }
             
             // PERFORMANCE OPTIMIZATION: Batch query untuk stocks (fix N+1 query problem)
