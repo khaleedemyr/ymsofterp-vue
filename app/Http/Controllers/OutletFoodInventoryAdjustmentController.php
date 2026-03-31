@@ -19,6 +19,15 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
+    private function unitMatches($selectedUnit, $unitId, $unitName): bool
+    {
+        $selected = strtolower(trim((string) $selectedUnit));
+        $name = strtolower(trim((string) $unitName));
+        $id = (string) $unitId;
+
+        return ($selected !== '' && $selected === $name) || ($selected !== '' && $selected === $id);
+    }
+
     private function convertToSmallQty($itemMaster, string $selectedUnit, float $qty): float
     {
         $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
@@ -27,18 +36,17 @@ class OutletFoodInventoryAdjustmentController extends Controller
         $unitMedium = optional($itemMaster->mediumUnit)->name;
         $unitLarge = optional($itemMaster->largeUnit)->name;
 
-        if ($selectedUnit === $unitSmall) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->small_unit_id, $unitSmall)) {
             return $qty;
         }
-        if ($selectedUnit === $unitMedium) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->medium_unit_id, $unitMedium)) {
             return $qty * $smallConv;
         }
-        if ($selectedUnit === $unitLarge) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->large_unit_id, $unitLarge)) {
             return $qty * $smallConv * $mediumConv;
         }
 
-        // Fallback: treat as small unit if unit mapping not found
-        return $qty;
+        throw new \Exception("Unit '{$selectedUnit}' tidak dikenali untuk item '{$itemMaster->name}'.");
     }
 
     private function convertSmallToSelectedUnit($itemMaster, string $selectedUnit, float $qtySmall): float
@@ -49,18 +57,18 @@ class OutletFoodInventoryAdjustmentController extends Controller
         $unitMedium = optional($itemMaster->mediumUnit)->name;
         $unitLarge = optional($itemMaster->largeUnit)->name;
 
-        if ($selectedUnit === $unitSmall) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->small_unit_id, $unitSmall)) {
             return $qtySmall;
         }
-        if ($selectedUnit === $unitMedium) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->medium_unit_id, $unitMedium)) {
             return $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
         }
-        if ($selectedUnit === $unitLarge) {
+        if ($this->unitMatches($selectedUnit, $itemMaster->large_unit_id, $unitLarge)) {
             $divisor = $smallConv * $mediumConv;
             return $divisor > 0 ? ($qtySmall / $divisor) : 0;
         }
 
-        return $qtySmall;
+        return $qtySmall; // fallback for error display
     }
 
     private function validateOutStockAvailability(Request $request): void
@@ -98,6 +106,49 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 throw new \Exception(
                     "Stok tidak cukup untuk item '{$itemMaster->name}' (item ke-" . ($index + 1) . "). " .
                     "Qty diminta: {$requestedQty} {$selectedUnit}, tersedia: " .
+                    number_format($availableInSelectedUnit, 2, '.', '') . " {$selectedUnit}."
+                );
+            }
+        }
+    }
+
+    private function validateOutStockAvailabilityByAdjustment(int $adjustmentId): void
+    {
+        $header = DB::table('outlet_food_inventory_adjustments')->where('id', $adjustmentId)->first();
+        if (!$header || $header->type !== 'out') {
+            return;
+        }
+
+        $items = DB::table('outlet_food_inventory_adjustment_items')
+            ->where('adjustment_id', $adjustmentId)
+            ->get();
+
+        foreach ($items as $index => $item) {
+            $itemMaster = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($item->item_id);
+            if (!$itemMaster) {
+                throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($index + 1));
+            }
+
+            $selectedUnit = (string) $item->unit;
+            $requestedQty = (float) $item->qty;
+            $requestedSmallQty = $this->convertToSmallQty($itemMaster, $selectedUnit, $requestedQty);
+
+            $inventoryItem = OutletFoodInventoryItem::where('item_id', $item->item_id)->first();
+            $availableSmallQty = 0.0;
+
+            if ($inventoryItem) {
+                $stock = OutletFoodInventoryStock::where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $header->id_outlet)
+                    ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                    ->first();
+                $availableSmallQty = (float) ($stock->qty_small ?? 0);
+            }
+
+            if ($requestedSmallQty > $availableSmallQty) {
+                $availableInSelectedUnit = $this->convertSmallToSelectedUnit($itemMaster, $selectedUnit, $availableSmallQty);
+                throw new \Exception(
+                    "Approval ditolak karena stok tidak cukup untuk item '{$itemMaster->name}' (item ke-" . ($index + 1) . "). " .
+                    "Qty dokumen: {$requestedQty} {$selectedUnit}, tersedia saat approve: " .
                     number_format($availableInSelectedUnit, 2, '.', '') . " {$selectedUnit}."
                 );
             }
@@ -1124,7 +1175,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
                             'status' => 'approved',
                             'updated_at' => now(),
                         ]);
-                    
+
+                    $this->validateOutStockAvailabilityByAdjustment((int) $id);
                     $this->processInventory($id);
                     DB::commit();
                     
@@ -1189,6 +1241,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     ($isSuperadmin && $adj->status == 'waiting_cost_control') ||
                     ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control')
                 ) {
+                    $this->validateOutStockAvailabilityByAdjustment((int) $id);
                     $this->processInventory($id);
                 }
                 DB::commit();
