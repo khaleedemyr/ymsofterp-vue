@@ -133,6 +133,28 @@ Route::get('/kebijakan-privasi', function () {
     return response()->view('privacy-policy')->header('Content-Type', 'text/html; charset=UTF-8');
 })->name('kebijakan-privasi');
 
+Route::get('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
+    ->name('external.login');
+Route::post('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
+    ->name('external.login.store');
+
+// Alias login external untuk menghindari redirect rule pada path /external/*
+Route::get('/login-external', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
+    ->name('external.login.alias');
+Route::post('/login-external', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
+    ->name('external.login.store.alias');
+
+Route::middleware('auth:external')->group(function () {
+    Route::get('/external/report-sales-simple', [\App\Http\Controllers\ExternalAuthController::class, 'salesReport'])
+        ->name('external.sales-report');
+    Route::get('/external/api/report/sales-simple', [\App\Http\Controllers\ExternalAuthController::class, 'salesSimpleReportApi'])
+        ->name('external.api.report.sales-simple');
+    Route::get('/external/api/outlets', [\App\Http\Controllers\ExternalAuthController::class, 'outlets'])
+        ->name('external.api.outlets');
+    Route::post('/external/logout', [\App\Http\Controllers\ExternalAuthController::class, 'logout'])
+        ->name('external.logout');
+});
+
 Route::get('/dashboard', function () {
     return redirect('/home');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -381,6 +403,11 @@ Route::middleware(['auth'])->group(function () {
 
     // Ticketing System routes
     Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'index'])->name('tickets.index');
+    Route::get('/tickets/calendar', [\App\Http\Controllers\TicketController::class, 'calendar'])->name('tickets.calendar');
+    Route::get('/tickets/report', [\App\Http\Controllers\TicketController::class, 'downloadReport'])->name('tickets.report');
+    Route::get('/tickets/timeline', function () {
+        return redirect()->route('tickets.calendar', request()->query());
+    })->name('tickets.timeline');
     Route::get('/tickets/import/template', [\App\Http\Controllers\TicketController::class, 'downloadImportTemplate'])->name('tickets.import.template');
     Route::post('/tickets/import', [\App\Http\Controllers\TicketController::class, 'importFromExcel'])->name('tickets.import');
     Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
@@ -1999,6 +2026,9 @@ Route::middleware(['auth'])->group(function () {
 Route::resource('users', UserController::class);
 Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 Route::post('users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');
+Route::get('/external-report-users', [\App\Http\Controllers\ExternalReportUserController::class, 'index'])->name('external-report-users.index');
+Route::get('/external-report-users/create', [\App\Http\Controllers\ExternalReportUserController::class, 'create'])->name('external-report-users.create');
+Route::post('/external-report-users', [\App\Http\Controllers\ExternalReportUserController::class, 'store'])->name('external-report-users.store');
 
 // API routes for user saldo management
 Route::middleware(['auth'])->group(function () {

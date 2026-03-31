@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ExternalUser;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\DB;
@@ -48,42 +50,60 @@ class HandleInertiaRequests extends Middleware
         }
 
 
+        $authUser = $request->user();
+
+        $sharedAuthUser = null;
+        if ($authUser instanceof User) {
+            $sharedAuthUser = [
+                'id' => $authUser->id,
+                'email' => $authUser->email,
+                'id_outlet' => $authUser->id_outlet,
+                'id_role' => $authUser->id_role,
+                'id_jabatan' => $authUser->id_jabatan,
+                'status' => $authUser->status,
+                'division_id' => $authUser->division_id,
+                'nama_lengkap' => $authUser->nama_lengkap ?? $authUser->name,
+                'avatar' => $authUser->avatar ?? null,
+                'banner' => $authUser->banner ?? null,
+                'jabatan' => $authUser->load(['jabatan.level'])->jabatan ? [
+                    'nama_jabatan' => $authUser->jabatan->nama_jabatan,
+                    'level' => $authUser->jabatan->level ? [
+                        'nama_level' => $authUser->jabatan->level->nama_level
+                    ] : null
+                ] : null,
+                'divisi' => $authUser->load('divisi')->divisi ? [
+                    'nama_divisi' => $authUser->divisi->nama_divisi
+                ] : null,
+                'region' => optional($authUser->region)->name,
+                'outlet' => $authUser->load('outlet')->outlet ? [
+                    'nama_outlet' => $authUser->outlet->nama_outlet
+                ] : null,
+                'pending_approvals_count' => $authUser->pendingApprovals()->count(),
+                'pending_hrd_approvals_count' => $authUser->division_id == 6 ? $authUser->pendingHrdApprovals()->count() : 0,
+                'signature_path' => $authUser->signature_path,
+                'pin_payroll' => $authUser->pin_payroll,
+                'region_id' => $authUser->id_outlet
+                    ? DB::table('tbl_data_outlet')
+                        ->where('id_outlet', $authUser->id_outlet)
+                        ->value('region_id')
+                    : null,
+            ];
+        } elseif ($authUser instanceof ExternalUser) {
+            $sharedAuthUser = [
+                'id' => $authUser->id,
+                'email' => $authUser->email,
+                'name' => $authUser->name,
+                'nama_lengkap' => $authUser->name,
+                'kode_outlet' => $authUser->kode_outlet,
+                'nama_outlet' => $authUser->nama_outlet,
+                'status' => $authUser->status,
+                'is_external' => true,
+            ];
+        }
+
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $request->user() ? [
-                    'id' => $request->user()->id,
-                    'email' => $request->user()->email,
-                    'id_outlet' => $request->user()->id_outlet,
-                    'id_role' => $request->user()->id_role,
-                    'id_jabatan' => $request->user()->id_jabatan,
-                    'status' => $request->user()->status,
-                    'division_id' => $request->user()->division_id,
-                    'nama_lengkap' => $request->user()->nama_lengkap ?? $request->user()->name,
-                    'avatar' => $request->user()->avatar ?? null,
-                    'banner' => $request->user()->banner ?? null,
-                    'jabatan' => $request->user()->load(['jabatan.level'])->jabatan ? [
-                        'nama_jabatan' => $request->user()->jabatan->nama_jabatan,
-                        'level' => $request->user()->jabatan->level ? [
-                            'nama_level' => $request->user()->jabatan->level->nama_level
-                        ] : null
-                    ] : null,
-                    'divisi' => $request->user()->load('divisi')->divisi ? [
-                        'nama_divisi' => $request->user()->divisi->nama_divisi
-                    ] : null,
-                    'region' => optional($request->user()->region)->name,
-                    'outlet' => $request->user()->load('outlet')->outlet ? [
-                        'nama_outlet' => $request->user()->outlet->nama_outlet
-                    ] : null,
-                    'pending_approvals_count' => $request->user()->pendingApprovals()->count(),
-                    'pending_hrd_approvals_count' => $request->user()->division_id == 6 ? $request->user()->pendingHrdApprovals()->count() : 0,
-                    'signature_path' => $request->user()->signature_path,
-                    'pin_payroll' => $request->user()->pin_payroll,
-                    'region_id' => $request->user()->id_outlet
-                        ? \DB::table('tbl_data_outlet')
-                            ->where('id_outlet', $request->user()->id_outlet)
-                            ->value('region_id')
-                        : null,
-                ] : null,
+                'user' => $sharedAuthUser,
             ],
             'result' => fn () => $request->session()->get('result'),
             'flash' => [

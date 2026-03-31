@@ -51,7 +51,7 @@
         </div>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 items-end">
-        <div>
+        <div v-if="!isExternalMode">
           <label class="block text-sm font-medium mb-1">Outlet</label>
           <select v-model="filters.outlet" :disabled="!outletDropdownEnabled" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
             <option value="">Pilih Outlet</option>
@@ -202,6 +202,17 @@ import { ref, reactive, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
 
+const props = defineProps({
+  externalMode: {
+    type: Boolean,
+    default: false,
+  },
+  externalOutlet: {
+    type: String,
+    default: '',
+  },
+});
+
 const filters = reactive({
   outlet: '',
   date_from: '',
@@ -227,6 +238,7 @@ const selectedPerModeTanggal = ref(null);
 const showRevenueReportModal = ref(false);
 const selectedRevenueOrders = ref([]);
 const selectedRevenueTanggal = ref('');
+const isExternalMode = computed(() => props.externalMode === true);
 
 const avgCheckSummary = computed(() => {
   const grandTotal = report.summary.grand_total || 0;
@@ -248,7 +260,8 @@ function ordersByDate(tanggal) {
 }
 
 const fetchOutlets = async () => {
-  const res = await axios.get('/api/outlets/report');
+  const endpoint = isExternalMode.value ? '/external/api/outlets' : '/api/outlets/report';
+  const res = await axios.get(endpoint);
   outlets.value = res.data.outlets || [];
 };
 
@@ -262,7 +275,8 @@ const fetchMyOutletQr = async () => {
 const fetchReport = async () => {
   loading.value = true;
   try {
-    const res = await axios.get('/api/report/sales-simple', { params: filters });
+    const endpoint = isExternalMode.value ? '/external/api/report/sales-simple' : '/api/report/sales-simple';
+    const res = await axios.get(endpoint, { params: filters });
     Object.assign(report.summary, res.data.summary || {});
     report.per_day = res.data.per_day || {};
     report.orders = res.data.orders || [];
@@ -273,6 +287,13 @@ const fetchReport = async () => {
 };
 
 onMounted(async () => {
+  if (isExternalMode.value) {
+    outletDropdownEnabled.value = false;
+    await fetchOutlets();
+    filters.outlet = props.externalOutlet || outlets.value?.[0]?.qr_code || '';
+    return;
+  }
+
   if (user.id_outlet == 1) {
     outletDropdownEnabled.value = true;
     await fetchOutlets();

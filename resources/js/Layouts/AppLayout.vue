@@ -549,6 +549,8 @@ function toggleFullscreen() {
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user || { nama_lengkap: '', avatar: null });
+const isExternalUser = computed(() => Boolean(user.value?.is_external));
+const logoutRouteName = computed(() => (isExternalUser.value ? 'external.logout' : 'logout'));
 const avatarUrl = computed(() => user.value.avatar ? `/storage/${user.value.avatar}` : '/images/avatar-default.png');
 
 // Computed properties for user information
@@ -678,6 +680,10 @@ function handleNotifClick(notif) {
 
 // Fetch notifications on mount and every 60 seconds (reduced from 30s to save server resources)
 onMounted(async () => {
+    if (isExternalUser.value) {
+        return;
+    }
+
     await fetchNotifications();
     await fetchUnreadCount();
     
@@ -857,7 +863,7 @@ function formatCurrency(amount) {
     <audio ref="notificationSound" src="/sounds/aya_gawean_anyar_ringtone.mp3" preload="auto"></audio>
     
     <!-- Sidebar -->
-    <aside :class="['transition-all duration-300 flex flex-col fixed z-30 h-full bg-white shadow-xl border-r border-gray-200', sidebarOpen ? 'w-72' : 'w-20']">
+    <aside v-if="!isExternalUser" :class="['transition-all duration-300 flex flex-col fixed z-30 h-full bg-white shadow-xl border-r border-gray-200', sidebarOpen ? 'w-72' : 'w-20']">
         <!-- Sidebar Header -->
         <div class="flex items-center justify-between h-20 px-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
             <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -914,21 +920,21 @@ function formatCurrency(amount) {
         </nav>
     </aside>
     <!-- Main Content -->
-    <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', sidebarOpen ? 'ml-72' : 'ml-20']">
+    <div :class="['flex-1 flex flex-col min-h-screen transition-all duration-300', isExternalUser ? 'ml-0' : (sidebarOpen ? 'ml-72' : 'ml-20')]">
         <!-- Navbar -->
         <header class="h-16 bg-white/95 backdrop-blur-md border-b border-gray-200/50 flex items-center px-6 justify-between shadow-sm navbar-modern sticky top-0 z-20">
             <div class="flex items-center gap-4">
-                <button @click="toggleSidebar" class="md:hidden text-gray-600 hover:text-blue-600 focus:outline-none p-2 rounded-lg hover:bg-gray-100 transition-all duration-200">
+                <button v-if="!isExternalUser" @click="toggleSidebar" class="md:hidden text-gray-600 hover:text-blue-600 focus:outline-none p-2 rounded-lg hover:bg-gray-100 transition-all duration-200">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
-                <div class="hidden md:flex items-center gap-2 text-sm text-gray-600">
+                <div v-if="!isExternalUser" class="hidden md:flex items-center gap-2 text-sm text-gray-600">
                     <i class="fas fa-home text-gray-400"></i>
                     <span class="font-medium">{{ $page.component }}</span>
                 </div>
             </div>
             <div class="flex items-center gap-3">
                 <!-- Language -->
-                <div class="relative">
+                <div v-if="!isExternalUser" class="relative">
                     <button class="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all duration-200 group" @click="showLang = !showLang">
                         <img :src="currentLang === 'id' ? '/images/indonesia.png' : '/images/united-states.png'" alt="Lang" class="w-5 h-5 rounded-full ring-2 ring-gray-200 group-hover:ring-blue-300 transition-all" />
                         <span class="hidden md:inline text-sm font-medium text-gray-700">{{ languages.find(l => l.code === currentLang)?.label }}</span>
@@ -942,11 +948,11 @@ function formatCurrency(amount) {
                     </div>
                 </div>
                 <!-- Fullscreen -->
-                <button @click="toggleFullscreen" class="p-2.5 rounded-xl hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-all duration-200 group relative" title="Toggle Fullscreen">
+                <button v-if="!isExternalUser" @click="toggleFullscreen" class="p-2.5 rounded-xl hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-all duration-200 group relative" title="Toggle Fullscreen">
                     <i class="fas fa-expand group-hover:scale-110 transition-transform duration-200"></i>
                 </button>
                 <!-- Notif -->
-                <div class="relative">
+                <div v-if="!isExternalUser" class="relative">
                     <button class="p-2.5 rounded-xl hover:bg-gray-100 text-gray-600 hover:text-blue-600 transition-all duration-200 relative group" @click="showNotifDropdown = !showNotifDropdown" title="Notifications">
                         <i class="fas fa-bell group-hover:animate-pulse"></i>
                         <span v-if="unreadCount > 0" class="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-lg animate-bounce">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
@@ -1027,6 +1033,7 @@ function formatCurrency(amount) {
                             </div>
                         </div>
                         <div class="py-2">
+                            <template v-if="!isExternalUser">
                             <button @click="showProfileModal = true; showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
                                 <i class="fa-solid fa-user w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
                                 <span class="text-sm font-medium">{{ t('profile.profile') }}</span>
@@ -1044,8 +1051,9 @@ function formatCurrency(amount) {
                                 <span class="text-sm font-medium">Payroll</span>
                             </button>
                             <div class="my-2 h-px bg-gray-200"></div>
+                            </template>
                             <Link
-                                :href="route('logout')"
+                                :href="route(logoutRouteName)"
                                 method="post"
                                 as="button"
                                 class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all duration-150 group"

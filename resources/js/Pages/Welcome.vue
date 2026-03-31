@@ -49,6 +49,12 @@ function handleImageError() {
             >
                 {{ props.canLogin ? 'Go to Dashboard' : 'Login' }}
             </button>
+            <a
+                href="/login-external"
+                class="w-full mt-3 py-3 rounded-lg text-lg font-semibold text-[#1a237e] border border-[#1a237e] hover:bg-[#eef2ff] transition-all duration-200 shadow-sm text-center"
+            >
+                Login External (Revenue Report)
+            </a>
         </div>
         <div class="mt-10 text-xs text-gray-400">&copy; {{ new Date().getFullYear() }} YMSoft ERP. All rights reserved.</div>
     </div>

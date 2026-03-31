@@ -112,6 +112,14 @@ function openCreate() {
   router.visit('/users/create');
 }
 
+function openCreateExternalUser() {
+  router.visit('/external-report-users/create');
+}
+
+function openExternalUserList() {
+  router.visit('/external-report-users');
+}
+
 function openEdit(user) {
   router.visit(`/users/${user.id}/edit`);
 }
@@ -542,6 +550,12 @@ function exportToExcel() {
            </button>
            <button @click="openUploadModal" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              <i class="fa-solid fa-upload mr-2"></i>Upload Excel
+           </button>
+           <button @click="openCreateExternalUser" class="bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             + Input User External
+           </button>
+           <button @click="openExternalUserList" class="bg-gradient-to-r from-cyan-500 to-cyan-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+             List User External
            </button>
            <button @click="openCreate" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              + Tambah Karyawan Baru

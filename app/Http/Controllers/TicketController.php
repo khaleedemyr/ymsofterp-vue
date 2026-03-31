@@ -723,6 +723,506 @@ class TicketController extends Controller
     }
 
     /**
+     * Download ticket report (styled XLSX) based on active filters.
+     */
+    public function downloadReport(Request $request)
+    {
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+        $priority = $request->get('priority', 'all');
+        $category = $request->get('category', 'all');
+        $division = $request->get('division', 'all');
+        $outlet = $request->get('outlet', 'all');
+        $paymentStatus = $request->get('payment_status', 'all');
+
+        $query = Ticket::with([
+            'category',
+            'priority',
+            'status',
+            'divisi',
+            'outlet',
+            'creator',
+            'assignedUsers:id,nama_lengkap',
+        ]);
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ticket_number', 'like', "%{$search}%")
+                    ->orWhere('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        if ($status !== 'all') {
+            $query->whereHas('status', function ($q) use ($status) {
+                $q->where('slug', $status);
+            });
+        }
+        if ($priority !== 'all') {
+            $query->where('priority_id', $priority);
+        }
+        if ($category !== 'all') {
+            $query->where('category_id', $category);
+        }
+        if ($division !== 'all') {
+            $query->where('divisi_id', $division);
+        }
+        if ($outlet !== 'all') {
+            $query->where('outlet_id', $outlet);
+        }
+
+        if ($paymentStatus !== 'all') {
+            $paidCondition = function ($prQuery) {
+                $prQuery->where(function ($q) {
+                    $q->whereRaw("UPPER(status) = 'PAID'")
+                        ->orWhereExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('non_food_payments as nfp')
+                                ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                                ->whereIn('nfp.status', ['paid', 'approved'])
+                                ->where('nfp.status', '!=', 'cancelled');
+                        });
+                });
+            };
+            $hasAnyPaymentCondition = function ($prQuery) {
+                $prQuery->whereExists(function ($subQuery) {
+                    $subQuery->select(DB::raw(1))
+                        ->from('non_food_payments as nfp')
+                        ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                        ->where('nfp.status', '!=', 'cancelled');
+                });
+            };
+
+            if ($paymentStatus === 'paid') {
+                $query->whereHas('purchaseRequisitions', $paidCondition);
+            } elseif ($paymentStatus === 'on_process') {
+                $query->whereDoesntHave('purchaseRequisitions', $paidCondition)
+                    ->whereHas('purchaseRequisitions', $hasAnyPaymentCondition);
+            } elseif ($paymentStatus === 'no_pr') {
+                $query->whereDoesntHave('purchaseRequisitions');
+            } elseif ($paymentStatus === 'with_pr') {
+                $query->whereHas('purchaseRequisitions');
+            }
+        }
+
+        $tickets = $query->orderBy('created_at', 'desc')->get();
+
+        $ticketIds = $tickets->pluck('id')->toArray();
+        $prsByTicket = collect();
+        $paymentStatsByPr = collect();
+
+        if (!empty($ticketIds)) {
+            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
+                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode')
+                ->orderBy('created_at', 'desc')
+                ->get();
+            $prsByTicket = $prs->groupBy('ticket_id');
+
+            $prIds = $prs->pluck('id')->toArray();
+            if (!empty($prIds)) {
+                $paymentStatsByPr = DB::table('non_food_payments')
+                    ->whereIn('purchase_requisition_id', $prIds)
+                    ->select(
+                        'purchase_requisition_id as pr_id',
+                        DB::raw('COUNT(*) as total_payments'),
+                        DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+                    )
+                    ->groupBy('purchase_requisition_id')
+                    ->get()
+                    ->keyBy('pr_id');
+            }
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Ticket Report');
+
+        $headers = [
+            'Ticket Number',
+            'Issue Type',
+            'Title',
+            'Category',
+            'Priority',
+            'Status',
+            'Division',
+            'Outlet',
+            'Creator',
+            'Team',
+            'Created At',
+            'Due Date',
+            'Selesai (Closed At)',
+            'Total PR',
+            'Paid PR',
+            'Processing PR',
+        ];
+
+        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->mergeCells("A1:{$lastCol}1");
+        $sheet->setCellValue('A1', 'Ticket Report');
+        $sheet->setCellValue('A2', 'Generated: ' . now()->format('d M Y H:i:s'));
+
+        $col = 1;
+        foreach ($headers as $h) {
+            $sheet->setCellValueByColumnAndRow($col, 3, $h);
+            $col++;
+        }
+
+        $row = 4;
+        foreach ($tickets as $ticket) {
+            $issueMeta = $this->ticketCalendarIssueMeta($ticket);
+            $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
+            $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
+                $paymentStat = $paymentStatsByPr->get($pr->id);
+                $totalPayments = (int) ($paymentStat->total_payments ?? 0);
+                $paidPayments = (int) ($paymentStat->paid_payments ?? 0);
+                if (strtoupper((string) $pr->status) === 'PAID' || $paidPayments > 0) {
+                    return 'PAID';
+                }
+                if ($totalPayments > 0) {
+                    return 'ON_PROCESS';
+                }
+                return 'NO_PAYMENT';
+            });
+
+            $teamNames = $ticket->assignedUsers
+                ->pluck('nama_lengkap')
+                ->filter()
+                ->implode(', ');
+
+            $statusSlug = $ticket->status?->slug;
+            $selesaiAt = ($statusSlug === 'closed' && $ticket->closed_at)
+                ? $ticket->closed_at->format('Y-m-d H:i:s')
+                : '';
+
+            $values = [
+                $ticket->ticket_number,
+                $issueMeta['label'],
+                $ticket->title,
+                $ticket->category?->name,
+                $ticket->priority?->name,
+                $ticket->status?->name,
+                $ticket->divisi?->nama_divisi,
+                $ticket->outlet?->nama_outlet,
+                $ticket->creator?->nama_lengkap,
+                $teamNames,
+                optional($ticket->created_at)->format('Y-m-d H:i:s'),
+                $ticket->due_date ? Carbon::parse($ticket->due_date)->format('Y-m-d H:i:s') : '',
+                $selesaiAt,
+                $prSummaries->count(),
+                $prSummaries->where(fn ($s) => $s === 'PAID')->count(),
+                $prSummaries->where(fn ($s) => $s === 'ON_PROCESS')->count(),
+            ];
+
+            $c = 1;
+            foreach ($values as $v) {
+                $sheet->setCellValueByColumnAndRow($c, $row, $v);
+                $c++;
+            }
+            $row++;
+        }
+
+        $sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 16, 'color' => ['rgb' => '1F2937']],
+            'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+        ]);
+        $sheet->getStyle("A3:{$lastCol}3")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '2563EB'],
+            ],
+            'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+        ]);
+        if ($row > 4) {
+            $sheet->getStyle("A4:{$lastCol}" . ($row - 1))->getAlignment()->setVertical('top');
+        }
+
+        for ($i = 1; $i <= count($headers); $i++) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
+            $sheet->getColumnDimension($colLetter)->setAutoSize(true);
+        }
+        $sheet->getRowDimension(1)->setRowHeight(26);
+        $sheet->freezePane('A4');
+        $sheet->setAutoFilter("A3:{$lastCol}3");
+
+        $fileName = 'ticket-report-' . now()->format('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Kalender bulanan: ticket di tanggal due & tanggal dibuat (bulan berjalan).
+     */
+    public function calendar(Request $request)
+    {
+        $year = (int) $request->get('year', now()->year);
+        $month = (int) $request->get('month', now()->month);
+        if ($month < 1 || $month > 12) {
+            $month = now()->month;
+        }
+        if ($year < 2000 || $year > 2100) {
+            $year = now()->year;
+        }
+
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $end = (clone $start)->endOfMonth()->endOfDay();
+
+        $tickets = Ticket::query()
+            ->with([
+                'status:id,name,slug,is_final',
+                'priority:id,name',
+                'category:id,name',
+                'outlet:id_outlet,nama_outlet',
+                'creator:id,nama_lengkap',
+                'assignedUsers:id,nama_lengkap,avatar',
+                'attachments:id,ticket_id,file_name,file_path,file_size,mime_type',
+            ])
+            ->where(function ($q) use ($start, $end) {
+                $q->whereBetween('due_date', [$start, $end])
+                    ->orWhereBetween('created_at', [$start, $end]);
+            })
+            ->orderBy('ticket_number')
+            ->get();
+
+        $ticketIds = $tickets->pluck('id')->toArray();
+        $prsByTicket = collect();
+        $paymentStatsByPr = collect();
+
+        if (!empty($ticketIds)) {
+            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
+                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->get();
+            $prsByTicket = $prs->groupBy('ticket_id');
+
+            $prIds = $prs->pluck('id')->toArray();
+            if (!empty($prIds)) {
+                $paymentStatsByPr = DB::table('non_food_payments')
+                    ->whereIn('purchase_requisition_id', $prIds)
+                    ->select(
+                        'purchase_requisition_id as pr_id',
+                        DB::raw('COUNT(*) as total_payments'),
+                        DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+                    )
+                    ->groupBy('purchase_requisition_id')
+                    ->get()
+                    ->keyBy('pr_id');
+            }
+        }
+
+        $calendarEvents = [];
+        foreach ($tickets as $ticket) {
+            $dueDay = $ticket->due_date ? Carbon::parse($ticket->due_date)->toDateString() : null;
+            $createdDay = $ticket->created_at
+                ? $ticket->created_at->clone()->timezone(config('app.timezone'))->toDateString()
+                : null;
+
+            $inMonth = function (?string $dateStr) use ($start, $end): bool {
+                if ($dateStr === null || $dateStr === '') {
+                    return false;
+                }
+                $d = Carbon::parse($dateStr);
+
+                return $d->gte($start->copy()->startOfDay()) && $d->lte($end->copy()->endOfDay());
+            };
+
+            if ($dueDay && $inMonth($dueDay)) {
+                $calendarEvents[] = $this->buildTicketCalendarEvent($ticket, $dueDay, 'due', $prsByTicket, $paymentStatsByPr);
+            }
+            if ($createdDay && $inMonth($createdDay) && $createdDay !== $dueDay) {
+                $calendarEvents[] = $this->buildTicketCalendarEvent($ticket, $createdDay, 'created', $prsByTicket, $paymentStatsByPr);
+            }
+        }
+
+        return Inertia::render('Tickets/Calendar', [
+            'calendarEvents' => $calendarEvents,
+            'year' => $year,
+            'month' => $month,
+        ]);
+    }
+
+    private function buildTicketCalendarEvent(Ticket $ticket, string $date, string $kind, $prsByTicket, $paymentStatsByPr): array
+    {
+        $slug = $ticket->status?->slug ?? '';
+        $isFinal = (bool) ($ticket->status?->is_final ?? false);
+        $due = $ticket->due_date ? Carbon::parse($ticket->due_date) : null;
+        $overdue = $kind === 'due' && $due && $due->copy()->startOfDay()->lt(now()->startOfDay()) && !$isFinal;
+
+        $palette = $this->ticketCalendarColors($slug, $overdue, $kind);
+
+        $prefix = $kind === 'due' ? 'Due' : 'Baru';
+        $title = $prefix . ' · ' . $ticket->ticket_number;
+        $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
+        $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
+            $paymentStat = $paymentStatsByPr->get($pr->id);
+            $totalPayments = (int) ($paymentStat->total_payments ?? 0);
+            $paidPayments = (int) ($paymentStat->paid_payments ?? 0);
+
+            $paymentStatus = 'NO_PAYMENT';
+            if (strtoupper((string) $pr->status) === 'PAID' || $paidPayments > 0) {
+                $paymentStatus = 'PAID';
+            } elseif ($totalPayments > 0) {
+                $paymentStatus = 'ON_PROCESS';
+            }
+
+            return [
+                'id' => $pr->id,
+                'pr_number' => $pr->pr_number,
+                'mode' => $pr->mode,
+                'status' => $pr->status,
+                'payment_status' => $paymentStatus,
+                'total_payments' => $totalPayments,
+                'paid_payments' => $paidPayments,
+                'created_at' => $pr->created_at,
+            ];
+        })->values();
+
+        $paymentInfo = [
+            'total_pr' => $prSummaries->count(),
+            'total_paid_pr' => $prSummaries->where('payment_status', 'PAID')->count(),
+            'total_processing_pr' => $prSummaries->where('payment_status', 'ON_PROCESS')->count(),
+            'prs' => $prSummaries,
+        ];
+
+        $issueMeta = $this->ticketCalendarIssueMeta($ticket);
+
+        return [
+            'id' => $ticket->id . '-' . $kind . '-' . $date,
+            'title' => $title,
+            'start' => $date,
+            'allDay' => true,
+            'backgroundColor' => $palette['bg'],
+            'borderColor' => $palette['border'],
+            'textColor' => $palette['text'],
+            'extendedProps' => [
+                'ticket_id' => $ticket->id,
+                'ticket_number' => $ticket->ticket_number,
+                'title_full' => $ticket->title,
+                'status' => $ticket->status?->name,
+                'status_slug' => $slug,
+                'priority' => $ticket->priority?->name,
+                'outlet_name' => $ticket->outlet?->nama_outlet,
+                'creator_name' => $ticket->creator?->nama_lengkap,
+                'issue_type_label' => $issueMeta['label'],
+                'issue_type_variant' => $issueMeta['variant'],
+                'created_at_label' => $ticket->created_at?->format('d M Y H:i'),
+                'due_date_label' => $ticket->due_date ? Carbon::parse($ticket->due_date)->format('d M Y H:i') : null,
+                'assigned_team' => $ticket->assignedUsers->map(function ($user) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->nama_lengkap,
+                        'avatar' => $user->avatar,
+                    ];
+                })->values()->all(),
+                'attachments' => $ticket->attachments->map(function ($attachment) {
+                    return [
+                        'id' => $attachment->id,
+                        'name' => $attachment->file_name,
+                        'path' => $attachment->file_path,
+                        'mime' => $attachment->mime_type,
+                        'size' => $attachment->file_size,
+                    ];
+                })->values()->all(),
+                'kind' => $kind,
+                'overdue' => $overdue,
+                'payment_info' => $paymentInfo,
+            ],
+        ];
+    }
+
+    /**
+     * Selaras dengan inferensi issue type di Tickets/Index.vue (defect / ops issue + fallback teks mentah).
+     *
+     * @return array{label: string, variant: string}
+     */
+    private function ticketCalendarIssueMeta(Ticket $ticket): array
+    {
+        $normalize = static function (?string $value): string {
+            if ($value === null || $value === '') {
+                return '';
+            }
+
+            return strtolower(str_replace(['_', '-'], ' ', trim($value)));
+        };
+
+        $raw = $ticket->getAttribute('issue_type');
+        $rawStr = $raw !== null && $raw !== '' ? (string) $raw : '';
+        $issueNorm = $normalize($rawStr);
+        $categoryNorm = $normalize($ticket->category?->name);
+
+        $key = '';
+        if ($issueNorm === 'defect') {
+            $key = 'defect';
+        } elseif ($issueNorm === 'ops issue') {
+            $key = 'ops_issue';
+        } elseif (str_contains($categoryNorm, 'defect')) {
+            $key = 'defect';
+        } elseif (
+            str_contains($categoryNorm, 'ops issue')
+            || str_contains($categoryNorm, 'ops')
+            || str_contains($categoryNorm, 'operation')
+        ) {
+            $key = 'ops_issue';
+        }
+
+        if ($key === 'defect') {
+            return ['label' => 'Defect', 'variant' => 'defect'];
+        }
+        if ($key === 'ops_issue') {
+            return ['label' => 'Ops Issue', 'variant' => 'ops_issue'];
+        }
+
+        if ($rawStr !== '') {
+            return ['label' => $rawStr, 'variant' => 'custom'];
+        }
+
+        return ['label' => '', 'variant' => ''];
+    }
+
+    /**
+     * @return array{bg: string, border: string, text: string}
+     */
+    private function ticketCalendarColors(string $slug, bool $overdue, string $kind): array
+    {
+        if ($overdue) {
+            return ['bg' => '#fee2e2', 'border' => '#dc2626', 'text' => '#991b1b'];
+        }
+        if ($kind === 'created') {
+            return ['bg' => '#e0e7ff', 'border' => '#6366f1', 'text' => '#312e81'];
+        }
+
+        return match ($slug) {
+            'open' => ['bg' => '#dbeafe', 'border' => '#2563eb', 'text' => '#1e3a8a'],
+            'in_progress' => ['bg' => '#fef9c3', 'border' => '#ca8a04', 'text' => '#713f12'],
+            'resolved' => ['bg' => '#dcfce7', 'border' => '#16a34a', 'text' => '#14532d'],
+            'closed' => ['bg' => '#f3f4f6', 'border' => '#6b7280', 'text' => '#1f2937'],
+            default => ['bg' => '#f3f4f6', 'border' => '#9ca3af', 'text' => '#374151'],
+        };
+    }
+
+    /**
+     * Sync closed_at when status transitions to/from slug "closed".
+     *
+     * @return array{closed_at?: \Illuminate\Support\Carbon|null}
+     */
+    private function closedAtAttributesForStatusChange(?string $oldSlug, TicketStatus $newStatus): array
+    {
+        $newSlug = $newStatus->slug;
+        if ($oldSlug !== 'closed' && $newSlug === 'closed') {
+            return ['closed_at' => now()];
+        }
+        if ($oldSlug === 'closed' && $newSlug !== 'closed') {
+            return ['closed_at' => null];
+        }
+
+        return [];
+    }
+
+    /**
      * Show the form for creating a new ticket
      */
     public function create()
@@ -997,7 +1497,7 @@ class TicketController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $ticket = Ticket::findOrFail($id);
+        $ticket = Ticket::with('status')->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
@@ -1020,15 +1520,19 @@ class TicketController extends Controller
         DB::beginTransaction();
         try {
             $oldData = $ticket->toArray();
-            
+            $oldStatusSlug = $ticket->status?->slug;
+            $newStatus = TicketStatus::findOrFail($request->status_id);
+
             // Recalculate due date if priority changed
             $dueDate = $ticket->due_date;
             if ($oldData['priority_id'] != $request->priority_id) {
                 $priority = TicketPriority::findOrFail($request->priority_id);
                 $dueDate = now()->addDays($priority->max_days ?? 7);
             }
-            
-            $ticket->update([
+
+            $closedAtAttrs = $this->closedAtAttributesForStatusChange($oldStatusSlug, $newStatus);
+
+            $ticket->update(array_merge([
                 'title' => $request->title,
                 'description' => $request->description,
                 'category_id' => $request->category_id,
@@ -1037,7 +1541,7 @@ class TicketController extends Controller
                 'divisi_id' => $request->divisi_id,
                 'outlet_id' => $request->outlet_id,
                 'due_date' => $dueDate,
-            ]);
+            ], $closedAtAttrs));
 
             // Create ticket history for changes
             $this->createTicketHistory($ticket, 'updated', null, null, 'Ticket updated');
@@ -1096,11 +1600,13 @@ class TicketController extends Controller
         }
 
         $oldLabel = $ticket->status?->name ?? '-';
+        $oldStatusSlug = $ticket->status?->slug;
         $previousStatusId = $ticket->status_id;
 
         DB::beginTransaction();
         try {
-            $ticket->update(['status_id' => $newStatus->id]);
+            $closedAtAttrs = $this->closedAtAttributesForStatusChange($oldStatusSlug, $newStatus);
+            $ticket->update(array_merge(['status_id' => $newStatus->id], $closedAtAttrs));
             $this->createTicketHistory(
                 $ticket,
                 'updated',

@@ -40,6 +40,11 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        'external' => [
+            'driver' => 'session',
+            'provider' => 'external_users',
+        ],
         
         'sanctum' => [
             'driver' => 'sanctum',
@@ -73,6 +78,11 @@ return [
         'members' => [
             'driver' => 'eloquent',
             'model' => App\Models\MemberAppsMember::class,
+        ],
+
+        'external_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\ExternalUser::class,
         ],
 
         // 'users' => [

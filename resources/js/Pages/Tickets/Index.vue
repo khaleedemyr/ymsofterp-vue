@@ -16,6 +16,20 @@
           <div class="flex flex-wrap gap-2">
             <button
               type="button"
+              @click="openCalendar"
+              class="bg-white/90 text-violet-800 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
+              <i class="fa-solid fa-calendar-days mr-2"></i> Kalender
+            </button>
+            <button
+              type="button"
+              @click="downloadReport"
+              class="bg-white/90 text-sky-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
+              <i class="fa-solid fa-file-lines mr-2"></i> Report
+            </button>
+            <button
+              type="button"
               @click="downloadImportTemplate"
               class="bg-white/90 text-indigo-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
             >
@@ -262,24 +276,33 @@
                     </span>
                   </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <select
-                    v-if="ticketStatuses.length"
-                    :value="String(ticket.status_id)"
-                    :disabled="statusUpdatingId === ticket.id"
-                    title="Ubah status tanpa buka halaman edit"
-                    @change="quickUpdateStatus(ticket, $event)"
-                    class="max-w-[14rem] cursor-pointer rounded-lg border border-gray-200/80 py-1.5 pl-2 pr-8 text-xs font-semibold shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-55"
-                    :class="getStatusColor(ticket.status?.slug)"
-                  >
-                    <option v-for="s in ticketStatuses" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
-                  </select>
-                  <span
-                    v-else
-                    :class="['inline-flex px-2 py-1 text-xs font-semibold rounded-full', getStatusColor(ticket.status?.slug)]"
-                  >
-                    {{ ticket.status?.name || '-' }}
-                  </span>
+                <td class="px-6 py-4 align-top">
+                  <div class="space-y-1.5">
+                    <select
+                      v-if="ticketStatuses.length"
+                      :value="String(ticket.status_id)"
+                      :disabled="statusUpdatingId === ticket.id"
+                      title="Ubah status tanpa buka halaman edit"
+                      @change="quickUpdateStatus(ticket, $event)"
+                      class="max-w-[14rem] cursor-pointer rounded-lg border border-gray-200/80 py-1.5 pl-2 pr-8 text-xs font-semibold shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-55"
+                      :class="getStatusColor(ticket.status?.slug)"
+                    >
+                      <option v-for="s in ticketStatuses" :key="s.id" :value="String(s.id)">{{ s.name }}</option>
+                    </select>
+                    <span
+                      v-else
+                      :class="['inline-flex px-2 py-1 text-xs font-semibold rounded-full', getStatusColor(ticket.status?.slug)]"
+                    >
+                      {{ ticket.status?.name || '-' }}
+                    </span>
+                    <div
+                      v-if="ticket.status?.slug === 'closed'"
+                      class="max-w-[14rem] text-[10px] leading-snug text-gray-500"
+                    >
+                      <span class="font-semibold text-gray-600">Selesai:</span>
+                      {{ formatDateTime(ticket.closed_at) }}
+                    </div>
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div class="space-y-1">
@@ -787,6 +810,22 @@ function resetFilters() {
 
 function openCreate() {
   router.visit('/tickets/create');
+}
+
+function openCalendar() {
+  router.visit('/tickets/calendar');
+}
+
+function downloadReport() {
+  const params = new URLSearchParams({
+    search: search.value || '',
+    status: status.value || 'all',
+    priority: priority.value || 'all',
+    division: division.value || 'all',
+    outlet: outlet.value || 'all',
+    payment_status: paymentStatus.value || 'all',
+  });
+  window.open(`/tickets/report?${params.toString()}`, '_blank');
 }
 
 function downloadImportTemplate() {
