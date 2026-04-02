@@ -387,52 +387,46 @@ class CostReportController extends Controller
             return [];
         }
 
-        $endingFromOpname = [];
-        $endingRows = DB::table('outlet_stock_opname_items as soi')
-            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
-            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
-            ->whereIn('so.outlet_id', $outletIds)
-            ->whereIn('so.warehouse_outlet_id', $warehouseOutletIds)
-            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
-            ->whereDate('so.opname_date', '=', $tanggalAkhirBulan)
+        $tanggalAwalBulan = Carbon::parse($tanggalAkhirBulan)->startOfMonth()->toDateString();
+
+        // Ambil stock opname TERAKHIR dalam bulan ini per (outlet, warehouse_outlet)
+        // (bukan harus tepat tanggal akhir bulan) agar ending tidak 0 semua.
+        $outletIdsSql = implode(',', array_map('intval', $outletIds));
+        $warehouseIdsSql = implode(',', array_map('intval', $warehouseOutletIds));
+
+        $latestSoSub = "
+            SELECT
+                so.outlet_id,
+                so.warehouse_outlet_id,
+                MAX(CONCAT(DATE(so.opname_date), ' ', LPAD(so.id, 20, '0'))) AS mx
+            FROM outlet_stock_opnames so
+            WHERE so.outlet_id IN ({$outletIdsSql})
+              AND so.warehouse_outlet_id IN ({$warehouseIdsSql})
+              AND so.status IN ('APPROVED', 'COMPLETED')
+              AND DATE(so.opname_date) >= '{$tanggalAwalBulan}'
+              AND DATE(so.opname_date) <= '{$tanggalAkhirBulan}'
+            GROUP BY so.outlet_id, so.warehouse_outlet_id
+        ";
+
+        $endingTotals = DB::table('outlet_stock_opnames as so')
+            ->join(DB::raw("({$latestSoSub}) t"), function ($join) {
+                $join->on('t.outlet_id', '=', 'so.outlet_id')
+                    ->on('t.warehouse_outlet_id', '=', 'so.warehouse_outlet_id');
+            })
+            ->whereRaw("t.mx = CONCAT(DATE(so.opname_date), ' ', LPAD(so.id, 20, '0'))")
+            ->join('outlet_stock_opname_items as soi', 'soi.stock_opname_id', '=', 'so.id')
             ->select(
                 'so.outlet_id',
                 'so.warehouse_outlet_id',
-                'fi.item_id',
-                'soi.qty_physical_small',
-                'soi.mac_after',
-                'soi.mac_before',
-                'so.id as so_id'
+                DB::raw('SUM(COALESCE(soi.qty_physical_small,0) * COALESCE(soi.mac_after, soi.mac_before, 0)) as total_mac')
             )
-            ->orderByDesc('so.id')
+            ->groupBy('so.outlet_id', 'so.warehouse_outlet_id')
             ->get();
 
-        foreach ($endingRows as $row) {
-            $key = (int) $row->outlet_id . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->item_id;
-            if (isset($endingFromOpname[$key])) {
-                continue;
-            }
-
-            $endingFromOpname[$key] = [
-                'qty_small' => (float) ($row->qty_physical_small ?? 0),
-                'mac' => (float) ($row->mac_after ?? $row->mac_before ?? 0),
-            ];
-        }
-
         $totalsByWarehouse = [];
-        foreach ($stockRows as $row) {
-            $warehouseId = (int) $row->warehouse_outlet_id;
-            $key = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->item_id;
-            $opname = $endingFromOpname[$key] ?? null;
-            if ($opname === null) {
-                continue;
-            }
-
-            if (!isset($totalsByWarehouse[$warehouseId])) {
-                $totalsByWarehouse[$warehouseId] = 0;
-            }
-
-            $totalsByWarehouse[$warehouseId] += (float) ($opname['qty_small'] ?? 0) * (float) ($opname['mac'] ?? 0);
+        foreach ($endingTotals as $r) {
+            $warehouseId = (int) $r->warehouse_outlet_id;
+            $totalsByWarehouse[$warehouseId] = (float) ($r->total_mac ?? 0);
         }
 
         return $totalsByWarehouse;
