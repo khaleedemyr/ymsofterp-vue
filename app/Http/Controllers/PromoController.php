@@ -445,6 +445,14 @@ class PromoController extends Controller
             ->with('success', 'Promo berhasil dihapus!');
     }
 
+    public function toggleStatus(Promo $promo)
+    {
+        $promo->status = $promo->status === 'active' ? 'inactive' : 'active';
+        $promo->save();
+
+        return back()->with('success', 'Status promo berhasil diubah');
+    }
+
     public function apiItemPrices(Request $request)
     {
         $itemIds = $request->input('item_ids', []);

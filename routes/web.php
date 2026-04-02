@@ -1503,6 +1503,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/promos/{promo}', [PromoController::class, 'show'])->name('promos.show');
     Route::get('/promos/{promo}/edit', [PromoController::class, 'edit'])->name('promos.edit');
     Route::put('/promos/{promo}', [PromoController::class, 'update'])->name('promos.update');
+    Route::patch('/promos/{promo}/toggle-status', [PromoController::class, 'toggleStatus'])->name('promos.toggle-status');
     Route::delete('/promos/{promo}', [PromoController::class, 'destroy'])->name('promos.destroy');
 
     Route::get('/payment-types', [PaymentTypeController::class, 'index'])->name('payment-types.index');

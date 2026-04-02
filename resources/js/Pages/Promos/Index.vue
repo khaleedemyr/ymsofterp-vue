@@ -57,9 +57,24 @@
               <td class="px-6 py-3">{{ formatDate(promo.start_date) }}</td>
               <td class="px-6 py-3">{{ formatDate(promo.end_date) }}</td>
               <td class="px-6 py-3">
-                <span :class="promo.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'" class="px-2 py-1 rounded-full text-xs font-bold">
-                  {{ promo.status === 'active' ? 'Aktif' : 'Nonaktif' }}
-                </span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    @click="toggleStatus(promo)"
+                    :disabled="loadingToggleId === promo.id"
+                    class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50"
+                    :class="promo.status === 'active' ? 'bg-green-500' : 'bg-gray-300'"
+                    :title="promo.status === 'active' ? 'Klik untuk nonaktifkan promo' : 'Klik untuk aktifkan promo'"
+                  >
+                    <span
+                      class="inline-block h-4 w-4 transform rounded-full bg-white transition"
+                      :class="promo.status === 'active' ? 'translate-x-6' : 'translate-x-1'"
+                    />
+                  </button>
+                  <span :class="promo.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'" class="px-2 py-1 rounded-full text-xs font-bold">
+                    {{ promo.status === 'active' ? 'Aktif' : 'Nonaktif' }}
+                  </span>
+                </div>
               </td>
               <td class="px-6 py-3">
                 <Link :href="route('promos.show', promo.id)" class="inline-flex items-center btn btn-xs bg-pink-100 text-pink-800 hover:bg-pink-200 rounded px-2 py-1 font-semibold transition">
@@ -97,6 +112,7 @@ const search = ref(props.search || '');
 const type = ref(props.type || '');
 
 const loadingDeleteId = ref(null);
+const loadingToggleId = ref(null);
 
 function formatDate(date) {
   if (!date) return '-';
@@ -122,6 +138,33 @@ async function handleDelete(id) {
     onError: () => {
       loadingDeleteId.value = null;
       Swal.fire('Error', 'Gagal menghapus promo', 'error');
+    }
+  });
+}
+
+async function toggleStatus(promo) {
+  const isActive = promo.status === 'active';
+  const confirm = await Swal.fire({
+    title: isActive ? 'Nonaktifkan Promo?' : 'Aktifkan Promo?',
+    text: isActive ? 'Promo tidak akan dipakai saat transaksi.' : 'Promo akan kembali dipakai saat transaksi.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: isActive ? 'Ya, Nonaktifkan' : 'Ya, Aktifkan',
+    cancelButtonText: 'Batal',
+  });
+
+  if (!confirm.isConfirmed) return;
+
+  loadingToggleId.value = promo.id;
+  router.patch(route('promos.toggle-status', promo.id), {}, {
+    preserveScroll: true,
+    onSuccess: () => {
+      loadingToggleId.value = null;
+      Swal.fire('Sukses', 'Status promo berhasil diubah', 'success');
+    },
+    onError: () => {
+      loadingToggleId.value = null;
+      Swal.fire('Error', 'Gagal mengubah status promo', 'error');
     }
   });
 }
