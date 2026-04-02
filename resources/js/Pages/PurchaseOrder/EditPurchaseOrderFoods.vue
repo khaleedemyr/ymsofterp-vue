@@ -181,6 +181,10 @@
             </button>
           </div>
 
+          <p class="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            PR menggantung dengan tanggal lebih dari 7 hari disembunyikan dari daftar.
+          </p>
+
           <!-- Loading State -->
           <div v-if="loadingPR" class="flex justify-center items-center py-8">
             <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

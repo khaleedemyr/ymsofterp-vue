@@ -271,22 +271,32 @@ function setQty(item, val) {
 }
 
 function syncTabItemsToForm() {
-  // Ambil semua item dari categories yang qty > 0
-  const items = [];
+  // Satu baris per item.id (hindari double jika item sama muncul di lebih dari satu kategori)
+  const byId = new Map();
   categories.value.forEach(cat => {
     cat.items.forEach(item => {
-      if (Number(item.qty) > 0) {
-        items.push({
+      const qty = Number(item.qty) || 0;
+      if (qty <= 0) return;
+      const price = Number(item.price) || 0;
+      const id = item.id;
+      if (byId.has(id)) {
+        const cur = byId.get(id);
+        const newQty = (Number(cur.qty) || 0) + qty;
+        cur.qty = newQty;
+        cur.subtotal = newQty * (Number(cur.price) || 0);
+      } else {
+        byId.set(id, {
           item_id: item.id,
           item_name: item.name,
           qty: item.qty,
           unit: item.unit_medium_name || item.unit_medium || item.unit_small || item.unit || '-',
           price: item.price,
-          subtotal: (Number(item.qty) || 0) * (Number(item.price) || 0),
+          subtotal: qty * price,
         });
       }
     });
   });
+  const items = Array.from(byId.values());
   form.value.items = items.length ? items : [{
     item_id: '', item_name: '', qty: '', unit: '', price: 0, subtotal: 0,
     suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random()

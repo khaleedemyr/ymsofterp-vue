@@ -69,6 +69,30 @@ class FoodFloorOrderController extends Controller
         return $processedItems;
     }
 
+    /**
+     * Satu baris per item_id: qty & subtotal dijumlahkan (hindari double dari mode tab / payload ganda).
+     */
+    private function dedupeProcessedItemsByItemId(array $processedItems): array
+    {
+        $map = [];
+        foreach ($processedItems as $item) {
+            $key = (string) $item['item_id'];
+            if (! isset($map[$key])) {
+                $map[$key] = $item;
+
+                continue;
+            }
+            $acc = &$map[$key];
+            $acc['qty'] = (float) $acc['qty'] + (float) $item['qty'];
+            $acc['subtotal'] = (float) $acc['subtotal'] + (float) $item['subtotal'];
+            if ($acc['qty'] > 0) {
+                $acc['price'] = round($acc['subtotal'] / $acc['qty'], 4);
+            }
+        }
+
+        return array_values($map);
+    }
+
     // Method store untuk membuat floor order
     public function store(Request $request)
     {
@@ -147,7 +171,9 @@ class FoodFloorOrderController extends Controller
             $items = $request->items;
             
             // Proses item tanpa validasi supplier
-            $processedItems = $this->validateAndGroupItemsBySupplier($items, $idOutlet, $request->fo_mode);
+            $processedItems = $this->dedupeProcessedItemsByItemId(
+                $this->validateAndGroupItemsBySupplier($items, $idOutlet, $request->fo_mode)
+            );
 
             // Hapus item lama (hanya untuk draft ini)
             \DB::table('food_floor_order_items')->where('floor_order_id', $floorOrderId)->delete();
@@ -222,7 +248,9 @@ class FoodFloorOrderController extends Controller
         ));
 
         // Proses item tanpa validasi supplier
-        $processedItems = $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode);
+        $processedItems = $this->dedupeProcessedItemsByItemId(
+            $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode)
+        );
 
         // Hapus data item lama
         $order->items()->delete();

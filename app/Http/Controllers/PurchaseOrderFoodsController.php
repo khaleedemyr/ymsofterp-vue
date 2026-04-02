@@ -175,6 +175,7 @@ class PurchaseOrderFoodsController extends Controller
                 ->leftJoin('items as i', 'items.item_id', '=', 'i.id')
                 ->leftJoin('warehouses as w', 'pr.warehouse_id', '=', 'w.id')
                 ->where('pr.status', 'approved')
+                ->where('pr.tanggal', '>=', $this->prFoodOpenForPoTanggalCutoff())
                 ->whereNotIn('items.id', $poPrItemIds)
                 ->select(
                     'pr.id',
@@ -242,7 +243,17 @@ class PurchaseOrderFoodsController extends Controller
             'pr_ids.*' => 'exists:pr_foods,id'
         ]);
 
-        $items = PurchaseRequisitionFood::whereIn('id', $request->pr_ids)
+        $cutoff = $this->prFoodOpenForPoTanggalCutoff();
+        $allowedPrIds = PurchaseRequisitionFood::whereIn('id', $request->pr_ids)
+            ->where('tanggal', '>=', $cutoff)
+            ->pluck('id')
+            ->all();
+
+        if (empty($allowedPrIds)) {
+            return response()->json([]);
+        }
+
+        $items = PurchaseRequisitionFood::whereIn('id', $allowedPrIds)
             ->with(['items.item'])
             ->get()
             ->flatMap(function ($pr) {
@@ -440,6 +451,17 @@ class PurchaseOrderFoodsController extends Controller
                     $prItems = PurchaseRequisitionFoodItem::with('item')
                         ->whereIn('id', $prItemIds)
                         ->get();
+
+                    $cutoff = $this->prFoodOpenForPoTanggalCutoff();
+                    $stalePrs = PurchaseRequisitionFood::whereIn('id', $prItems->pluck('pr_food_id')->unique()->all())
+                        ->where('tanggal', '<', $cutoff)
+                        ->get(['id', 'pr_number']);
+                    if ($stalePrs->isNotEmpty()) {
+                        throw new \Exception(
+                            'PR berikut sudah lewat batas 7 hari dan tidak dapat dibuat PO: '
+                            . $stalePrs->pluck('pr_number')->implode(', ')
+                        );
+                    }
                 }
 
 
@@ -1543,4 +1565,13 @@ class PurchaseOrderFoodsController extends Controller
             ], 500);
         }
     }
-} 
+
+    /**
+     * Tanggal minimum PR (kolom tanggal) agar masih tampil untuk dibuat PO:
+     * 7 hari kalender ke belakang dari hari ini (Asia/Jakarta).
+     */
+    private function prFoodOpenForPoTanggalCutoff(): Carbon
+    {
+        return Carbon::now('Asia/Jakarta')->startOfDay()->subDays(7);
+    }
+}
