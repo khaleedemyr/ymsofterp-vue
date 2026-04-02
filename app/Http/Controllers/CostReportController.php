@@ -275,6 +275,7 @@ class CostReportController extends Controller
                 's.warehouse_outlet_id',
                 'fi.id as inventory_item_id',
                 'fi.item_id',
+                's.qty_small',
                 's.last_cost_small'
             )
             ->distinct()
@@ -299,57 +300,59 @@ class CostReportController extends Controller
         }
 
         /**
-         * BEGIN INVENTORY SOURCE OF TRUTH:
-         * - Ambil "saldo terakhir" per inventory_item_id dari outlet_food_inventory_cards.
-         * - Cutoff default: card.date <= tanggalAkhirBulanSebelumnya.
-         * - Khusus stock opname penutupan bulan: jika prosesnya subuh (card.date = tgl 1),
-         *   gunakan so.opname_date sebagai tanggal efektif, sehingga opname_date = tanggal1BulanIni tetap masuk.
+         * BEGIN INVENTORY (AUTO MODE):
+         * - Jika outlet punya upload saldo awal (reference_type=initial_balance) pada tanggal 1 bulan laporan,
+         *   maka Begin Inventory outlet tsb HANYA dari initial_balance day-1 (latest per item+warehouse).
+         * - Jika outlet TIDAK punya initial_balance day-1 sama sekali, maka Begin Inventory outlet tsb
+         *   murni dari saldo snapshot terakhir s/d akhir bulan sebelumnya (cutoff = tanggalAkhirBulanSebelumnya),
+         *   dengan pengecualian: stock opname penutupan bulan yang selesai subuh (opname_date = tgl 1 bulan laporan)
+         *   tetap dianggap sebagai saldo akhir bulan sebelumnya.
          */
         $outletIdsSql = implode(',', array_map('intval', $outletIds));
         $warehouseIdsSql = implode(',', array_map('intval', $warehouseOutletIds));
         $inventoryIdsSql = implode(',', array_map('intval', $inventoryItemIds));
 
-        $subquery = "
+        $outletsWithDay1Initial = DB::table('outlet_food_inventory_cards as c')
+            ->whereIn('c.id_outlet', $outletIds)
+            ->whereIn('c.warehouse_outlet_id', $warehouseOutletIds)
+            ->whereIn('c.inventory_item_id', $inventoryItemIds)
+            ->where('c.reference_type', 'initial_balance')
+            ->whereDate('c.date', $tanggal1BulanIni)
+            ->distinct()
+            ->pluck('c.id_outlet')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $outletsWithDay1InitialSet = array_fill_keys($outletsWithDay1Initial, true);
+
+        // (A) initial_balance day-1 snapshot (latest per outlet+warehouse+item)
+        $subInit = "
             SELECT
                 card.id_outlet,
                 card.warehouse_outlet_id,
                 card.inventory_item_id,
                 MAX(
                     CONCAT(
-                        DATE(COALESCE(so.opname_date, card.date)),
+                        DATE(card.date),
                         ' ',
                         LPAD(card.id, 20, '0')
                     )
                 ) AS mx
             FROM outlet_food_inventory_cards card
-            LEFT JOIN outlet_stock_opnames so
-                ON card.reference_type = 'stock_opname'
-               AND so.id = card.reference_id
             WHERE card.id_outlet IN ({$outletIdsSql})
               AND card.warehouse_outlet_id IN ({$warehouseIdsSql})
               AND card.inventory_item_id IN ({$inventoryIdsSql})
-              AND (
-                    -- Default cutoff: berdasarkan tanggal efektif (opname_date untuk stock_opname, else card.date)
-                    DATE(COALESCE(so.opname_date, card.date)) <= '{$tanggalAkhirBulanSebelumnya}'
-                    -- Pengecualian: opname penutupan bulan yang selesai subuh (opname_date = tgl 1 bulan laporan)
-                    OR (card.reference_type = 'stock_opname' AND DATE(so.opname_date) = '{$tanggal1BulanIni}')
-                    -- Pengecualian: upload saldo awal untuk begin bulan laporan (card.date = tgl 1 bulan laporan)
-                    OR (card.reference_type = 'initial_balance' AND DATE(card.date) = '{$tanggal1BulanIni}')
-                  )
+              AND card.reference_type = 'initial_balance'
+              AND DATE(card.date) = '{$tanggal1BulanIni}'
             GROUP BY card.id_outlet, card.warehouse_outlet_id, card.inventory_item_id
         ";
 
-        $saldoRows = DB::table('outlet_food_inventory_cards as card')
-            ->join(DB::raw("({$subquery}) t"), function ($join) {
+        $saldoRowsInit = DB::table('outlet_food_inventory_cards as card')
+            ->join(DB::raw("({$subInit}) t"), function ($join) {
                 $join->on('t.id_outlet', '=', 'card.id_outlet')
                     ->on('t.warehouse_outlet_id', '=', 'card.warehouse_outlet_id')
                     ->on('t.inventory_item_id', '=', 'card.inventory_item_id');
             })
-            ->leftJoin('outlet_stock_opnames as so', function ($join) {
-                $join->on('card.reference_type', '=', DB::raw("'stock_opname'"))
-                    ->on('so.id', '=', 'card.reference_id');
-            })
-            ->whereRaw("t.mx = CONCAT(DATE(COALESCE(so.opname_date, card.date)), ' ', LPAD(card.id, 20, '0'))")
+            ->whereRaw("t.mx = CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))")
             ->select(
                 'card.id_outlet',
                 'card.warehouse_outlet_id',
@@ -358,10 +361,21 @@ class CostReportController extends Controller
             )
             ->get();
 
-        $saldoValueMap = [];
-        foreach ($saldoRows as $r) {
+        $saldoValueInitMap = [];
+        foreach ($saldoRowsInit as $r) {
             $k = (int) $r->id_outlet . '|' . (int) $r->warehouse_outlet_id . '|' . (int) $r->inventory_item_id;
-            $saldoValueMap[$k] = (float) ($r->saldo_value ?? 0);
+            $saldoValueInitMap[$k] = (float) ($r->saldo_value ?? 0);
+        }
+
+        // (B) last stock from system (stocks table): qty_small * last_cost_small (per outlet+warehouse+item)
+        $stockValueMap = [];
+        foreach ($stockRows as $row) {
+            $k = (int) $row->id_outlet . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->inventory_item_id;
+            if (!isset($stockValueMap[$k])) {
+                $qtySmall = (float) ($row->qty_small ?? 0);
+                $macSmall = (float) ($row->last_cost_small ?? 0);
+                $stockValueMap[$k] = $qtySmall * $macSmall;
+            }
         }
 
         // Hindari double count jika stockRows punya duplikasi per inventory_item_id.
@@ -377,7 +391,12 @@ class CostReportController extends Controller
             if (!isset($totalsByWarehouse[$warehouseIdKey])) {
                 $totalsByWarehouse[$warehouseIdKey] = 0;
             }
-            $totalsByWarehouse[$warehouseIdKey] += (float) ($saldoValueMap[$k] ?? 0);
+            $useInitOnly = isset($outletsWithDay1InitialSet[$outletIdKey]);
+            $totalsByWarehouse[$warehouseIdKey] += (float) (
+                $useInitOnly
+                    ? ($saldoValueInitMap[$k] ?? 0)
+                    : ($stockValueMap[$k] ?? 0)
+            );
         }
 
         return $totalsByWarehouse;
@@ -681,6 +700,7 @@ class CostReportController extends Controller
                 's.warehouse_outlet_id',
                 'fi.id as inventory_item_id',
                 'fi.item_id',
+                's.qty_small',
                 's.last_cost_small'
             )
             ->distinct()
