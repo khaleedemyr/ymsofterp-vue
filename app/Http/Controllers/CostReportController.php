@@ -329,11 +329,12 @@ class CostReportController extends Controller
               AND card.warehouse_outlet_id IN ({$warehouseIdsSql})
               AND card.inventory_item_id IN ({$inventoryIdsSql})
               AND (
-                    DATE(card.date) <= '{$tanggalAkhirBulanSebelumnya}'
-                    OR (
-                        card.reference_type = 'stock_opname'
-                        AND DATE(so.opname_date) = '{$tanggal1BulanIni}'
-                    )
+                    -- Default cutoff: berdasarkan tanggal efektif (opname_date untuk stock_opname, else card.date)
+                    DATE(COALESCE(so.opname_date, card.date)) <= '{$tanggalAkhirBulanSebelumnya}'
+                    -- Pengecualian: opname penutupan bulan yang selesai subuh (opname_date = tgl 1 bulan laporan)
+                    OR (card.reference_type = 'stock_opname' AND DATE(so.opname_date) = '{$tanggal1BulanIni}')
+                    -- Pengecualian: upload saldo awal untuk begin bulan laporan (card.date = tgl 1 bulan laporan)
+                    OR (card.reference_type = 'initial_balance' AND DATE(card.date) = '{$tanggal1BulanIni}')
                   )
             GROUP BY card.id_outlet, card.warehouse_outlet_id, card.inventory_item_id
         ";
@@ -363,15 +364,20 @@ class CostReportController extends Controller
             $saldoValueMap[$k] = (float) ($r->saldo_value ?? 0);
         }
 
-        $totalsByWarehouse = [];
+        // Hindari double count jika stockRows punya duplikasi per inventory_item_id.
+        $uniqueKeys = [];
         foreach ($stockRows as $row) {
-            $warehouseId = (int) $row->warehouse_outlet_id;
-            if (!isset($totalsByWarehouse[$warehouseId])) {
-                $totalsByWarehouse[$warehouseId] = 0;
-            }
+            $k = (int) $row->id_outlet . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->inventory_item_id;
+            $uniqueKeys[$k] = true;
+        }
 
-            $k = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->inventory_item_id;
-            $totalsByWarehouse[$warehouseId] += (float) ($saldoValueMap[$k] ?? 0);
+        $totalsByWarehouse = [];
+        foreach (array_keys($uniqueKeys) as $k) {
+            [$outletIdKey, $warehouseIdKey] = array_map('intval', explode('|', $k, 3));
+            if (!isset($totalsByWarehouse[$warehouseIdKey])) {
+                $totalsByWarehouse[$warehouseIdKey] = 0;
+            }
+            $totalsByWarehouse[$warehouseIdKey] += (float) ($saldoValueMap[$k] ?? 0);
         }
 
         return $totalsByWarehouse;
