@@ -293,99 +293,85 @@ class CostReportController extends Controller
             return [];
         }
 
-        $beginInventoryFromOpname = [];
-        $beginOpnameRows = DB::table('outlet_stock_opname_items as soi')
-            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
-            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
-            ->whereIn('so.outlet_id', $outletIds)
-            ->whereIn('so.warehouse_outlet_id', $warehouseOutletIds)
-            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
-            ->where(function ($q) use ($bulanSebelumnya, $tanggal1BulanIni) {
-                $q->where(function ($q2) use ($bulanSebelumnya) {
-                    $q2->whereYear('so.opname_date', $bulanSebelumnya->year)
-                        ->whereMonth('so.opname_date', $bulanSebelumnya->month);
-                })->orWhereDate('so.opname_date', $tanggal1BulanIni);
-            })
-            ->select(
-                'so.outlet_id',
-                'so.warehouse_outlet_id',
-                'fi.item_id',
-                'soi.qty_physical_small',
-                'soi.mac_after',
-                'soi.mac_before',
-                'so.opname_date',
-                'so.id as so_id'
-            )
-            ->orderByDesc('so.opname_date')
-            ->orderByDesc('so.id')
-            ->get();
-
-        foreach ($beginOpnameRows as $row) {
-            $key = (int) $row->outlet_id . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->item_id;
-            if (isset($beginInventoryFromOpname[$key])) {
-                continue;
-            }
-
-            $beginInventoryFromOpname[$key] = [
-                'qty_small' => (float) ($row->qty_physical_small ?? 0),
-                'mac' => (float) ($row->mac_after ?? $row->mac_before ?? 0),
-            ];
+        $inventoryItemIds = $stockRows->pluck('inventory_item_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        if (empty($inventoryItemIds)) {
+            return [];
         }
 
-        $inventoryItemIds = $stockRows->pluck('inventory_item_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        /**
+         * BEGIN INVENTORY SOURCE OF TRUTH:
+         * - Ambil "saldo terakhir" per inventory_item_id dari outlet_food_inventory_cards.
+         * - Cutoff default: card.date <= tanggalAkhirBulanSebelumnya.
+         * - Khusus stock opname penutupan bulan: jika prosesnya subuh (card.date = tgl 1),
+         *   gunakan so.opname_date sebagai tanggal efektif, sehingga opname_date = tanggal1BulanIni tetap masuk.
+         */
+        $outletIdsSql = implode(',', array_map('intval', $outletIds));
+        $warehouseIdsSql = implode(',', array_map('intval', $warehouseOutletIds));
+        $inventoryIdsSql = implode(',', array_map('intval', $inventoryItemIds));
 
-        $beginFromUpload = [];
-        if (!empty($inventoryItemIds)) {
-            $uploadRows = DB::table('outlet_food_inventory_cards as card')
-                ->where('card.reference_type', 'initial_balance')
-                ->whereIn('card.id_outlet', $outletIds)
-                ->whereIn('card.warehouse_outlet_id', $warehouseOutletIds)
-                ->where('card.date', '<=', $tanggalAkhirBulanSebelumnya)
-                ->whereIn('card.inventory_item_id', $inventoryItemIds)
-                ->orderByDesc('card.date')
-                ->orderByDesc('card.created_at')
-                ->select(
-                    'card.id_outlet',
-                    'card.warehouse_outlet_id',
-                    'card.inventory_item_id',
-                    'card.saldo_qty_small'
-                )
-                ->get();
+        $subquery = "
+            SELECT
+                card.id_outlet,
+                card.warehouse_outlet_id,
+                card.inventory_item_id,
+                MAX(
+                    CONCAT(
+                        DATE(COALESCE(so.opname_date, card.date)),
+                        ' ',
+                        LPAD(card.id, 20, '0')
+                    )
+                ) AS mx
+            FROM outlet_food_inventory_cards card
+            LEFT JOIN outlet_stock_opnames so
+                ON card.reference_type = 'stock_opname'
+               AND so.id = card.reference_id
+            WHERE card.id_outlet IN ({$outletIdsSql})
+              AND card.warehouse_outlet_id IN ({$warehouseIdsSql})
+              AND card.inventory_item_id IN ({$inventoryIdsSql})
+              AND (
+                    DATE(card.date) <= '{$tanggalAkhirBulanSebelumnya}'
+                    OR (
+                        card.reference_type = 'stock_opname'
+                        AND DATE(so.opname_date) = '{$tanggal1BulanIni}'
+                    )
+                  )
+            GROUP BY card.id_outlet, card.warehouse_outlet_id, card.inventory_item_id
+        ";
 
-            foreach ($uploadRows as $row) {
-                $key = (int) $row->id_outlet . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->inventory_item_id;
-                if (!isset($beginFromUpload[$key])) {
-                    $beginFromUpload[$key] = [
-                        'qty_small' => (float) ($row->saldo_qty_small ?? 0),
-                    ];
-                }
-            }
+        $saldoRows = DB::table('outlet_food_inventory_cards as card')
+            ->join(DB::raw("({$subquery}) t"), function ($join) {
+                $join->on('t.id_outlet', '=', 'card.id_outlet')
+                    ->on('t.warehouse_outlet_id', '=', 'card.warehouse_outlet_id')
+                    ->on('t.inventory_item_id', '=', 'card.inventory_item_id');
+            })
+            ->leftJoin('outlet_stock_opnames as so', function ($join) {
+                $join->on('card.reference_type', '=', DB::raw("'stock_opname'"))
+                    ->on('so.id', '=', 'card.reference_id');
+            })
+            ->whereRaw("t.mx = CONCAT(DATE(COALESCE(so.opname_date, card.date)), ' ', LPAD(card.id, 20, '0'))")
+            ->select(
+                'card.id_outlet',
+                'card.warehouse_outlet_id',
+                'card.inventory_item_id',
+                'card.saldo_value'
+            )
+            ->get();
+
+        $saldoValueMap = [];
+        foreach ($saldoRows as $r) {
+            $k = (int) $r->id_outlet . '|' . (int) $r->warehouse_outlet_id . '|' . (int) $r->inventory_item_id;
+            $saldoValueMap[$k] = (float) ($r->saldo_value ?? 0);
         }
 
         $totalsByWarehouse = [];
         foreach ($stockRows as $row) {
             $warehouseId = (int) $row->warehouse_outlet_id;
-            $itemKey = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->item_id;
-            $inventoryItemKey = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->inventory_item_id;
-
-            $fromOpname = $beginInventoryFromOpname[$itemKey] ?? null;
-            $fromUpload = $beginFromUpload[$inventoryItemKey] ?? null;
-
-            $beginQtySmall = 0.0;
-            $mac = 0.0;
-            if ($fromOpname !== null) {
-                $beginQtySmall = (float) ($fromOpname['qty_small'] ?? 0);
-                $mac = (float) ($fromOpname['mac'] ?? 0);
-            } elseif ($fromUpload !== null) {
-                $beginQtySmall = (float) ($fromUpload['qty_small'] ?? 0);
-                $mac = (float) ($row->last_cost_small ?? 0);
-            }
-
             if (!isset($totalsByWarehouse[$warehouseId])) {
                 $totalsByWarehouse[$warehouseId] = 0;
             }
 
-            $totalsByWarehouse[$warehouseId] += $beginQtySmall * $mac;
+            $k = (int) $row->id_outlet . '|' . $warehouseId . '|' . (int) $row->inventory_item_id;
+            $totalsByWarehouse[$warehouseId] += (float) ($saldoValueMap[$k] ?? 0);
         }
 
         return $totalsByWarehouse;
@@ -675,8 +661,9 @@ class CostReportController extends Controller
 
     /**
      * Hitung total MAC begin inventory untuk satu (outlet, warehouse).
-     * Logic mengikuti OutletStockReportController: begin = last stock opname bulan lalu
-     * atau fallback initial_balance. Nilai MAC = qty_small * mac (per small unit).
+     * LEGACY helper (saat ini tidak dipakai oleh CostReport).
+     * Disamakan dengan logic utama: gunakan saldo terakhir dari outlet_food_inventory_cards
+     * dengan cutoff akhir bulan sebelumnya + pengecualian stock opname (opname_date = tgl 1).
      */
     private function computeBeginInventoryTotalMac(
         int $outletId,
@@ -685,119 +672,31 @@ class CostReportController extends Controller
         string $tanggalAkhirBulanSebelumnya,
         string $tanggal1BulanIni
     ): float {
-        // Inventory items di outlet+warehouse ini
-        $inventoryItems = DB::table('outlet_food_inventory_stocks as s')
+        $stockRows = DB::table('outlet_food_inventory_stocks as s')
             ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->where('s.id_outlet', $outletId)
             ->where('s.warehouse_outlet_id', $warehouseOutletId)
-            ->select('fi.id as inventory_item_id', 'fi.item_id')
+            ->select(
+                's.id_outlet',
+                's.warehouse_outlet_id',
+                'fi.id as inventory_item_id',
+                'fi.item_id',
+                's.last_cost_small'
+            )
             ->distinct()
             ->get();
 
-        if ($inventoryItems->isEmpty()) {
-            return 0;
-        }
+        $byWarehouse = $this->computeBeginInventoryTotalMacByWarehouse(
+            $stockRows,
+            [$outletId],
+            [$warehouseOutletId],
+            $bulanSebelumnya,
+            $tanggalAkhirBulanSebelumnya,
+            $tanggal1BulanIni
+        );
 
-        $inventoryItemIds = $inventoryItems->pluck('inventory_item_id')->toArray();
-
-        // Begin from opname bulan lalu (dengan mac_after untuk nilai MAC)
-        $beginInventoryFromOpname = [];
-        $beginOpnamePrevMonth = DB::table('outlet_stock_opname_items as soi')
-            ->join('outlet_stock_opnames as so', 'soi.stock_opname_id', '=', 'so.id')
-            ->join('outlet_food_inventory_items as fi', 'soi.inventory_item_id', '=', 'fi.id')
-            ->where('so.outlet_id', $outletId)
-            ->where('so.warehouse_outlet_id', $warehouseOutletId)
-            ->whereIn('so.status', ['APPROVED', 'COMPLETED'])
-            ->where(function ($q) use ($bulanSebelumnya, $tanggal1BulanIni) {
-                $q->where(function ($q2) use ($bulanSebelumnya) {
-                    $q2->whereYear('so.opname_date', $bulanSebelumnya->year)
-                       ->whereMonth('so.opname_date', $bulanSebelumnya->month);
-                })->orWhereDate('so.opname_date', $tanggal1BulanIni);
-            })
-            ->select(
-                'fi.item_id',
-                'soi.qty_physical_small',
-                'soi.qty_physical_medium',
-                'soi.qty_physical_large',
-                'soi.mac_after',
-                'soi.mac_before',
-                'so.opname_date',
-                'so.id as so_id'
-            )
-            ->orderBy('so.opname_date', 'desc')
-            ->orderBy('so.id', 'desc')
-            ->get();
-
-        foreach ($beginOpnamePrevMonth as $d) {
-            if (isset($beginInventoryFromOpname[$d->item_id])) {
-                continue;
-            }
-            $mac = (float) ($d->mac_after ?? $d->mac_before ?? 0);
-            $beginInventoryFromOpname[$d->item_id] = [
-                'qty_small' => (float) ($d->qty_physical_small ?? 0),
-                'mac' => $mac,
-            ];
-        }
-
-        // Fallback: initial_balance dari outlet_food_inventory_cards
-        $beginFromUpload = [];
-        $uploadCards = DB::table('outlet_food_inventory_cards as card')
-            ->where('card.reference_type', 'initial_balance')
-            ->where('card.id_outlet', $outletId)
-            ->where('card.warehouse_outlet_id', $warehouseOutletId)
-            ->where('card.date', '<=', $tanggalAkhirBulanSebelumnya)
-            ->whereIn('card.inventory_item_id', $inventoryItemIds)
-            ->orderBy('card.date', 'desc')
-            ->orderBy('card.created_at', 'desc')
-            ->select('card.inventory_item_id', 'card.saldo_qty_small', 'card.saldo_qty_medium', 'card.saldo_qty_large')
-            ->get();
-
-        foreach ($uploadCards as $r) {
-            if (!isset($beginFromUpload[$r->inventory_item_id])) {
-                $beginFromUpload[$r->inventory_item_id] = [
-                    'qty_small' => (float) ($r->saldo_qty_small ?? 0),
-                ];
-            }
-        }
-
-        // Last cost (MAC) untuk item yang begin-nya dari upload - dari outlet_food_inventory_stocks
-        $lastCostByInventoryItem = [];
-        if (!empty($inventoryItemIds)) {
-            $stocks = DB::table('outlet_food_inventory_stocks')
-                ->where('id_outlet', $outletId)
-                ->where('warehouse_outlet_id', $warehouseOutletId)
-                ->whereIn('inventory_item_id', $inventoryItemIds)
-                ->select('inventory_item_id', 'last_cost_small')
-                ->get();
-            foreach ($stocks as $s) {
-                $lastCostByInventoryItem[$s->inventory_item_id] = (float) ($s->last_cost_small ?? 0);
-            }
-        }
-
-        $totalMac = 0;
-        foreach ($inventoryItems as $row) {
-            $itemId = $row->item_id;
-            $inventoryItemId = $row->inventory_item_id;
-
-            $fromOpname = $beginInventoryFromOpname[$itemId] ?? null;
-            $fromUpload = $beginFromUpload[$inventoryItemId] ?? null;
-
-            $beginQtySmall = 0;
-            $mac = 0;
-
-            if ($fromOpname !== null) {
-                $beginQtySmall = $fromOpname['qty_small'];
-                $mac = $fromOpname['mac'];
-            } elseif ($fromUpload !== null) {
-                $beginQtySmall = $fromUpload['qty_small'];
-                $mac = $lastCostByInventoryItem[$inventoryItemId] ?? 0;
-            }
-
-            $totalMac += $beginQtySmall * $mac;
-        }
-
-return $totalMac;
-        }
+        return (float) ($byWarehouse[$warehouseOutletId] ?? 0);
+    }
 
     /**
      * Hitung total MAC ending inventory untuk satu (outlet, warehouse).
