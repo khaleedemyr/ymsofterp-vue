@@ -23,9 +23,31 @@
         <div class="panel meta">
           <div class="row">
             <span class="lbl">Status</span>
-            <span class="badge" :class="'st-' + report.status">{{ statusLabel(report.status) }}</span>
-            <span v-if="polling" class="poll">Memeriksa proses…</span>
+            <span class="badge" :class="'st-' + live.status">{{ statusLabel(live.status) }}</span>
+            <span v-if="polling" class="poll">Memperbarui…</span>
           </div>
+
+          <div v-if="live.status === 'pending'" class="queue-hint">
+            Jika status tetap “Menunggu” lama, pastikan worker antrian berjalan:
+            <code class="code">php artisan queue:work</code>
+            (atau ubah <code class="code">QUEUE_CONNECTION</code> di <code class="code">.env</code>).
+          </div>
+
+          <div v-if="live.status === 'pending' || live.status === 'processing'" class="progress-block">
+            <div class="progress-top">
+              <span class="phase">{{ phaseLabel(live.progress_phase) }}</span>
+              <span class="pct">{{ progressPercent }}%</span>
+            </div>
+            <div class="bar-outer" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100">
+              <div class="bar-inner" :style="{ width: progressPercent + '%' }"></div>
+            </div>
+            <div class="progress-sub">
+              {{ live.progress_done }} / {{ live.progress_total || '—' }}
+              <span v-if="live.raw_review_count"> · mentah {{ live.raw_review_count }}</span>
+              <span v-if="live.dedupe_removed_count"> · duplikat diabaikan {{ live.dedupe_removed_count }}</span>
+            </div>
+          </div>
+
           <div class="row">
             <span class="lbl">Sumber</span>
             <span>{{ sourceLabel(report.source) }}</span>
@@ -36,9 +58,20 @@
           </div>
           <div class="row">
             <span class="lbl">Jumlah review terklasifikasi</span>
-            <span>{{ report.review_count }}</span>
+            <span>{{ live.review_count }}</span>
           </div>
-          <div v-if="report.error_message" class="err">{{ report.error_message }}</div>
+          <div v-if="(live.progress_log || []).length" class="log-panel">
+            <div class="log-title">Log proses</div>
+            <ul class="log-list">
+              <li v-for="(entry, i) in live.progress_log" :key="i">
+                <span class="log-t">{{ entry.t }}</span>
+                <span class="log-m">{{ entry.m }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="live.error_message || report.error_message" class="err">
+            {{ live.error_message || report.error_message }}
+          </div>
         </div>
 
         <div class="panel" v-if="report.status === 'completed'">
@@ -102,7 +135,7 @@
 
 <script setup>
 import { Link, router } from '@inertiajs/vue3'
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
@@ -115,11 +148,43 @@ const severity = ref(props.filters.severity || '')
 const polling = ref(false)
 let timer = null
 
+function syncLiveFromReport(r) {
+  return {
+    status: r.status,
+    review_count: r.review_count ?? 0,
+    raw_review_count: r.raw_review_count ?? 0,
+    dedupe_removed_count: r.dedupe_removed_count ?? 0,
+    progress_total: r.progress_total ?? 0,
+    progress_done: r.progress_done ?? 0,
+    progress_phase: r.progress_phase ?? null,
+    progress_log: Array.isArray(r.progress_log) ? r.progress_log : [],
+    error_message: r.error_message || null,
+  }
+}
+
+const live = ref(syncLiveFromReport(props.report))
+
+const progressPercent = computed(() => {
+  const t = Number(live.value.progress_total) || 0
+  const d = Number(live.value.progress_done) || 0
+  if (t <= 0) return 0
+  return Math.min(100, Math.round((d / t) * 100))
+})
+
 watch(
   () => props.filters.severity,
   (v) => {
     severity.value = v || ''
   }
+)
+
+watch(
+  () => props.report,
+  (r) => {
+    if (!r) return
+    Object.assign(live.value, syncLiveFromReport(r))
+  },
+  { deep: true }
 )
 
 function statusLabel(s) {
@@ -130,6 +195,19 @@ function statusLabel(s) {
 function sourceLabel(s) {
   const m = { apify_dataset: 'Apify (dataset)', places_api: 'Google Places API', scraper_inline: 'File scraper / inline' }
   return m[s] || s
+}
+
+function phaseLabel(phase) {
+  const m = {
+    starting: 'Memulai…',
+    fetching: 'Mengunduh dataset',
+    deduping: 'Menghapus duplikat',
+    classifying: 'Klasifikasi AI',
+    saving: 'Menyimpan',
+    completed: 'Selesai',
+    failed: 'Gagal',
+  }
+  return m[phase] || (phase ? String(phase) : 'Menunggu / memproses')
 }
 
 function sevLabel(s) {
@@ -155,15 +233,28 @@ function startPoll() {
   if (timer) clearInterval(timer)
   if (props.report.status !== 'pending' && props.report.status !== 'processing') return
   polling.value = true
-  timer = setInterval(async () => {
+
+  const tick = async () => {
     try {
       const res = await fetch(`/google-review/ai/reports/${props.report.id}/status`, {
         headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'same-origin',
       })
       const j = await res.json()
-      if (j.success && (j.status === 'completed' || j.status === 'failed')) {
-        clearInterval(timer)
+      if (!j.success) return
+
+      live.value.status = j.status
+      live.value.review_count = j.review_count ?? live.value.review_count
+      live.value.raw_review_count = j.raw_review_count ?? 0
+      live.value.dedupe_removed_count = j.dedupe_removed_count ?? 0
+      live.value.progress_total = j.progress_total ?? 0
+      live.value.progress_done = j.progress_done ?? 0
+      live.value.progress_phase = j.progress_phase ?? null
+      live.value.progress_log = Array.isArray(j.progress_log) ? j.progress_log : []
+      if (j.error_message) live.value.error_message = j.error_message
+
+      if (j.status === 'completed' || j.status === 'failed') {
+        if (timer) clearInterval(timer)
         timer = null
         polling.value = false
         router.reload({ preserveScroll: true })
@@ -171,7 +262,10 @@ function startPoll() {
     } catch {
       /* ignore */
     }
-  }, 4000)
+  }
+
+  tick()
+  timer = setInterval(tick, 2000)
 }
 
 onMounted(() => {
@@ -273,6 +367,103 @@ onUnmounted(() => {
 .poll {
   font-size: 12px;
   color: #2563eb;
+}
+.queue-hint {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #1e40af;
+  line-height: 1.5;
+}
+.code {
+  font-size: 11px;
+  background: #fff;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid #dbeafe;
+}
+.progress-block {
+  margin: 12px 0 14px;
+}
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.phase {
+  font-weight: 600;
+  color: #111827;
+}
+.pct {
+  font-weight: 700;
+  color: #2563eb;
+  font-variant-numeric: tabular-nums;
+}
+.bar-outer {
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #2563eb);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+  min-width: 0;
+}
+.progress-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+.log-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+.log-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.log-list li {
+  padding: 6px 10px;
+  border-bottom: 1px solid #eef0f3;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.log-list li:last-child {
+  border-bottom: none;
+}
+.log-t {
+  flex: 0 0 auto;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.log-m {
+  color: #374151;
+  word-break: break-word;
 }
 .err {
   margin-top: 10px;

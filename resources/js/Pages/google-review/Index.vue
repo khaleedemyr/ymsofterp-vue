@@ -37,6 +37,32 @@
               </select>
             </div>
 
+            <div class="control control-narrow">
+              <div class="label">Maks review (Apify)</div>
+              <input
+                v-model.number="maxApifyReviews"
+                type="number"
+                min="1"
+                max="2000"
+                class="input-num"
+                :disabled="loading"
+                title="Jumlah maksimum yang diminta ke actor Apify (1–2000)"
+              />
+            </div>
+
+            <div class="control control-narrow">
+              <div class="label">Maks review (file scraper)</div>
+              <input
+                v-model.number="maxScraperReviews"
+                type="number"
+                min="0"
+                max="2000"
+                class="input-num"
+                :disabled="loading"
+                title="0 = ambil semua dari reviews.json, lalu dibatasi maks 2000 untuk AI"
+              />
+            </div>
+
             <div class="actions">
               <button type="button" class="btn btn-primary" :disabled="!selectedOutlet || loading" @click="fetchReviews">
                 Ambil Review API
@@ -81,6 +107,7 @@
             <div v-if="placeInfo.address" class="muted">Alamat: {{ placeInfo.address }}</div>
             <div v-if="placeInfo.rating" class="muted">Rating: {{ placeInfo.rating }}</div>
             <div v-if="meta.total" class="muted">Total review: {{ meta.total }}</div>
+            <div v-if="datasetId && apifyRequestedMax != null" class="muted">Target scrape Apify: {{ apifyRequestedMax }} review</div>
             <div v-if="datasetId" class="muted">Dataset: {{ datasetId }}</div>
           </div>
         </div>
@@ -171,6 +198,9 @@ const placeInfo = ref(null)
 const reviews = ref([])
 const meta = ref({ page: 1, perPage: 20, total: 0, lastPage: 1 })
 const perPage = ref(20)
+const maxApifyReviews = ref(500)
+const maxScraperReviews = ref(0)
+const apifyRequestedMax = ref(null)
 const loadingItems = ref(false)
 const exporting = ref(false)
 const lastFetchSource = ref('')
@@ -204,6 +234,7 @@ watch(
 
     if (val && val.success && val.dataset_id) {
       lastFetchSource.value = 'apify'
+      apifyRequestedMax.value = val.max_reviews != null ? Number(val.max_reviews) : null
       datasetId.value = val.dataset_id
       placeInfo.value = val.place || null
       meta.value = {
@@ -219,6 +250,7 @@ watch(
     // API path sets place+reviews directly.
     if (val && val.success && val.reviews) {
       lastFetchSource.value = 'places'
+      apifyRequestedMax.value = null
       datasetId.value = ''
       placeInfo.value = val.place || null
       reviews.value = Array.isArray(val.reviews) ? val.reviews : []
@@ -227,8 +259,15 @@ watch(
   }
 )
 
+function clampApifyMax() {
+  const n = Number(maxApifyReviews.value)
+  if (!Number.isFinite(n) || n < 1) return 200
+  return Math.min(2000, Math.max(1, Math.floor(n)))
+}
+
 function fetchReviews() {
   lastFetchSource.value = 'places'
+  apifyRequestedMax.value = null
   datasetId.value = ''
   loading.value = true
   error.value = ''
@@ -253,9 +292,17 @@ function fetchScrapedReviews() {
     .then(res => res.json())
     .then(data => {
       if (data.success) {
+        apifyRequestedMax.value = null
         datasetId.value = ''
         placeInfo.value = { name: 'Review Scraper', address: '', rating: '' }
-        reviews.value = Array.isArray(data.reviews) ? data.reviews : []
+        let list = Array.isArray(data.reviews) ? data.reviews : []
+        const lim = Number(maxScraperReviews.value)
+        if (Number.isFinite(lim) && lim > 0) {
+          list = list.slice(0, Math.min(2000, Math.floor(lim)))
+        } else {
+          list = list.slice(0, 2000)
+        }
+        reviews.value = list
         meta.value = { page: 1, perPage: reviews.value.length || perPage.value, total: reviews.value.length || 0, lastPage: 1 }
       } else {
         error.value = data.error || 'Gagal ambil review scraper'
@@ -274,7 +321,7 @@ function fetchApifyReviews() {
   error.value = ''
   router.post(
     '/google-review/fetch-apify',
-    { place_id: selectedOutlet.value, max_reviews: 500 },
+    { place_id: selectedOutlet.value, max_reviews: clampApifyMax() },
     {
       preserveState: true,
       onError: (err) => {
@@ -458,6 +505,27 @@ function initials(name) {
 }
 .control {
   min-width: 280px;
+}
+.control-narrow {
+  min-width: 140px;
+  max-width: 180px;
+}
+.input-num {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  outline: none;
+  font-size: 14px;
+}
+.input-num:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+.input-num:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .label {
   font-size: 12px;

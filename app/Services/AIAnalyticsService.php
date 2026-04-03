@@ -2186,20 +2186,25 @@ PROMPT;
      * Klasifikasi banyak review dengan beberapa panggilan AI (chunk).
      *
      * @param  array<int, array<string, mixed>>  $reviews
+     * @param  callable(int $classifiedCount, int $total): void|null  $onProgress
      * @return array<int, array<string, mixed>>
      */
-    public function classifyGoogleReviewsInChunks(array $reviews, int $chunkSize = 35): array
+    public function classifyGoogleReviewsInChunks(array $reviews, int $chunkSize = 35, ?callable $onProgress = null): array
     {
         $reviews = array_values($reviews);
         if ($reviews === []) {
             return [];
         }
         $chunkSize = max(5, min(50, $chunkSize));
+        $total = count($reviews);
         $all = [];
         foreach (array_chunk($reviews, $chunkSize) as $chunk) {
             $part = $this->classifyGoogleReviews($chunk);
             foreach ($part as $row) {
                 $all[] = $row;
+            }
+            if ($onProgress !== null) {
+                $onProgress(count($all), $total);
             }
         }
 

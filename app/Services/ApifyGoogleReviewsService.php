@@ -33,21 +33,7 @@ class ApifyGoogleReviewsService
             'reviewsSort' => $sort, // newest | mostRelevant
         ]);
 
-        $reviews = collect($items)->map(function ($item) {
-            $time = 0;
-            if (!empty($item['publishedAtDate'])) {
-                $time = strtotime($item['publishedAtDate']) ?: 0;
-            }
-
-            return [
-                'author' => (string)($item['name'] ?? ''),
-                'rating' => (string)($item['stars'] ?? ''),
-                'date' => (string)($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
-                'text' => (string)($item['text'] ?? ''),
-                'profile_photo' => (string)($item['reviewerPhotoUrl'] ?? ''),
-                'time' => (int)$time,
-            ];
-        })->values()->all();
+        $reviews = collect($items)->map(fn ($item) => $this->mapApifyItemToReview($item))->values()->all();
 
         $placeName = (string)($items[0]['title'] ?? 'Apify Google Reviews');
         $address = (string)($items[0]['address'] ?? '');
@@ -63,6 +49,16 @@ class ApifyGoogleReviewsService
             ],
             'reviews' => $reviews,
         ];
+    }
+
+    /**
+     * Untuk progress UI: jumlah baris di dataset (tanpa mengunduh semua).
+     */
+    public function getDatasetItemCount(string $datasetId): int
+    {
+        $info = $this->getDatasetInfo($datasetId);
+
+        return max(0, (int) ($info['itemCount'] ?? 0));
     }
 
     public function startScrapeByPlaceId(string $placeId, int $maxReviews = 200, string $sort = 'newest'): array
@@ -98,9 +94,10 @@ class ApifyGoogleReviewsService
     /**
      * Ambil semua item review dari dataset Apify (loop offset, maks 200 per request).
      *
-     * @return array<int, array{author: string, rating: string, date: string, text: string, profile_photo: string, time: int}>
+     * @param  callable(int $loaded, int $total): void|null  $onProgress
+     * @return array<int, array<string, mixed>>
      */
-    public function getAllReviewsFromDataset(string $datasetId): array
+    public function getAllReviewsFromDataset(string $datasetId, ?callable $onProgress = null): array
     {
         $datasetInfo = $this->getDatasetInfo($datasetId);
         $total = (int) ($datasetInfo['itemCount'] ?? 0);
@@ -109,18 +106,10 @@ class ApifyGoogleReviewsService
         for ($offset = 0; $offset < $total; $offset += $limit) {
             $items = $this->getDatasetItems($datasetId, $offset, $limit);
             foreach ($items as $item) {
-                $time = 0;
-                if (! empty($item['publishedAtDate'])) {
-                    $time = strtotime($item['publishedAtDate']) ?: 0;
-                }
-                $all[] = [
-                    'author' => (string) ($item['name'] ?? ''),
-                    'rating' => (string) ($item['stars'] ?? ''),
-                    'date' => (string) ($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
-                    'text' => (string) ($item['text'] ?? ''),
-                    'profile_photo' => (string) ($item['reviewerPhotoUrl'] ?? ''),
-                    'time' => (int) $time,
-                ];
+                $all[] = $this->mapApifyItemToReview($item);
+            }
+            if ($onProgress !== null) {
+                $onProgress(count($all), max(1, $total));
             }
         }
 
@@ -136,21 +125,7 @@ class ApifyGoogleReviewsService
         $datasetInfo = $this->getDatasetInfo($datasetId);
         $items = $this->getDatasetItems($datasetId, $offset, $perPage);
 
-        $reviews = collect($items)->map(function ($item) {
-            $time = 0;
-            if (!empty($item['publishedAtDate'])) {
-                $time = strtotime($item['publishedAtDate']) ?: 0;
-            }
-
-            return [
-                'author' => (string)($item['name'] ?? ''),
-                'rating' => (string)($item['stars'] ?? ''),
-                'date' => (string)($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
-                'text' => (string)($item['text'] ?? ''),
-                'profile_photo' => (string)($item['reviewerPhotoUrl'] ?? ''),
-                'time' => (int)$time,
-            ];
-        })->values()->all();
+        $reviews = collect($items)->map(fn ($item) => $this->mapApifyItemToReview($item))->values()->all();
 
         $total = (int)($datasetInfo['itemCount'] ?? 0);
         $lastPage = (int) max(1, (int) ceil($total / $perPage));
@@ -196,6 +171,29 @@ class ApifyGoogleReviewsService
             throw new \Exception('Apify run tidak mengembalikan defaultDatasetId');
         }
         return $this->getDatasetItems($datasetId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    protected function mapApifyItemToReview(array $item): array
+    {
+        $time = 0;
+        if (! empty($item['publishedAtDate'])) {
+            $time = strtotime($item['publishedAtDate']) ?: 0;
+        }
+        $rid = $item['reviewId'] ?? $item['review_id'] ?? $item['id'] ?? null;
+
+        return [
+            'author' => (string) ($item['name'] ?? ''),
+            'rating' => (string) ($item['stars'] ?? ''),
+            'date' => (string) ($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
+            'text' => (string) ($item['text'] ?? ''),
+            'profile_photo' => (string) ($item['reviewerPhotoUrl'] ?? ''),
+            'time' => (int) $time,
+            'review_id' => $rid !== null && $rid !== '' ? (string) $rid : '',
+        ];
     }
 
     protected function runActor(array $input): array

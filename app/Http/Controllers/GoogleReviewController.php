@@ -177,6 +177,7 @@ class GoogleReviewController extends Controller
                 'dataset_id' => $started['datasetId'],
                 'place' => $started['place'],
                 'item_count' => $started['itemCount'],
+                'max_reviews' => $maxReviews,
             ];
 
             if ($request->hasHeader('X-Inertia')) {
@@ -381,11 +382,23 @@ class GoogleReviewController extends Controller
             return response()->json(['success' => false, 'error' => 'Tidak ditemukan'], 404);
         }
 
+        $log = [];
+        if (! empty($r->progress_log)) {
+            $decoded = json_decode($r->progress_log, true);
+            $log = is_array($decoded) ? $decoded : [];
+        }
+
         return response()->json([
             'success' => true,
             'status' => $r->status,
             'review_count' => (int) $r->review_count,
             'error_message' => $r->error_message,
+            'raw_review_count' => (int) ($r->raw_review_count ?? 0),
+            'dedupe_removed_count' => (int) ($r->dedupe_removed_count ?? 0),
+            'progress_total' => (int) ($r->progress_total ?? 0),
+            'progress_done' => (int) ($r->progress_done ?? 0),
+            'progress_phase' => $r->progress_phase ?? null,
+            'progress_log' => $log,
         ]);
     }
 
@@ -425,6 +438,12 @@ class GoogleReviewController extends Controller
             ];
         });
 
+        $initialLog = [];
+        if (! empty($report->progress_log)) {
+            $decoded = json_decode($report->progress_log, true);
+            $initialLog = is_array($decoded) ? $decoded : [];
+        }
+
         return Inertia::render('google-review/AiReportShow', [
             'report' => [
                 'id' => $report->id,
@@ -439,6 +458,12 @@ class GoogleReviewController extends Controller
                 'review_count' => (int) $report->review_count,
                 'error_message' => $report->error_message,
                 'created_at' => $report->created_at,
+                'raw_review_count' => (int) ($report->raw_review_count ?? 0),
+                'dedupe_removed_count' => (int) ($report->dedupe_removed_count ?? 0),
+                'progress_total' => (int) ($report->progress_total ?? 0),
+                'progress_done' => (int) ($report->progress_done ?? 0),
+                'progress_phase' => $report->progress_phase ?? null,
+                'progress_log' => $initialLog,
             ],
             'items' => $items,
             'filters' => [

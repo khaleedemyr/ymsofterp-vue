@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Services\AIAnalyticsService;
 use App\Services\ApifyGoogleReviewsService;
+use App\Services\GoogleReviewDeduper;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -31,8 +32,12 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
         DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
             'status' => 'processing',
+            'progress_phase' => 'starting',
+            'progress_total' => 0,
+            'progress_done' => 0,
             'updated_at' => now(),
         ]);
+        $this->pushLog('Job dimulai (klasifikasi AI).');
 
         try {
             $reviews = [];
@@ -40,7 +45,28 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 if (empty($report->dataset_id)) {
                     throw new \RuntimeException('dataset_id kosong.');
                 }
-                $reviews = $apify->getAllReviewsFromDataset($report->dataset_id);
+                $this->pushLog('Mengunduh review dari dataset Apify…');
+                $expectedTotal = max(1, $apify->getDatasetItemCount($report->dataset_id));
+                DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                    'progress_phase' => 'fetching',
+                    'progress_total' => $expectedTotal,
+                    'progress_done' => 0,
+                    'updated_at' => now(),
+                ]);
+
+                $lastLogged = 0;
+                $reviews = $apify->getAllReviewsFromDataset($report->dataset_id, function ($loaded, $total) use (&$lastLogged) {
+                    DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                        'progress_phase' => 'fetching',
+                        'progress_total' => max(1, (int) $total),
+                        'progress_done' => (int) $loaded,
+                        'updated_at' => now(),
+                    ]);
+                    if ($loaded === $total || $loaded - $lastLogged >= 200) {
+                        $this->pushLog("Unduh dataset: {$loaded}/{$total} baris.");
+                        $lastLogged = $loaded;
+                    }
+                });
             } else {
                 $raw = $report->source_payload;
                 if (empty($raw)) {
@@ -57,7 +83,59 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 throw new \RuntimeException('Tidak ada review untuk diklasifikasi.');
             }
 
-            $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35);
+            $rawCount = count($reviews);
+            DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                'raw_review_count' => $rawCount,
+                'updated_at' => now(),
+            ]);
+            $this->pushLog("Review mentah: {$rawCount} baris.");
+
+            DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                'progress_phase' => 'deduping',
+                'updated_at' => now(),
+            ]);
+            $deduped = GoogleReviewDeduper::dedupe($reviews);
+            $reviews = $deduped['reviews'];
+            $removed = $deduped['removed'];
+            DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                'dedupe_removed_count' => $removed,
+                'updated_at' => now(),
+            ]);
+            if ($removed > 0) {
+                $this->pushLog("Deduplikasi: {$removed} duplikat diabaikan ({$rawCount} → ".count($reviews).' unik).');
+            } else {
+                $this->pushLog('Deduplikasi: tidak ada duplikat.');
+            }
+
+            if (count($reviews) === 0) {
+                throw new \RuntimeException('Semua review terdeteksi duplikat; tidak ada yang diklasifikasi.');
+            }
+
+            $toClassify = count($reviews);
+            DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                'progress_phase' => 'classifying',
+                'progress_total' => $toClassify,
+                'progress_done' => 0,
+                'updated_at' => now(),
+            ]);
+            $this->pushLog("Klasifikasi AI dimulai ({$toClassify} review, per batch).");
+
+            $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35, function ($done, $total) {
+                DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                    'progress_phase' => 'classifying',
+                    'progress_total' => max(1, (int) $total),
+                    'progress_done' => (int) $done,
+                    'updated_at' => now(),
+                ]);
+            });
+
+            $this->pushLog('Menyimpan hasil ke database…');
+            DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                'progress_phase' => 'saving',
+                'progress_done' => $toClassify,
+                'progress_total' => max(1, $toClassify),
+                'updated_at' => now(),
+            ]);
 
             DB::table('google_review_ai_items')->where('report_id', $this->reportId)->delete();
 
@@ -89,24 +167,51 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 DB::table('google_review_ai_items')->insert($batch);
             }
 
+            $finalCount = count($classified);
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
                 'status' => 'completed',
-                'review_count' => count($classified),
+                'review_count' => $finalCount,
                 'source_payload' => null,
                 'error_message' => null,
+                'progress_phase' => 'completed',
+                'progress_total' => max(1, $finalCount),
+                'progress_done' => $finalCount,
                 'updated_at' => now(),
             ]);
+            $this->pushLog("Selesai. {$finalCount} review tersimpan.");
         } catch (\Throwable $e) {
             Log::error('ProcessGoogleReviewAiReportJob failed', [
                 'report_id' => $this->reportId,
                 'error' => $e->getMessage(),
             ]);
+            $this->pushLog('Gagal: '.$e->getMessage());
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
                 'status' => 'failed',
                 'error_message' => mb_substr($e->getMessage(), 0, 10000),
+                'progress_phase' => 'failed',
                 'updated_at' => now(),
             ]);
         }
+    }
+
+    private function pushLog(string $message): void
+    {
+        $row = DB::table('google_review_ai_reports')->where('id', $this->reportId)->first();
+        $log = [];
+        if ($row && ! empty($row->progress_log)) {
+            $decoded = json_decode($row->progress_log, true);
+            $log = is_array($decoded) ? $decoded : [];
+        }
+        $log[] = [
+            't' => now()->format('Y-m-d H:i:s'),
+            'm' => mb_substr($message, 0, 800),
+        ];
+        $log = array_slice($log, -100);
+
+        DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+            'progress_log' => json_encode($log, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
     }
 
     public function failed(\Throwable $e): void
@@ -114,6 +219,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
         DB::table('google_review_ai_reports')->where('id', $this->reportId)->where('status', '!=', 'completed')->update([
             'status' => 'failed',
             'error_message' => mb_substr($e->getMessage(), 0, 10000),
+            'progress_phase' => 'failed',
             'updated_at' => now(),
         ]);
     }
