@@ -96,7 +96,7 @@ class InstagramCommentImporter
         if ($url === '') {
             return '';
         }
-        if (preg_match('#instagram\.com/p/([^/?#]+)#i', $url, $m)) {
+        if (preg_match('~instagram\.com/p/([^/?#]+)~i', $url, $m)) {
             return 'p/'.strtolower($m[1]);
         }
 
