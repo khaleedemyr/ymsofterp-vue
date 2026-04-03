@@ -35,6 +35,11 @@
               <div class="diag-title">Diagnostik (dari server)</div>
               <ul class="diag-list">
                 <li><span class="dk">QUEUE_CONNECTION</span> <code class="code">{{ diagnostics.queue_connection || '—' }}</code></li>
+                <li v-if="diagnostics.google_review_ai_queue">
+                  <span class="dk">Antrean job laporan AI</span>
+                  <code class="code">{{ diagnostics.google_review_ai_queue }}</code>
+                  (worker harus memuat antrean ini, mis. <code class="code">--queue=notifications,{{ diagnostics.google_review_ai_queue }}</code>)
+                </li>
                 <li v-if="diagnostics.jobs_pending_count !== null">
                   <span class="dk">Job di tabel <code>jobs</code></span> {{ diagnostics.jobs_pending_count }}
                 </li>

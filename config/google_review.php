@@ -14,4 +14,10 @@ return [
     */
     'ai_dispatch_sync' => filter_var(env('GOOGLE_REVIEW_AI_DISPATCH_SYNC', false), FILTER_VALIDATE_BOOLEAN),
 
+    /*
+    | Nama antrean Redis/database untuk job klasifikasi AI (bukan "default").
+    | Sesuaikan Supervisor: --queue=notifications,google-review-ai
+    */
+    'process_queue' => env('GOOGLE_REVIEW_AI_QUEUE', 'google-review-ai'),
+
 ];

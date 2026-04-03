@@ -266,6 +266,14 @@ class GoogleReviewController extends Controller
      *
      * @return array{queue_connection: string, jobs_pending_count: int|null, failed_jobs_24h: int|null}
      */
+    protected function aiReportQueuedMessage(int $reportId): string
+    {
+        $q = (string) config('google_review.process_queue', 'google-review-ai');
+
+        return 'Laporan AI diantre pada antrean "'.$q.'". Pastikan Supervisor/queue:work memuat antrean ini, mis. --queue=notifications,'.$q
+            .' (urutan sesuai prioritas Anda). Atau: php artisan google-review:process-ai-report '.$reportId;
+    }
+
     protected function buildQueueDiagnostics(): array
     {
         $driver = (string) config('queue.default', 'sync');
@@ -293,6 +301,8 @@ class GoogleReviewController extends Controller
                 // ignore
             }
         }
+
+        $diag['google_review_ai_queue'] = (string) config('google_review.process_queue', 'google-review-ai');
 
         return $diag;
     }
@@ -412,7 +422,7 @@ class GoogleReviewController extends Controller
             'id' => $reportId,
             'message' => $sync
                 ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
-                : 'Laporan AI diantre. Proses bisa beberapa menit untuk ratusan review — pastikan queue worker berjalan (php artisan queue:work). Atau dari SSH: php artisan google-review:process-ai-report '.$reportId,
+                : $this->aiReportQueuedMessage($reportId),
         ]);
     }
 

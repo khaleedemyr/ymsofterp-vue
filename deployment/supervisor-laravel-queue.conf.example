@@ -1,0 +1,51 @@
+; =============================================================================
+; Contoh Supervisor — worker antrian Laravel (untuk user web, tanpa SSH manual)
+; =============================================================================
+; 1. Salin ke /etc/supervisor/conf.d/ymsofterp-queue.conf (sesuaikan path & user)
+; 2. sudo supervisorctl reread && sudo supervisorctl update
+; 3. sudo supervisorctl status
+;
+; Ganti:
+;   /var/www/ymsofterp  → path absolut ke folder yang berisi file artisan
+;   www-data            → user yang menjalankan PHP/web (nginx/apache)
+; =============================================================================
+
+[program:ymsofterp-queue-worker]
+process_name=%(program_name)s_%(process_num)02d
+directory=/var/www/ymsofterp
+; Sertakan antrean job laporan AI (nama default: google-review-ai, bisa diubah lewat .env GOOGLE_REVIEW_AI_QUEUE)
+command=/usr/bin/php artisan queue:work --queue=notifications,google-review-ai --sleep=3 --tries=1 --timeout=920 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/www/ymsofterp/storage/logs/queue-worker.log
+stopwaitsecs=3700
+
+; Jika QUEUE_CONNECTION=redis, worker tetap memakai default dari .env.
+; Untuk memaksa redis + antrean sama seperti di atas:
+;   command=/usr/bin/php artisan queue:work redis --queue=notifications,google-review-ai --sleep=3 --tries=1 --timeout=920
+
+; =============================================================================
+; Sudah ada Supervisor lain yang menjalankan queue:work?
+; =============================================================================
+; Worker Laravel HARUS dijalankan dari folder yang berisi artisan + .env project ini.
+; Kalau program lama directory=/path/aplikasi-lain, ia tidak memproses job ymsofterp
+; (job mengantre di Redis tapi tidak pernah selesai / error deserialize class).
+;
+; Opsi A — Dua aplikasi Laravel di server yang sama:
+;   Tambah program BARU dengan nama unik, contoh [program:ymsofterp-queue-worker]
+;   (file conf baru atau blok kedua). JANGAN matikan / hapus Supervisor yang lama —
+;   biarkan keduanya jalan: satu untuk aplikasi penting Anda, satu khusus ymsofterp.
+;   Wajib: directory= path absolut ke root ymsofterp (tempat file artisan).
+;
+; Opsi B — Hanya satu app yang seharusnya pakai antrean:
+;   Edit program Supervisor yang ada: arahkan directory= ke project yang benar.
+;
+; Opsi C — Dua app berbagi Redis, job tertukar atau macet:
+;   Bedakan antrean atau prefix Redis per app (lihat dokumentasi Laravel queue +
+;   REDIS_PREFIX), lalu worker per app: queue:work redis --queue=nama_antrian_tiap_app
+; =============================================================================

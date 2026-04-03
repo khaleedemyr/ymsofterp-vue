@@ -21,7 +21,10 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $reportId) {}
+    public function __construct(public int $reportId)
+    {
+        $this->onQueue((string) config('google_review.process_queue', 'google-review-ai'));
+    }
 
     public function handle(AIAnalyticsService $ai, ApifyGoogleReviewsService $apify): void
     {
