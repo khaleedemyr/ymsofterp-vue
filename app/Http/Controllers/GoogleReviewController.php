@@ -308,6 +308,12 @@ class GoogleReviewController extends Controller
 
     public function aiReportStore(Request $request)
     {
+        $placeInput = $request->input('place', []);
+        if (is_array($placeInput) && array_key_exists('rating', $placeInput) && $placeInput['rating'] !== null && $placeInput['rating'] !== '') {
+            $placeInput['rating'] = (string) $placeInput['rating'];
+            $request->merge(['place' => $placeInput]);
+        }
+
         $request->validate([
             'source' => 'required|string|in:apify_dataset,places_api,scraper_inline',
             'dataset_id' => 'required_if:source,apify_dataset|nullable|string|max:128',

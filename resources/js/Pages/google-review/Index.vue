@@ -331,10 +331,11 @@ async function startFullAiClassification() {
   if (!canStartFullAi.value || aiFullSubmitting.value) return
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   let body
+  const r = placeInfo.value?.rating
   const placePayload = {
     name: placeInfo.value?.name,
     address: placeInfo.value?.address,
-    rating: placeInfo.value?.rating,
+    rating: r !== undefined && r !== null && r !== '' ? String(r) : null,
   }
   if (datasetId.value) {
     body = {
