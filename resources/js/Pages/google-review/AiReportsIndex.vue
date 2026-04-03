@@ -4,8 +4,8 @@
       <div class="wrap">
         <div class="head">
           <div>
-            <h1 class="title">Laporan klasifikasi AI — Google Review</h1>
-            <p class="sub">Riwayat analisis sentimen tersimpan di database. Unduh Excel dari halaman detail.</p>
+            <h1 class="title">Laporan klasifikasi AI</h1>
+            <p class="sub">Riwayat analisis sentimen (Google Review + komentar Instagram) tersimpan di database.</p>
           </div>
           <Link href="/google-review" class="btn-back">← Scrape review</Link>
         </div>
@@ -17,6 +17,7 @@
               <tr>
                 <th>ID</th>
                 <th>Status</th>
+                <th>Sumber</th>
                 <th>Tempat</th>
                 <th>Outlet</th>
                 <th>Jumlah</th>
@@ -28,6 +29,7 @@
               <tr v-for="r in reports.data" :key="r.id">
                 <td>{{ r.id }}</td>
                 <td><span class="badge" :class="'st-' + r.status">{{ statusLabel(r.status) }}</span></td>
+                <td>{{ sourceLabel(r.source) }}</td>
                 <td>{{ r.place_name || '—' }}</td>
                 <td>{{ r.nama_outlet || '—' }}</td>
                 <td>{{ r.review_count }}</td>
@@ -67,6 +69,16 @@ defineProps({
 function statusLabel(s) {
   const m = { pending: 'Menunggu', processing: 'Memproses', completed: 'Selesai', failed: 'Gagal' }
   return m[s] || s
+}
+
+function sourceLabel(s) {
+  const m = {
+    apify_dataset: 'Google Apify',
+    places_api: 'Google Places API',
+    scraper_inline: 'Google Scraper Inline',
+    instagram_comments_db: 'Instagram Comments DB',
+  }
+  return m[s] || s || '—'
 }
 </script>
 

@@ -49,6 +49,16 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                     throw new \RuntimeException('dataset_id kosong.');
                 }
                 $this->pushLog('Mengunduh review dari dataset Apify…');
+                $sourceMeta = [];
+                if (! empty($report->source_payload)) {
+                    $decodedMeta = json_decode((string) $report->source_payload, true);
+                    $sourceMeta = is_array($decodedMeta) ? $decodedMeta : [];
+                }
+                $dateFrom = isset($sourceMeta['date_from']) ? (string) $sourceMeta['date_from'] : null;
+                $dateTo = isset($sourceMeta['date_to']) ? (string) $sourceMeta['date_to'] : null;
+                if ($dateFrom || $dateTo) {
+                    $this->pushLog('Filter tanggal aktif: '.($dateFrom ?: '-').' s/d '.($dateTo ?: '-').'.');
+                }
                 $expectedTotal = max(1, $apify->getDatasetItemCount($report->dataset_id));
                 DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
                     'progress_phase' => 'fetching',
@@ -69,7 +79,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                         $this->pushLog("Unduh dataset: {$loaded}/{$total} baris.");
                         $lastLogged = $loaded;
                     }
-                });
+                }, $dateFrom, $dateTo);
             } else {
                 $raw = $report->source_payload;
                 if (empty($raw)) {

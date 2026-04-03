@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\GoogleReviewAiReportExport;
 use App\Jobs\ProcessGoogleReviewAiReportJob;
+use App\Jobs\ProcessInstagramCommentAiReportJob;
 use App\Services\ApifyGoogleReviewsService;
 use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
@@ -173,17 +174,23 @@ class GoogleReviewController extends Controller
         $request->validate([
             'place_id' => 'required|string',
             'max_reviews' => 'nullable|integer|min:1|max:2000',
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
         ]);
 
         \Log::info('GoogleReviewController@scrapeReviewsApify', [
             'place_id' => $request->input('place_id'),
             'max_reviews' => $request->input('max_reviews'),
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
             'is_inertia' => $request->hasHeader('X-Inertia'),
         ]);
 
         try {
             $placeId = $request->input('place_id');
             $maxReviews = (int)($request->input('max_reviews') ?? 200);
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
 
             $started = $this->apifyService->startScrapeByPlaceId($placeId, $maxReviews, 'newest');
 
@@ -194,6 +201,8 @@ class GoogleReviewController extends Controller
                 'placeId' => $placeId,
                 'place' => $started['place'],
                 'itemCount' => $started['itemCount'],
+                'dateFrom' => $dateFrom,
+                'dateTo' => $dateTo,
             ], now()->addHours(6));
 
             $payload = [
@@ -203,6 +212,8 @@ class GoogleReviewController extends Controller
                 'place' => $started['place'],
                 'item_count' => $started['itemCount'],
                 'max_reviews' => $maxReviews,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
             ];
 
             if ($request->hasHeader('X-Inertia')) {
@@ -233,18 +244,26 @@ class GoogleReviewController extends Controller
             'dataset_id' => 'required|string',
             'page' => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:200',
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
         ]);
 
         try {
             $datasetId = $request->input('dataset_id');
             $page = (int)($request->input('page') ?? 1);
             $perPage = (int)($request->input('per_page') ?? 20);
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
 
-            $data = $this->apifyService->getReviewsPageFromDataset($datasetId, $page, $perPage);
+            $data = $this->apifyService->getReviewsPageFromDataset($datasetId, $page, $perPage, $dateFrom, $dateTo);
             return response()->json([
                 'success' => true,
                 'reviews' => $data['reviews'],
                 'meta' => $data['meta'],
+                'filters' => [
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                ],
             ]);
         } catch (\Exception $e) {
             \Log::error('Error fetching Apify dataset items: ' . $e->getMessage());
@@ -259,12 +278,16 @@ class GoogleReviewController extends Controller
     {
         $request->validate([
             'dataset_id' => 'required|string',
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
         ]);
 
         $datasetId = $request->input('dataset_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $filename = 'google-reviews-' . date('Ymd-His') . '.csv';
 
-        return response()->streamDownload(function () use ($datasetId) {
+        return response()->streamDownload(function () use ($datasetId, $dateFrom, $dateTo) {
             $out = fopen('php://output', 'w');
             if ($out === false) {
                 return;
@@ -272,7 +295,7 @@ class GoogleReviewController extends Controller
 
             $this->apifyService->exportDatasetReviewsToCsv($datasetId, function (array $row) use ($out) {
                 fputcsv($out, $row);
-            });
+            }, $dateFrom, $dateTo);
 
             fclose($out);
         }, $filename, [
@@ -351,8 +374,10 @@ class GoogleReviewController extends Controller
         }
 
         $request->validate([
-            'source' => 'required|string|in:apify_dataset,places_api,scraper_inline',
+            'source' => 'required|string|in:apify_dataset,places_api,scraper_inline,instagram_comments_db',
             'dataset_id' => 'required_if:source,apify_dataset|nullable|string|max:128',
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
             'place_id' => 'nullable|string|max:255',
             'id_outlet' => 'nullable|integer',
             'nama_outlet' => 'nullable|string|max:255',
@@ -365,11 +390,15 @@ class GoogleReviewController extends Controller
                 'array',
                 'max:2000',
             ],
+            'profile_keys' => 'nullable|array',
+            'profile_keys.*' => 'string|max:64',
         ]);
 
         $source = $request->input('source');
         $place = $request->input('place', []);
         $payload = null;
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         if (in_array($source, ['places_api', 'scraper_inline'], true)) {
             $reviews = $request->input('reviews', []);
             if (! is_array($reviews) || count($reviews) === 0) {
@@ -379,6 +408,17 @@ class GoogleReviewController extends Controller
                 ], 422);
             }
             $payload = json_encode($reviews, JSON_UNESCAPED_UNICODE);
+        } elseif ($source === 'apify_dataset' && ($dateFrom || $dateTo)) {
+            $payload = json_encode([
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ], JSON_UNESCAPED_UNICODE);
+        } elseif ($source === 'instagram_comments_db') {
+            $payload = json_encode([
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'profile_keys' => array_values(array_filter((array) $request->input('profile_keys', []))),
+            ], JSON_UNESCAPED_UNICODE);
         }
 
         $reportId = DB::table('google_review_ai_reports')->insertGetId([
@@ -400,9 +440,17 @@ class GoogleReviewController extends Controller
 
         $sync = (bool) config('google_review.ai_dispatch_sync', false);
         if ($sync) {
-            ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+            if ($source === 'instagram_comments_db') {
+                ProcessInstagramCommentAiReportJob::dispatchSync($reportId);
+            } else {
+                ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+            }
         } else {
-            ProcessGoogleReviewAiReportJob::dispatch($reportId);
+            if ($source === 'instagram_comments_db') {
+                ProcessInstagramCommentAiReportJob::dispatch($reportId);
+            } else {
+                ProcessGoogleReviewAiReportJob::dispatch($reportId);
+            }
         }
 
         return response()->json([

@@ -187,7 +187,12 @@ function statusLabel(s) {
 }
 
 function sourceLabel(s) {
-  const m = { apify_dataset: 'Apify (dataset)', places_api: 'Google Places API', scraper_inline: 'File scraper / inline' }
+  const m = {
+    apify_dataset: 'Apify (dataset)',
+    places_api: 'Google Places API',
+    scraper_inline: 'File scraper / inline',
+    instagram_comments_db: 'Instagram comments (database)',
+  }
   return m[s] || s
 }
 

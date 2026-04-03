@@ -24,7 +24,12 @@ class SyncInstagramCommentsJob implements ShouldQueue
     /**
      * @param  array<int, string>  $profileKeys
      */
-    public function __construct(public array $profileKeys = [], public ?string $operationId = null)
+    public function __construct(
+        public array $profileKeys = [],
+        public ?string $operationId = null,
+        public ?string $dateFrom = null,
+        public ?string $dateTo = null
+    )
     {
         $this->onQueue((string) config('instagram.process_queue', 'instagram-scraper'));
     }
@@ -80,6 +85,7 @@ class SyncInstagramCommentsJob implements ShouldQueue
                 $input = $apify->buildCommentsInput($urls);
                 $datasetId = $apify->runAndWaitForDataset($input);
                 $items = $apify->getAllDatasetItems($datasetId);
+                $items = $this->filterItemsByDateRange($items);
                 $totalSaved += $commentImporter->upsertFromApifyCommentItems($items, $urlToId);
             } catch (\Throwable $e) {
                 $failedBatches++;
@@ -140,5 +146,80 @@ class SyncInstagramCommentsJob implements ShouldQueue
             'progress_done' => max(0, min($done, max(1, $total))),
             'updated_at' => now()->toDateTimeString(),
         ], $extra), now()->addHours(6));
+    }
+
+    /**
+     * @param  array<int, mixed>  $items
+     * @return array<int, mixed>
+     */
+    protected function filterItemsByDateRange(array $items): array
+    {
+        [$fromTs, $toTs] = $this->buildDateRangeBoundaries();
+        if ($fromTs === null && $toTs === null) {
+            return $items;
+        }
+
+        $filtered = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $time = $this->extractCommentTimestamp($item);
+            if ($time === null) {
+                continue;
+            }
+            if ($fromTs !== null && $time < $fromTs) {
+                continue;
+            }
+            if ($toTs !== null && $time > $toTs) {
+                continue;
+            }
+            $filtered[] = $item;
+        }
+
+        return $filtered;
+    }
+
+    protected function extractCommentTimestamp(array $item): ?int
+    {
+        $candidates = [
+            $item['timestamp'] ?? null,
+            $item['createdAt'] ?? null,
+        ];
+        if (isset($item['ownerComment']) && is_array($item['ownerComment'])) {
+            $candidates[] = $item['ownerComment']['timestamp'] ?? null;
+            $candidates[] = $item['ownerComment']['createdAt'] ?? null;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (is_numeric($candidate)) {
+                $ts = (int) $candidate;
+                if ($ts > 0) {
+                    return $ts;
+                }
+            }
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $parsed = strtotime($candidate);
+                if ($parsed !== false && $parsed > 0) {
+                    return $parsed;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    protected function buildDateRangeBoundaries(): array
+    {
+        $fromTs = null;
+        $toTs = null;
+        if ($this->dateFrom && trim($this->dateFrom) !== '') {
+            $fromTs = strtotime(trim($this->dateFrom).' 00:00:00 UTC') ?: null;
+        }
+        if ($this->dateTo && trim($this->dateTo) !== '') {
+            $toTs = strtotime(trim($this->dateTo).' 23:59:59 UTC') ?: null;
+        }
+
+        return [$fromTs, $toTs];
     }
 }

@@ -97,16 +97,26 @@ class ApifyGoogleReviewsService
      * @param  callable(int $loaded, int $total): void|null  $onProgress
      * @return array<int, array<string, mixed>>
      */
-    public function getAllReviewsFromDataset(string $datasetId, ?callable $onProgress = null): array
+    public function getAllReviewsFromDataset(
+        string $datasetId,
+        ?callable $onProgress = null,
+        ?string $dateFrom = null,
+        ?string $dateTo = null
+    ): array
     {
         $datasetInfo = $this->getDatasetInfo($datasetId);
         $total = (int) ($datasetInfo['itemCount'] ?? 0);
         $all = [];
         $limit = 200;
+        [$fromTs, $toTs] = $this->buildDateRangeBoundaries($dateFrom, $dateTo);
         for ($offset = 0; $offset < $total; $offset += $limit) {
             $items = $this->getDatasetItems($datasetId, $offset, $limit);
             foreach ($items as $item) {
-                $all[] = $this->mapApifyItemToReview($item);
+                $mapped = $this->mapApifyItemToReview($item);
+                if (! $this->reviewInDateRange($mapped, $fromTs, $toTs)) {
+                    continue;
+                }
+                $all[] = $mapped;
             }
             if ($onProgress !== null) {
                 $onProgress(count($all), max(1, $total));
@@ -116,12 +126,35 @@ class ApifyGoogleReviewsService
         return $all;
     }
 
-    public function getReviewsPageFromDataset(string $datasetId, int $page = 1, int $perPage = 20): array
+    public function getReviewsPageFromDataset(
+        string $datasetId,
+        int $page = 1,
+        int $perPage = 20,
+        ?string $dateFrom = null,
+        ?string $dateTo = null
+    ): array
     {
         $page = max(1, $page);
         $perPage = max(1, min(200, $perPage));
-        $offset = ($page - 1) * $perPage;
+        if ($dateFrom !== null || $dateTo !== null) {
+            $allFiltered = $this->getAllReviewsFromDataset($datasetId, null, $dateFrom, $dateTo);
+            $total = count($allFiltered);
+            $lastPage = (int) max(1, (int) ceil(max(1, $total) / $perPage));
+            $offset = ($page - 1) * $perPage;
+            $reviews = array_slice($allFiltered, $offset, $perPage);
 
+            return [
+                'reviews' => array_values($reviews),
+                'meta' => [
+                    'page' => min($page, $lastPage),
+                    'perPage' => $perPage,
+                    'total' => $total,
+                    'lastPage' => $lastPage,
+                ],
+            ];
+        }
+
+        $offset = ($page - 1) * $perPage;
         $datasetInfo = $this->getDatasetInfo($datasetId);
         $items = $this->getDatasetItems($datasetId, $offset, $perPage);
 
@@ -141,10 +174,16 @@ class ApifyGoogleReviewsService
         ];
     }
 
-    public function exportDatasetReviewsToCsv(string $datasetId, callable $writer): void
+    public function exportDatasetReviewsToCsv(
+        string $datasetId,
+        callable $writer,
+        ?string $dateFrom = null,
+        ?string $dateTo = null
+    ): void
     {
         $datasetInfo = $this->getDatasetInfo($datasetId);
         $total = (int)($datasetInfo['itemCount'] ?? 0);
+        [$fromTs, $toTs] = $this->buildDateRangeBoundaries($dateFrom, $dateTo);
 
         $writer(['Author', 'Rating', 'Date', 'Text', 'Profile Photo']);
 
@@ -152,15 +191,52 @@ class ApifyGoogleReviewsService
         for ($offset = 0; $offset < $total; $offset += $limit) {
             $items = $this->getDatasetItems($datasetId, $offset, $limit);
             foreach ($items as $item) {
+                $mapped = $this->mapApifyItemToReview($item);
+                if (! $this->reviewInDateRange($mapped, $fromTs, $toTs)) {
+                    continue;
+                }
                 $writer([
-                    (string)($item['name'] ?? ''),
-                    (string)($item['stars'] ?? ''),
-                    (string)($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
-                    (string)($item['text'] ?? ''),
-                    (string)($item['reviewerPhotoUrl'] ?? ''),
+                    (string)($mapped['author'] ?? ''),
+                    (string)($mapped['rating'] ?? ''),
+                    (string)($mapped['date'] ?? ''),
+                    (string)($mapped['text'] ?? ''),
+                    (string)($mapped['profile_photo'] ?? ''),
                 ]);
             }
         }
+    }
+
+    protected function buildDateRangeBoundaries(?string $dateFrom, ?string $dateTo): array
+    {
+        $fromTs = null;
+        $toTs = null;
+        if ($dateFrom !== null && trim($dateFrom) !== '') {
+            $fromTs = strtotime(trim($dateFrom).' 00:00:00 UTC') ?: null;
+        }
+        if ($dateTo !== null && trim($dateTo) !== '') {
+            $toTs = strtotime(trim($dateTo).' 23:59:59 UTC') ?: null;
+        }
+
+        return [$fromTs, $toTs];
+    }
+
+    protected function reviewInDateRange(array $review, ?int $fromTs, ?int $toTs): bool
+    {
+        if ($fromTs === null && $toTs === null) {
+            return true;
+        }
+        $time = (int) ($review['time'] ?? 0);
+        if ($time <= 0) {
+            return false;
+        }
+        if ($fromTs !== null && $time < $fromTs) {
+            return false;
+        }
+        if ($toTs !== null && $time > $toTs) {
+            return false;
+        }
+
+        return true;
     }
 
     protected function runActorAndGetDatasetItems(array $input): array

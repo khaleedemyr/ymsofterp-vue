@@ -87,6 +87,25 @@
               />
             </div>
 
+            <div class="control control-narrow">
+              <div class="label">Dari tanggal</div>
+              <input v-model="googleDateFrom" type="date" class="input-num" :disabled="loading || loadingItems" />
+            </div>
+
+            <div class="control control-narrow">
+              <div class="label">Sampai tanggal</div>
+              <input v-model="googleDateTo" type="date" class="input-num" :disabled="loading || loadingItems" />
+            </div>
+            <div class="control control-wide">
+              <div class="label">Preset tanggal</div>
+              <div class="date-preset">
+                <button type="button" class="btn btn-outline btn-sm" :disabled="loading || loadingItems" @click="applyGooglePreset(7)">7 hari</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="loading || loadingItems" @click="applyGooglePreset(30)">30 hari</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="loading || loadingItems" @click="applyGooglePreset(90)">3 bulan</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="loading || loadingItems" @click="clearGoogleDateRange">Clear</button>
+              </div>
+            </div>
+
             <div class="actions">
               <button type="button" class="btn btn-primary" :disabled="!selectedOutlet || loading" @click="fetchReviews">
                 Ambil Review API
@@ -204,28 +223,38 @@
 
         <div v-show="activeTab === 'instagram'" class="tab-panel ig-tab">
           <div class="panel">
-            <div class="ig-intro">
-              Profil di <code class="code-inline">config/instagram.php</code>. Token <code class="code-inline">APIFY_TOKEN</code>.
-              <strong>Jika klik sinkron tapi angka tetap 0:</strong> job mengantri dan belum diproses. Jalankan worker
-              <code class="code-inline">php artisan queue:work --queue={{ instagramQueueName }}</code>
-              (gabungkan dengan antrian lain pakai koma), atau di <code class="code-inline">.env</code> set
-              <code class="code-inline">INSTAGRAM_SCRAPER_DISPATCH_SYNC=true</code> agar jalan di tab ini tanpa worker (bisa 10+ menit, jangan tutup browser).
-              <span v-if="queueConnectionHint" class="ig-queue-hint">{{ queueConnectionHint }}</span>
-            </div>
             <div class="ig-stats">
               <span>Post tersimpan: <strong>{{ instagramStatsLocal.posts }}</strong></span>
               <span>Komentar tersimpan: <strong>{{ instagramStatsLocal.comments }}</strong></span>
               <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="refreshInstagramStats">Refresh angka</button>
             </div>
-            <div class="ig-profiles" v-if="instagramProfiles.length">
-              <div class="label">Pilih profil (untuk post &amp; komentar)</div>
-              <div class="ig-checkboxes">
-                <label v-for="p in instagramProfiles" :key="p.key" class="ig-check">
-                  <input v-model="igSelectedKeys" type="checkbox" :value="p.key" />
-                  <span>{{ p.label }}</span>
-                </label>
+            <template v-if="instagramProfiles.length">
+              <div class="ig-profiles">
+                <div class="label">Pilih profil (untuk post &amp; komentar)</div>
+                <div class="ig-checkboxes">
+                  <label v-for="p in instagramProfiles" :key="p.key" class="ig-check">
+                    <input v-model="igSelectedKeys" type="checkbox" :value="p.key" />
+                    <span>{{ p.label }}</span>
+                  </label>
+                </div>
               </div>
-            </div>
+              <div class="ig-date-range">
+                <div class="control control-narrow">
+                  <div class="label">Dari tanggal</div>
+                  <input v-model="igDateFrom" type="date" class="input-num" :disabled="igBusy" />
+                </div>
+                <div class="control control-narrow">
+                  <div class="label">Sampai tanggal</div>
+                  <input v-model="igDateTo" type="date" class="input-num" :disabled="igBusy" />
+                </div>
+              </div>
+              <div class="date-preset">
+                <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="applyInstagramPreset(7)">7 hari</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="applyInstagramPreset(30)">30 hari</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="applyInstagramPreset(90)">3 bulan</button>
+                <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="clearInstagramDateRange">Clear</button>
+              </div>
+            </template>
             <div v-else class="notice notice-muted">Belum ada profil di config.</div>
             <div class="ig-actions">
               <button
@@ -245,6 +274,15 @@
                 @click="instagramSyncComments"
               >
                 {{ igBusy && igBusyAction === 'comments' ? 'Mengantri…' : 'Sinkron komentar (Apify)' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ai"
+                :disabled="igBusy || igSelectedKeys.length === 0"
+                title="Klasifikasi AI komentar Instagram dari database (tanpa scrape ulang)."
+                @click="startInstagramAiClassification"
+              >
+                Klasifikasi AI komentar DB
               </button>
             </div>
             <div v-if="igMessage" class="notice notice-loading">{{ igMessage }}</div>
@@ -319,18 +357,6 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 const page = usePage()
 const outlets = page.props.outlets || []
 const instagramProfiles = page.props.instagramProfiles || []
-const instagramQueueName = page.props.instagramProcessQueue || 'instagram-scraper'
-
-const queueConnectionHint = computed(() => {
-  if (page.props.instagramDispatchSync) {
-    return ' INSTAGRAM_SCRAPER_DISPATCH_SYNC aktif: satu klik menunggu Apify di server (bisa 10+ menit).'
-  }
-  const q = page.props.queueDefaultConnection || ''
-  if (q === 'sync') {
-    return ' QUEUE_CONNECTION=sync → job dijalankan langsung di request PHP; tombol "Mengantri…" bisa berarti sedang scrape Apify (lama) atau timeout server.'
-  }
-  return ` Antrian: ${q}. Tanpa worker (--queue=…,${instagramQueueName}) job hanya tertunda di tabel jobs — angka tetap 0.`
-})
 
 const activeTab = ref('google')
 const instagramStatsLocal = ref({
@@ -358,6 +384,10 @@ const meta = ref({ page: 1, perPage: 20, total: 0, lastPage: 1 })
 const perPage = ref(20)
 const maxApifyReviews = ref(500)
 const maxScraperReviews = ref(0)
+const googleDateFrom = ref('')
+const googleDateTo = ref('')
+const igDateFrom = ref('')
+const igDateTo = ref('')
 const apifyRequestedMax = ref(null)
 const loadingItems = ref(false)
 const exporting = ref(false)
@@ -423,6 +453,43 @@ function clampApifyMax() {
   return Math.min(2000, Math.max(1, Math.floor(n)))
 }
 
+function fmtDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function dateRangeInvalid(from, to) {
+  return Boolean(from && to && from > to)
+}
+
+function applyRangePreset(setFrom, setTo, days) {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - Math.max(0, Number(days) - 1))
+  setFrom(fmtDate(start))
+  setTo(fmtDate(end))
+}
+
+function applyGooglePreset(days) {
+  applyRangePreset((v) => { googleDateFrom.value = v }, (v) => { googleDateTo.value = v }, days)
+}
+
+function clearGoogleDateRange() {
+  googleDateFrom.value = ''
+  googleDateTo.value = ''
+}
+
+function applyInstagramPreset(days) {
+  applyRangePreset((v) => { igDateFrom.value = v }, (v) => { igDateTo.value = v }, days)
+}
+
+function clearInstagramDateRange() {
+  igDateFrom.value = ''
+  igDateTo.value = ''
+}
+
 function fetchReviews() {
   lastFetchSource.value = 'places'
   apifyRequestedMax.value = null
@@ -474,12 +541,21 @@ function fetchScrapedReviews() {
 }
 
 function fetchApifyReviews() {
+  if (dateRangeInvalid(googleDateFrom.value, googleDateTo.value)) {
+    error.value = 'Range tanggal Google tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
+    return
+  }
   lastFetchSource.value = 'apify'
   loading.value = true
   error.value = ''
   router.post(
     '/google-review/fetch-apify',
-    { place_id: selectedOutlet.value, max_reviews: clampApifyMax() },
+    {
+      place_id: selectedOutlet.value,
+      max_reviews: clampApifyMax(),
+      date_from: googleDateFrom.value || null,
+      date_to: googleDateTo.value || null,
+    },
     {
       preserveState: true,
       onError: (err) => {
@@ -505,6 +581,8 @@ function goToPage(pageNumber) {
     page: String(pageNumber),
     per_page: String(perPage.value),
   })
+  if (googleDateFrom.value) params.set('date_from', googleDateFrom.value)
+  if (googleDateTo.value) params.set('date_to', googleDateTo.value)
 
   fetch(`/google-review/apify/items?${params.toString()}`)
     .then(res => res.json())
@@ -528,12 +606,18 @@ function exportExcel() {
   if (!datasetId.value) return
   exporting.value = true
   const params = new URLSearchParams({ dataset_id: datasetId.value })
+  if (googleDateFrom.value) params.set('date_from', googleDateFrom.value)
+  if (googleDateTo.value) params.set('date_to', googleDateTo.value)
   window.location.href = `/google-review/apify/export?${params.toString()}`
   setTimeout(() => (exporting.value = false), 1500)
 }
 
 async function startFullAiClassification() {
   if (!canStartFullAi.value || aiFullSubmitting.value) return
+  if (dateRangeInvalid(googleDateFrom.value, googleDateTo.value)) {
+    error.value = 'Range tanggal Google tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
+    return
+  }
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   let body
   const r = placeInfo.value?.rating
@@ -550,6 +634,8 @@ async function startFullAiClassification() {
       id_outlet: selectedOutletRecord.value?.id ?? null,
       nama_outlet: selectedOutletRecord.value?.nama_outlet ?? null,
       place: placePayload,
+      date_from: googleDateFrom.value || null,
+      date_to: googleDateTo.value || null,
     }
   } else if (reviews.value.length && (lastFetchSource.value === 'places' || lastFetchSource.value === 'scraper')) {
     body = {
@@ -672,7 +758,7 @@ async function pollInstagramProgress(operationId) {
         total,
         percent,
       }
-      if (['completed', 'failed'].includes(data.status)) {
+      if (['completed', 'completed_with_errors', 'failed'].includes(data.status)) {
         stopInstagramProgressPolling()
         await refreshInstagramStats()
         await loadInstagramRecentPosts()
@@ -688,6 +774,10 @@ async function pollInstagramProgress(operationId) {
 
 async function instagramSyncPosts() {
   if (!igSelectedKeys.value.length) return
+  if (dateRangeInvalid(igDateFrom.value, igDateTo.value)) {
+    igError.value = 'Range tanggal Instagram tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
+    return
+  }
   igBusy.value = true
   igBusyAction.value = 'posts'
   igMessage.value = ''
@@ -703,7 +793,11 @@ async function instagramSyncPosts() {
         'X-Requested-With': 'XMLHttpRequest',
       },
       credentials: 'same-origin',
-      body: JSON.stringify({ profile_keys: igSelectedKeys.value }),
+      body: JSON.stringify({
+        profile_keys: igSelectedKeys.value,
+        date_from: igDateFrom.value || null,
+        date_to: igDateTo.value || null,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.success) {
@@ -725,6 +819,10 @@ async function instagramSyncPosts() {
 
 async function instagramSyncComments() {
   if (!igSelectedKeys.value.length) return
+  if (dateRangeInvalid(igDateFrom.value, igDateTo.value)) {
+    igError.value = 'Range tanggal Instagram tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
+    return
+  }
   igBusy.value = true
   igBusyAction.value = 'comments'
   igMessage.value = ''
@@ -740,7 +838,11 @@ async function instagramSyncComments() {
         'X-Requested-With': 'XMLHttpRequest',
       },
       credentials: 'same-origin',
-      body: JSON.stringify({ profile_keys: igSelectedKeys.value }),
+      body: JSON.stringify({
+        profile_keys: igSelectedKeys.value,
+        date_from: igDateFrom.value || null,
+        date_to: igDateTo.value || null,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.success) {
@@ -754,6 +856,50 @@ async function instagramSyncComments() {
     }
   } catch (e) {
     igError.value = e.message || 'Gagal mengantrikan sinkron komentar'
+  } finally {
+    igBusy.value = false
+    igBusyAction.value = ''
+  }
+}
+
+async function startInstagramAiClassification() {
+  if (!igSelectedKeys.value.length) return
+  if (dateRangeInvalid(igDateFrom.value, igDateTo.value)) {
+    igError.value = 'Range tanggal Instagram tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
+    return
+  }
+  igBusy.value = true
+  igBusyAction.value = 'ai'
+  igMessage.value = ''
+  igError.value = ''
+  try {
+    const res = await fetch('/google-review/ai/reports', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': csrf(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        source: 'instagram_comments_db',
+        place: { name: 'Instagram Comments (Database)' },
+        place_id: null,
+        id_outlet: null,
+        nama_outlet: null,
+        profile_keys: igSelectedKeys.value,
+        date_from: igDateFrom.value || null,
+        date_to: igDateTo.value || null,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || `HTTP ${res.status}`)
+    }
+    router.visit(`/google-review/ai/reports/${data.id}`)
+  } catch (e) {
+    igError.value = e.message || 'Gagal membuat laporan AI komentar Instagram'
   } finally {
     igBusy.value = false
     igBusyAction.value = ''
@@ -825,6 +971,14 @@ async function instagramSyncComments() {
 .control-narrow {
   min-width: 140px;
   max-width: 180px;
+}
+.control-wide {
+  min-width: 260px;
+}
+.date-preset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .input-num {
   width: 100%;
@@ -1115,22 +1269,6 @@ async function instagramSyncComments() {
 .tab-panel {
   min-height: 120px;
 }
-.ig-tab .ig-intro {
-  font-size: 13px;
-  color: #4b5563;
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
-.ig-queue-hint {
-  display: block;
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
-  border-radius: 8px;
-  color: #92400e;
-  font-size: 12px;
-}
 .ig-stats {
   display: flex;
   flex-wrap: wrap;
@@ -1154,6 +1292,12 @@ async function instagramSyncComments() {
   gap: 8px;
   font-size: 14px;
   cursor: pointer;
+}
+.ig-date-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-bottom: 10px;
 }
 .ig-actions {
   display: flex;

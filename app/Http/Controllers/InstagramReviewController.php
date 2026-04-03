@@ -19,17 +19,21 @@ class InstagramReviewController extends Controller
         $request->validate([
             'profile_keys' => 'nullable|array',
             'profile_keys.*' => ['string', Rule::in($validKeys)],
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
         ]);
 
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $operationId = (string) Str::uuid();
         $this->putProgress($operationId, 'queued', 'Menunggu worker memproses sinkron posting...', 1, 0);
 
         $ranSync = (bool) config('instagram.dispatch_sync', false);
         if ($ranSync) {
             try {
-                Bus::dispatchSync(new SyncInstagramPostsJob($keys, $operationId));
+                Bus::dispatchSync(new SyncInstagramPostsJob($keys, $operationId, $dateFrom, $dateTo));
             } catch (\Throwable $e) {
                 $payload = [
                     'success' => false,
@@ -49,7 +53,7 @@ class InstagramReviewController extends Controller
                 'message' => 'Sinkron posting selesai (mode langsung). Data sudah disimpan; tabel di bawah bisa dimuat ulang.',
             ];
         } else {
-            SyncInstagramPostsJob::dispatch($keys, $operationId);
+            SyncInstagramPostsJob::dispatch($keys, $operationId, $dateFrom, $dateTo);
             $payload = [
                 'success' => true,
                 'ran_sync' => false,
@@ -70,17 +74,21 @@ class InstagramReviewController extends Controller
         $request->validate([
             'profile_keys' => 'nullable|array',
             'profile_keys.*' => ['string', Rule::in($validKeys)],
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
         ]);
 
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
         $operationId = (string) Str::uuid();
         $this->putProgress($operationId, 'queued', 'Menunggu worker memproses sinkron komentar...', 1, 0);
 
         $ranSync = (bool) config('instagram.dispatch_sync', false);
         if ($ranSync) {
             try {
-                Bus::dispatchSync(new SyncInstagramCommentsJob($keys, $operationId));
+                Bus::dispatchSync(new SyncInstagramCommentsJob($keys, $operationId, $dateFrom, $dateTo));
             } catch (\Throwable $e) {
                 $payload = [
                     'success' => false,
@@ -100,7 +108,7 @@ class InstagramReviewController extends Controller
                 'message' => 'Sinkron komentar selesai (mode langsung).',
             ];
         } else {
-            SyncInstagramCommentsJob::dispatch($keys, $operationId);
+            SyncInstagramCommentsJob::dispatch($keys, $operationId, $dateFrom, $dateTo);
             $payload = [
                 'success' => true,
                 'ran_sync' => false,
