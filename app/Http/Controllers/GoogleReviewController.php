@@ -400,12 +400,19 @@ class GoogleReviewController extends Controller
             'updated_at' => now(),
         ]);
 
-        ProcessGoogleReviewAiReportJob::dispatch($reportId);
+        $sync = (bool) config('google_review.ai_dispatch_sync', false);
+        if ($sync) {
+            ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+        } else {
+            ProcessGoogleReviewAiReportJob::dispatch($reportId);
+        }
 
         return response()->json([
             'success' => true,
             'id' => $reportId,
-            'message' => 'Laporan AI diantre. Proses bisa beberapa menit untuk ratusan review — pastikan queue worker berjalan (php artisan queue:work) jika QUEUE_CONNECTION bukan sync.',
+            'message' => $sync
+                ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
+                : 'Laporan AI diantre. Proses bisa beberapa menit untuk ratusan review — pastikan queue worker berjalan (php artisan queue:work). Atau dari SSH: php artisan google-review:process-ai-report '.$reportId,
         ]);
     }
 

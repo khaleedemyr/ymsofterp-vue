@@ -49,6 +49,19 @@
               Perintah umum: <code class="code">php artisan queue:work</code>
               (jalan terus di server). Produksi: pakai Supervisor / systemd agar worker tidak mati.
             </p>
+            <p class="hint-p hint-ssh">
+              <strong>Tanpa worker Redis:</strong> SSH ke server, <code class="code">cd</code> ke folder Laravel, lalu:
+              <code class="code">php artisan google-review:process-ai-report {{ report.id }}</code>
+              — memproses laporan ini sekali dari CLI (bisa beberapa menit). Jika status macet di «Memproses», pakai
+              <code class="code">--force</code>.
+            </p>
+          </div>
+
+          <div v-if="live.status === 'processing'" class="queue-hint hint-stuck">
+            <p class="hint-p">
+              Jika lama tidak bergerak, worker mungkin mati di tengah jalan. Paksa selesai dari CLI:
+              <code class="code">php artisan google-review:process-ai-report {{ report.id }} --force</code>
+            </p>
           </div>
 
           <div v-if="live.status === 'pending' || live.status === 'processing'" class="progress-block">
@@ -472,6 +485,22 @@ onUnmounted(() => {
   padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid #fed7aa;
+}
+.hint-ssh {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #14532d;
+}
+.hint-ssh .code {
+  display: inline;
+  word-break: break-all;
+}
+.hint-stuck {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #78350f;
 }
 .code {
   font-size: 11px;
