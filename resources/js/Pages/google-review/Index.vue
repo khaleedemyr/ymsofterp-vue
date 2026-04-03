@@ -11,7 +11,10 @@
               Tab <strong>Instagram</strong>: sinkron post &amp; komentar via Apify (profil tetap di config), simpan ke database.
             </div>
           </div>
-          <a href="/google-review/ai/reports" class="btn-history">Riwayat laporan AI</a>
+          <div class="header-actions">
+            <button type="button" class="btn-history" @click="scrollToDashboard">Dashboard</button>
+            <a href="/google-review/ai/reports" class="btn-history">Riwayat laporan AI</a>
+          </div>
         </div>
 
         <div class="tabs" role="tablist">
@@ -107,12 +110,6 @@
             </div>
 
             <div class="actions">
-              <button type="button" class="btn btn-primary" :disabled="!selectedOutlet || loading" @click="fetchReviews">
-                Ambil Review API
-              </button>
-              <button type="button" class="btn btn-success" :disabled="loading" @click="fetchScrapedReviews">
-                Ambil Review Scraper
-              </button>
               <button type="button" class="btn btn-apify" :disabled="!selectedOutlet || loading" @click="fetchApifyReviews">
                 Ambil Review Apify
               </button>
@@ -218,6 +215,36 @@
 
         <div v-else-if="datasetId && !loadingItems" class="panel empty">
           Belum ada data review untuk ditampilkan.
+        </div>
+
+        <div id="dashboard-inline" class="panel dashboard-panel">
+          <div class="table-head">
+            <div class="table-title">Dashboard Ringkas</div>
+          </div>
+          <div class="dash-cards">
+            <div class="dash-card"><span>IG Posts</span><strong>{{ dash.cards.instagram_posts }}</strong></div>
+            <div class="dash-card"><span>IG Comments</span><strong>{{ dash.cards.instagram_comments }}</strong></div>
+            <div class="dash-card"><span>AI Reports</span><strong>{{ dash.cards.ai_reports_completed }}</strong></div>
+            <div class="dash-card"><span>AI Items</span><strong>{{ dash.cards.ai_items_total }}</strong></div>
+          </div>
+          <div class="dash-grid">
+            <div>
+              <div class="label">Sentimen Google ({{ dash.range.sentiment_days }} hari)</div>
+              <div v-for="(v, k) in dash.sentiment.google" :key="`g-${k}`" class="bar-row">
+                <span class="bar-label">{{ sevLabel(k) }}</span>
+                <div class="bar"><div class="bar-fill" :style="{ width: `${barPct(v, dashGoogleMax)}%` }"></div></div>
+                <strong class="bar-val">{{ v }}</strong>
+              </div>
+            </div>
+            <div>
+              <div class="label">Sentimen Instagram ({{ dash.range.sentiment_days }} hari)</div>
+              <div v-for="(v, k) in dash.sentiment.instagram" :key="`i-${k}`" class="bar-row">
+                <span class="bar-label">{{ sevLabel(k) }}</span>
+                <div class="bar"><div class="bar-fill ig" :style="{ width: `${barPct(v, dashInstagramMax)}%` }"></div></div>
+                <strong class="bar-val">{{ v }}</strong>
+              </div>
+            </div>
+          </div>
         </div>
         </div>
 
@@ -357,6 +384,16 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 const page = usePage()
 const outlets = page.props.outlets || []
 const instagramProfiles = page.props.instagramProfiles || []
+const dash = page.props.dashboardData || {
+  cards: { instagram_posts: 0, instagram_comments: 0, ai_reports_completed: 0, ai_items_total: 0 },
+  sentiment: {
+    google: { positive: 0, neutral: 0, mild_negative: 0, negative: 0, severe: 0 },
+    instagram: { positive: 0, neutral: 0, mild_negative: 0, negative: 0, severe: 0 },
+  },
+  daily: [],
+  topProfiles: [],
+  range: { sentiment_days: 30, daily_days: 14 },
+}
 
 const activeTab = ref('google')
 const instagramStatsLocal = ref({
@@ -395,6 +432,8 @@ const lastFetchSource = ref('')
 const aiFullSubmitting = ref(false)
 
 const selectedOutletRecord = computed(() => outlets.find((o) => o.place_id === selectedOutlet.value))
+const dashGoogleMax = computed(() => Math.max(1, ...Object.values(dash.sentiment.google || {})))
+const dashInstagramMax = computed(() => Math.max(1, ...Object.values(dash.sentiment.instagram || {})))
 
 const canStartFullAi = computed(() => {
   if (datasetId.value) return true
@@ -451,6 +490,27 @@ function clampApifyMax() {
   const n = Number(maxApifyReviews.value)
   if (!Number.isFinite(n) || n < 1) return 200
   return Math.min(2000, Math.max(1, Math.floor(n)))
+}
+
+function sevLabel(k) {
+  const m = {
+    positive: 'Positif',
+    neutral: 'Netral',
+    mild_negative: 'Negatif ringan',
+    negative: 'Negatif',
+    severe: 'Sangat parah',
+  }
+  return m[k] || k
+}
+
+function barPct(v, max) {
+  return Math.max(0, Math.min(100, Math.round((Number(v || 0) / Number(max || 1)) * 100)))
+}
+
+function scrollToDashboard() {
+  activeTab.value = 'google'
+  const el = document.getElementById('dashboard-inline')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function fmtDate(date) {
@@ -921,6 +981,11 @@ async function startInstagramAiClassification() {
   flex-wrap: wrap;
   margin-bottom: 14px;
 }
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .btn-history {
   flex-shrink: 0;
   padding: 10px 14px;
@@ -980,6 +1045,51 @@ async function startInstagramAiClassification() {
   flex-wrap: wrap;
   gap: 8px;
 }
+.dashboard-panel {
+  margin-top: 8px;
+}
+.dash-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dash-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.dash-card span { font-size: 12px; color: #6b7280; }
+.dash-card strong { font-size: 18px; color: #111827; }
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 44px;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+.bar-label { font-size: 12px; color: #374151; }
+.bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 10px;
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+.bar-fill.ig {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+.bar-val { font-size: 12px; color: #111827; text-align: right; }
 .input-num {
   width: 100%;
   border: 1px solid #d1d5db;

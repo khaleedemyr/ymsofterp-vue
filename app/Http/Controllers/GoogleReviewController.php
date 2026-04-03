@@ -59,7 +59,118 @@ class GoogleReviewController extends Controller
                 'posts' => $igPosts,
                 'comments' => $igComments,
             ],
+            'dashboardData' => $this->buildDashboardData(),
         ]);
+    }
+
+    public function dashboard()
+    {
+        return Inertia::render('google-review/Dashboard', $this->buildDashboardData());
+    }
+
+    protected function buildDashboardData(): array
+    {
+        $today = now();
+        $since30 = $today->copy()->subDays(29)->startOfDay();
+        $since14 = $today->copy()->subDays(13)->startOfDay();
+
+        $cards = [
+            'instagram_posts' => 0,
+            'instagram_comments' => 0,
+            'ai_reports_completed' => 0,
+            'ai_items_total' => 0,
+        ];
+        $sentiment = [
+            'google' => ['positive' => 0, 'neutral' => 0, 'mild_negative' => 0, 'negative' => 0, 'severe' => 0],
+            'instagram' => ['positive' => 0, 'neutral' => 0, 'mild_negative' => 0, 'negative' => 0, 'severe' => 0],
+        ];
+        $daily = [];
+        $topProfiles = [];
+
+        try {
+            $cards['instagram_posts'] = (int) DB::table('instagram_posts')->count();
+            $cards['instagram_comments'] = (int) DB::table('instagram_comments')->count();
+            $cards['ai_reports_completed'] = (int) DB::table('google_review_ai_reports')->where('status', 'completed')->count();
+            $cards['ai_items_total'] = (int) DB::table('google_review_ai_items')->count();
+        } catch (\Throwable) {
+        }
+
+        try {
+            $rows = DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->select('r.source', 'i.severity', DB::raw('COUNT(*) as total'))
+                ->where('r.status', 'completed')
+                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'instagram_comments_db'])
+                ->where('r.created_at', '>=', $since30)
+                ->groupBy('r.source', 'i.severity')
+                ->get();
+            foreach ($rows as $r) {
+                $bucket = $r->source === 'instagram_comments_db' ? 'instagram' : 'google';
+                $sev = (string) $r->severity;
+                if (isset($sentiment[$bucket][$sev])) {
+                    $sentiment[$bucket][$sev] = (int) $r->total;
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $commentRows = DB::table('instagram_comments')
+                ->select(DB::raw('DATE(commented_at) as d'), DB::raw('COUNT(*) as total'))
+                ->whereNotNull('commented_at')
+                ->where('commented_at', '>=', $since14)
+                ->groupBy(DB::raw('DATE(commented_at)'))
+                ->get();
+            $aiRows = DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->select(DB::raw('DATE(i.created_at) as d'), DB::raw('COUNT(*) as total'))
+                ->where('r.source', 'instagram_comments_db')
+                ->where('r.status', 'completed')
+                ->where('i.created_at', '>=', $since14)
+                ->groupBy(DB::raw('DATE(i.created_at)'))
+                ->get();
+
+            $commentMap = [];
+            foreach ($commentRows as $r) {
+                $commentMap[(string) $r->d] = (int) $r->total;
+            }
+            $aiMap = [];
+            foreach ($aiRows as $r) {
+                $aiMap[(string) $r->d] = (int) $r->total;
+            }
+            for ($i = 13; $i >= 0; $i--) {
+                $d = $today->copy()->subDays($i)->toDateString();
+                $daily[] = [
+                    'date' => $d,
+                    'instagram_comments' => $commentMap[$d] ?? 0,
+                    'ai_classified' => $aiMap[$d] ?? 0,
+                ];
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $topProfiles = DB::table('instagram_comments as c')
+                ->join('instagram_posts as p', 'p.id', '=', 'c.instagram_post_id')
+                ->select('p.profile_key', DB::raw('COUNT(*) as total_comments'))
+                ->groupBy('p.profile_key')
+                ->orderByDesc('total_comments')
+                ->limit(10)
+                ->get()
+                ->map(fn ($r) => ['profile_key' => (string) $r->profile_key, 'total_comments' => (int) $r->total_comments])
+                ->values()
+                ->all();
+        } catch (\Throwable) {
+            $topProfiles = [];
+        }
+
+        return [
+            'cards' => $cards,
+            'sentiment' => $sentiment,
+            'daily' => $daily,
+            'topProfiles' => $topProfiles,
+            'range' => ['sentiment_days' => 30, 'daily_days' => 14],
+        ];
     }
 
     public function scrapeReviews(Request $request)
