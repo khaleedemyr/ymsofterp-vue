@@ -63,3 +63,12 @@ CREATE TABLE `instagram_comments` (
 --       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.images[0]')),
 --       ''
 --   ), '');
+
+-- Opsional (direkomendasikan): metadata AI untuk komentar Instagram
+-- agar report bisa tampilkan akun/post asal komentar dan skip yang sudah pernah diklasifikasi.
+-- ALTER TABLE `google_review_ai_items`
+--   ADD COLUMN `source_item_id` BIGINT UNSIGNED NULL AFTER `summary_id`,
+--   ADD COLUMN `source_account` VARCHAR(64) NULL AFTER `source_item_id`,
+--   ADD COLUMN `source_post_url` VARCHAR(512) NULL AFTER `source_account`,
+--   ADD COLUMN `source_post_shortcode` VARCHAR(32) NULL AFTER `source_post_url`,
+--   ADD KEY `google_review_ai_items_source_item_id_index` (`source_item_id`);

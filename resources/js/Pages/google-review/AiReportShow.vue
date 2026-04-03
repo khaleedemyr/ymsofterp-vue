@@ -87,6 +87,8 @@
                 <tr>
                   <th>#</th>
                   <th>Penulis</th>
+                  <th v-if="report.source === 'instagram_comments_db'">Akun IG</th>
+                  <th v-if="report.source === 'instagram_comments_db'">Post</th>
                   <th>Rating</th>
                   <th>Tanggal</th>
                   <th>Severity</th>
@@ -99,6 +101,13 @@
                 <tr v-for="it in items.data" :key="it.id">
                   <td>{{ it.sort_order + 1 }}</td>
                   <td>{{ it.author || '—' }}</td>
+                  <td v-if="report.source === 'instagram_comments_db'">{{ it.source_account || it.rating || '—' }}</td>
+                  <td v-if="report.source === 'instagram_comments_db'">
+                    <a v-if="it.source_post_url" :href="it.source_post_url" target="_blank" rel="noopener" class="plink">
+                      {{ it.source_post_shortcode || 'Buka post' }}
+                    </a>
+                    <span v-else>—</span>
+                  </td>
                   <td>{{ it.rating || '—' }}</td>
                   <td class="muted small">{{ it.review_date }}</td>
                   <td><span class="sev" :class="'s-' + it.severity">{{ sevLabel(it.severity) }}</span></td>
@@ -506,6 +515,14 @@ onUnmounted(() => {
 .txt {
   max-width: 320px;
   word-break: break-word;
+}
+.plink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+.plink:hover {
+  text-decoration: underline;
 }
 .sev {
   font-size: 11px;

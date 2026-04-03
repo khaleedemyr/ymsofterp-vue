@@ -142,11 +142,27 @@ class InstagramCommentImporter
      */
     protected function resolveCommentedAt(array $item): ?\Illuminate\Support\Carbon
     {
-        $raw = $item['timestamp'] ?? $item['createdAt'] ?? $item['created_at'] ?? null;
+        $raw = $item['timestamp']
+            ?? $item['createdAt']
+            ?? $item['created_at']
+            ?? $item['created_time']
+            ?? $item['time']
+            ?? null;
         if ($raw === null || $raw === '') {
             return null;
         }
         try {
+            if (is_int($raw) || is_float($raw) || (is_string($raw) && preg_match('/^\d+$/', trim($raw)))) {
+                $n = (int) $raw;
+                // Handle Unix milliseconds from some payload variants.
+                if ($n > 9999999999) {
+                    $n = (int) floor($n / 1000);
+                }
+                if ($n > 0) {
+                    return \Carbon\Carbon::createFromTimestamp($n);
+                }
+            }
+
             return \Carbon\Carbon::parse((string) $raw);
         } catch (\Throwable) {
             return null;

@@ -10,6 +10,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ProcessInstagramCommentAiReportJob implements ShouldQueue
 {
@@ -41,6 +42,10 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
         $this->pushLog('Job dimulai (klasifikasi AI komentar Instagram).');
 
         try {
+            $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
+            $hasSourceAccount = Schema::hasColumn('google_review_ai_items', 'source_account');
+            $hasSourcePostUrl = Schema::hasColumn('google_review_ai_items', 'source_post_url');
+            $hasSourcePostShortcode = Schema::hasColumn('google_review_ai_items', 'source_post_shortcode');
             $meta = [];
             if (! empty($report->source_payload)) {
                 $decoded = json_decode((string) $report->source_payload, true);
@@ -58,6 +63,10 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                     'instagram_comments.username',
                     'instagram_comments.text',
                     'instagram_comments.commented_at',
+                    'instagram_comments.raw_json',
+                    'instagram_posts.profile_key',
+                    'instagram_posts.post_url',
+                    'instagram_posts.short_code',
                 ])
                 ->whereRaw("TRIM(COALESCE(instagram_comments.text, '')) <> ''");
 
@@ -70,16 +79,64 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             if ($dateTo) {
                 $q->whereDate('instagram_comments.commented_at', '<=', $dateTo);
             }
+            if ($hasSourceItemId) {
+                $alreadyClassifiedIds = DB::table('google_review_ai_items as i')
+                    ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                    ->where('r.source', 'instagram_comments_db')
+                    ->where('r.status', 'completed')
+                    ->whereNotNull('i.source_item_id')
+                    ->pluck('i.source_item_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn ($id) => $id > 0)
+                    ->values()
+                    ->all();
+                if ($alreadyClassifiedIds !== []) {
+                    $q->whereNotIn('instagram_comments.id', $alreadyClassifiedIds);
+                }
+            } else {
+                $this->pushLog('Kolom source_item_id belum ada; skip "already-classified" tidak aktif.');
+            }
 
             $rows = $q->orderBy('instagram_comments.id')->get();
             $reviews = $rows->map(function ($r) {
+                $date = ! empty($r->commented_at) ? (string) $r->commented_at : '';
+                if ($date === '' && ! empty($r->raw_json)) {
+                    try {
+                        $raw = json_decode((string) $r->raw_json, true);
+                    } catch (\Throwable) {
+                        $raw = null;
+                    }
+                    if (is_array($raw)) {
+                        $candidate = $raw['timestamp'] ?? $raw['createdAt'] ?? $raw['created_at'] ?? null;
+                        if ($candidate !== null && $candidate !== '') {
+                            if (is_numeric($candidate)) {
+                                $ts = (int) $candidate;
+                                if ($ts > 9999999999) {
+                                    $ts = (int) floor($ts / 1000);
+                                }
+                                if ($ts > 0) {
+                                    $date = date('Y-m-d H:i:s', $ts);
+                                }
+                            } else {
+                                $parsed = strtotime((string) $candidate);
+                                if ($parsed !== false && $parsed > 0) {
+                                    $date = date('Y-m-d H:i:s', $parsed);
+                                }
+                            }
+                        }
+                    }
+                }
                 return [
                     'author' => (string) ($r->username ?? ''),
-                    'rating' => '',
-                    'date' => ! empty($r->commented_at) ? (string) $r->commented_at : '',
+                    'rating' => (string) ($r->profile_key ?? ''),
+                    'date' => $date,
                     'text' => (string) ($r->text ?? ''),
                     'profile_photo' => '',
                     'review_id' => (string) ($r->comment_id ?? ''),
+                    '_source_item_id' => (int) ($r->comment_id ?? 0),
+                    '_source_account' => (string) ($r->profile_key ?? ''),
+                    '_source_post_url' => (string) ($r->post_url ?? ''),
+                    '_source_post_shortcode' => (string) ($r->short_code ?? ''),
                 ];
             })->values()->all();
 
@@ -125,7 +182,7 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                     'report_id' => $this->reportId,
                     'sort_order' => $idx,
                     'author' => mb_substr((string) ($row['author'] ?? ''), 0, 255),
-                    'rating' => '',
+                    'rating' => mb_substr((string) ($row['rating'] ?? ''), 0, 32),
                     'review_date' => mb_substr((string) ($row['date'] ?? ''), 0, 255),
                     'text' => $row['text'] ?? null,
                     'profile_photo' => '',
@@ -135,6 +192,18 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
+                if ($hasSourceItemId) {
+                    $batch[count($batch) - 1]['source_item_id'] = (int) ($row['_source_item_id'] ?? 0);
+                }
+                if ($hasSourceAccount) {
+                    $batch[count($batch) - 1]['source_account'] = mb_substr((string) ($row['_source_account'] ?? ''), 0, 64);
+                }
+                if ($hasSourcePostUrl) {
+                    $batch[count($batch) - 1]['source_post_url'] = mb_substr((string) ($row['_source_post_url'] ?? ''), 0, 512);
+                }
+                if ($hasSourcePostShortcode) {
+                    $batch[count($batch) - 1]['source_post_shortcode'] = mb_substr((string) ($row['_source_post_shortcode'] ?? ''), 0, 32);
+                }
                 if (count($batch) >= 150) {
                     DB::table('google_review_ai_items')->insert($batch);
                     $batch = [];

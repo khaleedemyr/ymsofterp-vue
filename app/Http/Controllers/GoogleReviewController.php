@@ -525,6 +525,10 @@ class GoogleReviewController extends Controller
                 'severity' => $row->severity,
                 'topics' => is_array($topics) ? $topics : [],
                 'summary_id' => $row->summary_id,
+                'source_item_id' => property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : null,
+                'source_account' => property_exists($row, 'source_account') ? $row->source_account : null,
+                'source_post_url' => property_exists($row, 'source_post_url') ? $row->source_post_url : null,
+                'source_post_shortcode' => property_exists($row, 'source_post_shortcode') ? $row->source_post_shortcode : null,
             ];
         });
 
