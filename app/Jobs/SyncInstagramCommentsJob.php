@@ -17,9 +17,9 @@ class SyncInstagramCommentsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 3600;
+    public int $timeout = 7200;
 
-    public int $tries = 1;
+    public int $tries = 3;
 
     /**
      * @param  array<int, string>  $profileKeys
@@ -57,6 +57,7 @@ class SyncInstagramCommentsJob implements ShouldQueue
 
         $this->setProgress('processing', 'Memulai sinkron komentar...', $totalBatches, 0);
 
+        $failedBatches = 0;
         foreach ($chunks as $chunk) {
             $urls = [];
             $urlToId = [];
@@ -74,11 +75,27 @@ class SyncInstagramCommentsJob implements ShouldQueue
                 continue;
             }
 
-            Log::info('SyncInstagramCommentsJob: batch Apify', ['count' => count($urls)]);
-            $input = $apify->buildCommentsInput($urls);
-            $datasetId = $apify->runAndWaitForDataset($input);
-            $items = $apify->getAllDatasetItems($datasetId);
-            $totalSaved += $commentImporter->upsertFromApifyCommentItems($items, $urlToId);
+            try {
+                Log::info('SyncInstagramCommentsJob: batch Apify', ['count' => count($urls)]);
+                $input = $apify->buildCommentsInput($urls);
+                $datasetId = $apify->runAndWaitForDataset($input);
+                $items = $apify->getAllDatasetItems($datasetId);
+                $totalSaved += $commentImporter->upsertFromApifyCommentItems($items, $urlToId);
+            } catch (\Throwable $e) {
+                $failedBatches++;
+                Log::warning('SyncInstagramCommentsJob: batch gagal, lanjut batch berikutnya', [
+                    'error' => $e->getMessage(),
+                    'batch_size' => count($urls),
+                ]);
+                $processedBatches++;
+                $this->setProgress(
+                    'processing',
+                    "Batch {$processedBatches}/{$totalBatches} gagal ({$failedBatches} total gagal). Melanjutkan batch berikutnya...",
+                    $totalBatches,
+                    $processedBatches
+                );
+                continue;
+            }
 
             $processedBatches++;
             $this->setProgress(
@@ -90,11 +107,20 @@ class SyncInstagramCommentsJob implements ShouldQueue
             );
         }
 
-        $this->setProgress('completed', "Selesai: {$totalSaved} komentar tersimpan.", $totalBatches, $totalBatches, [
+        $finalStatus = $failedBatches > 0 ? 'completed_with_errors' : 'completed';
+        $finalMessage = $failedBatches > 0
+            ? "Selesai dengan kendala: {$totalSaved} komentar tersimpan, {$failedBatches} batch gagal."
+            : "Selesai: {$totalSaved} komentar tersimpan.";
+        $this->setProgress($finalStatus, $finalMessage, $totalBatches, $totalBatches, [
             'posts' => $posts->count(),
             'comments_upserted' => $totalSaved,
+            'failed_batches' => $failedBatches,
         ]);
-        Log::info('SyncInstagramCommentsJob: selesai', ['posts' => $posts->count(), 'comments_upserted' => $totalSaved]);
+        Log::info('SyncInstagramCommentsJob: selesai', [
+            'posts' => $posts->count(),
+            'comments_upserted' => $totalSaved,
+            'failed_batches' => $failedBatches,
+        ]);
     }
 
     public function failed(\Throwable $e): void
