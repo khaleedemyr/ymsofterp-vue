@@ -5,7 +5,9 @@
         <div class="header">
           <div>
             <div class="title">Google Reviews</div>
-            <div class="subtitle">Scrape & tampilkan review Google Maps per outlet (pagination + export).</div>
+            <div class="subtitle">
+              Scrape & tampilkan review Google Maps per outlet (pagination + export). Klasifikasi sentimen memakai AI yang sama dengan Sales Outlet Dashboard (<code class="code-inline">AI_PROVIDER</code> di <code class="code-inline">.env</code>).
+            </div>
           </div>
         </div>
 
@@ -51,6 +53,15 @@
               >
                 {{ exporting ? 'Exporting…' : 'Export Excel (CSV)' }}
               </button>
+              <button
+                type="button"
+                class="btn btn-ai"
+                :disabled="!reviews.length || aiClassifying || loadingItems || loading"
+                title="Analisis ulasan di halaman ini dengan AI (maks. 50 item)"
+                @click="classifyWithAi"
+              >
+                {{ aiClassifying ? 'AI menganalisis…' : 'Klasifikasi AI (halaman ini)' }}
+              </button>
             </div>
           </div>
 
@@ -73,7 +84,20 @@
 
         <div v-if="reviews.length" class="panel">
           <div class="table-head">
-            <div class="table-title">Reviews</div>
+            <div class="table-title-row">
+              <div class="table-title">Reviews</div>
+              <div class="filter-severity" v-if="hasAnyClassification">
+                <label class="filter-label" for="severity-filter">Filter AI</label>
+                <select id="severity-filter" v-model="severityFilter" class="select select-compact">
+                  <option value="">Semua</option>
+                  <option value="positive">Positif</option>
+                  <option value="neutral">Netral</option>
+                  <option value="mild_negative">Negatif ringan</option>
+                  <option value="negative">Negatif</option>
+                  <option value="severe">Sangat parah</option>
+                </select>
+              </div>
+            </div>
             <div class="pager">
               <button type="button" class="pager-btn" :disabled="meta.page <= 1 || loadingItems" @click="goToPage(meta.page - 1)">
                 Prev
@@ -92,8 +116,12 @@
             <span>Loading halaman review…</span>
           </div>
 
+          <div v-if="!displayedReviews.length" class="notice notice-muted">
+            Tidak ada review untuk filter ini.
+          </div>
+
           <div class="review-list">
-            <div v-for="review in reviews" :key="reviewKey(review)" class="review-card">
+            <div v-for="review in displayedReviews" :key="reviewKey(review)" class="review-card">
               <div class="review-header">
                 <div class="avatar">
                   <img v-if="review.profile_photo" :src="review.profile_photo" alt="profile" />
@@ -109,16 +137,26 @@
                       <span class="rating-num">{{ review.rating ? `(${review.rating})` : '' }}</span>
                     </div>
                   </div>
-                  <div class="date">{{ review.date }}</div>
+                  <div class="date-row">
+                    <span class="date">{{ review.date }}</span>
+                    <span v-if="review.ai_classification" class="ai-badges">
+                      <span class="ai-badge" :class="'sev-' + review.ai_classification.severity">{{ severityLabel(review.ai_classification.severity) }}</span>
+                      <span v-if="review.ai_classification.topics?.length" class="ai-topics" :title="review.ai_classification.topics.join(', ')">
+                        {{ review.ai_classification.topics.slice(0, 3).join(' · ') }}
+                      </span>
+                    </span>
+                  </div>
                 </div>
               </div>
+              <div v-if="review.ai_classification?.summary_id" class="ai-summary">{{ review.ai_classification.summary_id }}</div>
               <div class="review-text">{{ review.text || '-' }}</div>
             </div>
           </div>
 
           <div class="table-foot">
             <div class="muted">
-              Menampilkan {{ reviews.length }} item (per halaman: {{ meta.perPage }}).
+              Menampilkan {{ displayedReviews.length }} / {{ reviews.length }} item di halaman ini
+              <span v-if="datasetId">(per halaman: {{ meta.perPage }})</span>.
             </div>
             <div class="pager">
               <button type="button" class="pager-btn" :disabled="meta.page <= 1 || loadingItems" @click="goToPage(1)">
@@ -157,6 +195,17 @@ const reviews = ref([])
 const meta = ref({ page: 1, perPage: 20, total: 0, lastPage: 1 })
 const perPage = ref(20)
 const loadingItems = ref(false)
+const aiClassifying = ref(false)
+const severityFilter = ref('')
+
+const hasAnyClassification = computed(() => reviews.value.some((r) => r.ai_classification))
+
+const displayedReviews = computed(() => {
+  if (!severityFilter.value) {
+    return reviews.value
+  }
+  return reviews.value.filter((r) => r.ai_classification?.severity === severityFilter.value)
+})
 const exporting = ref(false)
 
 watch(
@@ -284,6 +333,46 @@ function exportExcel() {
   setTimeout(() => (exporting.value = false), 1500)
 }
 
+function severityLabel(sev) {
+  const map = {
+    positive: 'Positif',
+    neutral: 'Netral',
+    mild_negative: 'Negatif ringan',
+    negative: 'Negatif',
+    severe: 'Sangat parah',
+  }
+  return map[sev] || sev || '-'
+}
+
+async function classifyWithAi() {
+  if (!reviews.value.length || aiClassifying.value) return
+  aiClassifying.value = true
+  error.value = ''
+  try {
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    const res = await fetch('/google-review/ai/classify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': token || '',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({ reviews: reviews.value }),
+      credentials: 'same-origin',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || `HTTP ${res.status}`)
+    }
+    reviews.value = Array.isArray(data.reviews) ? data.reviews : []
+  } catch (e) {
+    error.value = e.message || 'Gagal klasifikasi AI'
+  } finally {
+    aiClassifying.value = false
+  }
+}
+
 function reviewKey(review) {
   return `${review.time || ''}:${review.author || ''}:${(review.text || '').slice(0, 20)}`
 }
@@ -394,6 +483,18 @@ function initials(name) {
   border-color: #d1d5db;
   color: #111827;
 }
+.btn-ai {
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.22);
+}
+.code-inline {
+  font-size: 11px;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #374151;
+}
 .notice {
   margin-top: 12px;
   font-size: 13px;
@@ -427,6 +528,11 @@ function initials(name) {
   border-color: #fecaca;
   color: #991b1b;
 }
+.notice-muted {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+  color: #6b7280;
+}
 .place-title {
   font-size: 16px;
   font-weight: 700;
@@ -450,9 +556,30 @@ function initials(name) {
   gap: 12px;
   flex-wrap: wrap;
 }
+.table-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 .table-title {
   font-weight: 700;
   color: #111827;
+}
+.filter-severity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-label {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.select-compact {
+  width: auto;
+  min-width: 160px;
+  padding: 8px 10px;
 }
 .pager {
   display: flex;
@@ -550,10 +677,68 @@ function initials(name) {
   margin-left: 6px;
   font-size: 12px;
 }
+.date-row {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
 .date {
-  margin-top: 2px;
   font-size: 12px;
   color: #6b7280;
+}
+.ai-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ai-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.ai-badge.sev-positive {
+  background: #d1fae5;
+  color: #065f46;
+}
+.ai-badge.sev-neutral {
+  background: #e5e7eb;
+  color: #374151;
+}
+.ai-badge.sev-mild_negative {
+  background: #fef3c7;
+  color: #92400e;
+}
+.ai-badge.sev-negative {
+  background: #fed7aa;
+  color: #9a3412;
+}
+.ai-badge.sev-severe {
+  background: #fecaca;
+  color: #7f1d1d;
+  border: 1px solid #f87171;
+}
+.ai-topics {
+  font-size: 11px;
+  color: #6b7280;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-summary {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #4b5563;
+  font-style: italic;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 3px solid #a78bfa;
 }
 .review-text {
   margin-top: 10px;

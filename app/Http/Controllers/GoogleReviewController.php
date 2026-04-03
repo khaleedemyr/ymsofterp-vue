@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\GooglePlacesService;
 use App\Services\ApifyGoogleReviewsService;
+use App\Services\AIAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
@@ -251,5 +252,32 @@ class GoogleReviewController extends Controller
     protected function apifyCacheKey($userId, string $placeId): string
     {
         return 'google-review:apify:' . $userId . ':' . $placeId;
+    }
+
+    /**
+     * Klasifikasi sentimen / tingkat keparahan ulasan via AI (sama config provider dengan Sales Outlet Dashboard).
+     */
+    public function classifyReviewsAi(Request $request)
+    {
+        $request->validate([
+            'reviews' => 'required|array|max:50',
+            'reviews.*' => 'array',
+        ]);
+
+        try {
+            $classified = app(AIAnalyticsService::class)->classifyGoogleReviews($request->input('reviews', []));
+
+            return response()->json([
+                'success' => true,
+                'reviews' => $classified,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('GoogleReviewController@classifyReviewsAi: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 } 

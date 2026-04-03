@@ -2094,4 +2094,215 @@ class AIAnalyticsService
             ];
         }
     }
+
+    /**
+     * Klasifikasi sentimen / tingkat keparahan untuk batch review Google (satu panggilan AI).
+     * Mengikuti provider aktif (claude / gemini / openai) seperti dashboard AI.
+     *
+     * @param  array<int, array<string, mixed>>  $reviews
+     * @return array<int, array<string, mixed>>
+     */
+    public function classifyGoogleReviews(array $reviews): array
+    {
+        if ($this->provider === 'claude' && $this->budgetService->isBudgetExceeded()) {
+            throw new \RuntimeException('Budget AI Claude untuk bulan ini sudah habis.');
+        }
+
+        $max = 50;
+        $reviews = array_values(array_slice($reviews, 0, $max));
+
+        $lines = [];
+        foreach ($reviews as $i => $r) {
+            $r = is_array($r) ? $r : (array) $r;
+            $text = isset($r['text']) ? mb_substr(trim((string) $r['text']), 0, 800) : '';
+            $rating = $r['rating'] ?? '';
+            $author = isset($r['author']) ? mb_substr((string) $r['author'], 0, 80) : '';
+            $lines[] = ['idx' => $i, 'author' => $author, 'rating' => $rating, 'text' => $text];
+        }
+
+        $payload = json_encode($lines, JSON_UNESCAPED_UNICODE);
+        $prompt = <<<PROMPT
+Anda menganalisis review Google Maps untuk restoran / outlet F&B.
+Data review (JSON array): {$payload}
+
+Untuk SETIAP item (satu entri per idx), tentukan:
+- severity: salah satu string persis: "positive", "neutral", "mild_negative", "negative", "severe"
+  - severe = sangat parah: ancaman hukum, tuduhan keracunan/penyakit serius, pelecehan keras, diskriminasi, kekerasan, ancaman boikot massal, atau bahasa sangat menghina/dehumanisasi.
+  - negative = keluhan operasional jelas (makanan buruk, pelayanan buruk, kotor, lama, harga tidak sesuai) tanpa eskalasi ekstrem di atas.
+  - mild_negative = ketidakpuasan ringan.
+  - neutral = fakta tanpa emosi kuat, atau teks kosong/tidak jelas.
+  - positive = puas / pujian.
+- topics: array string pendek (maks 5) dari: food_quality, service, hygiene, ambiance, price, wait_time, parking, portion, noise, reservation, other
+- summary_id: satu kalimat Bahasa Indonesia ringkas tentang inti ulasan (maks ~120 karakter).
+
+Output HANYA JSON valid tanpa markdown, bentuk persis:
+{"items":[{"idx":0,"severity":"neutral","topics":["other"],"summary_id":"..."}]}
+Semua idx dari input harus muncul tepat satu kali, urutan bebas.
+PROMPT;
+
+        $raw = $this->invokeClassifierPrompt($prompt);
+        $json = $this->extractJsonFromAiResponse($raw);
+        if (!$json || empty($json['items']) || !is_array($json['items'])) {
+            throw new \RuntimeException('Gagal memparse jawaban AI (bukan JSON items yang valid).');
+        }
+
+        $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
+        $byIdx = [];
+        foreach ($json['items'] as $item) {
+            if (!is_array($item) || !array_key_exists('idx', $item)) {
+                continue;
+            }
+            $sev = strtolower((string) ($item['severity'] ?? 'neutral'));
+            if (!in_array($sev, $allowed, true)) {
+                $sev = 'neutral';
+            }
+            $topics = $item['topics'] ?? [];
+            if (!is_array($topics)) {
+                $topics = [];
+            }
+            $byIdx[(int) $item['idx']] = [
+                'severity' => $sev,
+                'topics' => array_values(array_filter(array_map('strval', $topics))),
+                'summary_id' => mb_substr((string) ($item['summary_id'] ?? ''), 0, 200),
+            ];
+        }
+
+        $out = [];
+        foreach ($reviews as $i => $r) {
+            $r = is_array($r) ? $r : (array) $r;
+            $textTrim = isset($r['text']) ? trim((string) $r['text']) : '';
+            if ($textTrim === '') {
+                $c = ['severity' => 'neutral', 'topics' => ['other'], 'summary_id' => 'Tanpa teks ulasan'];
+            } else {
+                $c = $byIdx[$i] ?? ['severity' => 'neutral', 'topics' => [], 'summary_id' => ''];
+            }
+            $out[] = array_merge($r, ['ai_classification' => $c]);
+        }
+
+        return $out;
+    }
+
+    private function extractJsonFromAiResponse(string $text): ?array
+    {
+        $text = trim($text);
+        if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/i', $text, $m)) {
+            $text = trim($m[1]);
+        }
+        $decoded = json_decode($text, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function invokeClassifierPrompt(string $prompt): string
+    {
+        if ($this->provider === 'claude') {
+            return $this->invokeClassifierClaude($prompt);
+        }
+        if ($this->provider === 'openai') {
+            return $this->invokeClassifierOpenAI($prompt);
+        }
+
+        return $this->invokeClassifierGemini($prompt);
+    }
+
+    private function invokeClassifierClaude(string $prompt): string
+    {
+        $url = 'https://api.anthropic.com/v1/messages';
+        $model = config('ai.claude.model', 'claude-haiku-4-5-20251001');
+        $requestBody = [
+            'model' => $model,
+            'max_tokens' => min(4096, (int) config('ai.claude.max_tokens', 4096)),
+            'temperature' => 0.2,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ];
+
+        $httpClient = Http::timeout(120)
+            ->withHeaders([
+                'Content-Type' => 'application/json',
+                'x-api-key' => $this->claudeKey,
+                'anthropic-version' => '2023-06-01',
+            ]);
+        if (config('app.env') === 'local' || config('app.debug')) {
+            $httpClient = $httpClient->withoutVerifying();
+        }
+
+        $response = $httpClient->post($url, $requestBody);
+        if (!$response->successful()) {
+            Log::error('Claude classify reviews failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('Claude API error: ' . $response->status());
+        }
+        $data = $response->json();
+        $text = $data['content'][0]['text'] ?? '';
+        if ($text === '') {
+            throw new \RuntimeException('Jawaban Claude kosong.');
+        }
+        $inputTokens = $data['usage']['input_tokens'] ?? (int) (strlen($prompt) / 4);
+        $outputTokens = $data['usage']['output_tokens'] ?? (int) (strlen($text) / 4);
+        $cost = $this->budgetService->calculateCost('claude', $inputTokens, $outputTokens);
+        $this->budgetService->logUsage('claude', 'google_review_classify', $inputTokens, $outputTokens, $cost['total_cost_usd'], $cost['total_cost_rupiah']);
+
+        return trim($text);
+    }
+
+    private function invokeClassifierGemini(string $prompt): string
+    {
+        $model = config('ai.gemini.model', 'gemini-1.5-pro');
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
+        $requestBody = [
+            'contents' => [
+                ['parts' => [['text' => $prompt]]],
+            ],
+            'generationConfig' => [
+                'temperature' => 0.2,
+                'maxOutputTokens' => min(8192, (int) config('ai.gemini.max_tokens', 4096)),
+            ],
+        ];
+        $httpClient = Http::timeout(90)->withHeaders(['Content-Type' => 'application/json']);
+        if (config('app.env') === 'local' || config('app.debug')) {
+            $httpClient = $httpClient->withoutVerifying();
+        }
+        $response = $httpClient->post($url, $requestBody);
+        if (!$response->successful()) {
+            Log::error('Gemini classify reviews failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('Gemini API error: ' . $response->status());
+        }
+        $data = $response->json();
+        $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        if ($text === '') {
+            throw new \RuntimeException('Jawaban Gemini kosong.');
+        }
+
+        return trim($text);
+    }
+
+    private function invokeClassifierOpenAI(string $prompt): string
+    {
+        $model = config('ai.openai.model', 'gpt-4o-mini');
+        $response = Http::timeout(90)
+            ->withToken($this->openaiKey)
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model' => $model,
+                'temperature' => 0.2,
+                'max_tokens' => 4096,
+                'response_format' => ['type' => 'json_object'],
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Anda hanya mengembalikan JSON valid sesuai permintaan user.'],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+            ]);
+        if (!$response->successful()) {
+            Log::error('OpenAI classify reviews failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new \RuntimeException('OpenAI API error: ' . $response->status());
+        }
+        $data = $response->json();
+        $text = $data['choices'][0]['message']['content'] ?? '';
+        if ($text === '') {
+            throw new \RuntimeException('Jawaban OpenAI kosong.');
+        }
+
+        return trim($text);
+    }
 }
