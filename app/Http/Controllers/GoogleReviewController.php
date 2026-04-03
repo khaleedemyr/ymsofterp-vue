@@ -52,6 +52,8 @@ class GoogleReviewController extends Controller
             'outlets' => $outlets,
             'instagramProfiles' => $instagramProfiles,
             'instagramProcessQueue' => (string) config('instagram.process_queue', 'instagram-scraper'),
+            'instagramDispatchSync' => (bool) config('instagram.dispatch_sync', false),
+            'queueDefaultConnection' => (string) config('queue.default', 'sync'),
             'instagramStats' => [
                 'posts' => $igPosts,
                 'comments' => $igComments,

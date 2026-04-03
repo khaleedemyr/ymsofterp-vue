@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\SyncInstagramCommentsJob;
 use App\Jobs\SyncInstagramPostsJob;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -21,12 +22,37 @@ class InstagramReviewController extends Controller
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
 
-        SyncInstagramPostsJob::dispatch($keys);
+        $ranSync = (bool) config('instagram.dispatch_sync', false);
+        if ($ranSync) {
+            try {
+                Bus::dispatchSync(new SyncInstagramPostsJob($keys));
+            } catch (\Throwable $e) {
+                $payload = [
+                    'success' => false,
+                    'ran_sync' => true,
+                    'error' => $e->getMessage(),
+                ];
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json($payload, 422);
+                }
 
-        $payload = [
-            'success' => true,
-            'message' => 'Sinkronisasi posting Instagram dimasukkan ke antrian. Pastikan worker memproses antrian "'.config('instagram.process_queue', 'instagram-scraper').'".',
-        ];
+                return redirect()->back()->with('instagram_flash', $payload);
+            }
+            $payload = [
+                'success' => true,
+                'ran_sync' => true,
+                'message' => 'Sinkron posting selesai (mode langsung). Data sudah disimpan; tabel di bawah bisa dimuat ulang.',
+            ];
+        } else {
+            SyncInstagramPostsJob::dispatch($keys);
+            $payload = [
+                'success' => true,
+                'ran_sync' => false,
+                'message' => 'Sinkronisasi posting dimasukkan ke antrian "'.config('instagram.process_queue', 'instagram-scraper').'". '
+                    .'Jalankan: php artisan queue:work --queue='.config('instagram.process_queue', 'instagram-scraper')
+                    .' — atau set INSTAGRAM_SCRAPER_DISPATCH_SYNC=true di .env untuk jalan tanpa worker (tunggu lama di browser).',
+            ];
+        }
 
         if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json($payload);
@@ -46,12 +72,36 @@ class InstagramReviewController extends Controller
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
 
-        SyncInstagramCommentsJob::dispatch($keys);
+        $ranSync = (bool) config('instagram.dispatch_sync', false);
+        if ($ranSync) {
+            try {
+                Bus::dispatchSync(new SyncInstagramCommentsJob($keys));
+            } catch (\Throwable $e) {
+                $payload = [
+                    'success' => false,
+                    'ran_sync' => true,
+                    'error' => $e->getMessage(),
+                ];
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json($payload, 422);
+                }
 
-        $payload = [
-            'success' => true,
-            'message' => 'Sinkronisasi komentar Instagram dimasukkan ke antrian (beberapa batch). Worker antrian "'.config('instagram.process_queue', 'instagram-scraper').'" harus jalan.',
-        ];
+                return redirect()->back()->with('instagram_flash', $payload);
+            }
+            $payload = [
+                'success' => true,
+                'ran_sync' => true,
+                'message' => 'Sinkron komentar selesai (mode langsung).',
+            ];
+        } else {
+            SyncInstagramCommentsJob::dispatch($keys);
+            $payload = [
+                'success' => true,
+                'ran_sync' => false,
+                'message' => 'Sinkron komentar dimasukkan ke antrian (banyak batch). Worker "'.config('instagram.process_queue', 'instagram-scraper').'" harus jalan, '
+                    .'atau pakai INSTAGRAM_SCRAPER_DISPATCH_SYNC=true (satu request bisa sangat lama).',
+            ];
+        }
 
         if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json($payload);

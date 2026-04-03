@@ -205,10 +205,12 @@
         <div v-show="activeTab === 'instagram'" class="tab-panel ig-tab">
           <div class="panel">
             <div class="ig-intro">
-              Profil diatur di <code class="code-inline">config/instagram.php</code> (bukan per outlet). Pakai token
-              <code class="code-inline">APIFY_TOKEN</code> yang sama dengan Google Review. Butuh worker antrian
-              <code class="code-inline">{{ instagramQueueName }}</code>
-              (<code class="code-inline">php artisan queue:work --queue=...,{{ instagramQueueName }}</code>).
+              Profil di <code class="code-inline">config/instagram.php</code>. Token <code class="code-inline">APIFY_TOKEN</code>.
+              <strong>Jika klik sinkron tapi angka tetap 0:</strong> job mengantri dan belum diproses. Jalankan worker
+              <code class="code-inline">php artisan queue:work --queue={{ instagramQueueName }}</code>
+              (gabungkan dengan antrian lain pakai koma), atau di <code class="code-inline">.env</code> set
+              <code class="code-inline">INSTAGRAM_SCRAPER_DISPATCH_SYNC=true</code> agar jalan di tab ini tanpa worker (bisa 10+ menit, jangan tutup browser).
+              <span v-if="queueConnectionHint" class="ig-queue-hint">{{ queueConnectionHint }}</span>
             </div>
             <div class="ig-stats">
               <span>Post tersimpan: <strong>{{ instagramStatsLocal.posts }}</strong></span>
@@ -295,6 +297,17 @@ const page = usePage()
 const outlets = page.props.outlets || []
 const instagramProfiles = page.props.instagramProfiles || []
 const instagramQueueName = page.props.instagramProcessQueue || 'instagram-scraper'
+
+const queueConnectionHint = computed(() => {
+  if (page.props.instagramDispatchSync) {
+    return ' INSTAGRAM_SCRAPER_DISPATCH_SYNC aktif: satu klik menunggu Apify di server (bisa 10+ menit).'
+  }
+  const q = page.props.queueDefaultConnection || ''
+  if (q === 'sync') {
+    return ' QUEUE_CONNECTION=sync → job dijalankan langsung di request PHP; tombol "Mengantri…" bisa berarti sedang scrape Apify (lama) atau timeout server.'
+  }
+  return ` Antrian: ${q}. Tanpa worker (--queue=…,${instagramQueueName}) job hanya tertunda di tabel jobs — angka tetap 0.`
+})
 
 const activeTab = ref('google')
 const instagramStatsLocal = ref({
@@ -626,6 +639,10 @@ async function instagramSyncPosts() {
       throw new Error(data.message || data.error || `HTTP ${res.status}`)
     }
     igMessage.value = data.message || 'Job diantrikan.'
+    if (data.ran_sync) {
+      await refreshInstagramStats()
+      await loadInstagramRecentPosts()
+    }
   } catch (e) {
     igError.value = e.message || 'Gagal mengantrikan sinkron posting'
   } finally {
@@ -657,6 +674,10 @@ async function instagramSyncComments() {
       throw new Error(data.message || data.error || `HTTP ${res.status}`)
     }
     igMessage.value = data.message || 'Job diantrikan.'
+    if (data.ran_sync) {
+      await refreshInstagramStats()
+      await loadInstagramRecentPosts()
+    }
   } catch (e) {
     igError.value = e.message || 'Gagal mengantrikan sinkron komentar'
   } finally {
@@ -1025,6 +1046,16 @@ async function instagramSyncComments() {
   color: #4b5563;
   line-height: 1.5;
   margin-bottom: 12px;
+}
+.ig-queue-hint {
+  display: block;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 12px;
 }
 .ig-stats {
   display: flex;

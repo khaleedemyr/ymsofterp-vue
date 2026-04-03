@@ -4,6 +4,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | true = jalankan job di request yang sama (tidak perlu queue:work).
+    |        Proses Apify bisa 5–20+ menit — naikkan max_execution_time / nginx timeout.
+    | false = dispatch ke antrian (wajib worker --queue=...,instagram-scraper).
+    |--------------------------------------------------------------------------
+    */
+    'dispatch_sync' => filter_var(env('INSTAGRAM_SCRAPER_DISPATCH_SYNC', false), FILTER_VALIDATE_BOOLEAN),
+
+    /*
+    |--------------------------------------------------------------------------
     | Apify Instagram Scraper (sama token dengan Google Review: APIFY_TOKEN)
     |--------------------------------------------------------------------------
     */
