@@ -6,9 +6,12 @@
           <div>
             <div class="title">Google Reviews</div>
             <div class="subtitle">
-              Scrape & tampilkan review Google Maps per outlet (pagination + export). Klasifikasi sentimen memakai AI yang sama dengan Sales Outlet Dashboard (<code class="code-inline">AI_PROVIDER</code> di <code class="code-inline">.env</code>).
+              Scrape & preview per halaman. <strong>Klasifikasi AI semua review</strong> dijadwalkan ke antrian, disimpan di database, lalu bisa dibuka lagi dan diunduh Excel dari
+              <a class="inline-link" href="/google-review/ai/reports">riwayat laporan AI</a>.
+              Provider AI sama dengan Sales Outlet Dashboard (<code class="code-inline">AI_PROVIDER</code>).
             </div>
           </div>
+          <a href="/google-review/ai/reports" class="btn-history">Riwayat laporan AI</a>
         </div>
 
         <div class="panel">
@@ -51,16 +54,16 @@
                 :disabled="exporting"
                 @click="exportExcel"
               >
-                {{ exporting ? 'Exporting…' : 'Export Excel (CSV)' }}
+                {{ exporting ? 'Exporting…' : 'Export CSV (mentah)' }}
               </button>
               <button
                 type="button"
                 class="btn btn-ai"
-                :disabled="!reviews.length || aiClassifying || loadingItems || loading"
-                title="Analisis ulasan di halaman ini dengan AI (maks. 50 item)"
-                @click="classifyWithAi"
+                :disabled="!canStartFullAi || aiFullSubmitting || loading || loadingItems"
+                :title="fullAiTitle"
+                @click="startFullAiClassification"
               >
-                {{ aiClassifying ? 'AI menganalisis…' : 'Klasifikasi AI (halaman ini)' }}
+                {{ aiFullSubmitting ? 'Mengirim ke antrian…' : 'Klasifikasi AI semua & simpan' }}
               </button>
             </div>
           </div>
@@ -84,20 +87,7 @@
 
         <div v-if="reviews.length" class="panel">
           <div class="table-head">
-            <div class="table-title-row">
-              <div class="table-title">Reviews</div>
-              <div class="filter-severity" v-if="hasAnyClassification">
-                <label class="filter-label" for="severity-filter">Filter AI</label>
-                <select id="severity-filter" v-model="severityFilter" class="select select-compact">
-                  <option value="">Semua</option>
-                  <option value="positive">Positif</option>
-                  <option value="neutral">Netral</option>
-                  <option value="mild_negative">Negatif ringan</option>
-                  <option value="negative">Negatif</option>
-                  <option value="severe">Sangat parah</option>
-                </select>
-              </div>
-            </div>
+            <div class="table-title">Preview review (per halaman)</div>
             <div class="pager">
               <button type="button" class="pager-btn" :disabled="meta.page <= 1 || loadingItems" @click="goToPage(meta.page - 1)">
                 Prev
@@ -116,12 +106,8 @@
             <span>Loading halaman review…</span>
           </div>
 
-          <div v-if="!displayedReviews.length" class="notice notice-muted">
-            Tidak ada review untuk filter ini.
-          </div>
-
           <div class="review-list">
-            <div v-for="review in displayedReviews" :key="reviewKey(review)" class="review-card">
+            <div v-for="review in reviews" :key="reviewKey(review)" class="review-card">
               <div class="review-header">
                 <div class="avatar">
                   <img v-if="review.profile_photo" :src="review.profile_photo" alt="profile" />
@@ -137,26 +123,17 @@
                       <span class="rating-num">{{ review.rating ? `(${review.rating})` : '' }}</span>
                     </div>
                   </div>
-                  <div class="date-row">
-                    <span class="date">{{ review.date }}</span>
-                    <span v-if="review.ai_classification" class="ai-badges">
-                      <span class="ai-badge" :class="'sev-' + review.ai_classification.severity">{{ severityLabel(review.ai_classification.severity) }}</span>
-                      <span v-if="review.ai_classification.topics?.length" class="ai-topics" :title="review.ai_classification.topics.join(', ')">
-                        {{ review.ai_classification.topics.slice(0, 3).join(' · ') }}
-                      </span>
-                    </span>
-                  </div>
+                  <div class="date">{{ review.date }}</div>
                 </div>
               </div>
-              <div v-if="review.ai_classification?.summary_id" class="ai-summary">{{ review.ai_classification.summary_id }}</div>
               <div class="review-text">{{ review.text || '-' }}</div>
             </div>
           </div>
 
           <div class="table-foot">
             <div class="muted">
-              Menampilkan {{ displayedReviews.length }} / {{ reviews.length }} item di halaman ini
-              <span v-if="datasetId">(per halaman: {{ meta.perPage }})</span>.
+              Menampilkan {{ reviews.length }} item di halaman ini
+              <span v-if="datasetId">(total dataset {{ meta.total }}, per halaman {{ meta.perPage }})</span>.
             </div>
             <div class="pager">
               <button type="button" class="pager-btn" :disabled="meta.page <= 1 || loadingItems" @click="goToPage(1)">
@@ -195,18 +172,29 @@ const reviews = ref([])
 const meta = ref({ page: 1, perPage: 20, total: 0, lastPage: 1 })
 const perPage = ref(20)
 const loadingItems = ref(false)
-const aiClassifying = ref(false)
-const severityFilter = ref('')
-
-const hasAnyClassification = computed(() => reviews.value.some((r) => r.ai_classification))
-
-const displayedReviews = computed(() => {
-  if (!severityFilter.value) {
-    return reviews.value
-  }
-  return reviews.value.filter((r) => r.ai_classification?.severity === severityFilter.value)
-})
 const exporting = ref(false)
+const lastFetchSource = ref('')
+const aiFullSubmitting = ref(false)
+
+const selectedOutletRecord = computed(() => outlets.find((o) => o.place_id === selectedOutlet.value))
+
+const canStartFullAi = computed(() => {
+  if (datasetId.value) return true
+  if (reviews.value.length && (lastFetchSource.value === 'places' || lastFetchSource.value === 'scraper')) {
+    return true
+  }
+  return false
+})
+
+const fullAiTitle = computed(() => {
+  if (datasetId.value) {
+    return `Klasifikasi semua ${meta.value.total || '?'} review dari dataset Apify (bukan hanya halaman ini)`
+  }
+  if (reviews.value.length) {
+    return `Klasifikasi ${reviews.value.length} review di memori (API / scraper)`
+  }
+  return ''
+})
 
 watch(
   () => page.props.result,
@@ -215,6 +203,7 @@ watch(
     loading.value = false
 
     if (val && val.success && val.dataset_id) {
+      lastFetchSource.value = 'apify'
       datasetId.value = val.dataset_id
       placeInfo.value = val.place || null
       meta.value = {
@@ -227,8 +216,9 @@ watch(
       return
     }
 
-    // API / Scraper legacy path still sets place+reviews directly.
+    // API path sets place+reviews directly.
     if (val && val.success && val.reviews) {
+      lastFetchSource.value = 'places'
       datasetId.value = ''
       placeInfo.value = val.place || null
       reviews.value = Array.isArray(val.reviews) ? val.reviews : []
@@ -238,6 +228,8 @@ watch(
 )
 
 function fetchReviews() {
+  lastFetchSource.value = 'places'
+  datasetId.value = ''
   loading.value = true
   error.value = ''
   router.post(
@@ -254,6 +246,7 @@ function fetchReviews() {
 }
 
 function fetchScrapedReviews() {
+  lastFetchSource.value = 'scraper'
   loading.value = true
   error.value = ''
   fetch('/scraped-reviews')
@@ -276,6 +269,7 @@ function fetchScrapedReviews() {
 }
 
 function fetchApifyReviews() {
+  lastFetchSource.value = 'apify'
   loading.value = true
   error.value = ''
   router.post(
@@ -333,24 +327,42 @@ function exportExcel() {
   setTimeout(() => (exporting.value = false), 1500)
 }
 
-function severityLabel(sev) {
-  const map = {
-    positive: 'Positif',
-    neutral: 'Netral',
-    mild_negative: 'Negatif ringan',
-    negative: 'Negatif',
-    severe: 'Sangat parah',
+async function startFullAiClassification() {
+  if (!canStartFullAi.value || aiFullSubmitting.value) return
+  const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+  let body
+  const placePayload = {
+    name: placeInfo.value?.name,
+    address: placeInfo.value?.address,
+    rating: placeInfo.value?.rating,
   }
-  return map[sev] || sev || '-'
-}
+  if (datasetId.value) {
+    body = {
+      source: 'apify_dataset',
+      dataset_id: datasetId.value,
+      place_id: selectedOutlet.value || null,
+      id_outlet: selectedOutletRecord.value?.id ?? null,
+      nama_outlet: selectedOutletRecord.value?.nama_outlet ?? null,
+      place: placePayload,
+    }
+  } else if (reviews.value.length && (lastFetchSource.value === 'places' || lastFetchSource.value === 'scraper')) {
+    body = {
+      source: lastFetchSource.value === 'places' ? 'places_api' : 'scraper_inline',
+      place_id: selectedOutlet.value || null,
+      id_outlet: selectedOutletRecord.value?.id ?? null,
+      nama_outlet: selectedOutletRecord.value?.nama_outlet ?? null,
+      place: placePayload,
+      reviews: reviews.value,
+    }
+  } else {
+    error.value = 'Ambil review dulu (Apify, API Google, atau Scraper).'
+    return
+  }
 
-async function classifyWithAi() {
-  if (!reviews.value.length || aiClassifying.value) return
-  aiClassifying.value = true
+  aiFullSubmitting.value = true
   error.value = ''
   try {
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-    const res = await fetch('/google-review/ai/classify', {
+    const res = await fetch('/google-review/ai/reports', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -358,18 +370,18 @@ async function classifyWithAi() {
         'X-CSRF-TOKEN': token || '',
         'X-Requested-With': 'XMLHttpRequest',
       },
-      body: JSON.stringify({ reviews: reviews.value }),
+      body: JSON.stringify(body),
       credentials: 'same-origin',
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.success) {
       throw new Error(data.error || data.message || `HTTP ${res.status}`)
     }
-    reviews.value = Array.isArray(data.reviews) ? data.reviews : []
+    router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    error.value = e.message || 'Gagal klasifikasi AI'
+    error.value = e.message || 'Gagal membuat laporan AI'
   } finally {
-    aiClassifying.value = false
+    aiFullSubmitting.value = false
   }
 }
 
@@ -395,7 +407,28 @@ function initials(name) {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 14px;
+}
+.btn-history {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid #ddd6fe;
+}
+.btn-history:hover {
+  background: #ddd6fe;
+}
+.inline-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: underline;
 }
 .title {
   font-size: 22px;
@@ -556,30 +589,9 @@ function initials(name) {
   gap: 12px;
   flex-wrap: wrap;
 }
-.table-title-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
 .table-title {
   font-weight: 700;
   color: #111827;
-}
-.filter-severity {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.filter-label {
-  font-size: 12px;
-  color: #6b7280;
-  white-space: nowrap;
-}
-.select-compact {
-  width: auto;
-  min-width: 160px;
-  padding: 8px 10px;
 }
 .pager {
   display: flex;
@@ -677,68 +689,10 @@ function initials(name) {
   margin-left: 6px;
   font-size: 12px;
 }
-.date-row {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
 .date {
+  margin-top: 2px;
   font-size: 12px;
   color: #6b7280;
-}
-.ai-badges {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.ai-badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  letter-spacing: 0.02em;
-}
-.ai-badge.sev-positive {
-  background: #d1fae5;
-  color: #065f46;
-}
-.ai-badge.sev-neutral {
-  background: #e5e7eb;
-  color: #374151;
-}
-.ai-badge.sev-mild_negative {
-  background: #fef3c7;
-  color: #92400e;
-}
-.ai-badge.sev-negative {
-  background: #fed7aa;
-  color: #9a3412;
-}
-.ai-badge.sev-severe {
-  background: #fecaca;
-  color: #7f1d1d;
-  border: 1px solid #f87171;
-}
-.ai-topics {
-  font-size: 11px;
-  color: #6b7280;
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ai-summary {
-  margin: 8px 0 4px;
-  font-size: 12px;
-  color: #4b5563;
-  font-style: italic;
-  padding: 8px 10px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border-left: 3px solid #a78bfa;
 }
 .review-text {
   margin-top: 10px;

@@ -2182,6 +2182,30 @@ PROMPT;
         return $out;
     }
 
+    /**
+     * Klasifikasi banyak review dengan beberapa panggilan AI (chunk).
+     *
+     * @param  array<int, array<string, mixed>>  $reviews
+     * @return array<int, array<string, mixed>>
+     */
+    public function classifyGoogleReviewsInChunks(array $reviews, int $chunkSize = 35): array
+    {
+        $reviews = array_values($reviews);
+        if ($reviews === []) {
+            return [];
+        }
+        $chunkSize = max(5, min(50, $chunkSize));
+        $all = [];
+        foreach (array_chunk($reviews, $chunkSize) as $chunk) {
+            $part = $this->classifyGoogleReviews($chunk);
+            foreach ($part as $row) {
+                $all[] = $row;
+            }
+        }
+
+        return $all;
+    }
+
     private function extractJsonFromAiResponse(string $text): ?array
     {
         $text = trim($text);

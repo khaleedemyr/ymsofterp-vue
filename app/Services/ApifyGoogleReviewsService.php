@@ -95,6 +95,38 @@ class ApifyGoogleReviewsService
         ];
     }
 
+    /**
+     * Ambil semua item review dari dataset Apify (loop offset, maks 200 per request).
+     *
+     * @return array<int, array{author: string, rating: string, date: string, text: string, profile_photo: string, time: int}>
+     */
+    public function getAllReviewsFromDataset(string $datasetId): array
+    {
+        $datasetInfo = $this->getDatasetInfo($datasetId);
+        $total = (int) ($datasetInfo['itemCount'] ?? 0);
+        $all = [];
+        $limit = 200;
+        for ($offset = 0; $offset < $total; $offset += $limit) {
+            $items = $this->getDatasetItems($datasetId, $offset, $limit);
+            foreach ($items as $item) {
+                $time = 0;
+                if (! empty($item['publishedAtDate'])) {
+                    $time = strtotime($item['publishedAtDate']) ?: 0;
+                }
+                $all[] = [
+                    'author' => (string) ($item['name'] ?? ''),
+                    'rating' => (string) ($item['stars'] ?? ''),
+                    'date' => (string) ($item['publishAt'] ?? ($item['publishedAtDate'] ?? '')),
+                    'text' => (string) ($item['text'] ?? ''),
+                    'profile_photo' => (string) ($item['reviewerPhotoUrl'] ?? ''),
+                    'time' => (int) $time,
+                ];
+            }
+        }
+
+        return $all;
+    }
+
     public function getReviewsPageFromDataset(string $datasetId, int $page = 1, int $perPage = 20): array
     {
         $page = max(1, $page);

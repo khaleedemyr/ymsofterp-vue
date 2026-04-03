@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\GooglePlacesService;
+use App\Exports\GoogleReviewAiReportExport;
+use App\Jobs\ProcessGoogleReviewAiReportJob;
 use App\Services\ApifyGoogleReviewsService;
-use App\Services\AIAnalyticsService;
+use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class GoogleReviewController extends Controller
 {
@@ -254,30 +259,205 @@ class GoogleReviewController extends Controller
         return 'google-review:apify:' . $userId . ':' . $placeId;
     }
 
-    /**
-     * Klasifikasi sentimen / tingkat keparahan ulasan via AI (sama config provider dengan Sales Outlet Dashboard).
-     */
-    public function classifyReviewsAi(Request $request)
+    protected function userIsSuperadmin($user): bool
+    {
+        return $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
+    }
+
+    protected function userCanAccessReport(int $reportId): bool
+    {
+        $report = DB::table('google_review_ai_reports')->where('id', $reportId)->first();
+        if (! $report) {
+            return false;
+        }
+        $user = auth()->user();
+        if (! $user) {
+            return false;
+        }
+        if ($this->userIsSuperadmin($user)) {
+            return true;
+        }
+
+        return (int) $report->user_id === (int) $user->id;
+    }
+
+    public function aiReportsIndex(Request $request)
+    {
+        $user = auth()->user();
+        $q = DB::table('google_review_ai_reports')->orderByDesc('id');
+        if (! $this->userIsSuperadmin($user)) {
+            $q->where('user_id', $user->id);
+        }
+        $reports = $q->paginate(20)->through(function ($r) {
+            return [
+                'id' => $r->id,
+                'status' => $r->status,
+                'source' => $r->source,
+                'place_name' => $r->place_name,
+                'nama_outlet' => $r->nama_outlet,
+                'review_count' => (int) $r->review_count,
+                'created_at' => $r->created_at,
+                'error_message' => $r->error_message,
+            ];
+        });
+
+        return Inertia::render('google-review/AiReportsIndex', [
+            'reports' => $reports,
+        ]);
+    }
+
+    public function aiReportStore(Request $request)
     {
         $request->validate([
-            'reviews' => 'required|array|max:50',
-            'reviews.*' => 'array',
+            'source' => 'required|string|in:apify_dataset,places_api,scraper_inline',
+            'dataset_id' => 'required_if:source,apify_dataset|nullable|string|max:128',
+            'place_id' => 'nullable|string|max:255',
+            'id_outlet' => 'nullable|integer',
+            'nama_outlet' => 'nullable|string|max:255',
+            'place' => 'nullable|array',
+            'place.name' => 'nullable|string|max:512',
+            'place.address' => 'nullable|string|max:1024',
+            'place.rating' => 'nullable|string|max:64',
+            'reviews' => [
+                Rule::requiredIf(in_array($request->input('source'), ['places_api', 'scraper_inline'], true)),
+                'array',
+                'max:2000',
+            ],
         ]);
 
-        try {
-            $classified = app(AIAnalyticsService::class)->classifyGoogleReviews($request->input('reviews', []));
-
-            return response()->json([
-                'success' => true,
-                'reviews' => $classified,
-            ]);
-        } catch (\Throwable $e) {
-            \Log::error('GoogleReviewController@classifyReviewsAi: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage(),
-            ], 500);
+        $source = $request->input('source');
+        $place = $request->input('place', []);
+        $payload = null;
+        if (in_array($source, ['places_api', 'scraper_inline'], true)) {
+            $reviews = $request->input('reviews', []);
+            if (! is_array($reviews) || count($reviews) === 0) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Daftar review kosong.',
+                ], 422);
+            }
+            $payload = json_encode($reviews, JSON_UNESCAPED_UNICODE);
         }
+
+        $reportId = DB::table('google_review_ai_reports')->insertGetId([
+            'user_id' => auth()->id(),
+            'status' => 'pending',
+            'source' => $source,
+            'place_id' => $request->input('place_id'),
+            'id_outlet' => $request->input('id_outlet'),
+            'nama_outlet' => $request->input('nama_outlet'),
+            'dataset_id' => $request->input('dataset_id'),
+            'place_name' => $place['name'] ?? null,
+            'place_address' => $place['address'] ?? null,
+            'place_rating' => isset($place['rating']) ? (string) $place['rating'] : null,
+            'review_count' => 0,
+            'source_payload' => $payload,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        ProcessGoogleReviewAiReportJob::dispatch($reportId);
+
+        return response()->json([
+            'success' => true,
+            'id' => $reportId,
+            'message' => 'Laporan AI diantre. Proses bisa beberapa menit untuk ratusan review — pastikan queue worker berjalan (php artisan queue:work) jika QUEUE_CONNECTION bukan sync.',
+        ]);
+    }
+
+    public function aiReportStatus(Request $request, int $id)
+    {
+        if (! $this->userCanAccessReport($id)) {
+            return response()->json(['success' => false, 'error' => 'Tidak diizinkan'], 403);
+        }
+        $r = DB::table('google_review_ai_reports')->where('id', $id)->first();
+        if (! $r) {
+            return response()->json(['success' => false, 'error' => 'Tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'status' => $r->status,
+            'review_count' => (int) $r->review_count,
+            'error_message' => $r->error_message,
+        ]);
+    }
+
+    public function aiReportShow(Request $request, int $id)
+    {
+        if (! $this->userCanAccessReport($id)) {
+            abort(403);
+        }
+        $report = DB::table('google_review_ai_reports')->where('id', $id)->first();
+        if (! $report) {
+            abort(404);
+        }
+
+        $severity = $request->get('severity');
+        $itemsQuery = DB::table('google_review_ai_items')->where('report_id', $id)->orderBy('sort_order');
+        if ($severity !== null && $severity !== '') {
+            $itemsQuery->where('severity', $severity);
+        }
+
+        $items = $itemsQuery->paginate(100)->through(function ($row) {
+            $topics = $row->topics;
+            if (is_string($topics)) {
+                $topics = json_decode($topics, true) ?? [];
+            }
+
+            return [
+                'id' => $row->id,
+                'sort_order' => (int) $row->sort_order,
+                'author' => $row->author,
+                'rating' => $row->rating,
+                'review_date' => $row->review_date,
+                'text' => $row->text,
+                'profile_photo' => $row->profile_photo,
+                'severity' => $row->severity,
+                'topics' => is_array($topics) ? $topics : [],
+                'summary_id' => $row->summary_id,
+            ];
+        });
+
+        return Inertia::render('google-review/AiReportShow', [
+            'report' => [
+                'id' => $report->id,
+                'status' => $report->status,
+                'source' => $report->source,
+                'place_id' => $report->place_id,
+                'nama_outlet' => $report->nama_outlet,
+                'place_name' => $report->place_name,
+                'place_address' => $report->place_address,
+                'place_rating' => $report->place_rating,
+                'dataset_id' => $report->dataset_id,
+                'review_count' => (int) $report->review_count,
+                'error_message' => $report->error_message,
+                'created_at' => $report->created_at,
+            ],
+            'items' => $items,
+            'filters' => [
+                'severity' => $severity ?? '',
+            ],
+        ]);
+    }
+
+    public function aiReportExport(Request $request, int $id)
+    {
+        if (! $this->userCanAccessReport($id)) {
+            abort(403);
+        }
+        $report = DB::table('google_review_ai_reports')->where('id', $id)->first();
+        if (! $report || $report->status !== 'completed') {
+            abort(404, 'Laporan belum selesai atau tidak ada.');
+        }
+
+        $rows = DB::table('google_review_ai_items')
+            ->where('report_id', $id)
+            ->orderBy('sort_order')
+            ->get();
+
+        $filename = 'google-review-ai-' . $id . '-' . date('Ymd-His') . '.xlsx';
+
+        return Excel::download(new GoogleReviewAiReportExport($rows), $filename);
     }
 } 
