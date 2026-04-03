@@ -10,6 +10,7 @@ use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -86,6 +87,17 @@ class GoogleReviewController extends Controller
         ];
         $daily = [];
         $topProfiles = [];
+        $topNegativeTopics = [
+            'google' => [],
+            'instagram' => [],
+        ];
+        $profileRisk = [];
+        $aiInsights = [];
+        $weeklySpike = [
+            'instagram_comments' => ['current_7d' => 0, 'previous_7d' => 0, 'change_pct' => 0.0],
+            'instagram_negative' => ['current_7d' => 0, 'previous_7d' => 0, 'change_pct' => 0.0],
+        ];
+        $recommendedActions = [];
 
         try {
             $cards['instagram_posts'] = (int) DB::table('instagram_posts')->count();
@@ -110,6 +122,45 @@ class GoogleReviewController extends Controller
                 if (isset($sentiment[$bucket][$sev])) {
                     $sentiment[$bucket][$sev] = (int) $r->total;
                 }
+            }
+        } catch (\Throwable) {
+        }
+
+        try {
+            $topicRows = DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->select('r.source', 'i.severity', 'i.topics')
+                ->where('r.status', 'completed')
+                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'instagram_comments_db'])
+                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->where('r.created_at', '>=', $since30)
+                ->limit(4000)
+                ->get();
+            $topicAgg = [
+                'google' => [],
+                'instagram' => [],
+            ];
+            foreach ($topicRows as $row) {
+                $bucket = $row->source === 'instagram_comments_db' ? 'instagram' : 'google';
+                $topics = is_string($row->topics) ? (json_decode($row->topics, true) ?: []) : [];
+                if (! is_array($topics) || $topics === []) {
+                    $topics = ['other'];
+                }
+                foreach ($topics as $topic) {
+                    $t = trim((string) $topic);
+                    if ($t === '') {
+                        continue;
+                    }
+                    $topicAgg[$bucket][$t] = (int) ($topicAgg[$bucket][$t] ?? 0) + 1;
+                }
+            }
+            foreach (['google', 'instagram'] as $bucket) {
+                arsort($topicAgg[$bucket]);
+                $topNegativeTopics[$bucket] = collect($topicAgg[$bucket])
+                    ->map(fn ($v, $k) => ['topic' => (string) $k, 'total' => (int) $v])
+                    ->take(6)
+                    ->values()
+                    ->all();
             }
         } catch (\Throwable) {
         }
@@ -164,11 +215,140 @@ class GoogleReviewController extends Controller
             $topProfiles = [];
         }
 
+        try {
+            $riskRows = DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->select(
+                    'i.source_account',
+                    DB::raw("SUM(CASE WHEN i.severity IN ('negative','severe') THEN 1 ELSE 0 END) as neg_count"),
+                    DB::raw('COUNT(*) as total_count')
+                )
+                ->where('r.status', 'completed')
+                ->where('r.source', 'instagram_comments_db')
+                ->where('r.created_at', '>=', $since30)
+                ->whereNotNull('i.source_account')
+                ->groupBy('i.source_account')
+                ->havingRaw('COUNT(*) >= 3')
+                ->orderByDesc('neg_count')
+                ->limit(8)
+                ->get();
+            $profileRisk = $riskRows->map(function ($r) {
+                $total = max(1, (int) $r->total_count);
+                $neg = (int) $r->neg_count;
+
+                return [
+                    'profile' => (string) $r->source_account,
+                    'negative_count' => $neg,
+                    'total_count' => $total,
+                    'negative_rate' => round(($neg / $total) * 100, 1),
+                ];
+            })->values()->all();
+        } catch (\Throwable) {
+            $profileRisk = [];
+        }
+
+        try {
+            $current7 = $today->copy()->subDays(6)->startOfDay();
+            $prev7Start = $today->copy()->subDays(13)->startOfDay();
+            $prev7End = $today->copy()->subDays(7)->endOfDay();
+
+            $igCur = (int) DB::table('instagram_comments')
+                ->whereNotNull('commented_at')
+                ->where('commented_at', '>=', $current7)
+                ->count();
+            $igPrev = (int) DB::table('instagram_comments')
+                ->whereNotNull('commented_at')
+                ->whereBetween('commented_at', [$prev7Start, $prev7End])
+                ->count();
+
+            $negCur = (int) DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->where('r.source', 'instagram_comments_db')
+                ->where('r.status', 'completed')
+                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->where('i.created_at', '>=', $current7)
+                ->count();
+            $negPrev = (int) DB::table('google_review_ai_items as i')
+                ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+                ->where('r.source', 'instagram_comments_db')
+                ->where('r.status', 'completed')
+                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->whereBetween('i.created_at', [$prev7Start, $prev7End])
+                ->count();
+
+            $pct = function (int $cur, int $prev): float {
+                if ($prev <= 0) {
+                    return $cur > 0 ? 100.0 : 0.0;
+                }
+
+                return round((($cur - $prev) / $prev) * 100, 1);
+            };
+            $weeklySpike['instagram_comments'] = [
+                'current_7d' => $igCur,
+                'previous_7d' => $igPrev,
+                'change_pct' => $pct($igCur, $igPrev),
+            ];
+            $weeklySpike['instagram_negative'] = [
+                'current_7d' => $negCur,
+                'previous_7d' => $negPrev,
+                'change_pct' => $pct($negCur, $negPrev),
+            ];
+        } catch (\Throwable) {
+        }
+
+        $googleTotal = array_sum($sentiment['google']);
+        $instagramTotal = array_sum($sentiment['instagram']);
+        $googleNeg = (int) (($sentiment['google']['mild_negative'] ?? 0) + ($sentiment['google']['negative'] ?? 0) + ($sentiment['google']['severe'] ?? 0));
+        $igNeg = (int) (($sentiment['instagram']['mild_negative'] ?? 0) + ($sentiment['instagram']['negative'] ?? 0) + ($sentiment['instagram']['severe'] ?? 0));
+        $googleNegRate = $googleTotal > 0 ? round(($googleNeg / $googleTotal) * 100, 1) : 0.0;
+        $igNegRate = $instagramTotal > 0 ? round(($igNeg / $instagramTotal) * 100, 1) : 0.0;
+        $topGoogleTopic = $topNegativeTopics['google'][0]['topic'] ?? 'other';
+        $topIgTopic = $topNegativeTopics['instagram'][0]['topic'] ?? 'other';
+        $aiInsights[] = [
+            'title' => 'Ringkasan sentimen',
+            'detail' => "Google negatif {$googleNegRate}% ({$googleNeg}/{$googleTotal}), Instagram negatif {$igNegRate}% ({$igNeg}/{$instagramTotal}).",
+        ];
+        $aiInsights[] = [
+            'title' => 'Isu utama 30 hari terakhir',
+            'detail' => "Google dominan: {$topGoogleTopic}. Instagram dominan: {$topIgTopic}.",
+        ];
+        if (! empty($profileRisk)) {
+            $worst = $profileRisk[0];
+            $aiInsights[] = [
+                'title' => 'Profil IG perlu perhatian',
+                'detail' => "{$worst['profile']} punya rasio negatif {$worst['negative_rate']}% ({$worst['negative_count']}/{$worst['total_count']}).",
+            ];
+        }
+
+        $topicActionMap = [
+            'service' => 'Review SOP service dan lakukan coaching shift frontliner harian.',
+            'food_quality' => 'Audit konsistensi rasa/plating dan checklist quality sebelum serving.',
+            'hygiene' => 'Tambah inspeksi kebersihan area produksi dan dining tiap shift.',
+            'price' => 'Perjelas value promo dan update komunikasi harga di kanal digital.',
+            'wait_time' => 'Perbaiki flow kitchen-pass dan monitor tiket saat jam sibuk.',
+            'reservation' => 'Perketat SLA admin reservasi dan auto-reply di jam operasional.',
+        ];
+        foreach (['instagram', 'google'] as $bucket) {
+            $top = $topNegativeTopics[$bucket][0]['topic'] ?? null;
+            if ($top && isset($topicActionMap[$top])) {
+                $recommendedActions[] = [
+                    'channel' => $bucket,
+                    'topic' => $top,
+                    'action' => $topicActionMap[$top],
+                ];
+            }
+        }
+
         return [
             'cards' => $cards,
             'sentiment' => $sentiment,
             'daily' => $daily,
             'topProfiles' => $topProfiles,
+            'topNegativeTopics' => $topNegativeTopics,
+            'profileRisk' => $profileRisk,
+            'aiInsights' => $aiInsights,
+            'weeklySpike' => $weeklySpike,
+            'recommendedActions' => $recommendedActions,
             'range' => ['sentiment_days' => 30, 'daily_days' => 14],
         ];
     }
@@ -619,7 +799,8 @@ class GoogleReviewController extends Controller
             $itemsQuery->where('severity', $severity);
         }
 
-        $items = $itemsQuery->paginate(100)->through(function ($row) {
+        $itemsPaginator = $itemsQuery->paginate(100);
+        $itemRows = collect($itemsPaginator->items())->map(function ($row) {
             $topics = $row->topics;
             if (is_string($topics)) {
                 $topics = json_decode($topics, true) ?? [];
@@ -640,8 +821,97 @@ class GoogleReviewController extends Controller
                 'source_account' => property_exists($row, 'source_account') ? $row->source_account : null,
                 'source_post_url' => property_exists($row, 'source_post_url') ? $row->source_post_url : null,
                 'source_post_shortcode' => property_exists($row, 'source_post_shortcode') ? $row->source_post_shortcode : null,
+                'source_post_caption' => property_exists($row, 'source_post_caption') ? $row->source_post_caption : null,
             ];
         });
+
+        // Enrich Instagram rows for old reports that were created before source_* columns existed.
+        if ($report->source === 'instagram_comments_db') {
+            $hasSourceCols = Schema::hasColumn('google_review_ai_items', 'source_item_id')
+                && Schema::hasColumn('google_review_ai_items', 'source_account')
+                && Schema::hasColumn('google_review_ai_items', 'source_post_url');
+
+            $idMap = [];
+            if ($hasSourceCols) {
+                $sourceIds = $itemRows->pluck('source_item_id')
+                    ->filter(fn ($v) => is_numeric($v) && (int) $v > 0)
+                    ->map(fn ($v) => (int) $v)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if ($sourceIds !== []) {
+                    $idMap = DB::table('instagram_comments as c')
+                        ->join('instagram_posts as p', 'p.id', '=', 'c.instagram_post_id')
+                        ->select('c.id', 'p.profile_key', 'p.post_url', 'p.short_code', 'p.caption')
+                        ->whereIn('c.id', $sourceIds)
+                        ->get()
+                        ->keyBy('id')
+                        ->all();
+                }
+            }
+
+            $needsFallback = $itemRows->contains(function ($r) {
+                return empty($r['source_account']) && ! empty($r['author']) && ! empty($r['text']);
+            });
+
+            $fallbackCandidates = collect();
+            if ($needsFallback) {
+                $authors = $itemRows->pluck('author')->filter()->unique()->values()->all();
+                if ($authors !== []) {
+                    $fallbackCandidates = DB::table('instagram_comments as c')
+                        ->join('instagram_posts as p', 'p.id', '=', 'c.instagram_post_id')
+                        ->select('c.username', 'c.text', 'c.commented_at', 'p.profile_key', 'p.post_url', 'p.short_code', 'p.caption')
+                        ->whereIn('c.username', $authors)
+                        ->orderByDesc('c.id')
+                        ->limit(5000)
+                        ->get();
+                }
+            }
+
+            $itemRows = $itemRows->map(function ($r) use ($idMap, $fallbackCandidates) {
+                if (! empty($r['source_account']) && ! empty($r['source_post_url'])) {
+                    return $r;
+                }
+
+                $sid = (int) ($r['source_item_id'] ?? 0);
+                if ($sid > 0 && isset($idMap[$sid])) {
+                    $m = $idMap[$sid];
+                    $r['source_account'] = $r['source_account'] ?: (string) ($m->profile_key ?? '');
+                    $r['source_post_url'] = $r['source_post_url'] ?: (string) ($m->post_url ?? '');
+                    $r['source_post_shortcode'] = $r['source_post_shortcode'] ?: (string) ($m->short_code ?? '');
+                    $r['source_post_caption'] = $r['source_post_caption'] ?: (string) ($m->caption ?? '');
+                    if ($r['rating'] === '' || $r['rating'] === null) {
+                        $r['rating'] = (string) ($m->profile_key ?? '');
+                    }
+
+                    return $r;
+                }
+
+                if ($fallbackCandidates->isNotEmpty()) {
+                    $author = trim((string) ($r['author'] ?? ''));
+                    $text = trim((string) ($r['text'] ?? ''));
+                    if ($author !== '' && $text !== '') {
+                        $match = $fallbackCandidates->first(function ($c) use ($author, $text) {
+                            return trim((string) $c->username) === $author
+                                && trim((string) $c->text) === $text;
+                        });
+                        if ($match) {
+                            $r['source_account'] = $r['source_account'] ?: (string) ($match->profile_key ?? '');
+                            $r['source_post_url'] = $r['source_post_url'] ?: (string) ($match->post_url ?? '');
+                            $r['source_post_shortcode'] = $r['source_post_shortcode'] ?: (string) ($match->short_code ?? '');
+                            $r['source_post_caption'] = $r['source_post_caption'] ?: (string) ($match->caption ?? '');
+                            if ($r['rating'] === '' || $r['rating'] === null) {
+                                $r['rating'] = (string) ($match->profile_key ?? '');
+                            }
+                        }
+                    }
+                }
+
+                return $r;
+            });
+        }
+        $itemsPaginator->setCollection($itemRows->values());
+        $items = $itemsPaginator;
 
         $initialLog = [];
         if (! empty($report->progress_log)) {

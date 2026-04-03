@@ -89,6 +89,7 @@
                   <th>Penulis</th>
                   <th v-if="report.source === 'instagram_comments_db'">Akun IG</th>
                   <th v-if="report.source === 'instagram_comments_db'">Post</th>
+                  <th v-if="report.source === 'instagram_comments_db'">Caption Post</th>
                   <th>Rating</th>
                   <th>Tanggal</th>
                   <th>Severity</th>
@@ -108,6 +109,7 @@
                     </a>
                     <span v-else>—</span>
                   </td>
+                  <td v-if="report.source === 'instagram_comments_db'" class="small sum">{{ it.source_post_caption || '—' }}</td>
                   <td>{{ it.rating || '—' }}</td>
                   <td class="muted small">{{ it.review_date }}</td>
                   <td><span class="sev" :class="'s-' + it.severity">{{ sevLabel(it.severity) }}</span></td>

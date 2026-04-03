@@ -72,3 +72,47 @@ CREATE TABLE `instagram_comments` (
 --   ADD COLUMN `source_post_url` VARCHAR(512) NULL AFTER `source_account`,
 --   ADD COLUMN `source_post_shortcode` VARCHAR(32) NULL AFTER `source_post_url`,
 --   ADD KEY `google_review_ai_items_source_item_id_index` (`source_item_id`);
+
+-- Backfill metadata source untuk report Instagram lama (tanpa klasifikasi ulang)
+-- Prasyarat: kolom source_* di google_review_ai_items sudah ada.
+-- Metode:
+-- 1) Isi by exact match username + text (paling aman untuk data lama).
+-- 2) Jika source_item_id sudah ada, pastikan source_* sinkron dari relasi komentar→post.
+--
+-- STEP 1: backfill by username + text untuk report source instagram_comments_db
+-- UPDATE `google_review_ai_items` i
+-- JOIN `google_review_ai_reports` r
+--   ON r.id = i.report_id
+--  AND r.source = 'instagram_comments_db'
+--  AND r.status = 'completed'
+-- JOIN `instagram_comments` c
+--   ON c.username = i.author
+--  AND c.text = i.text
+-- JOIN `instagram_posts` p
+--   ON p.id = c.instagram_post_id
+-- SET
+--   i.source_item_id = COALESCE(i.source_item_id, c.id),
+--   i.source_account = COALESCE(NULLIF(i.source_account, ''), p.profile_key),
+--   i.source_post_url = COALESCE(NULLIF(i.source_post_url, ''), p.post_url),
+--   i.source_post_shortcode = COALESCE(NULLIF(i.source_post_shortcode, ''), p.short_code),
+--   i.rating = CASE WHEN i.rating IS NULL OR i.rating = '' THEN p.profile_key ELSE i.rating END
+-- WHERE
+--   (i.source_account IS NULL OR i.source_account = '' OR i.source_post_url IS NULL OR i.source_post_url = '');
+--
+-- STEP 2: sinkronkan ulang source_* by source_item_id (jika sudah ada)
+-- UPDATE `google_review_ai_items` i
+-- JOIN `google_review_ai_reports` r
+--   ON r.id = i.report_id
+--  AND r.source = 'instagram_comments_db'
+--  AND r.status = 'completed'
+-- JOIN `instagram_comments` c
+--   ON c.id = i.source_item_id
+-- JOIN `instagram_posts` p
+--   ON p.id = c.instagram_post_id
+-- SET
+--   i.source_account = p.profile_key,
+--   i.source_post_url = p.post_url,
+--   i.source_post_shortcode = p.short_code,
+--   i.rating = CASE WHEN i.rating IS NULL OR i.rating = '' THEN p.profile_key ELSE i.rating END
+-- WHERE
+--   i.source_item_id IS NOT NULL;

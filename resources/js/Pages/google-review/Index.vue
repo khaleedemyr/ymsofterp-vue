@@ -219,13 +219,55 @@
 
         <div id="dashboard-inline" class="panel dashboard-panel">
           <div class="table-head">
-            <div class="table-title">Dashboard Ringkas</div>
+            <div class="table-title">Dashboard & AI Insights</div>
           </div>
           <div class="dash-cards">
             <div class="dash-card"><span>IG Posts</span><strong>{{ dash.cards.instagram_posts }}</strong></div>
             <div class="dash-card"><span>IG Comments</span><strong>{{ dash.cards.instagram_comments }}</strong></div>
             <div class="dash-card"><span>AI Reports</span><strong>{{ dash.cards.ai_reports_completed }}</strong></div>
             <div class="dash-card"><span>AI Items</span><strong>{{ dash.cards.ai_items_total }}</strong></div>
+          </div>
+          <div class="insight-grid">
+            <div class="insight-box" v-for="(ins, idx) in dash.aiInsights" :key="`ins-${idx}`">
+              <div class="ins-title">{{ ins.title }}</div>
+              <div class="ins-detail">{{ ins.detail }}</div>
+            </div>
+          </div>
+          <div class="dash-grid">
+            <div class="insight-box">
+              <div class="ins-title">Spike Mingguan - IG Comments</div>
+              <div class="ins-detail">
+                7 hari ini: <strong>{{ dash.weeklySpike.instagram_comments.current_7d }}</strong>,
+                7 hari sebelumnya: <strong>{{ dash.weeklySpike.instagram_comments.previous_7d }}</strong>,
+                perubahan: <strong>{{ dash.weeklySpike.instagram_comments.change_pct }}%</strong>
+              </div>
+            </div>
+            <div class="insight-box">
+              <div class="ins-title">Spike Mingguan - IG Negatif</div>
+              <div class="ins-detail">
+                7 hari ini: <strong>{{ dash.weeklySpike.instagram_negative.current_7d }}</strong>,
+                7 hari sebelumnya: <strong>{{ dash.weeklySpike.instagram_negative.previous_7d }}</strong>,
+                perubahan: <strong>{{ dash.weeklySpike.instagram_negative.change_pct }}%</strong>
+              </div>
+            </div>
+          </div>
+          <div class="panel subpanel">
+            <div class="label">Rekomendasi Aksi Otomatis</div>
+            <table class="mini-table">
+              <thead>
+                <tr><th>Channel</th><th>Topik</th><th>Aksi</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(a, idx) in dash.recommendedActions" :key="`ra-${idx}`">
+                  <td>{{ a.channel }}</td>
+                  <td>{{ a.topic }}</td>
+                  <td>{{ a.action }}</td>
+                </tr>
+                <tr v-if="!dash.recommendedActions?.length">
+                  <td colspan="3" class="muted">Belum cukup data untuk rekomendasi.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="dash-grid">
             <div>
@@ -243,6 +285,64 @@
                 <div class="bar"><div class="bar-fill ig" :style="{ width: `${barPct(v, dashInstagramMax)}%` }"></div></div>
                 <strong class="bar-val">{{ v }}</strong>
               </div>
+            </div>
+            <div>
+              <div class="label">Top Isu Negatif Google</div>
+              <div v-if="dash.topNegativeTopics.google?.length">
+                <div v-for="row in dash.topNegativeTopics.google" :key="`tg-${row.topic}`" class="bar-row">
+                  <span class="bar-label">{{ row.topic }}</span>
+                  <div class="bar"><div class="bar-fill" :style="{ width: `${barPct(row.total, dashTopicGoogleMax)}%` }"></div></div>
+                  <strong class="bar-val">{{ row.total }}</strong>
+                </div>
+              </div>
+              <div v-else class="muted">Belum ada data.</div>
+            </div>
+            <div>
+              <div class="label">Top Isu Negatif Instagram</div>
+              <div v-if="dash.topNegativeTopics.instagram?.length">
+                <div v-for="row in dash.topNegativeTopics.instagram" :key="`ti-${row.topic}`" class="bar-row">
+                  <span class="bar-label">{{ row.topic }}</span>
+                  <div class="bar"><div class="bar-fill ig" :style="{ width: `${barPct(row.total, dashTopicInstagramMax)}%` }"></div></div>
+                  <strong class="bar-val">{{ row.total }}</strong>
+                </div>
+              </div>
+              <div v-else class="muted">Belum ada data.</div>
+            </div>
+          </div>
+          <div class="dash-grid mt10">
+            <div>
+              <div class="label">Tren 14 Hari (Komentar vs Klasifikasi)</div>
+              <table class="mini-table">
+                <thead>
+                  <tr><th>Tanggal</th><th>IG Komentar</th><th>AI Klasifikasi</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in dash.daily" :key="`d-${r.date}`">
+                    <td>{{ r.date }}</td>
+                    <td>{{ r.instagram_comments }}</td>
+                    <td>{{ r.ai_classified }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div class="label">Profil IG Dengan Rasio Negatif Tertinggi</div>
+              <table class="mini-table">
+                <thead>
+                  <tr><th>Profil</th><th>Negatif</th><th>Total</th><th>Rasio</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in dash.profileRisk" :key="`pr-${r.profile}`">
+                    <td>{{ r.profile }}</td>
+                    <td>{{ r.negative_count }}</td>
+                    <td>{{ r.total_count }}</td>
+                    <td>{{ r.negative_rate }}%</td>
+                  </tr>
+                  <tr v-if="!dash.profileRisk?.length">
+                    <td colspan="4" class="muted">Belum cukup data untuk analisa profil.</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -392,6 +492,14 @@ const dash = page.props.dashboardData || {
   },
   daily: [],
   topProfiles: [],
+  topNegativeTopics: { google: [], instagram: [] },
+  profileRisk: [],
+  aiInsights: [],
+  weeklySpike: {
+    instagram_comments: { current_7d: 0, previous_7d: 0, change_pct: 0 },
+    instagram_negative: { current_7d: 0, previous_7d: 0, change_pct: 0 },
+  },
+  recommendedActions: [],
   range: { sentiment_days: 30, daily_days: 14 },
 }
 
@@ -434,6 +542,8 @@ const aiFullSubmitting = ref(false)
 const selectedOutletRecord = computed(() => outlets.find((o) => o.place_id === selectedOutlet.value))
 const dashGoogleMax = computed(() => Math.max(1, ...Object.values(dash.sentiment.google || {})))
 const dashInstagramMax = computed(() => Math.max(1, ...Object.values(dash.sentiment.instagram || {})))
+const dashTopicGoogleMax = computed(() => Math.max(1, ...((dash.topNegativeTopics?.google || []).map((r) => Number(r.total || 0)))))
+const dashTopicInstagramMax = computed(() => Math.max(1, ...((dash.topNegativeTopics?.instagram || []).map((r) => Number(r.total || 0)))))
 
 const canStartFullAi = computed(() => {
   if (datasetId.value) return true
@@ -1090,6 +1200,53 @@ async function startInstagramAiClassification() {
   background: linear-gradient(90deg, #10b981, #059669);
 }
 .bar-val { font-size: 12px; color: #111827; text-align: right; }
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.insight-box {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 10px;
+}
+.ins-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-bottom: 4px;
+}
+.ins-detail {
+  font-size: 12px;
+  color: #1f2937;
+}
+.mt10 {
+  margin-top: 10px;
+}
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mini-table th,
+.mini-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 6px;
+  text-align: left;
+}
+.mini-table th {
+  color: #6b7280;
+  font-weight: 700;
+}
+.subpanel {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
 .input-num {
   width: 100%;
   border: 1px solid #d1d5db;
@@ -1481,5 +1638,16 @@ async function startInstagramAiClassification() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+@media (max-width: 1024px) {
+  .dash-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+  .dash-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style> 
