@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -21,9 +22,9 @@ class SyncInstagramCommentsJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * @param  array<int, string>  $profileKeys  kosong = semua
+     * @param  array<int, string>  $profileKeys
      */
-    public function __construct(public array $profileKeys = [])
+    public function __construct(public array $profileKeys = [], public ?string $operationId = null)
     {
         $this->onQueue((string) config('instagram.process_queue', 'instagram-scraper'));
     }
@@ -37,21 +38,24 @@ class SyncInstagramCommentsJob implements ShouldQueue
         if ($this->profileKeys !== []) {
             $q->whereIn('profile_key', $this->profileKeys);
         }
-
         if ((bool) config('instagram.comments.only_if_comments_count_positive', true)) {
             $q->where('comments_count', '>', 0);
         }
 
         $posts = $q->orderBy('id')->get();
         if ($posts->isEmpty()) {
+            $this->setProgress('completed', 'Tidak ada post yang memenuhi syarat komentar.', 1, 1);
             Log::info('SyncInstagramCommentsJob: tidak ada post untuk di-sync komentar.');
-
             return;
         }
 
         $batchSize = max(1, (int) config('instagram.comments.batch_size', 25));
         $chunks = $posts->chunk($batchSize);
+        $totalBatches = max(1, $chunks->count());
+        $processedBatches = 0;
         $totalSaved = 0;
+
+        $this->setProgress('processing', 'Memulai sinkron komentar...', $totalBatches, 0);
 
         foreach ($chunks as $chunk) {
             $urls = [];
@@ -65,6 +69,8 @@ class SyncInstagramCommentsJob implements ShouldQueue
                 }
             }
             if ($urls === []) {
+                $processedBatches++;
+                $this->setProgress('processing', 'Melewati batch kosong...', $totalBatches, $processedBatches);
                 continue;
             }
 
@@ -73,8 +79,40 @@ class SyncInstagramCommentsJob implements ShouldQueue
             $datasetId = $apify->runAndWaitForDataset($input);
             $items = $apify->getAllDatasetItems($datasetId);
             $totalSaved += $commentImporter->upsertFromApifyCommentItems($items, $urlToId);
+
+            $processedBatches++;
+            $this->setProgress(
+                'processing',
+                "Batch {$processedBatches}/{$totalBatches} selesai. Total komentar tersimpan: {$totalSaved}",
+                $totalBatches,
+                $processedBatches,
+                ['last_dataset_id' => $datasetId]
+            );
         }
 
+        $this->setProgress('completed', "Selesai: {$totalSaved} komentar tersimpan.", $totalBatches, $totalBatches, [
+            'posts' => $posts->count(),
+            'comments_upserted' => $totalSaved,
+        ]);
         Log::info('SyncInstagramCommentsJob: selesai', ['posts' => $posts->count(), 'comments_upserted' => $totalSaved]);
+    }
+
+    public function failed(\Throwable $e): void
+    {
+        $this->setProgress('failed', $e->getMessage(), 1, 1);
+    }
+
+    protected function setProgress(string $status, string $message, int $total, int $done, array $extra = []): void
+    {
+        if (! $this->operationId) {
+            return;
+        }
+        Cache::put('instagram:sync:'.$this->operationId, array_merge([
+            'status' => $status,
+            'message' => $message,
+            'progress_total' => max(1, $total),
+            'progress_done' => max(0, min($done, max(1, $total))),
+            'updated_at' => now()->toDateTimeString(),
+        ], $extra), now()->addHours(6));
     }
 }

@@ -6,7 +6,9 @@ use App\Jobs\SyncInstagramCommentsJob;
 use App\Jobs\SyncInstagramPostsJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class InstagramReviewController extends Controller
@@ -21,43 +23,44 @@ class InstagramReviewController extends Controller
 
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
+        $operationId = (string) Str::uuid();
+        $this->putProgress($operationId, 'queued', 'Menunggu worker memproses sinkron posting...', 1, 0);
 
         $ranSync = (bool) config('instagram.dispatch_sync', false);
         if ($ranSync) {
             try {
-                Bus::dispatchSync(new SyncInstagramPostsJob($keys));
+                Bus::dispatchSync(new SyncInstagramPostsJob($keys, $operationId));
             } catch (\Throwable $e) {
                 $payload = [
                     'success' => false,
                     'ran_sync' => true,
+                    'operation_id' => $operationId,
                     'error' => $e->getMessage(),
                 ];
                 if ($request->expectsJson() || $request->wantsJson()) {
                     return response()->json($payload, 422);
                 }
-
                 return redirect()->back()->with('instagram_flash', $payload);
             }
             $payload = [
                 'success' => true,
                 'ran_sync' => true,
+                'operation_id' => $operationId,
                 'message' => 'Sinkron posting selesai (mode langsung). Data sudah disimpan; tabel di bawah bisa dimuat ulang.',
             ];
         } else {
-            SyncInstagramPostsJob::dispatch($keys);
+            SyncInstagramPostsJob::dispatch($keys, $operationId);
             $payload = [
                 'success' => true,
                 'ran_sync' => false,
-                'message' => 'Sinkronisasi posting dimasukkan ke antrian "'.config('instagram.process_queue', 'instagram-scraper').'". '
-                    .'Jalankan: php artisan queue:work --queue='.config('instagram.process_queue', 'instagram-scraper')
-                    .' — atau set INSTAGRAM_SCRAPER_DISPATCH_SYNC=true di .env untuk jalan tanpa worker (tunggu lama di browser).',
+                'operation_id' => $operationId,
+                'message' => 'Sinkronisasi posting dimasukkan ke antrian "'.config('instagram.process_queue', 'instagram-scraper').'".',
             ];
         }
 
         if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json($payload);
         }
-
         return redirect()->back()->with('instagram_flash', $payload);
     }
 
@@ -71,43 +74,62 @@ class InstagramReviewController extends Controller
 
         $selected = $request->input('profile_keys');
         $keys = is_array($selected) ? array_values(array_filter($selected)) : [];
+        $operationId = (string) Str::uuid();
+        $this->putProgress($operationId, 'queued', 'Menunggu worker memproses sinkron komentar...', 1, 0);
 
         $ranSync = (bool) config('instagram.dispatch_sync', false);
         if ($ranSync) {
             try {
-                Bus::dispatchSync(new SyncInstagramCommentsJob($keys));
+                Bus::dispatchSync(new SyncInstagramCommentsJob($keys, $operationId));
             } catch (\Throwable $e) {
                 $payload = [
                     'success' => false,
                     'ran_sync' => true,
+                    'operation_id' => $operationId,
                     'error' => $e->getMessage(),
                 ];
                 if ($request->expectsJson() || $request->wantsJson()) {
                     return response()->json($payload, 422);
                 }
-
                 return redirect()->back()->with('instagram_flash', $payload);
             }
             $payload = [
                 'success' => true,
                 'ran_sync' => true,
+                'operation_id' => $operationId,
                 'message' => 'Sinkron komentar selesai (mode langsung).',
             ];
         } else {
-            SyncInstagramCommentsJob::dispatch($keys);
+            SyncInstagramCommentsJob::dispatch($keys, $operationId);
             $payload = [
                 'success' => true,
                 'ran_sync' => false,
-                'message' => 'Sinkron komentar dimasukkan ke antrian (banyak batch). Worker "'.config('instagram.process_queue', 'instagram-scraper').'" harus jalan, '
-                    .'atau pakai INSTAGRAM_SCRAPER_DISPATCH_SYNC=true (satu request bisa sangat lama).',
+                'operation_id' => $operationId,
+                'message' => 'Sinkron komentar dimasukkan ke antrian (banyak batch).',
             ];
         }
 
         if ($request->expectsJson() || $request->wantsJson()) {
             return response()->json($payload);
         }
-
         return redirect()->back()->with('instagram_flash', $payload);
+    }
+
+    public function progress(Request $request)
+    {
+        $request->validate([
+            'operation_id' => 'required|string|max:100',
+        ]);
+
+        $payload = Cache::get('instagram:sync:'.$request->query('operation_id'));
+        if (! is_array($payload)) {
+            return response()->json([
+                'success' => false,
+                'status' => 'not_found',
+                'message' => 'Progress tidak ditemukan atau sudah kedaluwarsa.',
+            ], 404);
+        }
+        return response()->json(array_merge(['success' => true], $payload));
     }
 
     public function stats()
@@ -136,15 +158,39 @@ class InstagramReviewController extends Controller
                 ->orderByDesc('id')
                 ->limit($limit)
                 ->get()
-                ->map(fn ($r) => [
-                    'id' => $r->id,
-                    'profile_key' => $r->profile_key,
-                    'short_code' => $r->short_code,
-                    'post_url' => $r->post_url,
-                    'comments_count' => (int) $r->comments_count,
-                    'owner_username' => $r->owner_username,
-                    'post_timestamp' => $r->post_timestamp,
-                ]);
+                ->map(function ($r) {
+                    $raw = null;
+                    if (! empty($r->raw_json)) {
+                        $decoded = json_decode((string) $r->raw_json, true);
+                        if (is_array($decoded)) {
+                            $raw = $decoded;
+                        }
+                    }
+
+                    $likesCount = isset($r->likes_count) ? (int) $r->likes_count : (int) ($raw['likesCount'] ?? 0);
+                    $viewsCount = isset($r->views_count) ? (int) $r->views_count : (int) ($raw['videoViewCount'] ?? ($raw['videoPlayCount'] ?? ($raw['video_view_count'] ?? 0)));
+                    $mediaUrl = (string) ($r->media_url ?? '');
+                    if ($mediaUrl === '') {
+                        $mediaUrl = (string) ($raw['displayUrl'] ?? '');
+                    }
+                    if ($mediaUrl === '' && isset($raw['images'][0])) {
+                        $mediaUrl = (string) $raw['images'][0];
+                    }
+
+                    return [
+                        'id' => $r->id,
+                        'profile_key' => $r->profile_key,
+                        'short_code' => $r->short_code,
+                        'post_url' => $r->post_url,
+                        'comments_count' => (int) $r->comments_count,
+                        'owner_username' => $r->owner_username,
+                        'caption' => $r->caption,
+                        'likes_count' => $likesCount,
+                        'views_count' => $viewsCount,
+                        'media_url' => $mediaUrl,
+                        'post_timestamp' => $r->post_timestamp,
+                    ];
+                });
         } catch (\Throwable) {
             $posts = collect();
         }
@@ -153,5 +199,16 @@ class InstagramReviewController extends Controller
             'success' => true,
             'posts' => $posts,
         ]);
+    }
+
+    protected function putProgress(string $operationId, string $status, string $message, int $total, int $done): void
+    {
+        Cache::put('instagram:sync:'.$operationId, [
+            'status' => $status,
+            'message' => $message,
+            'progress_total' => max(1, $total),
+            'progress_done' => max(0, min($done, max(1, $total))),
+            'updated_at' => now()->toDateTimeString(),
+        ], now()->addHours(6));
     }
 }

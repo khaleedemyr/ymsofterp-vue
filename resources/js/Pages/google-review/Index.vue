@@ -249,6 +249,16 @@
             </div>
             <div v-if="igMessage" class="notice notice-loading">{{ igMessage }}</div>
             <div v-if="igError" class="notice notice-error">{{ igError }}</div>
+            <div v-if="igProgress.status && igProgress.status !== 'not_found'" class="ig-progress-wrap">
+              <div class="ig-progress-head">
+                <span>Status: {{ igProgress.status }}</span>
+                <strong>{{ igProgress.percent }}%</strong>
+              </div>
+              <div class="ig-progress-bar">
+                <div class="ig-progress-fill" :style="{ width: `${igProgress.percent}%` }"></div>
+              </div>
+              <div class="ig-progress-msg">{{ igProgress.message }}</div>
+            </div>
           </div>
 
           <div class="panel">
@@ -263,16 +273,29 @@
               <table class="ig-table">
                 <thead>
                   <tr>
+                    <th>Media</th>
                     <th>Profil</th>
+                    <th>Owner</th>
                     <th>Shortcode</th>
+                    <th>Caption</th>
+                    <th>Likes</th>
+                    <th>Views</th>
                     <th>Komentar (scraped)</th>
                     <th>Link</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="row in igRecentPosts" :key="row.id">
+                    <td>
+                      <img v-if="row.media_url" :src="row.media_url" alt="media" class="ig-thumb" />
+                      <span v-else class="muted">-</span>
+                    </td>
                     <td>{{ row.profile_key }}</td>
+                    <td>{{ row.owner_username || '-' }}</td>
                     <td><code>{{ row.short_code }}</code></td>
+                    <td class="ig-caption" :title="row.caption || ''">{{ row.caption || '-' }}</td>
+                    <td>{{ row.likes_count || 0 }}</td>
+                    <td>{{ row.views_count || 0 }}</td>
                     <td>{{ row.comments_count }}</td>
                     <td>
                       <a :href="row.post_url" target="_blank" rel="noopener" class="inline-link">Buka</a>
@@ -321,6 +344,8 @@ const igMessage = ref('')
 const igError = ref('')
 const igRecentPosts = ref([])
 const igListLoading = ref(false)
+const igProgress = ref({ status: '', message: '', done: 0, total: 1, percent: 0 })
+let igProgressTimer = null
 const selectedOutlet = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -612,8 +637,53 @@ async function loadInstagramRecentPosts() {
 
 function openInstagramTab() {
   activeTab.value = 'instagram'
+  stopInstagramProgressPolling()
   refreshInstagramStats()
   loadInstagramRecentPosts()
+}
+
+function stopInstagramProgressPolling() {
+  if (igProgressTimer) {
+    clearInterval(igProgressTimer)
+    igProgressTimer = null
+  }
+}
+
+async function pollInstagramProgress(operationId) {
+  if (!operationId) return
+  stopInstagramProgressPolling()
+  const fetchProgress = async () => {
+    try {
+      const res = await fetch(`/google-review/instagram/progress?operation_id=${encodeURIComponent(operationId)}`, {
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === false) {
+        return
+      }
+      const done = Number(data.progress_done || 0)
+      const total = Math.max(1, Number(data.progress_total || 1))
+      const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)))
+      igProgress.value = {
+        status: data.status || '',
+        message: data.message || '',
+        done,
+        total,
+        percent,
+      }
+      if (['completed', 'failed'].includes(data.status)) {
+        stopInstagramProgressPolling()
+        await refreshInstagramStats()
+        await loadInstagramRecentPosts()
+      }
+    } catch {
+      // ignore transient errors
+    }
+  }
+
+  await fetchProgress()
+  igProgressTimer = setInterval(fetchProgress, 2500)
 }
 
 async function instagramSyncPosts() {
@@ -622,6 +692,7 @@ async function instagramSyncPosts() {
   igBusyAction.value = 'posts'
   igMessage.value = ''
   igError.value = ''
+  igProgress.value = { status: 'queued', message: 'Mengirim request sinkron posting...', done: 0, total: 1, percent: 0 }
   try {
     const res = await fetch('/google-review/instagram/sync-posts', {
       method: 'POST',
@@ -639,6 +710,7 @@ async function instagramSyncPosts() {
       throw new Error(data.message || data.error || `HTTP ${res.status}`)
     }
     igMessage.value = data.message || 'Job diantrikan.'
+    await pollInstagramProgress(data.operation_id)
     if (data.ran_sync) {
       await refreshInstagramStats()
       await loadInstagramRecentPosts()
@@ -657,6 +729,7 @@ async function instagramSyncComments() {
   igBusyAction.value = 'comments'
   igMessage.value = ''
   igError.value = ''
+  igProgress.value = { status: 'queued', message: 'Mengirim request sinkron komentar...', done: 0, total: 1, percent: 0 }
   try {
     const res = await fetch('/google-review/instagram/sync-comments', {
       method: 'POST',
@@ -674,6 +747,7 @@ async function instagramSyncComments() {
       throw new Error(data.message || data.error || `HTTP ${res.status}`)
     }
     igMessage.value = data.message || 'Job diantrikan.'
+    await pollInstagramProgress(data.operation_id)
     if (data.ran_sync) {
       await refreshInstagramStats()
       await loadInstagramRecentPosts()
@@ -1087,6 +1161,37 @@ async function instagramSyncComments() {
   gap: 10px;
   margin-top: 8px;
 }
+.ig-progress-wrap {
+  margin-top: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 10px;
+}
+.ig-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.ig-progress-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+.ig-progress-fill {
+  height: 10px;
+  background: linear-gradient(90deg, #2563eb, #22c55e);
+  transition: width 0.25s ease;
+}
+.ig-progress-msg {
+  font-size: 12px;
+  margin-top: 6px;
+  color: #6b7280;
+}
 .btn-sm {
   padding: 6px 10px;
   font-size: 13px;
@@ -1109,5 +1214,18 @@ async function instagramSyncComments() {
 .ig-table th {
   background: #f9fafb;
   font-weight: 700;
+}
+.ig-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.ig-caption {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style> 

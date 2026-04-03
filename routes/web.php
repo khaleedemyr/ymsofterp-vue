@@ -187,6 +187,7 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/google-review/instagram/sync-posts', [InstagramReviewController::class, 'syncPosts'])->name('google-review.instagram.sync-posts');
     Route::post('/google-review/instagram/sync-comments', [InstagramReviewController::class, 'syncComments'])->name('google-review.instagram.sync-comments');
+    Route::get('/google-review/instagram/progress', [InstagramReviewController::class, 'progress'])->name('google-review.instagram.progress');
     Route::get('/google-review/instagram/stats', [InstagramReviewController::class, 'stats'])->name('google-review.instagram.stats');
     Route::get('/google-review/instagram/recent-posts', [InstagramReviewController::class, 'recentPosts'])->name('google-review.instagram.recent-posts');
 

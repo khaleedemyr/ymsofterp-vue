@@ -40,3 +40,26 @@ CREATE TABLE `instagram_comments` (
   CONSTRAINT `instagram_comments_instagram_post_id_foreign`
     FOREIGN KEY (`instagram_post_id`) REFERENCES `instagram_posts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Opsional (untuk schema existing, tanpa DROP/CREATE): materialized metrics agar list lebih cepat.
+-- Jalankan jika tabel instagram_posts Anda belum punya kolom berikut.
+-- ALTER TABLE `instagram_posts`
+--   ADD COLUMN `likes_count` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `comments_count`,
+--   ADD COLUMN `views_count` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `likes_count`,
+--   ADD COLUMN `media_url` VARCHAR(1024) NULL AFTER `owner_username`;
+
+-- Backfill sekali setelah kolom ditambahkan (opsional):
+-- UPDATE `instagram_posts`
+-- SET
+--   `likes_count` = CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.likesCount')), '0') AS UNSIGNED),
+--   `views_count` = CAST(COALESCE(
+--       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.videoViewCount')),
+--       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.videoPlayCount')),
+--       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.video_view_count')),
+--       '0'
+--   ) AS UNSIGNED),
+--   `media_url` = NULLIF(COALESCE(
+--       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.displayUrl')),
+--       JSON_UNQUOTE(JSON_EXTRACT(`raw_json`, '$.images[0]')),
+--       ''
+--   ), '');

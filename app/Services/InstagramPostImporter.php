@@ -27,6 +27,12 @@ class InstagramPostImporter
             $profileKey = $this->resolveProfileKey($item);
             $caption = isset($item['caption']) ? (string) $item['caption'] : null;
             $commentsCount = (int) ($item['commentsCount'] ?? 0);
+            $likesCount = (int) ($item['likesCount'] ?? 0);
+            $viewsCount = (int) ($item['videoViewCount'] ?? ($item['videoPlayCount'] ?? ($item['video_view_count'] ?? 0)));
+            $mediaUrl = (string) ($item['displayUrl'] ?? '');
+            if ($mediaUrl === '' && isset($item['images'][0])) {
+                $mediaUrl = (string) $item['images'][0];
+            }
             $owner = (string) ($item['ownerUsername'] ?? '');
             $ts = null;
             if (! empty($item['timestamp'])) {
@@ -52,7 +58,10 @@ class InstagramPostImporter
                         'post_url' => $url,
                         'caption' => $caption,
                         'comments_count' => $commentsCount,
+                        'likes_count' => $likesCount,
+                        'views_count' => $viewsCount,
                         'owner_username' => $owner !== '' ? $owner : null,
+                        'media_url' => $mediaUrl !== '' ? $mediaUrl : null,
                         'post_timestamp' => $ts,
                         'raw_json' => $rawJson,
                         'created_at' => $now,
@@ -60,7 +69,7 @@ class InstagramPostImporter
                     ],
                 ],
                 ['profile_key', 'short_code'],
-                ['post_url', 'caption', 'comments_count', 'owner_username', 'post_timestamp', 'raw_json', 'updated_at']
+                ['post_url', 'caption', 'comments_count', 'likes_count', 'views_count', 'owner_username', 'media_url', 'post_timestamp', 'raw_json', 'updated_at']
             );
             $saved++;
         }
