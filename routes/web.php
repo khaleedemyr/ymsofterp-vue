@@ -175,6 +175,8 @@ Route::middleware('auth')->group(function () {
     // Google Review scraper routes
     Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');
     Route::get('/google-review/dashboard', [GoogleReviewController::class, 'dashboard'])->name('google-review.dashboard');
+    Route::get('/google-review/dashboard/drilldown', [GoogleReviewController::class, 'dashboardDrilldown'])->name('google-review.dashboard.drilldown');
+    Route::get('/google-review/dashboard/drilldown/export', [GoogleReviewController::class, 'dashboardDrilldownExport'])->name('google-review.dashboard.drilldown.export');
     Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeReviews'])->name('google-review.fetch');
     Route::post('/google-review/fetch-apify', [GoogleReviewController::class, 'scrapeReviewsApify'])->name('google-review.fetch-apify');
     Route::get('/google-review/apify/items', [GoogleReviewController::class, 'apifyItems'])->name('google-review.apify.items');

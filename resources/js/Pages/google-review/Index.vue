@@ -272,7 +272,7 @@
           <div class="dash-grid">
             <div>
               <div class="label">Sentimen Google ({{ dash.range.sentiment_days }} hari)</div>
-              <div v-for="(v, k) in dash.sentiment.google" :key="`g-${k}`" class="bar-row">
+              <div v-for="(v, k) in dash.sentiment.google" :key="`g-${k}`" class="bar-row bar-clickable" @click="openDrilldown('google', 'sentiment', k)">
                 <span class="bar-label">{{ sevLabel(k) }}</span>
                 <div class="bar"><div class="bar-fill" :style="{ width: `${barPct(v, dashGoogleMax)}%` }"></div></div>
                 <strong class="bar-val">{{ v }}</strong>
@@ -280,7 +280,7 @@
             </div>
             <div>
               <div class="label">Sentimen Instagram ({{ dash.range.sentiment_days }} hari)</div>
-              <div v-for="(v, k) in dash.sentiment.instagram" :key="`i-${k}`" class="bar-row">
+              <div v-for="(v, k) in dash.sentiment.instagram" :key="`i-${k}`" class="bar-row bar-clickable" @click="openDrilldown('instagram', 'sentiment', k)">
                 <span class="bar-label">{{ sevLabel(k) }}</span>
                 <div class="bar"><div class="bar-fill ig" :style="{ width: `${barPct(v, dashInstagramMax)}%` }"></div></div>
                 <strong class="bar-val">{{ v }}</strong>
@@ -289,7 +289,7 @@
             <div>
               <div class="label">Top Isu Negatif Google</div>
               <div v-if="dash.topNegativeTopics.google?.length">
-                <div v-for="row in dash.topNegativeTopics.google" :key="`tg-${row.topic}`" class="bar-row">
+                <div v-for="row in dash.topNegativeTopics.google" :key="`tg-${row.topic}`" class="bar-row bar-clickable" @click="openDrilldown('google', 'topic', row.topic)">
                   <span class="bar-label">{{ row.topic }}</span>
                   <div class="bar"><div class="bar-fill" :style="{ width: `${barPct(row.total, dashTopicGoogleMax)}%` }"></div></div>
                   <strong class="bar-val">{{ row.total }}</strong>
@@ -300,7 +300,7 @@
             <div>
               <div class="label">Top Isu Negatif Instagram</div>
               <div v-if="dash.topNegativeTopics.instagram?.length">
-                <div v-for="row in dash.topNegativeTopics.instagram" :key="`ti-${row.topic}`" class="bar-row">
+                <div v-for="row in dash.topNegativeTopics.instagram" :key="`ti-${row.topic}`" class="bar-row bar-clickable" @click="openDrilldown('instagram', 'topic', row.topic)">
                   <span class="bar-label">{{ row.topic }}</span>
                   <div class="bar"><div class="bar-fill ig" :style="{ width: `${barPct(row.total, dashTopicInstagramMax)}%` }"></div></div>
                   <strong class="bar-val">{{ row.total }}</strong>
@@ -340,6 +340,65 @@
                   </tr>
                   <tr v-if="!dash.profileRisk?.length">
                     <td colspan="4" class="muted">Belum cukup data untuk analisa profil.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="drilldown.open" class="drill-modal-backdrop" @click.self="closeDrilldown">
+          <div class="drill-modal">
+            <div class="drill-head">
+              <div>
+                <div class="table-title">Detail {{ drilldown.channel }} - {{ drilldown.metric }}: {{ drilldown.key }}</div>
+                <div class="muted">Total: {{ drilldown.total }} | Hal: {{ drilldown.page }}/{{ drilldown.lastPage }}</div>
+              </div>
+              <div class="drill-head-actions">
+                <button type="button" class="btn btn-outline btn-sm" @click="exportDrilldownCsv">Export CSV</button>
+                <button type="button" class="btn btn-outline btn-sm" @click="closeDrilldown">Tutup</button>
+              </div>
+            </div>
+            <div class="drill-filter">
+              <input v-model="drilldown.q" type="text" class="input-num" placeholder="Cari author/text/summary..." @keyup.enter="searchDrilldown" />
+              <button type="button" class="btn btn-outline btn-sm" @click="searchDrilldown">Cari</button>
+              <select v-model.number="drilldown.perPage" class="select select-sm" @change="loadDrilldownPage(1)">
+                <option :value="50">50</option>
+                <option :value="100">100</option>
+                <option :value="120">120</option>
+                <option :value="200">200</option>
+              </select>
+              <select v-model="drilldown.sort" class="select select-sm" @change="loadDrilldownPage(1)">
+                <option value="date_desc">Date terbaru</option>
+                <option value="date_asc">Date terlama</option>
+                <option value="severity_desc">Severity Z-A</option>
+                <option value="severity_asc">Severity A-Z</option>
+              </select>
+              <button type="button" class="btn btn-outline btn-sm" @click="loadDrilldownPage(Math.max(1, drilldown.page - 1))" :disabled="drilldown.page <= 1 || drilldown.loading">Prev</button>
+              <button type="button" class="btn btn-outline btn-sm" @click="loadDrilldownPage(Math.min(drilldown.lastPage, drilldown.page + 1))" :disabled="drilldown.page >= drilldown.lastPage || drilldown.loading">Next</button>
+            </div>
+            <div v-if="drilldown.loading" class="notice notice-loading">Memuat detail...</div>
+            <div v-else class="drill-body">
+              <table class="mini-table">
+                <thead>
+                  <tr>
+                    <th>Author</th>
+                    <th>Date</th>
+                    <th>Severity</th>
+                    <th>Summary</th>
+                    <th>Text</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="it in drilldown.items" :key="`dd-${it.id}`">
+                    <td>{{ it.author || '-' }}</td>
+                    <td>{{ it.review_date || '-' }}</td>
+                    <td>{{ sevLabel(it.severity) }}</td>
+                    <td v-html="highlightText(it.summary_id || '-')"></td>
+                    <td v-html="highlightText(it.text || '-')"></td>
+                  </tr>
+                  <tr v-if="!drilldown.items.length">
+                    <td colspan="5" class="muted">Tidak ada data.</td>
                   </tr>
                 </tbody>
               </table>
@@ -538,6 +597,20 @@ const loadingItems = ref(false)
 const exporting = ref(false)
 const lastFetchSource = ref('')
 const aiFullSubmitting = ref(false)
+const drilldown = ref({
+  open: false,
+  loading: false,
+  channel: '',
+  metric: '',
+  key: '',
+  q: '',
+  page: 1,
+  lastPage: 1,
+  total: 0,
+  perPage: 120,
+  sort: 'date_desc',
+  items: [],
+})
 
 const selectedOutletRecord = computed(() => outlets.find((o) => o.place_id === selectedOutlet.value))
 const dashGoogleMax = computed(() => Math.max(1, ...Object.values(dash.sentiment.google || {})))
@@ -621,6 +694,77 @@ function scrollToDashboard() {
   activeTab.value = 'google'
   const el = document.getElementById('dashboard-inline')
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function openDrilldown(channel, metric, key) {
+  drilldown.value = { ...drilldown.value, open: true, loading: true, channel, metric, key, q: '', page: 1, lastPage: 1, total: 0, perPage: 120, sort: 'date_desc', items: [] }
+  await loadDrilldownPage(1)
+}
+
+async function loadDrilldownPage(pageNumber = 1) {
+  drilldown.value = { ...drilldown.value, loading: true, page: pageNumber }
+  try {
+    const params = new URLSearchParams({
+      channel: String(drilldown.value.channel),
+      metric: String(drilldown.value.metric),
+      key: String(drilldown.value.key),
+      days: String(dash.range?.sentiment_days || 30),
+      limit: String(drilldown.value.perPage || 120),
+      page: String(pageNumber),
+      q: String(drilldown.value.q || ''),
+      sort: String(drilldown.value.sort || 'date_desc'),
+    })
+    const res = await fetch(`/google-review/dashboard/drilldown?${params.toString()}`, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `HTTP ${res.status}`)
+    }
+    drilldown.value = {
+      ...drilldown.value,
+      items: Array.isArray(data.items) ? data.items : [],
+      page: Number(data.meta?.page || 1),
+      lastPage: Number(data.meta?.last_page || 1),
+      total: Number(data.meta?.total || 0),
+      perPage: Number(data.meta?.per_page || 120),
+    }
+  } catch (e) {
+    drilldown.value = { ...drilldown.value, items: [], page: 1, lastPage: 1, total: 0, perPage: drilldown.value.perPage || 120 }
+    error.value = e.message || 'Gagal memuat detail bar chart'
+  } finally {
+    drilldown.value = { ...drilldown.value, loading: false }
+  }
+}
+
+async function searchDrilldown() {
+  await loadDrilldownPage(1)
+}
+
+function exportDrilldownCsv() {
+  const params = new URLSearchParams({
+    channel: String(drilldown.value.channel),
+    metric: String(drilldown.value.metric),
+    key: String(drilldown.value.key),
+    days: String(dash.range?.sentiment_days || 30),
+    q: String(drilldown.value.q || ''),
+      sort: String(drilldown.value.sort || 'date_desc'),
+  })
+  window.location.href = `/google-review/dashboard/drilldown/export?${params.toString()}`
+}
+
+function closeDrilldown() {
+  drilldown.value = { ...drilldown.value, open: false }
+}
+
+function highlightText(text) {
+  const t = String(text || '')
+  const q = String(drilldown.value.q || '').trim()
+  if (!q) return t
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`(${escaped})`, 'ig')
+  return t.replace(re, '<mark>$1</mark>')
 }
 
 function fmtDate(date) {
@@ -1185,6 +1329,13 @@ async function startInstagramAiClassification() {
   align-items: center;
   margin: 6px 0;
 }
+.bar-clickable {
+  cursor: pointer;
+}
+.bar-clickable:hover {
+  background: #f8fafc;
+  border-radius: 6px;
+}
 .bar-label { font-size: 12px; color: #374151; }
 .bar {
   height: 10px;
@@ -1246,6 +1397,55 @@ async function startInstagramAiClassification() {
   padding: 10px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
+}
+.drill-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.drill-modal {
+  width: min(1200px, 96vw);
+  max-height: 88vh;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+.drill-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.drill-head-actions {
+  display: flex;
+  gap: 8px;
+}
+.drill-filter {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.drill-filter .input-num {
+  max-width: 360px;
+}
+.select-sm {
+  width: auto;
+  min-width: 130px;
+  padding: 8px 10px;
+}
+.drill-body {
+  padding: 10px 14px 14px;
+  max-height: 72vh;
+  overflow: auto;
 }
 .input-num {
   width: 100%;

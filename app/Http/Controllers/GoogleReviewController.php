@@ -353,6 +353,188 @@ class GoogleReviewController extends Controller
         ];
     }
 
+    public function dashboardDrilldown(Request $request)
+    {
+        $request->validate([
+            'channel' => 'required|string|in:google,instagram',
+            'metric' => 'required|string|in:sentiment,topic',
+            'key' => 'required|string|max:100',
+            'days' => 'nullable|integer|min:1|max:90',
+            'limit' => 'nullable|integer|min:10|max:300',
+            'page' => 'nullable|integer|min:1',
+            'q' => 'nullable|string|max:200',
+            'sort' => 'nullable|string|in:date_desc,date_asc,severity_desc,severity_asc',
+        ]);
+
+        $channel = (string) $request->query('channel');
+        $metric = (string) $request->query('metric');
+        $key = trim((string) $request->query('key'));
+        $days = (int) ($request->query('days') ?? 30);
+        $limit = (int) ($request->query('limit') ?? 120);
+        $page = max(1, (int) ($request->query('page') ?? 1));
+        $keyword = trim((string) ($request->query('q') ?? ''));
+        $sort = (string) ($request->query('sort') ?? 'date_desc');
+
+        $q = $this->buildDashboardDrilldownQuery($channel, $metric, $key, $days, $keyword);
+        if ($q === null) {
+            return response()->json(['success' => false, 'error' => 'Parameter drilldown tidak valid.'], 422);
+        }
+
+        $total = (int) (clone $q)->count();
+        if ($sort === 'date_asc') {
+            $q->orderBy('i.created_at');
+        } elseif ($sort === 'severity_asc') {
+            $q->orderBy('i.severity')->orderByDesc('i.created_at');
+        } elseif ($sort === 'severity_desc') {
+            $q->orderByDesc('i.severity')->orderByDesc('i.created_at');
+        } else {
+            $q->orderByDesc('i.created_at');
+        }
+        $rows = $q
+            ->offset(($page - 1) * $limit)
+            ->limit($limit)
+            ->get()
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'author' => (string) ($r->author ?? ''),
+                'text' => (string) ($r->text ?? ''),
+                'review_date' => (string) ($r->review_date ?? ''),
+                'severity' => (string) ($r->severity ?? ''),
+                'summary_id' => (string) ($r->summary_id ?? ''),
+                'source' => (string) ($r->source ?? ''),
+                'source_account' => (string) ($r->source_account ?? ''),
+                'source_post_url' => (string) ($r->source_post_url ?? ''),
+                'source_post_shortcode' => (string) ($r->source_post_shortcode ?? ''),
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'channel' => $channel,
+            'metric' => $metric,
+            'key' => $key,
+            'q' => $keyword,
+            'sort' => $sort,
+            'meta' => [
+                'page' => $page,
+                'per_page' => $limit,
+                'total' => $total,
+                'last_page' => max(1, (int) ceil(max(1, $total) / $limit)),
+            ],
+            'count' => count($rows),
+            'items' => $rows,
+        ]);
+    }
+
+    public function dashboardDrilldownExport(Request $request)
+    {
+        $request->validate([
+            'channel' => 'required|string|in:google,instagram',
+            'metric' => 'required|string|in:sentiment,topic',
+            'key' => 'required|string|max:100',
+            'days' => 'nullable|integer|min:1|max:90',
+            'q' => 'nullable|string|max:200',
+            'sort' => 'nullable|string|in:date_desc,date_asc,severity_desc,severity_asc',
+        ]);
+
+        $channel = (string) $request->query('channel');
+        $metric = (string) $request->query('metric');
+        $key = trim((string) $request->query('key'));
+        $days = (int) ($request->query('days') ?? 30);
+        $keyword = trim((string) ($request->query('q') ?? ''));
+        $sort = (string) ($request->query('sort') ?? 'date_desc');
+
+        $q = $this->buildDashboardDrilldownQuery($channel, $metric, $key, $days, $keyword);
+        if ($q === null) {
+            abort(422, 'Parameter drilldown tidak valid.');
+        }
+
+        $filename = "dashboard-drilldown-{$channel}-{$metric}-".preg_replace('/[^a-z0-9_\-]+/i', '-', strtolower($key)).'-'.date('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($q) {
+            $out = fopen('php://output', 'w');
+            if ($out === false) {
+                return;
+            }
+            fputcsv($out, ['id', 'author', 'review_date', 'severity', 'summary_id', 'text', 'source', 'source_account', 'source_post_url']);
+
+            $streamQ = clone $q;
+            if ($sort === 'date_asc') {
+                $streamQ->orderBy('i.created_at');
+            } elseif ($sort === 'severity_asc') {
+                $streamQ->orderBy('i.severity')->orderByDesc('i.created_at');
+            } elseif ($sort === 'severity_desc') {
+                $streamQ->orderByDesc('i.severity')->orderByDesc('i.created_at');
+            } else {
+                $streamQ->orderByDesc('i.created_at');
+            }
+            $streamQ->limit(2000)->chunk(300, function ($chunk) use ($out) {
+                foreach ($chunk as $r) {
+                    fputcsv($out, [
+                        (int) $r->id,
+                        (string) ($r->author ?? ''),
+                        (string) ($r->review_date ?? ''),
+                        (string) ($r->severity ?? ''),
+                        (string) ($r->summary_id ?? ''),
+                        (string) ($r->text ?? ''),
+                        (string) ($r->source ?? ''),
+                        (string) ($r->source_account ?? ''),
+                        (string) ($r->source_post_url ?? ''),
+                    ]);
+                }
+            });
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    protected function buildDashboardDrilldownQuery(string $channel, string $metric, string $key, int $days, string $keyword = '')
+    {
+        $since = now()->subDays(max(0, $days - 1))->startOfDay();
+        $sources = $channel === 'instagram'
+            ? ['instagram_comments_db']
+            : ['apify_dataset', 'places_api', 'scraper_inline'];
+
+        $q = DB::table('google_review_ai_items as i')
+            ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
+            ->select([
+                'i.id',
+                'i.author',
+                'i.text',
+                'i.review_date',
+                'i.severity',
+                'i.summary_id',
+                'i.source_account',
+                'i.source_post_url',
+                'i.source_post_shortcode',
+                'r.source',
+                'i.created_at',
+            ])
+            ->where('r.status', 'completed')
+            ->whereIn('r.source', $sources)
+            ->where('r.created_at', '>=', $since);
+
+        if ($metric === 'sentiment') {
+            $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
+            if (! in_array($key, $allowed, true)) {
+                return null;
+            }
+            $q->where('i.severity', $key);
+        } else {
+            $q->whereRaw('JSON_CONTAINS(i.topics, JSON_QUOTE(?))', [$key]);
+        }
+
+        if ($keyword !== '') {
+            $q->where(function ($w) use ($keyword) {
+                $w->where('i.text', 'like', '%'.$keyword.'%')
+                    ->orWhere('i.author', 'like', '%'.$keyword.'%')
+                    ->orWhere('i.summary_id', 'like', '%'.$keyword.'%');
+            });
+        }
+
+        return $q;
+    }
+
     public function scrapeReviews(Request $request)
     {
         $request->validate([
