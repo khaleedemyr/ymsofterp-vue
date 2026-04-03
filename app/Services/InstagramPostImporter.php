@@ -26,9 +26,9 @@ class InstagramPostImporter
             }
             $profileKey = $this->resolveProfileKey($item);
             $caption = isset($item['caption']) ? (string) $item['caption'] : null;
-            $commentsCount = (int) ($item['commentsCount'] ?? 0);
-            $likesCount = (int) ($item['likesCount'] ?? 0);
-            $viewsCount = (int) ($item['videoViewCount'] ?? ($item['videoPlayCount'] ?? ($item['video_view_count'] ?? 0)));
+            $commentsCount = $this->toUint($item['commentsCount'] ?? 0);
+            $likesCount = $this->toUint($item['likesCount'] ?? 0);
+            $viewsCount = $this->toUint($item['videoViewCount'] ?? ($item['videoPlayCount'] ?? ($item['video_view_count'] ?? 0)));
             $mediaUrl = (string) ($item['displayUrl'] ?? '');
             if ($mediaUrl === '' && isset($item['images'][0])) {
                 $mediaUrl = (string) $item['images'][0];
@@ -119,5 +119,29 @@ class InstagramPostImporter
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Normalisasi angka agar aman untuk kolom INT UNSIGNED MySQL.
+     * - nilai negatif -> 0
+     * - non-numeric -> 0
+     * - nilai di atas batas INT UNSIGNED -> clamp ke 4294967295
+     */
+    protected function toUint($value): int
+    {
+        if (! is_numeric($value)) {
+            return 0;
+        }
+
+        $n = (float) $value;
+        if ($n < 0) {
+            return 0;
+        }
+
+        if ($n > 4294967295) {
+            return 4294967295;
+        }
+
+        return (int) floor($n);
     }
 }
