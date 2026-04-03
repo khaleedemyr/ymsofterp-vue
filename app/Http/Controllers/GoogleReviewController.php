@@ -9,7 +9,6 @@ use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -266,45 +265,9 @@ class GoogleReviewController extends Controller
      *
      * @return array{queue_connection: string, jobs_pending_count: int|null, failed_jobs_24h: int|null}
      */
-    protected function aiReportQueuedMessage(int $reportId): string
+    protected function aiReportQueuedMessage(): string
     {
-        $q = (string) config('google_review.process_queue', 'google-review-ai');
-
-        return 'Laporan AI diantre pada antrean "'.$q.'". Pastikan Supervisor/queue:work memuat antrean ini, mis. --queue=notifications,'.$q
-            .' (urutan sesuai prioritas Anda). Atau: php artisan google-review:process-ai-report '.$reportId;
-    }
-
-    protected function buildQueueDiagnostics(): array
-    {
-        $driver = (string) config('queue.default', 'sync');
-        $diag = [
-            'queue_connection' => $driver,
-            'jobs_pending_count' => null,
-            'failed_jobs_24h' => null,
-        ];
-
-        if ($driver === 'database') {
-            try {
-                if (Schema::hasTable('jobs')) {
-                    $diag['jobs_pending_count'] = (int) DB::table('jobs')->count();
-                }
-            } catch (\Throwable $e) {
-                // ignore
-            }
-            try {
-                if (Schema::hasTable('failed_jobs')) {
-                    $diag['failed_jobs_24h'] = (int) DB::table('failed_jobs')
-                        ->where('failed_at', '>=', now()->subDay())
-                        ->count();
-                }
-            } catch (\Throwable $e) {
-                // ignore
-            }
-        }
-
-        $diag['google_review_ai_queue'] = (string) config('google_review.process_queue', 'google-review-ai');
-
-        return $diag;
+        return 'Laporan AI sedang diproses.';
     }
 
     protected function userIsSuperadmin($user): bool
@@ -422,7 +385,7 @@ class GoogleReviewController extends Controller
             'id' => $reportId,
             'message' => $sync
                 ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
-                : $this->aiReportQueuedMessage($reportId),
+                : $this->aiReportQueuedMessage(),
         ]);
     }
 
@@ -453,7 +416,6 @@ class GoogleReviewController extends Controller
             'progress_done' => (int) ($r->progress_done ?? 0),
             'progress_phase' => $r->progress_phase ?? null,
             'progress_log' => $log,
-            'queue_diagnostics' => $this->buildQueueDiagnostics(),
         ]);
     }
 
@@ -520,7 +482,6 @@ class GoogleReviewController extends Controller
                 'progress_phase' => $report->progress_phase ?? null,
                 'progress_log' => $initialLog,
             ],
-            'queue_diagnostics' => $this->buildQueueDiagnostics(),
             'items' => $items,
             'filters' => [
                 'severity' => $severity ?? '',
