@@ -13,8 +13,8 @@
 [program:ymsofterp-queue-worker]
 process_name=%(program_name)s_%(process_num)02d
 directory=/var/www/ymsofterp
-; Sertakan antrean job laporan AI (nama default: google-review-ai, bisa diubah lewat .env GOOGLE_REVIEW_AI_QUEUE)
-command=/usr/bin/php artisan queue:work --queue=notifications,google-review-ai --sleep=3 --tries=1 --timeout=920 --max-time=3600
+; Sertakan antrean job laporan AI (GOOGLE_REVIEW_AI_QUEUE) dan Instagram Apify (INSTAGRAM_SCRAPER_QUEUE, default instagram-scraper)
+command=/usr/bin/php artisan queue:work --queue=notifications,google-review-ai,instagram-scraper --sleep=3 --tries=1 --timeout=3700 --max-time=3600
 autostart=true
 autorestart=true
 stopasgroup=true
@@ -27,7 +27,7 @@ stopwaitsecs=3700
 
 ; Jika QUEUE_CONNECTION=redis, worker tetap memakai default dari .env.
 ; Untuk memaksa redis + antrean sama seperti di atas:
-;   command=/usr/bin/php artisan queue:work redis --queue=notifications,google-review-ai --sleep=3 --tries=1 --timeout=920
+;   command=/usr/bin/php artisan queue:work redis --queue=notifications,google-review-ai,instagram-scraper --sleep=3 --tries=1 --timeout=3700
 
 ; =============================================================================
 ; Sudah ada Supervisor lain yang menjalankan queue:work?

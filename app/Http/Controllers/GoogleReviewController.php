@@ -31,8 +31,31 @@ class GoogleReviewController extends Controller
             ->whereNotNull('place_id')
             ->get();
 
+        $instagramProfiles = collect(config('instagram.profiles', []))
+            ->map(fn ($meta, $key) => [
+                'key' => $key,
+                'label' => (string) ($meta['label'] ?? $key),
+                'url' => (string) ($meta['url'] ?? ''),
+            ])
+            ->values()
+            ->all();
+
+        try {
+            $igPosts = (int) DB::table('instagram_posts')->count();
+            $igComments = (int) DB::table('instagram_comments')->count();
+        } catch (\Throwable) {
+            $igPosts = 0;
+            $igComments = 0;
+        }
+
         return inertia('google-review/Index', [
             'outlets' => $outlets,
+            'instagramProfiles' => $instagramProfiles,
+            'instagramProcessQueue' => (string) config('instagram.process_queue', 'instagram-scraper'),
+            'instagramStats' => [
+                'posts' => $igPosts,
+                'comments' => $igComments,
+            ],
         ]);
     }
 

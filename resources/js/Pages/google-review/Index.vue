@@ -4,16 +4,40 @@
       <div class="page">
         <div class="header">
           <div>
-            <div class="title">Google Reviews</div>
+            <div class="title">Google Maps & Instagram</div>
             <div class="subtitle">
-              Scrape & preview per halaman. <strong>Klasifikasi AI semua review</strong> dijadwalkan ke antrian, disimpan di database, lalu bisa dibuka lagi dan diunduh Excel dari
+              Tab <strong>Google Maps</strong>: scrape &amp; preview review; klasifikasi AI lewat
               <a class="inline-link" href="/google-review/ai/reports">riwayat laporan AI</a>.
-              Provider AI sama dengan Sales Outlet Dashboard (<code class="code-inline">AI_PROVIDER</code>).
+              Tab <strong>Instagram</strong>: sinkron post &amp; komentar via Apify (profil tetap di config), simpan ke database.
             </div>
           </div>
           <a href="/google-review/ai/reports" class="btn-history">Riwayat laporan AI</a>
         </div>
 
+        <div class="tabs" role="tablist">
+          <button
+            type="button"
+            class="tab"
+            :class="{ active: activeTab === 'google' }"
+            role="tab"
+            :aria-selected="activeTab === 'google'"
+            @click="activeTab = 'google'"
+          >
+            Google Maps
+          </button>
+          <button
+            type="button"
+            class="tab"
+            :class="{ active: activeTab === 'instagram' }"
+            role="tab"
+            :aria-selected="activeTab === 'instagram'"
+            @click="openInstagramTab"
+          >
+            Instagram
+          </button>
+        </div>
+
+        <div v-show="activeTab === 'google'" class="tab-panel">
         <div class="panel">
           <div class="controls">
             <div class="control">
@@ -176,6 +200,87 @@
         <div v-else-if="datasetId && !loadingItems" class="panel empty">
           Belum ada data review untuk ditampilkan.
         </div>
+        </div>
+
+        <div v-show="activeTab === 'instagram'" class="tab-panel ig-tab">
+          <div class="panel">
+            <div class="ig-intro">
+              Profil diatur di <code class="code-inline">config/instagram.php</code> (bukan per outlet). Pakai token
+              <code class="code-inline">APIFY_TOKEN</code> yang sama dengan Google Review. Butuh worker antrian
+              <code class="code-inline">{{ instagramQueueName }}</code>
+              (<code class="code-inline">php artisan queue:work --queue=...,{{ instagramQueueName }}</code>).
+            </div>
+            <div class="ig-stats">
+              <span>Post tersimpan: <strong>{{ instagramStatsLocal.posts }}</strong></span>
+              <span>Komentar tersimpan: <strong>{{ instagramStatsLocal.comments }}</strong></span>
+              <button type="button" class="btn btn-outline btn-sm" :disabled="igBusy" @click="refreshInstagramStats">Refresh angka</button>
+            </div>
+            <div class="ig-profiles" v-if="instagramProfiles.length">
+              <div class="label">Pilih profil (untuk post &amp; komentar)</div>
+              <div class="ig-checkboxes">
+                <label v-for="p in instagramProfiles" :key="p.key" class="ig-check">
+                  <input v-model="igSelectedKeys" type="checkbox" :value="p.key" />
+                  <span>{{ p.label }}</span>
+                </label>
+              </div>
+            </div>
+            <div v-else class="notice notice-muted">Belum ada profil di config.</div>
+            <div class="ig-actions">
+              <button
+                type="button"
+                class="btn btn-apify"
+                :disabled="igBusy || igSelectedKeys.length === 0"
+                title="Antrian: tarik posting /p/... dari Apify lalu upsert ke tabel instagram_posts"
+                @click="instagramSyncPosts"
+              >
+                {{ igBusy && igBusyAction === 'posts' ? 'Mengantri…' : 'Sinkron posting (Apify)' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-success"
+                :disabled="igBusy || igSelectedKeys.length === 0"
+                title="Butuh post di DB dulu. Komentar di-batch per URL (bisa lama)."
+                @click="instagramSyncComments"
+              >
+                {{ igBusy && igBusyAction === 'comments' ? 'Mengantri…' : 'Sinkron komentar (Apify)' }}
+              </button>
+            </div>
+            <div v-if="igMessage" class="notice notice-loading">{{ igMessage }}</div>
+            <div v-if="igError" class="notice notice-error">{{ igError }}</div>
+          </div>
+
+          <div class="panel">
+            <div class="table-head">
+              <div class="table-title">Posting terbaru (database)</div>
+              <button type="button" class="btn btn-outline btn-sm" :disabled="igListLoading" @click="loadInstagramRecentPosts">
+                {{ igListLoading ? 'Memuat…' : 'Muat ulang' }}
+              </button>
+            </div>
+            <div v-if="!igRecentPosts.length && !igListLoading" class="empty muted">Kosong — jalankan sinkron posting dulu.</div>
+            <div v-else class="ig-post-table-wrap">
+              <table class="ig-table">
+                <thead>
+                  <tr>
+                    <th>Profil</th>
+                    <th>Shortcode</th>
+                    <th>Komentar (scraped)</th>
+                    <th>Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in igRecentPosts" :key="row.id">
+                    <td>{{ row.profile_key }}</td>
+                    <td><code>{{ row.short_code }}</code></td>
+                    <td>{{ row.comments_count }}</td>
+                    <td>
+                      <a :href="row.post_url" target="_blank" rel="noopener" class="inline-link">Buka</a>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </template>
   </AppLayout>
@@ -188,6 +293,21 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 
 const page = usePage()
 const outlets = page.props.outlets || []
+const instagramProfiles = page.props.instagramProfiles || []
+const instagramQueueName = page.props.instagramProcessQueue || 'instagram-scraper'
+
+const activeTab = ref('google')
+const instagramStatsLocal = ref({
+  posts: Number(page.props.instagramStats?.posts ?? 0),
+  comments: Number(page.props.instagramStats?.comments ?? 0),
+})
+const igSelectedKeys = ref(instagramProfiles.map((p) => p.key))
+const igBusy = ref(false)
+const igBusyAction = ref('')
+const igMessage = ref('')
+const igError = ref('')
+const igRecentPosts = ref([])
+const igListLoading = ref(false)
 const selectedOutlet = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -442,6 +562,107 @@ function initials(name) {
   if (!n) return '?'
   const parts = n.split(/\s+/).slice(0, 2)
   return parts.map(p => p.charAt(0).toUpperCase()).join('')
+}
+
+function csrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+}
+
+async function refreshInstagramStats() {
+  try {
+    const res = await fetch('/google-review/instagram/stats', {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+    const data = await res.json().catch(() => ({}))
+    if (data.success) {
+      instagramStatsLocal.value = { posts: Number(data.posts), comments: Number(data.comments) }
+    }
+  } catch {
+    /* abaikan */
+  }
+}
+
+async function loadInstagramRecentPosts() {
+  igListLoading.value = true
+  try {
+    const res = await fetch('/google-review/instagram/recent-posts?limit=30', {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+    const data = await res.json().catch(() => ({}))
+    igRecentPosts.value = Array.isArray(data.posts) ? data.posts : []
+  } finally {
+    igListLoading.value = false
+  }
+}
+
+function openInstagramTab() {
+  activeTab.value = 'instagram'
+  refreshInstagramStats()
+  loadInstagramRecentPosts()
+}
+
+async function instagramSyncPosts() {
+  if (!igSelectedKeys.value.length) return
+  igBusy.value = true
+  igBusyAction.value = 'posts'
+  igMessage.value = ''
+  igError.value = ''
+  try {
+    const res = await fetch('/google-review/instagram/sync-posts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': csrf(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ profile_keys: igSelectedKeys.value }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || data.error || `HTTP ${res.status}`)
+    }
+    igMessage.value = data.message || 'Job diantrikan.'
+  } catch (e) {
+    igError.value = e.message || 'Gagal mengantrikan sinkron posting'
+  } finally {
+    igBusy.value = false
+    igBusyAction.value = ''
+  }
+}
+
+async function instagramSyncComments() {
+  if (!igSelectedKeys.value.length) return
+  igBusy.value = true
+  igBusyAction.value = 'comments'
+  igMessage.value = ''
+  igError.value = ''
+  try {
+    const res = await fetch('/google-review/instagram/sync-comments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': csrf(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ profile_keys: igSelectedKeys.value }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || data.error || `HTTP ${res.status}`)
+    }
+    igMessage.value = data.message || 'Job diantrikan.'
+  } catch (e) {
+    igError.value = e.message || 'Gagal mengantrikan sinkron komentar'
+  } finally {
+    igBusy.value = false
+    igBusyAction.value = ''
+  }
 }
 </script>
 
@@ -774,5 +995,88 @@ function initials(name) {
 .empty {
   color: #6b7280;
   font-size: 13px;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.tab {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 14px;
+}
+.tab.active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+.tab-panel {
+  min-height: 120px;
+}
+.ig-tab .ig-intro {
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.ig-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 20px;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.ig-profiles {
+  margin-bottom: 12px;
+}
+.ig-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 8px;
+}
+.ig-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ig-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.ig-post-table-wrap {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+.ig-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ig-table th,
+.ig-table td {
+  border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+}
+.ig-table th {
+  background: #f9fafb;
+  font-weight: 700;
 }
 </style> 

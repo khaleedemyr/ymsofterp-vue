@@ -49,6 +49,7 @@ use App\Http\Controllers\RepackController;
 use App\Http\Controllers\ButcherProcessController;
 use App\Http\Controllers\MKProductionController;
 use App\Http\Controllers\GoogleReviewController;
+use App\Http\Controllers\InstagramReviewController;
 use App\Http\Controllers\ButcherReportController;
 use App\Http\Controllers\StockCostReportController;
 use App\Http\Controllers\ButcherAnalysisReportController;
@@ -183,6 +184,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/google-review/ai/reports/{id}', [GoogleReviewController::class, 'aiReportShow'])->name('google-review.ai.reports.show');
     Route::get('/google-review/ai/reports/{id}/status', [GoogleReviewController::class, 'aiReportStatus'])->name('google-review.ai.reports.status');
     Route::get('/google-review/ai/reports/{id}/export', [GoogleReviewController::class, 'aiReportExport'])->name('google-review.ai.reports.export');
+
+    Route::post('/google-review/instagram/sync-posts', [InstagramReviewController::class, 'syncPosts'])->name('google-review.instagram.sync-posts');
+    Route::post('/google-review/instagram/sync-comments', [InstagramReviewController::class, 'syncComments'])->name('google-review.instagram.sync-comments');
+    Route::get('/google-review/instagram/stats', [InstagramReviewController::class, 'stats'])->name('google-review.instagram.stats');
+    Route::get('/google-review/instagram/recent-posts', [InstagramReviewController::class, 'recentPosts'])->name('google-review.instagram.recent-posts');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
