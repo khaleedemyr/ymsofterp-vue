@@ -28,9 +28,27 @@
           </div>
 
           <div v-if="live.status === 'pending'" class="queue-hint">
-            Jika status tetap “Menunggu” lama, pastikan worker antrian berjalan:
-            <code class="code">php artisan queue:work</code>
-            (atau ubah <code class="code">QUEUE_CONNECTION</code> di <code class="code">.env</code>).
+            <p class="hint-p">
+              Status <strong>Menunggu</strong> artinya job belum dijalankan worker. Progres baru muncul setelah worker mengambil job dari antrean.
+            </p>
+            <div class="diag-box">
+              <div class="diag-title">Diagnostik (dari server)</div>
+              <ul class="diag-list">
+                <li><span class="dk">QUEUE_CONNECTION</span> <code class="code">{{ diagnostics.queue_connection || '—' }}</code></li>
+                <li v-if="diagnostics.jobs_pending_count !== null">
+                  <span class="dk">Job di tabel <code>jobs</code></span> {{ diagnostics.jobs_pending_count }}
+                </li>
+                <li v-if="diagnostics.failed_jobs_24h != null && diagnostics.failed_jobs_24h > 0">
+                  <span class="dk">Job gagal (24 jam)</span> {{ diagnostics.failed_jobs_24h }}
+                  — cek <code class="code">php artisan queue:failed</code>
+                </li>
+              </ul>
+              <p class="diag-verdict">{{ queueDiagnosis }}</p>
+            </div>
+            <p class="hint-p">
+              Perintah umum: <code class="code">php artisan queue:work</code>
+              (jalan terus di server). Produksi: pakai Supervisor / systemd agar worker tidak mati.
+            </p>
           </div>
 
           <div v-if="live.status === 'pending' || live.status === 'processing'" class="progress-block">
@@ -142,6 +160,7 @@ const props = defineProps({
   report: { type: Object, required: true },
   items: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
+  queue_diagnostics: { type: Object, default: () => ({}) },
 })
 
 const severity = ref(props.filters.severity || '')
@@ -164,6 +183,30 @@ function syncLiveFromReport(r) {
 
 const live = ref(syncLiveFromReport(props.report))
 
+const diagnostics = ref({ ...props.queue_diagnostics })
+
+const queueDiagnosis = computed(() => {
+  const d = diagnostics.value || {}
+  const driver = d.queue_connection || ''
+  if (driver === 'database') {
+    const n = d.jobs_pending_count
+    if (n == null) {
+      return 'Tidak bisa membaca tabel jobs (cek migrasi antrian: php artisan queue:table).'
+    }
+    if (n > 0) {
+      return `Ada ${n} job mengantre — worker belum jalan atau sibuk. Jalankan: php artisan queue:work`
+    }
+    return 'Antrean kosong: job mungkin sudah diproses/dihapus, atau gagal sebelum masuk antrean. Cek storage/logs/laravel.log dan queue:failed.'
+  }
+  if (driver === 'redis') {
+    return 'Driver Redis: pastikan Redis aktif dan jalankan php artisan queue:work redis (atau sesuai nama koneksi).'
+  }
+  if (driver === 'sync') {
+    return 'Driver sync menjalankan job di request yang sama. Jika tetap Menunggu setelah refresh, ada error saat dispatch atau migrasi tabel laporan belum lengkap.'
+  }
+  return `Driver "${driver}": sesuaikan cara menjalankan worker dengan dokumentasi Laravel untuk driver ini.`
+})
+
 const progressPercent = computed(() => {
   const t = Number(live.value.progress_total) || 0
   const d = Number(live.value.progress_done) || 0
@@ -183,6 +226,16 @@ watch(
   (r) => {
     if (!r) return
     Object.assign(live.value, syncLiveFromReport(r))
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.queue_diagnostics,
+  (v) => {
+    if (v && typeof v === 'object') {
+      diagnostics.value = { ...v }
+    }
   },
   { deep: true }
 )
@@ -252,6 +305,9 @@ function startPoll() {
       live.value.progress_phase = j.progress_phase ?? null
       live.value.progress_log = Array.isArray(j.progress_log) ? j.progress_log : []
       if (j.error_message) live.value.error_message = j.error_message
+      if (j.queue_diagnostics && typeof j.queue_diagnostics === 'object') {
+        diagnostics.value = { ...j.queue_diagnostics }
+      }
 
       if (j.status === 'completed' || j.status === 'failed') {
         if (timer) clearInterval(timer)
@@ -370,13 +426,52 @@ onUnmounted(() => {
 }
 .queue-hint {
   margin: 10px 0 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-radius: 10px;
   font-size: 12px;
   color: #1e40af;
-  line-height: 1.5;
+  line-height: 1.55;
+}
+.hint-p {
+  margin: 0 0 10px;
+}
+.hint-p:last-child {
+  margin-bottom: 0;
+}
+.diag-box {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #1e3a8a;
+}
+.diag-title {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.diag-list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.diag-list li {
+  margin-bottom: 4px;
+}
+.dk {
+  margin-right: 6px;
+}
+.diag-verdict {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c2d12;
+  background: #fff7ed;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #fed7aa;
 }
 .code {
   font-size: 11px;

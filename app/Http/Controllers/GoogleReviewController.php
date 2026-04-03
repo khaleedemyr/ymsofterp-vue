@@ -9,6 +9,7 @@ use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -260,6 +261,42 @@ class GoogleReviewController extends Controller
         return 'google-review:apify:' . $userId . ':' . $placeId;
     }
 
+    /**
+     * Bantu debug kenapa laporan AI stuck di "pending" (biasanya worker antrian tidak jalan).
+     *
+     * @return array{queue_connection: string, jobs_pending_count: int|null, failed_jobs_24h: int|null}
+     */
+    protected function buildQueueDiagnostics(): array
+    {
+        $driver = (string) config('queue.default', 'sync');
+        $diag = [
+            'queue_connection' => $driver,
+            'jobs_pending_count' => null,
+            'failed_jobs_24h' => null,
+        ];
+
+        if ($driver === 'database') {
+            try {
+                if (Schema::hasTable('jobs')) {
+                    $diag['jobs_pending_count'] = (int) DB::table('jobs')->count();
+                }
+            } catch (\Throwable $e) {
+                // ignore
+            }
+            try {
+                if (Schema::hasTable('failed_jobs')) {
+                    $diag['failed_jobs_24h'] = (int) DB::table('failed_jobs')
+                        ->where('failed_at', '>=', now()->subDay())
+                        ->count();
+                }
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
+        return $diag;
+    }
+
     protected function userIsSuperadmin($user): bool
     {
         return $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
@@ -399,6 +436,7 @@ class GoogleReviewController extends Controller
             'progress_done' => (int) ($r->progress_done ?? 0),
             'progress_phase' => $r->progress_phase ?? null,
             'progress_log' => $log,
+            'queue_diagnostics' => $this->buildQueueDiagnostics(),
         ]);
     }
 
@@ -465,6 +503,7 @@ class GoogleReviewController extends Controller
                 'progress_phase' => $report->progress_phase ?? null,
                 'progress_log' => $initialLog,
             ],
+            'queue_diagnostics' => $this->buildQueueDiagnostics(),
             'items' => $items,
             'filters' => [
                 'severity' => $severity ?? '',
