@@ -34,6 +34,22 @@ class StockOpnameController extends Controller
     }
 
     /**
+     * Autosave: hanya kirim baris yang benar-benar diisi (ringan).
+     * Simpan penuh (klik Simpan): semua baris dari form — qty kosong di backend sama dengan stok sistem.
+     * Tanpa ini, update() memakai filterFilledItems lalu whereNotIn delete sehingga baris yang "belum diisi eksplisit" terhapus dari DB.
+     */
+    private function opnameItemsPayload(Request $request, array $items): array
+    {
+        if ($request->has('autosave') && $request->autosave) {
+            return $this->filterFilledItems($items);
+        }
+
+        return array_values(array_filter($items, function ($row) {
+            return isset($row['inventory_item_id']) && $row['inventory_item_id'] !== '' && $row['inventory_item_id'] !== null;
+        }));
+    }
+
+    /**
      * Display a listing of stock opnames
      */
     public function index(Request $request)
@@ -268,7 +284,7 @@ class StockOpnameController extends Controller
             ]);
 
             // Create items (skip if items array is empty for autosave)
-            $items = $this->filterFilledItems($validated['items'] ?? []);
+            $items = $this->opnameItemsPayload($request, $validated['items'] ?? []);
 
             if ((!$request->has('autosave') || !$request->autosave) && empty($items)) {
                 throw ValidationException::withMessages([
@@ -449,15 +465,8 @@ class StockOpnameController extends Controller
             $canApprove = true;
         }
 
-        // Hide legacy rows that were auto-saved without explicit input
-        $stockOpname->setRelation('items', $stockOpname->items->filter(function ($item) {
-            $hasReason = $item->reason !== null && trim((string) $item->reason) !== '';
-            $hasDiff = ((float) $item->qty_diff_small) !== 0.0
-                || ((float) $item->qty_diff_medium) !== 0.0
-                || ((float) $item->qty_diff_large) !== 0.0;
-
-            return $hasReason || $hasDiff;
-        })->values());
+        // Semua baris di outlet_stock_opname_items ditampilkan di detail (termasuk qty fisik = sistem).
+        // Filter "hanya selisih" sebelumnya membuat jumlah item di UI tidak sesuai data tersimpan / laporan.
 
         // Get users for approver selection
         $usersQuery = DB::table('users')
@@ -688,7 +697,7 @@ class StockOpnameController extends Controller
             $existingItems = $stockOpname->items()->get()->keyBy('inventory_item_id');
 
             // Process new items (skip if items array is empty for autosave)
-            $items = $this->filterFilledItems($validated['items'] ?? []);
+            $items = $this->opnameItemsPayload($request, $validated['items'] ?? []);
 
             if ((!$request->has('autosave') || !$request->autosave) && empty($items)) {
                 throw ValidationException::withMessages([
