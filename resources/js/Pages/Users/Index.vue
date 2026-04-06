@@ -545,6 +545,12 @@ function exportToExcel() {
              <i :class="viewMode === 'list' ? 'fa-solid fa-th-large mr-2' : 'fa-solid fa-list mr-2'"></i>
              {{ viewMode === 'list' ? 'Card View' : 'List View' }}
            </button>
+           <button
+             @click="() => router.visit(route('users.leave-balance-report'))"
+             class="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold"
+           >
+             <i class="fa-solid fa-scale-balanced mr-2"></i>Saldo Cuti & Extra Off
+           </button>
            <button @click="exportToExcel" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
              <i class="fa-solid fa-file-excel mr-2"></i>Export Excel
            </button>

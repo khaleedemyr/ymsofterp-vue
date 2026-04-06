@@ -149,6 +149,7 @@ const menuGroups = [
             { name: () => 'Data Jabatan', icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
             { name: () => 'Data Divisi', icon: 'fa-solid fa-building', route: '/divisis', code: 'data_divisi' },
             { name: () => 'Data Karyawan', icon: 'fa-solid fa-users', route: '/users', code: 'data_karyawan' },
+            { name: () => 'Saldo Cuti & Extra Off', icon: 'fa-solid fa-scale-balanced', route: '/users/leave-balance-report', code: 'data_karyawan' },
            // { name: () => 'Struktur Organisasi', icon: 'fa-solid fa-sitemap', route: '/organization-chart', code: 'organization_chart' },
             { name: () => 'Regional Management', icon: 'fa-solid fa-globe', route: '/regional', code: 'regional_management' },
             { name: () => 'Report Man Power Outlet', icon: 'fa-solid fa-users-gear', route: '/man-power-outlet', code: 'man_power_outlet_report' },

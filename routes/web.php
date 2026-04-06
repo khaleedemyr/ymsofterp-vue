@@ -86,6 +86,7 @@ use App\Http\Controllers\RetailWarehouseSaleController;
 use App\Http\Controllers\StockCutController;
 use App\Http\Controllers\OutletDashboardController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\EmployeeLeaveBalanceReportController;
 use App\Http\Controllers\UserPinController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UserShiftController;
@@ -2037,6 +2038,8 @@ Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->
 // Export route must be before resource route to avoid conflicts
 Route::middleware(['auth'])->group(function () {
     Route::get('users/export', [UserController::class, 'export'])->name('users.export');
+    Route::get('users/leave-balance-report', [EmployeeLeaveBalanceReportController::class, 'index'])->name('users.leave-balance-report');
+    Route::get('users/leave-balance-report/export', [EmployeeLeaveBalanceReportController::class, 'export'])->name('users.leave-balance-report.export');
 });
 
 Route::resource('users', UserController::class);

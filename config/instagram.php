@@ -59,7 +59,7 @@ return [
             'label' => 'Asian Grill Express',
             'url' => 'https://www.instagram.com/asiangrillexpress/',
         ],
-        'mwlt_steak' => [
+        'melt_steak' => [
             'label' => 'Melt Steak',
             'url' => 'https://www.instagram.com/meltsteak_id/',
         ],
