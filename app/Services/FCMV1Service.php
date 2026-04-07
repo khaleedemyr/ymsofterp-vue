@@ -247,10 +247,15 @@ class FCMV1Service
                     ],
                     'apns' => [
                         'headers' => [
+                            'apns-push-type' => 'alert',
                             'apns-priority' => '10',
                         ],
                         'payload' => [
                             'aps' => [
+                                'alert' => [
+                                    'title' => $title,
+                                    'body' => $message,
+                                ],
                                 'sound' => 'default',
                                 'badge' => 1,
                             ],
