@@ -410,6 +410,8 @@ class PurchaseOrderOpsReportController extends Controller
             ->leftJoin('users as gm', 'po.gm_finance_approved_by', '=', 'gm.id')
             ->leftJoin('purchase_requisitions as pr', 'po.source_id', '=', 'pr.id')
             ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin(DB::raw('(SELECT purchase_order_ops_id, MAX(outlet_id) as outlet_id FROM purchase_order_ops_items WHERE outlet_id IS NOT NULL GROUP BY purchase_order_ops_id) as poi_outlet_agg'), 'po.id', '=', 'poi_outlet_agg.purchase_order_ops_id')
+            ->leftJoin('tbl_data_outlet as o_item', 'poi_outlet_agg.outlet_id', '=', 'o_item.id_outlet')
             ->leftJoin(DB::raw('(SELECT purchase_order_ops_id, COUNT(*) as item_count, SUM(total) as items_total FROM purchase_order_ops_items GROUP BY purchase_order_ops_id) as items'), 'po.id', '=', 'items.purchase_order_ops_id')
             ->leftJoin(DB::raw('(SELECT purchase_order_ops_id, COUNT(*) as payment_count, SUM(CASE WHEN status = "paid" THEN amount ELSE 0 END) as total_paid, SUM(CASE WHEN status IN ("pending", "approved") THEN amount ELSE 0 END) as total_pending FROM non_food_payments WHERE status != "cancelled" GROUP BY purchase_order_ops_id) as payments'), 'po.id', '=', 'payments.purchase_order_ops_id')
             ->whereBetween('po.date', [$filters['date_from'], $filters['date_to']])
@@ -431,7 +433,7 @@ class PurchaseOrderOpsReportController extends Controller
                 'pm.nama_lengkap as purchasing_manager_name',
                 'gm.nama_lengkap as gm_finance_name',
                 'pr.pr_number as source_pr_number',
-                'o.nama_outlet as outlet_name',
+                DB::raw('COALESCE(o.nama_outlet, o_item.nama_outlet) as outlet_name'),
                 'items.item_count',
                 'items.items_total',
                 'payments.payment_count',
@@ -456,7 +458,8 @@ class PurchaseOrderOpsReportController extends Controller
                 $q->where('po.number', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('s.name', 'like', '%' . $filters['search'] . '%')
                   ->orWhere('pr.pr_number', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('o.nama_outlet', 'like', '%' . $filters['search'] . '%');
+                  ->orWhere('o.nama_outlet', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('o_item.nama_outlet', 'like', '%' . $filters['search'] . '%');
             });
         }
 
@@ -1741,8 +1744,9 @@ class PurchaseOrderOpsReportController extends Controller
             })
             ->leftJoin('purchase_requisition_categories as prc', 'pri.category_id', '=', 'prc.id')
             ->leftJoin('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-            // Join outlet from PR
+            // Join outlet from PR and from PO line item (fallback when PR join misses)
             ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as o_item', 'poi.outlet_id', '=', 'o_item.id_outlet')
             ->whereBetween('po.date', [$filters['date_from'], $filters['date_to']]);
 
         if ($filters['status'] !== 'all') {
@@ -1766,7 +1770,7 @@ class PurchaseOrderOpsReportController extends Controller
                 's.name as supplier_name',
                 'creator.nama_lengkap as creator_name',
                 'pr.pr_number as pr_number',
-                'o.nama_outlet as outlet_name',
+                DB::raw('COALESCE(o.nama_outlet, o_item.nama_outlet) as outlet_name'),
                 DB::raw('CONCAT(COALESCE(prc.division, ""), IF(prc.division IS NOT NULL AND prc.name IS NOT NULL, " - ", ""), COALESCE(prc.name, "")) as category_name')
             )
             ->orderBy('poi.item_name')
