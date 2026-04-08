@@ -28,6 +28,49 @@ use Illuminate\Validation\Rule;
 
 class ItemController extends Controller
 {
+    protected function sanitizeBomPayload(Request $request): void
+    {
+        if (! $request->has('bom') || ! is_array($request->input('bom'))) {
+            return;
+        }
+
+        $normalizedBom = collect($request->input('bom'))
+            ->filter(function ($row) {
+                if (! is_array($row)) {
+                    return false;
+                }
+
+                $itemId = trim((string) ($row['item_id'] ?? ''));
+                $unitId = trim((string) ($row['unit_id'] ?? ''));
+                $qty = $row['qty'] ?? null;
+                $hasQty = $qty !== null && $qty !== '';
+
+                // Buang baris placeholder BOM yang masih kosong semua.
+                return $itemId !== '' || $unitId !== '' || $hasQty;
+            })
+            ->map(function ($row) {
+                if (! is_array($row)) {
+                    return $row;
+                }
+
+                if (array_key_exists('stock_cut', $row)) {
+                    $stockCut = $row['stock_cut'];
+                    if ($stockCut === '' || $stockCut === null) {
+                        $row['stock_cut'] = null;
+                    } else {
+                        $parsed = filter_var($stockCut, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                        $row['stock_cut'] = $parsed === null ? null : $parsed;
+                    }
+                }
+
+                return $row;
+            })
+            ->values()
+            ->all();
+
+        $request->merge(['bom' => $normalizedBom]);
+    }
+
     public function index(Request $request)
     {
         $query = Item::with([
@@ -202,7 +245,8 @@ class ItemController extends Controller
 
     public function store(Request $request)
     {
-        
+        $this->sanitizeBomPayload($request);
+
         try {
             
             // Get allowed types from menu_type table
@@ -492,6 +536,7 @@ class ItemController extends Controller
 
     public function update(Request $request, Item $item)
     {
+        $this->sanitizeBomPayload($request);
         $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
         if ($request->has('modifier_enabled')) {
             $request->merge([
@@ -2488,6 +2533,7 @@ class ItemController extends Controller
 
     public function apiStore(Request $request)
     {
+        $this->sanitizeBomPayload($request);
         $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
         if ($request->has('modifier_enabled')) {
             $request->merge([
@@ -2607,6 +2653,7 @@ class ItemController extends Controller
 
     public function apiUpdate(Request $request, $id)
     {
+        $this->sanitizeBomPayload($request);
         $item = Item::findOrFail($id);
         $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
         if ($request->has('modifier_enabled')) {
