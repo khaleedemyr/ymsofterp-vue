@@ -791,47 +791,36 @@ class GoogleReviewController extends Controller
         return 'Laporan AI sedang diproses.';
     }
 
-    protected function userIsSuperadmin($user): bool
-    {
-        return $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
-    }
-
+    /**
+     * Laporan AI disimpan per tim (bukan per akun pembuat): semua user yang login
+     * boleh melihat/mengekspor selama route dilindungi auth (sama aksesnya dengan menu Google Review).
+     */
     protected function userCanAccessReport(int $reportId): bool
     {
-        $report = DB::table('google_review_ai_reports')->where('id', $reportId)->first();
-        if (! $report) {
+        if (! auth()->check()) {
             return false;
-        }
-        $user = auth()->user();
-        if (! $user) {
-            return false;
-        }
-        if ($this->userIsSuperadmin($user)) {
-            return true;
         }
 
-        return (int) $report->user_id === (int) $user->id;
+        return DB::table('google_review_ai_reports')->where('id', $reportId)->exists();
     }
 
     public function aiReportsIndex(Request $request)
     {
-        $user = auth()->user();
-        $q = DB::table('google_review_ai_reports')->orderByDesc('id');
-        if (! $this->userIsSuperadmin($user)) {
-            $q->where('user_id', $user->id);
-        }
-        $reports = $q->paginate(20)->through(function ($r) {
-            return [
-                'id' => $r->id,
-                'status' => $r->status,
-                'source' => $r->source,
-                'place_name' => $r->place_name,
-                'nama_outlet' => $r->nama_outlet,
-                'review_count' => (int) $r->review_count,
-                'created_at' => $r->created_at,
-                'error_message' => $r->error_message,
-            ];
-        });
+        $reports = DB::table('google_review_ai_reports')
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->through(function ($r) {
+                return [
+                    'id' => $r->id,
+                    'status' => $r->status,
+                    'source' => $r->source,
+                    'place_name' => $r->place_name,
+                    'nama_outlet' => $r->nama_outlet,
+                    'review_count' => (int) $r->review_count,
+                    'created_at' => $r->created_at,
+                    'error_message' => $r->error_message,
+                ];
+            });
 
         return Inertia::render('google-review/AiReportsIndex', [
             'reports' => $reports,
