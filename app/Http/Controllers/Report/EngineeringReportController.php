@@ -154,9 +154,8 @@ class EngineeringReportController extends Controller
 
         $candidates = [$outlet];
         $matchedOutlet = DB::table('tbl_data_outlet')
-            ->select('qr_code', 'kode_outlet', 'nama_outlet', 'id_outlet')
+            ->select('qr_code', 'nama_outlet', 'id_outlet')
             ->where('qr_code', $outlet)
-            ->orWhere('kode_outlet', $outlet)
             ->orWhere('nama_outlet', $outlet)
             ->when(is_numeric($outlet), function ($q) use ($outlet) {
                 $q->orWhere('id_outlet', (int) $outlet);
@@ -166,9 +165,6 @@ class EngineeringReportController extends Controller
         if ($matchedOutlet) {
             if (!empty($matchedOutlet->qr_code)) {
                 $candidates[] = $matchedOutlet->qr_code;
-            }
-            if (!empty($matchedOutlet->kode_outlet)) {
-                $candidates[] = $matchedOutlet->kode_outlet;
             }
         }
 
