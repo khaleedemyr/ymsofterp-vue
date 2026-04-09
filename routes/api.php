@@ -326,6 +326,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/reservations/create-data', [\App\Http\Controllers\ReservationController::class, 'apiCreateData']);
         Route::get('/reservations/dp-summary', [\App\Http\Controllers\ReservationController::class, 'apiDpSummary']);
         Route::get('/reservations/validate-dp-code', [\App\Http\Controllers\ReservationController::class, 'apiValidateDpCode']);
+        Route::get('/reservations/status-by-number', [\App\Http\Controllers\ReservationController::class, 'apiStatusByNumber']);
         Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationController::class, 'apiMarkDpUsed']);
         Route::get('/reservations/{id}', [\App\Http\Controllers\ReservationController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiStore']);
@@ -1215,6 +1216,7 @@ Route::prefix('closing-shift')->group(function () {
 // POS – validasi & mark DP & update status (tanpa auth, dipanggil dari POS desktop)
 Route::get('/reservations/validate-dp-code', [\App\Http\Controllers\ReservationController::class, 'apiValidateDpCode']);
 Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationController::class, 'apiMarkDpUsed']);
+Route::get('/reservations/status-by-number', [\App\Http\Controllers\ReservationController::class, 'apiStatusByNumber']);
 Route::patch('/reservations/{id}/status', [\App\Http\Controllers\ReservationController::class, 'apiUpdateStatus']);
 Route::get('/reservations/availability-layout', [\App\Http\Controllers\ReservationController::class, 'apiAvailabilityLayout']);
 // Website reservation submit (same controller as approval-app; public, no auth)

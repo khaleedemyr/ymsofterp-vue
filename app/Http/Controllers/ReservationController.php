@@ -861,6 +861,37 @@ class ReservationController extends Controller
         ]);
     }
 
+    public function apiStatusByNumber(Request $request)
+    {
+        $request->validate([
+            'reservation_number' => 'required|string|max:32',
+        ]);
+
+        $reservationNumber = strtoupper(trim((string) $request->input('reservation_number')));
+        $reservation = Reservation::with(['outlet'])
+            ->where('reservation_number', $reservationNumber)
+            ->first();
+
+        if (!$reservation) {
+            return response()->json([
+                'message' => 'Nomor reservasi tidak ditemukan',
+            ], 404);
+        }
+
+        return response()->json([
+            'reservation_number' => $reservation->reservation_number,
+            'name' => $reservation->name,
+            'phone' => $reservation->phone,
+            'outlet' => $reservation->outlet ? $reservation->outlet->nama_outlet : null,
+            'reservation_date' => $reservation->reservation_date?->format('Y-m-d'),
+            'reservation_time' => $reservation->reservation_time ? \Carbon\Carbon::parse($reservation->reservation_time)->format('H:i') : null,
+            'number_of_guests' => $reservation->number_of_guests,
+            'smoking_preference' => $reservation->smoking_preference,
+            'status' => $reservation->status,
+            'created_at' => $reservation->created_at?->toIso8601String(),
+        ]);
+    }
+
     public function apiStore(Request $request)
     {
         try {
