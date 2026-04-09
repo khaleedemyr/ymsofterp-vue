@@ -45,6 +45,7 @@ class EngineeringReportController extends Controller
         $region = $request->input('region');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
+        $outletCandidates = $this->resolveOutletCandidates($outlet);
 
         // Query untuk items dengan category
         $query = DB::table('order_items')
@@ -60,8 +61,8 @@ class EngineeringReportController extends Controller
             ]);
         
         // Filter by outlet or region
-        if ($outlet) {
-            $query->where('orders.kode_outlet', $outlet);
+        if (!empty($outletCandidates)) {
+            $query->whereIn('orders.kode_outlet', $outletCandidates);
         } elseif ($region) {
             // If region is selected, get all outlets in that region (using cached helper)
             $outletCodes = $this->getCachedOutletQrCodesByRegion($region);
@@ -93,10 +94,10 @@ class EngineeringReportController extends Controller
         $orderItems = DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->select(['order_items.modifiers', 'order_items.qty'])
-            ->when($outlet, function($q) use ($outlet) {
-                $q->where('orders.kode_outlet', $outlet);
+            ->when(!empty($outletCandidates), function($q) use ($outletCandidates) {
+                $q->whereIn('orders.kode_outlet', $outletCandidates);
             })
-            ->when($region && !$outlet, function($q) use ($region) {
+            ->when($region && empty($outletCandidates), function($q) use ($region) {
                 // If region is selected and no specific outlet, get all outlets in that region (using cached helper)
                 $outletCodes = $this->getCachedOutletQrCodesByRegion($region);
                 $q->whereIn('orders.kode_outlet', $outletCodes);
@@ -134,6 +135,44 @@ class EngineeringReportController extends Controller
             'modifiers' => $modifiers, 
             'grand_total' => $grand_total
         ]);
+    }
+
+    /**
+     * Resolve outlet filter candidates for orders.kode_outlet.
+     * Accepts qr_code, kode_outlet, id_outlet, or outlet name.
+     */
+    private function resolveOutletCandidates($outlet)
+    {
+        if (empty($outlet)) {
+            return [];
+        }
+
+        $outlet = trim((string) $outlet);
+        if ($outlet === '') {
+            return [];
+        }
+
+        $candidates = [$outlet];
+        $matchedOutlet = DB::table('tbl_data_outlet')
+            ->select('qr_code', 'kode_outlet', 'nama_outlet', 'id_outlet')
+            ->where('qr_code', $outlet)
+            ->orWhere('kode_outlet', $outlet)
+            ->orWhere('nama_outlet', $outlet)
+            ->when(is_numeric($outlet), function ($q) use ($outlet) {
+                $q->orWhere('id_outlet', (int) $outlet);
+            })
+            ->first();
+
+        if ($matchedOutlet) {
+            if (!empty($matchedOutlet->qr_code)) {
+                $candidates[] = $matchedOutlet->qr_code;
+            }
+            if (!empty($matchedOutlet->kode_outlet)) {
+                $candidates[] = $matchedOutlet->kode_outlet;
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
     }
 
     /**
