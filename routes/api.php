@@ -402,6 +402,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Report Invoice Outlet (Approval App - Laporan Invoice Outlet)
         Route::get('/report-invoice-outlet', [\App\Http\Controllers\OutletPaymentController::class, 'apiReportInvoiceOutlet']);
+        Route::get('/report/daily-outlet-revenue', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'index']);
 
         // Stock Cut (Approval App - Potong Stock)
         Route::get('/stock-cut/form-data', [\App\Http\Controllers\StockCutController::class, 'apiFormData']);
