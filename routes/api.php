@@ -1217,6 +1217,8 @@ Route::get('/reservations/validate-dp-code', [\App\Http\Controllers\ReservationC
 Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationController::class, 'apiMarkDpUsed']);
 Route::patch('/reservations/{id}/status', [\App\Http\Controllers\ReservationController::class, 'apiUpdateStatus']);
 Route::get('/reservations/availability-layout', [\App\Http\Controllers\ReservationController::class, 'apiAvailabilityLayout']);
+// Website reservation submit (same controller as approval-app; public, no auth)
+Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiStore']);
 Route::get('/self-order/menu', [\App\Http\Controllers\MenuBookController::class, 'apiSelfOrderMenuByOutlet']);
 Route::post('/self-order/checkout', [\App\Http\Controllers\MenuBookController::class, 'apiSelfOrderCheckout']);
 

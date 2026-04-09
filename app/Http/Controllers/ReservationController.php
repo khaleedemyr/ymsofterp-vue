@@ -19,7 +19,13 @@ use App\Models\PaymentType;
 
 class ReservationController extends Controller
 {
-    private const DEFAULT_RESERVATION_DURATION_MINUTES = 120;
+    private const DEFAULT_RESERVATION_DURATION_MINUTES = 150;
+
+    /** Same-day reservations (public web/API): earliest slot is this many hours from now. */
+    private const SAME_DAY_MIN_LEAD_HOURS = 4;
+
+    /** Bump when public availability / date rules change (check response header on GET availability-layout). */
+    private const PUBLIC_RESERVATION_AVAILABILITY_VERSION = 'v2-allow-today';
 
     public function index(Request $request)
     {
@@ -820,12 +826,16 @@ class ReservationController extends Controller
     public function apiStore(Request $request)
     {
         try {
+            $request->merge([
+                'reservation_date' => trim((string) $request->input('reservation_date', '')),
+                'reservation_time' => trim((string) $request->input('reservation_time', '')),
+            ]);
             $validated = $request->validate([
                 'name' => 'required|string|max:100',
                 'phone' => 'required|string|max:20',
                 'email' => 'nullable|email|max:100',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-                'reservation_date' => 'required|date',
+                'reservation_date' => 'required|date_format:Y-m-d',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
                 'selected_table_ids' => 'nullable|array|min:1',
@@ -840,7 +850,7 @@ class ReservationController extends Controller
                 'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
-            $validated['created_by'] = auth()->id();
+            $validated['created_by'] = auth()->check() ? auth()->id() : null;
             $validated['email'] = $request->filled('email') ? trim((string) $request->input('email')) : null;
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
             if (empty($validated['from_sales'])) {
@@ -854,6 +864,13 @@ class ReservationController extends Controller
                 );
             } else {
                 unset($validated['menu_file']);
+            }
+            $this->ensureReservationDateNotInPast((string) $validated['reservation_date']);
+            if ($reject = $this->rejectIfSameDayReservationTooSoon(
+                (string) $validated['reservation_date'],
+                (string) $validated['reservation_time']
+            )) {
+                return $reject;
             }
             $reservation = Reservation::create($validated);
             return response()->json([
@@ -874,14 +891,26 @@ class ReservationController extends Controller
     public function apiAvailabilityLayout(Request $request)
     {
         try {
+            $request->merge([
+                'reservation_date' => trim((string) $request->input('reservation_date', '')),
+                'reservation_time' => trim((string) $request->input('reservation_time', '')),
+            ]);
             $validated = $request->validate([
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-                'reservation_date' => 'required|date|after:today',
+                'reservation_date' => 'required|date_format:Y-m-d',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'reservation_duration_minutes' => 'nullable|integer|min:30|max:360',
             ]);
+            $this->ensureReservationDateNotInPast((string) $validated['reservation_date']);
+
+            if ($reject = $this->rejectIfSameDayReservationTooSoon(
+                (string) $validated['reservation_date'],
+                (string) $validated['reservation_time']
+            )) {
+                return $reject;
+            }
 
             $outlet = Outlet::where('id_outlet', $validated['outlet_id'])->first();
             if (!$outlet) {
@@ -959,15 +988,15 @@ class ReservationController extends Controller
             $availableCount = 0;
             $eligibleTablesForCombination = collect();
             $tablesBySection = $allTables
-                ->map(function ($table) use ($reservationSettings, $guestCount, $smokingPreference, &$availableCount) {
+                ->map(function ($table) use ($reservationSettings, $guestCount, &$availableCount) {
                     $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
                     $allowReservation = $setting ? ((int) $setting->allow_reservation === 1) : true;
                     $tableSmokingType = ($setting && !empty($setting->smoking_type)) ? $setting->smoking_type : 'non_smoking';
                     $seatingCapacity = max(0, (int) ($table->jumlah_kursi ?? 0));
                     $isReservableType = (($table->tipe ?? 'biasa') === 'biasa');
-                    $smokingMatch = !$smokingPreference || $tableSmokingType === $smokingPreference;
+                    // Smoking vs non-smoking is indicated per table (S/NS on the website); do not hide tables by step-2 preference.
                     $capacityMatch = $seatingCapacity >= $guestCount;
-                    $isSelectable = $isReservableType && $allowReservation && $smokingMatch && $seatingCapacity > 0;
+                    $isSelectable = $isReservableType && $allowReservation && $seatingCapacity > 0;
                     $isAvailable = $isSelectable && $capacityMatch;
 
                     if ($isAvailable) {
@@ -988,20 +1017,18 @@ class ReservationController extends Controller
                 });
 
             $eligibleTablesForCombination = $allTables
-                ->map(function ($table) use ($reservationSettings, $smokingPreference) {
+                ->map(function ($table) use ($reservationSettings) {
                     $setting = $reservationSettings[(int) $table->source_table_id] ?? $reservationSettings[(string) $table->source_table_id] ?? null;
                     $allowReservation = $setting ? ((int) $setting->allow_reservation === 1) : true;
-                    $tableSmokingType = ($setting && !empty($setting->smoking_type)) ? $setting->smoking_type : 'non_smoking';
                     $seatingCapacity = max(0, (int) ($table->jumlah_kursi ?? 0));
                     $isReservableType = (($table->tipe ?? 'biasa') === 'biasa');
-                    $smokingMatch = !$smokingPreference || $tableSmokingType === $smokingPreference;
 
                     return (object) [
                         'source_table_id' => (int) $table->source_table_id,
                         'source_section_id' => (int) $table->source_section_id,
                         'nama' => $table->nama,
                         'seating_capacity' => $seatingCapacity,
-                        'is_candidate' => $isReservableType && $allowReservation && $smokingMatch && $seatingCapacity > 0,
+                        'is_candidate' => $isReservableType && $allowReservation && $seatingCapacity > 0,
                     ];
                 })
                 ->filter(function ($table) {
@@ -1121,13 +1148,73 @@ class ReservationController extends Controller
                     'available_table_count' => $availableCount,
                     'table_combinations' => $tableCombinations,
                 ],
+            ], 200, [
+                'X-Ymsoft-Reservation-Availability' => self::PUBLIC_RESERVATION_AVAILABILITY_VERSION,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422);
+            return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422, [
+                'X-Ymsoft-Reservation-Availability' => self::PUBLIC_RESERVATION_AVAILABILITY_VERSION,
+            ]);
         } catch (\Throwable $e) {
             \Log::error('Reservation apiAvailabilityLayout: ' . $e->getMessage());
             return response()->json(['message' => 'Gagal cek ketersediaan meja'], 500);
         }
+    }
+
+    /**
+     * Calendar date (Y-m-d) must not be before today in app timezone (avoids same-day false rejects from loose date rules).
+     */
+    private function ensureReservationDateNotInPast(string $dateYmd): void
+    {
+        $tz = config('app.timezone');
+        $parsed = Carbon::createFromFormat('Y-m-d', $dateYmd, $tz);
+        if ($parsed === false) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reservation_date' => ['Format tanggal reservasi tidak valid (gunakan YYYY-MM-DD).'],
+            ]);
+        }
+        $chosen = $parsed->copy()->startOfDay();
+        $today = Carbon::now($tz)->startOfDay();
+        if ($chosen->lt($today)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reservation_date' => ['Tanggal reservasi tidak boleh sebelum hari ini.'],
+            ]);
+        }
+    }
+
+    /**
+     * If reservation is on today's date (app timezone), start time must be at least SAME_DAY_MIN_LEAD_HOURS from now.
+     */
+    private function rejectIfSameDayReservationTooSoon(string $reservationDate, string $reservationTime): ?\Illuminate\Http\JsonResponse
+    {
+        $tz = config('app.timezone');
+        try {
+            $dateOnly = Carbon::parse($reservationDate, $tz)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if ($dateOnly !== Carbon::now($tz)->format('Y-m-d')) {
+            return null;
+        }
+        $timePart = trim($reservationTime);
+        if ($timePart === '') {
+            return null;
+        }
+        try {
+            $requested = Carbon::parse($dateOnly . ' ' . $timePart, $tz);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Format waktu reservasi tidak valid.',
+            ], 422);
+        }
+        $minStart = Carbon::now($tz)->addHours(self::SAME_DAY_MIN_LEAD_HOURS);
+        if ($requested->lt($minStart)) {
+            return response()->json([
+                'message' => 'Untuk reservasi hari ini, pilih waktu mulai minimal ' . self::SAME_DAY_MIN_LEAD_HOURS . ' jam dari sekarang.',
+            ], 422);
+        }
+
+        return null;
     }
 
     private function getOccupiedTableIdsForWindow(
@@ -1216,6 +1303,12 @@ class ReservationController extends Controller
                 );
             } else {
                 unset($validated['menu_file']);
+            }
+            if ($reject = $this->rejectIfSameDayReservationTooSoon(
+                (string) $validated['reservation_date'],
+                (string) $validated['reservation_time']
+            )) {
+                return $reject;
             }
             $reservation->update($validated);
             return response()->json(['message' => 'Reservasi berhasil diupdate']);
