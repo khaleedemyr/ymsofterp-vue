@@ -106,6 +106,7 @@ class ReservationController extends Controller
                 $orderRef = $orderByReservation->get($reservation->id, ['paid_number' => null, 'used_order_at' => null]);
                 return [
                 'id' => $reservation->id,
+                'reservation_number' => $reservation->reservation_number,
                 'name' => $reservation->name,
                 'phone' => $reservation->phone ?? '–',
                 'outlet' => $reservation->outlet?->nama_outlet ?? '–',
@@ -263,6 +264,7 @@ class ReservationController extends Controller
             }
 
             $reservation = Reservation::create($validated);
+            $this->assignReservationNumberIfMissing($reservation);
             $this->syncDpCode($reservation, (float) ($request->input('dp') ?? 0));
 
             return redirect()->route('reservations.index')
@@ -454,6 +456,40 @@ class ReservationController extends Controller
         return $code;
     }
 
+    private function assignReservationNumberIfMissing(Reservation $reservation): void
+    {
+        if (!empty($reservation->reservation_number)) {
+            return;
+        }
+
+        $createdAt = $reservation->created_at
+            ? Carbon::parse($reservation->created_at)->timezone('Asia/Jakarta')
+            : now('Asia/Jakarta');
+        $dateKey = $createdAt->format('Ymd');
+        $prefix = 'RSV-' . $dateKey . '-';
+
+        $latestForDay = Reservation::whereNotNull('reservation_number')
+            ->where('reservation_number', 'like', $prefix . '%')
+            ->orderByDesc('reservation_number')
+            ->value('reservation_number');
+
+        $nextSeq = 1;
+        if (is_string($latestForDay) && preg_match('/-(\d{4})$/', $latestForDay, $matches)) {
+            $nextSeq = ((int) $matches[1]) + 1;
+        }
+
+        for ($attempt = 0; $attempt < 2000; $attempt++) {
+            $candidate = sprintf('%s%04d', $prefix, $nextSeq + $attempt);
+            if (!Reservation::where('reservation_number', $candidate)->exists()) {
+                $reservation->reservation_number = $candidate;
+                $reservation->saveQuietly();
+                return;
+            }
+        }
+
+        throw new \RuntimeException('Gagal membuat reservation_number unik.');
+    }
+
     public function destroy(Reservation $reservation)
     {
         $reservation->delete();
@@ -484,6 +520,7 @@ class ReservationController extends Controller
         $reservations = $query->get()->map(function ($reservation) {
             return [
                 'id' => $reservation->id,
+                'reservation_number' => $reservation->reservation_number,
                 'name' => $reservation->name,
                 'phone' => $reservation->phone,
                 'email' => $reservation->email,
@@ -796,6 +833,7 @@ class ReservationController extends Controller
         }
         return response()->json([
             'id' => $reservation->id,
+            'reservation_number' => $reservation->reservation_number,
             'name' => $reservation->name,
             'phone' => $reservation->phone,
             'email' => $reservation->email,
@@ -873,9 +911,11 @@ class ReservationController extends Controller
                 return $reject;
             }
             $reservation = Reservation::create($validated);
+            $this->assignReservationNumberIfMissing($reservation);
             return response()->json([
                 'message' => 'Reservasi berhasil ditambahkan',
                 'id' => $reservation->id,
+                'reservation_number' => $reservation->reservation_number,
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422);

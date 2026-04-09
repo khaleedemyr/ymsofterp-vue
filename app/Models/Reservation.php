@@ -13,6 +13,7 @@ class Reservation extends Model
     protected $appends = ['menu_file_url'];
 
     protected $fillable = [
+        'reservation_number',
         'name',
         'phone',
         'email',
