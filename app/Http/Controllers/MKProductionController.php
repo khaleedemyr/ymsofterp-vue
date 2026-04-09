@@ -9,6 +9,141 @@ use Illuminate\Support\Facades\Log;
 
 class MKProductionController extends Controller
 {
+    /**
+     * API: list MK production for mobile app (approval-app).
+     */
+    public function apiIndex(Request $request)
+    {
+        $query = DB::table('mk_productions')
+            ->leftJoin('items', 'mk_productions.item_id', '=', 'items.id')
+            ->leftJoin('units', 'mk_productions.unit_id', '=', 'units.id')
+            ->leftJoin('users', 'mk_productions.created_by', '=', 'users.id')
+            ->select(
+                'mk_productions.*',
+                'items.name as item_name',
+                'units.name as unit_name',
+                'users.nama_lengkap as created_by_name',
+                'users.avatar as created_by_avatar'
+            );
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('items.name', 'like', $search)
+                    ->orWhere('mk_productions.batch_number', 'like', $search)
+                    ->orWhere('users.nama_lengkap', 'like', $search)
+                    ->orWhere('mk_productions.notes', 'like', $search);
+            });
+        }
+        if ($request->filled('item_id')) {
+            $query->where('mk_productions.item_id', $request->item_id);
+        }
+        if ($request->filled('from_date')) {
+            $query->whereDate('mk_productions.production_date', '>=', $request->from_date);
+        }
+        if ($request->filled('to_date')) {
+            $query->whereDate('mk_productions.production_date', '<=', $request->to_date);
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        $paginated = $query->orderByDesc('mk_productions.production_date')
+            ->orderByDesc('mk_productions.id')
+            ->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'per_page' => $paginated->perPage(),
+            'total' => $paginated->total(),
+        ]);
+    }
+
+    /**
+     * API: create data for mobile app.
+     */
+    public function apiCreateData()
+    {
+        $items = DB::table('items')
+            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->where('items.composition_type', 'composed')
+            ->where('items.status', 'active')
+            ->select(
+                'items.*',
+                'small_unit.name as small_unit_name',
+                'medium_unit.name as medium_unit_name',
+                'large_unit.name as large_unit_name'
+            )
+            ->get();
+
+        $itemsWithBom = DB::table('items')
+            ->join('item_bom', 'items.id', '=', 'item_bom.item_id')
+            ->where('items.composition_type', 'composed')
+            ->where('items.status', 'active')
+            ->select('items.id', 'items.name')
+            ->distinct()
+            ->get();
+
+        $warehouses = DB::table('warehouses')
+            ->where('status', 'active')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+            'items_with_bom' => $itemsWithBom,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    /**
+     * API: show one MK production detail for mobile app.
+     */
+    public function apiShow($id)
+    {
+        $prod = DB::table('mk_productions')->where('id', $id)->first();
+        if (!$prod) {
+            return response()->json(['success' => false, 'message' => 'Data produksi tidak ditemukan'], 404);
+        }
+
+        $item = DB::table('items')
+            ->leftJoin('units as small_unit', 'items.small_unit_id', '=', 'small_unit.id')
+            ->leftJoin('units as medium_unit', 'items.medium_unit_id', '=', 'medium_unit.id')
+            ->leftJoin('units as large_unit', 'items.large_unit_id', '=', 'large_unit.id')
+            ->where('items.id', $prod->item_id)
+            ->select(
+                'items.*',
+                'small_unit.name as small_unit_name',
+                'medium_unit.name as medium_unit_name',
+                'large_unit.name as large_unit_name'
+            )
+            ->first();
+
+        $warehouse = DB::table('warehouses')->where('id', $prod->warehouse_id)->first();
+        $stockCard = DB::table('food_inventory_cards')
+            ->where('reference_type', 'mk_production')
+            ->where('reference_id', $id)
+            ->get();
+        $bom = DB::table('item_bom')
+            ->join('items as material', 'item_bom.material_item_id', '=', 'material.id')
+            ->join('units', 'item_bom.unit_id', '=', 'units.id')
+            ->where('item_bom.item_id', $prod->item_id)
+            ->select('item_bom.*', 'material.name as material_name', 'units.name as unit_name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'prod' => $prod,
+            'item' => $item,
+            'warehouse' => $warehouse,
+            'stock_card' => $stockCard,
+            'bom' => $bom,
+        ]);
+    }
+
     public function index(Request $request)
     {
         // Ambil item hasil produksi (composed & aktif) beserta nama unit
@@ -199,6 +334,12 @@ class MKProductionController extends Controller
             }
             $qty_total = $b->qty * $qty_produksi;
             if ($stok < $qty_total) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Stok bahan {$b->material_item_id} tidak cukup",
+                    ], 422);
+                }
                 return back()->with('error', "Stok bahan {$b->material_item_id} tidak cukup");
             }
         }
@@ -464,9 +605,22 @@ class MKProductionController extends Controller
                 'updated_at' => now(),
             ]);
             DB::commit();
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Produksi berhasil dicatat',
+                    'id' => $productionId,
+                ]);
+            }
             return redirect()->route('mk-production.index')->with('success', 'Produksi berhasil dicatat');
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
             return back()->with('error', $e->getMessage());
         }
     }

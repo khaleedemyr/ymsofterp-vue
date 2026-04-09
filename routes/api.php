@@ -561,6 +561,14 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy']);
         Route::get('/outlet-wip-report', [\App\Http\Controllers\OutletWIPController::class, 'apiReport']);
 
+        // MK Production (mobile app)
+        Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
+        Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
+        Route::post('/mk-production/bom', [\App\Http\Controllers\MKProductionController::class, 'getBomAndStock']);
+        Route::post('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'store']);
+        Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'apiShow']);
+        Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy']);
+
         // Penjualan Warehouse Retail (mobile app) - specific routes before {id}
         Route::get('/retail-warehouse-sale', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiIndex']);
         Route::get('/retail-warehouse-sale/create-data', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'apiCreate']);
