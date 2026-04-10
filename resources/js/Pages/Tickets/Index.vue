@@ -29,7 +29,6 @@
               <i class="fa-solid fa-file-lines mr-2"></i> Report
             </button>
             <button
-              v-if="can_manage_tickets"
               type="button"
               @click="downloadImportTemplate"
               class="bg-white/90 text-indigo-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
@@ -37,18 +36,13 @@
               <i class="fa-solid fa-file-excel mr-2"></i> Download Template
             </button>
             <button
-              v-if="can_manage_tickets"
               type="button"
               @click="openImportFilePicker"
               class="bg-white/90 text-emerald-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
             >
               <i class="fa-solid fa-file-import mr-2"></i> Import Excel
             </button>
-            <button
-              v-if="can_manage_tickets"
-              @click="openCreate"
-              class="bg-white text-blue-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
-            >
+            <button @click="openCreate" class="bg-white text-blue-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold">
               <i class="fa-solid fa-plus mr-2"></i> Buat Ticket Baru
             </button>
             <input
@@ -172,12 +166,22 @@
           <option v-for="d in filterOptions.divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
         </select>
         <select
+          v-if="tickets_view_all_outlets"
           v-model="outlet"
           @change="debouncedSearch"
           class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
         >
           <option value="all">Semua Outlet</option>
           <option v-for="o in filterOptions.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+        </select>
+        <select
+          v-model="issueType"
+          @change="debouncedSearch"
+          class="w-full md:w-auto px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition"
+        >
+          <option value="all">Semua Jenis Issue</option>
+          <option value="defect">Defect</option>
+          <option value="ops_issue">Ops Issue</option>
         </select>
         <select
           v-model="paymentStatus"
@@ -212,8 +216,11 @@
           <span v-if="division !== 'all'" class="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-1 text-purple-700">
             Divisi: {{ getDivisionLabel(division) }}
           </span>
-          <span v-if="outlet !== 'all'" class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-green-700">
+          <span v-if="tickets_view_all_outlets && outlet !== 'all'" class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-green-700">
             Outlet: {{ getOutletLabel(outlet) }}
+          </span>
+          <span v-if="issueType !== 'all'" class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">
+            Issue: {{ issueType === 'defect' ? 'Defect' : 'Ops Issue' }}
           </span>
           <span v-if="paymentStatus !== 'all'" class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700">
             Payment: {{ getPaymentFilterLabel(paymentStatus) }}
@@ -480,11 +487,7 @@
           </div>
           <h3 class="text-lg font-medium text-gray-600 mb-2">No Tickets Found</h3>
           <p class="text-gray-500 mb-6">Start by creating your first ticket</p>
-          <button
-            v-if="can_manage_tickets"
-            @click="openCreate"
-            class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
+          <button @click="openCreate" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
             <i class="fa-solid fa-plus mr-2"></i>
             Create New Ticket
           </button>
@@ -724,6 +727,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  tickets_view_all_outlets: {
+    type: Boolean,
+    default: true,
+  },
   assignableUsers: {
     type: Array,
     default: () => []
@@ -745,6 +752,7 @@ const priority = ref(props.filters?.priority || 'all');
 const division = ref(props.filters?.division || 'all');
 const outlet = ref(props.filters?.outlet || 'all');
 const paymentStatus = ref(props.filters?.payment_status || 'all');
+const issueType = ref(props.filters?.issue_type || 'all');
 const perPage = ref(props.filters?.per_page || 15);
 const importFileInput = ref(null);
 const statusUpdatingId = ref(null);
@@ -764,7 +772,8 @@ const hasActiveFilters = computed(() => {
     status.value !== 'all' ||
     priority.value !== 'all' ||
     division.value !== 'all' ||
-    outlet.value !== 'all' ||
+    (props.tickets_view_all_outlets && outlet.value !== 'all') ||
+    issueType.value !== 'all' ||
     paymentStatus.value !== 'all' ||
     (search.value && search.value.trim() !== '')
   );
@@ -781,6 +790,7 @@ const debouncedSearch = debounce(() => {
     division: division.value,
     outlet: outlet.value,
     payment_status: paymentStatus.value,
+    issue_type: issueType.value,
     per_page: perPage.value,
   }, { preserveState: true, replace: true });
 }, 400);
@@ -804,6 +814,7 @@ function goToPage(url) {
     urlObj.searchParams.set('division', division.value);
     urlObj.searchParams.set('outlet', outlet.value);
     urlObj.searchParams.set('payment_status', paymentStatus.value);
+    urlObj.searchParams.set('issue_type', issueType.value);
     urlObj.searchParams.set('per_page', perPage.value);
     
     // Extract pathname and query string
@@ -821,6 +832,7 @@ function goToPage(url) {
       division: division.value,
       outlet: outlet.value,
       payment_status: paymentStatus.value,
+      issue_type: issueType.value,
       per_page: perPage.value,
     }, { preserveState: true, replace: true });
   }
@@ -838,6 +850,7 @@ function resetFilters() {
   division.value = 'all';
   outlet.value = 'all';
   paymentStatus.value = 'all';
+  issueType.value = 'all';
   perPage.value = 15;
   debouncedSearch();
 }
@@ -858,6 +871,7 @@ function downloadReport() {
     division: division.value || 'all',
     outlet: outlet.value || 'all',
     payment_status: paymentStatus.value || 'all',
+    issue_type: issueType.value || 'all',
   });
   window.open(`/tickets/report?${params.toString()}`, '_blank');
 }

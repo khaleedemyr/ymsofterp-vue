@@ -39,7 +39,8 @@ class TicketController extends Controller
     public const TICKET_MANAGER_JABATAN_ID = 343;
 
     /**
-     * Superadmin role, division 20, atau jabatan 343 boleh mengelola ticket (status, assign, edit, payment/PR, hapus, buat, import).
+     * Superadmin, division 20, atau jabatan 343: ubah status, assign tim, edit, payment/PR, hapus.
+     * Membuat ticket (form, API store, import Excel, dari daily report) boleh semua user yang sudah login.
      */
     public static function userCanManageTickets($user): bool
     {
@@ -65,6 +66,112 @@ class TicketController extends Controller
             'success' => false,
             'message' => 'Anda tidak memiliki izin untuk aksi ini. Hanya superadmin, divisi terkait, atau jabatan terkait yang dapat mengubah ticket.',
         ], 403);
+    }
+
+    protected function ticketViewDeniedJsonResponse()
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Ticket tidak ditemukan.',
+        ], 404);
+    }
+
+    /** User dengan outlet pusat (id_outlet = 1) melihat semua ticket; lainnya hanya ticket outlet mereka. */
+    public const TICKET_VIEW_ALL_OUTLETS_ID = 1;
+
+    public static function userSeesAllTicketOutlets($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return (int) ($user->id_outlet ?? 0) === self::TICKET_VIEW_ALL_OUTLETS_ID;
+    }
+
+    public static function userCanViewTicket($user, Ticket $ticket): bool
+    {
+        if (self::userSeesAllTicketOutlets($user)) {
+            return true;
+        }
+        $oid = $user?->id_outlet;
+        if ($oid === null || $oid === '') {
+            return false;
+        }
+
+        return (int) $ticket->outlet_id === (int) $oid;
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Ticket>  $query
+     */
+    protected function applyTicketOutletVisibility(\Illuminate\Database\Eloquent\Builder $query, $user): void
+    {
+        if (self::userSeesAllTicketOutlets($user)) {
+            return;
+        }
+        $oid = $user?->id_outlet;
+        if ($oid === null || $oid === '') {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+        $query->where('outlet_id', (int) $oid);
+    }
+
+    /**
+     * Filter jenis issue (defect / ops_issue), selaras inferensi di ticketCalendarIssueMeta.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Ticket>  $query
+     */
+    protected function applyTicketIssueTypeFilter(\Illuminate\Database\Eloquent\Builder $query, string $issueType): void
+    {
+        $issueType = strtolower(trim($issueType));
+        if ($issueType === '' || $issueType === 'all') {
+            return;
+        }
+
+        if ($issueType === 'defect') {
+            $query->where(function ($q) {
+                $q->whereRaw("LOWER(REPLACE(REPLACE(TRIM(COALESCE(issue_type, '')), '_', ' '), '-', ' ')) = ?", ['defect'])
+                    ->orWhereHas('category', function ($c) {
+                        $c->whereRaw('LOWER(name) LIKE ?', ['%defect%']);
+                    });
+            });
+
+            return;
+        }
+
+        if ($issueType === 'ops_issue') {
+            $query->where(function ($q) {
+                $q->whereRaw("LOWER(REPLACE(REPLACE(TRIM(COALESCE(issue_type, '')), '_', ' '), '-', ' ')) = ?", ['ops issue'])
+                    ->orWhereHas('category', function ($c) {
+                        $c->where(function ($c2) {
+                            $c2->whereRaw('LOWER(name) LIKE ?', ['%ops issue%'])
+                                ->orWhereRaw('LOWER(name) LIKE ?', ['%operation%'])
+                                ->orWhere(function ($c3) {
+                                    $c3->whereRaw('LOWER(name) LIKE ?', ['%ops%'])
+                                        ->whereRaw('LOWER(name) NOT LIKE ?', ['%defect%']);
+                                });
+                        });
+                    });
+            });
+        }
+    }
+
+    /**
+     * Daftar outlet untuk form buat/edit ticket (bukan pusat → hanya outlet user).
+     */
+    protected function outletsForTicketUser($user)
+    {
+        $q = Outlet::active()->orderBy('nama_outlet');
+        if (! self::userSeesAllTicketOutlets($user)) {
+            $oid = $user?->id_outlet;
+            if ($oid !== null && $oid !== '') {
+                $q->where('id_outlet', (int) $oid);
+            }
+        }
+
+        return $q->get();
     }
 
     /**
@@ -387,10 +494,6 @@ class TicketController extends Controller
 
     public function downloadImportTemplate()
     {
-        if (!self::userCanManageTickets(auth()->user())) {
-            abort(403, 'Anda tidak memiliki izin mengunduh template import ticket.');
-        }
-
         $sheets = array_merge(
             [
                 $this->buildTicketImportTemplateDataSheet(),
@@ -413,10 +516,6 @@ class TicketController extends Controller
 
     public function importFromExcel(Request $request)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls|max:10240',
         ]);
@@ -583,6 +682,7 @@ class TicketController extends Controller
         $division = $request->get('division', 'all');
         $outlet = $request->get('outlet', 'all');
         $paymentStatus = $request->get('payment_status', 'all');
+        $issueType = $request->get('issue_type', 'all');
         $perPage = $request->get('per_page', 15);
 
         $query = Ticket::with([
@@ -594,6 +694,9 @@ class TicketController extends Controller
             'creator',
             'assignedUsers:id,nama_lengkap,avatar'
         ])->withCount('comments');
+
+        $this->applyTicketOutletVisibility($query, $request->user());
+        $this->applyTicketIssueTypeFilter($query, (string) $issueType);
 
         // Apply filters
         if ($search) {
@@ -732,27 +835,41 @@ class TicketController extends Controller
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = TicketStatus::active()->ordered()->get();
-        
-        // Get only divisions that have tickets
-        $divisis = Divisi::whereHas('tickets')->active()->orderBy('nama_divisi')->get();
-        
-        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+
+        $user = $request->user();
+        // Get only divisions that have tickets (terbatas outlet user bila bukan pusat)
+        $divisis = Divisi::whereHas('tickets', function ($q) use ($user) {
+            $this->applyTicketOutletVisibility($q, $user);
+        })->active()->orderBy('nama_divisi')->get();
+
+        $outletsQuery = Outlet::active()->orderBy('nama_outlet');
+        if (! self::userSeesAllTicketOutlets($user)) {
+            $oid = $user?->id_outlet;
+            if ($oid !== null && $oid !== '') {
+                $outletsQuery->where('id_outlet', (int) $oid);
+            }
+        }
+        $outlets = $outletsQuery->get();
         $assignableUsers = User::where('status', 'A')
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
 
-        // Statistics
+        // Statistics — selaras filter outlet + jenis issue
+        $statsBase = Ticket::query();
+        $this->applyTicketOutletVisibility($statsBase, $user);
+        $this->applyTicketIssueTypeFilter($statsBase, (string) $issueType);
         $statistics = [
-            'total' => Ticket::count(),
-            'open' => Ticket::open()->count(),
-            'in_progress' => Ticket::inProgress()->count(),
-            'resolved' => Ticket::resolved()->count(),
-            'closed' => Ticket::closed()->count(),
+            'total' => (clone $statsBase)->count(),
+            'open' => (clone $statsBase)->open()->count(),
+            'in_progress' => (clone $statsBase)->inProgress()->count(),
+            'resolved' => (clone $statsBase)->resolved()->count(),
+            'closed' => (clone $statsBase)->closed()->count(),
         ];
 
         return Inertia::render('Tickets/Index', [
             'data' => $tickets,
             'can_manage_tickets' => self::userCanManageTickets($request->user()),
+            'tickets_view_all_outlets' => self::userSeesAllTicketOutlets($request->user()),
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -761,6 +878,7 @@ class TicketController extends Controller
                 'division' => $division,
                 'outlet' => $outlet,
                 'payment_status' => $paymentStatus,
+                'issue_type' => $issueType,
                 'per_page' => $perPage,
             ],
             'filterOptions' => [
@@ -787,6 +905,7 @@ class TicketController extends Controller
         $division = $request->get('division', 'all');
         $outlet = $request->get('outlet', 'all');
         $paymentStatus = $request->get('payment_status', 'all');
+        $issueType = $request->get('issue_type', 'all');
 
         $query = Ticket::with([
             'category',
@@ -798,11 +917,14 @@ class TicketController extends Controller
             'assignedUsers:id,nama_lengkap',
         ]);
 
+        $this->applyTicketOutletVisibility($query, $request->user());
+        $this->applyTicketIssueTypeFilter($query, (string) $issueType);
+
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('ticket_number', 'like', "%{$search}%")
-                    ->orWhere('title', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+                  ->orWhere('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
             });
         }
         if ($status !== 'all') {
@@ -1033,7 +1155,9 @@ class TicketController extends Controller
                 'creator:id,nama_lengkap',
                 'assignedUsers:id,nama_lengkap,avatar',
                 'attachments:id,ticket_id,file_name,file_path,file_size,mime_type',
-            ])
+            ]);
+        $this->applyTicketOutletVisibility($tickets, $request->user());
+        $tickets = $tickets
             ->where(function ($q) use ($start, $end) {
                 $q->whereBetween('due_date', [$start, $end])
                     ->orWhereBetween('created_at', [$start, $end]);
@@ -1280,14 +1404,10 @@ class TicketController extends Controller
      */
     public function create()
     {
-        if (!self::userCanManageTickets(auth()->user())) {
-            abort(403, 'Anda tidak memiliki izin membuat ticket.');
-        }
-
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
-        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $outlets = $this->outletsForTicketUser(auth()->user());
 
         return Inertia::render('Tickets/Create', [
             'categories' => $categories,
@@ -1302,10 +1422,6 @@ class TicketController extends Controller
      */
     public function store(Request $request)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'required|string',
@@ -1402,7 +1518,7 @@ class TicketController extends Controller
     public function show($id)
     {
         return Inertia::render('Tickets/Show', [
-            'ticket' => $this->buildTicketDetailArray((int) $id),
+            'ticket' => $this->buildTicketDetailArray((int) $id, auth()->user()),
             'can_manage_tickets' => self::userCanManageTickets(auth()->user()),
         ]);
     }
@@ -1410,7 +1526,7 @@ class TicketController extends Controller
     /**
      * Payload detail ticket (web + Approval App API).
      */
-    protected function buildTicketDetailArray(int $id): array
+    protected function buildTicketDetailArray(int $id, $user): array
     {
         $ticket = Ticket::with([
             'category',
@@ -1425,6 +1541,10 @@ class TicketController extends Controller
             'history.user',
             'assignedUsers:id,nama_lengkap,avatar',
         ])->findOrFail($id);
+
+        if (! self::userCanViewTicket($user, $ticket)) {
+            abort(404);
+        }
 
         // If ticket source is daily_report, get attachments from daily report area
         if ($ticket->source === 'daily_report' && $ticket->source_id) {
@@ -1539,20 +1659,28 @@ class TicketController extends Controller
         return response()->json([
             'success' => true,
             'can_manage_tickets' => self::userCanManageTickets($request->user()),
-            'ticket' => $this->buildTicketDetailArray((int) $id),
+            'ticket' => $this->buildTicketDetailArray((int) $id, $request->user()),
         ]);
     }
 
     /**
      * Opsi form (create/edit) + assign — Approval App.
      */
-    public function apiFormOptions()
+    public function apiFormOptions(Request $request)
     {
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = TicketStatus::active()->ordered()->get();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
-        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $outletsQuery = Outlet::active()->orderBy('nama_outlet');
+        $user = $request->user();
+        if (! self::userSeesAllTicketOutlets($user)) {
+            $oid = $user?->id_outlet;
+            if ($oid !== null && $oid !== '') {
+                $outletsQuery->where('id_outlet', (int) $oid);
+            }
+        }
+        $outlets = $outletsQuery->get();
         $assignableUsers = User::where('status', 'A')
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
@@ -1580,6 +1708,7 @@ class TicketController extends Controller
         $division = $request->get('division', 'all');
         $outlet = $request->get('outlet', 'all');
         $paymentStatus = $request->get('payment_status', 'all');
+        $issueType = $request->get('issue_type', 'all');
         $perPage = (int) $request->get('per_page', 15);
         if ($perPage < 1 || $perPage > 100) {
             $perPage = 15;
@@ -1594,6 +1723,9 @@ class TicketController extends Controller
             'creator',
             'assignedUsers:id,nama_lengkap,avatar',
         ])->withCount('comments');
+
+        $this->applyTicketOutletVisibility($query, $request->user());
+        $this->applyTicketIssueTypeFilter($query, (string) $issueType);
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -1729,23 +1861,37 @@ class TicketController extends Controller
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = TicketStatus::active()->ordered()->get();
-        $divisis = Divisi::whereHas('tickets')->active()->orderBy('nama_divisi')->get();
-        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $apiUser = $request->user();
+        $divisis = Divisi::whereHas('tickets', function ($q) use ($apiUser) {
+            $this->applyTicketOutletVisibility($q, $apiUser);
+        })->active()->orderBy('nama_divisi')->get();
+        $outletsQuery = Outlet::active()->orderBy('nama_outlet');
+        if (! self::userSeesAllTicketOutlets($apiUser)) {
+            $oid = $apiUser?->id_outlet;
+            if ($oid !== null && $oid !== '') {
+                $outletsQuery->where('id_outlet', (int) $oid);
+            }
+        }
+        $outlets = $outletsQuery->get();
         $assignableUsers = User::where('status', 'A')
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
 
+        $statsBase = Ticket::query();
+        $this->applyTicketOutletVisibility($statsBase, $apiUser);
+        $this->applyTicketIssueTypeFilter($statsBase, (string) $issueType);
         $statistics = [
-            'total' => Ticket::count(),
-            'open' => Ticket::open()->count(),
-            'in_progress' => Ticket::inProgress()->count(),
-            'resolved' => Ticket::resolved()->count(),
-            'closed' => Ticket::closed()->count(),
+            'total' => (clone $statsBase)->count(),
+            'open' => (clone $statsBase)->open()->count(),
+            'in_progress' => (clone $statsBase)->inProgress()->count(),
+            'resolved' => (clone $statsBase)->resolved()->count(),
+            'closed' => (clone $statsBase)->closed()->count(),
         ];
 
         return response()->json([
             'success' => true,
             'can_manage_tickets' => self::userCanManageTickets($request->user()),
+            'tickets_view_all_outlets' => self::userSeesAllTicketOutlets($request->user()),
             'tickets' => $tickets->items(),
             'pagination' => [
                 'current_page' => $tickets->currentPage(),
@@ -1784,11 +1930,15 @@ class TicketController extends Controller
             'attachments'
         ])->findOrFail($id);
 
+        if (! self::userCanViewTicket(auth()->user(), $ticket)) {
+            abort(404);
+        }
+
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = TicketStatus::active()->ordered()->get();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
-        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $outlets = $this->outletsForTicketUser(auth()->user());
 
         return Inertia::render('Tickets/Edit', [
             'ticket' => $ticket,
@@ -1810,6 +1960,10 @@ class TicketController extends Controller
         }
 
         $ticket = Ticket::with('status')->findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
 
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
@@ -1887,6 +2041,10 @@ class TicketController extends Controller
 
         $ticket = Ticket::with('status')->findOrFail($id);
 
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'status_id' => 'required|exists:ticket_statuses,id',
         ]);
@@ -1958,6 +2116,10 @@ class TicketController extends Controller
 
         $ticket = Ticket::findOrFail($id);
 
+        if (! self::userCanViewTicket(auth()->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
         try {
             $ticket->delete();
 
@@ -1979,10 +2141,6 @@ class TicketController extends Controller
      */
     public function createFromDailyReport(Request $request)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $validator = Validator::make($request->all(), [
             'daily_report_id' => 'required|exists:daily_reports,id',
             'area_id' => 'required|exists:areas,id',
@@ -2079,6 +2237,10 @@ class TicketController extends Controller
     {
         $ticket = Ticket::findOrFail($id);
 
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'comment' => 'nullable|string|max:1000|required_without:attachments',
             'attachments' => 'nullable|array|max:5',
@@ -2150,6 +2312,10 @@ class TicketController extends Controller
     {
         $ticket = Ticket::findOrFail($id);
 
+        if (! self::userCanViewTicket(auth()->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
         $comments = \App\Models\TicketComment::with(['user', 'attachments'])
             ->where('ticket_id', $ticket->id)
             ->latest()
@@ -2166,7 +2332,11 @@ class TicketController extends Controller
      */
     public function updateComment(Request $request, $id)
     {
-        $comment = \App\Models\TicketComment::findOrFail($id);
+        $comment = \App\Models\TicketComment::with('ticket')->findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $comment->ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
 
         // Check if user can edit this comment (only the author or admin)
         if ($comment->user_id !== auth()->id() && !auth()->user()->hasRole('admin')) {
@@ -2212,7 +2382,11 @@ class TicketController extends Controller
      */
     public function deleteComment($id)
     {
-        $comment = \App\Models\TicketComment::findOrFail($id);
+        $comment = \App\Models\TicketComment::with('ticket')->findOrFail($id);
+
+        if (! self::userCanViewTicket(auth()->user(), $comment->ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
 
         // Check if user can delete this comment (only the author or admin)
         if ($comment->user_id !== auth()->id() && !auth()->user()->hasRole('admin')) {
@@ -2248,6 +2422,10 @@ class TicketController extends Controller
         }
 
         $ticket = Ticket::findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
 
         $validator = Validator::make($request->all(), [
             'user_ids' => 'required|array|min:1',
@@ -2540,7 +2718,17 @@ class TicketController extends Controller
                 'message' => 'Outlet ID is required'
             ], 400);
         }
-        
+
+        if (! self::userSeesAllTicketOutlets($request->user())) {
+            $uid = $request->user()?->id_outlet;
+            if ($uid === null || $uid === '' || (int) $outletId !== (int) $uid) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Akses ditolak',
+                ], 403);
+            }
+        }
+
         // Get tickets that contain the area name in title, match outlet, and are not closed/cancelled
         $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet'])
             ->where('title', 'like', "%{$area->nama_area}%")
