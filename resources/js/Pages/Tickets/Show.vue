@@ -6,10 +6,18 @@
           <i class="fa-solid fa-ticket-alt text-blue-500"></i> {{ ticket.ticket_number }}
         </h1>
         <div class="flex gap-2">
-          <button @click="openCreatePayment" class="bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors">
+          <button
+            v-if="can_manage_tickets"
+            @click="openCreatePayment"
+            class="bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
+          >
             <i class="fa-solid fa-money-bill-wave mr-2"></i> Create Payment
           </button>
-          <button @click="editTicket" class="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors">
+          <button
+            v-if="can_manage_tickets"
+            @click="editTicket"
+            class="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors"
+          >
             <i class="fa-solid fa-edit mr-2"></i> Edit
           </button>
           <button @click="goBack" class="bg-gray-500 text-white px-4 py-2 rounded-xl hover:bg-gray-600 transition-colors">
@@ -34,6 +42,7 @@
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-bold text-gray-800">Informasi Payment</h3>
               <button
+                v-if="can_manage_tickets"
                 @click="openCreatePayment"
                 class="inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-semibold hover:bg-emerald-200"
               >
@@ -500,6 +509,10 @@ import axios from 'axios';
 
 const props = defineProps({
   ticket: Object,
+  can_manage_tickets: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 

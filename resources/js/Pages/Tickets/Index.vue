@@ -29,6 +29,7 @@
               <i class="fa-solid fa-file-lines mr-2"></i> Report
             </button>
             <button
+              v-if="can_manage_tickets"
               type="button"
               @click="downloadImportTemplate"
               class="bg-white/90 text-indigo-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
@@ -36,13 +37,18 @@
               <i class="fa-solid fa-file-excel mr-2"></i> Download Template
             </button>
             <button
+              v-if="can_manage_tickets"
               type="button"
               @click="openImportFilePicker"
               class="bg-white/90 text-emerald-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
             >
               <i class="fa-solid fa-file-import mr-2"></i> Import Excel
             </button>
-            <button @click="openCreate" class="bg-white text-blue-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold">
+            <button
+              v-if="can_manage_tickets"
+              @click="openCreate"
+              class="bg-white text-blue-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
               <i class="fa-solid fa-plus mr-2"></i> Buat Ticket Baru
             </button>
             <input
@@ -279,7 +285,7 @@
                 <td class="px-6 py-4 align-top">
                   <div class="space-y-1.5">
                     <select
-                      v-if="ticketStatuses.length"
+                      v-if="can_manage_tickets && ticketStatuses.length"
                       :value="String(ticket.status_id)"
                       :disabled="statusUpdatingId === ticket.id"
                       title="Ubah status tanpa buka halaman edit"
@@ -428,16 +434,36 @@
                     <button @click="viewTicket(ticket)" class="text-blue-600 hover:text-blue-900" title="View">
                       <i class="fa-solid fa-eye"></i>
                     </button>
-                    <button @click="editTicket(ticket)" class="text-green-600 hover:text-green-900" title="Edit">
+                    <button
+                      v-if="can_manage_tickets"
+                      @click="editTicket(ticket)"
+                      class="text-green-600 hover:text-green-900"
+                      title="Edit"
+                    >
                       <i class="fa-solid fa-edit"></i>
                     </button>
-                    <button @click="openAssignTeam(ticket)" class="text-indigo-600 hover:text-indigo-900" title="Assign Team">
+                    <button
+                      v-if="can_manage_tickets"
+                      @click="openAssignTeam(ticket)"
+                      class="text-indigo-600 hover:text-indigo-900"
+                      title="Assign Team"
+                    >
                       <i class="fa-solid fa-users"></i>
                     </button>
-                    <button @click="openCreatePayment(ticket)" class="text-emerald-600 hover:text-emerald-900" title="Create Payment dari Ticket">
+                    <button
+                      v-if="can_manage_tickets"
+                      @click="openCreatePayment(ticket)"
+                      class="text-emerald-600 hover:text-emerald-900"
+                      title="Create Payment dari Ticket"
+                    >
                       <i class="fa-solid fa-money-bill-wave"></i>
                     </button>
-                    <button @click="deleteTicket(ticket)" class="text-red-600 hover:text-red-900" title="Delete">
+                    <button
+                      v-if="can_manage_tickets"
+                      @click="deleteTicket(ticket)"
+                      class="text-red-600 hover:text-red-900"
+                      title="Delete"
+                    >
                       <i class="fa-solid fa-trash"></i>
                     </button>
                   </div>
@@ -454,7 +480,11 @@
           </div>
           <h3 class="text-lg font-medium text-gray-600 mb-2">No Tickets Found</h3>
           <p class="text-gray-500 mb-6">Start by creating your first ticket</p>
-          <button @click="openCreate" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+          <button
+            v-if="can_manage_tickets"
+            @click="openCreate"
+            class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+          >
             <i class="fa-solid fa-plus mr-2"></i>
             Create New Ticket
           </button>
@@ -690,6 +720,10 @@ const props = defineProps({
   data: Object,
   filters: Object,
   filterOptions: Object,
+  can_manage_tickets: {
+    type: Boolean,
+    default: false,
+  },
   assignableUsers: {
     type: Array,
     default: () => []

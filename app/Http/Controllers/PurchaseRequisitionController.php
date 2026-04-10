@@ -589,8 +589,26 @@ class PurchaseRequisitionController extends Controller
         }
 
         $initialTicketId = $request->query('ticket_id');
-        if ($initialTicketId !== null) {
+        if ($initialTicketId !== null && $initialTicketId !== '') {
             $initialTicketId = (int) $initialTicketId;
+            if ($initialTicketId < 1) {
+                $initialTicketId = null;
+            }
+        } else {
+            $initialTicketId = null;
+        }
+
+        if ($initialTicketId === null) {
+            $initialTicketNumber = $request->query('ticket_number');
+            if ($initialTicketNumber !== null && $initialTicketNumber !== '') {
+                $initialTicketNumber = trim((string) $initialTicketNumber);
+                if ($initialTicketNumber !== '') {
+                    $byNumber = Ticket::where('ticket_number', $initialTicketNumber)->value('id');
+                    if ($byNumber) {
+                        $initialTicketId = (int) $byNumber;
+                    }
+                }
+            }
         }
 
         $categories = PurchaseRequisitionCategory::orderBy('name')->get();

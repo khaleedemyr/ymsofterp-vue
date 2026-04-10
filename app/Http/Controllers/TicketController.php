@@ -32,6 +32,41 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class TicketController extends Controller
 {
+    public const TICKET_MANAGER_ROLE_ID = '5af56935b011a';
+
+    public const TICKET_MANAGER_DIVISION_ID = 20;
+
+    public const TICKET_MANAGER_JABATAN_ID = 343;
+
+    /**
+     * Superadmin role, division 20, atau jabatan 343 boleh mengelola ticket (status, assign, edit, payment/PR, hapus, buat, import).
+     */
+    public static function userCanManageTickets($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+        if ((string) ($user->id_role ?? '') === self::TICKET_MANAGER_ROLE_ID) {
+            return true;
+        }
+        if ((int) ($user->division_id ?? 0) === self::TICKET_MANAGER_DIVISION_ID) {
+            return true;
+        }
+        if ((int) ($user->id_jabatan ?? 0) === self::TICKET_MANAGER_JABATAN_ID) {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function ticketManageDeniedJsonResponse()
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Anda tidak memiliki izin untuk aksi ini. Hanya superadmin, divisi terkait, atau jabatan terkait yang dapat mengubah ticket.',
+        ], 403);
+    }
+
     /**
      * @return array{categories: \Illuminate\Support\Collection, priorities: \Illuminate\Support\Collection, divisions: \Illuminate\Support\Collection, outlets: \Illuminate\Support\Collection, issueTypes: array<int, array{excel_value: string, label: string, notes: string}>}
      */
@@ -352,6 +387,10 @@ class TicketController extends Controller
 
     public function downloadImportTemplate()
     {
+        if (!self::userCanManageTickets(auth()->user())) {
+            abort(403, 'Anda tidak memiliki izin mengunduh template import ticket.');
+        }
+
         $sheets = array_merge(
             [
                 $this->buildTicketImportTemplateDataSheet(),
@@ -374,6 +413,10 @@ class TicketController extends Controller
 
     public function importFromExcel(Request $request)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls|max:10240',
         ]);
@@ -709,6 +752,7 @@ class TicketController extends Controller
 
         return Inertia::render('Tickets/Index', [
             'data' => $tickets,
+            'can_manage_tickets' => self::userCanManageTickets($request->user()),
             'filters' => [
                 'search' => $search,
                 'status' => $status,
@@ -1236,6 +1280,10 @@ class TicketController extends Controller
      */
     public function create()
     {
+        if (!self::userCanManageTickets(auth()->user())) {
+            abort(403, 'Anda tidak memiliki izin membuat ticket.');
+        }
+
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
@@ -1254,6 +1302,10 @@ class TicketController extends Controller
      */
     public function store(Request $request)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'description' => 'required|string',
@@ -1351,6 +1403,7 @@ class TicketController extends Controller
     {
         return Inertia::render('Tickets/Show', [
             'ticket' => $this->buildTicketDetailArray((int) $id),
+            'can_manage_tickets' => self::userCanManageTickets(auth()->user()),
         ]);
     }
 
@@ -1481,10 +1534,11 @@ class TicketController extends Controller
     /**
      * Detail ticket — Approval App (JSON).
      */
-    public function apiShow($id)
+    public function apiShow(Request $request, $id)
     {
         return response()->json([
             'success' => true,
+            'can_manage_tickets' => self::userCanManageTickets($request->user()),
             'ticket' => $this->buildTicketDetailArray((int) $id),
         ]);
     }
@@ -1691,6 +1745,7 @@ class TicketController extends Controller
 
         return response()->json([
             'success' => true,
+            'can_manage_tickets' => self::userCanManageTickets($request->user()),
             'tickets' => $tickets->items(),
             'pagination' => [
                 'current_page' => $tickets->currentPage(),
@@ -1715,6 +1770,10 @@ class TicketController extends Controller
      */
     public function edit($id)
     {
+        if (!self::userCanManageTickets(auth()->user())) {
+            abort(403, 'Anda tidak memiliki izin mengedit ticket.');
+        }
+
         $ticket = Ticket::with([
             'category',
             'priority',
@@ -1746,6 +1805,10 @@ class TicketController extends Controller
      */
     public function update(Request $request, $id)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $ticket = Ticket::with('status')->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
@@ -1818,6 +1881,10 @@ class TicketController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $ticket = Ticket::with('status')->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
@@ -1885,6 +1952,10 @@ class TicketController extends Controller
      */
     public function destroy($id)
     {
+        if (!self::userCanManageTickets(auth()->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $ticket = Ticket::findOrFail($id);
 
         try {
@@ -1908,6 +1979,10 @@ class TicketController extends Controller
      */
     public function createFromDailyReport(Request $request)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'daily_report_id' => 'required|exists:daily_reports,id',
             'area_id' => 'required|exists:areas,id',
@@ -2168,6 +2243,10 @@ class TicketController extends Controller
      */
     public function assignTeam(Request $request, $id)
     {
+        if (!self::userCanManageTickets($request->user())) {
+            return $this->ticketManageDeniedJsonResponse();
+        }
+
         $ticket = Ticket::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
