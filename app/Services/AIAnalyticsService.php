@@ -1158,7 +1158,6 @@ class AIAnalyticsService
         $hourlySales = $data['hourlySales'] ?? [];
         $paymentMethods = $data['paymentMethods'] ?? [];
         $salesTrend = $data['salesTrend'] ?? [];
-        $recentOrders = $data['recentOrders'] ?? [];
         $peakHours = $data['peakHours'] ?? [];
         
         // Deteksi apakah pertanyaan tentang cost

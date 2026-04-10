@@ -72,10 +72,7 @@ class SalesOutletDashboardController extends Controller
         // 5. Hourly Sales
         $hourlySales = $this->getHourlySales($dateFrom, $dateTo);
         
-        // 6. Recent Orders
-        $recentOrders = $this->getRecentOrders($dateFrom, $dateTo);
-        
-        // 7. Promo Usage
+        // 6. Promo Usage
         $promoUsage = $this->getPromoUsage($dateFrom, $dateTo);
         
         // 7.1. Bank Promo Discount
@@ -111,7 +108,6 @@ class SalesOutletDashboardController extends Controller
             'topItems' => $topItems,
             'paymentMethods' => $paymentMethods,
             'hourlySales' => $hourlySales,
-            'recentOrders' => $recentOrders,
             'promoUsage' => $promoUsage,
             'bankPromoDiscount' => $bankPromoDiscount,
             'avgOrderValue' => $avgOrderValue,
@@ -302,32 +298,6 @@ class SalesOutletDashboardController extends Controller
             WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
             GROUP BY HOUR(created_at)
             ORDER BY hour ASC
-        ";
-
-        return DB::select($query);
-    }
-
-
-    private function getRecentOrders($dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
-                o.id,
-                o.nomor,
-                o.table,
-                o.member_name,
-                o.pax,
-                o.grand_total,
-                o.status,
-                o.created_at,
-                o.waiters,
-                o.kode_outlet,
-                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name
-            FROM orders o
-            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
-            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            ORDER BY o.created_at DESC
-            LIMIT 20
         ";
 
         return DB::select($query);

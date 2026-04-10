@@ -3482,49 +3482,6 @@ const menuRegionChartOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <!-- Recent Orders -->
-                    <div class="bg-white rounded-lg shadow-sm border p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Orders</h3>
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order #</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Table</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pax</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="order in dashboardData?.recentOrders || []" :key="order.id">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ order.nomor }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.outlet_name || order.kode_outlet || '-' }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.table || '-' }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.member_name || '-' }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ order.pax || 0 }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(order.grand_total) }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
-                                                  :class="{
-                                                      'bg-green-100 text-green-800': order.status === 'completed',
-                                                      'bg-yellow-100 text-yellow-800': order.status === 'pending',
-                                                      'bg-red-100 text-red-800': order.status === 'cancelled',
-                                                      'bg-blue-100 text-blue-800': order.status === 'processing'
-                                                  }">
-                                                {{ order.status }}
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDateTime(order.created_at) }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
                     <!-- Bank Promo Discount Transactions -->
                     <div v-if="dashboardData?.bankPromoDiscount?.orders_with_bank_promo > 0" class="bg-white rounded-lg shadow-sm border p-6">
                         <div class="flex justify-between items-center mb-4">

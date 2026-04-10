@@ -23,7 +23,6 @@ class SalesOutletDashboardService
             'payment_methods' => $this->getPaymentMethods($outletFilter, $dateFrom, $dateTo),
             'hourly_sales' => $this->getHourlySales($outletFilter, $dateFrom, $dateTo),
             'order_status' => $this->getOrderStatusDistribution($outletFilter, $dateFrom, $dateTo),
-            'recent_orders' => $this->getRecentOrders($outletFilter, $dateFrom, $dateTo),
             'promo_usage' => $this->getPromoUsage($outletFilter, $dateFrom, $dateTo),
             'peak_hours' => $this->getPeakHoursAnalysis($outletFilter, $dateFrom, $dateTo),
             'customer_analysis' => $this->getCustomerAnalysis($outletFilter, $dateFrom, $dateTo),
@@ -240,36 +239,6 @@ class SalesOutletDashboardService
             {$outletFilter}
             GROUP BY status
             ORDER BY count DESC
-        ";
-
-        return DB::select($query);
-    }
-
-    /**
-     * Get recent orders
-     */
-    private function getRecentOrders($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
-                o.id,
-                o.nomor,
-                o.table,
-                o.member_name,
-                o.pax,
-                o.grand_total,
-                o.status,
-                o.created_at,
-                o.waiters,
-                o.kode_outlet,
-                COUNT(oi.id) as item_count
-            FROM orders o
-            LEFT JOIN order_items oi ON o.id = oi.order_id
-            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-            GROUP BY o.id
-            ORDER BY o.created_at DESC
-            LIMIT 25
         ";
 
         return DB::select($query);
