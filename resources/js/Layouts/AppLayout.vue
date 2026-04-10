@@ -552,7 +552,19 @@ const page = usePage();
 const user = computed(() => page.props.auth?.user || { nama_lengkap: '', avatar: null });
 const isExternalUser = computed(() => Boolean(user.value?.is_external));
 const logoutRouteName = computed(() => (isExternalUser.value ? 'external.logout' : 'logout'));
+const mobileAppPlayStoreUrl =
+    'https://play.google.com/store/apps/details?id=com.ymsoft.erp&pcampaignid=web_share';
 const avatarUrl = computed(() => user.value.avatar ? `/storage/${user.value.avatar}` : '/images/avatar-default.png');
+
+function onMobileAppStoreClick() {
+    showProfileDropdown.value = false;
+    Swal.fire({
+        icon: 'info',
+        title: 'App Store',
+        text: 'Link download App Store belum tersedia. Akan diumumkan setelah aplikasi tersedia di App Store.',
+        confirmButtonText: 'OK',
+    });
+}
 
 // Computed properties for user information
 const userOutlet = computed(() => user.value.outlet?.nama_outlet || 'N/A');
@@ -1051,13 +1063,42 @@ function formatCurrency(amount) {
                                 <i class="fa-solid fa-file-invoice-dollar w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
                                 <span class="text-sm font-medium">Payroll</span>
                             </button>
-                            <div class="my-2 h-px bg-gray-200"></div>
                             </template>
+                            <div class="px-4 py-3 space-y-2.5 border-t border-gray-200 bg-gray-50/60">
+                                <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                                    Download aplikasi mobile
+                                </p>
+                                <a
+                                    :href="mobileAppPlayStoreUrl"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="block rounded-lg overflow-hidden ring-1 ring-gray-200/80 hover:ring-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                                    @click="showProfileDropdown = false"
+                                >
+                                    <img
+                                        src="/images/btn_download_mobile_playstore.png"
+                                        alt="Unduh di Google Play"
+                                        class="w-full h-auto block"
+                                    />
+                                </a>
+                                <button
+                                    type="button"
+                                    class="block w-full rounded-lg overflow-hidden ring-1 ring-gray-200/80 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-shadow"
+                                    title="App Store — segera hadir"
+                                    @click="onMobileAppStoreClick"
+                                >
+                                    <img
+                                        src="/images/btn_download_mobile_appstore.png"
+                                        alt="Unduh di App Store"
+                                        class="w-full h-auto block"
+                                    />
+                                </button>
+                            </div>
                             <Link
                                 :href="route(logoutRouteName)"
                                 method="post"
                                 as="button"
-                                class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all duration-150 group"
+                                class="flex items-center gap-3 w-full text-left px-5 py-2.5 border-t border-gray-200 hover:bg-red-50 text-red-600 hover:text-red-700 transition-all duration-150 group"
                             >
                                 <i class="fa-solid fa-right-from-bracket w-5 text-center group-hover:scale-110 transition-transform"></i>
                                 <span class="text-sm font-medium">{{ t('profile.logout') }}</span>
