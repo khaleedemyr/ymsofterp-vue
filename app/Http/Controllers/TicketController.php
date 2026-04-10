@@ -476,7 +476,7 @@ class TicketController extends Controller
                 $division = $divisions->get($divisionName);
                 $outlet = $outlets->get($outletName);
 
-                Ticket::create([
+                $ticket = Ticket::create([
                     'ticket_number' => Ticket::generateTicketNumber(),
                     'title' => $title,
                     'description' => $description,
@@ -489,6 +489,15 @@ class TicketController extends Controller
                     'due_date' => $dueDate ? $dueDate : now()->addDays($priority->max_days ?? 7),
                     'source' => 'manual',
                 ]);
+
+                // Keep ticket history consistent with create/manual flows.
+                $this->createTicketHistory(
+                    $ticket,
+                    'created',
+                    null,
+                    null,
+                    'Ticket created via Excel import'
+                );
 
                 $createdCount++;
             }
