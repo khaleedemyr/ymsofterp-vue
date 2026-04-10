@@ -1349,6 +1349,16 @@ class TicketController extends Controller
      */
     public function show($id)
     {
+        return Inertia::render('Tickets/Show', [
+            'ticket' => $this->buildTicketDetailArray((int) $id),
+        ]);
+    }
+
+    /**
+     * Payload detail ticket (web + Approval App API).
+     */
+    protected function buildTicketDetailArray(int $id): array
+    {
         $ticket = Ticket::with([
             'category',
             'priority',
@@ -1359,7 +1369,8 @@ class TicketController extends Controller
             'comments.user',
             'comments.attachments',
             'attachments',
-            'history.user'
+            'history.user',
+            'assignedUsers:id,nama_lengkap,avatar',
         ])->findOrFail($id);
 
         // If ticket source is daily_report, get attachments from daily report area
@@ -1369,31 +1380,31 @@ class TicketController extends Controller
                 // Get the area name from ticket title (format: "Area Name - Description...")
                 $titleParts = explode(' - ', $ticket->title);
                 $areaName = $titleParts[0] ?? '';
-                
+
                 // Find the area by name
                 $area = \App\Models\Area::where('nama_area', $areaName)->first();
-                
+
                 if ($area) {
                     // Get daily report area with documentation
                     $reportArea = \App\Models\DailyReportArea::where('daily_report_id', $dailyReport->id)
                         ->where('area_id', $area->id)
                         ->first();
-                    
+
                     if ($reportArea && $reportArea->documentation && !empty($reportArea->documentation)) {
                         // Create virtual attachments from daily report documentation
                         $dailyReportAttachments = [];
                         foreach ($reportArea->documentation as $index => $documentPath) {
                             $fileInfo = pathinfo($documentPath);
                             $fileName = $fileInfo['basename'];
-                            
+
                             // Get file info
                             $cleanPath = ltrim($documentPath, '/storage/');
                             $fullPath = storage_path('app/public/' . $cleanPath);
-                            
+
                             if (file_exists($fullPath)) {
                                 $fileSize = filesize($fullPath);
                                 $mimeType = mime_content_type($fullPath);
-                                
+
                                 $dailyReportAttachments[] = (object) [
                                     'id' => 'daily_report_' . $index,
                                     'ticket_id' => $ticket->id,
@@ -1409,14 +1420,13 @@ class TicketController extends Controller
                                 ];
                             }
                         }
-                        
+
                         // Merge daily report attachments with regular attachments
                         $ticket->attachments = $ticket->attachments->concat(collect($dailyReportAttachments));
                     }
                 }
             }
         }
-
 
         // Convert attachments collection to array for proper frontend serialization
         $ticketData = $ticket->toArray();
@@ -1465,8 +1475,238 @@ class TicketController extends Controller
             ];
         })->values();
 
-        return Inertia::render('Tickets/Show', [
-            'ticket' => $ticketData,
+        return $ticketData;
+    }
+
+    /**
+     * Detail ticket — Approval App (JSON).
+     */
+    public function apiShow($id)
+    {
+        return response()->json([
+            'success' => true,
+            'ticket' => $this->buildTicketDetailArray((int) $id),
+        ]);
+    }
+
+    /**
+     * Opsi form (create/edit) + assign — Approval App.
+     */
+    public function apiFormOptions()
+    {
+        $categories = TicketCategory::active()->orderBy('name')->get();
+        $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
+        $statuses = TicketStatus::active()->ordered()->get();
+        $divisis = Divisi::active()->orderBy('nama_divisi')->get();
+        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $assignableUsers = User::where('status', 'A')
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
+
+        return response()->json([
+            'success' => true,
+            'categories' => $categories,
+            'priorities' => $priorities,
+            'statuses' => $statuses,
+            'divisions' => $divisis,
+            'outlets' => $outlets,
+            'assignable_users' => $assignableUsers,
+        ]);
+    }
+
+    /**
+     * Daftar ticket terpaginasi — selaras filter Tickets/Index (Approval App).
+     */
+    public function apiIndex(Request $request)
+    {
+        $search = $request->get('search', '');
+        $status = $request->get('status', 'all');
+        $priority = $request->get('priority', 'all');
+        $category = $request->get('category', 'all');
+        $division = $request->get('division', 'all');
+        $outlet = $request->get('outlet', 'all');
+        $paymentStatus = $request->get('payment_status', 'all');
+        $perPage = (int) $request->get('per_page', 15);
+        if ($perPage < 1 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        $query = Ticket::with([
+            'category',
+            'priority',
+            'status',
+            'divisi',
+            'outlet',
+            'creator',
+            'assignedUsers:id,nama_lengkap,avatar',
+        ])->withCount('comments');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ticket_number', 'like', "%{$search}%")
+                    ->orWhere('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all') {
+            $query->whereHas('status', function ($q) use ($status) {
+                $q->where('slug', $status);
+            });
+        }
+
+        if ($priority !== 'all') {
+            $query->where('priority_id', $priority);
+        }
+
+        if ($category !== 'all') {
+            $query->where('category_id', $category);
+        }
+
+        if ($division !== 'all') {
+            $query->where('divisi_id', $division);
+        }
+
+        if ($outlet !== 'all') {
+            $query->where('outlet_id', $outlet);
+        }
+
+        if ($paymentStatus !== 'all') {
+            $paidCondition = function ($prQuery) {
+                $prQuery->where(function ($q) {
+                    $q->whereRaw("UPPER(status) = 'PAID'")
+                        ->orWhereExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('non_food_payments as nfp')
+                                ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                                ->whereIn('nfp.status', ['paid', 'approved'])
+                                ->where('nfp.status', '!=', 'cancelled');
+                        });
+                });
+            };
+
+            $hasAnyPaymentCondition = function ($prQuery) {
+                $prQuery->whereExists(function ($subQuery) {
+                    $subQuery->select(DB::raw(1))
+                        ->from('non_food_payments as nfp')
+                        ->whereColumn('nfp.purchase_requisition_id', 'purchase_requisitions.id')
+                        ->where('nfp.status', '!=', 'cancelled');
+                });
+            };
+
+            if ($paymentStatus === 'paid') {
+                $query->whereHas('purchaseRequisitions', $paidCondition);
+            } elseif ($paymentStatus === 'on_process') {
+                $query->whereDoesntHave('purchaseRequisitions', $paidCondition)
+                    ->whereHas('purchaseRequisitions', $hasAnyPaymentCondition);
+            } elseif ($paymentStatus === 'no_pr') {
+                $query->whereDoesntHave('purchaseRequisitions');
+            } elseif ($paymentStatus === 'with_pr') {
+                $query->whereHas('purchaseRequisitions');
+            }
+        }
+
+        $tickets = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        $ticketIds = $tickets->getCollection()->pluck('id')->toArray();
+        $prsByTicket = collect();
+        $paymentStatsByPr = collect();
+
+        if (! empty($ticketIds)) {
+            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
+                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $prsByTicket = $prs->groupBy('ticket_id');
+
+            $prIds = $prs->pluck('id')->toArray();
+            if (! empty($prIds)) {
+                $paymentStatsByPr = DB::table('non_food_payments')
+                    ->whereIn('purchase_requisition_id', $prIds)
+                    ->select(
+                        'purchase_requisition_id as pr_id',
+                        DB::raw('COUNT(*) as total_payments'),
+                        DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+                    )
+                    ->groupBy('purchase_requisition_id')
+                    ->get()
+                    ->keyBy('pr_id');
+            }
+        }
+
+        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr) {
+            $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
+
+            $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
+                $paymentStat = $paymentStatsByPr->get($pr->id);
+                $totalPayments = (int) ($paymentStat->total_payments ?? 0);
+                $paidPayments = (int) ($paymentStat->paid_payments ?? 0);
+
+                $payStatus = 'NO_PAYMENT';
+                if (strtoupper((string) $pr->status) === 'PAID' || $paidPayments > 0) {
+                    $payStatus = 'PAID';
+                } elseif ($totalPayments > 0) {
+                    $payStatus = 'ON_PROCESS';
+                }
+
+                return [
+                    'id' => $pr->id,
+                    'pr_number' => $pr->pr_number,
+                    'mode' => $pr->mode,
+                    'status' => $pr->status,
+                    'payment_status' => $payStatus,
+                    'total_payments' => $totalPayments,
+                    'paid_payments' => $paidPayments,
+                ];
+            })->values();
+
+            $ticket->payment_info = [
+                'total_pr' => $prSummaries->count(),
+                'total_paid_pr' => $prSummaries->where('payment_status', 'PAID')->count(),
+                'total_processing_pr' => $prSummaries->where('payment_status', 'ON_PROCESS')->count(),
+                'prs' => $prSummaries,
+            ];
+
+            return $ticket;
+        });
+
+        $categories = TicketCategory::active()->orderBy('name')->get();
+        $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
+        $statuses = TicketStatus::active()->ordered()->get();
+        $divisis = Divisi::whereHas('tickets')->active()->orderBy('nama_divisi')->get();
+        $outlets = Outlet::active()->orderBy('nama_outlet')->get();
+        $assignableUsers = User::where('status', 'A')
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
+
+        $statistics = [
+            'total' => Ticket::count(),
+            'open' => Ticket::open()->count(),
+            'in_progress' => Ticket::inProgress()->count(),
+            'resolved' => Ticket::resolved()->count(),
+            'closed' => Ticket::closed()->count(),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'tickets' => $tickets->items(),
+            'pagination' => [
+                'current_page' => $tickets->currentPage(),
+                'last_page' => $tickets->lastPage(),
+                'per_page' => $tickets->perPage(),
+                'total' => $tickets->total(),
+            ],
+            'filter_options' => [
+                'categories' => $categories,
+                'priorities' => $priorities,
+                'statuses' => $statuses,
+                'divisions' => $divisis,
+                'outlets' => $outlets,
+            ],
+            'statistics' => $statistics,
+            'assignable_users' => $assignableUsers,
         ]);
     }
 

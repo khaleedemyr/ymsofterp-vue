@@ -397,6 +397,18 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/cctv-access-requests/{id}/approve', [\App\Http\Controllers\CctvAccessRequestController::class, 'approve'])->where('id', '[0-9]+');
         Route::post('/cctv-access-requests/{id}/reject', [\App\Http\Controllers\CctvAccessRequestController::class, 'reject'])->where('id', '[0-9]+');
 
+        // Ticketing (Approval App — selaras web /tickets)
+        Route::get('/tickets/form-options', [\App\Http\Controllers\TicketController::class, 'apiFormOptions']);
+        Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'apiIndex']);
+        Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store']);
+        Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->where('id', '[0-9]+');
+        Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->where('id', '[0-9]+');
+        Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->where('id', '[0-9]+');
+        Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->where('id', '[0-9]+');
+        Route::get('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'getComments'])->where('id', '[0-9]+');
+        Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->where('id', '[0-9]+');
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
