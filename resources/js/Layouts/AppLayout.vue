@@ -1072,7 +1072,7 @@ function formatCurrency(amount) {
                                     :href="mobileAppPlayStoreUrl"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    class="block rounded-lg overflow-hidden ring-1 ring-gray-200/80 hover:ring-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                                    class="block rounded-lg overflow-hidden bg-black px-3 py-2.5 ring-1 ring-gray-800 hover:ring-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
                                     @click="showProfileDropdown = false"
                                 >
                                     <img
@@ -1083,7 +1083,7 @@ function formatCurrency(amount) {
                                 </a>
                                 <button
                                     type="button"
-                                    class="block w-full rounded-lg overflow-hidden ring-1 ring-gray-200/80 hover:ring-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-shadow"
+                                    class="block w-full rounded-lg overflow-hidden bg-black px-3 py-2.5 ring-1 ring-gray-800 hover:ring-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-shadow"
                                     title="App Store — segera hadir"
                                     @click="onMobileAppStoreClick"
                                 >
