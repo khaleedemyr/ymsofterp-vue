@@ -237,8 +237,19 @@
 
                 <!-- Message Input -->
                 <div class="p-4 border-t border-gray-200 flex-shrink-0">
+                    <div v-if="isSelectedConversationClosed"
+                         class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                        <p class="font-medium">Percakapan ini sudah ditutup</p>
+                        <p class="mt-1 text-amber-800/90">Untuk mengirim pesan lagi, buat percakapan baru.</p>
+                        <button type="button"
+                                @click="openNewConversationFromClosed"
+                                class="mt-3 w-full rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white hover:bg-blue-700">
+                            + Percakapan baru
+                        </button>
+                    </div>
+
                     <!-- File Upload Section -->
-                    <div v-if="selectedFiles.length > 0" class="mb-3">
+                    <div v-if="!isSelectedConversationClosed && selectedFiles.length > 0" class="mb-3">
                         <div class="flex flex-wrap gap-2">
                             <div v-for="(file, index) in selectedFiles" :key="index" 
                                  class="flex items-center gap-2 bg-gray-100 p-2 rounded-lg">
@@ -263,7 +274,7 @@
                         </div>
                     </div>
                     
-                    <div class="flex gap-2 items-end">
+                    <div v-if="!isSelectedConversationClosed" class="flex gap-2 items-end">
                         <!-- File Upload Button -->
                         <label class="flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-2 rounded-md cursor-pointer hover:bg-gray-200 transition-colors flex-shrink-0">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -510,7 +521,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
 
 // Reactive data
@@ -552,6 +563,32 @@ const newConversationFiles = ref([]);
 
 // Polling interval
 let pollingInterval = null;
+
+const isSelectedConversationClosed = computed(() => {
+    const s = selectedConversation.value?.status;
+    return s === 'closed';
+});
+
+function syncSelectedConversationFromList() {
+    if (!selectedConversation.value) return;
+    const prev = selectedConversation.value;
+    const updated = conversations.value.find((c) => c.id === prev.id);
+    if (updated) {
+        const wasNotClosed = prev.status !== 'closed';
+        selectedConversation.value = updated;
+        if (updated.status === 'closed' && wasNotClosed) {
+            newMessage.value = '';
+            selectedFiles.value = [];
+        }
+    }
+}
+
+function openNewConversationFromClosed() {
+    newMessage.value = '';
+    selectedFiles.value = [];
+    selectedConversation.value = null;
+    showNewConversationModal.value = true;
+}
 
 // Drag methods
 const startDrag = (event) => {
@@ -824,6 +861,8 @@ const fetchConversations = async () => {
         // Ensure unreadCount is a valid number and greater than 0
         unreadCount.value = unreadCount.value > 0 ? unreadCount.value : 0;
         hasUnreadMessages.value = unreadCount.value > 0;
+
+        syncSelectedConversationFromList();
     } catch (error) {
         console.error('Error fetching conversations:', error);
     }
@@ -866,7 +905,8 @@ const fetchMessages = async (conversationId) => {
 
 const sendMessage = async () => {
     if ((!newMessage.value.trim() && selectedFiles.value.length === 0) || !selectedConversation.value) return;
-    
+    if (isSelectedConversationClosed.value) return;
+
     sending.value = true;
     try {
         const formData = new FormData();
@@ -897,9 +937,9 @@ const sendMessage = async () => {
         
         // Handle conversation closed error
         if (error.response?.data?.conversation_closed) {
-            alert('Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.');
-            // Optionally refresh conversations to show updated status
             await fetchConversations();
+            syncSelectedConversationFromList();
+            alert('Percakapan ini telah ditutup oleh tim support. Silakan buat percakapan baru jika Anda memerlukan bantuan lebih lanjut.');
         } else if (error.response?.data?.error) {
             alert(error.response.data.error);
         }
