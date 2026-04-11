@@ -203,7 +203,7 @@ async function confirmDelete(row) {
       </p>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
-        <table class="w-full min-w-[900px] divide-y divide-gray-200">
+        <table class="w-full min-w-[1000px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-2 sm:px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-12">No.</th>
@@ -212,13 +212,14 @@ async function confirmDelete(row) {
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
-              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[160px]">Pencatat</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Pencatat</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Verifikasi</th>
               <th class="px-2 py-3 text-center text-xs font-bold text-blue-700 uppercase w-[100px]">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="8" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="9" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
@@ -283,22 +284,24 @@ async function confirmDelete(row) {
                     </div>
                   </div>
                 </div>
+              </td>
+              <td class="px-3 py-3 text-sm text-gray-800 min-w-0">
                 <template v-if="row.status === 'verified' && row.verifier">
-                  <div class="mt-2 flex gap-2 min-w-0 text-[11px] leading-snug border-t border-gray-100 pt-2">
+                  <div class="flex gap-2 min-w-0">
                     <GuestCommentUserAvatar
                       :user="row.verifier"
                       size-class="w-9 h-9 sm:w-10 sm:h-10"
                       @preview="openAvatarLightbox"
                     />
                     <div class="min-w-0 flex-1">
-                      <span class="text-gray-400">Verifikasi:</span>
-                      <span class="font-medium text-gray-800">{{ row.verifier.nama_lengkap }}</span>
-                      <div v-if="row.verified_at" class="text-gray-500 mt-0.5">
+                      <div class="font-medium text-gray-900 break-words">{{ row.verifier.nama_lengkap }}</div>
+                      <div v-if="row.verified_at" class="mt-1 text-[11px] text-gray-500 leading-snug">
                         {{ new Date(row.verified_at).toLocaleString('id-ID') }}
                       </div>
                     </div>
                   </div>
                 </template>
+                <span v-else class="text-xs text-gray-400">—</span>
               </td>
               <td class="px-2 py-3">
                 <div class="flex flex-wrap gap-1 items-center">
