@@ -49,6 +49,7 @@ use App\Http\Controllers\RepackController;
 use App\Http\Controllers\ButcherProcessController;
 use App\Http\Controllers\MKProductionController;
 use App\Http\Controllers\GoogleReviewController;
+use App\Http\Controllers\GuestCommentFormController;
 use App\Http\Controllers\InstagramReviewController;
 use App\Http\Controllers\ButcherReportController;
 use App\Http\Controllers\StockCostReportController;
@@ -197,6 +198,13 @@ Route::middleware('auth')->group(function () {
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
+
+    Route::get('/guest-comment-forms', [GuestCommentFormController::class, 'index'])->name('guest-comment-forms.index');
+    Route::get('/guest-comment-forms/create', [GuestCommentFormController::class, 'create'])->name('guest-comment-forms.create');
+    Route::post('/guest-comment-forms', [GuestCommentFormController::class, 'store'])->name('guest-comment-forms.store');
+    Route::get('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'show'])->name('guest-comment-forms.show');
+    Route::get('/guest-comment-forms/{guest_comment_form}/verify', [GuestCommentFormController::class, 'verify'])->name('guest-comment-forms.verify');
+    Route::put('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'update'])->name('guest-comment-forms.update');
     
     // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
     Route::get('/api/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals'])->name('pending-approvals.all');
