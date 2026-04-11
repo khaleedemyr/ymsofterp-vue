@@ -93,6 +93,17 @@ class GuestCommentFormController extends Controller
 
         $forms = $query->paginate(15)->withQueryString();
 
+        $forms->getCollection()->transform(function (GuestCommentForm $form) {
+            $form->setAttribute(
+                'image_url',
+                $form->image_path
+                    ? Storage::disk('public')->url($form->image_path)
+                    : null
+            );
+
+            return $form;
+        });
+
         $outlets = $canChooseOutlet
             ? Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet'])
             : collect();

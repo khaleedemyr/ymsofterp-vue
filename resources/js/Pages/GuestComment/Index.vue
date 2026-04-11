@@ -28,11 +28,15 @@ const avatarLightboxVisible = ref(false);
 const avatarLightboxImages = ref([]);
 const avatarLightboxIndex = ref(0);
 
-function openAvatarLightbox({ src }) {
+function openImageLightbox(src) {
   if (!src) return;
   avatarLightboxImages.value = [src];
   avatarLightboxIndex.value = 0;
   avatarLightboxVisible.value = true;
+}
+
+function openAvatarLightbox({ src }) {
+  openImageLightbox(src);
 }
 
 const paginationSummary = computed(() => {
@@ -210,10 +214,11 @@ async function confirmDelete(row) {
       </p>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
-        <table class="w-full min-w-[1120px] divide-y divide-gray-200">
+        <table class="w-full min-w-[1180px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-2 sm:px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-12">No.</th>
+              <th class="px-2 py-3 text-center text-xs font-bold text-blue-700 uppercase w-[52px]">Foto</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px] w-[220px]">Rating</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
@@ -227,10 +232,28 @@ async function confirmDelete(row) {
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="10" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="11" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
+              <td class="px-1 py-3 align-middle text-center">
+                <button
+                  v-if="row.image_url"
+                  type="button"
+                  class="mx-auto block rounded-lg overflow-hidden border border-gray-200 bg-gray-50 shadow-sm ring-blue-400/60 transition hover:ring-2 focus:outline-none focus-visible:ring-2"
+                  title="Klik untuk perbesar foto formulir"
+                  @click="openImageLightbox(row.image_url)"
+                >
+                  <img
+                    :src="row.image_url"
+                    alt=""
+                    class="h-14 w-11 object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>
+                <span v-else class="text-gray-300 text-xs">—</span>
+              </td>
               <td class="px-3 py-3 min-w-0">
                 <div class="font-medium text-gray-900 break-words">{{ row.guest_name || '—' }}</div>
                 <div class="mt-1.5 text-xs text-gray-600 space-y-0.5">
