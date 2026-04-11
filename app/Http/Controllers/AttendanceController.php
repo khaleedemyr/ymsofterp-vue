@@ -1154,19 +1154,22 @@ class AttendanceController extends Controller
         try {
             $user = auth()->user();
             $search = $request->get('search', '');
+            $like = $search !== '' ? ('%' . addcslashes($search, '%_\\') . '%') : null;
 
-            // Use same approach as Purchase Order Ops (tanpa limit — semua baris yang lolos filter)
+            // leftJoin jabatan: user tanpa id_jabatan tetap ikut (inner join membuat banyak user tidak pernah muncul)
             $users = \App\Models\User::where('users.status', 'A')
-                ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+                ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
                 ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
                 ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
                 ->where('users.id', '!=', $user->id) // Not the current user
-                ->where(function($query) use ($search) {
-                    $query->where('users.nama_lengkap', 'like', "%{$search}%")
-                          ->orWhere('users.email', 'like', "%{$search}%")
-                          ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%")
-                          ->orWhere('tbl_data_divisi.nama_divisi', 'like', "%{$search}%")
-                          ->orWhere('tbl_data_outlet.nama_outlet', 'like', "%{$search}%");
+                ->when($like !== null, function ($q) use ($like) {
+                    $q->where(function ($query) use ($like) {
+                        $query->where('users.nama_lengkap', 'like', $like)
+                              ->orWhere('users.email', 'like', $like)
+                              ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', $like)
+                              ->orWhere('tbl_data_divisi.nama_divisi', 'like', $like)
+                              ->orWhere('tbl_data_outlet.nama_outlet', 'like', $like);
+                    });
                 })
                 ->where(function($q) {
                     $q->whereNull('tbl_data_jabatan.id_level') // Include users without level
