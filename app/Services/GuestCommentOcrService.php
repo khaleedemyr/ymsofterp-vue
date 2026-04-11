@@ -282,6 +282,30 @@ TXT;
     }
 
     /**
+     * Urutan model Gemini untuk OCR: primary dari .env, lalu yang masih dibuka Google untuk pengguna baru.
+     * gemini-2.0-flash sering 404 ("no longer available to new users") — fallback ke 2.5 / 1.5.
+     *
+     * @return list<string>
+     */
+    private function guestCommentGeminiModelCandidates(): array
+    {
+        $ocrModel = config('ai.guest_comment_ocr.gemini_model');
+        $primary = (is_string($ocrModel) && trim($ocrModel) !== '')
+            ? trim($ocrModel)
+            : (string) config('ai.gemini.model', 'gemini-1.5-pro');
+        $primary = $this->normalizeGeminiModelId($primary);
+
+        $fallbacks = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+        ];
+
+        return array_values(array_unique(array_filter(array_merge([$primary], $fallbacks))));
+    }
+
+    /**
      * @return array{raw_text: string, fields: array<string, mixed>}
      */
     private function extractWithGemini(string $absolutePath): array
@@ -293,10 +317,6 @@ TXT;
             return $this->emptyResult();
         }
 
-        $ocrModel = config('ai.guest_comment_ocr.gemini_model');
-        $model = (is_string($ocrModel) && trim($ocrModel) !== '')
-            ? trim($ocrModel)
-            : (string) config('ai.gemini.model', 'gemini-1.5-pro');
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
         $prepared = $this->prepareImageForVisionOcr($absolutePath);
@@ -307,8 +327,31 @@ TXT;
         }
         $b64 = base64_encode($bytes);
 
-        $userPrompt = "Ini foto formulir komentar tamu restoran. Bentuk kertas bisa beda (Inggris atau Indonesia); ikuti petunjuk varian A/B di skema. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
+        $userPrompt = "Ini foto formulir komentar tamu restoran. Bentuk kertas bisa beda (Inggris atau Indonesia); ikuti petunjuk varian A/B di skema. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT."\n\nBalas hanya satu objek JSON valid (boleh dibungkus ```json), tanpa teks lain di luar JSON.";
 
+        foreach ($this->guestCommentGeminiModelCandidates() as $model) {
+            $result = $this->geminiAttemptGuestCommentOcr($key, $model, $userPrompt, $b64, $mime, $timeout);
+            if ($result !== null) {
+                return $result;
+            }
+        }
+
+        Log::error('GuestCommentOcrService: semua model Gemini OCR gagal (404/deprecated atau tanpa jawaban).');
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * @return array{raw_text: string, fields: array<string, mixed>}|null null = coba model berikutnya
+     */
+    private function geminiAttemptGuestCommentOcr(
+        string $key,
+        string $model,
+        string $userPrompt,
+        string $b64,
+        string $mime,
+        int $timeout,
+    ): ?array {
         $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($key);
 
         $response = $this->httpClient($timeout)->post($url, [
@@ -321,30 +364,83 @@ TXT;
             'generationConfig' => [
                 'temperature' => 0.2,
                 'maxOutputTokens' => min(8192, (int) config('ai.gemini.max_tokens', 4096)),
-                'responseMimeType' => 'application/json',
             ],
         ]);
+
+        $status = $response->status();
+        $bodyRaw = $response->body();
+
+        if ($status === 404 || ($status === 400 && str_contains($bodyRaw, 'no longer available'))) {
+            Log::warning('Gemini GuestComment OCR: model tidak dipakai / deprecated, coba fallback', [
+                'model' => $model,
+                'status' => $status,
+            ]);
+
+            return null;
+        }
 
         if (! $response->successful()) {
             Log::error('Gemini GuestComment OCR HTTP error', [
                 'model' => $model,
-                'status' => $response->status(),
-                'body' => $response->body(),
+                'status' => $status,
+                'body' => $bodyRaw,
             ]);
-            throw new \RuntimeException('Gemini OCR error: '.$response->status());
+            if (in_array($status, [401, 403], true)) {
+                throw new \RuntimeException('Gemini OCR: periksa GOOGLE_GEMINI_API_KEY (HTTP '.$status.').');
+            }
+            throw new \RuntimeException('Gemini OCR error: '.$status);
         }
 
-        $candidates = $response->json('candidates');
-        if (empty($candidates)) {
-            Log::warning('Gemini GuestComment OCR: tidak ada candidates', ['body' => $response->json()]);
+        $body = $response->json();
+        $candidates = $body['candidates'] ?? null;
+        if (empty($candidates) || ! is_array($candidates)) {
+            Log::warning('Gemini GuestComment OCR: tidak ada candidates', [
+                'model' => $model,
+                'promptFeedback' => $body['promptFeedback'] ?? null,
+                'error' => $body['error'] ?? null,
+            ]);
 
-            return $this->emptyResult();
+            return null;
         }
 
-        $text = $response->json('candidates.0.content.parts.0.text') ?? '';
+        $text = $this->geminiConcatTextParts($candidates[0]['content']['parts'] ?? []);
+        if ($text === '') {
+            Log::warning('Gemini GuestComment OCR: teks kosong', ['model' => $model]);
+
+            return null;
+        }
+
         $parsed = $this->decodeJsonObject($text);
 
         return $this->buildResult($text, $parsed);
+    }
+
+    private function normalizeGeminiModelId(string $model): string
+    {
+        $model = trim($model);
+        if (str_starts_with($model, 'models/')) {
+            return substr($model, strlen('models/'));
+        }
+
+        return $model;
+    }
+
+    /**
+     * @param  array<int, mixed>  $parts
+     */
+    private function geminiConcatTextParts(array $parts): string
+    {
+        $out = [];
+        foreach ($parts as $part) {
+            if (! is_array($part)) {
+                continue;
+            }
+            if (isset($part['text']) && is_string($part['text']) && $part['text'] !== '') {
+                $out[] = $part['text'];
+            }
+        }
+
+        return trim(implode("\n", $out));
     }
 
     /**
