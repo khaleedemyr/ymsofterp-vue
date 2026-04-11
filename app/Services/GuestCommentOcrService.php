@@ -107,6 +107,75 @@ TXT;
     }
 
     /**
+     * Kecilkan gambar hanya untuk payload API (biaya vision ~proporsional piksel). Berkas di storage tidak diubah.
+     *
+     * @return array{bytes: string, mime: string}
+     */
+    private function prepareImageForVisionOcr(string $absolutePath): array
+    {
+        $raw = file_get_contents($absolutePath);
+        if ($raw === false) {
+            return ['bytes' => '', 'mime' => 'image/jpeg'];
+        }
+
+        $originalMime = mime_content_type($absolutePath) ?: 'image/jpeg';
+        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1600)));
+        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 82)));
+
+        if (! extension_loaded('gd') || ! function_exists('imagecreatefromstring')) {
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        $im = @imagecreatefromstring($raw);
+        if ($im === false) {
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        $w = imagesx($im);
+        $h = imagesy($im);
+        if ($w <= 0 || $h <= 0) {
+            imagedestroy($im);
+
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        if ($w <= $maxEdge && $h <= $maxEdge) {
+            imagedestroy($im);
+
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        if ($w >= $h) {
+            $nw = $maxEdge;
+            $nh = (int) max(1, round($h * $maxEdge / $w));
+        } else {
+            $nh = $maxEdge;
+            $nw = (int) max(1, round($w * $maxEdge / $h));
+        }
+
+        $dst = imagecreatetruecolor($nw, $nh);
+        if ($dst === false) {
+            imagedestroy($im);
+
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($im);
+
+        ob_start();
+        imagejpeg($dst, null, $quality);
+        $jpeg = ob_get_clean();
+        imagedestroy($dst);
+
+        if ($jpeg === false || $jpeg === '') {
+            return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
+    }
+
+    /**
      * @return array{raw_text: string, fields: array<string, mixed>}
      */
     private function extractWithGemini(string $absolutePath): array
@@ -121,9 +190,10 @@ TXT;
         $model = config('ai.gemini.model', 'gemini-1.5-pro');
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
-        $mime = mime_content_type($absolutePath) ?: 'image/jpeg';
-        $bytes = file_get_contents($absolutePath);
-        if ($bytes === false) {
+        $prepared = $this->prepareImageForVisionOcr($absolutePath);
+        $bytes = $prepared['bytes'];
+        $mime = $prepared['mime'];
+        if ($bytes === '') {
             return $this->emptyResult();
         }
         $b64 = base64_encode($bytes);
@@ -182,9 +252,10 @@ TXT;
         $model = config('ai.openai.model', 'gpt-4o');
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
-        $mime = mime_content_type($absolutePath) ?: 'image/jpeg';
-        $bytes = file_get_contents($absolutePath);
-        if ($bytes === false) {
+        $prepared = $this->prepareImageForVisionOcr($absolutePath);
+        $bytes = $prepared['bytes'];
+        $mime = $prepared['mime'];
+        if ($bytes === '') {
             return $this->emptyResult();
         }
         $b64 = base64_encode($bytes);
@@ -285,13 +356,14 @@ TXT;
     {
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
-        $mime = mime_content_type($absolutePath) ?: 'image/jpeg';
+        $prepared = $this->prepareImageForVisionOcr($absolutePath);
+        $bytes = $prepared['bytes'];
+        $mime = $prepared['mime'];
+        if ($bytes === '') {
+            throw new \RuntimeException('Berkas gambar tidak terbaca untuk Claude OCR.');
+        }
         if (! preg_match('#^image/(jpeg|png|gif|webp)$#', $mime)) {
             $mime = 'image/jpeg';
-        }
-        $bytes = file_get_contents($absolutePath);
-        if ($bytes === false) {
-            throw new \RuntimeException('Berkas gambar tidak terbaca untuk Claude OCR.');
         }
         $b64 = base64_encode($bytes);
 
