@@ -7,15 +7,14 @@ const props = defineProps({
   imageUrl: String,
 });
 
-const ratingLabels = {
-  poor: 'Buruk',
-  average: 'Cukup',
-  good: 'Baik',
-  excellent: 'Sangat baik',
-};
-
+/** Sama dengan formulir kertas: Poor, Average, Good, Excellent */
 function r(v) {
-  return v ? (ratingLabels[v] || v) : '—';
+  if (!v) return '—';
+  const s = String(v).toLowerCase();
+  if (['poor', 'average', 'good', 'excellent'].includes(s)) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  return v;
 }
 </script>
 

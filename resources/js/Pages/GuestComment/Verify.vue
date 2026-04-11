@@ -10,12 +10,11 @@ const props = defineProps({
   readOnly: Boolean,
 });
 
-const ratingLabels = {
-  poor: 'Buruk',
-  average: 'Cukup',
-  good: 'Baik',
-  excellent: 'Sangat baik',
-};
+/** Sama dengan kolom di formulir kertas (English). */
+function ratingOptionLabel(opt) {
+  if (!opt) return '';
+  return opt.charAt(0).toUpperCase() + opt.slice(1);
+}
 
 const f = useForm({
   rating_service: props.form.rating_service || '',
@@ -78,7 +77,7 @@ function save() {
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">{{ key.replace('rating_', '').replace('_', ' ') }}</label>
                 <select v-model="f[key]" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly">
                   <option value="">—</option>
-                  <option v-for="opt in ratingOptions" :key="opt" :value="opt">{{ ratingLabels[opt] || opt }}</option>
+                  <option v-for="opt in ratingOptions" :key="opt" :value="opt">{{ ratingOptionLabel(opt) }}</option>
                 </select>
               </div>
             </template>
