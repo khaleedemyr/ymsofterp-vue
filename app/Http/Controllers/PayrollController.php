@@ -122,42 +122,153 @@ class PayrollController extends Controller
         return response()->json(['success' => true, 'message' => 'Data payroll berhasil disimpan']);
     }
 
+    /**
+     * Normalisasi teks header Excel untuk mapping kolom import.
+     */
+    private function normalizePayrollHeader(?string $h): string
+    {
+        $h = strtoupper(trim(preg_replace('/\s+/', ' ', (string) $h)));
+        $h = preg_replace('/\s*\([^)]*\)\s*/', '', $h);
+
+        return trim($h);
+    }
+
+    /**
+     * Map header label -> key payroll; null = kolom informasi saja (abaikan saat import nilai).
+     */
+    private function payrollHeaderToFieldKey(string $normalized): ?string
+    {
+        $map = [
+            'NIK' => 'nik',
+            'NAMA KARYAWAN' => null,
+            'NAMA' => null,
+            'JABATAN' => null,
+            'POINT' => null,
+            'GAJI' => 'gaji',
+            'TUNJANGAN' => 'tunjangan',
+            'OT' => 'ot',
+            'UM' => 'um',
+            'PH' => 'ph',
+            'SC' => 'sc',
+            'BPJS JKN' => 'bpjs_jkn',
+            'BPJS TK' => 'bpjs_tk',
+            'L&B' => 'lb',
+            'L & B' => 'lb',
+            'LB' => 'lb',
+            'DEVIASI' => 'deviasi',
+            'CITY LEDGER' => 'city_ledger',
+            // Template lama (import tetap bisa jika header ini ada)
+            'OUTLET' => null,
+            'DIVISI' => null,
+        ];
+
+        return array_key_exists($normalized, $map) ? $map[$normalized] : null;
+    }
+
+    private function payrollExcelBool($cell): int
+    {
+        if ($cell === null || $cell === '') {
+            return 0;
+        }
+        if (is_numeric($cell)) {
+            return (float) $cell != 0.0 ? 1 : 0;
+        }
+        $v = strtoupper(trim((string) $cell));
+
+        return in_array($v, ['1', 'Y', 'YES', 'TRUE', 'YA', 'X', 'V'], true) ? 1 : 0;
+    }
+
+    private function payrollExcelNumber($cell): int|string
+    {
+        if ($cell === null || $cell === '') {
+            return 0;
+        }
+        if (is_numeric($cell)) {
+            return (int) round((float) $cell);
+        }
+        $s = preg_replace('/[^\d.-]/', '', (string) $cell);
+
+        return $s === '' || $s === '-' ? 0 : (int) round((float) $s);
+    }
+
+    /**
+     * User + jabatan + point sama seperti halaman Master Payroll (filter outlet/divisi).
+     */
+    private function usersForPayrollMaster(?string $outletId, ?string $divisionId)
+    {
+        $userQuery = User::query()->where('status', 'A');
+        if ($outletId) {
+            $userQuery->where('id_outlet', $outletId);
+        }
+        if ($divisionId) {
+            $userQuery->where('division_id', $divisionId);
+        }
+        if (! $outletId && ! $divisionId) {
+            return collect();
+        }
+        $users = $userQuery->orderBy('nama_lengkap')->get(['id', 'nama_lengkap', 'nik', 'id_jabatan']);
+        $jabatanLevels = DB::table('tbl_data_jabatan')->pluck('id_level', 'id_jabatan');
+        $levelPoints = DB::table('tbl_data_level')->pluck('nilai_point', 'id');
+        $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
+        foreach ($users as $u) {
+            $u->jabatan = $jabatans[$u->id_jabatan] ?? '-';
+            $userLevel = $jabatanLevels[$u->id_jabatan] ?? null;
+            $u->point = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
+        }
+
+        return $users;
+    }
+
     public function downloadTemplate(Request $request)
     {
-        // Ambil semua user aktif
-        $users = \App\Models\User::where('status', 'A')
-            ->orderBy('nama_lengkap')
-            ->get();
-        $jabatans = \DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
-        $outlets = \DB::table('tbl_data_outlet')->pluck('nama_outlet', 'id_outlet');
-        $divisis = \DB::table('tbl_data_divisi')->pluck('nama_divisi', 'id');
+        $outletId = $request->input('outlet_id');
+        $divisionId = $request->input('division_id');
+
+        $users = $this->usersForPayrollMaster($outletId, $divisionId);
 
         // Pakai PhpSpreadsheet
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
-        // Instruksi pengisian
-        $sheet->setCellValue('A1', 'INSTRUKSI PENGISIAN:');
-        $sheet->setCellValue('A2', '1. Kolom identitas (NIK, Nama, Jabatan, Outlet, Divisi) tidak perlu diubah.');
-        $sheet->setCellValue('A3', '2. Kolom nominal (GAJI, TUNJANGAN) diisi angka tanpa pemisah ribuan.');
-        $sheet->setCellValue('A4', '3. Kolom centang (OT, UM, PH, SC, BPJS JKN, BPJS TK, L&B) diisi 1 (ya) atau 0 (tidak).');
-        $sheet->setCellValue('A5', '4. Jangan mengubah urutan/format kolom.');
-        $sheet->setCellValue('A6', '5. Setelah diisi, upload kembali file ini ke sistem.');
+        $outletLabel = $outletId ? (DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet') ?? '-') : '-';
+        $divisiLabel = $divisionId ? (DB::table('tbl_data_divisi')->where('id', $divisionId)->value('nama_divisi') ?? '-') : '-';
 
-        // Header kolom
-        $header = ['NIK', 'Nama', 'Jabatan', 'Outlet', 'Divisi', 'GAJI', 'TUNJANGAN', 'OT', 'UM', 'PH', 'SC', 'BPJS JKN', 'BPJS TK', 'L&B'];
+        // Instruksi pengisian (sama urutan kolom dengan tabel Master Payroll)
+        $sheet->setCellValue('A1', 'INSTRUKSI PENGISIAN:');
+        $sheet->setCellValue('A2', '1. Kolom identitas (NIK, Nama Karyawan, Jabatan, Point) tidak perlu diubah.');
+        $sheet->setCellValue('A3', '2. Filter aktif — Outlet: '.$outletLabel.' | Divisi: '.$divisiLabel.'. Upload hanya untuk kombinasi filter yang sama.');
+        $sheet->setCellValue('A4', '3. Kolom nominal (GAJI, TUNJANGAN) diisi angka; boleh tanpa pemisah ribuan.');
+        $sheet->setCellValue('A5', '4. Kolom flag (OT, UM, PH, SC, BPJS JKN, BPJS TK, L&B, Deviasi, City Ledger) diisi 1 (ya) atau 0 (tidak).');
+        $sheet->setCellValue('A6', '5. Jangan mengubah urutan baris/kolom header. Setelah diisi, upload dari halaman Master Payroll dengan outlet & divisi yang sama.');
+
+        // Header kolom — selaras dengan resources/js/Pages/Payroll/Master.vue
+        $header = [
+            'NIK',
+            'Nama Karyawan',
+            'Jabatan',
+            'Point',
+            'GAJI (EARN)',
+            'TUNJANGAN (EARN)',
+            'OT (EARN)',
+            'UM (EARN)',
+            'PH (EARN)',
+            'SC (EARN)',
+            'BPJS JKN (DEDUCTION)',
+            'BPJS TK (DEDUCTION)',
+            'L&B (DEDUCTION)',
+            'Deviasi (DEDUCTION)',
+            'City Ledger (DEDUCTION)',
+        ];
         $sheet->fromArray($header, null, 'A8');
 
-        // Data karyawan
         $rows = [];
         foreach ($users as $u) {
             $rows[] = [
                 $u->nik,
                 $u->nama_lengkap,
-                $jabatans[$u->id_jabatan] ?? '-',
-                $outlets[$u->id_outlet] ?? '-',
-                $divisis[$u->division_id] ?? '-',
-                '', '', '', '', '', '', '', '', ''
+                $u->jabatan,
+                $u->point,
+                '', '', '', '', '', '', '', '', '', '', '',
             ];
         }
         $sheet->fromArray($rows, null, 'A9');
@@ -177,75 +288,153 @@ class PayrollController extends Controller
     {
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls',
+            'outlet_id' => 'required|integer',
+            'division_id' => 'nullable',
         ]);
+
+        $filterOutletId = (int) $request->input('outlet_id');
+        $divisionRaw = $request->input('division_id');
+        $filterDivisionId = ($divisionRaw === null || $divisionRaw === '' || (int) $divisionRaw === 0) ? 0 : (int) $divisionRaw;
+
         $file = $request->file('file');
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getPathname());
         $sheet = $spreadsheet->getActiveSheet();
         $rows = $sheet->toArray(null, true, true, true);
-        // Cari baris header (kolom NIK)
-        $headerRow = 0;
+
+        $headerRowKey = null;
         foreach ($rows as $i => $row) {
-            if (isset($row['A']) && strtoupper(trim($row['A'])) === 'NIK') {
-                $headerRow = $i;
-                break;
+            if (! is_array($row)) {
+                continue;
+            }
+            foreach ($row as $cell) {
+                if ($this->normalizePayrollHeader($cell) === 'NIK') {
+                    $headerRowKey = $i;
+                    break 2;
+                }
             }
         }
-        if (!$headerRow) {
+        if ($headerRowKey === null) {
             return response()->json(['success' => false, 'message' => 'Header kolom NIK tidak ditemukan di file.'], 422);
         }
-        $dataRows = array_slice($rows, $headerRow + 1);
-        $niks = array_column($dataRows, 'A');
-        // Ambil semua user aktif yang NIK-nya ada di file
-        $users = \App\Models\User::where('status', 'A')
-            ->whereIn('nik', $niks)
-            ->get()->keyBy('nik');
-        $success = 0; $failed = 0; $failMsg = [];
-        foreach ($dataRows as $row) {
-            $nik = trim($row['A'] ?? '');
-            $outletName = trim($row['D'] ?? '');
-            $divisionName = trim($row['E'] ?? '');
-            if (!$nik || !isset($users[$nik])) {
-                $failed++;
-                $failMsg[] = "NIK $nik tidak ditemukan di sistem.";
+
+        $headerCells = $rows[$headerRowKey];
+        $fieldToCol = [];
+        $outletCol = null;
+        $divisiCol = null;
+        foreach ($headerCells as $colLetter => $label) {
+            $n = $this->normalizePayrollHeader($label ?? '');
+            if ($n === '') {
                 continue;
             }
-            $user = $users[$nik];
-            // Mapping nama outlet/divisi ke id
-            $outletId = \DB::table('tbl_data_outlet')->where('nama_outlet', $outletName)->value('id_outlet');
-            $divisionId = \DB::table('tbl_data_divisi')->where('nama_divisi', $divisionName)->value('id');
-            if (!$outletId || !$divisionId) {
-                $failed++;
-                $failMsg[] = "Outlet/Divisi tidak ditemukan untuk NIK $nik (Outlet: $outletName, Divisi: $divisionName).";
+            if ($n === 'OUTLET') {
+                $outletCol = $colLetter;
                 continue;
             }
+            if ($n === 'DIVISI') {
+                $divisiCol = $colLetter;
+                continue;
+            }
+            $fk = $this->payrollHeaderToFieldKey($n);
+            if ($fk !== null) {
+                $fieldToCol[$fk] = $colLetter;
+            }
+        }
+
+        if (! isset($fieldToCol['nik'])) {
+            return response()->json(['success' => false, 'message' => 'Kolom NIK tidak ditemukan pada baris header.'], 422);
+        }
+
+        $legacyOutletDivisi = $outletCol !== null && $divisiCol !== null;
+
+        $dataRowKeys = array_filter(array_keys($rows), fn ($k) => $k > $headerRowKey);
+        $success = 0;
+        $failed = 0;
+        $failMsg = [];
+
+        foreach ($dataRowKeys as $rk) {
+            $row = $rows[$rk];
+            if (! is_array($row)) {
+                continue;
+            }
+            $nik = trim((string) ($row[$fieldToCol['nik']] ?? ''));
+            if ($nik === '') {
+                continue;
+            }
+
+            $user = User::where('status', 'A')->where('nik', $nik)->first();
+            if (! $user) {
+                $failed++;
+                $failMsg[] = "NIK {$nik} tidak ditemukan di sistem.";
+
+                continue;
+            }
+
+            if ($legacyOutletDivisi) {
+                $outletName = trim((string) ($row[$outletCol] ?? ''));
+                $divisionName = trim((string) ($row[$divisiCol] ?? ''));
+                $rowOutletId = DB::table('tbl_data_outlet')->where('nama_outlet', $outletName)->value('id_outlet');
+                $rowDivisionId = DB::table('tbl_data_divisi')->where('nama_divisi', $divisionName)->value('id');
+                if (! $rowOutletId || ! $rowDivisionId) {
+                    $failed++;
+                    $failMsg[] = "Outlet/Divisi tidak ditemukan untuk NIK {$nik} (Outlet: {$outletName}, Divisi: {$divisionName}).";
+
+                    continue;
+                }
+                $effectiveOutletId = (int) $rowOutletId;
+                $effectiveDivisionId = (int) $rowDivisionId;
+            } else {
+                if ($filterOutletId && (int) $user->id_outlet !== $filterOutletId) {
+                    $failed++;
+                    $failMsg[] = "NIK {$nik} tidak termasuk outlet yang dipilih di filter.";
+
+                    continue;
+                }
+                if ($filterDivisionId && (int) $user->division_id !== $filterDivisionId) {
+                    $failed++;
+                    $failMsg[] = "NIK {$nik} tidak termasuk divisi yang dipilih di filter.";
+
+                    continue;
+                }
+                $effectiveOutletId = $filterOutletId;
+                $effectiveDivisionId = $filterDivisionId;
+            }
+
+            $payload = [
+                'gaji' => isset($fieldToCol['gaji']) ? $this->payrollExcelNumber($row[$fieldToCol['gaji']] ?? null) : 0,
+                'tunjangan' => isset($fieldToCol['tunjangan']) ? $this->payrollExcelNumber($row[$fieldToCol['tunjangan']] ?? null) : 0,
+                'ot' => isset($fieldToCol['ot']) ? $this->payrollExcelBool($row[$fieldToCol['ot']] ?? null) : 0,
+                'um' => isset($fieldToCol['um']) ? $this->payrollExcelBool($row[$fieldToCol['um']] ?? null) : 0,
+                'ph' => isset($fieldToCol['ph']) ? $this->payrollExcelBool($row[$fieldToCol['ph']] ?? null) : 0,
+                'sc' => isset($fieldToCol['sc']) ? $this->payrollExcelBool($row[$fieldToCol['sc']] ?? null) : 0,
+                'bpjs_jkn' => isset($fieldToCol['bpjs_jkn']) ? $this->payrollExcelBool($row[$fieldToCol['bpjs_jkn']] ?? null) : 0,
+                'bpjs_tk' => isset($fieldToCol['bpjs_tk']) ? $this->payrollExcelBool($row[$fieldToCol['bpjs_tk']] ?? null) : 0,
+                'lb' => isset($fieldToCol['lb']) ? $this->payrollExcelBool($row[$fieldToCol['lb']] ?? null) : 0,
+                'deviasi' => isset($fieldToCol['deviasi']) ? $this->payrollExcelBool($row[$fieldToCol['deviasi']] ?? null) : 0,
+                'city_ledger' => isset($fieldToCol['city_ledger']) ? $this->payrollExcelBool($row[$fieldToCol['city_ledger']] ?? null) : 0,
+                'updated_at' => now(),
+            ];
+
             try {
-                \DB::table('payroll_master')->updateOrInsert(
+                DB::table('payroll_master')->updateOrInsert(
                     [
                         'user_id' => $user->id,
-                        'outlet_id' => $outletId,
-                        'division_id' => $divisionId,
+                        'outlet_id' => $effectiveOutletId,
+                        'division_id' => $effectiveDivisionId,
                     ],
-                    [
-                        'gaji' => $row['F'] ?? 0,
-                        'tunjangan' => $row['G'] ?? 0,
-                        'ot' => !empty($row['H']) ? 1 : 0,
-                        'um' => !empty($row['I']) ? 1 : 0,
-                        'ph' => !empty($row['J']) ? 1 : 0,
-                        'sc' => !empty($row['K']) ? 1 : 0,
-                        'bpjs_jkn' => !empty($row['L']) ? 1 : 0,
-                        'bpjs_tk' => !empty($row['M']) ? 1 : 0,
-                        'lb' => !empty($row['N']) ? 1 : 0,
-                        'updated_at' => now(),
-                    ]
+                    $payload
                 );
                 $success++;
             } catch (\Exception $e) {
                 $failed++;
-                $failMsg[] = "NIK $nik gagal: " . $e->getMessage();
+                $failMsg[] = "NIK {$nik} gagal: ".$e->getMessage();
             }
         }
-        $msg = "Import selesai. Berhasil: $success, Gagal: $failed.";
-        if ($failed) $msg .= "\n" . implode("\n", $failMsg);
-        return response()->json(['success' => $failed == 0, 'message' => $msg]);
+
+        $msg = "Import selesai. Berhasil: {$success}, Gagal: {$failed}.";
+        if ($failed) {
+            $msg .= "\n".implode("\n", $failMsg);
+        }
+
+        return response()->json(['success' => $failed === 0, 'message' => $msg]);
     }
 } 
