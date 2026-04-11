@@ -246,7 +246,43 @@ TXT;
             return $this->emptyResult();
         }
 
-        $model = config('ai.claude.model', 'claude-haiku-4-5-20251001');
+        $configured = (string) config('ai.claude.model', 'claude-haiku-4-5-20251001');
+        $fallbacks = [
+            'claude-haiku-4-5-20251001',
+            'claude-3-5-haiku-20241022',
+            'claude-3-haiku-20240307',
+        ];
+        $models = array_values(array_unique(array_filter(array_merge([$configured], $fallbacks))));
+
+        $lastException = null;
+        foreach ($models as $model) {
+            try {
+                return $this->extractWithClaudeModel($absolutePath, $model, $key);
+            } catch (\Throwable $e) {
+                $lastException = $e;
+                Log::warning('GuestCommentOcrService: Claude OCR model gagal, coba berikutnya', [
+                    'model' => $model,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($lastException) {
+            Log::error('GuestCommentOcrService: semua model Claude OCR gagal', [
+                'message' => $lastException->getMessage(),
+            ]);
+        }
+
+        return $this->emptyResult();
+    }
+
+    /**
+     * Satu percobaan Messages API (vision) dengan model tertentu.
+     *
+     * @return array{raw_text: string, fields: array<string, mixed>}
+     */
+    private function extractWithClaudeModel(string $absolutePath, string $model, string $key): array
+    {
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
         $mime = mime_content_type($absolutePath) ?: 'image/jpeg';
@@ -255,7 +291,7 @@ TXT;
         }
         $bytes = file_get_contents($absolutePath);
         if ($bytes === false) {
-            return $this->emptyResult();
+            throw new \RuntimeException('Berkas gambar tidak terbaca untuk Claude OCR.');
         }
         $b64 = base64_encode($bytes);
 
@@ -272,16 +308,16 @@ TXT;
                     'role' => 'user',
                     'content' => [
                         [
+                            'type' => 'text',
+                            'text' => $userPrompt,
+                        ],
+                        [
                             'type' => 'image',
                             'source' => [
                                 'type' => 'base64',
                                 'media_type' => $mime,
                                 'data' => $b64,
                             ],
-                        ],
-                        [
-                            'type' => 'text',
-                            'text' => $userPrompt,
                         ],
                     ],
                 ],
@@ -297,6 +333,7 @@ TXT;
 
         if (! $response->successful()) {
             Log::error('Claude GuestComment OCR HTTP error', [
+                'model' => $model,
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
@@ -304,19 +341,45 @@ TXT;
         }
 
         $data = $response->json();
-        $text = $data['content'][0]['text'] ?? '';
+        $text = $this->claudeAssistantTextFromResponse(is_array($data) ? $data : []);
         if ($text === '') {
             throw new \RuntimeException('Jawaban Claude kosong.');
         }
 
-        $inputTokens = $data['usage']['input_tokens'] ?? (int) (strlen($b64) / 4);
-        $outputTokens = $data['usage']['output_tokens'] ?? (int) (strlen($text) / 4);
-        $cost = $this->budgetService->calculateCost('claude', $inputTokens, $outputTokens);
-        $this->budgetService->logUsage('claude', 'guest_comment_ocr', $inputTokens, $outputTokens, $cost['total_cost_usd'], $cost['total_cost_rupiah']);
+        $inputTokens = (int) ($data['usage']['input_tokens'] ?? 0);
+        $outputTokens = (int) ($data['usage']['output_tokens'] ?? 0);
+        if ($inputTokens > 0 || $outputTokens > 0) {
+            $cost = $this->budgetService->calculateCost('claude', $inputTokens, $outputTokens);
+            $this->budgetService->logUsage('claude', 'guest_comment_ocr', $inputTokens, $outputTokens, $cost['total_cost_usd'], $cost['total_cost_rupiah']);
+        } else {
+            Log::warning('GuestCommentOcrService: respons Claude tanpa usage tokens, biaya tidak dicatat', ['model' => $model]);
+        }
 
         $parsed = $this->decodeJsonObject($text);
 
         return $this->buildResult($text, $parsed);
+    }
+
+    /**
+     * Gabungkan semua blok type "text" (bukan hanya content[0]) untuk kompatibilitas respons multi-bagian.
+     */
+    private function claudeAssistantTextFromResponse(array $data): string
+    {
+        $content = $data['content'] ?? null;
+        if (! is_array($content)) {
+            return '';
+        }
+        $parts = [];
+        foreach ($content as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+            if (($block['type'] ?? '') === 'text' && isset($block['text']) && is_string($block['text'])) {
+                $parts[] = $block['text'];
+            }
+        }
+
+        return trim(implode("\n", $parts));
     }
 
     private function decodeJsonObject(string $text): ?array
