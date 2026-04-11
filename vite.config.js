@@ -27,7 +27,7 @@ export default defineConfig({
     },
     optimizeDeps: {
         include: ['firebase/app', 'firebase/messaging'],
-        exclude: [],
+        exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
     },
     build: {
         commonjsOptions: {

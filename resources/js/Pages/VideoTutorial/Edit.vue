@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   video: Object,
@@ -19,26 +20,80 @@ const form = ref({
 
 const errors = ref({});
 const isSubmitting = ref(false);
+const compressingVideo = ref(false);
 
-function handleVideoChange(event) {
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+function updateCompressSwal(message, ratio) {
+  const msg = document.getElementById('vt-compress-msg');
+  const bar = document.getElementById('vt-compress-bar');
+  if (msg) msg.textContent = message;
+  if (bar) bar.style.width = `${Math.min(100, Math.round(ratio * 100))}%`;
+}
+
+async function handleVideoChange(event) {
   const file = event.target.files[0];
-  if (file) {
-    // Validate file size (100MB max)
-    if (file.size > 100 * 1024 * 1024) {
-      alert('Ukuran file video maksimal 100MB');
+  if (!file) return;
+
+  const allowedTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
+  if (!allowedTypes.includes(file.type)) {
+    Swal.fire({
+      title: 'Error',
+      text: 'Tipe file video tidak didukung. Gunakan MP4, WebM, AVI, atau MOV',
+      icon: 'error',
+      confirmButtonColor: '#dc2626',
+    });
+    event.target.value = '';
+    return;
+  }
+
+  compressingVideo.value = true;
+  try {
+    let processed = file;
+    if (file.size > MAX_VIDEO_BYTES) {
+      Swal.fire({
+        title: 'Mengompres video…',
+        html: `
+          <p class="text-sm text-gray-600 mb-2">File melebihi 100 MB. Kompresi otomatis di browser.</p>
+          <p id="vt-compress-msg" class="text-sm font-medium text-gray-800">Memulai…</p>
+          <div class="w-full bg-gray-200 rounded-full h-2.5 mt-3">
+            <div id="vt-compress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-200" style="width:0%"></div>
+          </div>
+        `,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+      });
+      const { ensureVideoTutorialFileUnderMax } = await import('@/utils/videoTutorialCompress.js');
+      processed = await ensureVideoTutorialFileUnderMax(file, {
+        onProgress: ({ message, ratio }) => updateCompressSwal(message, ratio),
+      });
+      Swal.close();
+    }
+
+    if (processed.size > MAX_VIDEO_BYTES) {
+      Swal.fire({
+        title: 'Error',
+        text: 'Setelah dikompres video masih di atas 100 MB.',
+        icon: 'error',
+        confirmButtonColor: '#dc2626',
+      });
       event.target.value = '';
       return;
     }
-    
-    // Validate file type
-    const allowedTypes = ['video/mp4', 'video/webm', 'video/avi', 'video/mov'];
-    if (!allowedTypes.includes(file.type)) {
-      alert('Tipe file video tidak didukung. Gunakan MP4, WebM, AVI, atau MOV');
-      event.target.value = '';
-      return;
-    }
-    
-    form.value.video = file;
+
+    form.value.video = processed;
+  } catch (e) {
+    Swal.close();
+    Swal.fire({
+      title: 'Tidak bisa memproses video',
+      text: e?.message || String(e),
+      icon: 'error',
+      confirmButtonColor: '#dc2626',
+    });
+    event.target.value = '';
+  } finally {
+    compressingVideo.value = false;
   }
 }
 
@@ -222,14 +277,15 @@ function cancel() {
                 accept="video/mp4,video/webm,video/avi,video/mov"
                 class="hidden" 
                 id="video-upload"
+                :disabled="compressingVideo"
               />
-              <label for="video-upload" class="cursor-pointer">
+              <label for="video-upload" class="cursor-pointer" :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': compressingVideo }">
                 <i class="fa-solid fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
                 <p class="text-lg font-medium text-gray-700 mb-2">
                   {{ form.video ? form.video.name : 'Klik untuk memilih file video baru' }}
                 </p>
                 <p class="text-sm text-gray-500">
-                  MP4, WebM, AVI, atau MOV (maksimal 100MB). Kosongkan jika tidak ingin mengganti video.
+                  MP4, WebM, AVI, atau MOV — target maks. 100 MB (lebih besar dikompres otomatis). Kosongkan jika tidak ingin mengganti video.
                 </p>
               </label>
             </div>
@@ -281,7 +337,7 @@ function cancel() {
             </button>
             <button 
               type="submit" 
-              :disabled="isSubmitting"
+              :disabled="isSubmitting || compressingVideo"
               class="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <i v-if="isSubmitting" class="fa-solid fa-spinner fa-spin mr-2"></i>
