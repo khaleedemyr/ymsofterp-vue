@@ -3,6 +3,8 @@ import { ref, computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import VueEasyLightbox from 'vue-easy-lightbox';
+import GuestCommentUserAvatar from '@/Components/GuestCommentUserAvatar.vue';
 
 const props = defineProps({
   forms: Object,
@@ -21,6 +23,17 @@ const idOutlet = ref(
 );
 const dateFrom = ref(props.filters?.date_from || '');
 const dateTo = ref(props.filters?.date_to || '');
+
+const avatarLightboxVisible = ref(false);
+const avatarLightboxImages = ref([]);
+const avatarLightboxIndex = ref(0);
+
+function openAvatarLightbox({ src }) {
+  if (!src) return;
+  avatarLightboxImages.value = [src];
+  avatarLightboxIndex.value = 0;
+  avatarLightboxVisible.value = true;
+}
 
 const paginationSummary = computed(() => {
   const p = props.forms;
@@ -69,17 +82,18 @@ function ratingStarCount(v) {
 }
 
 const RATING_LABELS = [
-  { key: 'rating_service', label: 'Service' },
-  { key: 'rating_food', label: 'Food' },
-  { key: 'rating_beverage', label: 'Beverage' },
-  { key: 'rating_cleanliness', label: 'Cleanliness' },
-  { key: 'rating_staff', label: 'Staff' },
-  { key: 'rating_value', label: 'Value' },
+  { key: 'rating_service', label: 'Service', abbr: 'Svc' },
+  { key: 'rating_food', label: 'Food', abbr: 'Fd' },
+  { key: 'rating_beverage', label: 'Beverage', abbr: 'Bv' },
+  { key: 'rating_cleanliness', label: 'Cleanliness', abbr: 'Cl' },
+  { key: 'rating_staff', label: 'Staff', abbr: 'St' },
+  { key: 'rating_value', label: 'Value', abbr: 'V' },
 ];
 
 function ratingRowsForTable(row) {
-  return RATING_LABELS.map(({ key, label }) => ({
+  return RATING_LABELS.map(({ key, label, abbr }) => ({
     label,
+    abbr,
     count: ratingStarCount(row[key]),
   }));
 }
@@ -185,7 +199,7 @@ async function confirmDelete(row) {
       </div>
 
       <p class="text-xs text-gray-500 mb-2 px-1">
-        Rating: ★ 1–4 = Poor → Excellent (kosong = belum diisi).
+        Rating: Svc Service, Fd Food, Bv Beverage, Cl Cleanliness, St Staff, V Value — ★ 1–4 = Poor → Excellent (kosong = belum diisi).
       </p>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
@@ -194,7 +208,7 @@ async function confirmDelete(row) {
             <tr>
               <th class="px-2 sm:px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-12">No.</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
-              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[140px]">Rating</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px] w-[220px]">Rating</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
@@ -216,17 +230,25 @@ async function confirmDelete(row) {
                   <div v-if="!row.guest_address && !row.guest_phone" class="text-gray-400">Alamat / HP belum diisi</div>
                 </div>
               </td>
-              <td class="px-3 py-3 min-w-0">
-                <ul class="space-y-0.5 text-[11px] leading-snug text-gray-800">
-                  <li v-for="r in ratingRowsForTable(row)" :key="r.label" class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-gray-500 shrink-0 w-[4.75rem]">{{ r.label }}</span>
-                    <span class="text-gray-400">=</span>
-                    <span v-if="r.count > 0" class="inline-flex items-center gap-px text-amber-500" :aria-label="`${r.count} bintang`">
-                      <i v-for="n in r.count" :key="n" class="fa-solid fa-star text-[9px] sm:text-[10px]" aria-hidden="true"></i>
+              <td class="px-3 py-3 min-w-0 align-top">
+                <div
+                  class="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] leading-tight text-gray-800 max-w-[14rem]"
+                  role="list"
+                  :aria-label="'Rating tamu'"
+                >
+                  <div
+                    v-for="r in ratingRowsForTable(row)"
+                    :key="r.label"
+                    class="flex items-center gap-1 min-w-0"
+                    role="listitem"
+                  >
+                    <span class="text-gray-500 shrink-0 font-medium" :title="r.label">{{ r.abbr }}</span>
+                    <span v-if="r.count > 0" class="inline-flex items-center gap-px text-amber-500" :aria-label="`${r.label}: ${r.count} bintang`">
+                      <i v-for="n in r.count" :key="n" class="fa-solid fa-star text-[8px]" aria-hidden="true"></i>
                     </span>
                     <span v-else class="text-gray-300">—</span>
-                  </li>
-                </ul>
+                  </div>
+                </div>
               </td>
               <td class="px-3 py-3 min-w-0">
                 <p
@@ -246,17 +268,34 @@ async function confirmDelete(row) {
                 </span>
               </td>
               <td class="px-3 py-3 text-sm text-gray-800 min-w-0">
-                <div class="font-medium text-gray-900 break-words">{{ row.creator?.nama_lengkap || '—' }}</div>
-                <div class="mt-1 text-[11px] text-gray-500 leading-snug">
-                  <span class="text-gray-400">Dibuat:</span>
-                  {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
+                <div class="flex gap-2 min-w-0">
+                  <GuestCommentUserAvatar
+                    v-if="row.creator"
+                    :user="row.creator"
+                    size-class="w-9 h-9 sm:w-10 sm:h-10"
+                    @preview="openAvatarLightbox"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <div class="font-medium text-gray-900 break-words">{{ row.creator?.nama_lengkap || '—' }}</div>
+                    <div class="mt-1 text-[11px] text-gray-500 leading-snug">
+                      <span class="text-gray-400">Dibuat:</span>
+                      {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
+                    </div>
+                  </div>
                 </div>
                 <template v-if="row.status === 'verified' && row.verifier">
-                  <div class="mt-1.5 text-[11px] leading-snug border-t border-gray-100 pt-1.5">
-                    <span class="text-gray-400">Verifikasi:</span>
-                    <span class="font-medium text-gray-800">{{ row.verifier.nama_lengkap }}</span>
-                    <div v-if="row.verified_at" class="text-gray-500 mt-0.5">
-                      {{ new Date(row.verified_at).toLocaleString('id-ID') }}
+                  <div class="mt-2 flex gap-2 min-w-0 text-[11px] leading-snug border-t border-gray-100 pt-2">
+                    <GuestCommentUserAvatar
+                      :user="row.verifier"
+                      size-class="w-9 h-9 sm:w-10 sm:h-10"
+                      @preview="openAvatarLightbox"
+                    />
+                    <div class="min-w-0 flex-1">
+                      <span class="text-gray-400">Verifikasi:</span>
+                      <span class="font-medium text-gray-800">{{ row.verifier.nama_lengkap }}</span>
+                      <div v-if="row.verified_at" class="text-gray-500 mt-0.5">
+                        {{ new Date(row.verified_at).toLocaleString('id-ID') }}
+                      </div>
                     </div>
                   </div>
                 </template>
@@ -316,6 +355,13 @@ async function confirmDelete(row) {
           />
         </template>
       </div>
+
+      <VueEasyLightbox
+        :visible="avatarLightboxVisible"
+        :imgs="avatarLightboxImages"
+        :index="avatarLightboxIndex"
+        @hide="avatarLightboxVisible = false"
+      />
     </div>
   </AppLayout>
 </template>

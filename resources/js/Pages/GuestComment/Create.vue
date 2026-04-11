@@ -32,7 +32,12 @@ async function startCamera() {
       return;
     }
     const s = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1080 },
+        height: { ideal: 1920 },
+        aspectRatio: { ideal: 210 / 297 },
+      },
       audio: false,
     });
     stream.value = s;
@@ -60,24 +65,50 @@ function setMode(m) {
   }
 }
 
+/** Crop sumber video agar sama dengan area terlihat (object-cover di kotak potret). */
+function getVideoCoverCrop(video) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const cw = video.clientWidth;
+  const ch = video.clientHeight;
+  if (!vw || !vh || !cw || !ch) return null;
+  const scale = Math.max(cw / vw, ch / vh);
+  const sw = cw / scale;
+  const sh = ch / scale;
+  const sx = (vw - sw) / 2;
+  const sy = (vh - sh) / 2;
+  return { sx, sy, sw, sh };
+}
+
 function captureFromCamera() {
   const video = videoRef.value;
   if (!video || !stream.value || video.readyState < 2) {
     cameraError.value = 'Tunggu kamera siap, lalu coba lagi.';
     return;
   }
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  if (!w || !h) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) {
     cameraError.value = 'Video belum siap.';
     return;
   }
+  const crop = getVideoCoverCrop(video);
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  ctx.drawImage(video, 0, 0, w, h);
+
+  if (crop) {
+    const outW = Math.max(1, Math.round(crop.sw));
+    const outH = Math.max(1, Math.round(crop.sh));
+    canvas.width = outW;
+    canvas.height = outH;
+    ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, outW, outH);
+  } else {
+    canvas.width = vw;
+    canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
+  }
+
   canvas.toBlob(
     (blob) => {
       if (!blob) {
@@ -113,7 +144,7 @@ onUnmounted(() => {
 
 <template>
   <AppLayout>
-    <div class="w-full py-8 px-4 max-w-xl mx-auto">
+    <div class="w-full py-8 px-4 max-w-xl mx-auto" :class="{ 'max-w-2xl': mode === 'camera' }">
       <div class="mb-6">
         <Link :href="route('guest-comment-forms.index')" class="text-blue-600 hover:underline text-sm font-semibold">
           ← Kembali ke daftar
@@ -160,10 +191,16 @@ onUnmounted(() => {
 
         <template v-else>
           <p class="text-sm font-semibold text-gray-700 mb-2">Pratinjau kamera</p>
-          <div class="relative rounded-xl overflow-hidden bg-black aspect-[4/3] max-h-[360px]">
+          <p class="text-xs text-gray-500 mb-2">
+            Bingkai potret mirip kertas A4 — sesuaikan jarak dan sudut kamera. Foto yang diunggah = area pratinjau (bukan seluruh sensor).
+          </p>
+          <div
+            class="relative mx-auto w-full max-w-[min(100%,380px)] overflow-hidden rounded-xl bg-black shadow-inner"
+            style="aspect-ratio: 210 / 297; max-height: min(82vh, 780px)"
+          >
             <video
               ref="videoRef"
-              class="w-full h-full object-cover"
+              class="h-full w-full object-cover"
               playsinline
               muted
               autoplay

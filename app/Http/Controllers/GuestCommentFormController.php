@@ -44,8 +44,8 @@ class GuestCommentFormController extends Controller
 
         $query = GuestCommentForm::query()
             ->with([
-                'creator:id,nama_lengkap',
-                'verifier:id,nama_lengkap',
+                'creator:id,nama_lengkap,avatar',
+                'verifier:id,nama_lengkap,avatar',
                 'outlet:id_outlet,nama_outlet',
             ])
             ->orderByDesc('created_at');
@@ -182,7 +182,7 @@ class GuestCommentFormController extends Controller
     {
         $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
 
-        $guest_comment_form->load(['creator:id,nama_lengkap', 'verifier:id,nama_lengkap', 'outlet:id_outlet,nama_outlet']);
+        $guest_comment_form->load(['creator:id,nama_lengkap,avatar', 'verifier:id,nama_lengkap,avatar', 'outlet:id_outlet,nama_outlet']);
 
         return Inertia::render('GuestComment/Show', [
             'form' => $guest_comment_form,
@@ -194,7 +194,7 @@ class GuestCommentFormController extends Controller
     {
         $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
 
-        $guest_comment_form->load(['creator:id,nama_lengkap', 'verifier:id,nama_lengkap', 'outlet:id_outlet,nama_outlet']);
+        $guest_comment_form->load(['creator:id,nama_lengkap,avatar', 'verifier:id,nama_lengkap,avatar', 'outlet:id_outlet,nama_outlet']);
 
         $userOutletId = (int) ($request->user()->id_outlet ?? 0);
         $canChooseOutlet = ($userOutletId === 1);

@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link } from '@inertiajs/vue3';
+import VueEasyLightbox from 'vue-easy-lightbox';
+import GuestCommentUserAvatar from '@/Components/GuestCommentUserAvatar.vue';
 
 const props = defineProps({
   form: Object,
@@ -11,6 +13,17 @@ const props = defineProps({
 const lightboxOpen = ref(false);
 const zoom = ref(1);
 const lbNatural = ref({ w: 0, h: 0 });
+
+const avatarLightboxVisible = ref(false);
+const avatarLightboxImages = ref([]);
+const avatarLightboxIndex = ref(0);
+
+function openAvatarLightbox({ src }) {
+  if (!src) return;
+  avatarLightboxImages.value = [src];
+  avatarLightboxIndex.value = 0;
+  avatarLightboxVisible.value = true;
+}
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 6;
@@ -131,21 +144,37 @@ function r(v) {
           {{ form.status === 'verified' ? 'Terverifikasi' : 'Menunggu verifikasi' }}
         </span>
       </p>
-      <div class="text-sm text-gray-700 mb-6 space-y-1 border-l-4 border-blue-200 pl-4 py-2 bg-blue-50/50 rounded-r-lg">
-        <div>
-          <span class="text-gray-500">Pencatat</span>
-          · <span class="font-medium">{{ form.creator?.nama_lengkap || '—' }}</span>
+      <div class="text-sm text-gray-700 mb-6 space-y-3 border-l-4 border-blue-200 pl-4 py-3 bg-blue-50/50 rounded-r-lg">
+        <div class="flex gap-3 items-start">
+          <GuestCommentUserAvatar
+            v-if="form.creator"
+            :user="form.creator"
+            size-class="w-11 h-11"
+            @preview="openAvatarLightbox"
+          />
+          <div>
+            <span class="text-gray-500">Pencatat</span>
+            · <span class="font-medium">{{ form.creator?.nama_lengkap || '—' }}</span>
+          </div>
         </div>
-        <div>
-          <span class="text-gray-500">Diverifikasi</span>
-          ·
-          <template v-if="form.status === 'verified'">
-            <span class="font-medium">{{ form.verifier?.nama_lengkap || '—' }}</span>
-            <span v-if="form.verified_at" class="text-gray-600">
-              · {{ new Date(form.verified_at).toLocaleString('id-ID') }}
-            </span>
-          </template>
-          <span v-else class="text-gray-400">Belum diverifikasi</span>
+        <div class="flex gap-3 items-start">
+          <GuestCommentUserAvatar
+            v-if="form.status === 'verified' && form.verifier"
+            :user="form.verifier"
+            size-class="w-11 h-11"
+            @preview="openAvatarLightbox"
+          />
+          <div>
+            <span class="text-gray-500">Diverifikasi</span>
+            ·
+            <template v-if="form.status === 'verified'">
+              <span class="font-medium">{{ form.verifier?.nama_lengkap || '—' }}</span>
+              <span v-if="form.verified_at" class="text-gray-600">
+                · {{ new Date(form.verified_at).toLocaleString('id-ID') }}
+              </span>
+            </template>
+            <span v-else class="text-gray-400">Belum diverifikasi</span>
+          </div>
         </div>
       </div>
 
@@ -248,5 +277,12 @@ function r(v) {
         </div>
       </div>
     </Teleport>
+
+    <VueEasyLightbox
+      :visible="avatarLightboxVisible"
+      :imgs="avatarLightboxImages"
+      :index="avatarLightboxIndex"
+      @hide="avatarLightboxVisible = false"
+    />
   </AppLayout>
 </template>
