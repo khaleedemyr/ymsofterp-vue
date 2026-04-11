@@ -48,8 +48,10 @@ return [
         'enabled' => env('GUEST_COMMENT_OCR_ENABLED', true),
         'timeout' => (int) env('GUEST_COMMENT_OCR_TIMEOUT', 120),
         // Turunkan piksel sebelum kirim ke API vision (file arsip di disk tidak diubah). Lebih kecil = lebih murah.
-        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1280),
-        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 78),
+        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1024),
+        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 75),
+        // true = log ke storage/logs (ukuran gambar, resize ya/tidak, token Claude) — matikan setelah cek PHP-FPM vs CLI
+        'debug_log' => env('GUEST_COMMENT_OCR_DEBUG_LOG', false),
     ],
 ];
 

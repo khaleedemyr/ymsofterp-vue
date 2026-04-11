@@ -120,28 +120,36 @@ TXT;
         }
 
         $originalMime = mime_content_type($absolutePath) ?: 'image/jpeg';
-        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1280)));
-        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 78)));
+        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1024)));
+        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 75)));
 
         $dims = @getimagesize($absolutePath);
         $w = isset($dims[0]) ? (int) $dims[0] : 0;
         $h = isset($dims[1]) ? (int) $dims[1] : 0;
 
         if ($w <= 0 || $h <= 0) {
+            $this->logVisionPayloadDebug($absolutePath, 0, 0, $maxEdge, $raw, $raw, 'passthrough_no_dimensions');
+
             return ['bytes' => $raw, 'mime' => $originalMime];
         }
 
         if ($w <= $maxEdge && $h <= $maxEdge) {
+            $this->logVisionPayloadDebug($absolutePath, $w, $h, $maxEdge, $raw, $raw, 'passthrough_under_max');
+
             return ['bytes' => $raw, 'mime' => $originalMime];
         }
 
         $jpeg = $this->downscaleImageWithGd($raw, $w, $h, $maxEdge, $quality);
         if ($jpeg !== null) {
+            $this->logVisionPayloadDebug($absolutePath, $w, $h, $maxEdge, $raw, $jpeg, 'downscaled_gd');
+
             return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
         }
 
         $jpeg = $this->downscaleImageWithImagick($raw, $maxEdge, $quality);
         if ($jpeg !== null) {
+            $this->logVisionPayloadDebug($absolutePath, $w, $h, $maxEdge, $raw, $jpeg, 'downscaled_imagick');
+
             return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
         }
 
@@ -153,8 +161,34 @@ TXT;
             'gd' => extension_loaded('gd'),
             'imagick' => extension_loaded('imagick'),
         ]);
+        $this->logVisionPayloadDebug($absolutePath, $w, $h, $maxEdge, $raw, $raw, 'full_image_no_resize_helper');
 
         return ['bytes' => $raw, 'mime' => $originalMime];
+    }
+
+    private function logVisionPayloadDebug(
+        string $absolutePath,
+        int $w,
+        int $h,
+        int $maxEdge,
+        string $bytesIn,
+        string $bytesOut,
+        string $mode,
+    ): void {
+        if (! config('ai.guest_comment_ocr.debug_log')) {
+            return;
+        }
+
+        Log::info('GuestCommentOcrService vision payload (debug)', [
+            'file' => basename($absolutePath),
+            'original_px' => $w > 0 && $h > 0 ? "{$w}x{$h}" : 'unknown',
+            'max_edge' => $maxEdge,
+            'mode' => $mode,
+            'bytes_in' => strlen($bytesIn),
+            'bytes_out' => strlen($bytesOut),
+            'php_sapi' => PHP_SAPI,
+            'gd_loaded' => extension_loaded('gd'),
+        ]);
     }
 
     /**
@@ -484,6 +518,15 @@ TXT;
             $this->budgetService->logUsage('claude', 'guest_comment_ocr', $inputTokens, $outputTokens, $cost['total_cost_usd'], $cost['total_cost_rupiah']);
         } else {
             Log::warning('GuestCommentOcrService: respons Claude tanpa usage tokens, biaya tidak dicatat', ['model' => $model]);
+        }
+
+        if (config('ai.guest_comment_ocr.debug_log')) {
+            Log::info('GuestCommentOcrService Claude usage (debug)', [
+                'model' => $model,
+                'input_tokens' => $inputTokens,
+                'output_tokens' => $outputTokens,
+                'image_bytes_to_api' => strlen($bytes),
+            ]);
         }
 
         $parsed = $this->decodeJsonObject($text);
