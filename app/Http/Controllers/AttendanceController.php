@@ -1154,8 +1154,8 @@ class AttendanceController extends Controller
         try {
             $user = auth()->user();
             $search = $request->get('search', '');
-            
-            // Use same approach as Purchase Order Ops
+
+            // Use same approach as Purchase Order Ops (tanpa limit — semua baris yang lolos filter)
             $users = \App\Models\User::where('users.status', 'A')
                 ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
                 ->leftJoin('tbl_data_divisi', 'users.division_id', '=', 'tbl_data_divisi.id')
@@ -1164,7 +1164,9 @@ class AttendanceController extends Controller
                 ->where(function($query) use ($search) {
                     $query->where('users.nama_lengkap', 'like', "%{$search}%")
                           ->orWhere('users.email', 'like', "%{$search}%")
-                          ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+                          ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%")
+                          ->orWhere('tbl_data_divisi.nama_divisi', 'like', "%{$search}%")
+                          ->orWhere('tbl_data_outlet.nama_outlet', 'like', "%{$search}%");
                 })
                 ->where(function($q) {
                     $q->whereNull('tbl_data_jabatan.id_level') // Include users without level
@@ -1172,19 +1174,12 @@ class AttendanceController extends Controller
                 })
                 ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan', 'tbl_data_divisi.nama_divisi', 'tbl_data_outlet.nama_outlet', 'tbl_data_jabatan.id_level')
                 ->orderBy('users.nama_lengkap')
-                ->limit(50)
                 ->get();
-            
-            // Debug logging
-            \Log::info('Approvers query result (with level filter)', [
+
+            \Log::debug('Approvers query result (with level filter)', [
                 'total_count' => $users->count(),
-                'user_outlet' => $user->id_outlet,
                 'search_term' => $search,
                 'user_id' => $user->id,
-                'users' => $users->toArray(),
-                'level_summary' => $users->groupBy('id_level')->map(function($group) {
-                    return $group->count();
-                })
             ]);
             
             return response()->json([

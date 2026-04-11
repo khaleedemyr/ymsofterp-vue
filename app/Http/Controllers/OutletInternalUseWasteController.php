@@ -2305,7 +2305,7 @@ class OutletInternalUseWasteController extends Controller
     public function getApprovers(Request $request)
     {
         $search = $request->get('search', '');
-        
+
         $users = User::where('users.status', 'A')
             ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
             ->where(function($query) use ($search) {
@@ -2315,7 +2315,6 @@ class OutletInternalUseWasteController extends Controller
             })
             ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
             ->orderBy('users.nama_lengkap')
-            ->limit(20)
             ->get();
         
         return response()->json(['success' => true, 'users' => $users]);
