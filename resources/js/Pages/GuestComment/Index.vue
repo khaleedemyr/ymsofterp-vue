@@ -60,26 +60,28 @@ function rowNumber(index) {
   return (page - 1) * perPage + index + 1;
 }
 
-/** Singkatan rating (Poor/Average/Good/Excellent) untuk tabel */
-const R_ABBR = { poor: 'P', average: 'A', good: 'G', excellent: 'E' };
-
-function ratingLetter(v) {
-  if (!v) return '—';
+/** 1–4 bintang: Poor / Average / Good / Excellent */
+function ratingStarCount(v) {
+  if (!v) return 0;
   const s = String(v).toLowerCase();
-  return R_ABBR[s] ?? String(v).charAt(0).toUpperCase();
+  const map = { poor: 1, average: 2, good: 3, excellent: 4 };
+  return map[s] ?? 0;
 }
 
-/** Satu baris ringkas: Sv Fd Bv Cl St V */
-function ratingsSummary(row) {
-  const parts = [
-    ['Sv', row.rating_service],
-    ['Fd', row.rating_food],
-    ['Bv', row.rating_beverage],
-    ['Cl', row.rating_cleanliness],
-    ['St', row.rating_staff],
-    ['V', row.rating_value],
-  ];
-  return parts.map(([lab, val]) => `${lab} ${ratingLetter(val)}`).join(' · ');
+const RATING_LABELS = [
+  { key: 'rating_service', label: 'Service' },
+  { key: 'rating_food', label: 'Food' },
+  { key: 'rating_beverage', label: 'Beverage' },
+  { key: 'rating_cleanliness', label: 'Cleanliness' },
+  { key: 'rating_staff', label: 'Staff' },
+  { key: 'rating_value', label: 'Value' },
+];
+
+function ratingRowsForTable(row) {
+  return RATING_LABELS.map(({ key, label }) => ({
+    label,
+    count: ratingStarCount(row[key]),
+  }));
 }
 
 async function confirmDelete(row) {
@@ -114,7 +116,7 @@ async function confirmDelete(row) {
 
 <template>
   <AppLayout>
-    <div class="w-full py-8 px-4 max-w-7xl mx-auto">
+    <div class="guest-comment-index w-full max-w-[100vw] py-6 sm:py-8 px-3 sm:px-4 lg:px-6 xl:px-8 box-border">
       <div v-if="$page.props.flash?.success" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-800 rounded-xl">
         {{ $page.props.flash.success }}
       </div>
@@ -144,15 +146,15 @@ async function confirmDelete(row) {
         Akun tidak memiliki outlet — daftar kosong.
       </div>
 
-      <div class="flex flex-wrap gap-3 mb-4 items-end">
+      <div class="flex flex-wrap gap-3 mb-4 items-end w-full">
         <input
           v-model="search"
           type="text"
           placeholder="Cari nama / telepon / komentar..."
-          class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow-sm focus:ring-2 focus:ring-blue-400"
+          class="w-full sm:w-64 min-w-0 flex-1 sm:flex-none px-4 py-2 rounded-xl border border-blue-200 shadow-sm focus:ring-2 focus:ring-blue-400"
           @keyup.enter="applyFilters"
         />
-        <select v-if="canChooseOutlet" v-model="idOutlet" class="min-w-[200px] px-4 py-2 rounded-xl border border-blue-200 shadow-sm" @change="applyFilters">
+        <select v-if="canChooseOutlet" v-model="idOutlet" class="w-full sm:w-auto min-w-[200px] px-4 py-2 rounded-xl border border-blue-200 shadow-sm" @change="applyFilters">
           <option value="">Semua outlet</option>
           <option v-for="o in outlets" :key="o.id_outlet" :value="String(o.id_outlet)">{{ o.nama_outlet }}</option>
         </select>
@@ -183,44 +185,50 @@ async function confirmDelete(row) {
       </div>
 
       <p class="text-xs text-gray-500 mb-2 px-1">
-        Kolom rating: Sv Service, Fd Food, Bv Beverage, Cl Cleanliness, St Staff, V Value — huruf
-        <span class="font-mono">P/A/G/E</span> = Poor / Average / Good / Excellent.
+        Rating: ★ 1–4 = Poor → Excellent (kosong = belum diisi).
       </p>
 
-      <div class="bg-white rounded-2xl shadow-xl overflow-x-auto">
-        <table class="w-full min-w-[1180px] divide-y divide-gray-200">
+      <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
+        <table class="w-full min-w-[900px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase w-14">No.</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Tamu</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Rating</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Komentar</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Outlet</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Status</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Pencatat</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Diverifikasi</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Dibuat</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Aksi</th>
+              <th class="px-2 sm:px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-12">No.</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[140px]">Rating</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[160px]">Pencatat</th>
+              <th class="px-2 py-3 text-center text-xs font-bold text-blue-700 uppercase w-[100px]">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="10" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="8" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
-              <td class="px-4 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
-              <td class="px-4 py-3 max-w-[240px]">
-                <div class="font-medium text-gray-900">{{ row.guest_name || '—' }}</div>
+              <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
+              <td class="px-3 py-3 min-w-0">
+                <div class="font-medium text-gray-900 break-words">{{ row.guest_name || '—' }}</div>
                 <div class="mt-1.5 text-xs text-gray-600 space-y-0.5">
                   <div v-if="row.guest_address" class="break-words">{{ row.guest_address }}</div>
                   <div v-if="row.guest_phone" class="text-gray-700">{{ row.guest_phone }}</div>
                   <div v-if="!row.guest_address && !row.guest_phone" class="text-gray-400">Alamat / HP belum diisi</div>
                 </div>
               </td>
-              <td class="px-4 py-3 text-xs text-gray-800 max-w-[220px]">
-                <div class="font-mono tracking-tight leading-relaxed">{{ ratingsSummary(row) }}</div>
+              <td class="px-3 py-3 min-w-0">
+                <ul class="space-y-0.5 text-[11px] leading-snug text-gray-800">
+                  <li v-for="r in ratingRowsForTable(row)" :key="r.label" class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-gray-500 shrink-0 w-[4.75rem]">{{ r.label }}</span>
+                    <span class="text-gray-400">=</span>
+                    <span v-if="r.count > 0" class="inline-flex items-center gap-px text-amber-500" :aria-label="`${r.count} bintang`">
+                      <i v-for="n in r.count" :key="n" class="fa-solid fa-star text-[9px] sm:text-[10px]" aria-hidden="true"></i>
+                    </span>
+                    <span v-else class="text-gray-300">—</span>
+                  </li>
+                </ul>
               </td>
-              <td class="px-4 py-3 max-w-[260px]">
+              <td class="px-3 py-3 min-w-0">
                 <p
                   class="text-sm text-gray-800 whitespace-pre-wrap break-words line-clamp-4"
                   :title="row.comment_text || ''"
@@ -228,31 +236,32 @@ async function confirmDelete(row) {
                   {{ row.comment_text || '—' }}
                 </p>
               </td>
-              <td class="px-4 py-3">{{ row.outlet?.nama_outlet || '—' }}</td>
-              <td class="px-4 py-3">
+              <td class="px-3 py-3 text-sm break-words min-w-0">{{ row.outlet?.nama_outlet || '—' }}</td>
+              <td class="px-3 py-3">
                 <span
-                  class="px-2 py-1 rounded-full text-xs font-semibold"
+                  class="inline-block px-2 py-1 rounded-full text-xs font-semibold"
                   :class="row.status === 'verified' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'"
                 >
                   {{ statusLabel(row.status) }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-800 max-w-[140px]">
-                {{ row.creator?.nama_lengkap || '—' }}
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-800 max-w-[160px]">
+              <td class="px-3 py-3 text-sm text-gray-800 min-w-0">
+                <div class="font-medium text-gray-900 break-words">{{ row.creator?.nama_lengkap || '—' }}</div>
+                <div class="mt-1 text-[11px] text-gray-500 leading-snug">
+                  <span class="text-gray-400">Dibuat:</span>
+                  {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
+                </div>
                 <template v-if="row.status === 'verified' && row.verifier">
-                  <span class="font-medium">{{ row.verifier.nama_lengkap }}</span>
-                  <span v-if="row.verified_at" class="block text-xs text-gray-500 mt-0.5">
-                    {{ new Date(row.verified_at).toLocaleString('id-ID') }}
-                  </span>
+                  <div class="mt-1.5 text-[11px] leading-snug border-t border-gray-100 pt-1.5">
+                    <span class="text-gray-400">Verifikasi:</span>
+                    <span class="font-medium text-gray-800">{{ row.verifier.nama_lengkap }}</span>
+                    <div v-if="row.verified_at" class="text-gray-500 mt-0.5">
+                      {{ new Date(row.verified_at).toLocaleString('id-ID') }}
+                    </div>
+                  </div>
                 </template>
-                <span v-else class="text-gray-400">—</span>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
-              </td>
-              <td class="px-4 py-3">
+              <td class="px-2 py-3">
                 <div class="flex flex-wrap gap-1 items-center">
                   <Link
                     v-if="row.status !== 'verified'"
