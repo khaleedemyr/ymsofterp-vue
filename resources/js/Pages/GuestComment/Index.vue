@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   forms: Object,
@@ -21,6 +22,18 @@ const idOutlet = ref(
 const dateFrom = ref(props.filters?.date_from || '');
 const dateTo = ref(props.filters?.date_to || '');
 
+const paginationSummary = computed(() => {
+  const p = props.forms;
+  if (!p?.total) return '';
+  const from = p.from ?? 0;
+  const to = p.to ?? 0;
+  let s = `Menampilkan ${from}–${to} dari ${p.total} entri`;
+  if (p.last_page > 1) {
+    s += ` · Halaman ${p.current_page} / ${p.last_page}`;
+  }
+  return s;
+});
+
 function applyFilters() {
   const q = {
     search: search.value,
@@ -38,6 +51,42 @@ function statusLabel(s) {
   if (s === 'verified') return 'Terverifikasi';
   if (s === 'pending_verification') return 'Menunggu verifikasi';
   return s || '-';
+}
+
+function rowNumber(index) {
+  const p = props.forms;
+  const page = p?.current_page ?? 1;
+  const perPage = p?.per_page ?? 15;
+  return (page - 1) * perPage + index + 1;
+}
+
+async function confirmDelete(row) {
+  const result = await Swal.fire({
+    title: 'Hapus guest comment?',
+    text: 'Data dan foto formulir akan dihapus permanen.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+  });
+  if (!result.isConfirmed) return;
+
+  router.delete(route('guest-comment-forms.destroy', row.id), {
+    preserveScroll: true,
+    onSuccess: () => {
+      Swal.fire({
+        icon: 'success',
+        title: 'Terhapus',
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    },
+    onError: () => {
+      Swal.fire({ icon: 'error', title: 'Gagal menghapus', text: 'Coba lagi atau hubungi admin.' });
+    },
+  });
 }
 </script>
 
@@ -112,23 +161,25 @@ function statusLabel(s) {
       </div>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto">
-        <table class="w-full min-w-[800px] divide-y divide-gray-200">
+        <table class="w-full min-w-[960px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">ID</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase w-14">No.</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Outlet</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Status</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Pencatat</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Diverifikasi</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Dibuat</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="6" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="8" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
-            <tr v-for="row in forms.data" :key="row.id" class="hover:bg-blue-50/50">
-              <td class="px-4 py-3 font-mono text-sm">#{{ row.id }}</td>
+            <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50">
+              <td class="px-4 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
               <td class="px-4 py-3">{{ row.guest_name || '—' }}</td>
               <td class="px-4 py-3">{{ row.outlet?.nama_outlet || '—' }}</td>
               <td class="px-4 py-3">
@@ -139,11 +190,23 @@ function statusLabel(s) {
                   {{ statusLabel(row.status) }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-sm text-gray-600">
+              <td class="px-4 py-3 text-sm text-gray-800 max-w-[140px]">
+                {{ row.creator?.nama_lengkap || '—' }}
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-800 max-w-[160px]">
+                <template v-if="row.status === 'verified' && row.verifier">
+                  <span class="font-medium">{{ row.verifier.nama_lengkap }}</span>
+                  <span v-if="row.verified_at" class="block text-xs text-gray-500 mt-0.5">
+                    {{ new Date(row.verified_at).toLocaleString('id-ID') }}
+                  </span>
+                </template>
+                <span v-else class="text-gray-400">—</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                 {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
               </td>
               <td class="px-4 py-3">
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 items-center">
                   <Link
                     v-if="row.status !== 'verified'"
                     :href="route('guest-comment-forms.verify', row.id)"
@@ -153,6 +216,13 @@ function statusLabel(s) {
                     :href="route('guest-comment-forms.show', row.id)"
                     class="text-sm font-semibold text-gray-600 hover:underline"
                   >Detail</Link>
+                  <button
+                    type="button"
+                    class="text-sm font-semibold text-red-600 hover:underline"
+                    @click="confirmDelete(row)"
+                  >
+                    Hapus
+                  </button>
                 </div>
               </td>
             </tr>
@@ -160,18 +230,22 @@ function statusLabel(s) {
         </table>
       </div>
 
-      <div v-if="forms.links?.length > 3" class="mt-4 flex flex-wrap gap-2 justify-center">
+      <div v-if="forms.total > 0" class="mt-4 text-center text-sm text-gray-600">
+        {{ paginationSummary }}
+      </div>
+
+      <div v-if="forms.last_page > 1" class="mt-3 flex flex-wrap gap-2 justify-center items-center">
         <template v-for="(link, i) in forms.links" :key="i">
           <Link
             v-if="link.url"
             :href="link.url"
-            class="px-3 py-1 rounded-lg text-sm border"
+            class="px-3 py-1.5 rounded-lg text-sm border min-w-[2.25rem] text-center"
             :class="link.active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-50 border-gray-200'"
             v-html="link.label"
           />
           <span
             v-else
-            class="px-3 py-1 rounded-lg text-sm border text-gray-400 border-gray-200"
+            class="px-3 py-1.5 rounded-lg text-sm border text-gray-400 border-gray-200 cursor-default min-w-[2.25rem] text-center"
             v-html="link.label"
           />
         </template>

@@ -72,9 +72,26 @@ function save() {
         </Link>
       </div>
 
-      <h1 class="text-2xl font-bold text-gray-800 mb-6">
+      <h1 class="text-2xl font-bold text-gray-800 mb-2">
         {{ readOnly ? 'Detail (terverifikasi)' : 'Verifikasi data guest comment' }}
       </h1>
+      <div class="text-sm text-gray-700 mb-6 space-y-1 border-l-4 border-blue-200 pl-4 py-2 bg-blue-50/50 rounded-r-lg">
+        <div>
+          <span class="text-gray-500">Pencatat</span>
+          · <span class="font-medium">{{ form.creator?.nama_lengkap || '—' }}</span>
+        </div>
+        <div>
+          <span class="text-gray-500">Diverifikasi</span>
+          ·
+          <template v-if="readOnly">
+            <span class="font-medium">{{ form.verifier?.nama_lengkap || '—' }}</span>
+            <span v-if="form.verified_at" class="text-gray-600">
+              · {{ new Date(form.verified_at).toLocaleString('id-ID') }}
+            </span>
+          </template>
+          <span v-else class="text-gray-400">Belum diverifikasi</span>
+        </div>
+      </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div class="bg-white rounded-2xl shadow-lg p-4 border border-gray-100">

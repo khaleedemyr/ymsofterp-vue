@@ -43,7 +43,11 @@ class GuestCommentFormController extends Controller
         $canChooseOutlet = ($userOutletId === 1);
 
         $query = GuestCommentForm::query()
-            ->with(['creator:id,nama_lengkap', 'outlet:id_outlet,nama_outlet'])
+            ->with([
+                'creator:id,nama_lengkap',
+                'verifier:id,nama_lengkap',
+                'outlet:id_outlet,nama_outlet',
+            ])
             ->orderByDesc('created_at');
 
         if ($canChooseOutlet) {
@@ -280,5 +284,20 @@ class GuestCommentFormController extends Controller
 
         return redirect()->route('guest-comment-forms.verify', $guest_comment_form)
             ->with('success', 'Perubahan disimpan (belum terverifikasi).');
+    }
+
+    public function destroy(Request $request, GuestCommentForm $guest_comment_form)
+    {
+        $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
+
+        $relativePath = $guest_comment_form->image_path;
+        $guest_comment_form->delete();
+
+        if ($relativePath && Storage::disk('public')->exists($relativePath)) {
+            Storage::disk('public')->delete($relativePath);
+        }
+
+        return redirect()->route('guest-comment-forms.index')
+            ->with('success', 'Data guest comment berhasil dihapus.');
     }
 }

@@ -205,6 +205,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'show'])->name('guest-comment-forms.show');
     Route::get('/guest-comment-forms/{guest_comment_form}/verify', [GuestCommentFormController::class, 'verify'])->name('guest-comment-forms.verify');
     Route::put('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'update'])->name('guest-comment-forms.update');
+    Route::delete('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'destroy'])->name('guest-comment-forms.destroy');
     
     // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
     Route::get('/api/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals'])->name('pending-approvals.all');
