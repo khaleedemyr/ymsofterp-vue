@@ -48,8 +48,8 @@ return [
         'enabled' => env('GUEST_COMMENT_OCR_ENABLED', true),
         'timeout' => (int) env('GUEST_COMMENT_OCR_TIMEOUT', 120),
         // Turunkan piksel sebelum kirim ke API vision (file arsip di disk tidak diubah). Lebih kecil = lebih murah.
-        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1600),
-        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 82),
+        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1280),
+        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 78),
     ],
 ];
 

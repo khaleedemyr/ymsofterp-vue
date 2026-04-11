@@ -108,6 +108,7 @@ TXT;
 
     /**
      * Kecilkan gambar hanya untuk payload API (biaya vision ~proporsional piksel). Berkas di storage tidak diubah.
+     * Butuh php-gd atau php-imagick; tanpa keduanya gambar penuh dikirim (mahal).
      *
      * @return array{bytes: string, mime: string}
      */
@@ -119,30 +120,55 @@ TXT;
         }
 
         $originalMime = mime_content_type($absolutePath) ?: 'image/jpeg';
-        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1600)));
-        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 82)));
+        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1280)));
+        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 78)));
 
-        if (! extension_loaded('gd') || ! function_exists('imagecreatefromstring')) {
-            return ['bytes' => $raw, 'mime' => $originalMime];
-        }
+        $dims = @getimagesize($absolutePath);
+        $w = isset($dims[0]) ? (int) $dims[0] : 0;
+        $h = isset($dims[1]) ? (int) $dims[1] : 0;
 
-        $im = @imagecreatefromstring($raw);
-        if ($im === false) {
-            return ['bytes' => $raw, 'mime' => $originalMime];
-        }
-
-        $w = imagesx($im);
-        $h = imagesy($im);
         if ($w <= 0 || $h <= 0) {
-            imagedestroy($im);
-
             return ['bytes' => $raw, 'mime' => $originalMime];
         }
 
         if ($w <= $maxEdge && $h <= $maxEdge) {
-            imagedestroy($im);
-
             return ['bytes' => $raw, 'mime' => $originalMime];
+        }
+
+        $jpeg = $this->downscaleImageWithGd($raw, $w, $h, $maxEdge, $quality);
+        if ($jpeg !== null) {
+            return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
+        }
+
+        $jpeg = $this->downscaleImageWithImagick($raw, $maxEdge, $quality);
+        if ($jpeg !== null) {
+            return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
+        }
+
+        Log::warning('GuestCommentOcrService: resize OCR tidak jalan — gambar penuh dikirim ke API (biaya vision tinggi). Aktifkan ekstensi PHP gd atau imagick.', [
+            'file' => basename($absolutePath),
+            'w' => $w,
+            'h' => $h,
+            'max_edge_config' => $maxEdge,
+            'gd' => extension_loaded('gd'),
+            'imagick' => extension_loaded('imagick'),
+        ]);
+
+        return ['bytes' => $raw, 'mime' => $originalMime];
+    }
+
+    /**
+     * @return string|null JPEG binary atau null jika gagal / tidak tersedia
+     */
+    private function downscaleImageWithGd(string $raw, int $w, int $h, int $maxEdge, int $quality): ?string
+    {
+        if (! extension_loaded('gd') || ! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+
+        $im = @imagecreatefromstring($raw);
+        if ($im === false) {
+            return null;
         }
 
         if ($w >= $h) {
@@ -157,7 +183,7 @@ TXT;
         if ($dst === false) {
             imagedestroy($im);
 
-            return ['bytes' => $raw, 'mime' => $originalMime];
+            return null;
         }
 
         imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h);
@@ -169,10 +195,43 @@ TXT;
         imagedestroy($dst);
 
         if ($jpeg === false || $jpeg === '') {
-            return ['bytes' => $raw, 'mime' => $originalMime];
+            return null;
         }
 
-        return ['bytes' => $jpeg, 'mime' => 'image/jpeg'];
+        return $jpeg;
+    }
+
+    /**
+     * @return string|null JPEG binary atau null jika gagal / tidak tersedia
+     */
+    private function downscaleImageWithImagick(string $raw, int $maxEdge, int $quality): ?string
+    {
+        if (! extension_loaded('imagick')) {
+            return null;
+        }
+
+        try {
+            $im = new \Imagick;
+            $im->readImageBlob($raw);
+            $im->setImageColorspace(\Imagick::COLORSPACE_SRGB);
+            $im->stripImage();
+            $im->setImageFormat('jpeg');
+            $im->setImageCompressionQuality($quality);
+            $im->thumbnailImage($maxEdge, $maxEdge, true);
+            $blob = $im->getImageBlob();
+            $im->clear();
+            $im->destroy();
+
+            if ($blob === false || $blob === '') {
+                return null;
+            }
+
+            return $blob;
+        } catch (\Throwable $e) {
+            Log::warning('GuestCommentOcrService: Imagick downscale gagal', ['message' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     /**
