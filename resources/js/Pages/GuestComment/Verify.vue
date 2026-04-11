@@ -182,7 +182,7 @@ function save() {
             </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Dari mana mengetahui outlet (marketing)</label>
-              <input v-model="f.marketing_source" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="Contoh: Sosial Media — form Tempayan" />
+              <input v-model="f.marketing_source" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="Contoh: Sosial Media · atau Lainnya: teman kantor" />
             </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outlet (data master)</label>

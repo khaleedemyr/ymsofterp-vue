@@ -34,11 +34,16 @@ Balas HANYA dengan objek JSON valid (tanpa markdown), kunci persis:
   "marketing_source": string atau null
 }
 
+Khusus marketing_source (form Tempayan / sejenis):
+- Jika dicentang salah satu opsi tetap (Sosial Media, Media Cetak, Media Elektronik, Brosur): isi persis label opsi itu.
+- Jika dicentang Lainnya dan ada tulisan tangan di kotak/garis samping "Lainnya": gabungkan jadi SATU string di marketing_source, misalnya "Lainnya: rekomendasi teman" atau "Lainnya — Google Maps". Jangan buang isi tulisan tangan.
+- Jika hanya Lainnya tercentang tanpa teks terbaca, isi "Lainnya" saja.
+
 DUA VARIAN FORM DI LAPANGAN (isi field yang ADA di foto; sisanya null):
 
 A) Form Inggris (mis. Justus Steak House): judul baris Poor / Average / Good / Excellent. Bawah: Address, Whatsapp/Phone, Date of Birth, Date of visit, lalu blok "staff helpful" → praised_staff_name + praised_staff_outlet (Outlet). marketing_source null.
 
-B) Form Indonesia (mis. Tempayan): judul baris Buruk / Cukup / Baik / Sangat Baik — map ke poor / average / good / excellent. Bawah: Whatsapp/Telp, Tanggal berkunjung; ada pertanyaan "Dari mana anda mengetahui ...?" dengan centang (Sosial Media, Media Cetak, …) → isi marketing_source dengan TEKS OPSI YANG DICENTANG saja. praised_staff_name & praised_staff_outlet biasanya null. guest_address & guest_dob sering tidak ada → null.
+B) Form Indonesia (mis. Tempayan): judul baris Buruk / Cukup / Baik / Sangat Baik — map ke poor / average / good / excellent. Bawah: Whatsapp/Telp, Tanggal berkunjung; ada pertanyaan "Dari mana anda mengetahui ...?" dengan centang (Sosial Media, Media Cetak, …) → isi marketing_source (lihat aturan Lainnya di atas). praised_staff_name & praised_staff_outlet biasanya null. guest_address & guest_dob sering tidak ada → null.
 
 Mapping baris rating (nama bisa Inggris atau Indonesia, urutan grid 6 baris):
 - Baris 1 → rating_service (Quality of service / Kualitas Pelayanan)
