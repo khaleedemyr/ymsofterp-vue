@@ -90,7 +90,20 @@ class GuestCommentFormController extends Controller
 
         $form->update($updates);
 
-        return redirect()->route('guest-comment-forms.verify', $form)->with('success', 'Foto tersimpan. Silakan verifikasi data.');
+        $anyField = false;
+        foreach ($fieldKeys as $key) {
+            if (! empty($updates[$key])) {
+                $anyField = true;
+                break;
+            }
+        }
+        $hasRaw = trim((string) ($updates['ocr_raw_text'] ?? '')) !== '';
+        $msg = 'Foto tersimpan. Silakan verifikasi data.';
+        if (! $anyField && ! $hasRaw) {
+            $msg .= ' Isi otomatis tidak jalan: samakan dengan AI dashboard — cek AI_PROVIDER dan API key (Gemini/OpenAI/Claude) di .env, atau set GUEST_COMMENT_OCR_ENABLED=false untuk menonaktifkan.';
+        }
+
+        return redirect()->route('guest-comment-forms.verify', $form)->with('success', $msg);
     }
 
     public function show(GuestCommentForm $guest_comment_form)

@@ -42,5 +42,11 @@ return [
         'weather_api_key' => env('WEATHER_API_KEY', null), // OpenWeatherMap API
         'news_api_key' => env('NEWS_API_KEY', null), // NewsAPI.org
     ],
+
+    // Guest comment: pakai AI_PROVIDER + model/key yang sama dengan dashboard / Google Review AI
+    'guest_comment_ocr' => [
+        'enabled' => env('GUEST_COMMENT_OCR_ENABLED', true),
+        'timeout' => (int) env('GUEST_COMMENT_OCR_TIMEOUT', 120),
+    ],
 ];
 
