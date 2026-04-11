@@ -14,11 +14,64 @@ class GuestCommentFormController extends Controller
 {
     private const RATINGS = ['poor', 'average', 'good', 'excellent'];
 
+    /**
+     * id_outlet user = 1 (pusat): akses semua data, boleh filter outlet di index.
+     * Selain itu: hanya data outlet sendiri; parameter id_outlet di URL diabaikan.
+     */
+    private function authorizeGuestCommentFormAccess(Request $request, GuestCommentForm $form): void
+    {
+        $userOutletId = (int) ($request->user()->id_outlet ?? 0);
+        if ($userOutletId === 1) {
+            return;
+        }
+        if ($userOutletId <= 0) {
+            abort(403, 'Akun tidak memiliki outlet.');
+        }
+        $formOutletId = $form->id_outlet !== null ? (int) $form->id_outlet : null;
+        if ($formOutletId === $userOutletId) {
+            return;
+        }
+        if ($formOutletId === null && (int) $form->created_by === (int) $request->user()->id) {
+            return;
+        }
+        abort(403, 'Anda tidak dapat mengakses data guest comment ini.');
+    }
+
     public function index(Request $request)
     {
+        $userOutletId = (int) ($request->user()->id_outlet ?? 0);
+        $canChooseOutlet = ($userOutletId === 1);
+
         $query = GuestCommentForm::query()
             ->with(['creator:id,nama_lengkap', 'outlet:id_outlet,nama_outlet'])
             ->orderByDesc('created_at');
+
+        if ($canChooseOutlet) {
+            if ($request->filled('id_outlet')) {
+                $idOutlet = (int) $request->id_outlet;
+                if ($idOutlet > 0) {
+                    $query->where('guest_comment_forms.id_outlet', $idOutlet);
+                }
+            }
+        } elseif ($userOutletId > 0) {
+            $uid = (int) $request->user()->id;
+            $query->where(function ($q) use ($userOutletId, $uid) {
+                $q->where('guest_comment_forms.id_outlet', $userOutletId)
+                    ->orWhere(function ($q2) use ($uid) {
+                        $q2->whereNull('guest_comment_forms.id_outlet')
+                            ->where('guest_comment_forms.created_by', $uid);
+                    });
+            });
+        } else {
+            $query->whereRaw('0 = 1');
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('guest_comment_forms.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('guest_comment_forms.created_at', '<=', $request->date_to);
+        }
 
         if ($request->filled('search')) {
             $s = '%'.$request->search.'%';
@@ -35,11 +88,26 @@ class GuestCommentFormController extends Controller
 
         $forms = $query->paginate(15)->withQueryString();
 
+        $outlets = $canChooseOutlet
+            ? Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet'])
+            : collect();
+
+        $lockedOutlet = null;
+        if (! $canChooseOutlet && $userOutletId > 0) {
+            $lockedOutlet = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->first(['id_outlet', 'nama_outlet']);
+        }
+
         return Inertia::render('GuestComment/Index', [
             'forms' => $forms,
+            'outlets' => $outlets,
+            'canChooseOutlet' => $canChooseOutlet,
+            'lockedOutlet' => $lockedOutlet,
             'filters' => [
                 'search' => $request->search,
                 'status' => $request->status,
+                'id_outlet' => $canChooseOutlet ? $request->id_outlet : null,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
             ],
         ]);
     }
@@ -79,7 +147,7 @@ class GuestCommentFormController extends Controller
         $fieldKeys = [
             'rating_service', 'rating_food', 'rating_beverage', 'rating_cleanliness',
             'rating_staff', 'rating_value', 'comment_text', 'guest_name', 'guest_address',
-            'guest_phone', 'guest_dob', 'visit_date', 'praised_staff_name', 'praised_staff_outlet',
+            'guest_phone', 'guest_dob', 'visit_date', 'praised_staff_name',
         ];
         foreach ($fieldKeys as $key) {
             $v = $payload['fields'][$key] ?? null;
@@ -106,8 +174,10 @@ class GuestCommentFormController extends Controller
         return redirect()->route('guest-comment-forms.verify', $form)->with('success', $msg);
     }
 
-    public function show(GuestCommentForm $guest_comment_form)
+    public function show(Request $request, GuestCommentForm $guest_comment_form)
     {
+        $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
+
         $guest_comment_form->load(['creator:id,nama_lengkap', 'verifier:id,nama_lengkap', 'outlet:id_outlet,nama_outlet']);
 
         return Inertia::render('GuestComment/Show', [
@@ -116,15 +186,32 @@ class GuestCommentFormController extends Controller
         ]);
     }
 
-    public function verify(GuestCommentForm $guest_comment_form)
+    public function verify(Request $request, GuestCommentForm $guest_comment_form)
     {
+        $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
+
         $guest_comment_form->load(['creator:id,nama_lengkap', 'verifier:id,nama_lengkap', 'outlet:id_outlet,nama_outlet']);
-        $outlets = Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+
+        $userOutletId = (int) ($request->user()->id_outlet ?? 0);
+        $canChooseOutlet = ($userOutletId === 1);
+
+        $outlets = $canChooseOutlet
+            ? Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet'])
+            : collect();
+
+        $lockedOutlet = null;
+        if (! $canChooseOutlet && $userOutletId > 0) {
+            $lockedOutlet = Outlet::where('id_outlet', $userOutletId)
+                ->where('status', 'A')
+                ->first(['id_outlet', 'nama_outlet']);
+        }
 
         return Inertia::render('GuestComment/Verify', [
             'form' => $guest_comment_form,
             'imageUrl' => Storage::disk('public')->url($guest_comment_form->image_path),
             'outlets' => $outlets,
+            'canChooseOutlet' => $canChooseOutlet,
+            'lockedOutlet' => $lockedOutlet,
             'ratingOptions' => self::RATINGS,
             'readOnly' => $guest_comment_form->status === 'verified',
         ]);
@@ -132,6 +219,8 @@ class GuestCommentFormController extends Controller
 
     public function update(Request $request, GuestCommentForm $guest_comment_form)
     {
+        $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
+
         if ($guest_comment_form->status === 'verified') {
             return redirect()->route('guest-comment-forms.show', $guest_comment_form)
                 ->with('error', 'Data sudah terverifikasi, tidak bisa diubah.');
@@ -155,7 +244,6 @@ class GuestCommentFormController extends Controller
             'guest_dob' => 'nullable|date',
             'visit_date' => 'nullable|string|max:100',
             'praised_staff_name' => 'nullable|string|max:255',
-            'praised_staff_outlet' => 'nullable|string|max:255',
             'id_outlet' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'mark_verified' => 'nullable|boolean',
         ];
@@ -168,6 +256,11 @@ class GuestCommentFormController extends Controller
             if (array_key_exists($rk, $data) && $data[$rk] === '') {
                 $data[$rk] = null;
             }
+        }
+
+        $editorOutletId = (int) ($request->user()->id_outlet ?? 0);
+        if ($editorOutletId !== 1) {
+            $data['id_outlet'] = $editorOutletId > 0 ? $editorOutletId : null;
         }
 
         $guest_comment_form->fill($data);

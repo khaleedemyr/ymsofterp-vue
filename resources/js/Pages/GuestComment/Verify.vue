@@ -5,10 +5,19 @@ import { Link, useForm } from '@inertiajs/vue3';
 const props = defineProps({
   form: Object,
   imageUrl: String,
-  outlets: Array,
+  outlets: { type: Array, default: () => [] },
+  canChooseOutlet: { type: Boolean, default: true },
+  lockedOutlet: { type: Object, default: null },
   ratingOptions: Array,
   readOnly: Boolean,
 });
+
+function initialOutletId() {
+  if (props.canChooseOutlet) {
+    return props.form.id_outlet != null && props.form.id_outlet !== '' ? props.form.id_outlet : '';
+  }
+  return props.lockedOutlet?.id_outlet ?? '';
+}
 
 /** Sama dengan kolom di formulir kertas (English). */
 function ratingOptionLabel(opt) {
@@ -30,16 +39,21 @@ const f = useForm({
   guest_dob: props.form.guest_dob ? String(props.form.guest_dob).slice(0, 10) : '',
   visit_date: props.form.visit_date || '',
   praised_staff_name: props.form.praised_staff_name || '',
-  praised_staff_outlet: props.form.praised_staff_outlet || '',
-  id_outlet: props.form.id_outlet != null ? props.form.id_outlet : '',
+  id_outlet: initialOutletId(),
   mark_verified: false,
 });
 
 function save() {
-  f.transform((data) => ({
-    ...data,
-    id_outlet: data.id_outlet === '' ? null : data.id_outlet,
-  })).put(route('guest-comment-forms.update', props.form.id), {
+  f.transform((data) => {
+    const next = {
+      ...data,
+      id_outlet: data.id_outlet === '' || data.id_outlet === null ? null : data.id_outlet,
+    };
+    if (!props.canChooseOutlet) {
+      next.id_outlet = props.lockedOutlet?.id_outlet ?? null;
+    }
+    return next;
+  }).put(route('guest-comment-forms.update', props.form.id), {
     preserveScroll: true,
   });
 }
@@ -109,20 +123,28 @@ function save() {
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tanggal kunjungan</label>
               <input v-model="f.visit_date" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="bebas teks / tanggal" />
             </div>
-            <div>
+            <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Staff yang dipuji</label>
               <input v-model="f.praised_staff_name" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" />
             </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outlet staff</label>
-              <input v-model="f.praised_staff_outlet" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" />
-            </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outlet (data master)</label>
-              <select v-model="f.id_outlet" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly">
-                <option value="">— Pilih outlet —</option>
-                <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
-              </select>
+              <template v-if="canChooseOutlet">
+                <select v-model="f.id_outlet" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly">
+                  <option value="">— Pilih outlet —</option>
+                  <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                </select>
+              </template>
+              <template v-else>
+                <div
+                  class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 min-h-[2.5rem] flex items-center"
+                >
+                  {{ readOnly ? (form.outlet?.nama_outlet || '—') : (lockedOutlet?.nama_outlet || '—') }}
+                </div>
+                <p v-if="!readOnly && !lockedOutlet" class="text-xs text-amber-700 mt-1">
+                  Akun Anda belum memiliki outlet (id_outlet). Hubungi admin.
+                </p>
+              </template>
             </div>
           </div>
 

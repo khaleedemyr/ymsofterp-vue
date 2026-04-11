@@ -6,16 +6,32 @@ import { Link, router } from '@inertiajs/vue3';
 const props = defineProps({
   forms: Object,
   filters: Object,
+  outlets: { type: Array, default: () => [] },
+  canChooseOutlet: { type: Boolean, default: true },
+  lockedOutlet: { type: Object, default: null },
 });
 
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
+const idOutlet = ref(
+  props.filters?.id_outlet != null && props.filters.id_outlet !== ''
+    ? String(props.filters.id_outlet)
+    : ''
+);
+const dateFrom = ref(props.filters?.date_from || '');
+const dateTo = ref(props.filters?.date_to || '');
 
 function applyFilters() {
-  router.get('/guest-comment-forms', {
+  const q = {
     search: search.value,
     status: status.value,
-  }, { preserveState: true, replace: true });
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
+  };
+  if (props.canChooseOutlet && idOutlet.value) {
+    q.id_outlet = idOutlet.value;
+  }
+  router.get('/guest-comment-forms', q, { preserveState: true, replace: true });
 }
 
 function statusLabel(s) {
@@ -48,7 +64,16 @@ function statusLabel(s) {
         </Link>
       </div>
 
-      <div class="flex flex-wrap gap-3 mb-4">
+      <div v-if="!canChooseOutlet && lockedOutlet" class="mb-3 inline-flex items-center gap-2 bg-blue-50 text-blue-900 px-4 py-2 rounded-xl text-sm font-semibold">
+        <i class="fa-solid fa-store"></i>
+        Hanya data outlet: <span class="font-bold">{{ lockedOutlet.nama_outlet }}</span>
+      </div>
+      <div v-else-if="!canChooseOutlet && !lockedOutlet" class="mb-3 inline-flex items-center gap-2 bg-amber-50 text-amber-900 px-4 py-2 rounded-xl text-sm font-semibold">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        Akun tidak memiliki outlet — daftar kosong.
+      </div>
+
+      <div class="flex flex-wrap gap-3 mb-4 items-end">
         <input
           v-model="search"
           type="text"
@@ -56,6 +81,26 @@ function statusLabel(s) {
           class="w-64 px-4 py-2 rounded-xl border border-blue-200 shadow-sm focus:ring-2 focus:ring-blue-400"
           @keyup.enter="applyFilters"
         />
+        <select v-if="canChooseOutlet" v-model="idOutlet" class="min-w-[200px] px-4 py-2 rounded-xl border border-blue-200 shadow-sm" @change="applyFilters">
+          <option value="">Semua outlet</option>
+          <option v-for="o in outlets" :key="o.id_outlet" :value="String(o.id_outlet)">{{ o.nama_outlet }}</option>
+        </select>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Dari</label>
+          <input
+            v-model="dateFrom"
+            type="date"
+            class="px-3 py-2 rounded-xl border border-blue-200 shadow-sm text-sm"
+            @change="applyFilters"
+          />
+          <label class="text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Sampai</label>
+          <input
+            v-model="dateTo"
+            type="date"
+            class="px-3 py-2 rounded-xl border border-blue-200 shadow-sm text-sm"
+            @change="applyFilters"
+          />
+        </div>
         <select v-model="status" class="px-4 py-2 rounded-xl border border-blue-200 shadow-sm" @change="applyFilters">
           <option value="">Semua status</option>
           <option value="pending_verification">Menunggu verifikasi</option>

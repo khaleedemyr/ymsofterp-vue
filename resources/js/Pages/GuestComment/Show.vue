@@ -67,7 +67,6 @@ function r(v) {
           <div><span class="text-gray-500">Tgl lahir</span> · {{ form.guest_dob || '—' }}</div>
           <div><span class="text-gray-500">Kunjungan</span> · {{ form.visit_date || '—' }}</div>
           <div><span class="text-gray-500">Staff dipuji</span> · {{ form.praised_staff_name || '—' }}</div>
-          <div><span class="text-gray-500">Outlet staff</span> · {{ form.praised_staff_outlet || '—' }}</div>
           <div><span class="text-gray-500">Outlet</span> · {{ form.outlet?.nama_outlet || '—' }}</div>
           <div v-if="form.creator" class="text-xs text-gray-400 pt-2">Dicatat oleh {{ form.creator.nama_lengkap }}</div>
         </div>

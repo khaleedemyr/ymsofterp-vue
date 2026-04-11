@@ -29,8 +29,7 @@ Balas HANYA dengan objek JSON valid (tanpa markdown), kunci persis:
   "guest_phone": string atau null,
   "guest_dob": "YYYY-MM-DD" atau null jika tidak terbaca / tidak ada di form,
   "visit_date": string bebas seperti tertulis (tanggal kunjungan),
-  "praised_staff_name": string atau null,
-  "praised_staff_outlet": string atau null
+  "praised_staff_name": string atau null
 }
 Petunjuk: untuk setiap baris rating, lihat kotak yang dicentang (Poor/Average/Good/Excellent). Jika tidak jelas, null.
 TXT;
@@ -404,7 +403,6 @@ TXT;
             'guest_dob' => null,
             'visit_date' => null,
             'praised_staff_name' => null,
-            'praised_staff_outlet' => null,
         ];
     }
 
