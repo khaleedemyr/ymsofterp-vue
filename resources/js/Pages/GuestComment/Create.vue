@@ -2,6 +2,7 @@
 import { ref, onUnmounted } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 
 const form = useForm({
   image: null,
@@ -131,9 +132,44 @@ function onFile(e) {
 
 function submit() {
   stopCamera();
+  Swal.fire({
+    title: 'Mengunggah & mengolah OCR…',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    },
+  });
+
   form.post(route('guest-comment-forms.store'), {
     forceFormData: true,
     preserveScroll: true,
+    onSuccess: () => {
+      Swal.close();
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: 'Foto tersimpan. Mengarahkan ke verifikasi…',
+        confirmButtonColor: '#16a34a',
+        timer: 1800,
+        showConfirmButton: false,
+      });
+    },
+    onError: () => {
+      Swal.close();
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal mengunggah',
+        text: 'Periksa gambar atau coba lagi.',
+        confirmButtonColor: '#dc2626',
+      });
+    },
+    onFinish: () => {
+      if (Swal.isLoading()) {
+        Swal.close();
+      }
+    },
   });
 }
 

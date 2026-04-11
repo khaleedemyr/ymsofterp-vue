@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import VueEasyLightbox from 'vue-easy-lightbox';
+import Swal from 'sweetalert2';
 import GuestCommentUserAvatar from '@/Components/GuestCommentUserAvatar.vue';
 
 const props = defineProps({
@@ -60,6 +61,18 @@ function openAvatarLightbox({ src }) {
 }
 
 function save() {
+  Swal.fire({
+    title: f.mark_verified ? 'Menyimpan & memverifikasi…' : 'Menyimpan…',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading();
+    },
+  });
+
+  const willVerify = !!f.mark_verified;
+
   f.transform((data) => {
     const next = {
       ...data,
@@ -71,6 +84,33 @@ function save() {
     return next;
   }).put(route('guest-comment-forms.update', props.form.id), {
     preserveScroll: true,
+    onSuccess: () => {
+      Swal.close();
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: willVerify
+          ? 'Data tersimpan dan terverifikasi.'
+          : 'Perubahan disimpan.',
+        confirmButtonColor: '#16a34a',
+        timer: 2200,
+        showConfirmButton: false,
+      });
+    },
+    onError: () => {
+      Swal.close();
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menyimpan',
+        text: 'Periksa isian form atau coba lagi.',
+        confirmButtonColor: '#dc2626',
+      });
+    },
+    onFinish: () => {
+      if (Swal.isLoading()) {
+        Swal.close();
+      }
+    },
   });
 }
 </script>

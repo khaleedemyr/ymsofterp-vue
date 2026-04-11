@@ -90,12 +90,18 @@ const RATING_LABELS = [
   { key: 'rating_value', label: 'Value', abbr: 'V' },
 ];
 
-function ratingRowsForTable(row) {
-  return RATING_LABELS.map(({ key, label, abbr }) => ({
+/** Rata-rata skala 1–4 hanya dari aspek yang sudah diisi (bukan nol). */
+function ratingBlockForTable(row) {
+  const rows = RATING_LABELS.map(({ key, label, abbr }) => ({
     label,
     abbr,
     count: ratingStarCount(row[key]),
   }));
+  const filled = rows.filter((r) => r.count > 0);
+  const average = filled.length
+    ? filled.reduce((a, r) => a + r.count, 0) / filled.length
+    : null;
+  return { rows, average, nFilled: filled.length };
 }
 
 async function confirmDelete(row) {
@@ -200,6 +206,7 @@ async function confirmDelete(row) {
 
       <p class="text-xs text-gray-500 mb-2 px-1">
         Rating: Svc Service, Fd Food, Bv Beverage, Cl Cleanliness, St Staff, V Value — ★ 1–4 = Poor → Excellent (kosong = belum diisi).
+        Angka <span class="font-semibold text-blue-800">avg</span> = rata-rata aspek terisi, skala 1–4.
       </p>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
@@ -233,24 +240,36 @@ async function confirmDelete(row) {
                 </div>
               </td>
               <td class="px-3 py-3 min-w-0 align-top">
-                <div
-                  class="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] leading-tight text-gray-800 max-w-[14rem]"
-                  role="list"
-                  :aria-label="'Rating tamu'"
-                >
+                <template v-for="blk in [ratingBlockForTable(row)]" :key="'rb-' + row.id">
                   <div
-                    v-for="r in ratingRowsForTable(row)"
-                    :key="r.label"
-                    class="flex items-center gap-1 min-w-0"
-                    role="listitem"
+                    v-if="blk.average != null"
+                    class="mb-1.5 flex flex-wrap items-baseline gap-x-1 gap-y-0"
+                    :title="`Rata-rata ${blk.nFilled} aspek terisi (skala 1–4, Poor=1 … Excellent=4)`"
                   >
-                    <span class="text-gray-500 shrink-0 font-medium" :title="r.label">{{ r.abbr }}</span>
-                    <span v-if="r.count > 0" class="inline-flex items-center gap-px text-amber-500" :aria-label="`${r.label}: ${r.count} bintang`">
-                      <i v-for="n in r.count" :key="n" class="fa-solid fa-star text-[8px]" aria-hidden="true"></i>
+                    <span class="text-lg font-extrabold tabular-nums text-blue-800 leading-none">
+                      {{ blk.average.toFixed(1) }}
                     </span>
-                    <span v-else class="text-gray-300">—</span>
+                    <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">/ 4 avg</span>
                   </div>
-                </div>
+                  <div
+                    class="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10px] leading-tight text-gray-800 max-w-[14rem]"
+                    role="list"
+                    aria-label="Rating tamu"
+                  >
+                    <div
+                      v-for="r in blk.rows"
+                      :key="r.label"
+                      class="flex items-center gap-1 min-w-0"
+                      role="listitem"
+                    >
+                      <span class="text-gray-500 shrink-0 font-medium" :title="r.label">{{ r.abbr }}</span>
+                      <span v-if="r.count > 0" class="inline-flex items-center gap-px text-amber-500" :aria-label="`${r.label}: ${r.count} bintang`">
+                        <i v-for="n in r.count" :key="n" class="fa-solid fa-star text-[8px]" aria-hidden="true"></i>
+                      </span>
+                      <span v-else class="text-gray-300">—</span>
+                    </div>
+                  </div>
+                </template>
               </td>
               <td class="px-3 py-3 min-w-0">
                 <p
