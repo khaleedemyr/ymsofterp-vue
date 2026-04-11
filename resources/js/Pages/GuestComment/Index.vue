@@ -60,6 +60,28 @@ function rowNumber(index) {
   return (page - 1) * perPage + index + 1;
 }
 
+/** Singkatan rating (Poor/Average/Good/Excellent) untuk tabel */
+const R_ABBR = { poor: 'P', average: 'A', good: 'G', excellent: 'E' };
+
+function ratingLetter(v) {
+  if (!v) return '—';
+  const s = String(v).toLowerCase();
+  return R_ABBR[s] ?? String(v).charAt(0).toUpperCase();
+}
+
+/** Satu baris ringkas: Sv Fd Bv Cl St V */
+function ratingsSummary(row) {
+  const parts = [
+    ['Sv', row.rating_service],
+    ['Fd', row.rating_food],
+    ['Bv', row.rating_beverage],
+    ['Cl', row.rating_cleanliness],
+    ['St', row.rating_staff],
+    ['V', row.rating_value],
+  ];
+  return parts.map(([lab, val]) => `${lab} ${ratingLetter(val)}`).join(' · ');
+}
+
 async function confirmDelete(row) {
   const result = await Swal.fire({
     title: 'Hapus guest comment?',
@@ -160,12 +182,19 @@ async function confirmDelete(row) {
         </button>
       </div>
 
+      <p class="text-xs text-gray-500 mb-2 px-1">
+        Kolom rating: Sv Service, Fd Food, Bv Beverage, Cl Cleanliness, St Staff, V Value — huruf
+        <span class="font-mono">P/A/G/E</span> = Poor / Average / Good / Excellent.
+      </p>
+
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto">
-        <table class="w-full min-w-[960px] divide-y divide-gray-200">
+        <table class="w-full min-w-[1180px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase w-14">No.</th>
-              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Tamu</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Rating</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px]">Komentar</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Outlet</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Status</th>
               <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase">Pencatat</th>
@@ -176,11 +205,29 @@ async function confirmDelete(row) {
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="8" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="10" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
-            <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50">
+            <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-4 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
-              <td class="px-4 py-3">{{ row.guest_name || '—' }}</td>
+              <td class="px-4 py-3 max-w-[240px]">
+                <div class="font-medium text-gray-900">{{ row.guest_name || '—' }}</div>
+                <div class="mt-1.5 text-xs text-gray-600 space-y-0.5">
+                  <div v-if="row.guest_address" class="break-words">{{ row.guest_address }}</div>
+                  <div v-if="row.guest_phone" class="text-gray-700">{{ row.guest_phone }}</div>
+                  <div v-if="!row.guest_address && !row.guest_phone" class="text-gray-400">Alamat / HP belum diisi</div>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-xs text-gray-800 max-w-[220px]">
+                <div class="font-mono tracking-tight leading-relaxed">{{ ratingsSummary(row) }}</div>
+              </td>
+              <td class="px-4 py-3 max-w-[260px]">
+                <p
+                  class="text-sm text-gray-800 whitespace-pre-wrap break-words line-clamp-4"
+                  :title="row.comment_text || ''"
+                >
+                  {{ row.comment_text || '—' }}
+                </p>
+              </td>
               <td class="px-4 py-3">{{ row.outlet?.nama_outlet || '—' }}</td>
               <td class="px-4 py-3">
                 <span
@@ -206,22 +253,32 @@ async function confirmDelete(row) {
                 {{ row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '—' }}
               </td>
               <td class="px-4 py-3">
-                <div class="flex flex-wrap gap-2 items-center">
+                <div class="flex flex-wrap gap-1 items-center">
                   <Link
                     v-if="row.status !== 'verified'"
                     :href="route('guest-comment-forms.verify', row.id)"
-                    class="text-sm font-semibold text-blue-600 hover:underline"
-                  >Verifikasi</Link>
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Verifikasi"
+                    aria-label="Verifikasi"
+                  >
+                    <i class="fa-solid fa-clipboard-check text-base" aria-hidden="true"></i>
+                  </Link>
                   <Link
                     :href="route('guest-comment-forms.show', row.id)"
-                    class="text-sm font-semibold text-gray-600 hover:underline"
-                  >Detail</Link>
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+                    title="Detail"
+                    aria-label="Detail"
+                  >
+                    <i class="fa-solid fa-eye text-base" aria-hidden="true"></i>
+                  </Link>
                   <button
                     type="button"
-                    class="text-sm font-semibold text-red-600 hover:underline"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                    title="Hapus"
+                    aria-label="Hapus"
                     @click="confirmDelete(row)"
                   >
-                    Hapus
+                    <i class="fa-solid fa-trash text-base" aria-hidden="true"></i>
                   </button>
                 </div>
               </td>

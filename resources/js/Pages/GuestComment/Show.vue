@@ -1,16 +1,40 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
   form: Object,
   imageUrl: String,
 });
 
 const lightboxOpen = ref(false);
+const zoom = ref(1);
+const lbNatural = ref({ w: 0, h: 0 });
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 6;
+
+const lbImgStyle = computed(() => {
+  if (!lbNatural.value.w) {
+    return { maxWidth: '95vw', maxHeight: '90vh', width: 'auto', height: 'auto' };
+  }
+  const w = Math.round(lbNatural.value.w * zoom.value);
+  return {
+    width: `${w}px`,
+    height: 'auto',
+    maxWidth: 'none',
+    display: 'block',
+  };
+});
+
+function resetLightboxZoom() {
+  zoom.value = 1;
+  lbNatural.value = { w: 0, h: 0 };
+}
 
 function openLightbox() {
+  resetLightboxZoom();
   lightboxOpen.value = true;
   document.body.style.overflow = 'hidden';
 }
@@ -18,11 +42,52 @@ function openLightbox() {
 function closeLightbox() {
   lightboxOpen.value = false;
   document.body.style.overflow = '';
+  resetLightboxZoom();
+}
+
+function onLbImageLoad(e) {
+  const el = e.target;
+  lbNatural.value = { w: el.naturalWidth, h: el.naturalHeight };
+}
+
+function zoomIn() {
+  zoom.value = Math.min(MAX_ZOOM, Math.round((zoom.value + 0.2) * 100) / 100);
+}
+
+function zoomOut() {
+  zoom.value = Math.max(MIN_ZOOM, Math.round((zoom.value - 0.2) * 100) / 100);
+}
+
+function zoomReset() {
+  zoom.value = 1;
+}
+
+function onLightboxWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) {
+    return;
+  }
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.12 : 0.12;
+  zoom.value = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((zoom.value + delta) * 100) / 100));
 }
 
 function onKeydown(e) {
   if (e.key === 'Escape') {
     closeLightbox();
+    return;
+  }
+  if (!lightboxOpen.value) return;
+  if (e.key === '+' || e.key === '=') {
+    e.preventDefault();
+    zoomIn();
+  }
+  if (e.key === '-' || e.key === '_') {
+    e.preventDefault();
+    zoomOut();
+  }
+  if (e.key === '0') {
+    e.preventDefault();
+    zoomReset();
   }
 }
 
@@ -97,7 +162,7 @@ function r(v) {
               class="w-full rounded-xl border border-gray-200 max-h-[70vh] object-contain bg-gray-50 cursor-zoom-in hover:opacity-95 transition-opacity"
             />
           </button>
-          <p class="text-xs text-gray-500 mt-2 text-center">Klik gambar untuk tampilan besar</p>
+          <p class="text-xs text-gray-500 mt-2 text-center">Klik gambar untuk lightbox — Ctrl+scroll atau tombol ± untuk zoom</p>
         </div>
         <div class="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 space-y-3 text-sm">
           <div><span class="text-gray-500">Service</span> · {{ r(form.rating_service) }}</div>
@@ -122,26 +187,65 @@ function r(v) {
     <Teleport to="body">
       <div
         v-if="lightboxOpen"
-        class="fixed inset-0 z-[200] flex items-center justify-center bg-black/88 p-4 md:p-8"
+        class="fixed inset-0 z-[200] flex flex-col bg-black/88"
         role="dialog"
         aria-modal="true"
         aria-label="Pratinjau formulir"
         @click.self="closeLightbox"
       >
-        <button
-          type="button"
-          class="absolute top-3 right-3 md:top-5 md:right-5 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors text-2xl leading-none font-light"
-          aria-label="Tutup"
-          @click="closeLightbox"
+        <div class="flex shrink-0 items-center justify-between gap-2 px-3 py-2 md:px-4 bg-black/40 text-white">
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold hover:bg-white/25"
+              aria-label="Perkecil"
+              @click.stop="zoomOut"
+            >
+              −
+            </button>
+            <span class="min-w-[3.5rem] text-center text-sm tabular-nums">{{ Math.round(zoom * 100) }}%</span>
+            <button
+              type="button"
+              class="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold hover:bg-white/25"
+              aria-label="Perbesar"
+              @click.stop="zoomIn"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold hover:bg-white/25"
+              @click.stop="zoomReset"
+            >
+              Reset
+            </button>
+          </div>
+          <p class="hidden sm:block text-xs text-white/70 text-right">Ctrl+scroll · tombol ± · + − 0</p>
+          <button
+            type="button"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-xl leading-none hover:bg-white/20"
+            aria-label="Tutup"
+            @click.stop="closeLightbox"
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          class="min-h-0 flex-1 overflow-auto p-4 flex items-start justify-center"
+          @wheel="onLightboxWheel"
         >
-          ×
-        </button>
-        <img
-          :src="imageUrl"
-          alt="Formulir"
-          class="max-h-full max-w-full object-contain shadow-2xl rounded-lg select-none"
-          @click.stop
-        />
+          <img
+            :key="props.imageUrl"
+            :src="imageUrl"
+            alt="Formulir"
+            class="shadow-2xl rounded-lg select-none"
+            :style="lbImgStyle"
+            draggable="false"
+            @click.stop
+            @load="onLbImageLoad"
+          />
+        </div>
       </div>
     </Teleport>
   </AppLayout>
