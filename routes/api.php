@@ -409,6 +409,14 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'getComments'])->where('id', '[0-9]+');
         Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->where('id', '[0-9]+');
 
+        // Guest Comment OCR (Approval App — selaras web /guest-comment-forms)
+        Route::get('/guest-comment-forms/meta', [\App\Http\Controllers\GuestCommentFormApiController::class, 'meta']);
+        Route::get('/guest-comment-forms', [\App\Http\Controllers\GuestCommentFormApiController::class, 'index']);
+        Route::post('/guest-comment-forms', [\App\Http\Controllers\GuestCommentFormApiController::class, 'store']);
+        Route::get('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'show']);
+        Route::put('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'update']);
+        Route::delete('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'destroy']);
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
