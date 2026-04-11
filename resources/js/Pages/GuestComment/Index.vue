@@ -164,7 +164,7 @@ async function confirmDelete(row) {
         <input
           v-model="search"
           type="text"
-          placeholder="Cari nama / telepon / komentar..."
+          placeholder="Cari nama / telepon / komentar / sumber marketing..."
           class="w-full sm:w-64 min-w-0 flex-1 sm:flex-none px-4 py-2 rounded-xl border border-blue-200 shadow-sm focus:ring-2 focus:ring-blue-400"
           @keyup.enter="applyFilters"
         />
@@ -203,13 +203,14 @@ async function confirmDelete(row) {
       </p>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-x-auto w-full">
-        <table class="w-full min-w-[1000px] divide-y divide-gray-200">
+        <table class="w-full min-w-[1120px] divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
             <tr>
               <th class="px-2 sm:px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-12">No.</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase">Tamu</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[200px] w-[220px]">Rating</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px] max-w-[160px]">Sumber marketing</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Pencatat</th>
@@ -219,7 +220,7 @@ async function confirmDelete(row) {
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="9" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="10" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
@@ -258,6 +259,10 @@ async function confirmDelete(row) {
                 >
                   {{ row.comment_text || '—' }}
                 </p>
+              </td>
+              <td class="px-3 py-3 text-sm break-words min-w-0 max-w-[11rem]">
+                <span v-if="row.marketing_source" class="text-gray-800">{{ row.marketing_source }}</span>
+                <span v-else class="text-gray-400">—</span>
               </td>
               <td class="px-3 py-3 text-sm break-words min-w-0">{{ row.outlet?.nama_outlet || '—' }}</td>
               <td class="px-3 py-3">

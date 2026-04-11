@@ -121,6 +121,7 @@ class GuestCommentFormApiController extends Controller
                 $q->where('guest_name', 'like', $s)
                     ->orWhere('guest_phone', 'like', $s)
                     ->orWhere('comment_text', 'like', $s)
+                    ->orWhere('marketing_source', 'like', $s)
                     ->orWhere('status', 'like', $s);
             });
         }
