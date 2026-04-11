@@ -57,5 +57,11 @@ return [
         // true = log ke storage/logs (ukuran gambar, resize, token) — matikan setelah cek
         'debug_log' => env('GUEST_COMMENT_OCR_DEBUG_LOG', false),
     ],
+
+    // Klasifikasi AI untuk Scrapper Google Review (laporan AI): default ikut ai.provider; override murah ke Gemini tanpa mengubah dashboard.
+    'google_review_classify' => [
+        'provider' => env('GOOGLE_REVIEW_AI_PROVIDER'),
+        'gemini_model' => env('GOOGLE_REVIEW_GEMINI_MODEL'),
+    ],
 ];
 

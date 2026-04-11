@@ -45,13 +45,20 @@ class AIAnalyticsService
         $this->inventoryService = $inventoryService ?? app(InventoryDataService::class);
         $this->correlationService = $correlationService ?? app(SalesInventoryCorrelationService::class);
         $this->cacheService = $cacheService ?? app(AICacheService::class);
-        
-        // Validate API key based on provider
-        if ($this->provider === 'gemini' && !$this->apiKey) {
+
+        $gr = config('ai.google_review_classify.provider');
+        $grP = is_string($gr) && trim($gr) !== '' ? strtolower(trim($gr)) : null;
+        $needGemini = ($this->provider === 'gemini') || ($grP === 'gemini');
+        $needOpenai = ($this->provider === 'openai') || ($grP === 'openai');
+        $needClaude = ($this->provider === 'claude') || ($grP === 'claude');
+
+        if ($needGemini && ! $this->apiKey) {
             throw new \Exception('Google Gemini API key not configured');
-        } elseif ($this->provider === 'openai' && !$this->openaiKey) {
+        }
+        if ($needOpenai && ! $this->openaiKey) {
             throw new \Exception('OpenAI API key not configured');
-        } elseif ($this->provider === 'claude' && !$this->claudeKey) {
+        }
+        if ($needClaude && ! $this->claudeKey) {
             throw new \Exception('Anthropic Claude API key not configured');
         }
         
@@ -2103,7 +2110,7 @@ class AIAnalyticsService
      */
     public function classifyGoogleReviews(array $reviews): array
     {
-        if ($this->provider === 'claude' && $this->budgetService->isBudgetExceeded()) {
+        if ($this->googleReviewClassifyProvider() === 'claude' && $this->budgetService->isBudgetExceeded()) {
             throw new \RuntimeException('Budget AI Claude untuk bulan ini sudah habis.');
         }
 
@@ -2221,12 +2228,26 @@ PROMPT;
         return is_array($decoded) ? $decoded : null;
     }
 
+    /**
+     * Provider untuk klasifikasi Google Review saja (bisa beda dari AI_PROVIDER).
+     */
+    private function googleReviewClassifyProvider(): string
+    {
+        $o = config('ai.google_review_classify.provider');
+        if (is_string($o) && trim($o) !== '') {
+            return strtolower(trim($o));
+        }
+
+        return strtolower((string) $this->provider);
+    }
+
     private function invokeClassifierPrompt(string $prompt): string
     {
-        if ($this->provider === 'claude') {
+        $p = $this->googleReviewClassifyProvider();
+        if ($p === 'claude') {
             return $this->invokeClassifierClaude($prompt);
         }
-        if ($this->provider === 'openai') {
+        if ($p === 'openai') {
             return $this->invokeClassifierOpenAI($prompt);
         }
 
@@ -2276,8 +2297,17 @@ PROMPT;
 
     private function invokeClassifierGemini(string $prompt): string
     {
-        $model = config('ai.gemini.model', 'gemini-1.5-pro');
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $model . ':generateContent?key=' . $this->apiKey;
+        if (! $this->apiKey) {
+            throw new \RuntimeException('GOOGLE_GEMINI_API_KEY kosong (diperlukan untuk klasifikasi Google Review).');
+        }
+
+        $reviewModelOverride = config('ai.google_review_classify.gemini_model');
+        $model = (is_string($reviewModelOverride) && trim($reviewModelOverride) !== '')
+            ? trim($reviewModelOverride)
+            : (string) config('ai.gemini.model', 'gemini-1.5-pro');
+        $model = $this->normalizeGeminiModelIdForClassifier($model);
+
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($this->apiKey);
         $requestBody = [
             'contents' => [
                 ['parts' => [['text' => $prompt]]],
@@ -2287,22 +2317,55 @@ PROMPT;
                 'maxOutputTokens' => min(8192, (int) config('ai.gemini.max_tokens', 4096)),
             ],
         ];
-        $httpClient = Http::timeout(90)->withHeaders(['Content-Type' => 'application/json']);
+        $httpClient = Http::timeout(120)->withHeaders(['Content-Type' => 'application/json']);
         if (config('app.env') === 'local' || config('app.debug')) {
             $httpClient = $httpClient->withoutVerifying();
         }
         $response = $httpClient->post($url, $requestBody);
-        if (!$response->successful()) {
-            Log::error('Gemini classify reviews failed', ['status' => $response->status(), 'body' => $response->body()]);
-            throw new \RuntimeException('Gemini API error: ' . $response->status());
+        if (! $response->successful()) {
+            Log::error('Gemini classify reviews failed', [
+                'model' => $model,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+            throw new \RuntimeException('Gemini API error: '.$response->status());
         }
         $data = $response->json();
-        $text = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        $parts = $data['candidates'][0]['content']['parts'] ?? [];
+        $text = $this->concatGeminiClassifierTextParts(is_array($parts) ? $parts : []);
         if ($text === '') {
             throw new \RuntimeException('Jawaban Gemini kosong.');
         }
 
         return trim($text);
+    }
+
+    private function normalizeGeminiModelIdForClassifier(string $model): string
+    {
+        $model = trim($model);
+        if (str_starts_with($model, 'models/')) {
+            return substr($model, strlen('models/'));
+        }
+
+        return $model;
+    }
+
+    /**
+     * @param  array<int, mixed>  $parts
+     */
+    private function concatGeminiClassifierTextParts(array $parts): string
+    {
+        $out = [];
+        foreach ($parts as $part) {
+            if (! is_array($part)) {
+                continue;
+            }
+            if (isset($part['text']) && is_string($part['text']) && $part['text'] !== '') {
+                $out[] = $part['text'];
+            }
+        }
+
+        return implode("\n", $out);
     }
 
     private function invokeClassifierOpenAI(string $prompt): string
