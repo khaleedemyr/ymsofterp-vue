@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `guest_comment_forms` (
   `visit_date` varchar(100) DEFAULT NULL,
   `praised_staff_name` varchar(255) DEFAULT NULL,
   `praised_staff_outlet` varchar(255) DEFAULT NULL,
+  `marketing_source` varchar(255) DEFAULT NULL COMMENT 'Form bercabang: mis. Sosial Media (Tempayan)',
   `id_outlet` bigint unsigned DEFAULT NULL,
   `created_by` bigint unsigned DEFAULT NULL,
   `verified_by` bigint unsigned DEFAULT NULL,
@@ -33,3 +34,6 @@ CREATE TABLE IF NOT EXISTS `guest_comment_forms` (
   KEY `guest_comment_forms_created_at_index` (`created_at`),
   KEY `guest_comment_forms_id_outlet_index` (`id_outlet`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabel sudah terpasang tanpa marketing_source? Jalankan sekali:
+-- ALTER TABLE guest_comment_forms ADD COLUMN marketing_source varchar(255) DEFAULT NULL COMMENT 'Form bercabang: mis. Sosial Media (Tempayan)' AFTER praised_staff_outlet;

@@ -27,6 +27,8 @@ class GuestCommentForm extends Model
         'guest_dob',
         'visit_date',
         'praised_staff_name',
+        'praised_staff_outlet',
+        'marketing_source',
         'id_outlet',
         'created_by',
         'verified_by',

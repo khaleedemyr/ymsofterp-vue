@@ -42,6 +42,8 @@ const f = useForm({
   guest_dob: props.form.guest_dob ? String(props.form.guest_dob).slice(0, 10) : '',
   visit_date: props.form.visit_date || '',
   praised_staff_name: props.form.praised_staff_name || '',
+  praised_staff_outlet: props.form.praised_staff_outlet || '',
+  marketing_source: props.form.marketing_source || '',
   id_outlet: initialOutletId(),
   mark_verified: false,
 });
@@ -173,6 +175,14 @@ function save() {
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Staff yang dipuji</label>
               <input v-model="f.praised_staff_name" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outlet (tertulis di form / staff)</label>
+              <input v-model="f.praised_staff_outlet" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="Contoh: JUSTUS THE PARK" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Dari mana mengetahui outlet (marketing)</label>
+              <input v-model="f.marketing_source" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="Contoh: Sosial Media — form Tempayan" />
             </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Outlet (data master)</label>

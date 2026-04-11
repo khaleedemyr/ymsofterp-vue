@@ -21,17 +21,34 @@ Balas HANYA dengan objek JSON valid (tanpa markdown), kunci persis:
   "rating_food": sama,
   "rating_beverage": sama,
   "rating_cleanliness": sama,
-  "rating_staff": sama (attentiveness of staff),
-  "rating_value": sama (value for money),
+  "rating_staff": sama (perhatian karyawan / attentiveness of staff),
+  "rating_value": sama (harga sepadan / value for money),
   "comment_text": string atau null,
   "guest_name": string atau null,
   "guest_address": string atau null,
   "guest_phone": string atau null,
   "guest_dob": "YYYY-MM-DD" atau null jika tidak terbaca / tidak ada di form,
-  "visit_date": string bebas seperti tertulis (tanggal kunjungan),
-  "praised_staff_name": string atau null
+  "visit_date": string bebas seperti tertulis (tanggal kunjungan / date of visit / Tanggal berkunjung),
+  "praised_staff_name": string atau null,
+  "praised_staff_outlet": string atau null,
+  "marketing_source": string atau null
 }
-Petunjuk: untuk setiap baris rating, lihat kotak yang dicentang (Poor/Average/Good/Excellent). Jika tidak jelas, null.
+
+DUA VARIAN FORM DI LAPANGAN (isi field yang ADA di foto; sisanya null):
+
+A) Form Inggris (mis. Justus Steak House): judul baris Poor / Average / Good / Excellent. Bawah: Address, Whatsapp/Phone, Date of Birth, Date of visit, lalu blok "staff helpful" → praised_staff_name + praised_staff_outlet (Outlet). marketing_source null.
+
+B) Form Indonesia (mis. Tempayan): judul baris Buruk / Cukup / Baik / Sangat Baik — map ke poor / average / good / excellent. Bawah: Whatsapp/Telp, Tanggal berkunjung; ada pertanyaan "Dari mana anda mengetahui ...?" dengan centang (Sosial Media, Media Cetak, …) → isi marketing_source dengan TEKS OPSI YANG DICENTANG saja. praised_staff_name & praised_staff_outlet biasanya null. guest_address & guest_dob sering tidak ada → null.
+
+Mapping baris rating (nama bisa Inggris atau Indonesia, urutan grid 6 baris):
+- Baris 1 → rating_service (Quality of service / Kualitas Pelayanan)
+- Baris 2 → rating_food (Food / Kualitas Makanan)
+- Baris 3 → rating_beverage (Beverage / Kualitas Minuman)
+- Baris 4 → rating_cleanliness (Cleanliness / Kebersihan)
+- Baris 5 → rating_staff (Staff attentiveness / Perhatian Karyawan)
+- Baris 6 → rating_value (Value for money / Harga sepadan dengan kualitas)
+
+Tulisan tangan di kotak komentar → comment_text. Nomor telepon apa adanya → guest_phone.
 TXT;
 
     public function __construct(
@@ -106,7 +123,7 @@ TXT;
         }
         $b64 = base64_encode($bytes);
 
-        $userPrompt = "Ini foto formulir komentar tamu restoran. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
+        $userPrompt = "Ini foto formulir komentar tamu restoran. Bentuk kertas bisa beda (Inggris atau Indonesia); ikuti petunjuk varian A/B di skema. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
 
         $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($key);
 
@@ -168,7 +185,7 @@ TXT;
         $b64 = base64_encode($bytes);
         $dataUrl = 'data:'.$mime.';base64,'.$b64;
 
-        $userPrompt = "Ini foto formulir komentar tamu restoran. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
+        $userPrompt = "Ini foto formulir komentar tamu restoran. Bentuk kertas bisa beda (Inggris atau Indonesia); ikuti petunjuk varian A/B di skema. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
 
         $response = $this->httpClient($timeout)
             ->withToken($key)
@@ -237,7 +254,7 @@ TXT;
         }
         $b64 = base64_encode($bytes);
 
-        $userPrompt = "Ini foto formulir komentar tamu restoran. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
+        $userPrompt = "Ini foto formulir komentar tamu restoran. Bentuk kertas bisa beda (Inggris atau Indonesia); ikuti petunjuk varian A/B di skema. Baca tulisan tangan dan centang rating.\n\n".self::JSON_SCHEMA_HINT;
 
         $url = 'https://api.anthropic.com/v1/messages';
         $requestBody = [
@@ -403,6 +420,8 @@ TXT;
             'guest_dob' => null,
             'visit_date' => null,
             'praised_staff_name' => null,
+            'praised_staff_outlet' => null,
+            'marketing_source' => null,
         ];
     }
 

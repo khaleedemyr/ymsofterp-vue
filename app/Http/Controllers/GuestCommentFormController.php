@@ -152,6 +152,7 @@ class GuestCommentFormController extends Controller
             'rating_service', 'rating_food', 'rating_beverage', 'rating_cleanliness',
             'rating_staff', 'rating_value', 'comment_text', 'guest_name', 'guest_address',
             'guest_phone', 'guest_dob', 'visit_date', 'praised_staff_name',
+            'praised_staff_outlet', 'marketing_source',
         ];
         foreach ($fieldKeys as $key) {
             $v = $payload['fields'][$key] ?? null;
@@ -248,6 +249,8 @@ class GuestCommentFormController extends Controller
             'guest_dob' => 'nullable|date',
             'visit_date' => 'nullable|string|max:100',
             'praised_staff_name' => 'nullable|string|max:255',
+            'praised_staff_outlet' => 'nullable|string|max:255',
+            'marketing_source' => 'nullable|string|max:255',
             'id_outlet' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'mark_verified' => 'nullable|boolean',
         ];
