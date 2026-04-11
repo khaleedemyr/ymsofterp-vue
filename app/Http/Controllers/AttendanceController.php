@@ -1171,15 +1171,11 @@ class AttendanceController extends Controller
                               ->orWhere('tbl_data_outlet.nama_outlet', 'like', $like);
                     });
                 })
-                ->where(function($q) {
-                    $q->whereNull('tbl_data_jabatan.id_level') // Include users without level
-                      ->orWhereNotIn('tbl_data_jabatan.id_level', [7, 8, 13]); // Exclude specific levels
-                })
                 ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan', 'tbl_data_divisi.nama_divisi', 'tbl_data_outlet.nama_outlet', 'tbl_data_jabatan.id_level')
                 ->orderBy('users.nama_lengkap')
                 ->get();
 
-            \Log::debug('Approvers query result (with level filter)', [
+            \Log::debug('Approvers query result', [
                 'total_count' => $users->count(),
                 'search_term' => $search,
                 'user_id' => $user->id,
