@@ -43,14 +43,18 @@ return [
         'news_api_key' => env('NEWS_API_KEY', null), // NewsAPI.org
     ],
 
-    // Guest comment: pakai AI_PROVIDER + model/key yang sama dengan dashboard / Google Review AI
+    // Guest comment OCR: default ikut ai.provider; bisa override hanya OCR (dashboard tetap Claude, OCR pakai Gemini Flash, dll.)
     'guest_comment_ocr' => [
         'enabled' => env('GUEST_COMMENT_OCR_ENABLED', true),
         'timeout' => (int) env('GUEST_COMMENT_OCR_TIMEOUT', 120),
+        // Kosong = pakai ai.provider. Isi gemini|openai|claude untuk OCR saja.
+        'provider' => env('GUEST_COMMENT_AI_PROVIDER'),
+        // Hanya dipakai jika OCR pakai Gemini: override model (mis. flash) tanpa mengubah GEMINI_MODEL dashboard.
+        'gemini_model' => env('GUEST_COMMENT_GEMINI_MODEL'),
         // Turunkan piksel sebelum kirim ke API vision (file arsip di disk tidak diubah). Lebih kecil = lebih murah.
-        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1024),
-        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 75),
-        // true = log ke storage/logs (ukuran gambar, resize ya/tidak, token Claude) — matikan setelah cek PHP-FPM vs CLI
+        'max_image_edge_px' => (int) env('GUEST_COMMENT_OCR_MAX_IMAGE_EDGE', 1600),
+        'jpeg_quality' => (int) env('GUEST_COMMENT_OCR_JPEG_QUALITY', 80),
+        // true = log ke storage/logs (ukuran gambar, resize, token) — matikan setelah cek
         'debug_log' => env('GUEST_COMMENT_OCR_DEBUG_LOG', false),
     ],
 ];

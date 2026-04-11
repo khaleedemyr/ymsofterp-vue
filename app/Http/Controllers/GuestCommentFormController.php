@@ -185,7 +185,7 @@ class GuestCommentFormController extends Controller
         $hasRaw = trim((string) ($updates['ocr_raw_text'] ?? '')) !== '';
         $msg = 'Foto tersimpan. Silakan verifikasi data.';
         if (! $anyField && ! $hasRaw) {
-            $msg .= ' Isi otomatis tidak jalan: samakan dengan AI dashboard — cek AI_PROVIDER dan API key (Gemini/OpenAI/Claude) di .env, atau set GUEST_COMMENT_OCR_ENABLED=false untuk menonaktifkan.';
+            $msg .= ' Isi otomatis tidak jalan: cek API key di .env (Gemini/OpenAI/Claude), atau GUEST_COMMENT_AI_PROVIDER + GUEST_COMMENT_GEMINI_MODEL untuk OCR murah, atau set GUEST_COMMENT_OCR_ENABLED=false.';
         }
 
         return redirect()->route('guest-comment-forms.verify', $form)->with('success', $msg);

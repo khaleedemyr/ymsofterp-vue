@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Ekstraksi field dari foto formulir guest comment.
- * Memakai provider AI yang sama dengan Sales Outlet Dashboard / Google Review AI:
- * config('ai.provider') = gemini | openai | claude, plus model & API key dari config/ai.php.
+ * Provider: config('ai.guest_comment_ocr.provider') jika diisi, else config('ai.provider') (gemini|openai|claude).
+ * Model Gemini OCR bisa di-override dengan GUEST_COMMENT_GEMINI_MODEL (mis. flash murah) tanpa mengubah dashboard.
  */
 class GuestCommentOcrService
 {
@@ -77,7 +77,7 @@ TXT;
             return $empty;
         }
 
-        $provider = strtolower((string) config('ai.provider', 'gemini'));
+        $provider = $this->guestCommentOcrProvider();
 
         try {
             return match ($provider) {
@@ -94,6 +94,19 @@ TXT;
 
             return $empty;
         }
+    }
+
+    /**
+     * Provider khusus guest comment OCR, atau fallback ke AI global.
+     */
+    private function guestCommentOcrProvider(): string
+    {
+        $override = config('ai.guest_comment_ocr.provider');
+        if (is_string($override) && trim($override) !== '') {
+            return strtolower(trim($override));
+        }
+
+        return strtolower((string) config('ai.provider', 'gemini'));
     }
 
     private function httpClient(int $timeout)
@@ -120,8 +133,8 @@ TXT;
         }
 
         $originalMime = mime_content_type($absolutePath) ?: 'image/jpeg';
-        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1024)));
-        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 75)));
+        $maxEdge = max(512, min(4096, (int) config('ai.guest_comment_ocr.max_image_edge_px', 1600)));
+        $quality = max(60, min(95, (int) config('ai.guest_comment_ocr.jpeg_quality', 80)));
 
         $dims = @getimagesize($absolutePath);
         $w = isset($dims[0]) ? (int) $dims[0] : 0;
@@ -280,7 +293,10 @@ TXT;
             return $this->emptyResult();
         }
 
-        $model = config('ai.gemini.model', 'gemini-1.5-pro');
+        $ocrModel = config('ai.guest_comment_ocr.gemini_model');
+        $model = (is_string($ocrModel) && trim($ocrModel) !== '')
+            ? trim($ocrModel)
+            : (string) config('ai.gemini.model', 'gemini-1.5-pro');
         $timeout = (int) config('ai.guest_comment_ocr.timeout', 120);
 
         $prepared = $this->prepareImageForVisionOcr($absolutePath);
@@ -311,6 +327,7 @@ TXT;
 
         if (! $response->successful()) {
             Log::error('Gemini GuestComment OCR HTTP error', [
+                'model' => $model,
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
