@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Http\Traits\ReportHelperTrait;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -1943,6 +1945,162 @@ class SalesReportController extends Controller
             'per_day' => $perDay, // Object with date as key
             'orders' => $ordersArray, // Orders with payments attached
         ]);
+    }
+
+    /**
+     * Export satu order (detail seperti modal Sales Report) ke PDF.
+     * Digunakan dari halaman report internal (auth web) atau external (auth:external).
+     */
+    public function exportOrderDetailPdf(Request $request)
+    {
+        $orderId = (int) $request->query('order_id', 0);
+        if ($orderId < 1) {
+            abort(422, 'order_id wajib diisi');
+        }
+
+        $webUser = Auth::guard('web')->user();
+        $externalUser = Auth::guard('external')->user();
+        if (!$webUser && !$externalUser) {
+            abort(401);
+        }
+
+        $order = DB::table('orders')
+            ->select([
+                'orders.id',
+                'orders.nomor',
+                'orders.paid_number',
+                'orders.table',
+                'orders.pax',
+                'orders.total',
+                'orders.discount',
+                'orders.cashback',
+                'orders.dpp',
+                'orders.pb1',
+                'orders.service',
+                'orders.commfee',
+                'orders.rounding',
+                'orders.grand_total',
+                'orders.status',
+                'orders.created_at',
+                'orders.kode_outlet',
+                'tdo.nama_outlet',
+                'orders.manual_discount_amount',
+                'orders.manual_discount_reason',
+                'orders.promo_discount_info',
+                'orders.promo_ids',
+                'orders.waiters',
+                'orders.mode',
+            ])
+            ->leftJoin('tbl_data_outlet as tdo', 'orders.kode_outlet', '=', 'tdo.qr_code')
+            ->where('orders.id', $orderId)
+            ->first();
+
+        if (!$order) {
+            abort(404);
+        }
+
+        if ($webUser) {
+            $idOutlet = isset($webUser->id_outlet) ? (int) $webUser->id_outlet : 0;
+            if ($idOutlet !== 1) {
+                $userQr = DB::table('tbl_data_outlet')
+                    ->where('id_outlet', $webUser->id_outlet)
+                    ->value('qr_code');
+                if (!$userQr || $order->kode_outlet !== $userQr) {
+                    abort(403);
+                }
+            }
+        } elseif ($externalUser && !empty($externalUser->kode_outlet) && $order->kode_outlet !== $externalUser->kode_outlet) {
+            abort(403);
+        }
+
+        $paymentsData = DB::table('order_payment')
+            ->where('order_id', $orderId)
+            ->select('order_id', 'payment_code', 'payment_type', 'amount', 'change', 'kasir')
+            ->get();
+
+        $paymentRows = [];
+        foreach ($paymentsData as $payment) {
+            $paymentRows[] = [
+                'payment_code' => $payment->payment_code,
+                'payment_type' => $payment->payment_type,
+                'amount' => floatval($payment->amount ?? 0),
+                'change' => floatval($payment->change ?? 0),
+                'kasir' => $payment->kasir,
+            ];
+        }
+
+        $cashiers = array_values(array_unique(array_filter(array_map(function ($payment) {
+            return isset($payment['kasir']) ? trim((string) $payment['kasir']) : '';
+        }, $paymentRows))));
+
+        $modifierOptionNames = DB::table('modifier_options')->pluck('name', 'id')->toArray();
+        $modifierNames = DB::table('modifiers')->pluck('name', 'id')->toArray();
+
+        $itemsData = DB::table('order_items')
+            ->where('order_id', $orderId)
+            ->select('id', 'order_id', 'item_name', 'qty', 'price', 'subtotal', 'modifiers', 'notes')
+            ->orderBy('id')
+            ->get();
+
+        $orderItems = [];
+        foreach ($itemsData as $item) {
+            $parsedModifiers = $this->parseOrderItemModifiers(
+                $item->modifiers,
+                $modifierOptionNames,
+                $modifierNames
+            );
+            $orderItems[] = [
+                'id' => $item->id,
+                'item_name' => $item->item_name,
+                'qty' => floatval($item->qty ?? 0),
+                'price' => floatval($item->price ?? 0),
+                'subtotal' => floatval($item->subtotal ?? 0),
+                'modifiers_formatted' => $parsedModifiers,
+                'notes' => $item->notes,
+            ];
+        }
+
+        $promoNames = DB::table('order_promos as op')
+            ->join('promos as p', 'op.promo_id', '=', 'p.id')
+            ->where('op.order_id', $orderId)
+            ->pluck('p.name')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $promoDiscountLines = [];
+        $rawPromoInfo = $order->promo_discount_info ?? '';
+        if (is_string($rawPromoInfo) && trim($rawPromoInfo) !== '') {
+            $decoded = json_decode($rawPromoInfo, true);
+            if (is_array($decoded) && !empty($decoded['promos']) && is_array($decoded['promos'])) {
+                foreach ($decoded['promos'] as $p) {
+                    if (!is_array($p)) {
+                        continue;
+                    }
+                    $promoDiscountLines[] = [
+                        'promo_name' => $p['promo_name'] ?? $p['name'] ?? 'Promo',
+                        'discount_amount' => (float) ($p['discount_amount'] ?? $p['amount'] ?? 0),
+                    ];
+                }
+            }
+        }
+
+        $orderArray = (array) $order;
+        $orderArray['payments'] = $paymentRows;
+        $orderArray['items'] = $orderItems;
+        $orderArray['cashier'] = !empty($cashiers) ? implode(', ', $cashiers) : null;
+        $orderArray['promo_names'] = $promoNames;
+        $orderArray['promo_discount_lines'] = $promoDiscountLines;
+
+        $pdf = Pdf::loadView('pdf.order_detail_sales', [
+            'order' => $orderArray,
+            'generatedAt' => now()->timezone(config('app.timezone'))->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'portrait');
+
+        $safeNomor = preg_replace('/[^a-zA-Z0-9._-]+/', '_', (string) ($order->nomor ?? (string) $orderId));
+
+        return $pdf->stream('detail-order-' . $safeNomor . '.pdf');
     }
 
     private function parseOrderItemModifiers($rawModifiers, array $modifierOptionNames = [], array $modifierNames = []): array

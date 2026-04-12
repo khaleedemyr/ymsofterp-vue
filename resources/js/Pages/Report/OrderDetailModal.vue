@@ -7,14 +7,24 @@
           <h2 class="text-lg font-bold">Detail Order</h2>
           <p class="text-slate-300 text-sm mt-0.5">{{ order.nomor }}{{ order.paid_number ? ` · ${order.paid_number}` : '' }}</p>
         </div>
-        <button
-          type="button"
-          @click="$emit('close')"
-          class="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition"
-          aria-label="Tutup"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="order.id"
+            type="button"
+            @click="exportPdf"
+            class="px-3 py-2 rounded-lg text-sm font-semibold bg-white/15 text-white hover:bg-white/25 transition"
+          >
+            Export PDF
+          </button>
+          <button
+            type="button"
+            @click="$emit('close')"
+            class="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition"
+            aria-label="Tutup"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
       </div>
 
       <div class="overflow-y-auto flex-1 p-6 space-y-5">
@@ -151,7 +161,19 @@ import { computed } from 'vue';
 
 const props = defineProps({
   order: { type: Object, required: true },
+  /** Base path tanpa query; internal vs external report */
+  pdfExportBasePath: {
+    type: String,
+    default: '/report/sales-simple/export-order-detail-pdf',
+  },
 });
+
+function exportPdf() {
+  const id = props.order?.id;
+  if (id == null || id === '') return;
+  const q = new URLSearchParams({ order_id: String(id) });
+  window.open(`${props.pdfExportBasePath}?${q.toString()}`, '_blank');
+}
 
 // Hanya field yang ditampilkan di "Info Transaksi" — tidak ada raw JSON
 const displayOrderKeys = [

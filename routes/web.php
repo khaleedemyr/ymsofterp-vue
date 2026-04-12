@@ -154,6 +154,8 @@ Route::middleware('auth:external')->group(function () {
         ->name('external.api.report.sales-simple');
     Route::get('/external/api/outlets', [\App\Http\Controllers\ExternalAuthController::class, 'outlets'])
         ->name('external.api.outlets');
+    Route::get('/external/report/sales-simple/export-order-detail-pdf', [\App\Http\Controllers\Report\SalesReportController::class, 'exportOrderDetailPdf'])
+        ->name('external.report.sales-simple.export-order-detail-pdf');
     Route::post('/external/logout', [\App\Http\Controllers\ExternalAuthController::class, 'logout'])
         ->name('external.logout');
 });
@@ -2504,6 +2506,7 @@ Route::get('attendance-report/employee-summary-attendance', [App\Http\Controller
 Route::post('attendance-report/employee-summary-attendance/export', [App\Http\Controllers\AttendanceReportController::class, 'exportEmployeeSummaryAttendance'])->name('attendance-report.employee-summary-attendance.export');
 
 Route::get('/report/sales-simple/export-order-detail', [\App\Http\Controllers\Report\EngineeringReportController::class, 'exportOrderDetail'])->name('report.sales-simple.export-order-detail');
+Route::middleware(['auth'])->get('/report/sales-simple/export-order-detail-pdf', [\App\Http\Controllers\Report\SalesReportController::class, 'exportOrderDetailPdf'])->name('report.sales-simple.export-order-detail-pdf');
 
 Route::get('/report/item-engineering/export', [\App\Http\Controllers\Report\EngineeringReportController::class, 'exportItemEngineering'])->name('report.item-engineering.export');
 
