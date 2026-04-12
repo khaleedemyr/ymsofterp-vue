@@ -125,6 +125,26 @@
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">
+            Outlet <span class="text-red-500">*</span>
+          </label>
+          <select
+            v-model="form.outlet_id"
+            required
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option disabled value="">— Pilih outlet —</option>
+            <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">
+              {{ o.nama_outlet }}
+            </option>
+          </select>
+          <div class="text-xs text-gray-500 mt-1">Tercatat di transaksi poin dan notifikasi member.</div>
+          <div v-if="errors.outlet_id" class="mt-1 text-sm text-red-600">
+            {{ errors.outlet_id }}
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
             Nilai transaksi (Rp) <span class="text-red-500">*</span>
           </label>
           <input
@@ -254,11 +274,16 @@ import axios from 'axios';
 
 const props = defineProps({
   errors: Object,
+  outlets: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const form = useForm({
   member_id: null,
   paid_number: '',
+  outlet_id: '',
   transaction_amount: null,
   transaction_date: new Date().toISOString().split('T')[0],
   channel: 'pos',
@@ -352,9 +377,12 @@ const roughPointsPreview = computed(() => {
 });
 
 const canSubmit = computed(() => {
+  const oid = form.outlet_id;
+  const hasOutlet = oid !== '' && oid !== null && Number(oid) > 0;
   return (
     form.member_id &&
     form.paid_number.trim().length > 0 &&
+    hasOutlet &&
     form.transaction_amount > 0 &&
     form.transaction_date &&
     form.description.trim().length > 0
@@ -370,6 +398,7 @@ const submitForm = () => {
       form.reset();
       form.transaction_date = new Date().toISOString().split('T')[0];
       form.channel = 'pos';
+      form.outlet_id = '';
       form.is_gift_voucher_payment = false;
       form.is_ecommerce_order = false;
       selectedMember.value = null;

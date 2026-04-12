@@ -74,11 +74,23 @@ class ManualPointController extends Controller
 
         $perPage = $request->get('per_page', 15);
         $transactions = $query->paginate($perPage)->withQueryString();
+        $collection = $transactions->getCollection();
+        $outletIds = $collection->pluck('outlet_id')->filter()->unique()->values()->all();
+        $outletNames = [];
+        if ($outletIds !== []) {
+            $outletNames = DB::table('tbl_data_outlet')
+                ->whereIn('id_outlet', $outletIds)
+                ->pluck('nama_outlet', 'id_outlet')
+                ->all();
+        }
         $transactions->setCollection(
-            $transactions->getCollection()->map(function ($transaction) {
+            $collection->map(function ($transaction) use ($outletNames) {
                 $remainingPoints = $transaction->earning?->remaining_points ?? 0;
                 $usedPoints = max(0, $transaction->point_amount - $remainingPoints);
                 $transaction->can_delete = $usedPoints === 0;
+                $oid = $transaction->outlet_id;
+                $transaction->outlet_name = $oid && isset($outletNames[$oid]) ? $outletNames[$oid] : null;
+
                 return $transaction;
             })
         );
@@ -105,7 +117,16 @@ class ManualPointController extends Controller
 
     public function create()
     {
-        return Inertia::render('ManualPoint/Create');
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->where('is_outlet', 1)
+            ->where('is_fc', 0)
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet']);
+
+        return Inertia::render('ManualPoint/Create', [
+            'outlets' => $outlets,
+        ]);
     }
 
     public function searchMembers(Request $request)
@@ -167,6 +188,7 @@ class ManualPointController extends Controller
             'transaction_amount' => 'required|numeric|min:0.01',
             'transaction_date' => 'required|date',
             'paid_number' => 'required|string|max:255',
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'channel' => 'nullable|string|in:dine-in,take-away,delivery-restaurant,gift-voucher,e-commerce,pos',
             'is_gift_voucher_payment' => 'nullable|boolean',
             'is_ecommerce_order' => 'nullable|boolean',
@@ -201,7 +223,9 @@ class ManualPointController extends Controller
                 $request->boolean('is_ecommerce_order'),
                 [
                     'manual_note' => $request->description,
-                    'manual_injected_by_user_id' => auth()->id(),
+                    'erp_manual_inject' => true,
+                    'manual_injected_by_user_id' => auth()->id() ?? 0,
+                    'outlet_id' => (int) $request->outlet_id,
                 ]
             );
 
@@ -237,6 +261,14 @@ class ManualPointController extends Controller
         $remainingPoints = $transaction->earning?->remaining_points ?? 0;
         $usedPoints = max(0, $transaction->point_amount - $remainingPoints);
         $canDelete = $usedPoints === 0;
+
+        $outletName = null;
+        if ($transaction->outlet_id) {
+            $outletName = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $transaction->outlet_id)
+                ->value('nama_outlet');
+        }
+        $transaction->setAttribute('outlet_name', $outletName);
 
         return Inertia::render('ManualPoint/Show', [
             'transaction' => $transaction,

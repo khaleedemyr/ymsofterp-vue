@@ -80,6 +80,7 @@
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">ID</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Member</th>
+                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Point Amount</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Nilai Transaksi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Paid number / bill</th>
@@ -97,6 +98,10 @@
                 <td class="px-6 py-4 text-sm">
                   <div class="font-medium text-gray-900">{{ transaction.member?.nama_lengkap || '-' }}</div>
                   <div class="text-gray-500 text-xs">{{ transaction.member?.member_id || '-' }}</div>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-800 max-w-[10rem]">
+                  <span v-if="transaction.outlet_name">{{ transaction.outlet_name }}</span>
+                  <span v-else class="text-gray-400">—</span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <span class="px-2 py-1 text-sm font-semibold rounded-full bg-green-100 text-green-800">

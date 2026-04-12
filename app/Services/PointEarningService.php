@@ -90,7 +90,7 @@ class PointEarningService
      * @param string $channel Channel type: 'dine-in', 'take-away', 'delivery-restaurant', 'gift-voucher', 'e-commerce'
      * @param bool $isGiftVoucherPayment Whether payment was made using gift voucher
      * @param bool $isEcommerceOrder Whether order is from e-commerce (Go-Food/Grab Food)
-     * @param array $options Optional: manual_note (string), manual_injected_by_user_id (int) — appends ERP manual marker to description
+     * @param array $options Optional: manual_note, erp_manual_inject, manual_injected_by_user_id, outlet_id (tbl_data_outlet.id_outlet) for ERP manual + notification
      * @return array|null
      */
     public function earnPointsFromOrder($memberId, $orderId, $transactionAmount, $transactionDate, $channel = 'pos', $isGiftVoucherPayment = false, $isEcommerceOrder = false, array $options = [])
@@ -233,8 +233,9 @@ class PointEarningService
             if ($manualNote !== '') {
                 $description .= ' — '.$manualNote;
             }
-            if (! empty($options['manual_injected_by_user_id'])) {
-                $description .= ' [ERP manual inject #'.(int) $options['manual_injected_by_user_id'].']';
+            if (! empty($options['erp_manual_inject'])) {
+                $uid = (int) ($options['manual_injected_by_user_id'] ?? 0);
+                $description .= ' [ERP manual inject #'.$uid.']';
             }
             
             Log::info('Creating point transaction', [
@@ -244,9 +245,13 @@ class PointEarningService
                 'point_amount' => $pointAmount
             ]);
 
+            $outletIdOption = isset($options['outlet_id']) ? (int) $options['outlet_id'] : 0;
+            $outletIdStored = $outletIdOption > 0 ? $outletIdOption : null;
+
             // Create point transaction
             $pointTransaction = MemberAppsPointTransaction::create([
                 'member_id' => $member->id,
+                'outlet_id' => $outletIdStored,
                 'transaction_type' => $transactionType,
                 'transaction_date' => $transactionDateObj->format('Y-m-d'),
                 'point_amount' => $pointAmount,
@@ -319,28 +324,36 @@ class PointEarningService
                 'expires_at' => $expiresAt->format('Y-m-d')
             ]);
 
-            // Get outlet name for notification
+            // Get outlet name for notification (explicit outlet from ERP manual, else from order)
             $outletName = 'Outlet';
             try {
-                $orderData = DB::selectOne(
-                    "SELECT kode_outlet FROM orders WHERE id = ? LIMIT 1",
-                    [$orderId]
-                );
-                
-                if ($orderData && $orderData->kode_outlet) {
-                    $outletData = DB::selectOne(
-                        "SELECT nama_outlet FROM tbl_data_outlet WHERE qr_code = ? LIMIT 1",
-                        [$orderData->kode_outlet]
+                if ($outletIdStored !== null) {
+                    $name = DB::table('tbl_data_outlet')->where('id_outlet', $outletIdStored)->value('nama_outlet');
+                    if ($name) {
+                        $outletName = $name;
+                    }
+                } else {
+                    $orderData = DB::selectOne(
+                        "SELECT kode_outlet FROM orders WHERE id = ? LIMIT 1",
+                        [$orderId]
                     );
-                    
-                    if ($outletData) {
-                        $outletName = $outletData->nama_outlet;
+
+                    if ($orderData && $orderData->kode_outlet) {
+                        $outletData = DB::selectOne(
+                            "SELECT nama_outlet FROM tbl_data_outlet WHERE qr_code = ? LIMIT 1",
+                            [$orderData->kode_outlet]
+                        );
+
+                        if ($outletData) {
+                            $outletName = $outletData->nama_outlet;
+                        }
                     }
                 }
             } catch (\Exception $e) {
                 Log::warning('Error getting outlet name for notification', [
                     'order_id' => $orderId,
-                    'error' => $e->getMessage()
+                    'outlet_id' => $outletIdStored,
+                    'error' => $e->getMessage(),
                 ]);
             }
 

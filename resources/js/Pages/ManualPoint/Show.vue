@@ -44,6 +44,10 @@
             <p class="text-sm text-gray-800">{{ transaction.reference_id || '-' }}</p>
           </div>
           <div>
+            <label class="text-sm font-medium text-gray-600">Outlet</label>
+            <p class="text-gray-800">{{ transaction.outlet_name || '—' }}</p>
+          </div>
+          <div>
             <label class="text-sm font-medium text-gray-600">Member</label>
             <p class="text-lg font-semibold text-gray-800">
               {{ transaction.member?.nama_lengkap || '-' }}

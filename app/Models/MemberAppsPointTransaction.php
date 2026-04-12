@@ -10,6 +10,7 @@ class MemberAppsPointTransaction extends Model
     
     protected $fillable = [
         'member_id',
+        'outlet_id',
         'transaction_type',
         'transaction_date',
         'point_amount',
@@ -24,6 +25,7 @@ class MemberAppsPointTransaction extends Model
     ];
 
     protected $casts = [
+        'outlet_id' => 'integer',
         'transaction_date' => 'date',
         'point_amount' => 'integer',
         'transaction_amount' => 'decimal:2',
