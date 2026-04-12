@@ -121,6 +121,9 @@ class CrmDashboardController extends Controller
             // Heavy datasets: load only when lazy request asks for those props
             $purchasingPowerByAge = [];
             $purchasingPowerByAgeThisMonth = [];
+            $purchasingPowerByGender = [];
+            $purchasingPowerByGenderThisMonth = [];
+            $purchasingPowerByOccupation = [];
             $memberSegmentation = (object)['vip' => 0, 'active' => 0, 'new' => 0, 'atRisk' => 0, 'dormant' => 0];
             $memberLifetimeValue = (object)[
                 'average' => 0,
@@ -164,6 +167,24 @@ class CrmDashboardController extends Controller
                 if ($shouldLoad('purchasingPowerByAgeThisMonth')) {
                     $purchasingPowerByAgeThisMonth = Cache::remember("crm_purchasing_power_by_age_month_{$cacheSuffix}", 300, function () use ($monthStart, $monthEnd) {
                         return $this->getPurchasingPowerByAgeThisMonth($monthStart, $monthEnd);
+                    });
+                }
+
+                if ($shouldLoad('purchasingPowerByGender')) {
+                    $purchasingPowerByGender = Cache::remember("crm_purchasing_power_by_gender_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                        return $this->getPurchasingPowerByGender($startDate, $endDate);
+                    });
+                }
+
+                if ($shouldLoad('purchasingPowerByGenderThisMonth')) {
+                    $purchasingPowerByGenderThisMonth = Cache::remember("crm_purchasing_power_by_gender_month_{$cacheSuffix}", 300, function () use ($monthStart, $monthEnd) {
+                        return $this->getPurchasingPowerByGenderThisMonth($monthStart, $monthEnd);
+                    });
+                }
+
+                if ($shouldLoad('purchasingPowerByOccupation')) {
+                    $purchasingPowerByOccupation = Cache::remember("crm_purchasing_power_by_occupation_{$cacheSuffix}", 300, function () use ($startDate, $endDate) {
+                        return $this->getPurchasingPowerByOccupation($startDate, $endDate);
                     });
                 }
 
@@ -221,6 +242,9 @@ class CrmDashboardController extends Controller
                 'pointActivityTrend' => $pointActivityTrend,
                 'purchasingPowerByAge' => $purchasingPowerByAge,
                 'purchasingPowerByAgeThisMonth' => $purchasingPowerByAgeThisMonth,
+                'purchasingPowerByGender' => $purchasingPowerByGender,
+                'purchasingPowerByGenderThisMonth' => $purchasingPowerByGenderThisMonth,
+                'purchasingPowerByOccupation' => $purchasingPowerByOccupation,
                 'topSpenders' => $topSpenders,
                 'topSpendersDateRange' => $topSpendersDateRange,
                 'mostActiveMembers' => $mostActiveMembers,
@@ -262,6 +286,9 @@ class CrmDashboardController extends Controller
                 'ageDistribution' => [],
                 'purchasingPowerByAge' => [],
                 'purchasingPowerByAgeThisMonth' => [],
+                'purchasingPowerByGender' => [],
+                'purchasingPowerByGenderThisMonth' => [],
+                'purchasingPowerByOccupation' => [],
                 'spendingTrend' => [],
                 'pointActivityTrend' => [],
                 'latestMembers' => [],
@@ -974,6 +1001,197 @@ class CrmDashboardController extends Controller
         }
         
         return array_values($chartData);
+    }
+
+    /**
+     * Daya beli per gender (agregasi order per member, filter tanggal sama seperti usia).
+     */
+    private function getPurchasingPowerByGender($startDate = null, $endDate = null)
+    {
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+
+        if ($startDate && $endDate) {
+            $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
+        } else {
+            $rangeStart = Carbon::now()->subDays(90)->startOfDay()->format('Y-m-d H:i:s');
+            $rangeEnd = Carbon::now()->endOfDay()->format('Y-m-d H:i:s');
+            $orderDateFilter = "AND o.created_at BETWEEN '{$rangeStart}' AND '{$rangeEnd}'";
+        }
+
+        $sql = "
+            SELECT 
+                CASE 
+                    WHEN UPPER(TRIM(COALESCE(m.jenis_kelamin, ''))) = 'L' THEN 'Laki-laki'
+                    WHEN UPPER(TRIM(COALESCE(m.jenis_kelamin, ''))) = 'P' THEN 'Perempuan'
+                    ELSE 'Tidak Diketahui'
+                END as gender_group,
+                COUNT(DISTINCT m.id) as total_customers,
+                COALESCE(SUM(order_summary.total_spending), 0) as total_spending,
+                COALESCE(AVG(order_summary.avg_order_value), 0) as avg_transaction_value,
+                COALESCE(SUM(order_summary.order_count), 0) as total_transactions
+            FROM member_apps_members m
+            LEFT JOIN (
+                SELECT 
+                    o.member_id,
+                    SUM(o.grand_total) as total_spending,
+                    AVG(o.grand_total) as avg_order_value,
+                    COUNT(*) as order_count
+                FROM {$dbJustusName}.orders as o
+                WHERE o.status = 'paid'
+                AND o.member_id != '' 
+                AND o.member_id IS NOT NULL
+                    {$orderDateFilter}
+                GROUP BY o.member_id
+            ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
+            WHERE m.is_active = 1
+            GROUP BY gender_group
+            ORDER BY 
+                CASE gender_group
+                    WHEN 'Laki-laki' THEN 1
+                    WHEN 'Perempuan' THEN 2
+                    ELSE 3
+                END
+        ";
+
+        return collect(DB::select($sql))
+            ->map(function ($item) {
+                return [
+                    'gender_group' => $item->gender_group,
+                    'gender_group_label' => $item->gender_group,
+                    'total_customers' => (int) $item->total_customers,
+                    'total_spending' => (float) $item->total_spending,
+                    'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
+                    'avg_transaction_value' => (float) $item->avg_transaction_value,
+                    'avg_transaction_value_formatted' => 'Rp ' . number_format($item->avg_transaction_value, 0, ',', '.'),
+                    'total_transactions' => (int) $item->total_transactions,
+                    'avg_spending_per_customer' => $item->total_customers > 0 ? (float) ($item->total_spending / $item->total_customers) : 0,
+                    'avg_spending_per_customer_formatted' => $item->total_customers > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_customers, 0, ',', '.') : 'Rp 0',
+                ];
+            });
+    }
+
+    /**
+     * Tren harian bulan ini: daya beli per gender.
+     */
+    private function getPurchasingPowerByGenderThisMonth($startDate, $endDate)
+    {
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+        $daysInMonth = Carbon::now()->daysInMonth;
+        $monthStart = Carbon::now()->startOfMonth();
+        $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
+
+        $sql = "
+            SELECT 
+                DATE(o.created_at) as transaction_date,
+                CASE 
+                    WHEN UPPER(TRIM(COALESCE(m.jenis_kelamin, ''))) = 'L' THEN 'Laki-laki'
+                    WHEN UPPER(TRIM(COALESCE(m.jenis_kelamin, ''))) = 'P' THEN 'Perempuan'
+                    ELSE 'Tidak Diketahui'
+                END as gender_group,
+                SUM(o.grand_total) as total_spending,
+                COUNT(*) as total_transactions
+            FROM {$dbJustusName}.orders o
+            INNER JOIN member_apps_members m ON o.member_id COLLATE utf8mb4_unicode_ci = m.member_id COLLATE utf8mb4_unicode_ci
+            WHERE o.status = 'paid'
+                AND o.member_id != ''
+                AND o.member_id IS NOT NULL
+                AND m.is_active = 1
+                {$orderDateFilter}
+            GROUP BY DATE(o.created_at), gender_group
+            ORDER BY DATE(o.created_at),
+                CASE gender_group
+                    WHEN 'Laki-laki' THEN 1
+                    WHEN 'Perempuan' THEN 2
+                    ELSE 3
+                END
+        ";
+
+        $results = DB::select($sql);
+        $genderGroups = ['Laki-laki', 'Perempuan', 'Tidak Diketahui'];
+        $chartData = [];
+
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = $monthStart->copy()->addDays($day - 1);
+            $dateKey = $date->format('Y-m-d');
+            $chartData[$dateKey] = [
+                'date' => $dateKey,
+                'date_label' => $date->format('d M'),
+                'day' => $day,
+            ];
+            foreach ($genderGroups as $g) {
+                $chartData[$dateKey][$g] = 0;
+            }
+        }
+
+        foreach ($results as $row) {
+            $dateKey = Carbon::parse($row->transaction_date)->format('Y-m-d');
+            if (isset($chartData[$dateKey])) {
+                $chartData[$dateKey][$row->gender_group] = (float) $row->total_spending;
+            }
+        }
+
+        return array_values($chartData);
+    }
+
+    /**
+     * Daya beli per pekerjaan (top 25 by total spending).
+     */
+    private function getPurchasingPowerByOccupation($startDate = null, $endDate = null)
+    {
+        $dbJustusName = DB::connection('db_justus')->getDatabaseName();
+
+        if ($startDate && $endDate) {
+            $orderDateFilter = "AND o.created_at BETWEEN '{$startDate}' AND '{$endDate}'";
+        } else {
+            $rangeStart = Carbon::now()->subDays(90)->startOfDay()->format('Y-m-d H:i:s');
+            $rangeEnd = Carbon::now()->endOfDay()->format('Y-m-d H:i:s');
+            $orderDateFilter = "AND o.created_at BETWEEN '{$rangeStart}' AND '{$rangeEnd}'";
+        }
+
+        $sql = "
+            SELECT 
+                COALESCE(NULLIF(TRIM(MAX(occ.name)), ''), 'Tidak Diketahui') as occupation_group,
+                COUNT(DISTINCT m.id) as total_customers,
+                COALESCE(SUM(order_summary.total_spending), 0) as total_spending,
+                COALESCE(AVG(order_summary.avg_order_value), 0) as avg_transaction_value,
+                COALESCE(SUM(order_summary.order_count), 0) as total_transactions
+            FROM member_apps_members m
+            LEFT JOIN member_apps_occupations occ ON m.pekerjaan_id = occ.id
+            LEFT JOIN (
+                SELECT 
+                    o.member_id,
+                    SUM(o.grand_total) as total_spending,
+                    AVG(o.grand_total) as avg_order_value,
+                    COUNT(*) as order_count
+                FROM {$dbJustusName}.orders as o
+                WHERE o.status = 'paid'
+                AND o.member_id != '' 
+                AND o.member_id IS NOT NULL
+                    {$orderDateFilter}
+                GROUP BY o.member_id
+            ) as order_summary ON m.member_id COLLATE utf8mb4_unicode_ci = order_summary.member_id COLLATE utf8mb4_unicode_ci
+            WHERE m.is_active = 1
+            GROUP BY m.pekerjaan_id
+            ORDER BY total_spending DESC
+            LIMIT 25
+        ";
+
+        return collect(DB::select($sql))
+            ->map(function ($item) {
+                return [
+                    'occupation_group' => $item->occupation_group,
+                    'occupation_group_label' => $item->occupation_group,
+                    'total_customers' => (int) $item->total_customers,
+                    'total_spending' => (float) $item->total_spending,
+                    'total_spending_formatted' => 'Rp ' . number_format($item->total_spending, 0, ',', '.'),
+                    'avg_transaction_value' => (float) $item->avg_transaction_value,
+                    'avg_transaction_value_formatted' => 'Rp ' . number_format($item->avg_transaction_value, 0, ',', '.'),
+                    'total_transactions' => (int) $item->total_transactions,
+                    'avg_spending_per_customer' => $item->total_customers > 0 ? (float) ($item->total_spending / $item->total_customers) : 0,
+                    'avg_spending_per_customer_formatted' => $item->total_customers > 0 ? 'Rp ' . number_format($item->total_spending / $item->total_customers, 0, ',', '.') : 'Rp 0',
+                ];
+            })
+            ->values();
     }
 
     /**

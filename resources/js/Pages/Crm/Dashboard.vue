@@ -38,6 +38,18 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  purchasingPowerByGender: {
+    type: Array,
+    default: () => []
+  },
+  purchasingPowerByGenderThisMonth: {
+    type: Array,
+    default: () => []
+  },
+  purchasingPowerByOccupation: {
+    type: Array,
+    default: () => []
+  },
   spendingTrend: {
     type: Array,
     default: () => []
@@ -197,6 +209,9 @@ const loadLazyDashboardData = async () => {
       await reloadPartial([
         'purchasingPowerByAge',
         'purchasingPowerByAgeThisMonth',
+        'purchasingPowerByGender',
+        'purchasingPowerByGenderThisMonth',
+        'purchasingPowerByOccupation',
       ]);
     } catch (error) {
       console.error('CRM lazy load phase 3 failed:', error);
@@ -932,6 +947,204 @@ const purchasingPowerLineChartSeries = computed(() => {
   }));
 });
 
+const genderGroupColors = {
+  'Laki-laki': '#3b82f6',
+  'Perempuan': '#ec4899',
+  'Tidak Diketahui': '#9ca3af',
+};
+
+const purchasingPowerGenderChartOptions = computed(() => {
+  const categories = props.purchasingPowerByGender?.map(p => p.gender_group_label || p.gender_group) || [];
+  const colors = props.purchasingPowerByGender?.map(p => {
+    const g = p.gender_group || 'Tidak Diketahui';
+    return genderGroupColors[g] || '#9ca3af';
+  }) || [];
+
+  return {
+    chart: {
+      type: 'bar',
+      height: 350,
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      stacked: false,
+    },
+    plotOptions: {
+      bar: {
+        distributed: true,
+        borderRadius: 6,
+        columnWidth: '60%',
+        dataLabels: { position: 'top' },
+      },
+    },
+    colors,
+    dataLabels: {
+      enabled: true,
+      formatter: function(val) {
+        if (val >= 1000000000) return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+        if (val >= 1000000) return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+        if (val >= 1000) return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+        return 'Rp ' + formatNumber(val);
+      },
+      style: { fontSize: '10px', fontWeight: 600, colors: ['#fff'] },
+      offsetY: -5,
+    },
+    xaxis: {
+      categories,
+      labels: { style: { fontSize: '11px', colors: '#6b7280' }, rotate: -45 },
+    },
+    yaxis: {
+      title: {
+        text: 'Total Spending (Rp)',
+        style: { color: '#6b7280', fontSize: '12px', fontWeight: 600 },
+      },
+      labels: {
+        style: { colors: '#6b7280', fontSize: '11px' },
+        formatter: function(val) {
+          if (val >= 1000000000) return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          if (val >= 1000000) return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+          if (val >= 1000) return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+          return 'Rp ' + formatNumber(val);
+        },
+      },
+    },
+    grid: { borderColor: '#f3f4f6', strokeDashArray: 3 },
+    legend: { show: false },
+    tooltip: { theme: 'dark', shared: true, intersect: false },
+  };
+});
+
+const purchasingPowerGenderChartSeries = computed(() => {
+  if (!props.purchasingPowerByGender?.length) return [];
+  const data = props.purchasingPowerByGender.map(p => {
+    const spending = p?.total_spending;
+    const num = typeof spending === 'number' ? spending : parseFloat(spending);
+    return isNaN(num) ? 0 : num;
+  });
+  if (!data.length || data.every(v => v === 0)) return [];
+  return [{ name: 'Total Spending', data }];
+});
+
+const purchasingPowerGenderLineChartOptions = computed(() => {
+  const categories = props.purchasingPowerByGenderThisMonth?.map(d => d.date_label || d.day) || [];
+  return {
+    chart: {
+      type: 'line',
+      height: 350,
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      zoom: { enabled: false },
+    },
+    colors: ['#3b82f6', '#ec4899', '#9ca3af'],
+    stroke: { width: 3, curve: 'smooth' },
+    markers: { size: 4, hover: { size: 6 } },
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories,
+      labels: { style: { fontSize: '11px', colors: '#6b7280' }, rotate: -45 },
+    },
+    yaxis: {
+      title: {
+        text: 'Total Spending (Rp)',
+        style: { color: '#6b7280', fontSize: '12px', fontWeight: 600 },
+      },
+      labels: {
+        style: { colors: '#6b7280', fontSize: '11px' },
+        formatter: function(val) {
+          if (val >= 1000000000) return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          if (val >= 1000000) return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+          if (val >= 1000) return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+          return 'Rp ' + formatNumber(val);
+        },
+      },
+    },
+    grid: { borderColor: '#f3f4f6', strokeDashArray: 3 },
+    legend: { position: 'top', fontSize: '12px', fontWeight: 500 },
+    tooltip: { theme: 'dark', shared: true, intersect: false },
+  };
+});
+
+const purchasingPowerGenderLineChartSeries = computed(() => {
+  const keys = ['Laki-laki', 'Perempuan', 'Tidak Diketahui'];
+  return keys.map(key => ({
+    name: key,
+    data: props.purchasingPowerByGenderThisMonth?.map(d => d[key] || 0) || [],
+  }));
+});
+
+const occupationBarPalette = [
+  '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#84cc16',
+  '#6366f1', '#14b8a6', '#f97316', '#a855f7', '#22c55e', '#0ea5e9', '#d946ef', '#eab308',
+];
+
+const purchasingPowerOccupationChartOptions = computed(() => {
+  const list = props.purchasingPowerByOccupation || [];
+  const categories = list.map(p => p.occupation_group_label || p.occupation_group);
+  const colors = list.map((_, i) => occupationBarPalette[i % occupationBarPalette.length]);
+
+  return {
+    chart: {
+      type: 'bar',
+      height: Math.max(350, Math.min(520, 120 + list.length * 28)),
+      toolbar: { show: false },
+      fontFamily: 'Inter, sans-serif',
+      stacked: false,
+    },
+    plotOptions: {
+      bar: {
+        distributed: true,
+        borderRadius: 6,
+        columnWidth: '55%',
+        dataLabels: { position: 'top' },
+      },
+    },
+    colors,
+    dataLabels: {
+      enabled: true,
+      formatter: function(val) {
+        if (val >= 1000000000) return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+        if (val >= 1000000) return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+        if (val >= 1000) return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+        return 'Rp ' + formatNumber(val);
+      },
+      style: { fontSize: '9px', fontWeight: 600, colors: ['#fff'] },
+      offsetY: -5,
+    },
+    xaxis: {
+      categories,
+      labels: { style: { fontSize: '10px', colors: '#6b7280' }, rotate: -55, maxHeight: 120 },
+    },
+    yaxis: {
+      title: {
+        text: 'Total Spending (Rp)',
+        style: { color: '#6b7280', fontSize: '12px', fontWeight: 600 },
+      },
+      labels: {
+        style: { colors: '#6b7280', fontSize: '11px' },
+        formatter: function(val) {
+          if (val >= 1000000000) return 'Rp ' + (val / 1000000000).toFixed(1) + 'M';
+          if (val >= 1000000) return 'Rp ' + (val / 1000000).toFixed(1) + 'Jt';
+          if (val >= 1000) return 'Rp ' + (val / 1000).toFixed(0) + 'Rb';
+          return 'Rp ' + formatNumber(val);
+        },
+      },
+    },
+    grid: { borderColor: '#f3f4f6', strokeDashArray: 3 },
+    legend: { show: false },
+    tooltip: { theme: 'dark', shared: true, intersect: false },
+  };
+});
+
+const purchasingPowerOccupationChartSeries = computed(() => {
+  if (!props.purchasingPowerByOccupation?.length) return [];
+  const data = props.purchasingPowerByOccupation.map(p => {
+    const spending = p?.total_spending;
+    const num = typeof spending === 'number' ? spending : parseFloat(spending);
+    return isNaN(num) ? 0 : num;
+  });
+  if (!data.length || data.every(v => v === 0)) return [];
+  return [{ name: 'Total Spending', data }];
+});
+
 // Member Segmentation Chart (Priority 3)
 const segmentationChartOptions = computed(() => ({
   chart: {
@@ -1265,6 +1478,14 @@ function getAgeGroupColor(ageGroup) {
     'Tidak Diketahui': '#9ca3af', // light gray
   };
   return colors[ageGroup] || '#9ca3af';
+}
+
+function getGenderGroupColor(genderGroup) {
+  return genderGroupColors[genderGroup] || '#9ca3af';
+}
+
+function getOccupationBarColor(index) {
+  return occupationBarPalette[index % occupationBarPalette.length];
 }
 
 onMounted(() => {
@@ -2017,6 +2238,197 @@ onMounted(() => {
             </div>
             </div>
           </div>
+
+        <!-- Purchasing Power by Gender -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fa-solid fa-venus-mars text-indigo-500"></i>
+                Daya Beli per Gender
+              </h3>
+            </div>
+            <div class="h-80">
+              <div v-if="!props.purchasingPowerByGender || props.purchasingPowerByGender.length === 0" class="flex items-center justify-center h-full">
+                <div class="text-center">
+                  <i class="fa-solid fa-venus-mars text-6xl text-gray-300 mb-4"></i>
+                  <p class="text-gray-500">Data tidak tersedia</p>
+                </div>
+              </div>
+              <template v-else-if="purchasingPowerGenderChartSeries && purchasingPowerGenderChartSeries.length > 0">
+                <VueApexCharts
+                  type="bar"
+                  height="350"
+                  :options="purchasingPowerGenderChartOptions"
+                  :series="purchasingPowerGenderChartSeries"
+                />
+              </template>
+              <div v-else class="flex items-center justify-center h-full">
+                <div class="text-center">
+                  <i class="fa-solid fa-exclamation-triangle text-4xl text-yellow-400 mb-4"></i>
+                  <p class="text-gray-500">Data chart tidak valid</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-8">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                  <i class="fa-solid fa-chart-line text-blue-500"></i>
+                  Tren Bulan Ini (Harian)
+                </h4>
+              </div>
+              <div class="h-80">
+                <div v-if="!props.purchasingPowerByGenderThisMonth || props.purchasingPowerByGenderThisMonth.length === 0" class="flex items-center justify-center h-full">
+                  <div class="text-center">
+                    <i class="fa-solid fa-chart-line text-6xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500">Data tidak tersedia</p>
+                  </div>
+                </div>
+                <VueApexCharts
+                  v-else
+                  type="line"
+                  height="350"
+                  :options="purchasingPowerGenderLineChartOptions"
+                  :series="purchasingPowerGenderLineChartSeries"
+                />
+              </div>
+            </div>
+
+            <div v-if="props.purchasingPowerByGender && props.purchasingPowerByGender.length > 0" class="mt-8">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div
+                  v-for="item in props.purchasingPowerByGender"
+                  :key="item.gender_group"
+                  class="bg-white rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-all duration-300 overflow-hidden"
+                >
+                  <div class="px-6 py-4 border-b border-gray-100" :style="{ backgroundColor: getGenderGroupColor(item.gender_group) + '15' }">
+                    <div class="flex items-center gap-3">
+                      <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: getGenderGroupColor(item.gender_group) }"></div>
+                      <h4 class="font-bold text-gray-900 text-lg">{{ item.gender_group_label || item.gender_group }}</h4>
+                    </div>
+                  </div>
+                  <div class="p-6 space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-money-bill-wave text-emerald-500"></i>
+                        <span class="text-sm text-gray-600">Total Spending</span>
+                      </div>
+                      <span class="font-bold text-emerald-600 text-lg">{{ item.total_spending_formatted }}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Avg/Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ item.avg_transaction_value_formatted }}</div>
+                      </div>
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Total Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ formatNumber(item.total_transactions) }}</div>
+                      </div>
+                    </div>
+                    <div class="pt-3 border-t border-gray-100">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <i class="fa-solid fa-users text-blue-500"></i>
+                          <span class="text-sm text-gray-600">Total Customer</span>
+                        </div>
+                        <span class="font-bold text-blue-600">{{ formatNumber(item.total_customers) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="mt-8 text-center py-12 text-gray-500">
+              <i class="fa-solid fa-venus-mars text-5xl mb-4 text-gray-300"></i>
+              <p class="text-lg">Data tidak tersedia</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Purchasing Power by Occupation -->
+        <div class="mb-8">
+          <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all duration-300">
+            <div class="flex items-center justify-between mb-6">
+              <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fa-solid fa-briefcase text-amber-600"></i>
+                Daya Beli per Pekerjaan
+              </h3>
+              <span class="text-xs text-gray-500">Top 25 berdasarkan total spending (periode filter)</span>
+            </div>
+            <div class="min-h-[20rem]">
+              <div v-if="!props.purchasingPowerByOccupation || props.purchasingPowerByOccupation.length === 0" class="flex items-center justify-center h-80">
+                <div class="text-center">
+                  <i class="fa-solid fa-briefcase text-6xl text-gray-300 mb-4"></i>
+                  <p class="text-gray-500">Data tidak tersedia</p>
+                </div>
+              </div>
+              <template v-else-if="purchasingPowerOccupationChartSeries && purchasingPowerOccupationChartSeries.length > 0">
+                <VueApexCharts
+                  type="bar"
+                  :height="purchasingPowerOccupationChartOptions.chart.height"
+                  :options="purchasingPowerOccupationChartOptions"
+                  :series="purchasingPowerOccupationChartSeries"
+                />
+              </template>
+              <div v-else class="flex items-center justify-center h-80">
+                <div class="text-center">
+                  <i class="fa-solid fa-exclamation-triangle text-4xl text-yellow-400 mb-4"></i>
+                  <p class="text-gray-500">Data chart tidak valid</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="props.purchasingPowerByOccupation && props.purchasingPowerByOccupation.length > 0" class="mt-8">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div
+                  v-for="(item, idx) in props.purchasingPowerByOccupation"
+                  :key="item.occupation_group + '-' + idx"
+                  class="bg-white rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-all duration-300 overflow-hidden"
+                >
+                  <div class="px-6 py-4 border-b border-gray-100" :style="{ backgroundColor: getOccupationBarColor(idx) + '15' }">
+                    <div class="flex items-center gap-3">
+                      <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: getOccupationBarColor(idx) }"></div>
+                      <h4 class="font-bold text-gray-900 text-lg leading-snug">{{ item.occupation_group_label || item.occupation_group }}</h4>
+                    </div>
+                  </div>
+                  <div class="p-6 space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-money-bill-wave text-emerald-500"></i>
+                        <span class="text-sm text-gray-600">Total Spending</span>
+                      </div>
+                      <span class="font-bold text-emerald-600 text-lg">{{ item.total_spending_formatted }}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Avg/Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ item.avg_transaction_value_formatted }}</div>
+                      </div>
+                      <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="text-xs text-gray-500 mb-1">Total Transaksi</div>
+                        <div class="font-semibold text-gray-900">{{ formatNumber(item.total_transactions) }}</div>
+                      </div>
+                    </div>
+                    <div class="pt-3 border-t border-gray-100">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <i class="fa-solid fa-users text-blue-500"></i>
+                          <span class="text-sm text-gray-600">Total Customer</span>
+                        </div>
+                        <span class="font-bold text-blue-600">{{ formatNumber(item.total_customers) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="mt-8 text-center py-12 text-gray-500">
+              <i class="fa-solid fa-briefcase text-5xl mb-4 text-gray-300"></i>
+              <p class="text-lg">Data tidak tersedia</p>
+            </div>
+          </div>
+        </div>
 
         <!-- Email Verification Status (Priority 2) -->
         <div class="mb-8">
