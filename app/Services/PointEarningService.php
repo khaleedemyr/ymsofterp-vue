@@ -235,7 +235,13 @@ class PointEarningService
             }
             if (! empty($options['erp_manual_inject'])) {
                 $uid = (int) ($options['manual_injected_by_user_id'] ?? 0);
-                $description .= ' [ERP manual inject #'.$uid.']';
+                // Awali dengan penanda — jangan di akhir saja (sering terpotong VARCHAR(255) di MySQL).
+                $description = '[ERP manual inject #'.$uid.'] '.$description;
+            }
+            // Hindari silent truncate DB: potong di aplikasi supaya bagian depan (penanda ERP) tetap utuh.
+            $descMax = 255;
+            if (mb_strlen($description) > $descMax) {
+                $description = mb_substr($description, 0, $descMax);
             }
             
             Log::info('Creating point transaction', [

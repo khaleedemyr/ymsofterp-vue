@@ -9,12 +9,13 @@ use App\Services\PointEarningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 
 class ManualPointController extends Controller
 {
-    /** Marker appended by PointEarningService for ERP manual backfill (same rules as POS earn). */
+    /** Marker in description (prefix) for ERP manual backfill — also see outlet_id fallback below. */
     public const ERP_MANUAL_DESCRIPTION_LIKE = '%[ERP manual inject]%';
 
     protected $pointEarningService;
@@ -35,8 +36,20 @@ class ManualPointController extends Controller
                     ->where('channel', 'adjustment');
             })->orWhere(function ($q2) {
                 $q2->where('transaction_type', 'earn')
-                    ->where('description', 'like', self::ERP_MANUAL_DESCRIPTION_LIKE);
+                    ->where(function ($q3) {
+                        $q3->where('description', 'like', self::ERP_MANUAL_DESCRIPTION_LIKE)
+                            ->orWhere('description', 'like', '%ERP manual inject%');
+                    });
             });
+
+            // Inject manual wajib outlet_id; sync POS earn (sumber lain) tidak mengisi kolom ini.
+            // Menampung baris lama yang penanda di description terpotong VARCHAR pendek.
+            if (Schema::hasColumn('member_apps_point_transactions', 'outlet_id')) {
+                $q->orWhere(function ($q2) {
+                    $q2->where('transaction_type', 'earn')
+                        ->whereNotNull('outlet_id');
+                });
+            }
         });
     }
 
@@ -319,7 +332,12 @@ class ManualPointController extends Controller
             $member->decrement('just_points', $rollbackPoint);
             $member->refresh();
 
-            if ($transaction->transaction_type === 'earn' && str_contains((string) $transaction->description, '[ERP manual inject')) {
+            $isManualEarn = $transaction->transaction_type === 'earn'
+                && (
+                    str_contains((string) $transaction->description, 'ERP manual inject')
+                    || ((int) ($transaction->outlet_id ?? 0) > 0)
+                );
+            if ($isManualEarn) {
                 $txAmount = (float) ($transaction->transaction_amount ?? 0);
                 if ($txAmount > 0) {
                     MemberTierService::reverseRecordedTransaction(
