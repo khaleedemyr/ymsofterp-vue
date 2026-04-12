@@ -538,21 +538,6 @@ class CrmDashboardController extends Controller
         $memberRevenueThisMonth = $spendingThisMonth;
         $memberRevenueThisYear = $spendingThisYear;
         
-        // Debug logging - check actual query results
-        $testTotalToday = DB::connection('db_justus')
-            ->table('orders')
-            ->where('status', 'paid')
-            ->whereDate('created_at', $today)
-            ->count();
-        
-        $testMemberToday = DB::connection('db_justus')
-            ->table('orders')
-            ->where('status', 'paid')
-            ->whereNotNull('member_id')
-            ->where('member_id', '!=', '')
-            ->whereDate('created_at', $today)
-            ->count();
-        
         // Calculate contribution percentage
         $memberContributionToday = $totalRevenueToday > 0 ? round(($memberRevenueToday / $totalRevenueToday) * 100, 2) : 0;
         $memberContributionThisMonth = $totalRevenueThisMonth > 0 ? round(($memberRevenueThisMonth / $totalRevenueThisMonth) * 100, 2) : 0;
@@ -1646,21 +1631,27 @@ class CrmDashboardController extends Controller
         $memberIds = $topSpenders->pluck('member_id')->toArray();
         $resolvedMembers = $this->resolveMemberRowsForOrderMemberKeys($memberIds);
 
-        // Get last spending for each member in one query (batch) - Last 90 days only
-        $lastOrders = DB::connection('db_justus')
-            ->table('orders')
-            ->select('member_id', 'grand_total', 'created_at')
+        // Order terakhir per member: subquery MAX(created_at) + join (bukan fetch semua order lalu group di PHP).
+        $justus = DB::connection('db_justus');
+        $lastOrderSub = $justus->table('orders')
+            ->select('member_id', DB::raw('MAX(created_at) as last_at'))
             ->whereIn('member_id', $memberIds)
             ->where('status', 'paid')
             ->whereNotNull('member_id')
             ->where('member_id', '!=', '')
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->orderBy('created_at', 'desc')
+            ->groupBy('member_id');
+
+        $lastOrders = $justus->table('orders as o')
+            ->joinSub($lastOrderSub, 'lo', function ($join) {
+                $join->on('o.member_id', '=', 'lo.member_id')
+                    ->on('o.created_at', '=', 'lo.last_at');
+            })
+            ->where('o.status', 'paid')
+            ->select('o.member_id', 'o.grand_total', 'o.created_at')
             ->get()
-            ->groupBy('member_id')
-            ->map(function ($orders) {
-                return $orders->first();
-            });
+            ->unique('member_id')
+            ->keyBy('member_id');
 
         $data = $topSpenders->map(function ($spender) use ($resolvedMembers, $lastOrders) {
             $member = $this->pickMemberForOrderKey($spender->member_id, $resolvedMembers);

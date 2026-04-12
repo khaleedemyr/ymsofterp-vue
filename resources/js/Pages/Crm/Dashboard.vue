@@ -166,6 +166,8 @@ const dateFilters = ref({
 });
 
 const isLazyLoading = ref(false);
+/** false sampai partial reload (grafik & data berat) selesai — tampilkan overlay loading */
+const dashboardReady = ref(false);
 
 const reloadPartial = (only) => new Promise((resolve) => {
   router.reload({
@@ -187,37 +189,23 @@ const loadLazyDashboardData = async () => {
   isLazyLoading.value = true;
 
   try {
-    try {
-      await reloadPartial([
-        'regionalBreakdown',
-        'comparisonData',
-      ]);
-    } catch (error) {
-      console.error('CRM lazy load phase 1 failed:', error);
-    }
-
-    try {
-      await reloadPartial([
-        'conversionFunnel',
-        'memberLifetimeValue',
-      ]);
-    } catch (error) {
-      console.error('CRM lazy load phase 2 failed:', error);
-    }
-
-    try {
-      await reloadPartial([
-        'purchasingPowerByAge',
-        'purchasingPowerByAgeThisMonth',
-        'purchasingPowerByGender',
-        'purchasingPowerByGenderThisMonth',
-        'purchasingPowerByOccupation',
-      ]);
-    } catch (error) {
-      console.error('CRM lazy load phase 3 failed:', error);
-    }
+    // Satu partial reload: hindari 3× round-trip (penyebab utama terasa lambat).
+    await reloadPartial([
+      'regionalBreakdown',
+      'comparisonData',
+      'conversionFunnel',
+      'memberLifetimeValue',
+      'purchasingPowerByAge',
+      'purchasingPowerByAgeThisMonth',
+      'purchasingPowerByGender',
+      'purchasingPowerByGenderThisMonth',
+      'purchasingPowerByOccupation',
+    ]);
+  } catch (error) {
+    console.error('CRM lazy load failed:', error);
   } finally {
     isLazyLoading.value = false;
+    dashboardReady.value = true;
   }
 };
 
@@ -1495,7 +1483,7 @@ onMounted(() => {
 
 <template>
   <AppLayout title="Dashboard CRM">
-    <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+    <div class="relative min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
       <!-- Animated Background Elements -->
       <div class="fixed inset-0 overflow-hidden pointer-events-none">
         <div class="absolute -top-40 -right-40 w-80 h-80 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
@@ -3486,6 +3474,35 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
+      <Transition
+        enter-active-class="transition-opacity duration-300 ease-out"
+        leave-active-class="transition-opacity duration-300 ease-in"
+        enter-from-class="opacity-0"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="!dashboardReady"
+          class="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-900/35 backdrop-blur-sm"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <div class="crm-boot-card rounded-3xl bg-white/95 shadow-2xl border border-white/70 px-10 py-11 flex flex-col items-center max-w-sm mx-4">
+            <div class="relative w-[4.5rem] h-[4.5rem] mb-6">
+              <div class="absolute inset-0 rounded-full border-[3px] border-indigo-100/90" />
+              <div
+                class="absolute inset-0 rounded-full border-[3px] border-transparent border-t-indigo-600 border-r-violet-500 animate-spin"
+              />
+            </div>
+            <p class="text-lg font-semibold text-gray-800 text-center tracking-tight">
+              Memuat dashboard CRM
+            </p>
+            <p class="text-sm text-gray-500 text-center mt-2 leading-relaxed">
+              Menyiapkan grafik dan data analitik…
+            </p>
+          </div>
+        </div>
+      </Transition>
     </div>
   </AppLayout>
 </template> 
@@ -3510,5 +3527,21 @@ onMounted(() => {
   }
   .animation-delay-4000 {
     animation-delay: 4s;
+  }
+
+  .crm-boot-card {
+    animation: crmBootPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes crmBootPulse {
+    0%,
+    100% {
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.18);
+    }
+    50% {
+      box-shadow:
+        0 25px 50px -12px rgb(99 102 241 / 0.2),
+        0 0 0 1px rgb(99 102 241 / 0.08);
+    }
   }
 </style>
