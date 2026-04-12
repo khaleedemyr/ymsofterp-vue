@@ -150,6 +150,7 @@
 
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -164,14 +165,32 @@ const props = defineProps({
   },
 });
 
-const confirmDelete = () => {
-  const confirmed = window.confirm(
-    `Yakin ingin menghapus injection #${props.transaction.id}? Point member akan otomatis dikurangi kembali.`
-  );
+const confirmDelete = async () => {
+  const result = await Swal.fire({
+    title: 'Hapus injection?',
+    html: `Yakin ingin menghapus injection <strong>#${props.transaction.id}</strong>?<br/>Point member akan otomatis dikurangi kembali.`,
+    icon: 'warning',
+    showCancelButton: true,
+    focusCancel: true,
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+  });
 
-  if (!confirmed) return;
+  if (!result.isConfirmed) return;
 
-  router.delete(`/manual-point/${props.transaction.id}`);
+  router.delete(`/manual-point/${props.transaction.id}`, {
+    onError: (errors) => {
+      const first = errors?.error;
+      const text = Array.isArray(first) ? first[0] : first || Object.values(errors || {})[0] || 'Coba lagi atau hubungi admin.';
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menghapus',
+        text: typeof text === 'string' ? text : String(text),
+      });
+    },
+  });
 };
 
 const formatDate = (date) => {
