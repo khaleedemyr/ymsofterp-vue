@@ -105,13 +105,14 @@
                   <td class="px-3 py-2">{{ idx + 1 }}</td>
                   <td class="px-3 py-2">
                     <div class="font-medium text-slate-800">{{ item.item_name || '-' }}</div>
-                    <div v-if="normalizedModifiers(item).length" class="mt-1 space-y-1">
+                    <div v-if="normalizedModifiers(item).length" class="mt-1 space-y-0.5">
+                      <div class="text-[11px] font-semibold text-slate-500">Modifier</div>
                       <div
-                        v-for="(modifier, mIdx) in normalizedModifiers(item)"
+                        v-for="(line, mIdx) in normalizedModifiers(item)"
                         :key="`mod-${idx}-${mIdx}`"
-                        class="text-xs text-slate-600"
+                        class="text-xs text-slate-600 pl-0.5"
                       >
-                        • Modifier: {{ modifier }}
+                        • {{ line }}
                       </div>
                     </div>
                     <div v-if="normalizedNotes(item)" class="mt-1 text-xs text-amber-700">
@@ -232,6 +233,75 @@ function normalizedNotes(item) {
   return text;
 }
 
+/**
+ * POS sering menyimpan modifiers sebagai string JSON, bahkan double-encoded: "{\"Potato\":{...}}".
+ */
+function parseModifierJsonDeep(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'object' && raw !== null) {
+    return raw;
+  }
+
+  let cur = raw;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof cur === 'object' && cur !== null) {
+      return cur;
+    }
+    const s = String(cur).trim();
+    if (!s || s.toLowerCase() === 'null') {
+      return null;
+    }
+    try {
+      cur = JSON.parse(s);
+    } catch {
+      return null;
+    }
+  }
+  return typeof cur === 'object' && cur !== null ? cur : null;
+}
+
+/**
+ * Bentuk umum: { "Grup": { "Nama opsi": qty, ... }, ... }
+ */
+function formatModifierGroupObject(obj) {
+  const lines = [];
+  for (const [groupName, choices] of Object.entries(obj)) {
+    if (choices == null) continue;
+
+    if (typeof choices === 'object' && !Array.isArray(choices)) {
+      const parts = [];
+      for (const [optName, qtyRaw] of Object.entries(choices)) {
+        const qty = Number(qtyRaw);
+        if (optName == null || String(optName).trim() === '') continue;
+        if (!Number.isNaN(qty) && qty <= 0) continue;
+        if (!Number.isNaN(qty) && qty > 1) {
+          parts.push(`${optName} ×${qty}`);
+        } else {
+          parts.push(String(optName));
+        }
+      }
+      if (parts.length) {
+        lines.push(`${groupName}: ${parts.join(', ')}`);
+      }
+      continue;
+    }
+
+    if (Array.isArray(choices)) {
+      const rendered = choices.map((c) => stringifyModifier(c)).filter(Boolean);
+      if (rendered.length) {
+        lines.push(`${groupName}: ${rendered.join(', ')}`);
+      }
+      continue;
+    }
+
+    const single = stringifyModifier(choices);
+    if (single) {
+      lines.push(`${groupName}: ${single}`);
+    }
+  }
+  return lines;
+}
+
 function normalizedModifiers(item) {
   if (Array.isArray(item?.modifiers_formatted) && item.modifiers_formatted.length) {
     return item.modifiers_formatted
@@ -246,37 +316,22 @@ function normalizedModifiers(item) {
     return raw.map((value) => stringifyModifier(value)).filter(Boolean);
   }
 
-  const rawString = String(raw).trim();
-  if (!rawString || rawString.toLowerCase() === 'null') return [];
-
-  try {
-    const parsed = JSON.parse(rawString);
-    if (Array.isArray(parsed)) {
-      return parsed.map((value) => stringifyModifier(value)).filter(Boolean);
-    }
-
-    if (parsed && typeof parsed === 'object') {
-      const flattened = [];
-      Object.entries(parsed).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          value.forEach((child) => {
-            const rendered = stringifyModifier(child);
-            if (rendered) flattened.push(`${key}: ${rendered}`);
-          });
-          return;
-        }
-
-        const rendered = stringifyModifier(value);
-        flattened.push(rendered ? `${key}: ${rendered}` : key);
-      });
-      return flattened.filter(Boolean);
-    }
-
-    const primitive = stringifyModifier(parsed);
-    return primitive ? [primitive] : [];
-  } catch (_) {
-    return [rawString];
+  const parsed = parseModifierJsonDeep(raw);
+  if (parsed == null) {
+    const fallback = String(raw).trim();
+    return fallback && fallback.toLowerCase() !== 'null' ? [fallback] : [];
   }
+
+  if (Array.isArray(parsed)) {
+    return parsed.map((value) => stringifyModifier(value)).filter(Boolean);
+  }
+
+  if (typeof parsed === 'object') {
+    return formatModifierGroupObject(parsed);
+  }
+
+  const primitive = stringifyModifier(parsed);
+  return primitive ? [primitive] : [];
 }
 
 function stringifyModifier(value) {
