@@ -137,13 +137,39 @@
                 <tr v-if="expanded[tanggal]">
                   <td :colspan="user.id_outlet == 1 ? 14 : 12" class="bg-blue-50 px-8 py-4">
                     <div v-if="ordersByDate(tanggal).length">
-                      <div class="font-bold mb-2 text-gray-700">Detail Order ({{ tanggal }})</div>
-                      <div class="overflow-x-auto">
+                      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+                        <div class="font-bold text-gray-700">Detail Order ({{ tanggal }})</div>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto sm:min-w-[280px] sm:max-w-md">
+                          <div class="relative flex-1">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none" aria-hidden="true" />
+                            <input
+                              v-model="orderDetailSearch[tanggal]"
+                              type="search"
+                              autocomplete="off"
+                              placeholder="Cari: nomor, paid no, member, meja, status…"
+                              class="w-full rounded-lg border border-blue-200 bg-white pl-9 pr-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+                          <span v-if="detailSearchQuery(tanggal)" class="text-xs text-gray-600 whitespace-nowrap shrink-0">
+                            {{ ordersByDateFiltered(tanggal).length }} / {{ ordersByDate(tanggal).length }} order
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        v-if="detailSearchQuery(tanggal) && !ordersByDateFiltered(tanggal).length"
+                        class="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-3"
+                      >
+                        Tidak ada order yang cocok dengan pencarian.
+                      </div>
+                      <div v-if="ordersByDateFiltered(tanggal).length" class="overflow-x-auto">
                         <table class="min-w-full text-sm rounded shadow">
                           <thead>
                             <tr class="bg-blue-200 text-blue-900">
                               <th class="px-3 py-2">No</th>
                               <th class="px-3 py-2">Nomor Order / Paid No</th>
+                              <th class="px-3 py-2">ID Member</th>
+                              <th class="px-3 py-2">Nama Member</th>
+                              <th class="px-3 py-2 text-right">Poin</th>
                               <th class="px-3 py-2">Table</th>
                               <th class="px-3 py-2">Pax</th>
                               <th class="px-3 py-2">Total</th>
@@ -157,9 +183,12 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="(order, idx) in ordersByDate(tanggal)" :key="order.id" class="bg-white border-b last:border-b-0 hover:bg-blue-100">
+                            <tr v-for="(order, idx) in ordersByDateFiltered(tanggal)" :key="order.id" class="bg-white border-b last:border-b-0 hover:bg-blue-100">
                               <td class="px-3 py-2">{{ idx + 1 }}</td>
                               <td class="px-3 py-2">{{ order.nomor }}{{ order.paid_number ? ' | ' + order.paid_number : '' }}</td>
+                              <td class="px-3 py-2 text-xs">{{ memberCellId(order) }}</td>
+                              <td class="px-3 py-2 text-xs">{{ memberCellName(order) }}</td>
+                              <td class="px-3 py-2 text-right text-xs whitespace-nowrap">{{ memberCellPoints(order) }}</td>
                               <td class="px-3 py-2">{{ order.table }}</td>
                               <td class="px-3 py-2">{{ order.pax }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.total) }}</td>
@@ -229,6 +258,8 @@ const showReport = ref(false);
 const showEodModal = ref(false);
 const selectedEodRow = ref({});
 const expanded = reactive({});
+/** Kata kunci pencarian detail order per tanggal (key = YYYY-MM-DD) */
+const orderDetailSearch = reactive({});
 const showOrderDetailModal = ref(false);
 const selectedOrderDetail = ref({});
 const user = usePage().props.auth?.user || {};
@@ -257,6 +288,39 @@ function toggleExpand(tanggal) {
 function ordersByDate(tanggal) {
   // Ambil order yang tanggalnya sama persis (YYYY-MM-DD)
   return (report.orders || []).filter(o => o.created_at && o.created_at.startsWith(tanggal));
+}
+
+function detailSearchQuery(tanggal) {
+  return String(orderDetailSearch[tanggal] ?? '').trim();
+}
+
+function orderMatchesDetailSearch(order, qLower) {
+  if (!qLower) return true;
+  const n = (v) => String(v ?? '').toLowerCase();
+  const haystack = [
+    n(order.nomor),
+    n(order.paid_number),
+    n(order.member_customer_id),
+    n(order.member_name),
+    n(order.member_points_earned),
+    n(order.table),
+    n(order.pax),
+    n(order.status),
+    n(order.cashier),
+    n(order.nama_outlet),
+    n(order.kode_outlet),
+    String(order.id ?? ''),
+    String(order.grand_total ?? ''),
+    String(order.total ?? ''),
+  ].join(' ');
+  return haystack.includes(qLower);
+}
+
+function ordersByDateFiltered(tanggal) {
+  const list = ordersByDate(tanggal);
+  const q = detailSearchQuery(tanggal).toLowerCase();
+  if (!q) return list;
+  return list.filter((o) => orderMatchesDetailSearch(o, q));
 }
 
 const fetchOutlets = async () => {
@@ -309,6 +373,34 @@ const formatCurrency = (val) => {
   if (typeof val !== 'number') val = Number(val) || 0;
   return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
 };
+
+function memberRowActive(order) {
+  return (
+    order.member_customer_id != null ||
+    order.member_name != null ||
+    order.member_points_earned != null
+  );
+}
+
+function memberCellId(order) {
+  if (!memberRowActive(order)) return '—';
+  const v = order.member_customer_id;
+  return v != null && String(v).trim() !== '' ? String(v) : '—';
+}
+
+function memberCellName(order) {
+  if (!memberRowActive(order)) return '—';
+  const v = order.member_name;
+  return v != null && String(v).trim() !== '' ? String(v) : '—';
+}
+
+function memberCellPoints(order) {
+  if (!memberRowActive(order)) return '—';
+  if (order.member_points_earned == null) return '—';
+  const n = Number(order.member_points_earned);
+  if (Number.isNaN(n)) return '—';
+  return `${n.toLocaleString('id-ID')} poin`;
+}
 
 function calculateDiscount(order) {
   // Pastikan konversi yang aman

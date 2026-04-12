@@ -7,6 +7,7 @@ use App\Http\Traits\ReportHelperTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Inertia\Inertia;
@@ -1655,33 +1656,41 @@ class SalesReportController extends Controller
             'all_params' => $request->all()
         ]);
 
+        $orderSelect = [
+            'orders.id',
+            'orders.nomor',
+            'orders.paid_number',
+            'orders.table',
+            'orders.pax',
+            'orders.total',
+            'orders.discount',
+            'orders.cashback',
+            'orders.dpp',
+            'orders.pb1',
+            'orders.service',
+            'orders.commfee',
+            'orders.rounding',
+            'orders.grand_total',
+            'orders.status',
+            'orders.created_at',
+            'orders.kode_outlet',
+            'tdo.nama_outlet',
+            'orders.manual_discount_amount',
+            'orders.manual_discount_reason',
+            'orders.promo_discount_info',
+            'orders.promo_ids',
+            'orders.waiters',
+            'orders.mode',
+        ];
+        if (Schema::hasColumn('orders', 'member_id')) {
+            $orderSelect[] = 'orders.member_id';
+        }
+        if (Schema::hasColumn('orders', 'member_name')) {
+            $orderSelect[] = 'orders.member_name';
+        }
+
         $query = DB::table('orders')
-            ->select([
-                'orders.id',
-                'orders.nomor',
-                'orders.paid_number',
-                'orders.table',
-                'orders.pax',
-                'orders.total',
-                'orders.discount',
-                'orders.cashback',
-                'orders.dpp',
-                'orders.pb1',
-                'orders.service',
-                'orders.commfee',
-                'orders.rounding',
-                'orders.grand_total',
-                'orders.status',
-                'orders.created_at',
-                'orders.kode_outlet',
-                'tdo.nama_outlet',
-                'orders.manual_discount_amount',
-                'orders.manual_discount_reason',
-                'orders.promo_discount_info',
-                'orders.promo_ids',
-                'orders.waiters',
-                'orders.mode',
-            ])
+            ->select($orderSelect)
             ->leftJoin('tbl_data_outlet as tdo', 'orders.kode_outlet', '=', 'tdo.qr_code');
 
         if ($outlet) {
@@ -1739,6 +1748,84 @@ class SalesReportController extends Controller
         ]);
 
         $orders = $query->orderBy('orders.created_at')->get();
+
+        // Poin earn dari POS / ERP: reference_id = orders.id atau paid_number (manual inject)
+        $pointSums = [];
+        $memberPkByRef = [];
+        $refKeys = [];
+        foreach ($orders as $o) {
+            $refKeys[] = (string) $o->id;
+            $pn = trim((string) ($o->paid_number ?? ''));
+            if ($pn !== '') {
+                $refKeys[] = $pn;
+            }
+        }
+        $refKeys = array_values(array_unique(array_filter($refKeys)));
+        if (!empty($refKeys) && Schema::hasTable('member_apps_point_transactions')) {
+            $agg = DB::table('member_apps_point_transactions')
+                ->where('transaction_type', 'earn')
+                ->whereIn('reference_id', $refKeys)
+                ->select('reference_id', DB::raw('SUM(point_amount) as total_points'))
+                ->groupBy('reference_id')
+                ->get();
+            foreach ($agg as $row) {
+                $pointSums[(string) $row->reference_id] = (int) $row->total_points;
+            }
+
+            $earnRows = DB::table('member_apps_point_transactions')
+                ->where('transaction_type', 'earn')
+                ->whereIn('reference_id', $refKeys)
+                ->orderBy('id')
+                ->select('reference_id', 'member_id')
+                ->get();
+            foreach ($earnRows as $er) {
+                $rk = (string) $er->reference_id;
+                if (!isset($memberPkByRef[$rk])) {
+                    $memberPkByRef[$rk] = (int) $er->member_id;
+                }
+            }
+        }
+
+        $memberCodesToFetch = [];
+        $memberPksToFetch = [];
+        foreach ($orders as $o) {
+            $raw = trim((string) ($o->member_id ?? ''));
+            if ($raw !== '') {
+                $memberCodesToFetch[] = $raw;
+                if (ctype_digit($raw)) {
+                    $memberPksToFetch[] = (int) $raw;
+                }
+            }
+        }
+        foreach ($memberPkByRef as $pk) {
+            if ($pk > 0) {
+                $memberPksToFetch[] = $pk;
+            }
+        }
+        $memberCodesToFetch = array_values(array_unique($memberCodesToFetch));
+        $memberPksToFetch = array_values(array_unique(array_filter($memberPksToFetch)));
+
+        $memberByCode = [];
+        $memberByPk = [];
+        if (Schema::hasTable('member_apps_members') && (!empty($memberCodesToFetch) || !empty($memberPksToFetch))) {
+            $mq = DB::table('member_apps_members')->select('id', 'member_id', 'nama_lengkap');
+            $mq->where(function ($q) use ($memberCodesToFetch, $memberPksToFetch) {
+                if (!empty($memberCodesToFetch)) {
+                    $q->whereIn('member_id', $memberCodesToFetch);
+                }
+                if (!empty($memberPksToFetch)) {
+                    if (!empty($memberCodesToFetch)) {
+                        $q->orWhereIn('id', $memberPksToFetch);
+                    } else {
+                        $q->whereIn('id', $memberPksToFetch);
+                    }
+                }
+            });
+            foreach ($mq->get() as $m) {
+                $memberByCode[(string) $m->member_id] = $m;
+                $memberByPk[(int) $m->id] = $m;
+            }
+        }
         
         // Load payments for all orders
         $orderIds = $orders->pluck('id')->toArray();
@@ -1818,8 +1905,16 @@ class SalesReportController extends Controller
             }
         }
         
-        // Attach payments to each order
-        $ordersArray = $orders->map(function($order) use ($payments, $orderItems, $orderPromoNames) {
+        // Attach payments + member / poin ke setiap order
+        $ordersArray = $orders->map(function ($order) use (
+            $payments,
+            $orderItems,
+            $orderPromoNames,
+            $pointSums,
+            $memberPkByRef,
+            $memberByCode,
+            $memberByPk
+        ) {
             $orderArray = (array) $order;
             $paymentRows = $payments[$order->id] ?? [];
             $cashiers = array_values(array_unique(array_filter(array_map(function ($payment) {
@@ -1830,6 +1925,47 @@ class SalesReportController extends Controller
             $orderArray['items'] = $orderItems[$order->id] ?? [];
             $orderArray['cashier'] = !empty($cashiers) ? implode(', ', $cashiers) : null;
             $orderArray['promo_names'] = $orderPromoNames[$order->id] ?? [];
+
+            $rawMid = trim((string) ($order->member_id ?? ''));
+            $m = null;
+            if ($rawMid !== '') {
+                $m = $memberByCode[$rawMid] ?? null;
+                if (!$m && ctype_digit($rawMid)) {
+                    $m = $memberByPk[(int) $rawMid] ?? null;
+                }
+            }
+
+            $pid = (string) $order->id;
+            $paid = trim((string) ($order->paid_number ?? ''));
+            $pts = (int) ($pointSums[$pid] ?? 0);
+            if ($pts === 0 && $paid !== '' && $paid !== $pid) {
+                $pts = (int) ($pointSums[$paid] ?? 0);
+            }
+
+            if (!$m) {
+                $pk = $memberPkByRef[$pid] ?? (($paid !== '' && $paid !== $pid) ? ($memberPkByRef[$paid] ?? null) : null);
+                if ($pk) {
+                    $m = $memberByPk[$pk] ?? null;
+                }
+            }
+
+            $memberCustomerId = $m ? (string) $m->member_id : ($rawMid !== '' ? $rawMid : null);
+            $memberName = trim((string) ($order->member_name ?? ''));
+            if ($memberName === '' && $m) {
+                $memberName = (string) $m->nama_lengkap;
+            }
+
+            $isMemberRow = ($rawMid !== '') || $m !== null || $pts > 0;
+            if ($isMemberRow) {
+                $orderArray['member_customer_id'] = $memberCustomerId ?: null;
+                $orderArray['member_name'] = $memberName !== '' ? $memberName : null;
+                $orderArray['member_points_earned'] = $pts;
+            } else {
+                $orderArray['member_customer_id'] = null;
+                $orderArray['member_name'] = null;
+                $orderArray['member_points_earned'] = null;
+            }
+
             return $orderArray;
         })->toArray();
         

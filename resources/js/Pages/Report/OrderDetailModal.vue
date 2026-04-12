@@ -173,6 +173,9 @@ function printDetail() {
 const displayOrderKeys = [
   'nomor',
   'paid_number',
+  'member_customer_id',
+  'member_name',
+  'member_points_earned',
   'nama_outlet',
   'kode_outlet',
   'table',
@@ -186,7 +189,6 @@ const displayOrderKeys = [
   'service',
   'grand_total',
   'status',
-  'member_name',
 ];
 
 function formatKey(key) {
@@ -209,12 +211,20 @@ function formatKey(key) {
     kode_outlet: 'Kode Outlet',
     nama_outlet: 'Nama Outlet',
     cashier: 'Kasir',
-    member_name: 'Member',
+    member_customer_id: 'ID Member',
+    member_name: 'Nama Member',
+    member_points_earned: 'Poin didapat',
   };
   return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
 function formatValue(key, val) {
+  if (key === 'member_points_earned') {
+    if (val === '' || val == null) return '-';
+    const n = Number(val);
+    if (Number.isNaN(n)) return '-';
+    return `${n.toLocaleString('id-ID')} poin`;
+  }
   if (key.match(/total|discount|cashback|service|pb1|grand|dpp|rounding/i)) {
     if (typeof val === 'number') return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
   }
