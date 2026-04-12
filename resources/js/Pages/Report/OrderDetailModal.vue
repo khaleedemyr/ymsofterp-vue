@@ -1,20 +1,22 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="$emit('close')">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col relative animate-fadeIn overflow-hidden">
+  <div
+    class="order-detail-print-root fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+    @click.self="$emit('close')"
+  >
+    <div class="order-detail-print-card bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col relative animate-fadeIn overflow-hidden">
       <!-- Header -->
       <div class="bg-gradient-to-r from-slate-700 to-slate-800 text-white px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h2 class="text-lg font-bold">Detail Order</h2>
           <p class="text-slate-300 text-sm mt-0.5">{{ order.nomor }}{{ order.paid_number ? ` · ${order.paid_number}` : '' }}</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 no-print">
           <button
-            v-if="order.id"
             type="button"
-            @click="exportPdf"
+            @click="printDetail"
             class="px-3 py-2 rounded-lg text-sm font-semibold bg-white/15 text-white hover:bg-white/25 transition"
           >
-            Export PDF
+            Cetak
           </button>
           <button
             type="button"
@@ -161,18 +163,10 @@ import { computed } from 'vue';
 
 const props = defineProps({
   order: { type: Object, required: true },
-  /** Base path tanpa query; internal vs external report */
-  pdfExportBasePath: {
-    type: String,
-    default: '/report/sales-simple/export-order-detail-pdf',
-  },
 });
 
-function exportPdf() {
-  const id = props.order?.id;
-  if (id == null || id === '') return;
-  const q = new URLSearchParams({ order_id: String(id) });
-  window.open(`${props.pdfExportBasePath}?${q.toString()}`, '_blank');
+function printDetail() {
+  window.print();
 }
 
 // Hanya field yang ditampilkan di "Info Transaksi" — tidak ada raw JSON
@@ -434,5 +428,46 @@ const parsedPromoDiscountInfo = computed(() => {
 }
 .animate-fadeIn {
   animation: fadeIn 0.25s;
+}
+</style>
+
+<style>
+/* Hanya untuk dialog cetak browser (Save as PDF / Microsoft Print to PDF) */
+@media print {
+  @page {
+    margin: 12mm;
+    size: a4 portrait;
+  }
+  #app {
+    visibility: hidden !important;
+  }
+  .order-detail-print-root {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .order-detail-print-root * {
+    visibility: visible !important;
+  }
+  .order-detail-print-card {
+    max-width: 100% !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+  .no-print {
+    display: none !important;
+  }
 }
 </style> 
