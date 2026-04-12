@@ -23,12 +23,12 @@
           <div class="ml-3 text-sm text-blue-700 space-y-1">
             <p>
               Sama dengan poin dari POS: isi <strong>nilai transaksi (Rp)</strong> dan
-              <strong>ID order</strong>. Poin dihitung otomatis dari tier member (Silver / Loyal / Elite),
+              <strong>paid_number / nomor bill</strong> dari struk. Poin dihitung otomatis dari tier member,
               channel, serta aturan sisa desimal seperti API <code class="bg-blue-100 px-1 rounded">/points/earn</code>.
             </p>
             <p>
-              Belanja rolling 12 bulan dan tier ikut ter-update. Expiry poin 1 tahun dari tanggal transaksi
-              (sama POS). Order ID yang sama tidak bisa didobel jika sudah ada transaksi earn.
+              Belanja rolling 12 bulan dan tier ikut ter-update. Expiry poin 1 tahun dari tanggal transaksi.
+              Nomor bill yang sama tidak bisa didobel jika sudah ada transaksi earn.
             </p>
           </div>
         </div>
@@ -43,15 +43,16 @@
             <input
               type="text"
               v-model="memberSearch"
-              @input="searchMembers"
-              placeholder="Cari member (ID, Nama, Email, atau No. HP) - minimal 2 karakter"
+              @input="searchMembersDebounced"
+              @blur="searchMembersNow"
+              placeholder="ID database (boleh 1 angka, mis. 1), kode member, nama, email, atau HP — min. 2 huruf untuk teks"
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <div v-if="searchingMembers" class="absolute right-3 top-3">
               <i class="fa fa-spinner fa-spin text-gray-400"></i>
             </div>
             <div
-              v-if="memberOptions.length > 0 && memberSearch && memberSearch.length >= 2"
+              v-if="memberOptions.length > 0 && memberSearch && (memberSearch.trim().length >= 2 || /^\d+$/.test(memberSearch.trim()))"
               class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"
             >
               <div
@@ -77,7 +78,7 @@
               </div>
             </div>
             <div
-              v-if="memberSearch && memberSearch.length >= 2 && memberOptions.length === 0 && !searchingMembers"
+              v-if="memberSearch && (memberSearch.trim().length >= 2 || /^\d+$/.test(memberSearch.trim())) && memberOptions.length === 0 && !searchingMembers"
               class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 text-center text-gray-500"
             >
               Tidak ada member yang ditemukan
@@ -94,6 +95,11 @@
               </button>
             </div>
           </div>
+          <p v-if="!selectedMember && memberSearch && !form.member_id" class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            <i class="fa-solid fa-hand-pointer mr-1"></i>
+            <strong>Member belum terpilih.</strong> Ketik lalu <strong>klik salah satu nama</strong> di daftar bawah kolom.
+            Untuk <strong>ID database</strong> angka (mis. <code class="bg-amber-100 px-1 rounded">1</code>), ketik lalu klik di luar kolom atau tunggu sebentar — jika satu hasil, terpilih otomatis.
+          </p>
           <div v-if="errors.member_id" class="mt-1 text-sm text-red-600">
             {{ errors.member_id }}
           </div>
@@ -101,19 +107,19 @@
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">
-            ID Order POS <span class="text-red-500">*</span>
+            Paid number / nomor bill <span class="text-red-500">*</span>
           </label>
           <input
             type="text"
-            v-model="form.order_id"
+            v-model="form.paid_number"
             required
             maxlength="255"
-            placeholder="Sama dengan reference_id / id order di POS"
+            placeholder="paid_number di bill / struk POS (bukan internal id order)"
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
-          <div class="text-xs text-gray-500 mt-1">Wajib unik: jika order sudah pernah earn, tidak bisa di-inject lagi.</div>
-          <div v-if="errors.order_id" class="mt-1 text-sm text-red-600">
-            {{ errors.order_id }}
+          <div class="text-xs text-gray-500 mt-1">Wajib unik: jika bill ini sudah pernah earn, tidak bisa di-inject lagi.</div>
+          <div v-if="errors.paid_number" class="mt-1 text-sm text-red-600">
+            {{ errors.paid_number }}
           </div>
         </div>
 
@@ -252,7 +258,7 @@ const props = defineProps({
 
 const form = useForm({
   member_id: null,
-  order_id: '',
+  paid_number: '',
   transaction_amount: null,
   transaction_date: new Date().toISOString().split('T')[0],
   channel: 'pos',
@@ -270,24 +276,43 @@ const today = new Date().toISOString().split('T')[0];
 
 let searchTimeout = null;
 
-const searchMembers = async () => {
-  const search = memberSearch.value;
-  if (!search || search.length < 2) {
+const runMemberSearch = async () => {
+  const search = memberSearch.value.trim();
+  if (!search) {
     memberOptions.value = [];
     return;
   }
-  if (searchTimeout) clearTimeout(searchTimeout);
+  const numericOnly = /^\d+$/.test(search);
+  if (search.length < 2 && !numericOnly) {
+    memberOptions.value = [];
+    return;
+  }
   searchingMembers.value = true;
-  searchTimeout = setTimeout(async () => {
-    try {
-      const response = await axios.get('/manual-point/search-members', { params: { search } });
-      memberOptions.value = response.data || [];
-    } catch {
-      memberOptions.value = [];
-    } finally {
-      searchingMembers.value = false;
+  try {
+    const response = await axios.get('/manual-point/search-members', { params: { search } });
+    memberOptions.value = response.data || [];
+    if (numericOnly && memberOptions.value.length === 1) {
+      selectMember(memberOptions.value[0]);
     }
-  }, 300);
+  } catch {
+    memberOptions.value = [];
+  } finally {
+    searchingMembers.value = false;
+  }
+};
+
+const searchMembersDebounced = () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => runMemberSearch(), 300);
+};
+
+/** Langsung cari saat blur — penting untuk ID satu digit seperti 1 tanpa nunggu debounce */
+const searchMembersNow = () => {
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+    searchTimeout = null;
+  }
+  runMemberSearch();
 };
 
 const selectMember = (member) => {
@@ -329,7 +354,7 @@ const roughPointsPreview = computed(() => {
 const canSubmit = computed(() => {
   return (
     form.member_id &&
-    form.order_id.trim().length > 0 &&
+    form.paid_number.trim().length > 0 &&
     form.transaction_amount > 0 &&
     form.transaction_date &&
     form.description.trim().length > 0

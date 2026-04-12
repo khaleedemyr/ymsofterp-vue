@@ -40,7 +40,7 @@
             <p class="text-lg font-semibold text-gray-800">#{{ transaction.id }}</p>
           </div>
           <div>
-            <label class="text-sm font-medium text-gray-600">Reference ID</label>
+            <label class="text-sm font-medium text-gray-600">Paid number / bill (reference)</label>
             <p class="text-sm text-gray-800">{{ transaction.reference_id || '-' }}</p>
           </div>
           <div>

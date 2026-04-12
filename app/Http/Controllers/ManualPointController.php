@@ -110,19 +110,34 @@ class ManualPointController extends Controller
 
     public function searchMembers(Request $request)
     {
-        $search = $request->get('search', '');
+        $search = trim((string) $request->get('search', ''));
 
-        if (strlen($search) < 2) {
+        if ($search === '') {
             return response()->json([]);
         }
 
-        $members = MemberAppsMember::where('is_active', true)
-            ->where(function ($query) use ($search) {
-                $query->where('member_id', 'like', "%{$search}%")
-                    ->orWhere('nama_lengkap', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('mobile_phone', 'like', "%{$search}%");
-            })
+        // Hanya angka: cocokkan id primary key DB atau kolom member_id persis (termasuk "1").
+        // Tanpa filter is_active — staff ERP tetap perlu backfill meski member nonaktif.
+        if (ctype_digit($search)) {
+            $members = MemberAppsMember::query()
+                ->where(function ($query) use ($search) {
+                    $query->where('id', (int) $search)
+                        ->orWhere('member_id', $search);
+                });
+        } else {
+            if (strlen($search) < 2) {
+                return response()->json([]);
+            }
+            $members = MemberAppsMember::where('is_active', true)
+                ->where(function ($query) use ($search) {
+                    $query->where('member_id', 'like', "%{$search}%")
+                        ->orWhere('nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('mobile_phone', 'like', "%{$search}%");
+                });
+        }
+
+        $members = $members
             ->select('id', 'member_id', 'nama_lengkap', 'email', 'mobile_phone', 'member_level', 'just_points')
             ->limit(20)
             ->get()
@@ -151,7 +166,7 @@ class ManualPointController extends Controller
             'member_id' => 'required|integer|exists:member_apps_members,id',
             'transaction_amount' => 'required|numeric|min:0.01',
             'transaction_date' => 'required|date',
-            'order_id' => 'required|string|max:255',
+            'paid_number' => 'required|string|max:255',
             'channel' => 'nullable|string|in:dine-in,take-away,delivery-restaurant,gift-voucher,e-commerce,pos',
             'is_gift_voucher_payment' => 'nullable|boolean',
             'is_ecommerce_order' => 'nullable|boolean',
@@ -162,14 +177,14 @@ class ManualPointController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        $orderId = $request->order_id;
-        $existingTransaction = MemberAppsPointTransaction::where('reference_id', $orderId)
+        $paidNumber = $request->paid_number;
+        $existingTransaction = MemberAppsPointTransaction::where('reference_id', $paidNumber)
             ->where('transaction_type', 'earn')
             ->first();
 
         if ($existingTransaction) {
             return back()->withErrors([
-                'order_id' => 'Poin untuk order ID ini sudah pernah tercatat (earn). Tidak bisa dobel.',
+                'paid_number' => 'Poin untuk nomor bill / paid_number ini sudah pernah tercatat (earn). Tidak bisa dobel.',
             ])->withInput();
         }
 
@@ -178,7 +193,7 @@ class ManualPointController extends Controller
 
             $result = $this->pointEarningService->earnPointsFromOrder(
                 $member->id,
-                $orderId,
+                $paidNumber,
                 (float) $request->transaction_amount,
                 $request->transaction_date,
                 $request->input('channel', 'pos'),
@@ -200,11 +215,11 @@ class ManualPointController extends Controller
             $member->refresh();
 
             return redirect()->route('manual-point.index')
-                ->with('success', "Backfill POS berhasil: {$points} poin untuk {$member->nama_lengkap} (total {$member->just_points} poin), order {$orderId}.");
+                ->with('success', "Backfill POS berhasil: {$points} poin untuk {$member->nama_lengkap} (total {$member->just_points} poin), bill {$paidNumber}.");
         } catch (\Exception $e) {
             Log::error('Error manual POS point backfill', [
                 'member_id' => $request->member_id,
-                'order_id' => $orderId ?? null,
+                'paid_number' => $paidNumber ?? null,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);

@@ -82,7 +82,7 @@
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Member</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Point Amount</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Nilai Transaksi</th>
-                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Order / Ref</th>
+                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Paid number / bill</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Keterangan</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal Transaksi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Expiry Date</th>
