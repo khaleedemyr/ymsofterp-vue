@@ -130,6 +130,59 @@ class MemberTierService
     /**
      * Record a transaction and update monthly spending
      */
+    /**
+     * Reverse a previously recorded spending amount (e.g. delete manual ERP earn backfill).
+     * Adjusts monthly bucket, lifetime total_spending, and recalculates tier.
+     */
+    public static function reverseRecordedTransaction($memberId, $amount, $transactionDate)
+    {
+        try {
+            $amount = (float) $amount;
+            if ($amount <= 0) {
+                return true;
+            }
+
+            if (!$transactionDate instanceof Carbon) {
+                $transactionDate = Carbon::parse($transactionDate);
+            }
+
+            $year = (int) $transactionDate->format('Y');
+            $month = (int) $transactionDate->format('m');
+
+            $monthlySpending = MemberAppsMonthlySpending::where('member_id', $memberId)
+                ->where('year', $year)
+                ->where('month', $month)
+                ->first();
+
+            if ($monthlySpending && (float) $monthlySpending->total_spending >= $amount) {
+                $monthlySpending->total_spending = (float) $monthlySpending->total_spending - $amount;
+                $monthlySpending->transaction_count = max(0, (int) $monthlySpending->transaction_count - 1);
+                $monthlySpending->save();
+            }
+
+            $member = MemberAppsMember::find($memberId);
+            if ($member) {
+                $currentTotal = (float) ($member->total_spending ?? 0);
+                if ($currentTotal >= $amount) {
+                    $member->total_spending = $currentTotal - $amount;
+                    $member->save();
+                }
+            }
+
+            self::updateMemberTier($memberId, $transactionDate);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Error reversing recorded transaction for tier', [
+                'member_id' => $memberId,
+                'amount' => $amount,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
     public static function recordTransaction($memberId, $amount, $transactionDate = null)
     {
         try {

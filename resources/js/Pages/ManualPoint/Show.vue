@@ -59,6 +59,26 @@
             </p>
           </div>
           <div>
+            <label class="text-sm font-medium text-gray-600">Nilai transaksi (Rp)</label>
+            <p class="text-gray-800">
+              <template v-if="transaction.transaction_amount != null && transaction.transaction_amount !== ''">
+                Rp {{ formatNumber(transaction.transaction_amount) }}
+              </template>
+              <span v-else>—</span>
+            </p>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-gray-600">Tipe / Channel</label>
+            <p class="text-gray-800">
+              {{ transaction.transaction_type || '—' }}
+              <span v-if="transaction.channel" class="text-gray-500"> · {{ transaction.channel }}</span>
+            </p>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-gray-600">Earning rate</label>
+            <p class="text-gray-800">{{ transaction.earning_rate != null ? transaction.earning_rate : '—' }}</p>
+          </div>
+          <div>
             <label class="text-sm font-medium text-gray-600">Tanggal Transaksi</label>
             <p class="text-gray-800">{{ formatDate(transaction.transaction_date) }}</p>
           </div>

@@ -81,7 +81,8 @@
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">ID</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Member</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Point Amount</th>
-                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Reference ID</th>
+                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Nilai Transaksi</th>
+                <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Order / Ref</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Keterangan</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Tanggal Transaksi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold uppercase tracking-wider">Expiry Date</th>
@@ -101,6 +102,12 @@
                   <span class="px-2 py-1 text-sm font-semibold rounded-full bg-green-100 text-green-800">
                     +{{ formatNumber(transaction.point_amount) }} points
                   </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                  <template v-if="transaction.transaction_amount != null && transaction.transaction_amount !== ''">
+                    Rp {{ formatNumber(transaction.transaction_amount) }}
+                  </template>
+                  <span v-else class="text-gray-400">—</span>
                 </td>
                 <td class="px-6 py-4 text-sm text-gray-600">
                   {{ transaction.reference_id || '-' }}

@@ -90,9 +90,10 @@ class PointEarningService
      * @param string $channel Channel type: 'dine-in', 'take-away', 'delivery-restaurant', 'gift-voucher', 'e-commerce'
      * @param bool $isGiftVoucherPayment Whether payment was made using gift voucher
      * @param bool $isEcommerceOrder Whether order is from e-commerce (Go-Food/Grab Food)
+     * @param array $options Optional: manual_note (string), manual_injected_by_user_id (int) — appends ERP manual marker to description
      * @return array|null
      */
-    public function earnPointsFromOrder($memberId, $orderId, $transactionAmount, $transactionDate, $channel = 'pos', $isGiftVoucherPayment = false, $isEcommerceOrder = false)
+    public function earnPointsFromOrder($memberId, $orderId, $transactionAmount, $transactionDate, $channel = 'pos', $isGiftVoucherPayment = false, $isEcommerceOrder = false, array $options = [])
     {
         try {
             DB::beginTransaction();
@@ -226,6 +227,15 @@ class PointEarningService
 
             // Ensure transaction_type is 'earn' (not 'earning')
             $transactionType = 'earn';
+
+            $description = "Point earning from order {$orderId}";
+            $manualNote = isset($options['manual_note']) ? trim((string) $options['manual_note']) : '';
+            if ($manualNote !== '') {
+                $description .= ' — '.$manualNote;
+            }
+            if (! empty($options['manual_injected_by_user_id'])) {
+                $description .= ' [ERP manual inject #'.(int) $options['manual_injected_by_user_id'].']';
+            }
             
             Log::info('Creating point transaction', [
                 'member_id' => $member->id,
@@ -244,7 +254,7 @@ class PointEarningService
                 'earning_rate' => $earningRate,
                 'channel' => $normalizedChannel,
                 'reference_id' => $orderId,
-                'description' => "Point earning from order {$orderId}",
+                'description' => $description,
                 'expires_at' => $expiresAt->format('Y-m-d'),
                 'is_expired' => false,
             ]);

@@ -4,18 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\MemberAppsMember;
 use App\Models\MemberAppsPointTransaction;
-use App\Models\MemberAppsPointEarning;
+use App\Services\MemberTierService;
 use App\Services\PointEarningService;
-use App\Events\PointEarned;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
-use Carbon\Carbon;
 
 class ManualPointController extends Controller
 {
+    /** Marker appended by PointEarningService for ERP manual backfill (same rules as POS earn). */
+    public const ERP_MANUAL_DESCRIPTION_LIKE = '%[ERP manual inject]%';
+
     protected $pointEarningService;
 
     public function __construct(PointEarningService $pointEarningService)
@@ -24,33 +25,46 @@ class ManualPointController extends Controller
     }
 
     /**
+     * Manual injections: legacy adjustment rows, or earn rows created from ERP manual POS backfill.
+     */
+    protected function scopeManualInjections($query)
+    {
+        return $query->where(function ($q) {
+            $q->where(function ($q2) {
+                $q2->where('transaction_type', 'adjustment')
+                    ->where('channel', 'adjustment');
+            })->orWhere(function ($q2) {
+                $q2->where('transaction_type', 'earn')
+                    ->where('description', 'like', self::ERP_MANUAL_DESCRIPTION_LIKE);
+            });
+        });
+    }
+
+    /**
      * Display list of manual point injections
      */
     public function index(Request $request)
     {
         $query = MemberAppsPointTransaction::with([
-                'member',
-                'earning:id,point_transaction_id,remaining_points'
-            ])
-            ->where('transaction_type', 'adjustment')
-            ->where('channel', 'adjustment')
+            'member',
+            'earning:id,point_transaction_id,remaining_points',
+        ])
+            ->tap(fn ($q) => $this->scopeManualInjections($q))
             ->orderBy('created_at', 'desc');
 
-        // Search
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('reference_id', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhereHas('member', function ($memberQuery) use ($search) {
-                      $memberQuery->where('member_id', 'like', "%{$search}%")
-                                  ->orWhere('nama_lengkap', 'like', "%{$search}%")
-                                  ->orWhere('email', 'like', "%{$search}%");
-                  });
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('member', function ($memberQuery) use ($search) {
+                        $memberQuery->where('member_id', 'like', "%{$search}%")
+                            ->orWhere('nama_lengkap', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
             });
         }
 
-        // Filter by date
         if ($request->filled('date_from')) {
             $query->where('transaction_date', '>=', $request->date_from);
         }
@@ -58,7 +72,6 @@ class ManualPointController extends Controller
             $query->where('transaction_date', '<=', $request->date_to);
         }
 
-        // Pagination
         $perPage = $request->get('per_page', 15);
         $transactions = $query->paginate($perPage)->withQueryString();
         $transactions->setCollection(
@@ -70,19 +83,17 @@ class ManualPointController extends Controller
             })
         );
 
-        // Stats
+        $statsBase = function () {
+            $q = MemberAppsPointTransaction::query();
+            $this->scopeManualInjections($q);
+
+            return $q;
+        };
+
         $stats = [
-            'total_injections' => MemberAppsPointTransaction::where('transaction_type', 'adjustment')
-                ->where('channel', 'adjustment')
-                ->count(),
-            'total_points_injected' => MemberAppsPointTransaction::where('transaction_type', 'adjustment')
-                ->where('channel', 'adjustment')
-                ->where('point_amount', '>', 0)
-                ->sum('point_amount'),
-            'today_injections' => MemberAppsPointTransaction::where('transaction_type', 'adjustment')
-                ->where('channel', 'adjustment')
-                ->whereDate('created_at', today())
-                ->count(),
+            'total_injections' => $statsBase()->count(),
+            'total_points_injected' => $statsBase()->where('point_amount', '>', 0)->sum('point_amount'),
+            'today_injections' => $statsBase()->whereDate('created_at', today())->count(),
         ];
 
         return Inertia::render('ManualPoint/Index', [
@@ -92,17 +103,11 @@ class ManualPointController extends Controller
         ]);
     }
 
-    /**
-     * Show form for manual point injection
-     */
     public function create()
     {
         return Inertia::render('ManualPoint/Create');
     }
 
-    /**
-     * Search members for autocomplete
-     */
     public function searchMembers(Request $request)
     {
         $search = $request->get('search', '');
@@ -130,7 +135,7 @@ class ManualPointController extends Controller
                     'mobile_phone' => $member->mobile_phone,
                     'member_level' => $member->member_level,
                     'just_points' => $member->just_points ?? 0,
-                    'label' => $member->nama_lengkap . ' (' . $member->member_id . ') - ' . ($member->just_points ?? 0) . ' points',
+                    'label' => $member->nama_lengkap.' ('.$member->member_id.') - '.($member->just_points ?? 0).' points',
                 ];
             });
 
@@ -138,126 +143,80 @@ class ManualPointController extends Controller
     }
 
     /**
-     * Store manual point injection
+     * Backfill POS earn: same rules as POST /mobile/member/points/earn (amount + tier rate, tier spending).
      */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'member_id' => 'required|integer|exists:member_apps_members,id',
-            'point_amount' => 'required|integer|min:1|max:100000',
+            'transaction_amount' => 'required|numeric|min:0.01',
             'transaction_date' => 'required|date',
-            'reference_id' => 'nullable|string|max:255',
+            'order_id' => 'required|string|max:255',
+            'channel' => 'nullable|string|in:dine-in,take-away,delivery-restaurant,gift-voucher,e-commerce,pos',
+            'is_gift_voucher_payment' => 'nullable|boolean',
+            'is_ecommerce_order' => 'nullable|boolean',
             'description' => 'required|string|max:500',
-            'expires_at' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
 
+        $orderId = $request->order_id;
+        $existingTransaction = MemberAppsPointTransaction::where('reference_id', $orderId)
+            ->where('transaction_type', 'earn')
+            ->first();
+
+        if ($existingTransaction) {
+            return back()->withErrors([
+                'order_id' => 'Poin untuk order ID ini sudah pernah tercatat (earn). Tidak bisa dobel.',
+            ])->withInput();
+        }
+
         try {
-            DB::beginTransaction();
-
             $member = MemberAppsMember::findOrFail($request->member_id);
-            $pointAmount = $request->point_amount;
-            $transactionDate = Carbon::parse($request->transaction_date);
-            $referenceId = $request->reference_id ?? 'MANUAL-' . now()->format('YmdHis') . '-' . $member->id;
-            $description = $request->description;
-            
-            // Calculate expiration date (default: 1 year from transaction date)
-            $expiresAt = $request->expires_at 
-                ? Carbon::parse($request->expires_at) 
-                : $transactionDate->copy()->addYear();
 
-            // Create point transaction
-            $pointTransaction = MemberAppsPointTransaction::create([
-                'member_id' => $member->id,
-                'transaction_type' => 'adjustment',
-                'transaction_date' => $transactionDate->format('Y-m-d'),
-                'point_amount' => $pointAmount,
-                'transaction_amount' => null, // Manual injection doesn't have transaction amount
-                'earning_rate' => null, // Manual injection doesn't have earning rate
-                'channel' => 'adjustment',
-                'reference_id' => $referenceId,
-                'description' => $description,
-                'expires_at' => $expiresAt->format('Y-m-d'),
-                'is_expired' => false,
-            ]);
+            $result = $this->pointEarningService->earnPointsFromOrder(
+                $member->id,
+                $orderId,
+                (float) $request->transaction_amount,
+                $request->transaction_date,
+                $request->input('channel', 'pos'),
+                $request->boolean('is_gift_voucher_payment'),
+                $request->boolean('is_ecommerce_order'),
+                [
+                    'manual_note' => $request->description,
+                    'manual_injected_by_user_id' => auth()->id(),
+                ]
+            );
 
-            // Create point earning record (for FIFO tracking)
-            $pointEarning = MemberAppsPointEarning::create([
-                'member_id' => $member->id,
-                'point_transaction_id' => $pointTransaction->id,
-                'point_amount' => $pointAmount,
-                'remaining_points' => $pointAmount, // Initially all points are remaining
-                'earned_at' => $transactionDate->format('Y-m-d'),
-                'expires_at' => $expiresAt->format('Y-m-d'),
-                'is_expired' => false,
-                'is_fully_redeemed' => false,
-            ]);
-
-            // Update member's total points
-            $member->increment('just_points', $pointAmount);
-            
-            // Refresh member to get updated points
-            $member->refresh();
-
-            DB::commit();
-
-            Log::info('Manual point injection successful', [
-                'member_id' => $member->id,
-                'member_member_id' => $member->member_id,
-                'point_amount' => $pointAmount,
-                'transaction_id' => $pointTransaction->id,
-                'reference_id' => $referenceId,
-                'injected_by' => auth()->id(),
-            ]);
-
-            // Dispatch event for push notification (optional)
-            try {
-                event(new PointEarned(
-                    $member,
-                    $pointTransaction,
-                    $pointAmount,
-                    'transaction',
-                    [
-                        'order_id' => $referenceId,
-                        'outlet_name' => 'Manual Injection',
-                        'is_manual' => true,
-                    ]
-                ));
-            } catch (\Exception $e) {
-                // Log error but don't fail the injection
-                Log::warning('Failed to dispatch PointEarned event for manual injection', [
-                    'member_id' => $member->id,
-                    'error' => $e->getMessage(),
-                ]);
+            if (! $result) {
+                return back()->withErrors([
+                    'error' => 'Tidak ada poin yang dicatat. Periksa: nominal terlalu kecil untuk menghasilkan poin, channel tidak mendapat poin, pembayaran voucher, atau order e-commerce. Atau hanya sisa desimal point (point_remainder) yang tersimpan.',
+                ])->withInput();
             }
 
-            return redirect()->route('manual-point.index')
-                ->with('success', "Point berhasil di-inject: {$pointAmount} points untuk {$member->nama_lengkap} (Total: {$member->just_points} points)");
+            $points = $result['points_earned'];
+            $member->refresh();
 
+            return redirect()->route('manual-point.index')
+                ->with('success', "Backfill POS berhasil: {$points} poin untuk {$member->nama_lengkap} (total {$member->just_points} poin), order {$orderId}.");
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error injecting manual points', [
+            Log::error('Error manual POS point backfill', [
                 'member_id' => $request->member_id,
-                'point_amount' => $request->point_amount,
+                'order_id' => $orderId ?? null,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->withErrors(['error' => 'Gagal inject point: ' . $e->getMessage()])->withInput();
+            return back()->withErrors(['error' => 'Gagal: '.$e->getMessage()])->withInput();
         }
     }
 
-    /**
-     * Show detail of manual point injection
-     */
     public function show($id)
     {
         $transaction = MemberAppsPointTransaction::with(['member', 'earning'])
-            ->where('transaction_type', 'adjustment')
-            ->where('channel', 'adjustment')
+            ->tap(fn ($q) => $this->scopeManualInjections($q))
             ->findOrFail($id);
 
         $remainingPoints = $transaction->earning?->remaining_points ?? 0;
@@ -274,7 +233,7 @@ class ManualPointController extends Controller
     }
 
     /**
-     * Delete manual point injection and rollback member points
+     * Delete manual injection: legacy adjustment, or ERP earn backfill (reverses tier spending for earn).
      */
     public function destroy($id)
     {
@@ -282,16 +241,16 @@ class ManualPointController extends Controller
             DB::beginTransaction();
 
             $transaction = MemberAppsPointTransaction::with(['member', 'earning'])
-                ->where('transaction_type', 'adjustment')
-                ->where('channel', 'adjustment')
+                ->tap(fn ($q) => $this->scopeManualInjections($q))
                 ->lockForUpdate()
                 ->findOrFail($id);
 
             $member = $transaction->member;
             $earning = $transaction->earning;
 
-            if (!$member || !$earning) {
+            if (! $member || ! $earning) {
                 DB::rollBack();
+
                 return back()->withErrors(['error' => 'Data point injection tidak lengkap dan tidak bisa dihapus.']);
             }
 
@@ -299,17 +258,30 @@ class ManualPointController extends Controller
             $usedPoints = max(0, (int) $transaction->point_amount - $remainingPoints);
             if ($usedPoints > 0) {
                 DB::rollBack();
+
                 return back()->withErrors(['error' => "Point injection tidak bisa dihapus karena sudah terpakai {$usedPoints} points."]);
             }
 
             $rollbackPoint = (int) $transaction->point_amount;
             if ((int) $member->just_points < $rollbackPoint) {
                 DB::rollBack();
+
                 return back()->withErrors(['error' => 'Point member saat ini lebih kecil dari point injection. Penghapusan dibatalkan untuk menjaga konsistensi data.']);
             }
 
             $member->decrement('just_points', $rollbackPoint);
             $member->refresh();
+
+            if ($transaction->transaction_type === 'earn' && str_contains((string) $transaction->description, '[ERP manual inject')) {
+                $txAmount = (float) ($transaction->transaction_amount ?? 0);
+                if ($txAmount > 0) {
+                    MemberTierService::reverseRecordedTransaction(
+                        $member->id,
+                        $txAmount,
+                        $transaction->transaction_date
+                    );
+                }
+            }
 
             $earning->delete();
             $transaction->delete();
@@ -334,8 +306,7 @@ class ManualPointController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->withErrors(['error' => 'Gagal menghapus point injection: ' . $e->getMessage()]);
+            return back()->withErrors(['error' => 'Gagal menghapus point injection: '.$e->getMessage()]);
         }
     }
 }
-
