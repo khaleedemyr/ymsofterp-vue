@@ -849,6 +849,33 @@ class GoogleReviewController extends Controller
         ]);
     }
 
+    public function apiAiReportsIndex(Request $request)
+    {
+        $perPage = (int) ($request->query('per_page') ?? 20);
+        $perPage = max(1, min(100, $perPage));
+
+        $reports = DB::table('google_review_ai_reports')
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->through(function ($r) {
+                return [
+                    'id' => (int) $r->id,
+                    'status' => (string) $r->status,
+                    'source' => (string) ($r->source ?? ''),
+                    'place_name' => (string) ($r->place_name ?? ''),
+                    'nama_outlet' => (string) ($r->nama_outlet ?? ''),
+                    'review_count' => (int) $r->review_count,
+                    'created_at' => $r->created_at,
+                    'error_message' => (string) ($r->error_message ?? ''),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'reports' => $reports,
+        ]);
+    }
+
     public function aiReportStore(Request $request)
     {
         $placeInput = $request->input('place', []);
@@ -1136,6 +1163,104 @@ class GoogleReviewController extends Controller
             'items' => $items,
             'filters' => [
                 'severity' => $severity ?? '',
+            ],
+        ]);
+    }
+
+    public function apiAiReportShow(Request $request, int $id)
+    {
+        if (! $this->userCanAccessReport($id)) {
+            return response()->json(['success' => false, 'error' => 'Tidak diizinkan'], 403);
+        }
+
+        $report = DB::table('google_review_ai_reports')->where('id', $id)->first();
+        if (! $report) {
+            return response()->json(['success' => false, 'error' => 'Tidak ditemukan'], 404);
+        }
+
+        $severity = trim((string) ($request->query('severity') ?? ''));
+        $perPage = (int) ($request->query('per_page') ?? 50);
+        $perPage = max(1, min(200, $perPage));
+
+        $itemsQuery = DB::table('google_review_ai_items')
+            ->where('report_id', $id)
+            ->orderBy('sort_order');
+
+        if ($severity !== '') {
+            $itemsQuery->where('severity', $severity);
+        }
+
+        $items = $itemsQuery
+            ->paginate($perPage)
+            ->through(function ($row) {
+                $topics = $row->topics;
+                if (is_string($topics)) {
+                    $topics = json_decode($topics, true) ?? [];
+                }
+
+                return [
+                    'id' => (int) $row->id,
+                    'sort_order' => (int) $row->sort_order,
+                    'author' => (string) ($row->author ?? ''),
+                    'rating' => $row->rating,
+                    'review_date' => (string) ($row->review_date ?? ''),
+                    'text' => (string) ($row->text ?? ''),
+                    'profile_photo' => (string) ($row->profile_photo ?? ''),
+                    'severity' => (string) ($row->severity ?? ''),
+                    'topics' => is_array($topics) ? $topics : [],
+                    'summary_id' => (string) ($row->summary_id ?? ''),
+                    'source_item_id' => property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : null,
+                    'source_account' => property_exists($row, 'source_account') ? (string) ($row->source_account ?? '') : '',
+                    'source_post_url' => property_exists($row, 'source_post_url') ? (string) ($row->source_post_url ?? '') : '',
+                    'source_post_shortcode' => property_exists($row, 'source_post_shortcode') ? (string) ($row->source_post_shortcode ?? '') : '',
+                    'source_post_caption' => property_exists($row, 'source_post_caption') ? (string) ($row->source_post_caption ?? '') : '',
+                ];
+            });
+
+        $severityCounts = DB::table('google_review_ai_items')
+            ->select('severity', DB::raw('COUNT(*) as total'))
+            ->where('report_id', $id)
+            ->groupBy('severity')
+            ->pluck('total', 'severity');
+
+        $initialLog = [];
+        if (! empty($report->progress_log)) {
+            $decoded = json_decode($report->progress_log, true);
+            $initialLog = is_array($decoded) ? $decoded : [];
+        }
+
+        return response()->json([
+            'success' => true,
+            'report' => [
+                'id' => (int) $report->id,
+                'status' => (string) $report->status,
+                'source' => (string) ($report->source ?? ''),
+                'place_id' => (string) ($report->place_id ?? ''),
+                'nama_outlet' => (string) ($report->nama_outlet ?? ''),
+                'place_name' => (string) ($report->place_name ?? ''),
+                'place_address' => (string) ($report->place_address ?? ''),
+                'place_rating' => (string) ($report->place_rating ?? ''),
+                'dataset_id' => (string) ($report->dataset_id ?? ''),
+                'review_count' => (int) $report->review_count,
+                'error_message' => (string) ($report->error_message ?? ''),
+                'created_at' => $report->created_at,
+                'raw_review_count' => (int) ($report->raw_review_count ?? 0),
+                'dedupe_removed_count' => (int) ($report->dedupe_removed_count ?? 0),
+                'progress_total' => (int) ($report->progress_total ?? 0),
+                'progress_done' => (int) ($report->progress_done ?? 0),
+                'progress_phase' => $report->progress_phase ?? null,
+                'progress_log' => $initialLog,
+            ],
+            'severity_counts' => [
+                'positive' => (int) ($severityCounts['positive'] ?? 0),
+                'neutral' => (int) ($severityCounts['neutral'] ?? 0),
+                'mild_negative' => (int) ($severityCounts['mild_negative'] ?? 0),
+                'negative' => (int) ($severityCounts['negative'] ?? 0),
+                'severe' => (int) ($severityCounts['severe'] ?? 0),
+            ],
+            'items' => $items,
+            'filters' => [
+                'severity' => $severity,
             ],
         ]);
     }

@@ -448,6 +448,10 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/google-review/fetch', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviews']);
         Route::post('/google-review/fetch-apify', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviewsApify']);
         Route::get('/google-review/apify/items', [\App\Http\Controllers\GoogleReviewController::class, 'apifyItems']);
+        Route::get('/google-review/ai/reports', [\App\Http\Controllers\GoogleReviewController::class, 'apiAiReportsIndex']);
+        Route::post('/google-review/ai/reports', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportStore']);
+        Route::get('/google-review/ai/reports/{id}', [\App\Http\Controllers\GoogleReviewController::class, 'apiAiReportShow'])->where('id', '[0-9]+');
+        Route::get('/google-review/ai/reports/{id}/status', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportStatus'])->where('id', '[0-9]+');
 
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
