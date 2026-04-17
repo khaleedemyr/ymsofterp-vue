@@ -657,13 +657,7 @@ class RetailFoodController extends Controller
 
             DB::beginTransaction();
 
-            // Get items to rollback inventory
-            $items = $retailFood->items;
-            
-            // Rollback inventory for each item
-            foreach ($items as $item) {
-                $this->rollbackInventory($item, $retailFood->outlet_id);
-            }
+            $this->rollbackRetailFoodInventory($retailFood);
 
             // Delete retail food items
             $retailFood->items()->delete();
@@ -688,61 +682,50 @@ class RetailFoodController extends Controller
         }
     }
 
-    private function rollbackInventory($item, $outletId)
+    private function rollbackRetailFoodInventory($retailFood)
     {
         try {
-            // Find item master
-            $itemMaster = DB::table('items')->where('name', $item->item_name)->first();
-            if (!$itemMaster) {
-                return;
-            }
+            $cards = DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'retail_food')
+                ->where('reference_id', $retailFood->id)
+                ->get();
 
-            // Find inventory item
-            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $itemMaster->id)->first();
-            if (!$inventoryItem) {
-                return;
-            }
+            foreach ($cards as $card) {
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('id_outlet', $card->id_outlet)
+                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->first();
 
-            $inventory_item_id = $inventoryItem->id;
-            $unit = $item->unit;
-            $qty_input = $item->qty;
-            
-            // Get unit names
-            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                if (! $stock) {
+                    continue;
+                }
 
-            // Convert quantity to small unit
-            $qty_small = 0;
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-            } elseif ($unit === $unitMedium) {
-                $qty_small = $qty_input * $smallConv;
-            } elseif ($unit === $unitLarge) {
-                $qty_small = $qty_input * $smallConv * $mediumConv;
-            } else {
-                $qty_small = $qty_input;
-            }
+                $newQtySmall = max(0, (float) $stock->qty_small - (float) $card->in_qty_small);
+                $newQtyMedium = max(0, (float) $stock->qty_medium - (float) $card->in_qty_medium);
+                $newQtyLarge = max(0, (float) $stock->qty_large - (float) $card->in_qty_large);
+                $lastCostSmall = (float) ($stock->last_cost_small ?? 0);
 
-            // Find outlet inventory stock
-            $stock = DB::table('food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('outlet_id', $outletId)
-                ->first();
-
-            if ($stock) {
-                // Rollback stock (subtract the quantity)
-                DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('outlet_id', $outletId)
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $stock->id)
                     ->update([
-                        'qty_small' => $stock->qty_small - $qty_small,
-                        'updated_at' => now()
+                        'qty_small' => $newQtySmall,
+                        'qty_medium' => $newQtyMedium,
+                        'qty_large' => $newQtyLarge,
+                        'value' => $newQtySmall * $lastCostSmall,
+                        'updated_at' => now(),
                     ]);
             }
 
+            DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'retail_food')
+                ->where('reference_id', $retailFood->id)
+                ->delete();
+
+            DB::table('outlet_food_inventory_cost_histories')
+                ->where('reference_type', 'retail_food')
+                ->where('reference_id', $retailFood->id)
+                ->delete();
         } catch (\Exception $e) {
             // Rollback failed, but don't stop the process
         }
@@ -1521,6 +1504,7 @@ class RetailFoodController extends Controller
     {
         $user = auth()->user();
         $userOutletId = $user->id_outlet;
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         $search = $request->get('search', '');
         $dateFrom = $request->get('date_from', '');
@@ -1565,6 +1549,7 @@ class RetailFoodController extends Controller
         return response()->json([
             'success' => true,
             'data' => $retailFoods,
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -1618,6 +1603,7 @@ class RetailFoodController extends Controller
         if ($user->id_outlet != 1 && $retailFood->outlet_id != $user->id_outlet) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         $warehouseName = $retailFood->warehouse_outlet_id
             ? DB::table('warehouse_outlets')->where('id', $retailFood->warehouse_outlet_id)->value('name')
@@ -1628,6 +1614,7 @@ class RetailFoodController extends Controller
         return response()->json([
             'success' => true,
             'retail_food' => $data,
+            'canDelete' => $canDelete,
         ]);
     }
 

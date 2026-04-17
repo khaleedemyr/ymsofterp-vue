@@ -1467,6 +1467,9 @@ class ItemController extends Controller
         }
         
         $items = Item::whereIn('id', $availableItemIds)
+            ->whereHas('category', function ($q) {
+                $q->where('show_pos', '0');
+            })
             ->with(['category', 'mediumUnit', 'smallUnit', 'largeUnit'])
             ->get()
             ->map(function($item) use ($region_id, $outlet_id) {
@@ -1550,6 +1553,9 @@ class ItemController extends Controller
         $items = \App\Models\Item::whereIn('id', $itemIds)
             ->where('status', 'active')
             ->whereNotNull('warehouse_division_id')
+            ->whereHas('category', function ($q) {
+                $q->where('show_pos', '0');
+            })
             ->with(['category', 'mediumUnit'])
             ->get()
             ->map(function($item) use ($region_id, $outlet_id) {

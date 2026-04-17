@@ -872,6 +872,7 @@ class RetailNonFoodController extends Controller
     {
         $user = auth()->user();
         $userOutletId = $user->id_outlet;
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11) || ($user->division_id == 2);
 
         $search = $request->get('search', '');
         $dateFrom = $request->get('date_from', '');
@@ -913,6 +914,7 @@ class RetailNonFoodController extends Controller
         return response()->json([
             'success' => true,
             'data' => $list,
+            'canDelete' => $canDelete,
         ]);
     }
 
@@ -961,10 +963,12 @@ class RetailNonFoodController extends Controller
         if ($user->id_outlet != 1 && $retailNonFood->outlet_id != $user->id_outlet) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11) || ($user->division_id == 2);
 
         return response()->json([
             'success' => true,
             'retail_non_food' => $retailNonFood,
+            'canDelete' => $canDelete,
         ]);
     }
 

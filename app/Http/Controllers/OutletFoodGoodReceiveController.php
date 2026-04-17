@@ -809,14 +809,64 @@ class OutletFoodGoodReceiveController extends Controller
             return response()->json(['success' => false, 'message' => 'Tidak dapat menghapus GR yang sudah memiliki payment aktif'], 400);
         }
         
-        // Test simple delete first
+        DB::beginTransaction();
         try {
+            // Rollback efek stok dari kartu stok reference good_receive_outlet.
+            $cards = DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $outletFoodGoodReceive->id)
+                ->get();
+
+            foreach ($cards as $card) {
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('id_outlet', $card->id_outlet)
+                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->first();
+
+                if (! $stock) {
+                    continue;
+                }
+
+                $newQtySmall = max(0, (float) $stock->qty_small - (float) $card->in_qty_small);
+                $newQtyMedium = max(0, (float) $stock->qty_medium - (float) $card->in_qty_medium);
+                $newQtyLarge = max(0, (float) $stock->qty_large - (float) $card->in_qty_large);
+                $lastCostSmall = (float) ($stock->last_cost_small ?? 0);
+
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $stock->id)
+                    ->update([
+                        'qty_small' => $newQtySmall,
+                        'qty_medium' => $newQtyMedium,
+                        'qty_large' => $newQtyLarge,
+                        'value' => $newQtySmall * $lastCostSmall,
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $outletFoodGoodReceive->id)
+                ->delete();
+
+            DB::table('outlet_food_inventory_cost_histories')
+                ->where('reference_type', 'good_receive_outlet')
+                ->where('reference_id', $outletFoodGoodReceive->id)
+                ->delete();
+
+            DB::table('outlet_food_good_receive_items')
+                ->where('outlet_food_good_receive_id', $outletFoodGoodReceive->id)
+                ->delete();
+
             $outletFoodGoodReceive->delete();
+            DB::commit();
+
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
         } catch (\Exception $e) {
-            \Log::error('DEBUG DESTROY SIMPLE DELETE FAILED', [
+            DB::rollBack();
+            \Log::error('OUTLET_GR_DESTROY_FAILED', [
                 'gr_id' => $outletFoodGoodReceive->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }

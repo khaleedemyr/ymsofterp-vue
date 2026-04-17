@@ -338,12 +338,14 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
         Route::get('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'apiShow']);
         Route::post('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiStore']);
+        Route::delete('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'destroy']);
 
         // Retail Non Food (Approval App - Outlet Retail Non Food)
         Route::get('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiIndex']);
         Route::get('/retail-non-food/create-data', [\App\Http\Controllers\RetailNonFoodController::class, 'apiCreateData']);
         Route::get('/retail-non-food/{id}', [\App\Http\Controllers\RetailNonFoodController::class, 'apiShow']);
         Route::post('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiStore']);
+        Route::delete('/retail-non-food/{id}', [\App\Http\Controllers\RetailNonFoodController::class, 'destroy']);
 
         // Outlet Food Return (Approval App)
         Route::get('/outlet-food-return', [\App\Http\Controllers\OutletFoodReturnController::class, 'apiIndex']);
