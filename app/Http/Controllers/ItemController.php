@@ -2566,6 +2566,7 @@ class ItemController extends Controller
             'modifier_enabled' => 'nullable|boolean',
             'modifier_option_ids' => 'nullable|array',
             'modifier_option_ids.*' => 'exists:modifier_options,id',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'prices' => 'nullable|array',
             'prices.*.region_id' => 'nullable|exists:regions,id',
             'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -2596,6 +2597,12 @@ class ItemController extends Controller
 
             if ($item->modifier_enabled && $request->modifier_option_ids) {
                 $item->modifierOptions()->sync($request->modifier_option_ids);
+            }
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $path = $image->store('items', 'public');
+                    $item->images()->create(['path' => $path]);
+                }
             }
             if ($request->composition_type === 'composed' && $request->bom) {
                 foreach ($request->bom as $bom) {
@@ -2687,6 +2694,9 @@ class ItemController extends Controller
             'modifier_enabled' => 'nullable|boolean',
             'modifier_option_ids' => 'nullable|array',
             'modifier_option_ids.*' => 'exists:modifier_options,id',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'deleted_images' => 'nullable|array',
+            'deleted_images.*' => 'nullable|string',
             'prices' => 'nullable|array',
             'prices.*.region_id' => 'nullable|exists:regions,id',
             'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -2714,6 +2724,23 @@ class ItemController extends Controller
                 'medium_conversion_qty' => $request->medium_conversion_qty ?? 0,
                 'small_conversion_qty' => $request->small_conversion_qty ?? 0,
             ]));
+
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $path = $image->store('items', 'public');
+                    $item->images()->create(['path' => $path]);
+                }
+            }
+
+            if ($request->has('deleted_images') && is_array($request->deleted_images)) {
+                foreach ($request->deleted_images as $imgPath) {
+                    $image = $item->images()->where('path', $imgPath)->first();
+                    if ($image) {
+                        \Storage::disk('public')->delete($image->path);
+                        $image->delete();
+                    }
+                }
+            }
 
             if ($request->has('prices')) {
                 $item->prices()->delete();
