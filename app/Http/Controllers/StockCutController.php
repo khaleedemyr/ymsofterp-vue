@@ -2435,4 +2435,5 @@ class StockCutController extends Controller
 
         return 0.0;
     }
+
 }

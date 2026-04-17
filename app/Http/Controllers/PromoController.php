@@ -495,4 +495,385 @@ class PromoController extends Controller
         }
         return response()->json($result);
     }
+
+    public function apiCreateData()
+    {
+        $categories = Category::where('show_pos', '1')
+            ->where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $items = Item::where('status', 'active')
+            ->whereHas('category', function ($q) {
+                $q->where('show_pos', '1');
+            })
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $outlets = Outlet::where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '')
+            ->get()
+            ->map(function ($o) {
+                return [
+                    'id' => $o->id_outlet,
+                    'name' => $o->nama_outlet,
+                ];
+            })
+            ->values();
+
+        $regions = Region::where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'categories' => $categories,
+            'items' => $items,
+            'outlets' => $outlets,
+            'regions' => $regions,
+        ]);
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $query = Promo::query();
+        if ($request->filled('search')) {
+            $query->where('name', 'like', '%' . trim((string) $request->query('search')) . '%');
+        }
+        if ($request->filled('type')) {
+            $query->where('type', $request->query('type'));
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(200, $perPage));
+
+        $promos = $query->latest()->paginate($perPage);
+        $promos->setCollection(
+            $promos->getCollection()->map(function (Promo $promo) {
+                return $this->transformPromoSummary($promo);
+            })
+        );
+
+        return response()->json([
+            'success' => true,
+            'promos' => $promos,
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $promo = Promo::with([
+            'categories:id,name',
+            'items:id,name',
+            'outlets:id_outlet,nama_outlet',
+            'regions:id,name',
+            'bogoItems.buyItem:id,name',
+            'bogoItems.getItem:id,name',
+        ])->find($id);
+
+        if (! $promo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Promo tidak ditemukan',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'promo' => $this->transformPromoDetail($promo),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $validated = $this->validatePromoPayload($request, null);
+            DB::beginTransaction();
+
+            if (empty($validated['code'])) {
+                do {
+                    $newCode = strtoupper(substr($validated['name'], 0, 3) . random_int(100, 999));
+                } while (Promo::where('code', $newCode)->exists());
+                $validated['code'] = $newCode;
+            }
+
+            if ($request->hasFile('banner')) {
+                $bannerPath = $request->file('banner')->store('promo-banners', 'public');
+                $validated['banner'] = $bannerPath;
+            }
+
+            $promo = Promo::create($validated);
+            $this->syncPromoRelations($promo, $request, $validated);
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Promo berhasil ditambahkan',
+                'promo' => $this->transformPromoSummary($promo->fresh()),
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Failed apiStore promo: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan promo: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $promo = Promo::find($id);
+        if (! $promo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Promo tidak ditemukan',
+            ], 404);
+        }
+
+        try {
+            $validated = $this->validatePromoPayload($request, $promo);
+            DB::beginTransaction();
+
+            $removeBanner = $this->normalizeBool($request->input('remove_banner', false));
+            if ($request->hasFile('banner')) {
+                if (!empty($promo->banner)) {
+                    Storage::disk('public')->delete($promo->banner);
+                }
+                $validated['banner'] = $request->file('banner')->store('promo-banners', 'public');
+            } elseif ($removeBanner) {
+                if (!empty($promo->banner)) {
+                    Storage::disk('public')->delete($promo->banner);
+                }
+                $validated['banner'] = null;
+            }
+
+            $promo->update($validated);
+            $this->syncPromoRelations($promo, $request, $validated);
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Promo berhasil diupdate',
+                'promo' => $this->transformPromoSummary($promo->fresh()),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Failed apiUpdate promo: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengupdate promo: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function apiToggleStatus(int $id)
+    {
+        $promo = Promo::find($id);
+        if (! $promo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Promo tidak ditemukan',
+            ], 404);
+        }
+
+        $promo->status = $promo->status === 'active' ? 'inactive' : 'active';
+        $promo->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status promo berhasil diubah',
+            'status' => $promo->status,
+        ]);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $promo = Promo::find($id);
+        if (! $promo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Promo tidak ditemukan',
+            ], 404);
+        }
+
+        $promo->delete();
+        return response()->json([
+            'success' => true,
+            'message' => 'Promo berhasil dihapus',
+        ]);
+    }
+
+    private function validatePromoPayload(Request $request, ?Promo $promo): array
+    {
+        $promoId = $promo?->id;
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'code' => 'nullable|string|max:50|unique:promos,code' . ($promoId ? ',' . $promoId : ''),
+            'type' => 'required|in:percent,nominal,bundle,bogo,bill_discount_percent,bill_discount_nominal',
+            'value' => 'nullable|numeric|min:0',
+            'max_discount' => 'nullable|numeric|min:0',
+            'is_multiple' => 'required|in:Yes,No',
+            'min_transaction' => 'nullable|numeric|min:0',
+            'max_transaction' => 'nullable|numeric|min:0',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'start_time' => 'nullable|string',
+            'end_time' => 'nullable|string',
+            'days' => 'nullable|array',
+            'days.*' => 'in:Senin,Selasa,Rabu,Kamis,Jumat,Sabtu,Minggu',
+            'description' => 'nullable|string',
+            'terms' => 'nullable|string',
+            'need_member' => 'required|in:Yes,No',
+            'all_tiers' => 'nullable|boolean',
+            'tiers' => 'nullable|array',
+            'tiers.*' => 'in:Silver,Loyal,Elite',
+            'banner' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'remove_banner' => 'nullable|boolean',
+            'status' => 'required|in:active,inactive',
+            'by_type' => 'nullable|in:kategori,item',
+            'outlet_type' => 'nullable|in:region,outlet',
+            'categories' => 'nullable|array',
+            'categories.*' => 'exists:categories,id',
+            'items' => 'nullable|array',
+            'items.*' => 'exists:items,id',
+            'outlets' => 'nullable|array',
+            'outlets.*' => 'exists:tbl_data_outlet,id_outlet',
+            'regions' => 'nullable|array',
+            'regions.*' => 'exists:regions,id',
+            'buy_items' => 'nullable|array',
+            'buy_items.*' => 'exists:items,id',
+            'get_items' => 'nullable|array',
+            'get_items.*' => 'exists:items,id',
+        ]);
+
+        $validated['all_tiers'] = $this->normalizeBool($validated['all_tiers'] ?? false);
+        if ($validated['all_tiers']) {
+            $validated['tiers'] = [];
+        } else {
+            $validated['tiers'] = isset($validated['tiers']) && is_array($validated['tiers']) ? array_values($validated['tiers']) : [];
+        }
+
+        if (in_array($validated['type'], ['percent', 'nominal', 'bundle', 'bill_discount_percent', 'bill_discount_nominal'], true) && ! isset($validated['value'])) {
+            throw new \InvalidArgumentException('Value wajib diisi untuk tipe promo ini');
+        }
+
+        if ($validated['type'] === 'bogo') {
+            $buyItems = $request->input('buy_items', []);
+            $getItems = $request->input('get_items', []);
+            if (!is_array($buyItems) || !is_array($getItems) || count($buyItems) === 0 || count($buyItems) !== count($getItems)) {
+                throw new \InvalidArgumentException('BOGO membutuhkan pasangan buy_items dan get_items dengan jumlah yang sama');
+            }
+        }
+
+        return $validated;
+    }
+
+    private function syncPromoRelations(Promo $promo, Request $request, array $validated): void
+    {
+        if (!in_array($validated['type'], ['bill_discount_percent', 'bill_discount_nominal'], true)) {
+            $byType = $request->input('by_type');
+            if ($byType === 'kategori') {
+                $promo->categories()->sync($request->input('categories', []));
+                $promo->items()->sync([]);
+            } elseif ($byType === 'item') {
+                $promo->items()->sync($request->input('items', []));
+                $promo->categories()->sync([]);
+            } else {
+                $promo->categories()->sync([]);
+                $promo->items()->sync([]);
+            }
+        } else {
+            $promo->categories()->sync([]);
+            $promo->items()->sync([]);
+        }
+
+        $outletType = $request->input('outlet_type');
+        if ($outletType === 'region') {
+            $promo->regions()->sync($request->input('regions', []));
+            $promo->outlets()->sync([]);
+        } else {
+            $promo->outlets()->sync($request->input('outlets', []));
+            $promo->regions()->sync([]);
+        }
+
+        $promo->bogoItems()->delete();
+        if ($validated['type'] === 'bogo') {
+            $buyItems = $request->input('buy_items', []);
+            $getItems = $request->input('get_items', []);
+            foreach ($buyItems as $index => $buyItemId) {
+                $promo->bogoItems()->create([
+                    'buy_item_id' => $buyItemId,
+                    'get_item_id' => $getItems[$index] ?? null,
+                ]);
+            }
+        }
+    }
+
+    private function normalizeBool($value): bool
+    {
+        if (is_bool($value)) return $value;
+        if (is_int($value) || is_float($value)) return ((int) $value) !== 0;
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) return true;
+            if (in_array($normalized, ['0', 'false', 'no', 'off', ''], true)) return false;
+        }
+        return false;
+    }
+
+    private function transformPromoSummary(Promo $promo): array
+    {
+        return [
+            'id' => $promo->id,
+            'name' => $promo->name,
+            'code' => $promo->code,
+            'type' => $promo->type,
+            'value' => $promo->value,
+            'max_discount' => $promo->max_discount,
+            'start_date' => $promo->start_date,
+            'end_date' => $promo->end_date,
+            'status' => $promo->status,
+        ];
+    }
+
+    private function transformPromoDetail(Promo $promo): array
+    {
+        return [
+            'id' => $promo->id,
+            'name' => $promo->name,
+            'code' => $promo->code,
+            'type' => $promo->type,
+            'value' => $promo->value,
+            'max_discount' => $promo->max_discount,
+            'is_multiple' => $promo->is_multiple,
+            'min_transaction' => $promo->min_transaction,
+            'max_transaction' => $promo->max_transaction,
+            'start_date' => optional($promo->start_date)->format('Y-m-d'),
+            'end_date' => optional($promo->end_date)->format('Y-m-d'),
+            'start_time' => $promo->start_time,
+            'end_time' => $promo->end_time,
+            'days' => $promo->days ?? [],
+            'description' => $promo->description,
+            'terms' => $promo->terms,
+            'banner' => $promo->banner,
+            'status' => $promo->status,
+            'need_member' => $promo->need_member,
+            'all_tiers' => (bool) $promo->all_tiers,
+            'tiers' => $promo->tiers ?? [],
+            'categories' => $promo->categories->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
+            'items' => $promo->items->map(fn ($i) => ['id' => $i->id, 'name' => $i->name])->values(),
+            'outlets' => $promo->outlets->map(fn ($o) => ['id' => $o->id_outlet, 'name' => $o->nama_outlet])->values(),
+            'regions' => $promo->regions->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values(),
+            'buy_items' => $promo->bogoItems->map(fn ($b) => ['id' => $b->buyItem?->id, 'name' => $b->buyItem?->name])->filter(fn ($x) => !empty($x['id']))->values(),
+            'get_items' => $promo->bogoItems->map(fn ($b) => ['id' => $b->getItem?->id, 'name' => $b->getItem?->name])->filter(fn ($x) => !empty($x['id']))->values(),
+        ];
+    }
 } 

@@ -18,7 +18,7 @@ const form = useForm({
   modifier_bom_json: '',
 });
 
-const bomRows = ref([]); // [{item_id, qty, unit_id}]
+const bomRows = ref([]); // [{item_id, qty, unit_id, stock_cut}]
 const allItems = ref([]); // {id, name}
 const itemUnits = reactive({}); // item_id -> [{id, name, type}]
 const itemSearch = ref([]); // search keyword per baris
@@ -49,7 +49,7 @@ async function fetchItemUnits(itemId) {
 }
 
 function addBomRow() {
-  bomRows.value.push({ item_id: '', qty: '', unit_id: '' });
+  bomRows.value.push({ item_id: '', qty: '', unit_id: '', stock_cut: true });
 }
 function removeBomRow(idx) {
   bomRows.value.splice(idx, 1);
@@ -76,7 +76,13 @@ watch(() => props.show, async (val) => {
       form.name = props.option.name;
       if (props.option.modifier_bom_json) {
         try {
-          bomRows.value = JSON.parse(props.option.modifier_bom_json);
+          const parsed = JSON.parse(props.option.modifier_bom_json);
+          bomRows.value = Array.isArray(parsed)
+            ? parsed.map((row) => ({
+                ...row,
+                stock_cut: row?.stock_cut === undefined ? true : row.stock_cut === true || row.stock_cut === 1 || row.stock_cut === '1',
+              }))
+            : [];
         } catch {
           bomRows.value = [];
         }
@@ -164,6 +170,7 @@ function closeModal() {
                     <th class="px-2 py-1">Item</th>
                     <th class="px-2 py-1">Qty</th>
                     <th class="px-2 py-1">Unit</th>
+                    <th class="px-2 py-1">Stock Cut</th>
                     <th class="px-2 py-1"></th>
                   </tr>
                 </thead>
@@ -184,6 +191,9 @@ function closeModal() {
                         <option value="">Pilih Unit</option>
                         <option v-for="unit in itemUnits[row.item_id] || []" :key="unit.id" :value="unit.id">{{ unit.name }} ({{ unit.type }})</option>
                       </select>
+                    </td>
+                    <td class="px-2 py-1 text-center">
+                      <input type="checkbox" v-model="row.stock_cut" class="rounded border-gray-300" />
                     </td>
                     <td class="px-2 py-1 text-center">
                       <button type="button" @click="removeBomRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa fa-trash"></i></button>

@@ -861,6 +861,15 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiUpdate']);
         Route::delete('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiDestroy']);
 
+        // Promos (approval app)
+        Route::get('/promos/create-data', [\App\Http\Controllers\PromoController::class, 'apiCreateData']);
+        Route::get('/promos', [\App\Http\Controllers\PromoController::class, 'apiIndex']);
+        Route::get('/promos/{id}', [\App\Http\Controllers\PromoController::class, 'apiShow']);
+        Route::post('/promos', [\App\Http\Controllers\PromoController::class, 'apiStore']);
+        Route::put('/promos/{id}', [\App\Http\Controllers\PromoController::class, 'apiUpdate']);
+        Route::patch('/promos/{id}/toggle-status', [\App\Http\Controllers\PromoController::class, 'apiToggleStatus']);
+        Route::delete('/promos/{id}', [\App\Http\Controllers\PromoController::class, 'apiDestroy']);
+
         // Warehouses + Warehouse Outlets (master data for app)
         Route::get('/warehouse-master/warehouses', [\App\Http\Controllers\WarehouseController::class, 'apiMasterIndex']);
         Route::post('/warehouse-master/warehouses', [\App\Http\Controllers\WarehouseController::class, 'apiMasterStore']);
