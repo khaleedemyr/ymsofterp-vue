@@ -107,4 +107,137 @@ class ItemScheduleController extends Controller
             ->get();
         return response()->json(['schedules' => $schedules]);
     }
+
+    public function apiMasterCreateData()
+    {
+        return response()->json([
+            'success' => true,
+            'items' => Item::query()
+                ->orderBy('name')
+                ->select('id', 'name')
+                ->get(),
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = ItemSchedule::with('item');
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('arrival_day', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhereHas('item', function ($iq) use ($search) {
+                        $iq->where('name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('arrival_day')) {
+            $query->where('arrival_day', $request->query('arrival_day'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+
+        $schedules = $query
+            ->orderBy('arrival_day')
+            ->orderByDesc('id')
+            ->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'itemSchedules' => $schedules,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'item_id' => 'required|exists:items,id',
+            'arrival_day' => 'required|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $schedule = ItemSchedule::create($validated);
+
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'create',
+            'module' => 'item_schedule',
+            'description' => 'Menambah jadwal item: '.$schedule->item_id.' - '.$schedule->arrival_day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $schedule->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal item berhasil ditambahkan',
+            'itemSchedule' => $schedule->load('item'),
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'item_id' => 'required|exists:items,id',
+            'arrival_day' => 'required|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $schedule = ItemSchedule::find($id);
+        if (! $schedule) {
+            return response()->json(['success' => false, 'message' => 'Jadwal item tidak ditemukan'], 404);
+        }
+
+        $oldData = $schedule->toArray();
+        $schedule->update($validated);
+
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'update',
+            'module' => 'item_schedule',
+            'description' => 'Update jadwal item: '.$schedule->item_id.' - '.$schedule->arrival_day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $schedule->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal item berhasil diupdate',
+            'itemSchedule' => $schedule->load('item'),
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $schedule = ItemSchedule::find($id);
+        if (! $schedule) {
+            return response()->json(['success' => false, 'message' => 'Jadwal item tidak ditemukan'], 404);
+        }
+
+        $oldData = $schedule->toArray();
+        $schedule->delete();
+
+        \App\Models\ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => 'delete',
+            'module' => 'item_schedule',
+            'description' => 'Menghapus jadwal item: '.$oldData['item_id'].' - '.$oldData['arrival_day'],
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal item berhasil dihapus',
+        ]);
+    }
 } 

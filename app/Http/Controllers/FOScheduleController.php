@@ -415,4 +415,211 @@ class FOScheduleController extends Controller
             // Tambahkan props lain jika perlu
         ]);
     }
+
+    public function apiMasterCreateData()
+    {
+        return response()->json([
+            'success' => true,
+            'regions' => Region::query()
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->select('id', 'name')
+                ->get(),
+            'outlets' => Outlet::query()
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->select('id_outlet', 'nama_outlet')
+                ->get(),
+            'warehouseDivisions' => WarehouseDivision::query()
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->select('id', 'name')
+                ->get(),
+            'foModes' => ['RO Utama', 'RO Tambahan', 'RO Pengambilan'],
+            'days' => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = FOSchedule::with(['regions', 'outlets', 'warehouseDivisions'])
+            ->orderBy('day')
+            ->orderBy('open_time');
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('fo_mode', 'like', "%{$search}%")
+                    ->orWhere('day', 'like', "%{$search}%")
+                    ->orWhereHas('warehouseDivisions', function ($wq) use ($search) {
+                        $wq->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('regions', function ($rq) use ($search) {
+                        $rq->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('outlets', function ($oq) use ($search) {
+                        $oq->where('nama_outlet', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('fo_mode')) {
+            $query->where('fo_mode', $request->query('fo_mode'));
+        }
+
+        if ($request->filled('day')) {
+            $query->where('day', $request->query('day'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $schedules = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'foSchedules' => $schedules,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $data = $request->validate([
+            'fo_mode' => 'required|in:RO Utama,RO Tambahan,RO Pengambilan',
+            'warehouse_division_ids' => 'required|array|min:1',
+            'warehouse_division_ids.*' => 'exists:warehouse_division,id',
+            'day' => 'required|string',
+            'open_time' => 'required|date_format:H:i',
+            'close_time' => 'required|date_format:H:i',
+            'region_ids' => 'required_without:outlet_ids|array',
+            'region_ids.*' => 'exists:regions,id',
+            'outlet_ids' => 'required_without:region_ids|array',
+            'outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
+        ]);
+
+        if ($data['open_time'] === $data['close_time']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jam tutup tidak boleh sama dengan jam buka.',
+            ], 422);
+        }
+
+        $schedule = FOSchedule::create([
+            'fo_mode' => $data['fo_mode'],
+            'day' => $data['day'],
+            'open_time' => $data['open_time'],
+            'close_time' => $data['close_time'],
+        ]);
+
+        $schedule->warehouseDivisions()->attach($data['warehouse_division_ids']);
+        if (!empty($data['region_ids'])) {
+            $schedule->regions()->attach($data['region_ids']);
+        }
+        if (!empty($data['outlet_ids'])) {
+            $schedule->outlets()->attach($data['outlet_ids']);
+        }
+
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'fo_schedule',
+            'description' => 'Membuat jadwal RO: '.$schedule->fo_mode.' - '.$schedule->day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $schedule->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal RO berhasil ditambahkan',
+            'foSchedule' => $schedule->load(['regions', 'outlets', 'warehouseDivisions']),
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $data = $request->validate([
+            'fo_mode' => 'required|in:RO Utama,RO Tambahan,RO Pengambilan',
+            'warehouse_division_ids' => 'required|array|min:1',
+            'warehouse_division_ids.*' => 'exists:warehouse_division,id',
+            'day' => 'required|string',
+            'open_time' => 'required|date_format:H:i',
+            'close_time' => 'required|date_format:H:i',
+            'region_ids' => 'required_without:outlet_ids|array',
+            'region_ids.*' => 'exists:regions,id',
+            'outlet_ids' => 'required_without:region_ids|array',
+            'outlet_ids.*' => 'exists:tbl_data_outlet,id_outlet',
+        ]);
+
+        if ($data['open_time'] === $data['close_time']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jam tutup tidak boleh sama dengan jam buka.',
+            ], 422);
+        }
+
+        $schedule = FOSchedule::find($id);
+        if (! $schedule) {
+            return response()->json(['success' => false, 'message' => 'Jadwal RO tidak ditemukan'], 404);
+        }
+
+        $oldData = $schedule->toArray();
+        $schedule->update([
+            'fo_mode' => $data['fo_mode'],
+            'day' => $data['day'],
+            'open_time' => $data['open_time'],
+            'close_time' => $data['close_time'],
+        ]);
+
+        $schedule->warehouseDivisions()->sync($data['warehouse_division_ids']);
+        $schedule->regions()->sync($data['region_ids'] ?? []);
+        $schedule->outlets()->sync($data['outlet_ids'] ?? []);
+
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'fo_schedule',
+            'description' => 'Update jadwal RO: '.$schedule->fo_mode.' - '.$schedule->day,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $schedule->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal RO berhasil diupdate',
+            'foSchedule' => $schedule->load(['regions', 'outlets', 'warehouseDivisions']),
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $schedule = FOSchedule::with(['regions', 'outlets', 'warehouseDivisions'])->find($id);
+        if (! $schedule) {
+            return response()->json(['success' => false, 'message' => 'Jadwal RO tidak ditemukan'], 404);
+        }
+
+        $oldData = $schedule->toArray();
+        $schedule->warehouseDivisions()->detach();
+        $schedule->regions()->detach();
+        $schedule->outlets()->detach();
+        $schedule->delete();
+
+        \App\Models\ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'fo_schedule',
+            'description' => 'Menghapus jadwal RO: '.$oldData['fo_mode'].' - '.$oldData['day'],
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal RO berhasil dihapus',
+        ]);
+    }
 } 

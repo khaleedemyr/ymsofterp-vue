@@ -904,6 +904,18 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/warehouse-master/regions/{id}', [\App\Http\Controllers\RegionController::class, 'apiMasterUpdate']);
         Route::delete('/warehouse-master/regions/{id}', [\App\Http\Controllers\RegionController::class, 'apiMasterDestroy']);
         Route::patch('/warehouse-master/regions/{id}/toggle-status', [\App\Http\Controllers\RegionController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/item-schedules/create-data', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/item-schedules', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/item-schedules', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/item-schedules/{id}', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/item-schedules/{id}', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterDestroy']);
+
+        Route::get('/warehouse-master/fo-schedules/create-data', [\App\Http\Controllers\FOScheduleController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/fo-schedules', [\App\Http\Controllers\FOScheduleController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/fo-schedules', [\App\Http\Controllers\FOScheduleController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/fo-schedules/{id}', [\App\Http\Controllers\FOScheduleController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/fo-schedules/{id}', [\App\Http\Controllers\FOScheduleController::class, 'apiMasterDestroy']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {
