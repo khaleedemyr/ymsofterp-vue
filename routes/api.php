@@ -412,6 +412,21 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'getComments'])->where('id', '[0-9]+');
         Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->where('id', '[0-9]+');
 
+        // Members (Approval App — selaras web /members)
+        Route::get('/members', [\App\Http\Controllers\MemberController::class, 'apiIndex']);
+        Route::get('/members/create-data', [\App\Http\Controllers\MemberController::class, 'apiCreateData']);
+        Route::post('/members', [\App\Http\Controllers\MemberController::class, 'apiStore']);
+        Route::get('/members/{id}', [\App\Http\Controllers\MemberController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/members/{id}', [\App\Http\Controllers\MemberController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/members/{id}', [\App\Http\Controllers\MemberController::class, 'apiDestroy'])->where('id', '[0-9]+');
+        Route::patch('/members/{id}/toggle-status', [\App\Http\Controllers\MemberController::class, 'apiToggleStatus'])->where('id', '[0-9]+');
+        Route::patch('/members/{id}/verify-email', [\App\Http\Controllers\MemberController::class, 'apiVerifyEmail'])->where('id', '[0-9]+');
+        Route::post('/members/verify-all-unverified', [\App\Http\Controllers\MemberController::class, 'apiVerifyAllUnverified']);
+        Route::patch('/members/{id}/change-password', [\App\Http\Controllers\MemberController::class, 'apiChangePassword'])->where('id', '[0-9]+');
+        Route::get('/members/{id}/transactions', [\App\Http\Controllers\MemberController::class, 'getTransactions'])->where('id', '[0-9]+');
+        Route::get('/members/{id}/preferences', [\App\Http\Controllers\MemberController::class, 'getPreferences'])->where('id', '[0-9]+');
+        Route::get('/members/{id}/voucher-timeline', [\App\Http\Controllers\MemberController::class, 'getVoucherTimeline'])->where('id', '[0-9]+');
+
         // Guest Comment OCR (Approval App — selaras web /guest-comment-forms)
         Route::get('/guest-comment-forms/meta', [\App\Http\Controllers\GuestCommentFormApiController::class, 'meta']);
         Route::get('/guest-comment-forms', [\App\Http\Controllers\GuestCommentFormApiController::class, 'index']);

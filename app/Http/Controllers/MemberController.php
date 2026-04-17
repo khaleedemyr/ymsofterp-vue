@@ -1779,4 +1779,507 @@ class MemberController extends Controller
 
         return empty($formatted) ? '-' : implode(', ', $formatted);
     }
+
+    /**
+     * Approval-app API: list members (aligned with web members index).
+     */
+    public function apiIndex(Request $request)
+    {
+        $query = MemberAppsMember::query();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_lengkap', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('mobile_phone', 'like', "%{$search}%")
+                    ->orWhere('member_id', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('status')) {
+            if ($request->status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($request->status === 'inactive') {
+                $query->where('is_active', false);
+            }
+        }
+
+        if ($request->filled('exclusive') && $request->exclusive === 'yes') {
+            $query->where('is_exclusive_member', true);
+        }
+
+        $sort = $request->get('sort', 'created_at');
+        $direction = $request->get('direction', 'desc');
+        $sortMap = [
+            'member_id' => 'member_id',
+            'name' => 'nama_lengkap',
+            'email' => 'email',
+            'mobile_phone' => 'mobile_phone',
+            'telepon' => 'mobile_phone',
+            'status_aktif' => 'is_active',
+            'tier' => 'member_level',
+        ];
+
+        if (in_array($sort, ['point_balance', 'spending_last_year', 'total_spending', 'last_spending'], true)) {
+            $query->orderBy('created_at', $direction);
+        } else {
+            $sortField = $sortMap[$sort] ?? $sort;
+            $query->orderBy($sortField, $direction);
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        if ($perPage < 1) {
+            $perPage = 15;
+        }
+        if ($perPage > 100) {
+            $perPage = 100;
+        }
+
+        $members = $query->paginate($perPage)->withQueryString();
+
+        $memberIds = $members->getCollection()->pluck('member_id')->filter()->toArray();
+        $oneYearAgo = now()->subYear();
+        $spendingByMemberId = [];
+        $totalSpendingByMemberId = [];
+        $lastSpendingByMemberId = [];
+
+        if (!empty($memberIds)) {
+            $ordersLastYear = DB::connection('db_justus')
+                ->table('orders')
+                ->whereIn('member_id', $memberIds)
+                ->where('created_at', '>=', $oneYearAgo)
+                ->where('status', 'paid')
+                ->select('member_id', 'grand_total')
+                ->get();
+
+            foreach ($ordersLastYear as $order) {
+                if (!isset($spendingByMemberId[$order->member_id])) {
+                    $spendingByMemberId[$order->member_id] = 0;
+                }
+                $spendingByMemberId[$order->member_id] += $order->grand_total;
+            }
+
+            $allOrders = DB::connection('db_justus')
+                ->table('orders')
+                ->leftJoin('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+                ->whereIn('orders.member_id', $memberIds)
+                ->where('orders.status', 'paid')
+                ->select('orders.member_id', 'orders.grand_total', 'orders.created_at', 'orders.kode_outlet', 'o.nama_outlet')
+                ->orderBy('orders.created_at', 'desc')
+                ->get();
+
+            foreach ($allOrders as $order) {
+                if (!isset($totalSpendingByMemberId[$order->member_id])) {
+                    $totalSpendingByMemberId[$order->member_id] = 0;
+                }
+                $totalSpendingByMemberId[$order->member_id] += $order->grand_total;
+
+                if (!isset($lastSpendingByMemberId[$order->member_id])) {
+                    $lastSpendingByMemberId[$order->member_id] = [
+                        'amount' => $order->grand_total,
+                        'outlet_name' => $order->nama_outlet ?? 'Outlet Tidak Diketahui',
+                        'created_at' => $order->created_at,
+                    ];
+                }
+            }
+        }
+
+        $members->getCollection()->transform(function ($member) use ($spendingByMemberId, $totalSpendingByMemberId, $lastSpendingByMemberId) {
+            $member->point_balance = $member->just_points ?? 0;
+            $member->point_balance_formatted = number_format($member->point_balance, 0, ',', '.');
+
+            $spending = $spendingByMemberId[$member->member_id] ?? 0;
+            $member->spending_last_year = $spending;
+            $member->spending_last_year_formatted = 'Rp '.number_format($spending, 0, ',', '.');
+
+            $totalSpending = $totalSpendingByMemberId[$member->member_id] ?? 0;
+            $member->total_spending = $totalSpending;
+            $member->total_spending_formatted = 'Rp '.number_format($totalSpending, 0, ',', '.');
+
+            $lastSpendingData = $lastSpendingByMemberId[$member->member_id] ?? null;
+            if ($lastSpendingData) {
+                $member->last_spending = $lastSpendingData['amount'];
+                $member->last_spending_formatted = 'Rp '.number_format($lastSpendingData['amount'], 0, ',', '.');
+                $member->last_spending_outlet = $lastSpendingData['outlet_name'];
+                $member->last_spending_date = $lastSpendingData['created_at'];
+                $member->last_spending_date_formatted = \Carbon\Carbon::parse($lastSpendingData['created_at'])->format('d M Y, H:i');
+            } else {
+                $member->last_spending = 0;
+                $member->last_spending_formatted = 'Rp 0';
+                $member->last_spending_outlet = null;
+                $member->last_spending_date = null;
+                $member->last_spending_date_formatted = '-';
+            }
+
+            $member->tier = $member->member_level ?? 'silver';
+            $member->tier_formatted = ucfirst($member->tier);
+            $member->name = $member->nama_lengkap;
+            $member->telepon = $member->mobile_phone;
+            $member->costumers_id = $member->member_id;
+            $member->status_aktif = $member->is_active ? '1' : '0';
+            $member->exclusive_member = $member->is_exclusive_member ? 'Y' : 'N';
+            $member->status_block = 'N';
+
+            return $member;
+        });
+
+        if ($sort === 'point_balance') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->point_balance : $member->point_balance;
+            })->values());
+        } elseif ($sort === 'spending_last_year') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->spending_last_year : $member->spending_last_year;
+            })->values());
+        } elseif ($sort === 'total_spending') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->total_spending : $member->total_spending;
+            })->values());
+        } elseif ($sort === 'last_spending') {
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
+                return $direction === 'desc' ? -$member->last_spending : $member->last_spending;
+            })->values());
+        } elseif ($sort === 'tier') {
+            $tierOrder = ['silver' => 1, 'gold' => 2, 'platinum' => 3];
+            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction, $tierOrder) {
+                $tierValue = $tierOrder[strtolower($member->tier ?? 'silver')] ?? 1;
+                return $direction === 'desc' ? -$tierValue : $tierValue;
+            })->values());
+        }
+
+        if ($request->filled('point_balance')) {
+            $pointFilter = $request->point_balance;
+            $members->getCollection()->transform(function ($member) use ($pointFilter) {
+                $showMember = true;
+                switch ($pointFilter) {
+                    case 'positive':
+                        $showMember = $member->point_balance > 0;
+                        break;
+                    case 'negative':
+                        $showMember = $member->point_balance < 0;
+                        break;
+                    case 'zero':
+                        $showMember = $member->point_balance == 0;
+                        break;
+                    case 'high':
+                        $showMember = $member->point_balance >= 1000;
+                        break;
+                }
+                $member->show_in_filter = $showMember;
+                return $member;
+            });
+            $members->setCollection($members->getCollection()->filter(function ($member) {
+                return $member->show_in_filter;
+            })->values());
+        }
+
+        $stats = [
+            'total_members' => MemberAppsMember::count(),
+            'active_members' => MemberAppsMember::where('is_active', true)->count(),
+            'inactive_members' => MemberAppsMember::where('is_active', false)->count(),
+            'exclusive_members' => MemberAppsMember::where('is_exclusive_member', true)->count(),
+        ];
+
+        $pointStats = MemberAppsMember::selectRaw('
+                COALESCE(SUM(just_points), 0) as total_point_balance,
+                COUNT(CASE WHEN just_points > 0 THEN 1 END) as members_with_points
+            ')
+            ->first();
+
+        $stats['total_point_balance'] = $pointStats->total_point_balance ?? 0;
+        $stats['members_with_points'] = $pointStats->members_with_points ?? 0;
+        $stats['total_point_earned'] = 0;
+        $stats['total_point_redeemed'] = 0;
+        $stats['total_point_earned_formatted'] = number_format($stats['total_point_earned'], 0, ',', '.');
+        $stats['total_point_redeemed_formatted'] = number_format($stats['total_point_redeemed'], 0, ',', '.');
+        $stats['total_point_balance_formatted'] = number_format($stats['total_point_balance'], 0, ',', '.');
+        $unverifiedCount = MemberAppsMember::whereNull('email_verified_at')->count();
+
+        return response()->json([
+            'success' => true,
+            'members' => $members,
+            'stats' => $stats,
+            'unverifiedCount' => $unverifiedCount,
+            'filters' => $request->only(['search', 'status', 'point_balance', 'sort', 'direction', 'per_page']),
+        ]);
+    }
+
+    /**
+     * Approval-app API: create/edit metadata.
+     */
+    public function apiCreateData()
+    {
+        $occupations = \App\Models\MemberAppsOccupation::where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->toArray();
+
+        return response()->json([
+            'success' => true,
+            'occupations' => $occupations,
+        ]);
+    }
+
+    /**
+     * Approval-app API: create member.
+     */
+    public function apiStore(Request $request)
+    {
+        $memberId = $request->member_id ?? $request->costumers_id;
+        $namaLengkap = $request->nama_lengkap ?? $request->name;
+        $mobilePhone = $request->mobile_phone ?? $request->telepon;
+        $exclusiveMember = $request->is_exclusive_member ?? ($request->exclusive_member === 'Y' ? true : false);
+        $password = $request->password ?? $request->password2;
+
+        $validator = \Validator::make($request->all(), [
+            'member_id' => 'nullable|string|max:50|unique:member_apps_members,member_id',
+            'costumers_id' => 'nullable|string|max:50|unique:member_apps_members,member_id',
+            'nama_lengkap' => 'nullable|string|max:255',
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255|unique:member_apps_members,email',
+            'mobile_phone' => 'nullable|string|max:20|unique:member_apps_members,mobile_phone',
+            'telepon' => 'nullable|string|max:20|unique:member_apps_members,mobile_phone',
+            'tanggal_lahir' => 'nullable|date',
+            'jenis_kelamin' => 'nullable|in:L,P,1,2',
+            'pekerjaan_id' => 'nullable|integer|exists:member_apps_occupations,id',
+            'pin' => 'nullable|string|max:10',
+            'password' => 'nullable|string|max:255',
+            'password2' => 'nullable|string|max:255',
+            'is_exclusive_member' => 'nullable|boolean',
+            'exclusive_member' => 'nullable|in:Y,N',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $jenisKelamin = $request->jenis_kelamin;
+            if ($jenisKelamin === '1') {
+                $jenisKelamin = 'L';
+            } elseif ($jenisKelamin === '2') {
+                $jenisKelamin = 'P';
+            }
+
+            $memberData = [
+                'member_id' => $memberId,
+                'nama_lengkap' => $namaLengkap,
+                'email' => $request->email,
+                'mobile_phone' => $mobilePhone,
+                'tanggal_lahir' => $request->tanggal_lahir,
+                'jenis_kelamin' => $jenisKelamin,
+                'pekerjaan_id' => $request->pekerjaan_id,
+                'pin' => $request->pin,
+                'is_exclusive_member' => $exclusiveMember,
+                'is_active' => true,
+                'just_points' => 0,
+                'point_remainder' => 0,
+                'total_spending' => 0,
+            ];
+
+            if ($password) {
+                $memberData['password'] = bcrypt($password);
+            }
+
+            $member = MemberAppsMember::create($memberData);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Member berhasil ditambahkan!',
+                'member' => $member,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menambahkan member: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Approval-app API: member detail.
+     */
+    public function apiShow($id)
+    {
+        $member = MemberAppsMember::with('occupation')->findOrFail($id);
+        $member->name = $member->nama_lengkap;
+        $member->telepon = $member->mobile_phone;
+        $member->costumers_id = $member->member_id;
+        $member->status_aktif = $member->is_active ? '1' : '0';
+        $member->point_balance = $member->just_points ?? 0;
+        $member->jenis_kelamin_text = $member->jenis_kelamin === 'L' ? 'Laki-laki' : ($member->jenis_kelamin === 'P' ? 'Perempuan' : '-');
+        $member->pekerjaan_name = $member->occupation ? $member->occupation->name : null;
+
+        return response()->json([
+            'success' => true,
+            'member' => $member,
+        ]);
+    }
+
+    /**
+     * Approval-app API: update member.
+     */
+    public function apiUpdate(Request $request, $id)
+    {
+        $member = MemberAppsMember::findOrFail($id);
+
+        $memberId = $request->member_id ?? $request->costumers_id ?? $member->member_id;
+        $namaLengkap = $request->nama_lengkap ?? $request->name ?? $member->nama_lengkap;
+        $mobilePhone = $request->mobile_phone ?? $request->telepon ?? $member->mobile_phone;
+        $exclusiveMember = $request->is_exclusive_member ?? ($request->exclusive_member === 'Y' ? true : ($request->exclusive_member === 'N' ? false : $member->is_exclusive_member));
+        $password = $request->password ?? $request->password2;
+
+        $validator = \Validator::make($request->all(), [
+            'member_id' => 'nullable|string|max:50|unique:member_apps_members,member_id,'.$member->id,
+            'costumers_id' => 'nullable|string|max:50|unique:member_apps_members,member_id,'.$member->id,
+            'nama_lengkap' => 'nullable|string|max:255',
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255|unique:member_apps_members,email,'.$member->id,
+            'mobile_phone' => 'nullable|string|max:20|unique:member_apps_members,mobile_phone,'.$member->id,
+            'telepon' => 'nullable|string|max:20|unique:member_apps_members,mobile_phone,'.$member->id,
+            'tanggal_lahir' => 'nullable|date',
+            'jenis_kelamin' => 'nullable|in:L,P,1,2',
+            'pekerjaan_id' => 'nullable|integer|exists:member_apps_occupations,id',
+            'pin' => 'nullable|string|max:10',
+            'password' => 'nullable|string|max:255',
+            'password2' => 'nullable|string|max:255',
+            'is_exclusive_member' => 'nullable|boolean',
+            'exclusive_member' => 'nullable|in:Y,N',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $jenisKelamin = $request->jenis_kelamin ?? $member->jenis_kelamin;
+            if ($jenisKelamin === '1') {
+                $jenisKelamin = 'L';
+            } elseif ($jenisKelamin === '2') {
+                $jenisKelamin = 'P';
+            }
+
+            $memberData = [
+                'member_id' => $memberId,
+                'nama_lengkap' => $namaLengkap,
+                'email' => $request->email ?? $member->email,
+                'mobile_phone' => $mobilePhone,
+                'tanggal_lahir' => $request->tanggal_lahir ?? $member->tanggal_lahir,
+                'jenis_kelamin' => $jenisKelamin,
+                'pekerjaan_id' => $request->pekerjaan_id ?? $member->pekerjaan_id,
+                'pin' => $request->pin ?? $member->pin,
+                'is_exclusive_member' => $exclusiveMember,
+            ];
+
+            if ($password) {
+                $memberData['password'] = bcrypt($password);
+            }
+
+            $member->update($memberData);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Member berhasil diperbarui!',
+                'member' => $member->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui member: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Approval-app API: delete member.
+     */
+    public function apiDestroy($id)
+    {
+        $member = MemberAppsMember::findOrFail($id);
+        try {
+            DB::beginTransaction();
+            $member->delete();
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Member berhasil dihapus!',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus member: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Approval-app API: toggle active status.
+     */
+    public function apiToggleStatus($id)
+    {
+        $member = MemberAppsMember::findOrFail($id);
+        try {
+            DB::beginTransaction();
+            $member->update([
+                'is_active' => !$member->is_active,
+            ]);
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Status member berhasil diubah!',
+                'member' => $member->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengubah status member: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Approval-app API: verify single member email.
+     */
+    public function apiVerifyEmail($id)
+    {
+        $member = MemberAppsMember::findOrFail($id);
+        return $this->verifyEmailManual($member);
+    }
+
+    /**
+     * Approval-app API: verify all unverified members.
+     */
+    public function apiVerifyAllUnverified()
+    {
+        return $this->verifyAllUnverified();
+    }
+
+    /**
+     * Approval-app API: change member password.
+     */
+    public function apiChangePassword(Request $request, $id)
+    {
+        $member = MemberAppsMember::findOrFail($id);
+        return $this->changePasswordManual($request, $member);
+    }
 } 
