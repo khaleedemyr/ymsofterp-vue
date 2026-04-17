@@ -872,6 +872,20 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/warehouse-master/warehouse-outlets/{id}', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterUpdate']);
         Route::delete('/warehouse-master/warehouse-outlets/{id}', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterDestroy']);
         Route::patch('/warehouse-master/warehouse-outlets/{id}/toggle-status', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/warehouse-divisions/create-data', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/warehouse-divisions', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/warehouse-divisions', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/warehouse-divisions/{id}', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/warehouse-divisions/{id}', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/warehouse-divisions/{id}/toggle-status', [\App\Http\Controllers\WarehouseDivisionController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/outlets/create-data', [\App\Http\Controllers\OutletController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/outlets', [\App\Http\Controllers\OutletController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/outlets', [\App\Http\Controllers\OutletController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/outlets/{id}/toggle-status', [\App\Http\Controllers\OutletController::class, 'apiMasterToggleStatus']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {

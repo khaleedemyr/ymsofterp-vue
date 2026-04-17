@@ -321,6 +321,171 @@ class OutletController extends Controller
             ->header('Content-Disposition', 'attachment; filename="'.$filename.'"');
     }
 
+    public function apiMasterCreateData()
+    {
+        $regions = Region::where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'regions' => $regions,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = Outlet::with(['region']);
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('lokasi', 'like', "%{$search}%")
+                    ->orWhere('qr_code', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status')) {
+            $status = $request->query('status') === 'active' ? 'A' : 'N';
+            $query->where('status', $status);
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $outlets = $query->orderByDesc('id_outlet')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'nama_outlet' => 'required|string|max:100',
+            'lokasi' => 'required|string',
+            'qr_code' => 'nullable|string|max:255',
+            'lat' => 'nullable|string|max:50',
+            'long' => 'nullable|string|max:50',
+            'keterangan' => 'nullable|string',
+            'region_id' => 'required|exists:regions,id',
+            'status' => 'nullable|in:A,N',
+            'url_places' => 'nullable|string',
+            'sn' => 'nullable|string|max:100',
+            'activation_code' => 'nullable|string|max:100',
+        ]);
+
+        // Match web behavior: new outlet always active.
+        $validated['status'] = 'A';
+        if (empty($validated['qr_code'])) {
+            $validated['qr_code'] = 'OUTLET-'.time();
+        }
+
+        $outlet = Outlet::create($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'outlets',
+            'description' => 'Menambahkan outlet baru: '.$outlet->nama_outlet,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $outlet->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Outlet berhasil ditambahkan!',
+            'outlet' => $outlet->fresh(['region']),
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'nama_outlet' => 'required|string|max:100',
+            'lokasi' => 'required|string',
+            'qr_code' => 'nullable|string|max:255',
+            'lat' => 'nullable|string|max:50',
+            'long' => 'nullable|string|max:50',
+            'keterangan' => 'nullable|string',
+            'region_id' => 'required|exists:regions,id',
+            'status' => 'required|in:A,N',
+            'url_places' => 'nullable|string',
+            'sn' => 'nullable|string|max:100',
+            'activation_code' => 'nullable|string|max:100',
+        ]);
+
+        $outlet = Outlet::find($id);
+        if (! $outlet) {
+            return response()->json(['success' => false, 'message' => 'Outlet tidak ditemukan'], 404);
+        }
+        $oldData = $outlet->toArray();
+        $outlet->update($validated);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'outlets',
+            'description' => 'Mengupdate outlet: '.$outlet->nama_outlet,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $outlet->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Outlet berhasil diupdate!',
+            'outlet' => $outlet->fresh(['region']),
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $outlet = Outlet::find($id);
+        if (! $outlet) {
+            return response()->json(['success' => false, 'message' => 'Outlet tidak ditemukan'], 404);
+        }
+
+        $oldData = $outlet->toArray();
+        $outlet->update(['status' => 'N']);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'outlets',
+            'description' => 'Menonaktifkan outlet: '.$outlet->nama_outlet,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $outlet->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Outlet berhasil dinonaktifkan!',
+        ]);
+    }
+
+    public function apiMasterToggleStatus(int $id)
+    {
+        $outlet = Outlet::find($id);
+        if (! $outlet) {
+            return response()->json(['success' => false, 'message' => 'Outlet tidak ditemukan'], 404);
+        }
+
+        $newStatus = $outlet->status === 'A' ? 'N' : 'A';
+        $outlet->update(['status' => $newStatus]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status outlet berhasil diubah',
+            'outlet' => $outlet->fresh(['region']),
+        ]);
+    }
+
     public function apiList()
     {
         $outlets = Outlet::where('status', 'A')
