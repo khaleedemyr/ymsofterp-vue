@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\PosSyncController;
 use App\Http\Controllers\Api\PosDesignSyncController;
 use App\Http\Controllers\OutletFoodGoodReceiveController;
 use App\Http\Controllers\GoodReceiveOutletSupplierController;
+use App\Http\Controllers\ManualPointController;
 use App\Http\Middleware\ApprovalAppAuth;
 
 
@@ -418,6 +419,14 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'show']);
         Route::put('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'update']);
         Route::delete('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'destroy']);
+
+        // Manual Point Injection (Approval App — selaras web /manual-point)
+        Route::get('/manual-point/create-data', [ManualPointController::class, 'apiCreateData']);
+        Route::get('/manual-point/search-members', [ManualPointController::class, 'apiSearchMembers']);
+        Route::get('/manual-point', [ManualPointController::class, 'apiIndex']);
+        Route::post('/manual-point', [ManualPointController::class, 'apiStore']);
+        Route::get('/manual-point/{id}', [ManualPointController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::delete('/manual-point/{id}', [ManualPointController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
