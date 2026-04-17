@@ -11,6 +11,53 @@ use App\Services\NotificationService;
 
 class AnnouncementController extends Controller
 {
+    private function resolveTargetName(string $targetType, $targetId): ?string
+    {
+        if ($targetType === 'user') {
+            return DB::table('users')->where('id', $targetId)->value('nama_lengkap');
+        }
+        if ($targetType === 'jabatan') {
+            return DB::table('tbl_data_jabatan')->where('id_jabatan', $targetId)->value('nama_jabatan');
+        }
+        if ($targetType === 'divisi') {
+            return DB::table('tbl_data_divisi')->where('id', $targetId)->value('nama_divisi');
+        }
+        if ($targetType === 'level') {
+            return DB::table('tbl_data_level')->where('id', $targetId)->value('nama_level');
+        }
+        if ($targetType === 'outlet') {
+            return DB::table('tbl_data_outlet')->where('id_outlet', $targetId)->value('nama_outlet');
+        }
+
+        return null;
+    }
+
+    private function enrichAnnouncementRow($announcement): void
+    {
+        $announcement->files = DB::table('announcement_files')
+            ->where('announcement_id', $announcement->id)
+            ->get()
+            ->map(function ($f) {
+                $f->file_url = url('/storage/'.$f->file_path);
+                return $f;
+            });
+
+        $targets = DB::table('announcement_targets')
+            ->where('announcement_id', $announcement->id)
+            ->get();
+        foreach ($targets as $target) {
+            $target->target_name = $this->resolveTargetName((string) $target->target_type, $target->target_id);
+        }
+        $announcement->targets = $targets;
+
+        $announcement->image_url = ! empty($announcement->image_path)
+            ? url('/storage/'.$announcement->image_path)
+            : null;
+        $announcement->created_at_formatted = ! empty($announcement->created_at)
+            ? \Carbon\Carbon::parse($announcement->created_at)->format('d M Y, H:i')
+            : null;
+    }
+
     public function index(Request $request)
     {
         $query = DB::table('announcements');
@@ -275,6 +322,229 @@ class AnnouncementController extends Controller
         $this->sendAnnouncementNotification($id, $targetArray, 'published');
 
         return response()->json(['success' => true]);
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $query = DB::table('announcements')
+            ->leftJoin('users as creators', 'announcements.created_by', '=', 'creators.id')
+            ->select(
+                'announcements.*',
+                'creators.nama_lengkap as creator_name',
+                'creators.id as creator_id',
+                'creators.avatar as creator_avatar'
+            );
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('announcements.title', 'like', '%'.$search.'%')
+                    ->orWhere('announcements.content', 'like', '%'.$search.'%');
+            });
+        }
+        if ($request->filled('startDate')) {
+            $query->whereDate('announcements.created_at', '>=', $request->query('startDate'));
+        }
+        if ($request->filled('endDate')) {
+            $query->whereDate('announcements.created_at', '<=', $request->query('endDate'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $announcements = $query->orderByDesc('announcements.created_at')->paginate($perPage);
+
+        foreach ($announcements->items() as $announcement) {
+            $this->enrichAnnouncementRow($announcement);
+        }
+
+        return response()->json([
+            'success' => true,
+            'announcements' => $announcements,
+        ]);
+    }
+
+    public function apiCreateData(Request $request)
+    {
+        $users = User::where('status', 'A')->select('id', 'nama_lengkap', 'id_jabatan', 'division_id', 'id_outlet')->get();
+        $jabatans = DB::table('tbl_data_jabatan')->select('id_jabatan', 'nama_jabatan')->get();
+        $divisis = DB::table('tbl_data_divisi')->select('id', 'nama_divisi')->get();
+        $levels = DB::table('tbl_data_level')->select('id', 'nama_level')->get();
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
+
+        return response()->json([
+            'success' => true,
+            'users' => $users,
+            'jabatans' => $jabatans,
+            'divisis' => $divisis,
+            'levels' => $levels,
+            'outlets' => $outlets,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'content' => 'nullable|string',
+            'image' => 'nullable|image|max:2048',
+            'files.*' => 'nullable|file|max:5120',
+            'targets' => 'required|array|min:1',
+            'targets.*.type' => 'required|in:user,jabatan,divisi,level,outlet',
+            'targets.*.id' => 'required|integer',
+        ]);
+
+        $announcementId = DB::table('announcements')->insertGetId([
+            'title' => $request->input('title'),
+            'content' => $request->input('content'),
+            'image_path' => $request->file('image') ? $request->file('image')->store('announcement_images', 'public') : null,
+            'created_by' => auth()->id(),
+            'created_at' => now(),
+            'status' => 'DRAFT',
+        ]);
+
+        if ($request->hasFile('files')) {
+            foreach ((array) $request->file('files') as $file) {
+                DB::table('announcement_files')->insert([
+                    'announcement_id' => $announcementId,
+                    'file_path' => $file->store('announcement_files', 'public'),
+                    'file_name' => $file->getClientOriginalName(),
+                    'uploaded_at' => now(),
+                ]);
+            }
+        }
+
+        foreach ((array) $request->input('targets', []) as $target) {
+            DB::table('announcement_targets')->insert([
+                'announcement_id' => $announcementId,
+                'target_type' => $target['type'],
+                'target_id' => $target['id'],
+            ]);
+        }
+
+        $this->sendAnnouncementNotification($announcementId, (array) $request->input('targets', []), 'created');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Announcement berhasil dibuat.',
+            'id' => (int) $announcementId,
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $announcement = DB::table('announcements')
+            ->leftJoin('users as creators', 'announcements.created_by', '=', 'creators.id')
+            ->select(
+                'announcements.*',
+                'creators.nama_lengkap as creator_name',
+                'creators.id as creator_id',
+                'creators.avatar as creator_avatar'
+            )
+            ->where('announcements.id', $id)
+            ->first();
+
+        if (! $announcement) {
+            return response()->json(['success' => false, 'message' => 'Announcement tidak ditemukan.'], 404);
+        }
+
+        $this->enrichAnnouncementRow($announcement);
+
+        return response()->json([
+            'success' => true,
+            'announcement' => $announcement,
+        ]);
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'content' => 'nullable|string',
+            'image' => 'nullable|image|max:2048',
+            'files.*' => 'nullable|file|max:5120',
+            'targets' => 'required|array|min:1',
+            'targets.*.type' => 'required|in:user,jabatan,divisi,level,outlet',
+            'targets.*.id' => 'required|integer',
+        ]);
+
+        $exists = DB::table('announcements')->where('id', $id)->exists();
+        if (! $exists) {
+            return response()->json(['success' => false, 'message' => 'Announcement tidak ditemukan.'], 404);
+        }
+
+        $data = [
+            'title' => $request->input('title'),
+            'content' => $request->input('content'),
+            'updated_at' => now(),
+        ];
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('announcement_images', 'public');
+        }
+        DB::table('announcements')->where('id', $id)->update($data);
+
+        if ($request->hasFile('files')) {
+            foreach ((array) $request->file('files') as $file) {
+                DB::table('announcement_files')->insert([
+                    'announcement_id' => $id,
+                    'file_path' => $file->store('announcement_files', 'public'),
+                    'file_name' => $file->getClientOriginalName(),
+                    'uploaded_at' => now(),
+                ]);
+            }
+        }
+
+        DB::table('announcement_targets')->where('announcement_id', $id)->delete();
+        foreach ((array) $request->input('targets', []) as $target) {
+            DB::table('announcement_targets')->insert([
+                'announcement_id' => $id,
+                'target_type' => $target['type'],
+                'target_id' => $target['id'],
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Announcement berhasil diupdate.',
+        ]);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $exists = DB::table('announcements')->where('id', $id)->exists();
+        if (! $exists) {
+            return response()->json(['success' => false, 'message' => 'Announcement tidak ditemukan.'], 404);
+        }
+
+        DB::table('announcement_targets')->where('announcement_id', $id)->delete();
+        DB::table('announcement_files')->where('announcement_id', $id)->delete();
+        DB::table('announcements')->where('id', $id)->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Announcement berhasil dihapus.',
+        ]);
+    }
+
+    public function apiPublish(int $id)
+    {
+        $announcement = DB::table('announcements')->where('id', $id)->first();
+        if (! $announcement) {
+            return response()->json(['success' => false, 'message' => 'Announcement not found'], 404);
+        }
+        if ((string) $announcement->status === 'Publish') {
+            return response()->json(['success' => false, 'message' => 'Announcement sudah publish'], 400);
+        }
+
+        DB::table('announcements')->where('id', $id)->update(['status' => 'Publish', 'updated_at' => now()]);
+
+        $targets = DB::table('announcement_targets')->where('announcement_id', $id)->get();
+        $targetArray = $targets->map(function ($target) {
+            return ['type' => $target->target_type, 'id' => $target->target_id];
+        })->toArray();
+
+        $this->sendAnnouncementNotification($id, $targetArray, 'published');
+
+        return response()->json(['success' => true, 'message' => 'Announcement berhasil dipublish']);
     }
 
     /**

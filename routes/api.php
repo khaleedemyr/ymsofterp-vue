@@ -309,6 +309,13 @@ Route::prefix('approval-app')->group(function () {
 
         // Announcement & Birthday routes for Approval App
         Route::get('/user-announcements', [AnnouncementController::class, 'getUserAnnouncements']);
+        Route::get('/announcements', [AnnouncementController::class, 'apiIndex']);
+        Route::get('/announcements/create-data', [AnnouncementController::class, 'apiCreateData']);
+        Route::post('/announcements', [AnnouncementController::class, 'apiStore']);
+        Route::get('/announcements/{id}', [AnnouncementController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/announcements/{id}', [AnnouncementController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/announcements/{id}', [AnnouncementController::class, 'apiDestroy'])->where('id', '[0-9]+');
+        Route::post('/announcements/{id}/publish', [AnnouncementController::class, 'apiPublish'])->where('id', '[0-9]+');
         Route::get('/birthdays', [BirthdayController::class, 'getBirthdays']);
 
         // Warehouse Transfer (Approval App)
