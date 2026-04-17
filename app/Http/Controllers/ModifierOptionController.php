@@ -92,4 +92,123 @@ class ModifierOptionController extends Controller
         ]);
         return redirect()->back();
     }
+
+    public function apiCreateData()
+    {
+        $modifiers = Modifier::orderBy('name')->get(['id', 'name']);
+        return response()->json([
+            'success' => true,
+            'modifiers' => $modifiers,
+        ]);
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $query = ModifierOption::with('modifier');
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where('name', 'like', "%{$search}%");
+        }
+        if ($request->filled('modifier_id')) {
+            $query->where('modifier_id', $request->query('modifier_id'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(200, $perPage));
+        $modifierOptions = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'modifierOptions' => $modifierOptions,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'modifier_id' => 'required|exists:modifiers,id',
+            'name' => 'required|string|max:100',
+            'modifier_bom_json' => 'nullable|string',
+        ]);
+
+        $option = ModifierOption::create($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'modifier_options',
+            'description' => 'Menambahkan modifier option: '.$option->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $option->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modifier option berhasil ditambahkan!',
+            'modifierOption' => $option->fresh(['modifier']),
+        ]);
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $modifierOption = ModifierOption::find($id);
+        if (! $modifierOption) {
+            return response()->json(['success' => false, 'message' => 'Modifier option tidak ditemukan'], 404);
+        }
+
+        $validated = $request->validate([
+            'modifier_id' => 'required|exists:modifiers,id',
+            'name' => 'required|string|max:100',
+            'modifier_bom_json' => 'nullable|string',
+        ]);
+
+        $oldData = $modifierOption->toArray();
+        $modifierOption->update($validated);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'modifier_options',
+            'description' => 'Mengupdate modifier option: '.$modifierOption->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $modifierOption->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modifier option berhasil diupdate!',
+            'modifierOption' => $modifierOption->fresh(['modifier']),
+        ]);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $modifierOption = ModifierOption::find($id);
+        if (! $modifierOption) {
+            return response()->json(['success' => false, 'message' => 'Modifier option tidak ditemukan'], 404);
+        }
+
+        $oldData = $modifierOption->toArray();
+        $name = $modifierOption->name;
+        $modifierOption->delete();
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'modifier_options',
+            'description' => 'Menghapus modifier option: '.$name,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modifier option berhasil dihapus!',
+        ]);
+    }
 } 

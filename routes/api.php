@@ -840,6 +840,24 @@ Route::prefix('approval-app')->group(function () {
 
         // Item search route for approval app (FO/RO)
         Route::get('/items/search', [ItemController::class, 'search']);
+
+        // Menu Type / Modifiers / Modifier Options (approval app)
+        Route::get('/menu-types', [\App\Http\Controllers\MenuTypeController::class, 'apiIndex']);
+        Route::post('/menu-types', [\App\Http\Controllers\MenuTypeController::class, 'apiStore']);
+        Route::put('/menu-types/{id}', [\App\Http\Controllers\MenuTypeController::class, 'apiUpdate']);
+        Route::delete('/menu-types/{id}', [\App\Http\Controllers\MenuTypeController::class, 'apiDestroy']);
+        Route::patch('/menu-types/{id}/toggle-status', [\App\Http\Controllers\MenuTypeController::class, 'apiToggleStatus']);
+
+        Route::get('/modifiers', [\App\Http\Controllers\ModifierController::class, 'apiIndex']);
+        Route::post('/modifiers', [\App\Http\Controllers\ModifierController::class, 'apiStore']);
+        Route::put('/modifiers/{id}', [\App\Http\Controllers\ModifierController::class, 'apiUpdate']);
+        Route::delete('/modifiers/{id}', [\App\Http\Controllers\ModifierController::class, 'apiDestroy']);
+
+        Route::get('/modifier-options/create-data', [\App\Http\Controllers\ModifierOptionController::class, 'apiCreateData']);
+        Route::get('/modifier-options', [\App\Http\Controllers\ModifierOptionController::class, 'apiIndex']);
+        Route::post('/modifier-options', [\App\Http\Controllers\ModifierOptionController::class, 'apiStore']);
+        Route::put('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiUpdate']);
+        Route::delete('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiDestroy']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {
