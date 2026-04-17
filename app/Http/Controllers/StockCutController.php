@@ -258,7 +258,9 @@ class StockCutController extends Controller
         }
 
         // 2. Mapping kebutuhan bahan baku & warehouse
-        $this->putStockCutProgress($progressKey, 'running', 'Menghitung kebutuhan BOM...', 28);
+        $this->putStockCutProgress($progressKey, 'running', 'Menghitung kebutuhan BOM...', 22, [
+            'phase' => 'bom_calculation',
+        ]);
         $kebutuhanBahan = [];
         $warehouseMap = [];
         
@@ -275,6 +277,8 @@ class StockCutController extends Controller
             ->where('status', 'active')
             ->first();
         
+        $totalOrderItems = $orderItems->count();
+        $processedOrderItems = 0;
         foreach ($orderItems as $oi) {
             // Tentukan warehouse berdasarkan type item
             $warehouse = null;
@@ -340,11 +344,31 @@ class StockCutController extends Controller
                     }
                 }
             }
+
+            $processedOrderItems++;
+            if ($totalOrderItems > 0 && ($processedOrderItems === 1 || $processedOrderItems % 5 === 0 || $processedOrderItems === $totalOrderItems)) {
+                $bomProgress = 22 + (int) floor(($processedOrderItems / $totalOrderItems) * 23); // 22..45
+                $this->putStockCutProgress(
+                    $progressKey,
+                    'running',
+                    "Menghitung BOM item {$processedOrderItems}/{$totalOrderItems}...",
+                    min(45, $bomProgress),
+                    [
+                        'phase' => 'bom_calculation',
+                        'processed_items' => $processedOrderItems,
+                        'total_items' => $totalOrderItems,
+                    ]
+                );
+            }
         }
 
         // 3. Cek stok (konsisten dengan konversi unit)
-        $this->putStockCutProgress($progressKey, 'running', 'Memeriksa ketersediaan stok...', 45);
+        $this->putStockCutProgress($progressKey, 'running', 'Memeriksa ketersediaan stok...', 46, [
+            'phase' => 'stock_validation',
+        ]);
         $kurang = [];
+        $totalChecks = count($kebutuhanBahan);
+        $processedChecks = 0;
         foreach ($kebutuhanBahan as $key => $data) {
             // Handle struktur data baru dengan unit
             if (is_array($data)) {
@@ -389,6 +413,22 @@ class StockCutController extends Controller
                     'stock_available' => $stock->qty_small,
                     'reason' => 'Stock tidak cukup'
                 ];
+            }
+
+            $processedChecks++;
+            if ($totalChecks > 0 && ($processedChecks === 1 || $processedChecks % 10 === 0 || $processedChecks === $totalChecks)) {
+                $checkProgress = 46 + (int) floor(($processedChecks / $totalChecks) * 9); // 46..55
+                $this->putStockCutProgress(
+                    $progressKey,
+                    'running',
+                    "Validasi stok {$processedChecks}/{$totalChecks}...",
+                    min(55, $checkProgress),
+                    [
+                        'phase' => 'stock_validation',
+                        'processed_items' => $processedChecks,
+                        'total_items' => $totalChecks,
+                    ]
+                );
             }
         }
         if (count($kurang) > 0) {
@@ -443,7 +483,9 @@ class StockCutController extends Controller
         );
 
         // 4. Potong stock & catat kartu stok (mengikuti pola OutletInternalUseWasteController)
-        $this->putStockCutProgress($progressKey, 'running', 'Memotong stok dan mencatat inventory card...', 55);
+        $this->putStockCutProgress($progressKey, 'running', 'Memotong stok dan mencatat inventory card...', 56, [
+            'phase' => 'stock_cutting',
+        ]);
         // Simpan detail stock cut untuk insert ke stock_cut_details
         $stockCutDetails = [];
         $totalKebutuhan = count($kebutuhanBahan);
@@ -613,19 +655,27 @@ class StockCutController extends Controller
             ];
 
             $processedKebutuhan++;
-            if ($totalKebutuhan > 0 && ($processedKebutuhan === 1 || $processedKebutuhan % 25 === 0 || $processedKebutuhan === $totalKebutuhan)) {
-                $loopProgress = 55 + (int) floor(($processedKebutuhan / $totalKebutuhan) * 30);
+            if ($totalKebutuhan > 0 && ($processedKebutuhan === 1 || $processedKebutuhan % 5 === 0 || $processedKebutuhan === $totalKebutuhan)) {
+                $loopProgress = 56 + (int) floor(($processedKebutuhan / $totalKebutuhan) * 29); // 56..85
                 $this->putStockCutProgress(
                     $progressKey,
                     'running',
                     "Memproses item {$processedKebutuhan}/{$totalKebutuhan}...",
                     min(85, $loopProgress)
+                    ,
+                    [
+                        'phase' => 'stock_cutting',
+                        'processed_items' => $processedKebutuhan,
+                        'total_items' => $totalKebutuhan,
+                    ]
                 );
             }
         }
 
         // 5. Update flag stock_cut di order_items
-        $this->putStockCutProgress($progressKey, 'running', 'Update flag stock_cut order items...', 90);
+        $this->putStockCutProgress($progressKey, 'running', 'Update flag stock_cut order items...', 90, [
+            'phase' => 'marking_order_items',
+        ]);
         // Hanya update order_items yang sesuai dengan type yang dipotong
         $orderItemIds = $orderItems->pluck('id')->toArray();
         if (!empty($orderItemIds)) {
@@ -635,7 +685,9 @@ class StockCutController extends Controller
         }
 
         // 6. Finalisasi log stock cut
-        $this->putStockCutProgress($progressKey, 'running', 'Finalisasi log stock cut...', 96);
+        $this->putStockCutProgress($progressKey, 'running', 'Finalisasi log stock cut...', 96, [
+            'phase' => 'finalizing',
+        ]);
         $totalItemsCut = count($orderItems);
         $totalModifiersCut = 0;
         
@@ -686,6 +738,7 @@ class StockCutController extends Controller
         }
 
         $this->putStockCutProgress($progressKey, 'success', 'Potong stock berhasil', 100, [
+            'phase' => 'completed',
             'total_items_cut' => $totalItemsCut,
             'total_modifiers_cut' => $totalModifiersCut,
         ]);
