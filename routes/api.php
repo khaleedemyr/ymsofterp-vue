@@ -443,6 +443,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/manual-point/{id}', [ManualPointController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::delete('/manual-point/{id}', [ManualPointController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // Scrapper Google Review (Approval App — native mobile support)
+        Route::get('/google-review/outlets', [\App\Http\Controllers\GoogleReviewController::class, 'apiOutlets']);
+        Route::post('/google-review/fetch', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviews']);
+        Route::post('/google-review/fetch-apify', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviewsApify']);
+        Route::get('/google-review/apify/items', [\App\Http\Controllers\GoogleReviewController::class, 'apifyItems']);
+
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);
         Route::get('/outlet-transfers/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);

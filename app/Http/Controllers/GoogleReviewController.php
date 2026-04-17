@@ -69,6 +69,28 @@ class GoogleReviewController extends Controller
         return Inertia::render('google-review/Dashboard', $this->buildDashboardData());
     }
 
+    public function apiOutlets(Request $request)
+    {
+        try {
+            $outlets = DB::table('tbl_data_outlet')
+                ->select('id_outlet as id', 'nama_outlet', 'place_id')
+                ->whereNotNull('place_id')
+                ->orderBy('nama_outlet')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'outlets' => $outlets,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat data outlet.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     protected function buildDashboardData(): array
     {
         $today = now();
