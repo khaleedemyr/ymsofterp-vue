@@ -439,4 +439,182 @@ class PaymentTypeController extends Controller
             ->whereNull('r.id')
             ->delete();
     }
+
+    public function apiMasterCreateData()
+    {
+        $outlets = Outlet::where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '')
+            ->get()
+            ->map(function ($o) {
+                return [
+                    'id' => $o->id_outlet,
+                    'name' => $o->nama_outlet,
+                ];
+            })
+            ->values();
+
+        $regions = Region::where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'regions' => $regions,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = PaymentType::with(['outlets', 'regions']);
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $paymentTypes = $query->latest()->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'paymentTypes' => $paymentTypes,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $request->merge([
+            'regions' => $this->normalizeIdArray($request->input('regions', [])),
+            'outlets' => $this->normalizeIdArray($request->input('outlets', [])),
+        ]);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:100',
+            'code' => 'required|string|max:50|unique:payment_types,code',
+            'is_bank' => 'boolean',
+            'bank_name' => 'required_if:is_bank,true|nullable|string|max:100',
+            'description' => 'nullable|string',
+            'status' => 'required|in:active,inactive',
+            'outlet_type' => 'required|in:region,outlet',
+            'outlets' => 'required_if:outlet_type,outlet|array',
+            'outlets.*' => 'integer|exists:tbl_data_outlet,id_outlet',
+            'regions' => 'required_if:outlet_type,region|array',
+            'regions.*' => 'integer|exists:regions,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $paymentType = PaymentType::create($validated);
+            $this->cleanupOrphanedRegionLinks($paymentType->id);
+
+            if ($validated['outlet_type'] === 'region') {
+                $paymentType->regions()->attach($validated['regions'] ?? []);
+            } else {
+                $paymentType->outlets()->attach($validated['outlets'] ?? []);
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Jenis pembayaran berhasil ditambahkan',
+                'paymentType' => $paymentType->load(['outlets', 'regions']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menambahkan jenis pembayaran: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $paymentType = PaymentType::find($id);
+        if (! $paymentType) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jenis pembayaran tidak ditemukan',
+            ], 404);
+        }
+
+        $request->merge([
+            'regions' => $this->normalizeIdArray($request->input('regions', [])),
+            'outlets' => $this->normalizeIdArray($request->input('outlets', [])),
+        ]);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:100',
+            'code' => 'required|string|max:50|unique:payment_types,code,'.$paymentType->id,
+            'is_bank' => 'boolean',
+            'bank_name' => 'required_if:is_bank,true|nullable|string|max:100',
+            'description' => 'nullable|string',
+            'status' => 'required|in:active,inactive',
+            'outlet_type' => 'required|in:region,outlet',
+            'outlets' => 'required_if:outlet_type,outlet|array',
+            'outlets.*' => 'integer|exists:tbl_data_outlet,id_outlet',
+            'regions' => 'required_if:outlet_type,region|array',
+            'regions.*' => 'integer|exists:regions,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $paymentType->update($validated);
+            $this->cleanupOrphanedRegionLinks($paymentType->id);
+
+            if ($validated['outlet_type'] === 'region') {
+                $paymentType->regions()->sync($validated['regions'] ?? []);
+                $paymentType->outlets()->detach();
+            } else {
+                $paymentType->outlets()->sync($validated['outlets'] ?? []);
+                $paymentType->regions()->detach();
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Jenis pembayaran berhasil diperbarui',
+                'paymentType' => $paymentType->load(['outlets', 'regions']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui jenis pembayaran: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $paymentType = PaymentType::find($id);
+        if (! $paymentType) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jenis pembayaran tidak ditemukan',
+            ], 404);
+        }
+
+        try {
+            $paymentType->delete();
+            return response()->json([
+                'success' => true,
+                'message' => 'Jenis pembayaran berhasil dihapus',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus jenis pembayaran: '.$e->getMessage(),
+            ], 500);
+        }
+    }
 } 

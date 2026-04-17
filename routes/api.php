@@ -905,6 +905,24 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/warehouse-master/regions/{id}', [\App\Http\Controllers\RegionController::class, 'apiMasterDestroy']);
         Route::patch('/warehouse-master/regions/{id}/toggle-status', [\App\Http\Controllers\RegionController::class, 'apiMasterToggleStatus']);
 
+        Route::get('/warehouse-master/investors/create-data', [\App\Http\Controllers\InvestorController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/investors', [\App\Http\Controllers\InvestorController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/investors', [\App\Http\Controllers\InvestorController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/investors/{id}', [\App\Http\Controllers\InvestorController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/investors/{id}', [\App\Http\Controllers\InvestorController::class, 'apiMasterDestroy']);
+
+        Route::get('/warehouse-master/officer-checks/create-data', [\App\Http\Controllers\OfficerCheckController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/officer-checks', [\App\Http\Controllers\OfficerCheckController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/officer-checks', [\App\Http\Controllers\OfficerCheckController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/officer-checks/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/officer-checks/{id}', [\App\Http\Controllers\OfficerCheckController::class, 'apiMasterDestroy']);
+
+        Route::get('/warehouse-master/payment-types/create-data', [\App\Http\Controllers\PaymentTypeController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/payment-types', [\App\Http\Controllers\PaymentTypeController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/payment-types', [\App\Http\Controllers\PaymentTypeController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/payment-types/{id}', [\App\Http\Controllers\PaymentTypeController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/payment-types/{id}', [\App\Http\Controllers\PaymentTypeController::class, 'apiMasterDestroy']);
+
         Route::get('/warehouse-master/item-schedules/create-data', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterCreateData']);
         Route::get('/warehouse-master/item-schedules', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterIndex']);
         Route::post('/warehouse-master/item-schedules', [\App\Http\Controllers\ItemScheduleController::class, 'apiMasterStore']);
