@@ -402,9 +402,9 @@
                   <div v-if="ticket.due_date" class="flex items-center gap-2">
                     <span class="text-gray-900">{{ new Date(ticket.due_date).toLocaleDateString('id-ID') }}</span>
                     <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
-                          :class="getDueDateBadgeClass(ticket.due_date, ticket.status?.slug)">
+                          :class="getDueDateBadgeClass(ticket)">
                       <i class="fas fa-clock mr-1"></i>
-                      {{ getDueDateStatus(ticket.due_date) }}
+                      {{ getDueDateStatus(ticket) }}
                     </span>
                   </div>
                   <span v-else class="text-gray-400">-</span>
@@ -1308,14 +1308,28 @@ function getTicketPaymentStatusClass(ticket) {
   return 'bg-blue-100 text-blue-700';
 }
 
-function getDueDateStatus(dueDate) {
+function getDueDateStatus(ticket) {
+  const dueDate = ticket?.due_date;
   if (!dueDate) return 'No Due Date';
-  
-  const today = new Date();
+
   const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return '-';
+
+  const completionInfo = getTicketCompletionInfo(ticket);
+  if (completionInfo.isCompleted) {
+    if (completionInfo.completedAt && completionInfo.completedAt <= due) {
+      return completionInfo.type === 'resolved' ? 'Resolved On Time' : 'Closed On Time';
+    }
+    if (completionInfo.completedAt && completionInfo.completedAt > due) {
+      return completionInfo.type === 'resolved' ? 'Resolved Late' : 'Closed Late';
+    }
+    return completionInfo.type === 'resolved' ? 'Resolved' : 'Closed';
+  }
+
+  const today = new Date();
   const diffTime = due - today;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
+
   if (diffDays < 0) {
     return 'Overdue';
   } else if (diffDays === 0) {
@@ -1329,31 +1343,55 @@ function getDueDateStatus(dueDate) {
   }
 }
 
-function getDueDateBadgeClass(dueDate, status) {
+function getTicketCompletionInfo(ticket) {
+  const status = String(ticket?.status?.slug || '').toLowerCase();
+  const isResolved = status === 'resolved';
+  const isClosed = status === 'closed';
+  const isCompleted = isResolved || isClosed;
+  if (!isCompleted) {
+    return { isCompleted: false, type: null, completedAt: null };
+  }
+
+  const completedRaw = isClosed ? ticket?.closed_at : ticket?.resolved_at;
+  const completedAt = completedRaw ? new Date(completedRaw) : null;
+  return {
+    isCompleted: true,
+    type: isResolved ? 'resolved' : 'closed',
+    completedAt: completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : null,
+  };
+}
+
+function getDueDateBadgeClass(ticket) {
+  const dueDate = ticket?.due_date;
   if (!dueDate) return 'bg-gray-100 text-gray-500';
 
-  const today = new Date();
   const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return 'bg-gray-100 text-gray-500';
+
+  const completionInfo = getTicketCompletionInfo(ticket);
+  if (completionInfo.isCompleted) {
+    if (completionInfo.completedAt && completionInfo.completedAt <= due) {
+      return 'bg-green-100 text-green-700';
+    }
+    if (completionInfo.completedAt && completionInfo.completedAt > due) {
+      return 'bg-red-100 text-red-600';
+    }
+    return 'bg-emerald-100 text-emerald-700';
+  }
+
+  const today = new Date();
   const diffTime = due - today;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    // Overdue should always be red regardless of status
     return 'bg-red-100 text-red-600';
-  } else if (status === 'closed' || status === 'resolved') {
-    // Completed and not overdue
-    return 'bg-green-100 text-green-600';
   } else if (diffDays === 0) {
-    // Due today - Orange
     return 'bg-orange-100 text-orange-600';
   } else if (diffDays === 1) {
-    // Due tomorrow - Yellow
     return 'bg-yellow-100 text-yellow-600';
   } else if (diffDays <= 3) {
-    // Due in 2-3 days - Light yellow
     return 'bg-yellow-50 text-yellow-700';
   } else {
-    // More than 3 days - Green
     return 'bg-green-100 text-green-600';
   }
 }
