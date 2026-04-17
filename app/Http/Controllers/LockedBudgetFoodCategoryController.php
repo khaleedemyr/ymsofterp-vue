@@ -241,4 +241,149 @@ class LockedBudgetFoodCategoryController extends Controller
             return back()->withErrors(['error' => 'Terjadi kesalahan saat menghapus data']);
         }
     }
+
+    public function apiMasterCreateData()
+    {
+        $categories = Category::select('id', 'name')->orderBy('name')->get();
+        $subCategories = SubCategory::select('id', 'category_id', 'name', 'status')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+        $outlets = Outlet::select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'categories' => $categories,
+            'subCategories' => $subCategories,
+            'outlets' => $outlets,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = LockedBudgetFoodCategory::with(['category', 'subCategory', 'outlet'])
+            ->select('locked_budget_food_categories.*');
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('category', function ($categoryQuery) use ($search) {
+                    $categoryQuery->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('subCategory', function ($subCategoryQuery) use ($search) {
+                    $subCategoryQuery->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('outlet', function ($outletQuery) use ($search) {
+                    $outletQuery->where('nama_outlet', 'like', "%{$search}%");
+                })
+                ->orWhere('budget', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->query('category_id'));
+        }
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', $request->query('outlet_id'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $rows = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'lockedBudgetFoodCategories' => $rows,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'sub_category_id' => 'required|exists:sub_categories,id',
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'budget' => 'required|numeric|min:0',
+        ]);
+
+        $existing = LockedBudgetFoodCategory::where('category_id', $validated['category_id'])
+            ->where('sub_category_id', $validated['sub_category_id'])
+            ->where('outlet_id', $validated['outlet_id'])
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Budget untuk kombinasi kategori/sub kategori/outlet ini sudah ada',
+            ], 422);
+        }
+
+        LockedBudgetFoodCategory::create([
+            ...$validated,
+            'created_by' => Auth::id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Locked budget food category berhasil ditambahkan',
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $row = LockedBudgetFoodCategory::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'sub_category_id' => 'required|exists:sub_categories,id',
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'budget' => 'required|numeric|min:0',
+        ]);
+
+        $existing = LockedBudgetFoodCategory::where('category_id', $validated['category_id'])
+            ->where('sub_category_id', $validated['sub_category_id'])
+            ->where('outlet_id', $validated['outlet_id'])
+            ->where('id', '!=', $id)
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Budget untuk kombinasi kategori/sub kategori/outlet ini sudah ada',
+            ], 422);
+        }
+
+        $row->update([
+            ...$validated,
+            'updated_by' => Auth::id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Locked budget food category berhasil diperbarui',
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $row = LockedBudgetFoodCategory::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+        $row->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Locked budget food category berhasil dihapus',
+        ]);
+    }
 }

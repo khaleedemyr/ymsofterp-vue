@@ -986,6 +986,40 @@ Route::prefix('approval-app')->group(function () {
         // Video Tutorial routes
         Route::get('/video-tutorials/gallery', [\App\Http\Controllers\VideoTutorialController::class, 'galleryApi']);
         Route::get('/video-tutorials/groups', [\App\Http\Controllers\VideoTutorialController::class, 'getGroupsApi']);
+
+        Route::prefix('finance-master')->group(function () {
+            Route::prefix('locked-budget-food-categories')->group(function () {
+                Route::get('/create-data', [\App\Http\Controllers\LockedBudgetFoodCategoryController::class, 'apiMasterCreateData']);
+                Route::get('/index', [\App\Http\Controllers\LockedBudgetFoodCategoryController::class, 'apiMasterIndex']);
+                Route::post('/store', [\App\Http\Controllers\LockedBudgetFoodCategoryController::class, 'apiMasterStore']);
+                Route::put('/update/{id}', [\App\Http\Controllers\LockedBudgetFoodCategoryController::class, 'apiMasterUpdate']);
+                Route::delete('/destroy/{id}', [\App\Http\Controllers\LockedBudgetFoodCategoryController::class, 'apiMasterDestroy']);
+            });
+
+            Route::prefix('budget-management')->group(function () {
+                Route::get('/create-data', [\App\Http\Controllers\BudgetManagementController::class, 'apiMasterCreateData']);
+                Route::get('/index', [\App\Http\Controllers\BudgetManagementController::class, 'apiMasterIndex']);
+                Route::post('/store', [\App\Http\Controllers\BudgetManagementController::class, 'apiMasterStore']);
+                Route::put('/update/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'apiMasterUpdate']);
+                Route::delete('/destroy/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'apiMasterDestroy']);
+            });
+
+            Route::prefix('chart-of-accounts')->group(function () {
+                Route::get('/create-data', [\App\Http\Controllers\ChartOfAccountController::class, 'apiMasterCreateData']);
+                Route::get('/index', [\App\Http\Controllers\ChartOfAccountController::class, 'apiMasterIndex']);
+                Route::post('/store', [\App\Http\Controllers\ChartOfAccountController::class, 'apiMasterStore']);
+                Route::put('/update/{id}', [\App\Http\Controllers\ChartOfAccountController::class, 'apiMasterUpdate']);
+                Route::delete('/destroy/{id}', [\App\Http\Controllers\ChartOfAccountController::class, 'apiMasterDestroy']);
+            });
+
+            Route::prefix('bank-accounts')->group(function () {
+                Route::get('/create-data', [\App\Http\Controllers\BankAccountController::class, 'apiMasterCreateData']);
+                Route::get('/index', [\App\Http\Controllers\BankAccountController::class, 'apiMasterIndex']);
+                Route::post('/store', [\App\Http\Controllers\BankAccountController::class, 'apiMasterStore']);
+                Route::put('/update/{id}', [\App\Http\Controllers\BankAccountController::class, 'apiMasterUpdate']);
+                Route::delete('/destroy/{id}', [\App\Http\Controllers\BankAccountController::class, 'apiMasterDestroy']);
+            });
+        });
         
         // Sales Outlet Dashboard API
         Route::get('/sales-outlet-dashboard', [\App\Http\Controllers\SalesOutletDashboardController::class, 'dashboardApi']);

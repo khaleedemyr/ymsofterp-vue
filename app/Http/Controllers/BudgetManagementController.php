@@ -10,6 +10,13 @@ use Illuminate\Support\Facades\DB;
 
 class BudgetManagementController extends Controller
 {
+    private const DIVISION_OPTIONS = [
+        'GENERAL',
+        'MARKETING',
+        'MAINTENANCE',
+        'ASSET',
+        'PROJECT_ENHANCEMENT',
+    ];
     /**
      * Display budget management dashboard
      */
@@ -448,5 +455,198 @@ class BudgetManagementController extends Controller
             'success' => true,
             'summary' => $summary,
         ]);
+    }
+
+    public function apiMasterCreateData()
+    {
+        $outlets = Outlet::select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'divisionOptions' => self::DIVISION_OPTIONS,
+            'budgetTypeOptions' => ['GLOBAL', 'PER_OUTLET'],
+            'outlets' => $outlets,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = PurchaseRequisitionCategory::query()->with(['outletBudgets.outlet']);
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('subcategory', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('division')) {
+            $query->where('division', $request->query('division'));
+        }
+        if ($request->filled('budget_type')) {
+            $query->where('budget_type', $request->query('budget_type'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $rows = $query->orderBy('division')->orderBy('name')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'budgetCategories' => $rows,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'division' => 'required|in:' . implode(',', self::DIVISION_OPTIONS),
+            'subcategory' => 'required|string|max:255',
+            'budget_limit' => 'required|numeric|min:0',
+            'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
+            'description' => 'nullable|string',
+            'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
+            'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
+            'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $category = PurchaseRequisitionCategory::create([
+                'name' => $validated['name'],
+                'division' => $validated['division'],
+                'subcategory' => $validated['subcategory'],
+                'budget_limit' => $validated['budget_limit'],
+                'budget_type' => $validated['budget_type'],
+                'description' => $validated['description'] ?? null,
+            ]);
+
+            if ($validated['budget_type'] === 'PER_OUTLET') {
+                $outletBudgets = $validated['outlet_budgets'] ?? [];
+                foreach (($validated['selected_outlets'] ?? []) as $outletId) {
+                    PurchaseRequisitionOutletBudget::create([
+                        'category_id' => $category->id,
+                        'outlet_id' => $outletId,
+                        'allocated_budget' => (float) ($outletBudgets[$outletId] ?? 0),
+                        'used_budget' => 0,
+                    ]);
+                }
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Budget category berhasil ditambahkan',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan budget category: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $row = PurchaseRequisitionCategory::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'division' => 'required|in:' . implode(',', self::DIVISION_OPTIONS),
+            'subcategory' => 'required|string|max:255',
+            'budget_limit' => 'required|numeric|min:0',
+            'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
+            'description' => 'nullable|string',
+            'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
+            'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
+            'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $row->update([
+                'name' => $validated['name'],
+                'division' => $validated['division'],
+                'subcategory' => $validated['subcategory'],
+                'budget_limit' => $validated['budget_limit'],
+                'budget_type' => $validated['budget_type'],
+                'description' => $validated['description'] ?? null,
+            ]);
+
+            if ($validated['budget_type'] === 'GLOBAL') {
+                PurchaseRequisitionOutletBudget::where('category_id', $row->id)->delete();
+            } else {
+                PurchaseRequisitionOutletBudget::where('category_id', $row->id)->delete();
+                $outletBudgets = $validated['outlet_budgets'] ?? [];
+                foreach (($validated['selected_outlets'] ?? []) as $outletId) {
+                    PurchaseRequisitionOutletBudget::create([
+                        'category_id' => $row->id,
+                        'outlet_id' => $outletId,
+                        'allocated_budget' => (float) ($outletBudgets[$outletId] ?? 0),
+                        'used_budget' => 0,
+                    ]);
+                }
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Budget category berhasil diperbarui',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memperbarui budget category: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $row = PurchaseRequisitionCategory::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+
+        $hasRequisitions = \App\Models\PurchaseRequisition::where('category_id', $id)->exists();
+        if ($hasRequisitions) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kategori sudah dipakai pada purchase requisition dan tidak bisa dihapus',
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            PurchaseRequisitionOutletBudget::where('category_id', $id)->delete();
+            $row->delete();
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Budget category berhasil dihapus',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus budget category: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

@@ -291,5 +291,134 @@ class BankAccountController extends Controller
             'data' => $banks
         ]);
     }
+
+    public function apiMasterCreateData()
+    {
+        $outlets = DataOutlet::select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+        $coas = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'chartOfAccounts' => $coas,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = BankAccount::with(['outlet', 'coa']);
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('bank_name', 'like', "%{$search}%")
+                    ->orWhere('account_number', 'like', "%{$search}%")
+                    ->orWhere('account_name', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('outlet_id')) {
+            if ($request->query('outlet_id') === 'null') {
+                $query->whereNull('outlet_id');
+            } else {
+                $query->where('outlet_id', $request->query('outlet_id'));
+            }
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->query('status');
+            if ($status === 'active') {
+                $query->where('is_active', 1);
+            } elseif ($status === 'inactive') {
+                $query->where('is_active', 0);
+            }
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $rows = $query->orderBy('bank_name')->orderBy('account_name')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'bankAccounts' => $rows,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'bank_name' => 'required|string|max:255',
+            'account_number' => 'required|string|max:100',
+            'account_name' => 'required|string|max:255',
+            'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
+            'coa_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        BankAccount::create([
+            ...$validated,
+            'is_active' => $request->boolean('is_active', true),
+            'outlet_id' => $validated['outlet_id'] ?? null,
+            'coa_id' => $validated['coa_id'] ?? null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account berhasil ditambahkan',
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $bankAccount = BankAccount::find($id);
+        if (! $bankAccount) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'bank_name' => 'required|string|max:255',
+            'account_number' => 'required|string|max:100',
+            'account_name' => 'required|string|max:255',
+            'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
+            'coa_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'is_active' => 'nullable|boolean',
+        ]);
+
+        $bankAccount->update([
+            ...$validated,
+            'is_active' => $request->boolean('is_active', true),
+            'outlet_id' => $validated['outlet_id'] ?? null,
+            'coa_id' => $validated['coa_id'] ?? null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account berhasil diperbarui',
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $bankAccount = BankAccount::find($id);
+        if (! $bankAccount) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+        $bankAccount->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account berhasil dihapus',
+        ]);
+    }
 }
 

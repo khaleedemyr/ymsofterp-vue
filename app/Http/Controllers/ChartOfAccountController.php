@@ -396,5 +396,133 @@ class ChartOfAccountController extends Controller
         return redirect()->route('chart-of-accounts.index')
             ->with('success', 'Status berhasil diubah!');
     }
+
+    public function apiMasterCreateData()
+    {
+        $parents = ChartOfAccount::where('is_active', 1)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'parent_id', 'type']);
+
+        $menus = Menu::orderBy('name')
+            ->get(['id', 'name', 'code', 'route', 'parent_id']);
+
+        return response()->json([
+            'success' => true,
+            'parents' => $parents,
+            'menus' => $menus,
+        ]);
+    }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = ChartOfAccount::with(['parent']);
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('type')) {
+            $query->where('type', $request->query('type'));
+        }
+        if ($request->filled('status')) {
+            $status = $request->query('status');
+            if ($status === 'active') {
+                $query->where('is_active', 1);
+            } elseif ($status === 'inactive') {
+                $query->where('is_active', 0);
+            }
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $rows = $query->orderBy('code')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'chartOfAccounts' => $rows,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:chart_of_accounts,code',
+            'name' => 'required|string|max:255',
+            'type' => 'required|string|in:Asset,Liability,Equity,Revenue,Expense',
+            'parent_id' => 'nullable|exists:chart_of_accounts,id',
+            'description' => 'nullable|string',
+            'is_active' => 'nullable|boolean',
+            'budget_limit' => 'nullable|numeric|min:0',
+        ]);
+
+        ChartOfAccount::create([
+            ...$validated,
+            'parent_id' => $validated['parent_id'] ?? null,
+            'is_active' => $request->boolean('is_active', true),
+            'show_in_menu_payment' => false,
+            'static_or_dynamic' => 'dynamic',
+            'menu_id' => null,
+            'mode_payment' => null,
+            'default_counter_account_id' => null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chart of account berhasil ditambahkan',
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $row = ChartOfAccount::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:chart_of_accounts,code,' . $id,
+            'name' => 'required|string|max:255',
+            'type' => 'required|string|in:Asset,Liability,Equity,Revenue,Expense',
+            'parent_id' => 'nullable|exists:chart_of_accounts,id|different:' . $id,
+            'description' => 'nullable|string',
+            'is_active' => 'nullable|boolean',
+            'budget_limit' => 'nullable|numeric|min:0',
+        ]);
+
+        $row->update([
+            ...$validated,
+            'parent_id' => $validated['parent_id'] ?? null,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chart of account berhasil diperbarui',
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $row = ChartOfAccount::find($id);
+        if (! $row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak ditemukan',
+            ], 404);
+        }
+        $row->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chart of account berhasil dihapus',
+        ]);
+    }
 }
 
