@@ -104,4 +104,148 @@ class WarehouseController extends Controller
         $warehouse->update(['status' => $request->status]);
         return response()->json(['success' => true]);
     }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = Warehouse::query();
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('location', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $warehouses = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:warehouses',
+            'name' => 'required|string|max:100',
+            'location' => 'required|string|max:255',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $warehouse = Warehouse::create($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'warehouses',
+            'description' => 'Menambahkan warehouse baru: '.$warehouse->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $warehouse->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Warehouse berhasil ditambahkan!',
+            'warehouse' => $warehouse,
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $warehouse = Warehouse::find($id);
+        if (! $warehouse) {
+            return response()->json(['success' => false, 'message' => 'Warehouse tidak ditemukan'], 404);
+        }
+
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:warehouses,code,'.$id,
+            'name' => 'required|string|max:100',
+            'location' => 'required|string|max:255',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $oldData = $warehouse->toArray();
+        $warehouse->update($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'warehouses',
+            'description' => 'Mengupdate warehouse: '.$warehouse->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $warehouse->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Warehouse berhasil diupdate!',
+            'warehouse' => $warehouse->fresh(),
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id, Request $request)
+    {
+        $warehouse = Warehouse::find($id);
+        if (! $warehouse) {
+            return response()->json(['success' => false, 'message' => 'Warehouse tidak ditemukan'], 404);
+        }
+
+        $oldData = $warehouse->toArray();
+        $warehouse->update(['status' => 'inactive']);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'warehouses',
+            'description' => 'Menonaktifkan warehouse: '.$warehouse->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $warehouse->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Warehouse berhasil dinonaktifkan!',
+        ]);
+    }
+
+    public function apiMasterToggleStatus(int $id, Request $request)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $warehouse = Warehouse::find($id);
+        if (! $warehouse) {
+            return response()->json(['success' => false, 'message' => 'Warehouse tidak ditemukan'], 404);
+        }
+
+        $oldData = $warehouse->toArray();
+        $warehouse->update(['status' => $validated['status']]);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'status_toggle',
+            'module' => 'warehouses',
+            'description' => 'Mengubah status warehouse: '.$warehouse->name.' menjadi '.$validated['status'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $warehouse->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status warehouse berhasil diubah',
+            'warehouse' => $warehouse->fresh(),
+        ]);
+    }
 } 

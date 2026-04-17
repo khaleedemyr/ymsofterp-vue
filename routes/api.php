@@ -858,6 +858,20 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/modifier-options', [\App\Http\Controllers\ModifierOptionController::class, 'apiStore']);
         Route::put('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiUpdate']);
         Route::delete('/modifier-options/{id}', [\App\Http\Controllers\ModifierOptionController::class, 'apiDestroy']);
+
+        // Warehouses + Warehouse Outlets (master data for app)
+        Route::get('/warehouse-master/warehouses', [\App\Http\Controllers\WarehouseController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/warehouses', [\App\Http\Controllers\WarehouseController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/warehouses/{id}', [\App\Http\Controllers\WarehouseController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/warehouses/{id}', [\App\Http\Controllers\WarehouseController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/warehouses/{id}/toggle-status', [\App\Http\Controllers\WarehouseController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/warehouse-outlets/create-data', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterCreateData']);
+        Route::get('/warehouse-master/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/warehouse-outlets', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/warehouse-outlets/{id}', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/warehouse-outlets/{id}', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/warehouse-outlets/{id}/toggle-status', [\App\Http\Controllers\WarehouseOutletController::class, 'apiMasterToggleStatus']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {
