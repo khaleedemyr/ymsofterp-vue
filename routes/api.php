@@ -886,6 +886,24 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/warehouse-master/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiMasterUpdate']);
         Route::delete('/warehouse-master/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiMasterDestroy']);
         Route::patch('/warehouse-master/outlets/{id}/toggle-status', [\App\Http\Controllers\OutletController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/customers', [\App\Http\Controllers\CustomerController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/customers', [\App\Http\Controllers\CustomerController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/customers/{id}', [\App\Http\Controllers\CustomerController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/customers/{id}', [\App\Http\Controllers\CustomerController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/customers/{id}/toggle-status', [\App\Http\Controllers\CustomerController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/suppliers', [\App\Http\Controllers\SupplierController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/suppliers', [\App\Http\Controllers\SupplierController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/suppliers/{id}', [\App\Http\Controllers\SupplierController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/suppliers/{id}', [\App\Http\Controllers\SupplierController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/suppliers/{id}/toggle-status', [\App\Http\Controllers\SupplierController::class, 'apiMasterToggleStatus']);
+
+        Route::get('/warehouse-master/regions', [\App\Http\Controllers\RegionController::class, 'apiMasterIndex']);
+        Route::post('/warehouse-master/regions', [\App\Http\Controllers\RegionController::class, 'apiMasterStore']);
+        Route::put('/warehouse-master/regions/{id}', [\App\Http\Controllers\RegionController::class, 'apiMasterUpdate']);
+        Route::delete('/warehouse-master/regions/{id}', [\App\Http\Controllers\RegionController::class, 'apiMasterDestroy']);
+        Route::patch('/warehouse-master/regions/{id}/toggle-status', [\App\Http\Controllers\RegionController::class, 'apiMasterToggleStatus']);
         
         // Warehouses route for approval app
         Route::get('/warehouses', function () {

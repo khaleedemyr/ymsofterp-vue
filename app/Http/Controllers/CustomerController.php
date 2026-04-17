@@ -142,4 +142,185 @@ class CustomerController extends Controller
         ]);
         return response()->json(['success' => true]);
     }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = DB::table('customers');
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('region', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->query('status'));
+        }
+        if ($request->filled('type')) {
+            $type = trim((string) $request->query('type'));
+            if (in_array($type, ['branch', 'customer'], true)) {
+                $query->where('type', $type);
+            }
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $customers = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'customers' => $customers,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:20|unique:customers,code',
+            'name' => 'required|string|max:100',
+            'type' => 'required|in:branch,customer',
+            'region' => 'required|string|max:20',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $id = DB::table('customers')->insertGetId([
+            'code' => $validated['code'],
+            'name' => $validated['name'],
+            'type' => $validated['type'],
+            'region' => $validated['region'],
+            'status' => $validated['status'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $customer = DB::table('customers')->where('id', $id)->first();
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'customers',
+            'description' => 'Menambahkan customer: '.$customer->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => json_encode($customer),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Customer berhasil ditambahkan!',
+            'customer' => $customer,
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:20|unique:customers,code,'.$id,
+            'name' => 'required|string|max:100',
+            'type' => 'required|in:branch,customer',
+            'region' => 'required|string|max:20',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $customer = DB::table('customers')->where('id', $id)->first();
+        if (! $customer) {
+            return response()->json(['success' => false, 'message' => 'Customer tidak ditemukan'], 404);
+        }
+        $oldData = $customer;
+
+        DB::table('customers')->where('id', $id)->update([
+            'code' => $validated['code'],
+            'name' => $validated['name'],
+            'type' => $validated['type'],
+            'region' => $validated['region'],
+            'status' => $validated['status'],
+            'updated_at' => now(),
+        ]);
+        $newData = DB::table('customers')->where('id', $id)->first();
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'customers',
+            'description' => 'Mengupdate customer: '.$newData->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => json_encode($oldData),
+            'new_data' => json_encode($newData),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Customer berhasil diupdate!',
+            'customer' => $newData,
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id, Request $request)
+    {
+        $customer = DB::table('customers')->where('id', $id)->first();
+        if (! $customer) {
+            return response()->json(['success' => false, 'message' => 'Customer tidak ditemukan'], 404);
+        }
+        $oldData = $customer;
+
+        DB::table('customers')->where('id', $id)->update([
+            'status' => 'inactive',
+            'updated_at' => now(),
+        ]);
+        $newData = DB::table('customers')->where('id', $id)->first();
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'customers',
+            'description' => 'Menonaktifkan customer: '.$customer->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => json_encode($oldData),
+            'new_data' => json_encode($newData),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Customer berhasil dinonaktifkan!',
+        ]);
+    }
+
+    public function apiMasterToggleStatus(int $id, Request $request)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $customer = DB::table('customers')->where('id', $id)->first();
+        if (! $customer) {
+            return response()->json(['success' => false, 'message' => 'Customer tidak ditemukan'], 404);
+        }
+        $oldData = $customer;
+
+        DB::table('customers')->where('id', $id)->update([
+            'status' => $validated['status'],
+            'updated_at' => now(),
+        ]);
+        $newData = DB::table('customers')->where('id', $id)->first();
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'status_toggle',
+            'module' => 'customers',
+            'description' => 'Mengubah status customer: '.$customer->name.' menjadi '.$validated['status'],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => json_encode($oldData),
+            'new_data' => json_encode($newData),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status customer berhasil diubah',
+            'customer' => $newData,
+        ]);
+    }
 } 

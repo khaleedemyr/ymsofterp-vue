@@ -386,4 +386,162 @@ class SupplierController extends Controller
             'error_count' => $errorCount
         ]);
     }
+
+    public function apiMasterIndex(Request $request)
+    {
+        $query = Supplier::query();
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('contact_person', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $perPage = (int) ($request->query('per_page') ?? 10);
+        $perPage = max(1, min(100, $perPage));
+        $suppliers = $query->orderByDesc('id')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'suppliers' => $suppliers,
+        ]);
+    }
+
+    public function apiMasterStore(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:suppliers,code',
+            'name' => 'required|string|max:100',
+            'contact_person' => 'nullable|string|max:100',
+            'phone' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:100',
+            'address' => 'nullable|string',
+            'city' => 'nullable|string|max:100',
+            'province' => 'nullable|string|max:100',
+            'postal_code' => 'nullable|string|max:20',
+            'npwp' => 'nullable|string|max:30',
+            'bank_name' => 'nullable|string|max:100',
+            'bank_account_number' => 'nullable|string|max:50',
+            'bank_account_name' => 'nullable|string|max:100',
+            'payment_term' => 'nullable|string|max:50',
+            'payment_days' => 'nullable|integer',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $supplier = Supplier::create($validated);
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'create',
+            'module' => 'suppliers',
+            'description' => 'Menambahkan supplier baru: '.$supplier->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => null,
+            'new_data' => $supplier->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Supplier berhasil ditambahkan!',
+            'supplier' => $supplier,
+        ]);
+    }
+
+    public function apiMasterUpdate(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:50|unique:suppliers,code,'.$id,
+            'name' => 'required|string|max:100',
+            'contact_person' => 'nullable|string|max:100',
+            'phone' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:100',
+            'address' => 'nullable|string',
+            'city' => 'nullable|string|max:100',
+            'province' => 'nullable|string|max:100',
+            'postal_code' => 'nullable|string|max:20',
+            'npwp' => 'nullable|string|max:30',
+            'bank_name' => 'nullable|string|max:100',
+            'bank_account_number' => 'nullable|string|max:50',
+            'bank_account_name' => 'nullable|string|max:100',
+            'payment_term' => 'nullable|string|max:50',
+            'payment_days' => 'nullable|integer',
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $supplier = Supplier::find($id);
+        if (! $supplier) {
+            return response()->json(['success' => false, 'message' => 'Supplier tidak ditemukan'], 404);
+        }
+        $oldData = $supplier->toArray();
+        $supplier->update($validated);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'suppliers',
+            'description' => 'Mengupdate supplier: '.$supplier->name,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $supplier->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Supplier berhasil diupdate!',
+            'supplier' => $supplier->fresh(),
+        ]);
+    }
+
+    public function apiMasterDestroy(int $id)
+    {
+        $supplier = Supplier::find($id);
+        if (! $supplier) {
+            return response()->json(['success' => false, 'message' => 'Supplier tidak ditemukan'], 404);
+        }
+        $oldData = $supplier->toArray();
+        $supplier->update(['status' => 'inactive']);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'delete',
+            'module' => 'suppliers',
+            'description' => 'Menonaktifkan supplier: '.$supplier->name,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $supplier->fresh()->toArray(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Supplier berhasil dinonaktifkan!',
+        ]);
+    }
+
+    public function apiMasterToggleStatus(int $id, Request $request)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $supplier = Supplier::find($id);
+        if (! $supplier) {
+            return response()->json(['success' => false, 'message' => 'Supplier tidak ditemukan'], 404);
+        }
+        $supplier->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status supplier berhasil diubah',
+            'supplier' => $supplier->fresh(),
+        ]);
+    }
 } 
