@@ -10,6 +10,30 @@ use App\Models\Outlet;
 
 class StockCutController extends Controller
 {
+    private function makeStockCutProgressKey($outletId, $tanggal, $typeFilter = null): string
+    {
+        return sprintf('stockcut:%s:%s:%s', $outletId, $tanggal, $typeFilter ?: '-');
+    }
+
+    private function putStockCutProgress(
+        string $progressKey,
+        string $status,
+        string $message,
+        int $progress,
+        array $extra = []
+    ): void {
+        $payload = array_merge(
+            [
+                'status' => $status,
+                'message' => $message,
+                'progress' => max(0, min(100, $progress)),
+                'updated_at' => now()->toIso8601String(),
+            ],
+            $extra
+        );
+        Cache::put('stockcut_status:' . $progressKey, $payload, 60 * 30);
+    }
+
     /**
      * API: Data untuk form stock cut (outlets + user) - dipakai oleh approval app.
      */
@@ -57,10 +81,13 @@ class StockCutController extends Controller
         $tanggal = $request->input('tanggal');
         $id_outlet = $request->input('id_outlet');
         $type_filter = $request->input('type'); // Filter berdasarkan type
+        $progressKey = $request->input('_progress_key') ?: $this->makeStockCutProgressKey($id_outlet, $tanggal, $type_filter);
         
         if (!$tanggal || !$id_outlet) {
+            $this->putStockCutProgress($progressKey, 'failed', 'Tanggal dan id_outlet wajib diisi', 100);
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
+        $this->putStockCutProgress($progressKey, 'running', 'Validasi mode stock cut...', 5);
 
         // Validasi stock cut berdasarkan mode:
         // 1. Mode "Semua" (null atau 'all') → lock semua (tidak bisa stock cut lagi)
@@ -198,9 +225,11 @@ class StockCutController extends Controller
         }
 
         // Ambil qr_code dari tbl_data_outlet
+        $this->putStockCutProgress($progressKey, 'running', 'Mengambil outlet dan order items...', 12);
         $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
         
         if (!$qr_code) {
+            $this->putStockCutProgress($progressKey, 'failed', 'QR Code outlet tidak ditemukan', 100);
             return response()->json(['status' => 'error', 'message' => 'QR Code outlet tidak ditemukan'], 422);
         }
 
@@ -224,10 +253,12 @@ class StockCutController extends Controller
         $orderItems = $query->get();
 
         if ($orderItems->isEmpty()) {
+            $this->putStockCutProgress($progressKey, 'success', 'Tidak ada order_items yang perlu dipotong stock', 100);
             return response()->json(['status' => 'success', 'message' => 'Tidak ada order_items yang perlu dipotong stock']);
         }
 
         // 2. Mapping kebutuhan bahan baku & warehouse
+        $this->putStockCutProgress($progressKey, 'running', 'Menghitung kebutuhan BOM...', 28);
         $kebutuhanBahan = [];
         $warehouseMap = [];
         
@@ -312,6 +343,7 @@ class StockCutController extends Controller
         }
 
         // 3. Cek stok (konsisten dengan konversi unit)
+        $this->putStockCutProgress($progressKey, 'running', 'Memeriksa ketersediaan stok...', 45);
         $kurang = [];
         foreach ($kebutuhanBahan as $key => $data) {
             // Handle struktur data baru dengan unit
@@ -379,6 +411,9 @@ class StockCutController extends Controller
                 ]
             );
             
+            $this->putStockCutProgress($progressKey, 'failed', 'Stock tidak cukup untuk beberapa item', 100, [
+                'total_kurang' => count($kurang),
+            ]);
             return response()->json(['status' => 'error', 'kurang' => $kurang]);
         }
 
@@ -408,9 +443,12 @@ class StockCutController extends Controller
         );
 
         // 4. Potong stock & catat kartu stok (mengikuti pola OutletInternalUseWasteController)
+        $this->putStockCutProgress($progressKey, 'running', 'Memotong stok dan mencatat inventory card...', 55);
         // Simpan detail stock cut untuk insert ke stock_cut_details
         $stockCutDetails = [];
-        
+        $totalKebutuhan = count($kebutuhanBahan);
+        $processedKebutuhan = 0;
+
         foreach ($kebutuhanBahan as $key => $data) {
             // Handle struktur data baru dengan unit
             if (is_array($data)) {
@@ -573,9 +611,21 @@ class StockCutController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+
+            $processedKebutuhan++;
+            if ($totalKebutuhan > 0 && ($processedKebutuhan === 1 || $processedKebutuhan % 25 === 0 || $processedKebutuhan === $totalKebutuhan)) {
+                $loopProgress = 55 + (int) floor(($processedKebutuhan / $totalKebutuhan) * 30);
+                $this->putStockCutProgress(
+                    $progressKey,
+                    'running',
+                    "Memproses item {$processedKebutuhan}/{$totalKebutuhan}...",
+                    min(85, $loopProgress)
+                );
+            }
         }
 
         // 5. Update flag stock_cut di order_items
+        $this->putStockCutProgress($progressKey, 'running', 'Update flag stock_cut order items...', 90);
         // Hanya update order_items yang sesuai dengan type yang dipotong
         $orderItemIds = $orderItems->pluck('id')->toArray();
         if (!empty($orderItemIds)) {
@@ -585,6 +635,7 @@ class StockCutController extends Controller
         }
 
         // 6. Finalisasi log stock cut
+        $this->putStockCutProgress($progressKey, 'running', 'Finalisasi log stock cut...', 96);
         $totalItemsCut = count($orderItems);
         $totalModifiersCut = 0;
         
@@ -634,6 +685,10 @@ class StockCutController extends Controller
             DB::table('stock_cut_details')->insert($stockCutDetails);
         }
 
+        $this->putStockCutProgress($progressKey, 'success', 'Potong stock berhasil', 100, [
+            'total_items_cut' => $totalItemsCut,
+            'total_modifiers_cut' => $totalModifiersCut,
+        ]);
         return response()->json(['status' => 'success', 'message' => 'Potong stock berhasil']);
     }
 
@@ -645,24 +700,39 @@ class StockCutController extends Controller
         $tanggal = $request->input('tanggal');
         $id_outlet = (int) $request->input('id_outlet');
         $type_filter = $request->input('type');
+        $key = $this->makeStockCutProgressKey($id_outlet, $tanggal, $type_filter);
 
         if (!$tanggal || !$id_outlet) {
+            $this->putStockCutProgress($key, 'failed', 'Tanggal dan id_outlet wajib diisi', 100);
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
 
-        $key = sprintf('stockcut:%s:%s:%s', $id_outlet, $tanggal, $type_filter ?: '-');
         $lock = Cache::lock('lock:' . $key, 60 * 30);
         
         if (!$lock->get()) {
+            $this->putStockCutProgress($key, 'running', 'Proses stock cut lain sedang berjalan...', 1);
             return response()->json(['status' => 'error', 'message' => 'Proses stock cut untuk outlet ini sedang berjalan'], 409);
         }
 
         try {
+            $this->putStockCutProgress($key, 'running', 'Memulai proses stock cut...', 1);
+            $request->merge(['_progress_key' => $key]);
             // Process directly without queue
             $response = $this->potongStockOrderItems($request);
             $responseData = $response->getData(true);
+            if (($responseData['status'] ?? null) !== 'success') {
+                $this->putStockCutProgress(
+                    $key,
+                    'failed',
+                    $responseData['message'] ?? 'Proses stock cut gagal',
+                    100
+                );
+            }
             
             return response()->json($responseData);
+        } catch (\Throwable $e) {
+            $this->putStockCutProgress($key, 'failed', $e->getMessage(), 100);
+            throw $e;
         } finally {
             $lock->release();
         }
@@ -679,8 +749,12 @@ class StockCutController extends Controller
         if (!$tanggal || !$id_outlet) {
             return response()->json(['status' => 'error', 'message' => 'Tanggal dan id_outlet wajib diisi'], 422);
         }
-        $key = sprintf('stockcut:%s:%s:%s', $id_outlet, $tanggal, $type_filter ?: '-');
-        $status = Cache::get('stockcut_status:' . $key, ['status' => 'unknown']);
+        $key = $this->makeStockCutProgressKey($id_outlet, $tanggal, $type_filter);
+        $status = Cache::get('stockcut_status:' . $key, [
+            'status' => 'unknown',
+            'message' => 'Belum ada proses stock cut',
+            'progress' => 0,
+        ]);
         return response()->json($status);
     }
 
