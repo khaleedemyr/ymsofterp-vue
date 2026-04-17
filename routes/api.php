@@ -483,6 +483,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/stock-cut/engineering', [\App\Http\Controllers\StockCutController::class, 'engineering']);
         Route::get('/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
         Route::post('/stock-cut/dispatch', [\App\Http\Controllers\StockCutController::class, 'dispatchStockCut']);
+        Route::post('/stock-cut/fix-data', [\App\Http\Controllers\StockCutController::class, 'fixStockCutData']);
         Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback'])->where('id', '[0-9]+');
 
         // Floor Order (Approval App)
