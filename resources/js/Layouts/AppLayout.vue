@@ -555,17 +555,9 @@ const isExternalUser = computed(() => Boolean(user.value?.is_external));
 const logoutRouteName = computed(() => (isExternalUser.value ? 'external.logout' : 'logout'));
 const mobileAppPlayStoreUrl =
     'https://play.google.com/store/apps/details?id=com.ymsoft.erp&pcampaignid=web_share';
+const mobileAppAppStoreUrl =
+    'https://apps.apple.com/us/app/ymsoft-erp/id6761749215';
 const avatarUrl = computed(() => user.value.avatar ? `/storage/${user.value.avatar}` : '/images/avatar-default.png');
-
-function onMobileAppStoreClick() {
-    showProfileDropdown.value = false;
-    Swal.fire({
-        icon: 'info',
-        title: 'App Store',
-        text: 'Link download App Store belum tersedia. Akan diumumkan setelah aplikasi tersedia di App Store.',
-        confirmButtonText: 'OK',
-    });
-}
 
 // Computed properties for user information
 const userOutlet = computed(() => user.value.outlet?.nama_outlet || 'N/A');
@@ -1082,18 +1074,20 @@ function formatCurrency(amount) {
                                         class="w-full h-auto block"
                                     />
                                 </a>
-                                <button
-                                    type="button"
-                                    class="block w-full rounded-lg overflow-hidden bg-black px-3 py-2.5 ring-1 ring-gray-800 hover:ring-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-shadow"
-                                    title="App Store — segera hadir"
-                                    @click="onMobileAppStoreClick"
+                                <a
+                                    :href="mobileAppAppStoreUrl"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="block rounded-lg overflow-hidden bg-black px-3 py-2.5 ring-1 ring-gray-800 hover:ring-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
+                                    title="Unduh di App Store"
+                                    @click="showProfileDropdown = false"
                                 >
                                     <img
                                         src="/images/btn_download_mobile_appstore.png"
                                         alt="Unduh di App Store"
                                         class="w-full h-auto block"
                                     />
-                                </button>
+                                </a>
                             </div>
                             <Link
                                 :href="route(logoutRouteName)"
