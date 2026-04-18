@@ -556,7 +556,7 @@ const logoutRouteName = computed(() => (isExternalUser.value ? 'external.logout'
 const mobileAppPlayStoreUrl =
     'https://play.google.com/store/apps/details?id=com.ymsoft.erp&pcampaignid=web_share';
 const mobileAppAppStoreUrl =
-    'https://apps.apple.com/us/app/ymsoft-erp/id6761749215';
+    'https://apps.apple.com/id/app/ymsoft-erp/id6761749215';
 const avatarUrl = computed(() => user.value.avatar ? `/storage/${user.value.avatar}` : '/images/avatar-default.png');
 
 // Computed properties for user information
