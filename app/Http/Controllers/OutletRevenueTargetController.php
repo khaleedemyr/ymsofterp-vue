@@ -255,12 +255,40 @@ class OutletRevenueTargetController extends Controller
         $momentumFactor = 1.00;
         if ($twoMonthsAgoTotal > 0) {
             $rawMomentum = $previousMonthTotal / $twoMonthsAgoTotal;
-            $momentumFactor = max(0.90, min(1.10, $rawMomentum));
+            $momentumFactor = max(0.80, min(0.98, $rawMomentum));
         }
 
-        $combinedFactor = max(0.85, min(1.20, $momentumFactor));
+        // Trend 30 hari terakhir vs 30 hari sebelumnya (maksimal netral, tidak dinaikkan).
+        $recent30End = $previousMonthEnd->copy();
+        $recent30Start = $recent30End->copy()->subDays(29)->startOfDay();
+        $prior30End = $recent30Start->copy()->subDay()->endOfDay();
+        $prior30Start = $prior30End->copy()->subDays(29)->startOfDay();
+
+        $recent30Total = (float) DB::table('orders')
+            ->where('kode_outlet', $outlet->qr_code)
+            ->whereBetween('created_at', [$recent30Start->toDateTimeString(), $recent30End->toDateString() . ' 23:59:59'])
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->sum('grand_total');
+
+        $prior30Total = (float) DB::table('orders')
+            ->where('kode_outlet', $outlet->qr_code)
+            ->whereBetween('created_at', [$prior30Start->toDateTimeString(), $prior30End->toDateTimeString()])
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->sum('grand_total');
+
+        $trendFactor = 1.00;
+        if ($prior30Total > 0) {
+            $trendFactor = max(0.80, min(1.00, $recent30Total / $prior30Total));
+        }
+
+        // Faktor ekonomi global konservatif (sementara default turun 4%).
+        $globalEconomyFactor = 0.96;
+
+        $combinedFactor = max(0.72, min(0.98, $momentumFactor * $trendFactor * $globalEconomyFactor));
         $holidayRatio = $avgWeekday > 0 ? ($avgHoliday / $avgWeekday) : 1.15;
-        $holidayBoost = max(1.05, min(1.40, $holidayRatio > 0 ? $holidayRatio : 1.15));
+        $holidayBoost = max(1.03, min(1.18, $holidayRatio > 0 ? $holidayRatio : 1.10));
 
         $suggestions = [];
         $suggestedMonthlyTarget = 0.0;
@@ -310,11 +338,14 @@ class OutletRevenueTargetController extends Controller
             'forecasts' => $suggestions,
             'factors' => [
                 'momentum_factor' => round($momentumFactor, 4),
+                'trend_factor' => round($trendFactor, 4),
+                'global_economy_factor' => round($globalEconomyFactor, 4),
                 'combined_factor' => round($combinedFactor, 4),
                 'holiday_boost' => round($holidayBoost, 4),
+                'previous_month_total' => round($previousMonthTotal, 2),
                 'historical_reference_month' => $previousMonthStart->format('Y-m'),
             ],
-            'note' => 'Ini adalah saran AI berbasis data bulan sebelumnya, pola kalender (weekday/weekend/libur), dan faktor ekonomi. User tetap bisa mengubah semua nilai sebelum simpan.',
+            'note' => 'Saran AI dibuat konservatif berbasis histori, pola kalender, tren penjualan terbaru, dan faktor ekonomi global. Semua nilai tetap bisa diedit manual.',
         ]);
     }
 

@@ -22,6 +22,11 @@ const suggesting = ref(false)
 const suggestError = ref('')
 const suggestInfo = ref(null)
 const holidays = ref([])
+const bulkStartDate = ref('')
+const bulkEndDate = ref('')
+const bulkMode = ref('set')
+const bulkValue = ref('')
+const bulkPercent = ref('')
 
 const forecasts = ref([])
 
@@ -30,6 +35,34 @@ function formatLocalDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function parseFormattedNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const normalized = String(value)
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^0-9.-]/g, '')
+  if (!normalized || normalized === '-' || normalized === '.') return null
+  const num = Number(normalized)
+  return Number.isFinite(num) ? num : null
+}
+
+function formatNumberId(value) {
+  const num = parseFormattedNumber(value)
+  if (num === null) return ''
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num)
+}
+
+function toEditableNumber(value) {
+  const num = parseFormattedNumber(value)
+  if (num === null) return ''
+  return String(num)
 }
 
 function buildDaysInMonth(monthStr) {
@@ -55,7 +88,7 @@ function buildDaysInMonth(monthStr) {
       is_weekend: dayOfWeek === 0 || dayOfWeek === 6,
       is_holiday: Boolean(holiday),
       holiday_desc: holiday?.keterangan || '',
-      forecast_revenue: mapped.has(iso) ? mapped.get(iso) : '',
+      forecast_revenue: mapped.has(iso) ? formatNumberId(mapped.get(iso)) : '',
     })
   }
   return rows
@@ -64,8 +97,10 @@ function buildDaysInMonth(monthStr) {
 function resetFormFromProps() {
   selectedOutletId.value = props.selectedOutletId || 0
   selectedMonth.value = props.selectedMonth || new Date().toISOString().slice(0, 7)
-  monthlyTarget.value = props.monthlyTarget ?? ''
+  monthlyTarget.value = formatNumberId(props.monthlyTarget ?? '')
   forecasts.value = buildDaysInMonth(selectedMonth.value)
+  bulkStartDate.value = forecasts.value[0]?.forecast_date || ''
+  bulkEndDate.value = forecasts.value[forecasts.value.length - 1]?.forecast_date || ''
 }
 
 watch(
@@ -76,6 +111,8 @@ watch(
 
 watch(selectedMonth, (newMonth) => {
   forecasts.value = buildDaysInMonth(newMonth)
+  bulkStartDate.value = forecasts.value[0]?.forecast_date || ''
+  bulkEndDate.value = forecasts.value[forecasts.value.length - 1]?.forecast_date || ''
 })
 
 watch(holidays, () => {
@@ -83,7 +120,7 @@ watch(holidays, () => {
 }, { deep: true })
 
 const totalForecast = computed(() =>
-  forecasts.value.reduce((sum, r) => sum + (Number(r.forecast_revenue || 0) || 0), 0)
+  forecasts.value.reduce((sum, r) => sum + (parseFormattedNumber(r.forecast_revenue) || 0), 0)
 )
 const totalHolidayDays = computed(() => forecasts.value.filter((r) => r.is_holiday).length)
 const totalWeekendDays = computed(() => forecasts.value.filter((r) => !r.is_holiday && r.is_weekend).length)
@@ -104,13 +141,18 @@ function loadData() {
 
 function save() {
   saving.value = true
+  const normalizedMonthlyTarget = parseFormattedNumber(monthlyTarget.value)
+  const normalizedForecasts = forecasts.value.map((row) => ({
+    forecast_date: row.forecast_date,
+    forecast_revenue: parseFormattedNumber(row.forecast_revenue),
+  }))
   router.post(
     route('outlet-revenue-targets.store'),
     {
       outlet_id: selectedOutletId.value,
       month: selectedMonth.value,
-      monthly_target: monthlyTarget.value,
-      forecasts: forecasts.value,
+      monthly_target: normalizedMonthlyTarget ?? 0,
+      forecasts: normalizedForecasts,
     },
     {
       preserveScroll: true,
@@ -137,12 +179,12 @@ async function suggestAI() {
       month: selectedMonth.value,
     })
 
-    monthlyTarget.value = data?.monthly_target_suggested ?? monthlyTarget.value
+    monthlyTarget.value = formatNumberId(data?.monthly_target_suggested ?? monthlyTarget.value)
 
     const suggestedMap = new Map((data?.forecasts || []).map((x) => [x.forecast_date, x.forecast_revenue]))
     forecasts.value = forecasts.value.map((row) => ({
       ...row,
-      forecast_revenue: suggestedMap.has(row.forecast_date) ? suggestedMap.get(row.forecast_date) : row.forecast_revenue,
+      forecast_revenue: suggestedMap.has(row.forecast_date) ? formatNumberId(suggestedMap.get(row.forecast_date)) : row.forecast_revenue,
     }))
 
     suggestInfo.value = data?.factors || null
@@ -151,6 +193,63 @@ async function suggestAI() {
   } finally {
     suggesting.value = false
   }
+}
+
+function onMonthlyTargetFocus() {
+  monthlyTarget.value = toEditableNumber(monthlyTarget.value)
+}
+
+function onMonthlyTargetBlur() {
+  monthlyTarget.value = formatNumberId(monthlyTarget.value)
+}
+
+function onForecastFocus(idx) {
+  forecasts.value[idx].forecast_revenue = toEditableNumber(forecasts.value[idx].forecast_revenue)
+}
+
+function onForecastBlur(idx) {
+  forecasts.value[idx].forecast_revenue = formatNumberId(forecasts.value[idx].forecast_revenue)
+}
+
+function applyBulkUpdate() {
+  if (!bulkStartDate.value || !bulkEndDate.value) {
+    suggestError.value = 'Isi tanggal awal dan akhir untuk bulk update.'
+    return
+  }
+
+  const start = bulkStartDate.value <= bulkEndDate.value ? bulkStartDate.value : bulkEndDate.value
+  const end = bulkStartDate.value <= bulkEndDate.value ? bulkEndDate.value : bulkStartDate.value
+
+  if (bulkMode.value === 'set') {
+    const base = parseFormattedNumber(bulkValue.value)
+    if (base === null || base < 0) {
+      suggestError.value = 'Isi nominal bulk update yang valid.'
+      return
+    }
+
+    forecasts.value = forecasts.value.map((row) => {
+      if (row.forecast_date >= start && row.forecast_date <= end) {
+        return { ...row, forecast_revenue: formatNumberId(base) }
+      }
+      return row
+    })
+    suggestError.value = ''
+    return
+  }
+
+  const pct = Number(bulkPercent.value)
+  if (!Number.isFinite(pct)) {
+    suggestError.value = 'Isi persentase bulk update yang valid.'
+    return
+  }
+
+  forecasts.value = forecasts.value.map((row) => {
+    if (row.forecast_date < start || row.forecast_date > end) return row
+    const current = parseFormattedNumber(row.forecast_revenue) || 0
+    const updated = current * (1 + pct / 100)
+    return { ...row, forecast_revenue: formatNumberId(updated) }
+  })
+  suggestError.value = ''
 }
 
 async function fetchHolidays() {
@@ -205,11 +304,12 @@ fetchHolidays()
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Target</label>
             <input
               v-model="monthlyTarget"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputmode="decimal"
               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               placeholder="0"
+              @focus="onMonthlyTargetFocus"
+              @blur="onMonthlyTargetBlur"
             />
           </div>
           <div class="flex items-end gap-2">
@@ -250,7 +350,9 @@ fetchHolidays()
 
         <div v-if="suggestInfo" class="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs text-indigo-900">
           <span class="font-semibold">AI factors:</span>
-          momentum <strong>{{ suggestInfo.momentum_factor }}</strong>, holiday boost
+          momentum <strong>{{ suggestInfo.momentum_factor }}</strong>, trend
+          <strong>{{ suggestInfo.trend_factor }}</strong>, global economy
+          <strong>{{ suggestInfo.global_economy_factor }}</strong>, holiday boost
           <strong>{{ suggestInfo.holiday_boost }}</strong>, referensi histori
           <strong>{{ suggestInfo.historical_reference_month }}</strong>.
         </div>
@@ -279,6 +381,54 @@ fetchHolidays()
             <span class="inline-block h-3 w-3 rounded bg-red-100 border border-red-300"></span>
             Hari Libur
           </span>
+        </div>
+
+        <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Bulk Update</p>
+          <div class="grid grid-cols-1 gap-2 md:grid-cols-6">
+            <input
+              v-model="bulkStartDate"
+              type="date"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+            <input
+              v-model="bulkEndDate"
+              type="date"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+            <select
+              v-model="bulkMode"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="set">Set Nominal</option>
+              <option value="percent">Naik/Turun %</option>
+            </select>
+            <input
+              v-if="bulkMode === 'set'"
+              v-model="bulkValue"
+              type="text"
+              inputmode="decimal"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              placeholder="Nominal"
+            />
+            <input
+              v-else
+              v-model="bulkPercent"
+              type="number"
+              step="0.1"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              placeholder="Persen, contoh -5"
+            />
+            <div class="md:col-span-2 flex items-center">
+              <button
+                type="button"
+                class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                @click="applyBulkUpdate"
+              >
+                Terapkan ke Rentang Tanggal
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="overflow-auto rounded-xl border border-slate-200">
@@ -318,11 +468,12 @@ fetchHolidays()
                 <td class="px-3 py-2.5">
                   <input
                     v-model="forecasts[idx].forecast_revenue"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
+                    inputmode="decimal"
                     class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                     placeholder="0"
+                    @focus="onForecastFocus(idx)"
+                    @blur="onForecastBlur(idx)"
                   />
                 </td>
               </tr>
