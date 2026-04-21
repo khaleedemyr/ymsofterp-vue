@@ -29,6 +29,10 @@ class GuestCommentForm extends Model
         'praised_staff_name',
         'praised_staff_outlet',
         'marketing_source',
+        'issue_severity',
+        'issue_topics',
+        'issue_summary_id',
+        'issue_classified_at',
         'id_outlet',
         'created_by',
         'verified_by',
@@ -39,7 +43,9 @@ class GuestCommentForm extends Model
     {
         return [
             'ocr_payload' => 'array',
+            'issue_topics' => 'array',
             'guest_dob' => 'date',
+            'issue_classified_at' => 'datetime',
             'verified_at' => 'datetime',
         ];
     }

@@ -8,7 +8,6 @@ use App\Services\AIAnalyticsService;
 use App\Services\GuestCommentOcrService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -132,7 +131,7 @@ class GuestCommentFormController extends Controller
         ]);
     }
 
-    public function gsiDashboard(Request $request, AIAnalyticsService $ai)
+    public function gsiDashboard(Request $request)
     {
         $userOutletId = (int) ($request->user()->id_outlet ?? 0);
         $canChooseOutlet = ($userOutletId === 1);
@@ -216,7 +215,6 @@ class GuestCommentFormController extends Controller
         }
 
         $issueInsights = $this->buildGsiIssueInsights(
-            $ai,
             $monthStart,
             $monthEnd,
             $selectedOutletId,
@@ -374,7 +372,6 @@ class GuestCommentFormController extends Controller
     }
 
     private function buildGsiIssueInsights(
-        AIAnalyticsService $ai,
         Carbon $start,
         Carbon $end,
         int $selectedOutletId,
@@ -400,113 +397,81 @@ class GuestCommentFormController extends Controller
             ];
         }
 
-        // Batas aman agar dashboard tetap responsif.
         $rows = (clone $base)
-            ->select('id', 'guest_name', 'comment_text', 'created_at')
+            ->select('guest_name', 'comment_text', 'issue_severity', 'issue_topics', 'issue_summary_id')
             ->orderByDesc('id')
-            ->limit(500)
             ->get();
-        $maxUpdated = (string) ((clone $base)->max('updated_at') ?? '');
-        $fingerprint = implode(':', [
-            $start->toDateString(),
-            $end->toDateString(),
-            $selectedOutletId,
-            $rows->count(),
-            (int) ($rows->max('id') ?? 0),
-            md5($maxUpdated),
-        ]);
-        $cacheKey = 'guest-comment:gsi-issue-insights:'.md5($fingerprint);
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($ai, $rows, $totalComments) {
-            $reviewPayload = [];
-            foreach ($rows as $row) {
-                $reviewPayload[] = [
-                    'author' => (string) ($row->guest_name ?? ''),
-                    'rating' => '',
-                    'text' => (string) ($row->comment_text ?? ''),
-                    'date' => (string) ($row->created_at ?? ''),
-                ];
+        $topicCounts = [];
+        $severityCounts = [];
+        $topicExamples = [];
+        foreach ($rows as $row) {
+            $severity = trim((string) ($row->issue_severity ?? '')) !== ''
+                ? (string) $row->issue_severity
+                : 'neutral';
+            $severityCounts[$severity] = (int) ($severityCounts[$severity] ?? 0) + 1;
+
+            $rawTopics = $row->issue_topics;
+            if (is_string($rawTopics) && trim($rawTopics) !== '') {
+                $decoded = json_decode($rawTopics, true);
+                $topics = is_array($decoded) ? $decoded : [];
+            } else {
+                $topics = is_array($rawTopics) ? $rawTopics : [];
             }
-
-            try {
-                $classified = $ai->classifyGoogleReviewsInChunks($reviewPayload, 35);
-            } catch (\Throwable $e) {
-                \Log::warning('Guest comment issue insights AI failed', [
-                    'error' => $e->getMessage(),
-                    'total_comments' => $totalComments,
-                ]);
-                return [
-                    'status' => 'error',
-                    'message' => 'AI issue analysis gagal diproses saat ini.',
-                    'total_comments' => $totalComments,
-                    'top_topics' => [],
-                    'severity' => [],
-                    'topic_examples' => [],
-                ];
+            if ($topics === []) {
+                $topics = ['other'];
             }
+            $summary = (string) ($row->issue_summary_id ?? '');
 
-            $topicCounts = [];
-            $severityCounts = [];
-            $topicExamples = [];
-            foreach ($classified as $item) {
-                $aiClass = $item['ai_classification'] ?? [];
-                $severity = (string) ($aiClass['severity'] ?? 'neutral');
-                $severityCounts[$severity] = (int) ($severityCounts[$severity] ?? 0) + 1;
+            foreach ($topics as $topic) {
+                $topicKey = trim((string) $topic) !== '' ? trim((string) $topic) : 'other';
+                $topicCounts[$topicKey] = (int) ($topicCounts[$topicKey] ?? 0) + 1;
 
-                $topics = $aiClass['topics'] ?? [];
-                if (!is_array($topics) || empty($topics)) {
-                    $topics = ['other'];
+                if (! isset($topicExamples[$topicKey])) {
+                    $topicExamples[$topicKey] = [];
                 }
-                $summary = (string) ($aiClass['summary_id'] ?? '');
-                foreach ($topics as $topic) {
-                    $topicKey = trim((string) $topic) !== '' ? trim((string) $topic) : 'other';
-                    $topicCounts[$topicKey] = (int) ($topicCounts[$topicKey] ?? 0) + 1;
-                    if (!isset($topicExamples[$topicKey])) {
-                        $topicExamples[$topicKey] = [];
-                    }
-                    if (count($topicExamples[$topicKey]) < 3) {
-                        $topicExamples[$topicKey][] = [
-                            'author' => (string) ($item['author'] ?? '-'),
-                            'text' => mb_substr((string) ($item['text'] ?? ''), 0, 200),
-                            'summary_id' => $summary,
-                            'severity' => $severity,
-                        ];
-                    }
-                }
-            }
-
-            arsort($topicCounts);
-            $topTopics = collect($topicCounts)
-                ->map(function ($count, $topic) {
-                    return [
-                        'topic' => (string) $topic,
-                        'count' => (int) $count,
-                        'label' => $this->mapIssueTopicLabel((string) $topic),
+                if (count($topicExamples[$topicKey]) < 3) {
+                    $topicExamples[$topicKey][] = [
+                        'author' => (string) ($row->guest_name ?? '-'),
+                        'text' => mb_substr((string) ($row->comment_text ?? ''), 0, 200),
+                        'summary_id' => $summary,
+                        'severity' => $severity,
                     ];
-                })
-                ->take(8)
-                ->values()
-                ->all();
-
-            $topicExampleList = [];
-            foreach ($topTopics as $topicRow) {
-                $key = $topicRow['topic'];
-                $topicExampleList[] = [
-                    'topic' => $key,
-                    'label' => $topicRow['label'],
-                    'examples' => $topicExamples[$key] ?? [],
-                ];
+                }
             }
+        }
 
-            return [
-                'status' => 'ready',
-                'message' => null,
-                'total_comments' => $totalComments,
-                'top_topics' => $topTopics,
-                'severity' => $severityCounts,
-                'topic_examples' => $topicExampleList,
+        arsort($topicCounts);
+        $topTopics = collect($topicCounts)
+            ->map(function ($count, $topic) {
+                return [
+                    'topic' => (string) $topic,
+                    'count' => (int) $count,
+                    'label' => $this->mapIssueTopicLabel((string) $topic),
+                ];
+            })
+            ->take(8)
+            ->values()
+            ->all();
+
+        $topicExampleList = [];
+        foreach ($topTopics as $topicRow) {
+            $key = $topicRow['topic'];
+            $topicExampleList[] = [
+                'topic' => $key,
+                'label' => $topicRow['label'],
+                'examples' => $topicExamples[$key] ?? [],
             ];
-        });
+        }
+
+        return [
+            'status' => 'ready',
+            'message' => null,
+            'total_comments' => $totalComments,
+            'top_topics' => $topTopics,
+            'severity' => $severityCounts,
+            'topic_examples' => $topicExampleList,
+        ];
     }
 
     private function mapIssueTopicLabel(string $topic): string
@@ -537,7 +502,7 @@ class GuestCommentFormController extends Controller
         return Inertia::render('GuestComment/Create');
     }
 
-    public function store(Request $request, GuestCommentOcrService $ocr)
+    public function store(Request $request, GuestCommentOcrService $ocr, AIAnalyticsService $ai)
     {
         $request->validate([
             'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:8192',
@@ -577,6 +542,13 @@ class GuestCommentFormController extends Controller
             }
         }
 
+        $issueMeta = $this->classifyIssueMeta(
+            $ai,
+            (string) ($updates['comment_text'] ?? ''),
+            (string) ($updates['guest_name'] ?? '')
+        );
+        $updates = array_merge($updates, $issueMeta);
+
         $form->update($updates);
 
         $anyField = false;
@@ -593,6 +565,51 @@ class GuestCommentFormController extends Controller
         }
 
         return redirect()->route('guest-comment-forms.verify', $form)->with('success', $msg);
+    }
+
+    private function classifyIssueMeta(AIAnalyticsService $ai, string $commentText, string $guestName): array
+    {
+        $commentText = trim($commentText);
+        if ($commentText === '') {
+            return [
+                'issue_severity' => null,
+                'issue_topics' => null,
+                'issue_summary_id' => null,
+                'issue_classified_at' => null,
+            ];
+        }
+
+        try {
+            $classified = $ai->classifyGoogleReviews([[
+                'author' => $guestName,
+                'rating' => '',
+                'text' => $commentText,
+                'date' => now()->toDateString(),
+            ]]);
+            $aiClass = $classified[0]['ai_classification'] ?? [];
+            $topics = $aiClass['topics'] ?? ['other'];
+            if (! is_array($topics) || $topics === []) {
+                $topics = ['other'];
+            }
+
+            return [
+                'issue_severity' => (string) ($aiClass['severity'] ?? 'neutral'),
+                'issue_topics' => array_values(array_filter(array_map('strval', $topics))),
+                'issue_summary_id' => mb_substr((string) ($aiClass['summary_id'] ?? ''), 0, 255),
+                'issue_classified_at' => now(),
+            ];
+        } catch (\Throwable $e) {
+            \Log::warning('Guest comment issue classify failed on OCR store', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'issue_severity' => 'neutral',
+                'issue_topics' => ['other'],
+                'issue_summary_id' => 'Klasifikasi AI gagal, fallback.',
+                'issue_classified_at' => now(),
+            ];
+        }
     }
 
     public function show(Request $request, GuestCommentForm $guest_comment_form)

@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS `guest_comment_forms` (
   `praised_staff_name` varchar(255) DEFAULT NULL,
   `praised_staff_outlet` varchar(255) DEFAULT NULL,
   `marketing_source` varchar(255) DEFAULT NULL COMMENT 'Form bercabang: mis. Sosial Media (Tempayan)',
+  `issue_severity` varchar(32) DEFAULT NULL COMMENT 'AI issue severity (positive/neutral/mild_negative/negative/severe)',
+  `issue_topics` json DEFAULT NULL COMMENT 'AI topic tags array',
+  `issue_summary_id` varchar(255) DEFAULT NULL COMMENT 'Ringkasan issue dari AI',
+  `issue_classified_at` datetime DEFAULT NULL COMMENT 'Waktu klasifikasi issue AI',
   `id_outlet` bigint unsigned DEFAULT NULL,
   `created_by` bigint unsigned DEFAULT NULL,
   `verified_by` bigint unsigned DEFAULT NULL,
@@ -37,3 +41,8 @@ CREATE TABLE IF NOT EXISTS `guest_comment_forms` (
 
 -- Tabel sudah terpasang tanpa marketing_source? Jalankan sekali:
 -- ALTER TABLE guest_comment_forms ADD COLUMN marketing_source varchar(255) DEFAULT NULL COMMENT 'Form bercabang: mis. Sosial Media (Tempayan)' AFTER praised_staff_outlet;
+-- Tabel sudah terpasang tanpa kolom issue AI? Jalankan sekali:
+-- ALTER TABLE guest_comment_forms ADD COLUMN issue_severity varchar(32) DEFAULT NULL COMMENT 'AI issue severity (positive/neutral/mild_negative/negative/severe)' AFTER marketing_source;
+-- ALTER TABLE guest_comment_forms ADD COLUMN issue_topics json DEFAULT NULL COMMENT 'AI topic tags array' AFTER issue_severity;
+-- ALTER TABLE guest_comment_forms ADD COLUMN issue_summary_id varchar(255) DEFAULT NULL COMMENT 'Ringkasan issue dari AI' AFTER issue_topics;
+-- ALTER TABLE guest_comment_forms ADD COLUMN issue_classified_at datetime DEFAULT NULL COMMENT 'Waktu klasifikasi issue AI' AFTER issue_summary_id;

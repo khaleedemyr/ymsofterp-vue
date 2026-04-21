@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\GuestCommentForm;
 use App\Models\Outlet;
+use App\Services\AIAnalyticsService;
 use App\Services\GuestCommentOcrService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -151,7 +152,7 @@ class GuestCommentFormApiController extends Controller
         ]);
     }
 
-    public function store(Request $request, GuestCommentOcrService $ocr): JsonResponse
+    public function store(Request $request, GuestCommentOcrService $ocr, AIAnalyticsService $ai): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:8192',
@@ -198,6 +199,13 @@ class GuestCommentFormApiController extends Controller
             }
         }
 
+        $issueMeta = $this->classifyIssueMeta(
+            $ai,
+            (string) ($updates['comment_text'] ?? ''),
+            (string) ($updates['guest_name'] ?? '')
+        );
+        $updates = array_merge($updates, $issueMeta);
+
         $form->update($updates);
 
         $anyField = false;
@@ -221,6 +229,51 @@ class GuestCommentFormApiController extends Controller
             'message' => $msg,
             'form' => $this->serializeForm($form),
         ], 201);
+    }
+
+    private function classifyIssueMeta(AIAnalyticsService $ai, string $commentText, string $guestName): array
+    {
+        $commentText = trim($commentText);
+        if ($commentText === '') {
+            return [
+                'issue_severity' => null,
+                'issue_topics' => null,
+                'issue_summary_id' => null,
+                'issue_classified_at' => null,
+            ];
+        }
+
+        try {
+            $classified = $ai->classifyGoogleReviews([[
+                'author' => $guestName,
+                'rating' => '',
+                'text' => $commentText,
+                'date' => now()->toDateString(),
+            ]]);
+            $aiClass = $classified[0]['ai_classification'] ?? [];
+            $topics = $aiClass['topics'] ?? ['other'];
+            if (! is_array($topics) || $topics === []) {
+                $topics = ['other'];
+            }
+
+            return [
+                'issue_severity' => (string) ($aiClass['severity'] ?? 'neutral'),
+                'issue_topics' => array_values(array_filter(array_map('strval', $topics))),
+                'issue_summary_id' => mb_substr((string) ($aiClass['summary_id'] ?? ''), 0, 255),
+                'issue_classified_at' => now(),
+            ];
+        } catch (\Throwable $e) {
+            \Log::warning('Guest comment issue classify failed on OCR API store', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'issue_severity' => 'neutral',
+                'issue_topics' => ['other'],
+                'issue_summary_id' => 'Klasifikasi AI gagal, fallback.',
+                'issue_classified_at' => now(),
+            ];
+        }
     }
 
     public function show(Request $request, GuestCommentForm $guest_comment_form): JsonResponse
