@@ -353,8 +353,9 @@ fetchHolidays()
           momentum <strong>{{ suggestInfo.momentum_factor }}</strong>, trend
           <strong>{{ suggestInfo.trend_factor }}</strong>, global economy
           <strong>{{ suggestInfo.global_economy_factor }}</strong>, holiday boost
-          <strong>{{ suggestInfo.holiday_boost }}</strong>, referensi histori
-          <strong>{{ suggestInfo.historical_reference_month }}</strong>.
+          <strong>{{ suggestInfo.holiday_boost }}</strong>, rata-rata 3 bulan
+          <strong>Rp {{ new Intl.NumberFormat('id-ID').format(suggestInfo.last3_average_monthly || 0) }}</strong>,
+          normalisasi <strong>{{ suggestInfo.normalization_factor }}</strong>.
         </div>
       </div>
 

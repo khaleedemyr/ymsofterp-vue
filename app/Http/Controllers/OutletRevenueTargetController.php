@@ -173,7 +173,7 @@ class OutletRevenueTargetController extends Controller
         $previousMonthEnd = $monthStart->copy()->subMonth()->endOfMonth();
 
         $twoMonthsAgoStart = $monthStart->copy()->subMonths(2)->startOfMonth();
-        $twoMonthsAgoEnd = $monthStart->copy()->subMonths(2)->endOfMonth();
+        $threeMonthsAgoStart = $monthStart->copy()->subMonths(3)->startOfMonth();
 
         $outlet = DB::table('tbl_data_outlet')
             ->where('id_outlet', $outletId)
@@ -186,10 +186,10 @@ class OutletRevenueTargetController extends Controller
             ], 422);
         }
 
-        $previousRevenueByDate = DB::table('orders')
+        $last3RevenueByDate = DB::table('orders')
             ->where('kode_outlet', $outlet->qr_code)
             ->whereBetween('created_at', [
-                $previousMonthStart->toDateString() . ' 00:00:00',
+                $threeMonthsAgoStart->toDateString() . ' 00:00:00',
                 $previousMonthEnd->toDateString() . ' 23:59:59',
             ])
             ->where('status', '!=', 'cancelled')
@@ -198,18 +198,31 @@ class OutletRevenueTargetController extends Controller
             ->groupBy('dt')
             ->pluck('revenue', 'dt');
 
-        $twoMonthsAgoTotal = (float) DB::table('orders')
+        $monthlyTotalsRaw = DB::table('orders')
             ->where('kode_outlet', $outlet->qr_code)
             ->whereBetween('created_at', [
-                $twoMonthsAgoStart->toDateString() . ' 00:00:00',
-                $twoMonthsAgoEnd->toDateString() . ' 23:59:59',
+                $threeMonthsAgoStart->toDateString() . ' 00:00:00',
+                $previousMonthEnd->toDateString() . ' 23:59:59',
             ])
             ->where('status', '!=', 'cancelled')
             ->where('grand_total', '>', 0)
-            ->sum('grand_total');
+            ->selectRaw("DATE_FORMAT(created_at, '%Y-%m') as ym, SUM(grand_total) as total")
+            ->groupBy('ym')
+            ->pluck('total', 'ym');
+
+        $referenceMonths = [
+            $threeMonthsAgoStart->format('Y-m'),
+            $twoMonthsAgoStart->format('Y-m'),
+            $previousMonthStart->format('Y-m'),
+        ];
+
+        $monthlyTotals = [];
+        foreach ($referenceMonths as $refMonth) {
+            $monthlyTotals[$refMonth] = (float) ($monthlyTotalsRaw[$refMonth] ?? 0);
+        }
 
         $holidays = DB::table('tbl_kalender_perusahaan')
-            ->whereBetween('tgl_libur', [$previousMonthStart->toDateString(), $monthEnd->toDateString()])
+            ->whereBetween('tgl_libur', [$threeMonthsAgoStart->toDateString(), $monthEnd->toDateString()])
             ->pluck('tgl_libur')
             ->map(fn ($d) => Carbon::parse($d)->toDateString())
             ->toArray();
@@ -222,21 +235,22 @@ class OutletRevenueTargetController extends Controller
             'holiday' => [],
         ];
         $allValues = [];
-        $previousMonthTotal = 0.0;
+        $previousMonthTotal = (float) ($monthlyTotals[$previousMonthStart->format('Y-m')] ?? 0);
+        $twoMonthsAgoTotal = (float) ($monthlyTotals[$twoMonthsAgoStart->format('Y-m')] ?? 0);
+        $last3AverageMonthly = $this->average(array_values($monthlyTotals));
 
-        $cursor = $previousMonthStart->copy();
+        $cursor = $threeMonthsAgoStart->copy();
         while ($cursor->lte($previousMonthEnd)) {
             $dateKey = $cursor->toDateString();
             $dow = (int) $cursor->dayOfWeek;
             $isHoliday = isset($holidaySet[$dateKey]);
             $isWeekend = in_array($dow, [0, 6], true);
             $dayType = $isHoliday ? 'holiday' : ($isWeekend ? 'weekend' : 'weekday');
-            $revenue = (float) ($previousRevenueByDate[$dateKey] ?? 0);
+            $revenue = (float) ($last3RevenueByDate[$dateKey] ?? 0);
 
             $statsByDow[$dow][] = $revenue;
             $statsByType[$dayType][] = $revenue;
             $allValues[] = $revenue;
-            $previousMonthTotal += $revenue;
 
             $cursor->addDay();
         }
@@ -286,7 +300,7 @@ class OutletRevenueTargetController extends Controller
         // Faktor ekonomi global konservatif (sementara default turun 4%).
         $globalEconomyFactor = 0.96;
 
-        $combinedFactor = max(0.72, min(0.98, $momentumFactor * $trendFactor * $globalEconomyFactor));
+        $combinedFactor = max(0.72, min(1.02, $momentumFactor * $trendFactor * $globalEconomyFactor));
         $holidayRatio = $avgWeekday > 0 ? ($avgHoliday / $avgWeekday) : 1.15;
         $holidayBoost = max(1.03, min(1.18, $holidayRatio > 0 ? $holidayRatio : 1.10));
 
@@ -328,6 +342,19 @@ class OutletRevenueTargetController extends Controller
             $cursor->addDay();
         }
 
+        $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $suggestedMonthlyTarget;
+        $normalizationFactor = 1.0;
+        if ($suggestedMonthlyTarget > 0 && $targetMonthlyFromHistory > 0) {
+            $normalizationFactor = $targetMonthlyFromHistory / $suggestedMonthlyTarget;
+            $suggestedMonthlyTarget = 0.0;
+
+            foreach ($suggestions as $idx => $row) {
+                $normalized = round(max(0, ((float) $row['forecast_revenue']) * $normalizationFactor), 2);
+                $suggestions[$idx]['forecast_revenue'] = $normalized;
+                $suggestedMonthlyTarget += $normalized;
+            }
+        }
+
         return response()->json([
             'outlet' => [
                 'id' => (int) $outlet->id_outlet,
@@ -343,9 +370,13 @@ class OutletRevenueTargetController extends Controller
                 'combined_factor' => round($combinedFactor, 4),
                 'holiday_boost' => round($holidayBoost, 4),
                 'previous_month_total' => round($previousMonthTotal, 2),
+                'last3_average_monthly' => round($last3AverageMonthly, 2),
+                'target_monthly_from_history' => round($targetMonthlyFromHistory, 2),
+                'normalization_factor' => round($normalizationFactor, 4),
+                'reference_months' => $referenceMonths,
                 'historical_reference_month' => $previousMonthStart->format('Y-m'),
             ],
-            'note' => 'Saran AI dibuat konservatif berbasis histori, pola kalender, tren penjualan terbaru, dan faktor ekonomi global. Semua nilai tetap bisa diedit manual.',
+            'note' => 'Saran AI dibuat dari rata-rata 3 bulan terakhir, pola kalender, tren penjualan terbaru, dan faktor ekonomi global. Semua nilai tetap bisa diedit manual.',
         ]);
     }
 
