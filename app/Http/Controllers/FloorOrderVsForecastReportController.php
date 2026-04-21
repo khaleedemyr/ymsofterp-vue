@@ -34,6 +34,7 @@ class FloorOrderVsForecastReportController extends Controller
     private function buildReportPayload(Request $request): array
     {
         $user = auth()->user();
+        /** Hanya user dengan id_outlet = 1 (HO) yang boleh memilih outlet; lainnya dikunci ke outlet user. */
         $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
 
         $month = $request->input('month', now()->format('Y-m'));
@@ -101,14 +102,48 @@ class FloorOrderVsForecastReportController extends Controller
                 ELSE \'other\'
             END';
 
+            /*
+             * Nilai RO per baris: jika sudah ada GR completed (Outlet Food Good Receive), pakai
+             * SUM(received_qty) × harga baris RO — sama seperti detail GR di laporan Invoice Outlet.
+             * Jika belum ada penerimaan tercatat di GR, fallback ke subtotal baris FO.
+             */
+            $receivedQtyByRoItem = DB::table('outlet_food_good_receive_items as gri')
+                ->join('outlet_food_good_receives as gr', function ($join) {
+                    $join->on('gri.outlet_food_good_receive_id', '=', 'gr.id')
+                        ->whereNull('gr.deleted_at')
+                        ->where('gr.status', 'completed');
+                })
+                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+                ->join('food_floor_orders as ffo_r', 'do.floor_order_id', '=', 'ffo_r.id')
+                ->where('ffo_r.id_outlet', $selectedOutletId)
+                ->whereNotNull('ffo_r.arrival_date')
+                ->whereBetween(DB::raw('DATE(ffo_r.arrival_date)'), [$rangeStart, $rangeEnd])
+                ->whereNotIn('ffo_r.status', ['draft', 'rejected'])
+                ->groupBy('do.floor_order_id', 'gri.item_id')
+                ->select(
+                    'do.floor_order_id as floor_order_id',
+                    'gri.item_id as item_id',
+                    DB::raw('SUM(gri.received_qty) as qty_received')
+                );
+
+            $lineValueSql = '(CASE
+                WHEN recv.qty_received IS NOT NULL AND recv.qty_received > 0
+                THEN recv.qty_received * COALESCE(ffoi.price, 0)
+                ELSE COALESCE(ffoi.subtotal, 0)
+            END)';
+
             $aggregates = DB::table('food_floor_orders as ffo')
                 ->join('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
                 ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
+                ->leftJoinSub($receivedQtyByRoItem, 'recv', function ($join) {
+                    $join->on('recv.floor_order_id', '=', 'ffo.id')
+                        ->on('recv.item_id', '=', 'ffoi.item_id');
+                })
                 ->where('ffo.id_outlet', $selectedOutletId)
                 ->whereNotNull('ffo.arrival_date')
                 ->whereBetween(DB::raw('DATE(ffo.arrival_date)'), [$rangeStart, $rangeEnd])
                 ->whereNotIn('ffo.status', ['draft', 'rejected'])
-                ->selectRaw('DATE(ffo.arrival_date) as d, '.$bucketExpr.' as bucket, SUM(ffoi.subtotal) as total')
+                ->selectRaw('DATE(ffo.arrival_date) as d, '.$bucketExpr.' as bucket, SUM('.$lineValueSql.') as total')
                 ->groupBy(DB::raw('DATE(ffo.arrival_date)'), DB::raw($bucketExpr))
                 ->get();
 

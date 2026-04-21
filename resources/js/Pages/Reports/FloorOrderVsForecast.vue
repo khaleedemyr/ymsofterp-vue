@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -61,6 +61,14 @@ function diffClass(diff) {
   if (!Number.isFinite(d) || d === 0) return 'text-slate-600'
   return d > 0 ? 'text-red-700 font-semibold' : 'text-emerald-700'
 }
+
+/** User HO (id_outlet = 1) bisa pilih outlet; selain itu hanya outlet sendiri (tanpa dropdown). */
+const currentOutletDisplayName = computed(() => {
+  const id = outletId.value
+  const list = props.outlets || []
+  const o = list.find((x) => Number(x.id) === Number(id))
+  return o?.name ?? '—'
+})
 </script>
 
 <template>
@@ -72,8 +80,11 @@ function diffClass(diff) {
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200/90">Laporan</p>
         <h1 class="mt-2 text-2xl font-bold tracking-tight">RO Food Floor vs Forecast Harian</h1>
         <p class="mt-2 max-w-3xl text-sm text-slate-300">
-          Nilai RO dijumlah dari <strong class="text-white">tanggal kedatangan</strong> pada Food Floor Order, dikelompokkan
-          warehouse outlet <strong class="text-white">Kitchen + Bar</strong> vs <strong class="text-white">Service</strong>.
+          Per <strong class="text-white">tanggal kedatangan</strong> FO, pembagian warehouse outlet
+          <strong class="text-white">Kitchen + Bar</strong> vs <strong class="text-white">Service</strong>.
+          Nilai per item: jika sudah ada <strong class="text-white">GR Outlet (completed)</strong>, dipakai
+          <strong class="text-white">Σ qty terima × harga RO</strong> per item (sama seperti detail GR di Invoice Outlet); jika belum ada GR untuk baris tersebut, dipakai
+          <strong class="text-white">subtotal FO</strong>.
           Plafon dibandingkan dengan
           <strong class="text-white">{{ kitchen_bar_ratio_pct }}%</strong> dan
           <strong class="text-white">{{ service_ratio_pct }}%</strong> dari
@@ -85,10 +96,16 @@ function diffClass(diff) {
         <div class="grid grid-cols-1 gap-4 md:grid-cols-6 md:items-end">
           <div class="md:col-span-2">
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Outlet</label>
+            <div
+              v-if="!canSelectOutlet"
+              class="flex min-h-[42px] w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-900"
+            >
+              {{ currentOutletDisplayName }}
+            </div>
             <select
+              v-else
               v-model.number="outletId"
               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              :disabled="!canSelectOutlet"
             >
               <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
@@ -242,8 +259,10 @@ function diffClass(diff) {
         </div>
         <p class="border-t border-slate-100 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
           * <strong>RO lain</strong>: warehouse outlet FO selain nama Kitchen / Bar / Service (misal typo atau warehouse tambahan).
-          RO dihitung dari FO dengan status selain draft &amp; rejected. Nilai per baris =
-          <code class="rounded bg-slate-100 px-1">SUM(food_floor_order_items.subtotal)</code>.
+          FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
+          qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
+          Agregasi per tanggal kedatangan =
+          <code class="rounded bg-slate-100 px-1">Σ…</code> dikelompokkan ke kolom tersebut.
         </p>
       </div>
     </div>

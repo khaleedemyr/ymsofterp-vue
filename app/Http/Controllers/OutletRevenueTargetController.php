@@ -47,6 +47,7 @@ class OutletRevenueTargetController extends Controller
     protected function buildRevenueTargetsIndexPayload(Request $request): array
     {
         $user = auth()->user();
+        /** Hanya user dengan id_outlet = 1 (HO) yang boleh memilih outlet; lainnya dikunci ke outlet user. */
         $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
 
         $month = $request->input('month', now()->format('Y-m'));

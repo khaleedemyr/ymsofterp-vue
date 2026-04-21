@@ -240,6 +240,14 @@ const totalForecast = computed(() =>
 const totalHolidayDays = computed(() => forecasts.value.filter((r) => r.is_holiday).length)
 const totalWeekendDays = computed(() => forecasts.value.filter((r) => !r.is_holiday && r.is_weekend).length)
 
+/** Nama outlet untuk user non-HO (id_outlet ≠ 1): tidak ada dropdown ganti outlet. */
+const selectedOutletDisplayName = computed(() => {
+  const id = selectedOutletId.value
+  const list = props.outlets || []
+  const o = list.find((x) => Number(x.id) === Number(id))
+  return o?.name ?? '—'
+})
+
 function loadData() {
   router.get(
     route('outlet-revenue-targets.index'),
@@ -458,10 +466,16 @@ fetchHolidays()
         <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Outlet</label>
+            <div
+              v-if="!canSelectOutlet"
+              class="flex min-h-[42px] w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-900"
+            >
+              {{ selectedOutletDisplayName }}
+            </div>
             <select
+              v-else
               v-model.number="selectedOutletId"
               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              :disabled="!canSelectOutlet"
             >
               <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
