@@ -39,15 +39,29 @@ function formatLocalDate(date) {
 
 function parseFormattedNumber(value) {
   if (value === null || value === undefined || value === '') return null
-  const normalized = String(value)
+  const raw = String(value).trim().toLowerCase()
+  let multiplier = 1
+
+  if (/(k|rb)$/.test(raw)) {
+    multiplier = 1_000
+  } else if (/(jt|juta)$/.test(raw)) {
+    multiplier = 1_000_000
+  } else if (/(m|mil|miliar)$/.test(raw)) {
+    multiplier = 1_000_000_000
+  } else if (/(t|triliun)$/.test(raw)) {
+    multiplier = 1_000_000_000_000
+  }
+
+  const normalized = raw
     .trim()
     .replace(/\s/g, '')
+    .replace(/(k|rb|jt|juta|m|mil|miliar|t|triliun)$/g, '')
     .replace(/\./g, '')
     .replace(',', '.')
     .replace(/[^0-9.-]/g, '')
   if (!normalized || normalized === '-' || normalized === '.') return null
   const num = Number(normalized)
-  return Number.isFinite(num) ? num : null
+  return Number.isFinite(num) ? num * multiplier : null
 }
 
 function formatNumberId(value) {
