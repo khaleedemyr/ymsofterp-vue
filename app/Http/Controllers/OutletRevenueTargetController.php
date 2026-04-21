@@ -415,21 +415,23 @@ class OutletRevenueTargetController extends Controller
         ]);
     }
 
+    /**
+     * Hanya membaca agregasi dari orders untuk ditampilkan di UI (kartu ringkasan).
+     * Tidak menyimpan apa pun ke outlet_revenue_target_*.
+     */
     public function generateHistorical(Request $request)
     {
-        $user = auth()->user();
-        $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
+        $isAdminOutlet = (int) (auth()->user()->id_outlet ?? 0) === 1;
 
         $validated = $request->validate([
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'end_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
             'months_back' => 'required|integer|min:1|max:12',
-            'overwrite' => 'nullable|boolean',
         ]);
 
         $outletId = (int) $validated['outlet_id'];
         if (!$isAdminOutlet) {
-            $outletId = (int) ($user->id_outlet ?? 0);
+            $outletId = (int) (auth()->user()->id_outlet ?? 0);
         }
 
         $outlet = DB::table('tbl_data_outlet')
@@ -445,127 +447,200 @@ class OutletRevenueTargetController extends Controller
 
         $endMonthStart = Carbon::createFromFormat('Y-m', $validated['end_month'])->startOfMonth();
         $monthsBack = (int) $validated['months_back'];
-        $overwrite = (bool) ($validated['overwrite'] ?? false);
 
-        $generated = 0;
-        $skipped = 0;
-        $processedMonths = [];
         $monthCards = [];
 
-        // Bulan di dropdown = acuan (mis. April). N bulan = N bulan SEBELUM acuan (tanpa bulan acuan).
-        // Contoh: April + 2 bulan → Maret, Februari.
-        DB::transaction(function () use (
-            $monthsBack,
-            $endMonthStart,
-            $outlet,
-            $outletId,
-            $overwrite,
-            $user,
-            &$generated,
-            &$skipped,
-            &$processedMonths,
-            &$monthCards
-        ) {
-            for ($k = 1; $k <= $monthsBack; $k++) {
-                $monthStart = $endMonthStart->copy()->subMonths($k)->startOfMonth();
-                $monthEnd = $monthStart->copy()->endOfMonth();
-                $monthKey = $monthStart->format('Y-m');
-                $label = $monthStart->locale('id')->translatedFormat('F Y');
+        // Bulan di dropdown = acuan. N bulan = N bulan SEBELUM acuan (tanpa bulan acuan).
+        for ($k = 1; $k <= $monthsBack; $k++) {
+            $monthStart = $endMonthStart->copy()->subMonths($k)->startOfMonth();
+            $monthEnd = $monthStart->copy()->endOfMonth();
+            $monthKey = $monthStart->format('Y-m');
+            $label = $monthStart->locale('id')->translatedFormat('F Y');
 
-                $dailyActual = DB::table('orders')
-                    ->where('kode_outlet', $outlet->qr_code)
-                    ->whereBetween('created_at', [
-                        $monthStart->toDateString() . ' 00:00:00',
-                        $monthEnd->toDateString() . ' 23:59:59',
-                    ])
-                    ->where('status', '!=', 'cancelled')
-                    ->where('grand_total', '>', 0)
-                    ->selectRaw('DATE(created_at) as dt, SUM(grand_total) as revenue')
-                    ->groupBy('dt')
-                    ->pluck('revenue', 'dt');
+            $dailyActual = DB::table('orders')
+                ->where('kode_outlet', $outlet->qr_code)
+                ->whereBetween('created_at', [
+                    $monthStart->toDateString() . ' 00:00:00',
+                    $monthEnd->toDateString() . ' 23:59:59',
+                ])
+                ->where('status', '!=', 'cancelled')
+                ->where('grand_total', '>', 0)
+                ->selectRaw('DATE(created_at) as dt, SUM(grand_total) as revenue')
+                ->groupBy('dt')
+                ->pluck('revenue', 'dt');
 
-                $monthlyTarget = (float) collect($dailyActual)->sum();
-                $daysWithOrders = $dailyActual->filter(fn ($v) => (float) $v > 0)->count();
-                $targetMonthDate = $monthStart->toDateString();
+            $monthlyTotal = (float) collect($dailyActual)->sum();
+            $daysWithOrders = $dailyActual->filter(fn ($v) => (float) $v > 0)->count();
 
-                $existingHeader = DB::table('outlet_revenue_target_headers')
-                    ->where('outlet_id', $outletId)
-                    ->where('target_month', $targetMonthDate)
-                    ->first();
-
-                if ($existingHeader && !$overwrite) {
-                    $skipped++;
-                    $monthCards[] = [
-                        'ym' => $monthKey,
-                        'label' => $label,
-                        'status' => 'skipped',
-                        'monthly_total' => round($monthlyTarget, 2),
-                        'days_with_orders' => $daysWithOrders,
-                    ];
-                    continue;
-                }
-
-                if ($existingHeader) {
-                    DB::table('outlet_revenue_target_headers')
-                        ->where('id', $existingHeader->id)
-                        ->update([
-                            'monthly_target' => $monthlyTarget,
-                            'updated_by' => $user->id,
-                            'updated_at' => now(),
-                        ]);
-                    $headerId = (int) $existingHeader->id;
-                    DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
-                } else {
-                    $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
-                        'outlet_id' => $outletId,
-                        'target_month' => $targetMonthDate,
-                        'monthly_target' => $monthlyTarget,
-                        'created_by' => $user->id,
-                        'updated_by' => $user->id,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-
-                $rows = [];
-                $cursor = $monthStart->copy();
-                while ($cursor->lte($monthEnd)) {
-                    $dateKey = $cursor->toDateString();
-                    $rows[] = [
-                        'header_id' => $headerId,
-                        'forecast_date' => $dateKey,
-                        'forecast_revenue' => (float) ($dailyActual[$dateKey] ?? 0),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
-                    $cursor->addDay();
-                }
-
-                if (!empty($rows)) {
-                    DB::table('outlet_revenue_target_details')->insert($rows);
-                }
-
-                $generated++;
-                $processedMonths[] = $monthKey;
-                $monthCards[] = [
-                    'ym' => $monthKey,
-                    'label' => $label,
-                    'status' => 'generated',
-                    'monthly_total' => round($monthlyTarget, 2),
-                    'days_with_orders' => $daysWithOrders,
-                ];
-            }
-        });
+            $monthCards[] = [
+                'ym' => $monthKey,
+                'label' => $label,
+                'status' => 'from_orders',
+                'monthly_total' => round($monthlyTotal, 2),
+                'days_with_orders' => $daysWithOrders,
+            ];
+        }
 
         usort($monthCards, fn ($a, $b) => strcmp($a['ym'], $b['ym']));
 
+        $count = count($monthCards);
+
         return response()->json([
-            'message' => "Generate historis selesai. Generated {$generated} bulan, skipped {$skipped} bulan.",
-            'generated' => $generated,
-            'skipped' => $skipped,
-            'months' => $processedMonths,
+            'message' => "Ringkasan revenue dari orders (tidak disimpan): {$count} bulan.",
+            'generated' => $count,
+            'skipped' => 0,
+            'months' => array_column($monthCards, 'ym'),
             'month_cards' => $monthCards,
-            'overwrite' => $overwrite,
+        ]);
+    }
+
+    /**
+     * Detail historis satu bulan dari orders (read-only): harian, weekday/weekend, lunch/dinner.
+     * Lunch/Dinner mengikuti Sales Outlet Dashboard: jam <= 17 Lunch, selain itu Dinner.
+     */
+    public function historicalMonthDetail(Request $request)
+    {
+        $isAdminOutlet = (int) (auth()->user()->id_outlet ?? 0) === 1;
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        if (!$isAdminOutlet) {
+            $outletId = (int) (auth()->user()->id_outlet ?? 0);
+        }
+
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->select('id_outlet', 'qr_code', 'nama_outlet')
+            ->first();
+
+        if (!$outlet || empty($outlet->qr_code)) {
+            return response()->json([
+                'message' => 'Outlet tidak valid atau QR Code outlet belum tersedia.',
+            ], 422);
+        }
+
+        $monthStart = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $daysInMonth = (int) $monthEnd->day;
+
+        $rangeStart = $monthStart->toDateString() . ' 00:00:00';
+        $rangeEnd = $monthEnd->toDateString() . ' 23:59:59';
+
+        $dailyTotals = DB::table('orders')
+            ->where('kode_outlet', $outlet->qr_code)
+            ->whereBetween('created_at', [$rangeStart, $rangeEnd])
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('DATE(created_at) as d, SUM(grand_total) as revenue')
+            ->groupBy('d')
+            ->pluck('revenue', 'd');
+
+        $dailyRows = [];
+        $cursor = $monthStart->copy();
+        while ($cursor->lte($monthEnd)) {
+            $key = $cursor->toDateString();
+            $dailyRows[] = [
+                'date' => $key,
+                'day_name' => $cursor->locale('id')->isoFormat('dddd'),
+                'revenue' => round((float) ($dailyTotals[$key] ?? 0), 2),
+            ];
+            $cursor->addDay();
+        }
+
+        $weekdayWeekendRows = DB::table('orders')
+            ->where('kode_outlet', $outlet->qr_code)
+            ->whereBetween('created_at', [$rangeStart, $rangeEnd])
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw(
+                "CASE WHEN DAYOFWEEK(created_at) IN (1, 7) THEN 'weekend' ELSE 'weekday' END as bucket,
+                SUM(grand_total) as revenue,
+                COUNT(*) as order_count"
+            )
+            ->groupBy(DB::raw("CASE WHEN DAYOFWEEK(created_at) IN (1, 7) THEN 'weekend' ELSE 'weekday' END"))
+            ->get();
+
+        $weekdayWeekend = $weekdayWeekendRows->keyBy('bucket');
+
+        $weekdayTotal = (float) ($weekdayWeekend['weekday']->revenue ?? 0);
+        $weekendTotal = (float) ($weekdayWeekend['weekend']->revenue ?? 0);
+        $weekdayOrders = (int) ($weekdayWeekend['weekday']->order_count ?? 0);
+        $weekendOrders = (int) ($weekdayWeekend['weekend']->order_count ?? 0);
+
+        $weekdayCalendarDays = 0;
+        $weekendCalendarDays = 0;
+        $walk = $monthStart->copy();
+        while ($walk->lte($monthEnd)) {
+            if ($walk->isWeekend()) {
+                $weekendCalendarDays++;
+            } else {
+                $weekdayCalendarDays++;
+            }
+            $walk->addDay();
+        }
+
+        $avgWeekdayPerCalendarDay = $weekdayCalendarDays > 0
+            ? round($weekdayTotal / $weekdayCalendarDays, 2)
+            : 0.0;
+        $avgWeekendPerCalendarDay = $weekendCalendarDays > 0
+            ? round($weekendTotal / $weekendCalendarDays, 2)
+            : 0.0;
+
+        $lunchDinnerRows = DB::table('orders')
+            ->where('kode_outlet', $outlet->qr_code)
+            ->whereBetween('created_at', [$rangeStart, $rangeEnd])
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw(
+                "CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END as bucket,
+                SUM(grand_total) as revenue,
+                COUNT(*) as order_count"
+            )
+            ->groupBy(DB::raw('CASE WHEN HOUR(created_at) <= 17 THEN \'lunch\' ELSE \'dinner\' END'))
+            ->get();
+
+        $lunchDinner = $lunchDinnerRows->keyBy('bucket');
+
+        $lunchRev = (float) ($lunchDinner['lunch']->revenue ?? 0);
+        $dinnerRev = (float) ($lunchDinner['dinner']->revenue ?? 0);
+        $lunchOrders = (int) ($lunchDinner['lunch']->order_count ?? 0);
+        $dinnerOrders = (int) ($lunchDinner['dinner']->order_count ?? 0);
+
+        return response()->json([
+            'outlet' => [
+                'id' => (int) $outlet->id_outlet,
+                'name' => $outlet->nama_outlet,
+            ],
+            'month' => $validated['month'],
+            'month_label' => $monthStart->locale('id')->translatedFormat('F Y'),
+            'days_in_month' => $daysInMonth,
+            'daily' => $dailyRows,
+            'weekday_weekend' => [
+                'weekday_total' => round($weekdayTotal, 2),
+                'weekend_total' => round($weekendTotal, 2),
+                'weekday_orders' => $weekdayOrders,
+                'weekend_orders' => $weekendOrders,
+                'weekday_calendar_days' => $weekdayCalendarDays,
+                'weekend_calendar_days' => $weekendCalendarDays,
+                'avg_weekday_per_calendar_day' => $avgWeekdayPerCalendarDay,
+                'avg_weekend_per_calendar_day' => $avgWeekendPerCalendarDay,
+            ],
+            'lunch_dinner' => [
+                'lunch' => [
+                    'revenue' => round($lunchRev, 2),
+                    'orders' => $lunchOrders,
+                    'rule' => 'Jam order <= 17:00 = Lunch (sama seperti Sales Outlet Dashboard)',
+                ],
+                'dinner' => [
+                    'revenue' => round($dinnerRev, 2),
+                    'orders' => $dinnerOrders,
+                    'rule' => 'Jam order > 17:00 = Dinner',
+                ],
+            ],
         ]);
     }
 
