@@ -307,8 +307,9 @@ class OutletRevenueTargetController extends Controller
         $holidayBoost = max(1.03, min(1.18, $holidayRatio > 0 ? $holidayRatio : 1.10));
 
         $suggestions = [];
-        $suggestedMonthlyTarget = 0.0;
         $cursor = $monthStart->copy();
+        $weightRows = [];
+        $totalWeight = 0.0;
 
         while ($cursor->lte($monthEnd)) {
             $dateKey = $cursor->toDateString();
@@ -317,52 +318,51 @@ class OutletRevenueTargetController extends Controller
             $isWeekend = in_array($dow, [0, 6], true);
             $dayType = $isHoliday ? 'holiday' : ($isWeekend ? 'weekend' : 'weekday');
 
-            $base = $avgByDow[$dow] ?? 0;
-            if ($base <= 0) {
-                $base = match ($dayType) {
-                    'holiday' => $avgHoliday > 0 ? $avgHoliday : ($avgWeekend > 0 ? $avgWeekend : $avgAll),
-                    'weekend' => $avgWeekend > 0 ? $avgWeekend : $avgAll,
-                    default => $avgWeekday > 0 ? $avgWeekday : $avgAll,
+            // Prioritas bobot: pola DoW historis -> pola tipe hari -> fallback default.
+            $weight = (float) ($avgByDow[$dow] ?? 0);
+            if ($weight <= 0) {
+                $weight = match ($dayType) {
+                    'holiday' => $avgHoliday > 0 ? $avgHoliday : 1.35,
+                    'weekend' => $avgWeekend > 0 ? $avgWeekend : 1.20,
+                    default => $avgWeekday > 0 ? $avgWeekday : 1.00,
                 };
             }
 
-            $suggested = $base * $combinedFactor;
             if ($dayType === 'holiday') {
-                $suggested *= $holidayBoost;
+                $weight *= $holidayBoost;
             }
 
-            $suggested = round(max(0, $suggested), 2);
-            $suggestedMonthlyTarget += $suggested;
+            $weight *= $combinedFactor;
+            $weight = max(0.01, $weight);
 
-            $suggestions[] = [
+            $weightRows[] = [
                 'forecast_date' => $dateKey,
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'day_type' => $dayType,
-                'forecast_revenue' => $suggested,
+                'weight' => $weight,
             ];
-
+            $totalWeight += $weight;
             $cursor->addDay();
         }
 
-        $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $inputMonthlyTarget;
-        $normalizationFactor = 1.0;
-        if ($suggestedMonthlyTarget > 0 && $inputMonthlyTarget > 0) {
-            $normalizationFactor = $inputMonthlyTarget / $suggestedMonthlyTarget;
-            $suggestedMonthlyTarget = 0.0;
+        $suggestedMonthlyTarget = 0.0;
+        $normalizationFactor = $totalWeight > 0 ? ($inputMonthlyTarget / $totalWeight) : 0.0;
 
-            foreach ($suggestions as $idx => $row) {
-                $normalized = round(max(0, ((float) $row['forecast_revenue']) * $normalizationFactor), 2);
-                $suggestions[$idx]['forecast_revenue'] = $normalized;
-                $suggestedMonthlyTarget += $normalized;
-            }
-        } elseif (!empty($suggestions) && $inputMonthlyTarget > 0) {
-            $equalPerDay = round($inputMonthlyTarget / count($suggestions), 2);
-            $suggestedMonthlyTarget = 0.0;
-            foreach ($suggestions as $idx => $row) {
-                $suggestions[$idx]['forecast_revenue'] = $equalPerDay;
-                $suggestedMonthlyTarget += $equalPerDay;
-            }
+        foreach ($weightRows as $row) {
+            $value = $normalizationFactor > 0
+                ? round($row['weight'] * $normalizationFactor, 2)
+                : 0.0;
+
+            $suggestions[] = [
+                'forecast_date' => $row['forecast_date'],
+                'day_name' => $row['day_name'],
+                'day_type' => $row['day_type'],
+                'forecast_revenue' => $value,
+            ];
+            $suggestedMonthlyTarget += $value;
         }
+
+        $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $inputMonthlyTarget;
 
         return response()->json([
             'outlet' => [
@@ -383,6 +383,7 @@ class OutletRevenueTargetController extends Controller
                 'input_monthly_target' => round($inputMonthlyTarget, 2),
                 'target_monthly_from_history' => round($targetMonthlyFromHistory, 2),
                 'normalization_factor' => round($normalizationFactor, 4),
+                'total_weight' => round($totalWeight, 4),
                 'reference_months' => $referenceMonths,
                 'historical_reference_month' => $previousMonthStart->format('Y-m'),
             ],
