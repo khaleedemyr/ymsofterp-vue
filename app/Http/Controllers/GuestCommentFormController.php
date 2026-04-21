@@ -339,18 +339,19 @@ class GuestCommentFormController extends Controller
             ->whereNotNull('g.id_outlet')
             ->whereBetween('g.created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
             ->groupBy('g.id_outlet', 'o.nama_outlet')
-            ->selectRaw("g.id_outlet as outlet_id, o.nama_outlet as outlet_name, {$responseExpr} as responses, {$positiveExpr} as positives")
+            ->selectRaw("g.id_outlet as outlet_id, o.nama_outlet as outlet_name, COUNT(*) as responses, {$responseExpr} as rating_responses, {$positiveExpr} as positives")
             ->get();
 
         return collect($rows)
             ->map(function ($r) {
                 $responses = (int) ($r->responses ?? 0);
+                $ratingResponses = (int) ($r->rating_responses ?? 0);
                 $positives = (int) ($r->positives ?? 0);
                 return [
                     'outlet_id' => (int) $r->outlet_id,
                     'outlet_name' => (string) $r->outlet_name,
                     'responses' => $responses,
-                    'gsi_pct' => $responses > 0 ? round(($positives / $responses) * 100, 2) : null,
+                    'gsi_pct' => $ratingResponses > 0 ? round(($positives / $ratingResponses) * 100, 2) : null,
                 ];
             })
             ->filter(fn ($r) => $r['responses'] > 0)
