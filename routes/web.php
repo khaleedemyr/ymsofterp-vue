@@ -1296,6 +1296,10 @@ Route::get('/outlet-internal-use-waste/{id}/details', [\App\Http\Controllers\Out
 Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'show'])->name('outlet-internal-use-waste.show');
 Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy'])->name('outlet-internal-use-waste.destroy');
 
+Route::get('/outlet-revenue-targets', [\App\Http\Controllers\OutletRevenueTargetController::class, 'index'])->name('outlet-revenue-targets.index');
+Route::post('/outlet-revenue-targets', [\App\Http\Controllers\OutletRevenueTargetController::class, 'store'])->name('outlet-revenue-targets.store');
+Route::post('/outlet-revenue-targets/suggest', [\App\Http\Controllers\OutletRevenueTargetController::class, 'suggest'])->name('outlet-revenue-targets.suggest');
+
 // Active Users Monitoring
 Route::get('/monitoring/active-users', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'index'])->name('monitoring.active-users');
 Route::get('/api/monitoring/active-users/stats', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'getStats'])->name('api.monitoring.active-users.stats');

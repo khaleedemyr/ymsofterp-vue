@@ -439,6 +439,7 @@ const menuGroups = [
             { name: () => 'Menu Book', icon: 'fa-solid fa-book-open', route: '/menu-book', code: 'menu_book' },
             { name: () => 'Web Profile', icon: 'fa-solid fa-globe', route: '/web-profile', code: 'web_profile' },
             { name: () => 'Rekap Transaksi Bank', icon: 'fa-solid fa-university', route: '/report-bank-transaction', code: 'report_bank_transaction' },
+            { name: () => 'Revenue Targets', icon: 'fa-solid fa-bullseye', route: '/outlet-revenue-targets', code: 'outlet_revenue_targets' },
         ],
     },
     {
