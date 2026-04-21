@@ -362,6 +362,28 @@ class OutletRevenueTargetController extends Controller
             $suggestedMonthlyTarget += $value;
         }
 
+        // Safety net: pastikan total forecast selalu mengikuti monthly target input user.
+        $finalReconcileFactor = 1.0;
+        if ($suggestedMonthlyTarget > 0 && $inputMonthlyTarget > 0) {
+            $finalReconcileFactor = $inputMonthlyTarget / $suggestedMonthlyTarget;
+            $suggestedMonthlyTarget = 0.0;
+
+            foreach ($suggestions as $idx => $row) {
+                $scaled = round(max(0, ((float) $row['forecast_revenue']) * $finalReconcileFactor), 2);
+                $suggestions[$idx]['forecast_revenue'] = $scaled;
+                $suggestedMonthlyTarget += $scaled;
+            }
+        }
+
+        // Koreksi rounding difference ke baris terakhir agar total persis.
+        $roundingDiff = round($inputMonthlyTarget - $suggestedMonthlyTarget, 2);
+        if (!empty($suggestions) && abs($roundingDiff) >= 0.01) {
+            $lastIdx = count($suggestions) - 1;
+            $lastValue = (float) $suggestions[$lastIdx]['forecast_revenue'];
+            $suggestions[$lastIdx]['forecast_revenue'] = round(max(0, $lastValue + $roundingDiff), 2);
+            $suggestedMonthlyTarget = round($suggestedMonthlyTarget + $roundingDiff, 2);
+        }
+
         $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $inputMonthlyTarget;
 
         return response()->json([
@@ -384,6 +406,8 @@ class OutletRevenueTargetController extends Controller
                 'target_monthly_from_history' => round($targetMonthlyFromHistory, 2),
                 'normalization_factor' => round($normalizationFactor, 4),
                 'total_weight' => round($totalWeight, 4),
+                'final_reconcile_factor' => round($finalReconcileFactor, 6),
+                'final_forecast_total' => round($suggestedMonthlyTarget, 2),
                 'reference_months' => $referenceMonths,
                 'historical_reference_month' => $previousMonthStart->format('Y-m'),
             ],
