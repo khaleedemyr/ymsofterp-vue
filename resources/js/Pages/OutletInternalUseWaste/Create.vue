@@ -14,7 +14,7 @@
                 <option value="internal_use">Internal Use</option>
                 <option value="spoil">Spoil</option>
                 <option value="waste">Waste</option>
-                <option value="stock_cut">Stock Cut</option>
+                <option value="usage">Usage</option>
                 <option value="r_and_d">R & D</option>
                 <option value="marketing">Marketing</option>
                 <option value="non_commodity">Non Commodity</option>
@@ -50,27 +50,110 @@
                 type="button" 
                 @click="addItem" 
                 class="btn btn-sm btn-primary"
-                :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
+                :disabled="!form.warehouse_outlet_id || isUsageAutoBomType"
               >
                 <i class="fa fa-plus mr-1"></i> Tambah Item
               </button>
             </div>
 
-            <div v-if="form.type === 'stock_cut' && loadingStockCutItems" class="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-              <i class="fa fa-spinner fa-spin mr-2"></i>Memuat item stock cut...
+            <div v-if="isUsageAutoBomType && loadingStockCutItems" class="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <i class="fa fa-spinner fa-spin mr-2"></i>Memuat item BOM (stock cut)…
             </div>
 
             <div v-if="form.items.length === 0" class="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
               <i class="fa fa-box-open text-4xl mb-2"></i>
-              <p v-if="form.type === 'stock_cut'">Tidak ada item stock cut dengan stok tersedia pada outlet dan warehouse ini.</p>
+              <p v-if="isUsageAutoBomType">Tidak ada material BOM (stock cut) dengan stok tersedia pada outlet dan warehouse ini.</p>
               <p v-else>Belum ada item. Klik "Tambah Item" untuk menambahkan.</p>
             </div>
 
-            <div v-for="(item, idx) in form.items" :key="item.id || idx" class="bg-white border rounded-lg p-4 space-y-4 relative">
+            <template v-if="isUsageAutoBomType && form.items.length > 0">
+              <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
+                <div class="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+                  <input
+                    v-model.trim="usageSearch"
+                    type="text"
+                    class="input input-bordered w-full md:max-w-sm"
+                    placeholder="Cari item usage..."
+                  />
+                  <div class="flex gap-2">
+                    <button type="button" class="btn btn-xs btn-outline" @click="setAllUsageGroups(true)">Expand All</button>
+                    <button type="button" class="btn btn-xs btn-outline" @click="setAllUsageGroups(false)">Collapse All</button>
+                  </div>
+                </div>
+                <p class="text-xs text-slate-500">
+                  Menampilkan {{ usageVisibleCount }} item
+                </p>
+              </div>
+
+              <div v-if="usageGroups.length === 0" class="text-center py-6 text-slate-500 border rounded-lg">
+                Tidak ada item yang cocok dengan pencarian.
+              </div>
+
+              <div v-for="group in usageGroups" :key="group.category" class="border border-slate-200 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  class="w-full px-4 py-3 bg-slate-100 hover:bg-slate-200 text-left flex items-center justify-between"
+                  @click="toggleUsageGroup(group.category)"
+                >
+                  <span class="font-semibold text-slate-700">
+                    {{ group.category }} <span class="text-xs text-slate-500">({{ group.items.length }})</span>
+                  </span>
+                  <i class="fa-solid" :class="isUsageGroupOpen(group.category) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                </button>
+
+                <div v-show="isUsageGroupOpen(group.category)" class="p-3 space-y-3 bg-white">
+                  <div v-for="entry in group.items" :key="entry.item.id || entry.idx" class="bg-white border rounded-lg p-4 space-y-4 relative">
+                    <div class="flex justify-between items-start mb-2">
+                      <h4 class="font-medium text-gray-800">Item #{{ entry.idx + 1 }}</h4>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
+                        <input
+                          type="text"
+                          :value="entry.item.item_name"
+                          class="input input-bordered w-full bg-gray-50"
+                          readonly
+                        />
+                        <div v-if="entry.item.stock" class="text-xs mt-1" :class="Number(entry.item.stock.qty_small || 0) <= 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
+                          Stok: {{ formatStockDisplay(entry.item) }}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Qty</label>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          v-model.number="entry.item.qty"
+                          class="input input-bordered w-full"
+                          required
+                          :disabled="!form.warehouse_outlet_id || !entry.item.item_id"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unit (terkecil)</label>
+                        <input
+                          type="text"
+                          :value="getItemUnitName(entry.item)"
+                          class="input input-bordered w-full bg-gray-50"
+                          readonly
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <div v-else v-for="(item, idx) in form.items" :key="item.id || idx" class="bg-white border rounded-lg p-4 space-y-4 relative">
               <div class="flex justify-between items-start mb-2">
                 <h4 class="font-medium text-gray-800">Item #{{ idx + 1 }}</h4>
                 <button 
-                  v-if="form.type !== 'stock_cut'"
+                  v-if="!isUsageAutoBomType"
                   type="button" 
                   @click="removeItem(idx)" 
                   class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
@@ -95,7 +178,7 @@
                     placeholder="Cari dan pilih item..."
                     label="name"
                     track-by="id"
-                    :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
+                    :disabled="!form.warehouse_outlet_id || isUsageAutoBomType"
                     @select="(selectedItem) => onItemSelect(selectedItem, idx)"
                     @remove="() => onItemRemove(idx)"
                     class="multiselect-custom"
@@ -165,7 +248,7 @@
                     class="input input-bordered w-full" 
                     placeholder="Catatan item (opsional)"
                     rows="3"
-                    :disabled="form.type === 'stock_cut'"
+                    :disabled="isUsageAutoBomType"
                   ></textarea>
                 </div>
               </div>
@@ -177,7 +260,7 @@
                 type="button" 
                 @click="addItem" 
                 class="btn btn-sm btn-primary"
-                :disabled="!form.warehouse_outlet_id || form.type === 'stock_cut'"
+                :disabled="!form.warehouse_outlet_id || isUsageAutoBomType"
               >
                 <i class="fa fa-plus mr-1"></i> Tambah Item
               </button>
@@ -352,10 +435,14 @@ function newItem() {
   }
 }
 
+// Legacy header type `stock_cut` is shown/edited as `usage` (single BOM flow)
+const initialType =
+  props.header?.type === 'stock_cut' ? 'usage' : (props.header?.type || 'internal_use')
+
 // Initialize form - if edit mode, load from props
 const form = ref({
   header_id: props.header?.id || null,
-  type: props.header?.type || 'internal_use',
+  type: initialType,
   date: props.header?.date || '',
   outlet_id: props.header?.outlet_id || (userOutletId.value == 1 ? '' : userOutletId.value),
   notes: props.header?.notes || '',
@@ -399,6 +486,56 @@ const showApproverDropdown = ref(false)
 const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const loadingStockCutItems = ref(false)
+const usageSearch = ref('')
+const usageGroupOpen = ref({})
+
+/** Usage: BOM material item_bom.stock_cut=1, auto-rows, unit terkecil, stok outlet */
+const isUsageAutoBomType = computed(() => form.value.type === 'usage')
+
+function normalizeUsageCategory(item) {
+  return item.category_name || 'Tanpa Kategori'
+}
+
+const usageGroups = computed(() => {
+  if (!isUsageAutoBomType.value) return []
+  const q = usageSearch.value.toLowerCase()
+  const source = q
+    ? form.value.items.filter((it) => `${it.item_name || ''}`.toLowerCase().includes(q))
+    : form.value.items
+
+  const grouped = {}
+  source.forEach((item, idx) => {
+    const originalIdx = form.value.items.indexOf(item)
+    const cat = normalizeUsageCategory(item)
+    if (!grouped[cat]) grouped[cat] = []
+    grouped[cat].push({ item, idx: originalIdx >= 0 ? originalIdx : idx })
+  })
+
+  return Object.keys(grouped)
+    .sort((a, b) => a.localeCompare(b))
+    .map((category) => ({ category, items: grouped[category] }))
+})
+
+const usageVisibleCount = computed(() =>
+  usageGroups.value.reduce((total, g) => total + g.items.length, 0)
+)
+
+function isUsageGroupOpen(category) {
+  if (usageGroupOpen.value[category] === undefined) return true
+  return usageGroupOpen.value[category]
+}
+
+function toggleUsageGroup(category) {
+  usageGroupOpen.value[category] = !isUsageGroupOpen(category)
+}
+
+function setAllUsageGroups(open) {
+  const next = {}
+  usageGroups.value.forEach((g) => {
+    next[g.category] = open
+  })
+  usageGroupOpen.value = next
+}
 
 // Add watch function to monitor outlet changes
 watch(() => form.value.outlet_id, async (newOutletId) => {
@@ -438,7 +575,7 @@ onMounted(async () => {
 })
 
 async function loadStockCutItems() {
-  if (form.value.type !== 'stock_cut') return
+  if (!isUsageAutoBomType.value) return
   if (!form.value.outlet_id || !form.value.warehouse_outlet_id) return
 
   loadingStockCutItems.value = true
@@ -461,6 +598,7 @@ async function loadStockCutItems() {
         id: Date.now() + Math.random(),
         item_id: row.item_id,
         item_name: row.item_name,
+        category_name: row.category_name || 'Tanpa Kategori',
         selectedItem,
         qty: '',
         unit_id: row.unit_id || '',
@@ -471,6 +609,11 @@ async function loadStockCutItems() {
     })
 
     form.value.items = mappedItems
+    const opened = {}
+    mappedItems.forEach((item) => {
+      opened[normalizeUsageCategory(item)] = true
+    })
+    usageGroupOpen.value = opened
   } catch (error) {
     console.error('Error loading stock cut items:', error)
     form.value.items = []
@@ -482,8 +625,11 @@ async function loadStockCutItems() {
 watch(
   () => [form.value.type, form.value.outlet_id, form.value.warehouse_outlet_id],
   async ([type, outletId, warehouseOutletId]) => {
-    if (type === 'stock_cut' && outletId && warehouseOutletId) {
+    if (type === 'usage' && outletId && warehouseOutletId) {
       await loadStockCutItems()
+    } else if (type !== 'usage') {
+      usageSearch.value = ''
+      usageGroupOpen.value = {}
     }
   },
   { immediate: true }

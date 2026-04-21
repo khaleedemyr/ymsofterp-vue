@@ -2349,6 +2349,8 @@ function typeLabelCategoryCost(type) {
     if (type === 'internal_use') return 'Internal Use';
     if (type === 'spoil') return 'Spoil';
     if (type === 'waste') return 'Waste';
+    if (type === 'usage') return 'Usage';
+    if (type === 'stock_cut') return 'Usage';
     if (type === 'r_and_d') return 'R & D';
     if (type === 'marketing') return 'Marketing';
     if (type === 'non_commodity') return 'Non Commodity';

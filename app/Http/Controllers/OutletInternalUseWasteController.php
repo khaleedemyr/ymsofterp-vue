@@ -185,7 +185,7 @@ class OutletInternalUseWasteController extends Controller
             
             $request->validate([
                 'header_id' => 'nullable|integer',
-                'type' => 'required|in:internal_use,spoil,waste,stock_cut,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
+                'type' => 'required|in:internal_use,spoil,waste,usage,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -1032,7 +1032,7 @@ class OutletInternalUseWasteController extends Controller
         
         try {
             $request->validate([
-                'type' => 'required|in:internal_use,spoil,waste,stock_cut,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
+                'type' => 'required|in:internal_use,spoil,waste,usage,r_and_d,marketing,non_commodity,guest_supplies,wrong_maker,training',
                 'date' => 'required|date',
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'warehouse_outlet_id' => 'required|exists:warehouse_outlets,id',
@@ -1738,6 +1738,8 @@ class OutletInternalUseWasteController extends Controller
                     ->where('ofs.id_outlet', '=', $request->outlet_id)
                     ->where('ofs.warehouse_outlet_id', '=', $request->warehouse_outlet_id);
             })
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
             ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
             ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
             ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
@@ -1751,6 +1753,8 @@ class OutletInternalUseWasteController extends Controller
             ->select(
                 'i.id as item_id',
                 'i.name as item_name',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
                 'i.small_unit_id',
                 'us.name as unit_small',
                 'i.medium_unit_id',
@@ -1761,14 +1765,17 @@ class OutletInternalUseWasteController extends Controller
                 'ofs.qty_medium',
                 'ofs.qty_large'
             )
-            ->distinct()
             ->orderBy('i.name')
-            ->get();
+            ->get()
+            ->unique('item_id')
+            ->values();
 
         $items = $rows->map(function ($row) {
             return [
                 'item_id' => (int) $row->item_id,
                 'item_name' => $row->item_name,
+                'category_name' => $row->category_name ?: 'Tanpa Kategori',
+                'sub_category_name' => $row->sub_category_name ?: 'Tanpa Sub Kategori',
                 'unit_id' => $row->small_unit_id,
                 'unit_name' => $row->unit_small,
                 'stock' => [
@@ -1912,7 +1919,7 @@ class OutletInternalUseWasteController extends Controller
                 ['value' => 'internal_use', 'label' => 'Internal Use'],
                 ['value' => 'spoil', 'label' => 'Spoil'],
                 ['value' => 'waste', 'label' => 'Waste'],
-                ['value' => 'stock_cut', 'label' => 'Stock Cut'],
+                ['value' => 'usage', 'label' => 'Usage'],
                 ['value' => 'r_and_d', 'label' => 'R & D'],
                 ['value' => 'marketing', 'label' => 'Marketing'],
                 ['value' => 'non_commodity', 'label' => 'Non Commodity'],
@@ -2145,7 +2152,7 @@ class OutletInternalUseWasteController extends Controller
             ['value' => 'internal_use', 'label' => 'Internal Use'],
             ['value' => 'spoil', 'label' => 'Spoil'],
             ['value' => 'waste', 'label' => 'Waste'],
-            ['value' => 'stock_cut', 'label' => 'Stock Cut'],
+            ['value' => 'usage', 'label' => 'Usage'],
             ['value' => 'r_and_d', 'label' => 'R & D'],
             ['value' => 'marketing', 'label' => 'Marketing'],
             ['value' => 'non_commodity', 'label' => 'Non Commodity'],

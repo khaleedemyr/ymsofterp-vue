@@ -385,12 +385,14 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
             'internal_use' => 'Internal Use',
             'spoil' => 'Spoil',
             'waste' => 'Waste',
-            'stock_cut' => 'Stock Cut',
+            'stock_cut' => 'Usage', /* legacy type */
             'r_and_d' => 'R & D',
             'marketing' => 'Marketing',
             'non_commodity' => 'Non Commodity',
             'guest_supplies' => 'Guest Supplies',
             'wrong_maker' => 'Wrong Maker',
+            'training' => 'Training',
+            'usage' => 'Usage',
         ];
         
         return $labels[$type] ?? $type;
