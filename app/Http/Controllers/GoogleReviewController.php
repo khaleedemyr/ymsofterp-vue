@@ -950,18 +950,69 @@ class GoogleReviewController extends Controller
         ]);
 
         $sync = (bool) config('google_review.ai_dispatch_sync', false);
-        if ($sync) {
-            if ($source === 'instagram_comments_db') {
-                ProcessInstagramCommentAiReportJob::dispatchSync($reportId);
+        $queueConnection = (string) config('queue.default', 'sync');
+        $queueName = (string) config('google_review.process_queue', 'google-review-ai');
+        $classifyProvider = (string) (config('ai.google_review_classify.provider') ?: config('ai.provider'));
+        $geminiModel = (string) (config('ai.google_review_classify.gemini_model') ?: config('ai.gemini.model', ''));
+        $geminiKeySet = ! empty(config('ai.gemini.api_key'));
+
+        \Log::info('GoogleReview AI report created', [
+            'report_id' => $reportId,
+            'source' => $source,
+            'sync' => $sync,
+            'queue_connection' => $queueConnection,
+            'queue_name' => $queueName,
+            'classify_provider' => $classifyProvider,
+            'gemini_model' => $geminiModel,
+            'gemini_key_set' => $geminiKeySet,
+            'dataset_id' => $request->input('dataset_id'),
+            'user_id' => auth()->id(),
+        ]);
+
+        try {
+            if ($sync) {
+                if ($source === 'instagram_comments_db') {
+                    ProcessInstagramCommentAiReportJob::dispatchSync($reportId);
+                } else {
+                    ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+                }
             } else {
-                ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+                if ($source === 'instagram_comments_db') {
+                    ProcessInstagramCommentAiReportJob::dispatch($reportId);
+                } else {
+                    ProcessGoogleReviewAiReportJob::dispatch($reportId);
+                }
             }
-        } else {
-            if ($source === 'instagram_comments_db') {
-                ProcessInstagramCommentAiReportJob::dispatch($reportId);
-            } else {
-                ProcessGoogleReviewAiReportJob::dispatch($reportId);
-            }
+
+            \Log::info('GoogleReview AI report dispatched', [
+                'report_id' => $reportId,
+                'source' => $source,
+                'sync' => $sync,
+                'queue_connection' => $queueConnection,
+                'queue_name' => $queueName,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('GoogleReview AI dispatch failed', [
+                'report_id' => $reportId,
+                'source' => $source,
+                'sync' => $sync,
+                'queue_connection' => $queueConnection,
+                'queue_name' => $queueName,
+                'error' => $e->getMessage(),
+            ]);
+
+            DB::table('google_review_ai_reports')->where('id', $reportId)->update([
+                'status' => 'failed',
+                'error_message' => mb_substr('Dispatch gagal: '.$e->getMessage(), 0, 10000),
+                'progress_phase' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'id' => $reportId,
+                'error' => 'Dispatch job gagal. Cek log server.',
+            ], 500);
         }
 
         return response()->json([

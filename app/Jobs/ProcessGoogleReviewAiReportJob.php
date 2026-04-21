@@ -28,8 +28,18 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
     public function handle(AIAnalyticsService $ai, ApifyGoogleReviewsService $apify): void
     {
+        Log::info('ProcessGoogleReviewAiReportJob started', [
+            'report_id' => $this->reportId,
+            'queue' => $this->queue,
+            'connection' => $this->connection,
+            'attempt' => method_exists($this, 'attempts') ? $this->attempts() : null,
+        ]);
+
         $report = DB::table('google_review_ai_reports')->where('id', $this->reportId)->first();
         if (! $report) {
+            Log::warning('ProcessGoogleReviewAiReportJob report not found', [
+                'report_id' => $this->reportId,
+            ]);
             return;
         }
 
@@ -192,10 +202,16 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 'updated_at' => now(),
             ]);
             $this->pushLog("Selesai. {$finalCount} review tersimpan.");
+            Log::info('ProcessGoogleReviewAiReportJob completed', [
+                'report_id' => $this->reportId,
+                'classified_count' => $finalCount,
+                'source' => $report->source,
+            ]);
         } catch (\Throwable $e) {
             Log::error('ProcessGoogleReviewAiReportJob failed', [
                 'report_id' => $this->reportId,
                 'error' => $e->getMessage(),
+                'trace' => mb_substr($e->getTraceAsString(), 0, 4000),
             ]);
             $this->pushLog('Gagal: '.$e->getMessage());
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
@@ -229,6 +245,11 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
     public function failed(\Throwable $e): void
     {
+        Log::error('ProcessGoogleReviewAiReportJob marked failed()', [
+            'report_id' => $this->reportId,
+            'error' => $e->getMessage(),
+            'trace' => mb_substr($e->getTraceAsString(), 0, 4000),
+        ]);
         DB::table('google_review_ai_reports')->where('id', $this->reportId)->where('status', '!=', 'completed')->update([
             'status' => 'failed',
             'error_message' => mb_substr($e->getMessage(), 0, 10000),
