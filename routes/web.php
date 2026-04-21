@@ -999,6 +999,7 @@ Route::get('/api/ro-khusus/pending-approvals', [FoodFloorOrderController::class,
 Route::get('/api/ro-khusus/{id}', [FoodFloorOrderController::class, 'getROKhususDetail']);
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
 Route::get('/api/floor-order/supplier-available', [\App\Http\Controllers\FoodFloorOrderController::class, 'supplierAvailable']);
+Route::get('/api/floor-order/forecast-budget', [\App\Http\Controllers\FoodFloorOrderController::class, 'forecastBudgetVsInput']);
 
 Route::resource('packing-list', App\Http\Controllers\PackingListController::class);
 

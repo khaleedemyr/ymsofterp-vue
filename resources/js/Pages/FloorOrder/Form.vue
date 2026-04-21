@@ -61,6 +61,7 @@ if (props.order) {
   form.value.items = props.order.items?.map(item => ({ ...item, suggestions: [], showDropdown: false, loading: false, highlightedIndex: -1, _rowKey: Date.now() + '-' + Math.random() })) || form.value.items;
   selectedFOMode.value = props.order.fo_mode;
   mode.value = props.order.input_mode;
+  jadwalSiap.value = true;
 }
 
 const draftId = ref(props.order?.id || null);
@@ -632,6 +633,77 @@ const grandTotalPC = computed(() =>
   }, 0)
 );
 
+/** Total input untuk banding plafon: PC pakai baris form, Tab pakai kategori. */
+const forecastInputTotal = computed(() =>
+  mode.value === 'tab' ? grandTotal.value : grandTotalPC.value
+);
+
+const forecastBudget = ref(null);
+const forecastBudgetLoading = ref(false);
+const forecastBudgetErr = ref('');
+let forecastBudgetDebounce = null;
+
+function scheduleForecastBudgetFetch() {
+  clearTimeout(forecastBudgetDebounce);
+  forecastBudgetDebounce = setTimeout(fetchForecastBudget, 400);
+}
+
+async function fetchForecastBudget() {
+  if (!jadwalSiap.value || !form.value.arrival_date || !selectedWarehouseOutlet.value) {
+    forecastBudget.value = null;
+    forecastBudgetErr.value = '';
+    return;
+  }
+  forecastBudgetLoading.value = true;
+  forecastBudgetErr.value = '';
+  try {
+    const params = {
+      arrival_date: form.value.arrival_date,
+      warehouse_outlet_id: selectedWarehouseOutlet.value,
+      current_input_total: forecastInputTotal.value,
+    };
+    if (draftId.value) params.exclude_floor_order_id = draftId.value;
+    const res = await axios.get('/api/floor-order/forecast-budget', { params });
+    if (res.data?.success) {
+      forecastBudget.value = res.data;
+    } else {
+      forecastBudget.value = null;
+      forecastBudgetErr.value = res.data?.message || 'Gagal memuat forecast';
+    }
+  } catch (e) {
+    forecastBudget.value = null;
+    forecastBudgetErr.value =
+      e.response?.data?.message || e.message || 'Gagal memuat forecast';
+  } finally {
+    forecastBudgetLoading.value = false;
+  }
+}
+
+watch(
+  [
+    jadwalSiap,
+    () => form.value.arrival_date,
+    selectedWarehouseOutlet,
+    draftId,
+    forecastInputTotal,
+    mode,
+  ],
+  () => scheduleForecastBudgetFetch(),
+  { flush: 'post' }
+);
+
+watch(
+  () => form.value.items,
+  () => scheduleForecastBudgetFetch(),
+  { deep: true }
+);
+
+watch(
+  categories,
+  () => scheduleForecastBudgetFetch(),
+  { deep: true }
+);
+
 // Watch selectedFOMode, jika FO Khusus, langsung fetch item availabilities
 watch(selectedFOMode, async (val) => {
   if (val === 'FO Khusus') {
@@ -691,7 +763,13 @@ async function fetchTodaySchedules() {
 }
 
 watch(jadwalSiap, (val) => {
-  if (val) fetchTodaySchedules();
+  if (val) {
+    fetchTodaySchedules();
+    scheduleForecastBudgetFetch();
+  } else {
+    forecastBudget.value = null;
+    forecastBudgetErr.value = '';
+  }
 });
 
 function isTodaySchedule(itemId) {
@@ -734,10 +812,11 @@ function handleF1Key(e) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleF1Key);
-  fetchWarehouseOutlets();
+  fetchWarehouseOutlets().then(() => scheduleForecastBudgetFetch());
 });
 onUnmounted(() => {
   window.removeEventListener('keydown', handleF1Key);
+  clearTimeout(forecastBudgetDebounce);
 });
 
 function formatRupiah(val) {
@@ -952,7 +1031,9 @@ async function fetchWarehouseOutlets() {
     const res = await axios.get('/api/warehouse-outlets', { params: { outlet_id: outlet_id.value, status: 'active' } });
     warehouseOutlets.value = Array.isArray(res.data) ? res.data : [];
     // Auto-select jika hanya satu warehouse
-    if (warehouseOutlets.value.length === 1) {
+    if (props.order?.warehouse_outlet_id) {
+      selectedWarehouseOutlet.value = props.order.warehouse_outlet_id;
+    } else if (warehouseOutlets.value.length === 1) {
       selectedWarehouseOutlet.value = warehouseOutlets.value[0].id;
     }
   } catch (e) {
@@ -1140,6 +1221,51 @@ watch(selectedWarehouseOutlet, (val) => {
       <div v-if="jadwalSiap" class="mb-6 flex gap-4">
         <button :class="['px-4 py-2 rounded-lg font-semibold', mode==='pc' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700']" @click="mode='pc'">Mode PC</button>
         <button :class="['px-4 py-2 rounded-lg font-semibold', mode==='tab' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700']" @click="mode='tab'">Mode Tab</button>
+      </div>
+      <div
+        v-if="jadwalSiap && form.arrival_date && selectedWarehouseOutlet"
+        class="mb-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-slate-50 p-4 text-sm shadow-sm"
+      >
+        <div class="font-semibold text-indigo-900 mb-2">Forecast &amp; plafon (tanggal kedatangan &amp; warehouse ini)</div>
+        <div v-if="forecastBudgetLoading" class="text-gray-600 flex items-center gap-2">
+          <i class="fas fa-spinner fa-spin"></i>
+          Menghitung…
+        </div>
+        <div v-else-if="forecastBudgetErr" class="text-red-600">{{ forecastBudgetErr }}</div>
+        <template v-else-if="forecastBudget">
+          <div v-if="!forecastBudget.has_revenue_target_header" class="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Belum ada Revenue Targets untuk bulan tanggal kedatangan ini — forecast harian tidak tersedia.
+          </div>
+          <div v-else class="space-y-2">
+            <div class="flex flex-wrap gap-x-6 gap-y-1">
+              <span>Forecast harian: <strong>{{ formatRupiah(forecastBudget.forecast_revenue) }}</strong></span>
+              <span class="text-gray-700">{{ forecastBudget.bucket_label }}</span>
+            </div>
+            <div class="flex flex-wrap gap-x-6 gap-y-1 text-gray-800">
+              <span v-if="forecastBudget.plafon !== null">
+                Plafon bucket: <strong>{{ formatRupiah(forecastBudget.plafon) }}</strong>
+              </span>
+              <span v-else class="text-gray-600">
+                Referensi cap K+B: {{ formatRupiah(forecastBudget.cap_kitchen_bar) }} · Service: {{ formatRupiah(forecastBudget.cap_service) }}
+              </span>
+            </div>
+            <div class="flex flex-wrap gap-x-6 gap-y-1 border-t border-indigo-100 pt-2 mt-2">
+              <span>RO lain (tanggal &amp; warehouse sama): <strong>{{ formatRupiah(forecastBudget.committed_other_fo) }}</strong></span>
+              <span>Input Anda sekarang: <strong>{{ formatRupiah(forecastBudget.current_input_total) }}</strong></span>
+            </div>
+            <div
+              v-if="forecastBudget.sisa_plafon !== null && forecastBudget.sisa_plafon !== undefined"
+              :class="forecastBudget.over_cap ? 'text-red-700 bg-red-50 border border-red-200' : 'text-green-800 bg-green-50 border border-green-200'"
+              class="rounded-lg px-3 py-2 font-semibold"
+            >
+              Sisa plafon (plafon − RO lain − input Anda): {{ formatRupiah(forecastBudget.sisa_plafon) }}
+              <span v-if="forecastBudget.over_cap" class="block text-sm font-normal mt-1">Melebihi plafon untuk bucket ini.</span>
+            </div>
+            <p v-if="forecastBudget.bucket === 'other'" class="text-xs text-gray-600">
+              Nama warehouse bukan Kitchen/Bar/Service persis — perbandingan plafon K+B atau Service tidak dipakai (sama seperti laporan RO vs Forecast).
+            </p>
+          </div>
+        </template>
       </div>
       <div v-if="mode==='pc' && jadwalSiap">
         <div v-if="!error || error !== 'Di luar jam operasional'" class="bg-white rounded-2xl shadow-2xl p-6">

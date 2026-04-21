@@ -489,6 +489,7 @@ Route::prefix('approval-app')->group(function () {
         // Floor Order (Approval App)
         Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
         Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);
+        Route::get('/floor-orders/forecast-budget', [FoodFloorOrderController::class, 'forecastBudgetVsInput']);
         Route::get('/floor-orders/supplier-available', [FoodFloorOrderController::class, 'supplierAvailable']);
         Route::get('/floor-orders/{id}', [FoodFloorOrderController::class, 'apiShow']);
         Route::post('/floor-orders', [FoodFloorOrderController::class, 'store']);

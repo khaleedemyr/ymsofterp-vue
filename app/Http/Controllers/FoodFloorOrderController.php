@@ -14,9 +14,14 @@ use App\Services\FloorOrderService;
 use Carbon\Carbon;
 use App\Models\WarehouseOutlet;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\DB;
 
 class FoodFloorOrderController extends Controller
 {
+    private const FORECAST_KITCHEN_BAR_RATIO = 0.35;
+
+    private const FORECAST_SERVICE_RATIO = 0.05;
+
     protected $floorOrderService;
 
     public function __construct(FloorOrderService $floorOrderService)
@@ -1157,5 +1162,115 @@ class FoodFloorOrderController extends Controller
 
         $filename = 'RO-' . $order->order_number . '.pdf';
         return $pdf->download($filename);
+    }
+
+    /**
+     * Forecast harian + plafon vs RO lain & input form (satu tanggal kedatangan + warehouse outlet).
+     * Selaras dengan laporan RO vs Forecast: nama warehouse harus persis kitchen/bar/service (lower trim).
+     */
+    public function forecastBudgetVsInput(Request $request)
+    {
+        $validated = $request->validate([
+            'arrival_date' => 'required|date',
+            'warehouse_outlet_id' => 'required|integer',
+            'exclude_floor_order_id' => 'nullable|integer',
+            'current_input_total' => 'nullable|numeric|min:0',
+        ]);
+
+        $user = Auth::user();
+        $outletId = (int) ($user->id_outlet ?? 0);
+        if ($outletId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Outlet tidak valid'], 422);
+        }
+
+        $arrival = Carbon::parse($validated['arrival_date'])->toDateString();
+        $monthStart = Carbon::parse($validated['arrival_date'])->copy()->startOfMonth()->toDateString();
+        $whId = (int) $validated['warehouse_outlet_id'];
+
+        $wo = DB::table('warehouse_outlets')->where('id', $whId)->first(['id', 'name']);
+        if (!$wo) {
+            return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak ditemukan'], 422);
+        }
+
+        $nameNorm = strtolower(trim((string) ($wo->name ?? '')));
+        $bucket = 'other';
+        if (in_array($nameNorm, ['kitchen', 'bar'], true)) {
+            $bucket = 'kitchen_bar';
+        } elseif ($nameNorm === 'service') {
+            $bucket = 'service';
+        }
+
+        $bucketLabels = [
+            'kitchen_bar' => 'Kitchen + Bar (35% dari forecast)',
+            'service' => 'Service (5% dari forecast)',
+            'other' => 'Lainnya (tanpa plafon K+B / Service)',
+        ];
+
+        $forecastForDay = 0.0;
+        $hasHeader = false;
+
+        $header = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->where('target_month', $monthStart)
+            ->first(['id']);
+
+        if ($header) {
+            $hasHeader = true;
+            $detail = DB::table('outlet_revenue_target_details')
+                ->where('header_id', $header->id)
+                ->whereDate('forecast_date', $arrival)
+                ->first(['forecast_revenue']);
+            if ($detail) {
+                $forecastForDay = (float) $detail->forecast_revenue;
+            }
+        }
+
+        $capKb = round($forecastForDay * self::FORECAST_KITCHEN_BAR_RATIO, 2);
+        $capSvc = round($forecastForDay * self::FORECAST_SERVICE_RATIO, 2);
+
+        $plafon = match ($bucket) {
+            'kitchen_bar' => $capKb,
+            'service' => $capSvc,
+            default => null,
+        };
+
+        $committedQuery = DB::table('food_floor_orders as ffo')
+            ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->where('ffo.id_outlet', $outletId)
+            ->whereDate('ffo.arrival_date', $arrival)
+            ->where('ffo.warehouse_outlet_id', $whId)
+            ->whereNotIn('ffo.status', ['draft', 'rejected']);
+
+        if (!empty($validated['exclude_floor_order_id'])) {
+            $committedQuery->where('ffo.id', '!=', (int) $validated['exclude_floor_order_id']);
+        }
+
+        $committed = (float) ($committedQuery
+            ->selectRaw('SUM(COALESCE(ffoi.subtotal, (COALESCE(ffoi.qty, 0) * COALESCE(ffoi.price, 0)))) AS total')
+            ->value('total') ?? 0);
+
+        $currentInput = round((float) ($validated['current_input_total'] ?? 0), 2);
+
+        $sisaPlafon = null;
+        $overCap = null;
+        if ($plafon !== null) {
+            $sisaPlafon = round((float) $plafon - $committed - $currentInput, 2);
+            $overCap = $sisaPlafon < 0;
+        }
+
+        return response()->json([
+            'success' => true,
+            'has_revenue_target_header' => $hasHeader,
+            'forecast_revenue' => round($forecastForDay, 2),
+            'cap_kitchen_bar' => $capKb,
+            'cap_service' => $capSvc,
+            'bucket' => $bucket,
+            'bucket_label' => $bucketLabels[$bucket] ?? $bucket,
+            'plafon' => $plafon !== null ? round((float) $plafon, 2) : null,
+            'committed_other_fo' => round($committed, 2),
+            'current_input_total' => $currentInput,
+            'sisa_plafon' => $sisaPlafon !== null ? round((float) $sisaPlafon, 2) : null,
+            'over_cap' => $overCap,
+        ]);
     }
 } 
