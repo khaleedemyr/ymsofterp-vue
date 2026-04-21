@@ -200,6 +200,7 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
 
     Route::get('/guest-comment-forms', [GuestCommentFormController::class, 'index'])->name('guest-comment-forms.index');
+    Route::get('/guest-comment-forms/gsi-dashboard', [GuestCommentFormController::class, 'gsiDashboard'])->name('guest-comment-forms.gsi-dashboard');
     Route::get('/guest-comment-forms/create', [GuestCommentFormController::class, 'create'])->name('guest-comment-forms.create');
     Route::post('/guest-comment-forms', [GuestCommentFormController::class, 'store'])->name('guest-comment-forms.store');
     Route::get('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'show'])->name('guest-comment-forms.show');

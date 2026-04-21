@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\GuestCommentForm;
 use App\Models\Outlet;
 use App\Services\GuestCommentOcrService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -126,6 +128,236 @@ class GuestCommentFormController extends Controller
                 'date_to' => $request->date_to,
             ],
         ]);
+    }
+
+    public function gsiDashboard(Request $request)
+    {
+        $userOutletId = (int) ($request->user()->id_outlet ?? 0);
+        $canChooseOutlet = ($userOutletId === 1);
+
+        $month = (string) ($request->input('month') ?: now()->format('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = now()->format('Y-m');
+        }
+
+        $selectedOutletId = (int) ($request->input('id_outlet') ?: 0);
+        if (! $canChooseOutlet) {
+            $selectedOutletId = max(0, $userOutletId);
+        }
+
+        $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $lastMonthStart = $monthStart->copy()->subMonth()->startOfMonth();
+        $lastMonthEnd = $lastMonthStart->copy()->endOfMonth();
+
+        $subjectColumns = [
+            'rating_service' => 'Quality of Service',
+            'rating_food' => 'Quality of Food',
+            'rating_beverage' => 'Quality of Beverage',
+            'rating_cleanliness' => 'Quality of Cleanliness',
+            'rating_staff' => 'Attentiveness of Staff',
+            'rating_value' => 'Value for Money',
+        ];
+
+        $currentStats = $this->buildGsiSubjectStats(
+            $subjectColumns,
+            $monthStart,
+            $monthEnd,
+            $selectedOutletId,
+            $canChooseOutlet,
+            $userOutletId
+        );
+
+        $lastStats = $this->buildGsiSubjectStats(
+            $subjectColumns,
+            $lastMonthStart,
+            $lastMonthEnd,
+            $selectedOutletId,
+            $canChooseOutlet,
+            $userOutletId
+        );
+
+        $rows = [];
+        foreach ($subjectColumns as $column => $label) {
+            $cur = $currentStats['subjects'][$column] ?? [];
+            $prev = $lastStats['subjects'][$column] ?? [];
+            $rows[] = [
+                'subject' => $label,
+                'excellent' => (int) ($cur['excellent'] ?? 0),
+                'good' => (int) ($cur['good'] ?? 0),
+                'average' => (int) ($cur['average'] ?? 0),
+                'poor' => (int) ($cur['poor'] ?? 0),
+                'abstain' => (int) ($cur['abstain'] ?? 0),
+                'total_responses' => (int) ($cur['responses'] ?? 0),
+                'mtd_pct' => $cur['mtd_pct'] ?? null,
+                'last_month_pct' => $prev['mtd_pct'] ?? null,
+            ];
+        }
+
+        $overallMtd = $currentStats['overall_pct'];
+        $overallLastMonth = $lastStats['overall_pct'];
+        $overallDelta = null;
+        if ($overallMtd !== null && $overallLastMonth !== null) {
+            $overallDelta = round($overallMtd - $overallLastMonth, 2);
+        }
+
+        $outlets = $canChooseOutlet
+            ? Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet'])
+            : collect();
+        $lockedOutlet = null;
+        if (! $canChooseOutlet && $userOutletId > 0) {
+            $lockedOutlet = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->first(['id_outlet', 'nama_outlet']);
+        }
+        $selectedOutlet = null;
+        if ($selectedOutletId > 0) {
+            $selectedOutlet = Outlet::where('id_outlet', $selectedOutletId)->first(['id_outlet', 'nama_outlet']);
+        }
+
+        return Inertia::render('GuestComment/GSIDashboard', [
+            'filters' => [
+                'month' => $month,
+                'id_outlet' => $canChooseOutlet ? ($selectedOutletId > 0 ? $selectedOutletId : null) : $selectedOutletId,
+            ],
+            'canChooseOutlet' => $canChooseOutlet,
+            'outlets' => $outlets,
+            'lockedOutlet' => $lockedOutlet,
+            'selectedOutlet' => $selectedOutlet,
+            'summary' => [
+                'total_forms' => (int) ($currentStats['total_forms'] ?? 0),
+                'overall_mtd_pct' => $overallMtd,
+                'overall_last_month_pct' => $overallLastMonth,
+                'overall_delta_pct' => $overallDelta,
+                'min_target_pct' => 85,
+            ],
+            'rows' => $rows,
+            'trend' => $this->buildGsiMonthlyTrend($subjectColumns, $monthStart, $selectedOutletId, $canChooseOutlet, $userOutletId, 6),
+            'outletRanking' => $canChooseOutlet && $selectedOutletId <= 0
+                ? $this->buildGsiOutletRanking($subjectColumns, $monthStart, $monthEnd)
+                : [],
+        ]);
+    }
+
+    private function applyOutletScope($query, int $selectedOutletId, bool $canChooseOutlet, int $userOutletId)
+    {
+        if ($canChooseOutlet) {
+            if ($selectedOutletId > 0) {
+                $query->where('id_outlet', $selectedOutletId);
+            }
+        } elseif ($userOutletId > 0) {
+            $query->where('id_outlet', $userOutletId);
+        } else {
+            $query->whereRaw('0=1');
+        }
+
+        return $query;
+    }
+
+    private function buildGsiSubjectStats(array $subjectColumns, Carbon $start, Carbon $end, int $selectedOutletId, bool $canChooseOutlet, int $userOutletId): array
+    {
+        $base = DB::table('guest_comment_forms')
+            ->where('status', 'verified')
+            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()]);
+        $this->applyOutletScope($base, $selectedOutletId, $canChooseOutlet, $userOutletId);
+
+        $totalForms = (int) (clone $base)->count();
+        $subjects = [];
+        $overallPositive = 0;
+        $overallResponses = 0;
+
+        foreach ($subjectColumns as $column => $label) {
+            $r = (clone $base)
+                ->selectRaw("
+                    SUM(CASE WHEN {$column} = 'excellent' THEN 1 ELSE 0 END) AS excellent,
+                    SUM(CASE WHEN {$column} = 'good' THEN 1 ELSE 0 END) AS good,
+                    SUM(CASE WHEN {$column} = 'average' THEN 1 ELSE 0 END) AS average,
+                    SUM(CASE WHEN {$column} = 'poor' THEN 1 ELSE 0 END) AS poor
+                ")
+                ->first();
+
+            $excellent = (int) ($r->excellent ?? 0);
+            $good = (int) ($r->good ?? 0);
+            $average = (int) ($r->average ?? 0);
+            $poor = (int) ($r->poor ?? 0);
+            $responses = $excellent + $good + $average + $poor;
+            $abstain = max(0, $totalForms - $responses);
+            $positive = $excellent + $good;
+            $mtdPct = $responses > 0 ? round(($positive / $responses) * 100, 2) : null;
+
+            $subjects[$column] = [
+                'label' => $label,
+                'excellent' => $excellent,
+                'good' => $good,
+                'average' => $average,
+                'poor' => $poor,
+                'abstain' => $abstain,
+                'responses' => $responses,
+                'mtd_pct' => $mtdPct,
+            ];
+
+            $overallPositive += $positive;
+            $overallResponses += $responses;
+        }
+
+        return [
+            'total_forms' => $totalForms,
+            'subjects' => $subjects,
+            'overall_pct' => $overallResponses > 0 ? round(($overallPositive / $overallResponses) * 100, 2) : null,
+        ];
+    }
+
+    private function buildGsiMonthlyTrend(array $subjectColumns, Carbon $selectedMonthStart, int $selectedOutletId, bool $canChooseOutlet, int $userOutletId, int $monthsBack = 6): array
+    {
+        $rows = [];
+        for ($i = $monthsBack - 1; $i >= 0; $i--) {
+            $start = $selectedMonthStart->copy()->subMonths($i)->startOfMonth();
+            $end = $start->copy()->endOfMonth();
+            $stats = $this->buildGsiSubjectStats($subjectColumns, $start, $end, $selectedOutletId, $canChooseOutlet, $userOutletId);
+            $rows[] = [
+                'month' => $start->format('Y-m'),
+                'label' => strtoupper($start->locale('id')->translatedFormat('M Y')),
+                'gsi_pct' => $stats['overall_pct'],
+                'total_forms' => (int) ($stats['total_forms'] ?? 0),
+            ];
+        }
+        return $rows;
+    }
+
+    private function buildGsiOutletRanking(array $subjectColumns, Carbon $start, Carbon $end): array
+    {
+        $positiveExprParts = [];
+        $responseExprParts = [];
+        foreach (array_keys($subjectColumns) as $column) {
+            $positiveExprParts[] = "SUM(CASE WHEN g.{$column} IN ('excellent','good') THEN 1 ELSE 0 END)";
+            $responseExprParts[] = "SUM(CASE WHEN g.{$column} IN ('excellent','good','average','poor') THEN 1 ELSE 0 END)";
+        }
+        $positiveExpr = implode(' + ', $positiveExprParts);
+        $responseExpr = implode(' + ', $responseExprParts);
+
+        $rows = DB::table('guest_comment_forms as g')
+            ->join('tbl_data_outlet as o', 'o.id_outlet', '=', 'g.id_outlet')
+            ->where('g.status', 'verified')
+            ->whereNotNull('g.id_outlet')
+            ->whereBetween('g.created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->groupBy('g.id_outlet', 'o.nama_outlet')
+            ->selectRaw("g.id_outlet as outlet_id, o.nama_outlet as outlet_name, {$responseExpr} as responses, {$positiveExpr} as positives")
+            ->get();
+
+        return collect($rows)
+            ->map(function ($r) {
+                $responses = (int) ($r->responses ?? 0);
+                $positives = (int) ($r->positives ?? 0);
+                return [
+                    'outlet_id' => (int) $r->outlet_id,
+                    'outlet_name' => (string) $r->outlet_name,
+                    'responses' => $responses,
+                    'gsi_pct' => $responses > 0 ? round(($positives / $responses) * 100, 2) : null,
+                ];
+            })
+            ->filter(fn ($r) => $r['responses'] > 0)
+            ->sortByDesc(fn ($r) => $r['gsi_pct'] ?? -1)
+            ->take(10)
+            ->values()
+            ->all();
     }
 
     public function create()

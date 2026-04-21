@@ -153,12 +153,20 @@ async function confirmDelete(row) {
           <i class="fa-solid fa-comment-dots text-blue-500"></i>
           Guest Comment (OCR)
         </h1>
-        <Link
-          :href="route('guest-comment-forms.create')"
-          class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all font-semibold"
-        >
-          + Unggah formulir
-        </Link>
+        <div class="flex items-center gap-2">
+          <Link
+            :href="route('guest-comment-forms.gsi-dashboard')"
+            class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all font-semibold"
+          >
+            <i class="fa-solid fa-chart-line mr-2"></i>Dashboard GSI
+          </Link>
+          <Link
+            :href="route('guest-comment-forms.create')"
+            class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all font-semibold"
+          >
+            + Unggah formulir
+          </Link>
+        </div>
       </div>
 
       <div v-if="!canChooseOutlet && lockedOutlet" class="mb-3 inline-flex items-center gap-2 bg-blue-50 text-blue-900 px-4 py-2 rounded-xl text-sm font-semibold">
