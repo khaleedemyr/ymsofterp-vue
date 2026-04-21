@@ -159,9 +159,11 @@ class OutletRevenueTargetController extends Controller
         $validated = $request->validate([
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'monthly_target' => 'required|numeric|min:0.01',
         ]);
 
         $outletId = (int) $validated['outlet_id'];
+        $inputMonthlyTarget = (float) $validated['monthly_target'];
         if (!$isAdminOutlet) {
             $outletId = (int) ($user->id_outlet ?? 0);
         }
@@ -342,16 +344,23 @@ class OutletRevenueTargetController extends Controller
             $cursor->addDay();
         }
 
-        $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $suggestedMonthlyTarget;
+        $targetMonthlyFromHistory = $last3AverageMonthly > 0 ? ($last3AverageMonthly * $combinedFactor) : $inputMonthlyTarget;
         $normalizationFactor = 1.0;
-        if ($suggestedMonthlyTarget > 0 && $targetMonthlyFromHistory > 0) {
-            $normalizationFactor = $targetMonthlyFromHistory / $suggestedMonthlyTarget;
+        if ($suggestedMonthlyTarget > 0 && $inputMonthlyTarget > 0) {
+            $normalizationFactor = $inputMonthlyTarget / $suggestedMonthlyTarget;
             $suggestedMonthlyTarget = 0.0;
 
             foreach ($suggestions as $idx => $row) {
                 $normalized = round(max(0, ((float) $row['forecast_revenue']) * $normalizationFactor), 2);
                 $suggestions[$idx]['forecast_revenue'] = $normalized;
                 $suggestedMonthlyTarget += $normalized;
+            }
+        } elseif (!empty($suggestions) && $inputMonthlyTarget > 0) {
+            $equalPerDay = round($inputMonthlyTarget / count($suggestions), 2);
+            $suggestedMonthlyTarget = 0.0;
+            foreach ($suggestions as $idx => $row) {
+                $suggestions[$idx]['forecast_revenue'] = $equalPerDay;
+                $suggestedMonthlyTarget += $equalPerDay;
             }
         }
 
@@ -361,7 +370,7 @@ class OutletRevenueTargetController extends Controller
                 'name' => $outlet->nama_outlet,
             ],
             'month' => $validated['month'],
-            'monthly_target_suggested' => round($suggestedMonthlyTarget, 2),
+            'monthly_target_suggested' => round($inputMonthlyTarget, 2),
             'forecasts' => $suggestions,
             'factors' => [
                 'momentum_factor' => round($momentumFactor, 4),
@@ -371,12 +380,13 @@ class OutletRevenueTargetController extends Controller
                 'holiday_boost' => round($holidayBoost, 4),
                 'previous_month_total' => round($previousMonthTotal, 2),
                 'last3_average_monthly' => round($last3AverageMonthly, 2),
+                'input_monthly_target' => round($inputMonthlyTarget, 2),
                 'target_monthly_from_history' => round($targetMonthlyFromHistory, 2),
                 'normalization_factor' => round($normalizationFactor, 4),
                 'reference_months' => $referenceMonths,
                 'historical_reference_month' => $previousMonthStart->format('Y-m'),
             ],
-            'note' => 'Saran AI dibuat dari rata-rata 3 bulan terakhir, pola kalender, tren penjualan terbaru, dan faktor ekonomi global. Semua nilai tetap bisa diedit manual.',
+            'note' => 'Saran AI membagi forecast harian berdasarkan pola 3 bulan terakhir dan kalender, lalu dinormalisasi agar mengikuti monthly target input user.',
         ]);
     }
 

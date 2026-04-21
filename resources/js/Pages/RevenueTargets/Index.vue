@@ -171,15 +171,21 @@ async function suggestAI() {
     suggestError.value = 'Pilih outlet dan bulan dulu sebelum generate suggestion.'
     return
   }
+  const normalizedMonthlyTarget = parseFormattedNumber(monthlyTarget.value)
+  if (normalizedMonthlyTarget === null || normalizedMonthlyTarget <= 0) {
+    suggestError.value = 'Isi Monthly Target dulu (lebih dari 0), baru klik AI Suggest.'
+    return
+  }
 
   suggesting.value = true
   try {
     const { data } = await axios.post(route('outlet-revenue-targets.suggest'), {
       outlet_id: selectedOutletId.value,
       month: selectedMonth.value,
+      monthly_target: normalizedMonthlyTarget,
     })
 
-    monthlyTarget.value = formatNumberId(data?.monthly_target_suggested ?? monthlyTarget.value)
+    monthlyTarget.value = formatNumberId(normalizedMonthlyTarget)
 
     const suggestedMap = new Map((data?.forecasts || []).map((x) => [x.forecast_date, x.forecast_revenue]))
     forecasts.value = forecasts.value.map((row) => ({
@@ -340,8 +346,8 @@ fetchHolidays()
         </div>
 
         <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
-          AI suggestion otomatis dihitung dari histori bulan sebelumnya, pola weekday/weekend/hari libur, dan momentum tren outlet.
-          Semua angka tetap bisa diubah manual sebelum simpan.
+          Monthly Target wajib diisi dulu. AI Suggest akan membagi forecast harian berdasarkan pola 3 bulan terakhir + kalender (weekday/weekend/libur),
+          lalu menyesuaikan total agar tetap mengikuti Monthly Target yang kamu input.
         </div>
 
         <div v-if="suggestError" class="mt-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -355,6 +361,7 @@ fetchHolidays()
           <strong>{{ suggestInfo.global_economy_factor }}</strong>, holiday boost
           <strong>{{ suggestInfo.holiday_boost }}</strong>, rata-rata 3 bulan
           <strong>Rp {{ new Intl.NumberFormat('id-ID').format(suggestInfo.last3_average_monthly || 0) }}</strong>,
+          target input <strong>Rp {{ new Intl.NumberFormat('id-ID').format(suggestInfo.input_monthly_target || 0) }}</strong>,
           normalisasi <strong>{{ suggestInfo.normalization_factor }}</strong>.
         </div>
       </div>
