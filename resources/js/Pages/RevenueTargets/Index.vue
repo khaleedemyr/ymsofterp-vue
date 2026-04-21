@@ -22,6 +22,10 @@ const suggesting = ref(false)
 const suggestError = ref('')
 const suggestInfo = ref(null)
 const holidays = ref([])
+const historyMonthsBack = ref(1)
+const historyOverwrite = ref(false)
+const historyLoading = ref(false)
+const historyMessage = ref('')
 const bulkStartDate = ref('')
 const bulkEndDate = ref('')
 const bulkMode = ref('set')
@@ -233,6 +237,33 @@ async function suggestAI() {
   }
 }
 
+async function generateHistorical() {
+  suggestError.value = ''
+  historyMessage.value = ''
+
+  if (!selectedOutletId.value || !selectedMonth.value) {
+    suggestError.value = 'Pilih outlet dan bulan dulu sebelum generate historis.'
+    return
+  }
+
+  historyLoading.value = true
+  try {
+    const { data } = await axios.post(route('outlet-revenue-targets.generate-historical'), {
+      outlet_id: selectedOutletId.value,
+      end_month: selectedMonth.value,
+      months_back: historyMonthsBack.value,
+      overwrite: historyOverwrite.value,
+    })
+
+    historyMessage.value = data?.message || 'Generate historis berhasil.'
+    loadData()
+  } catch (error) {
+    suggestError.value = error?.response?.data?.message || 'Gagal generate historis revenue.'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
 function onMonthlyTargetFocus() {
   monthlyTarget.value = toEditableNumber(monthlyTarget.value)
 }
@@ -380,6 +411,40 @@ fetchHolidays()
         <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
           Monthly Target wajib diisi dulu. AI Suggest akan membagi forecast harian berdasarkan pola 3 bulan terakhir + kalender (weekday/weekend/libur),
           lalu menyesuaikan total agar tetap mengikuti Monthly Target yang kamu input.
+        </div>
+
+        <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Generate Revenue Historis</p>
+          <div class="grid grid-cols-1 gap-2 md:grid-cols-6">
+            <div>
+              <label class="mb-1 block text-[11px] font-semibold text-slate-500">Jumlah Bulan</label>
+              <select
+                v-model.number="historyMonthsBack"
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option v-for="n in 12" :key="n" :value="n">{{ n }} bulan</option>
+              </select>
+            </div>
+            <div class="md:col-span-2 flex items-end">
+              <label class="inline-flex items-center gap-2 text-sm text-slate-600">
+                <input v-model="historyOverwrite" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                Overwrite data bulan yang sudah ada
+              </label>
+            </div>
+            <div class="md:col-span-3 flex items-end justify-start md:justify-end">
+              <button
+                type="button"
+                class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="historyLoading"
+                @click="generateHistorical"
+              >
+                {{ historyLoading ? 'Generating...' : 'Generate Historis (Orders)' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="historyMessage" class="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {{ historyMessage }}
+          </div>
         </div>
 
         <div v-if="suggestError" class="mt-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">

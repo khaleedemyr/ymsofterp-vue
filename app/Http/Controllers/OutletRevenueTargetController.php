@@ -415,6 +415,137 @@ class OutletRevenueTargetController extends Controller
         ]);
     }
 
+    public function generateHistorical(Request $request)
+    {
+        $user = auth()->user();
+        $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'end_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'months_back' => 'required|integer|min:1|max:12',
+            'overwrite' => 'nullable|boolean',
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        if (!$isAdminOutlet) {
+            $outletId = (int) ($user->id_outlet ?? 0);
+        }
+
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->select('id_outlet', 'qr_code', 'nama_outlet')
+            ->first();
+
+        if (!$outlet || empty($outlet->qr_code)) {
+            return response()->json([
+                'message' => 'Outlet tidak valid atau QR Code outlet belum tersedia.',
+            ], 422);
+        }
+
+        $endMonthStart = Carbon::createFromFormat('Y-m', $validated['end_month'])->startOfMonth();
+        $monthsBack = (int) $validated['months_back'];
+        $overwrite = (bool) ($validated['overwrite'] ?? false);
+
+        $generated = 0;
+        $skipped = 0;
+        $processedMonths = [];
+
+        DB::transaction(function () use (
+            $monthsBack,
+            $endMonthStart,
+            $outlet,
+            $outletId,
+            $overwrite,
+            $user,
+            &$generated,
+            &$skipped,
+            &$processedMonths
+        ) {
+            for ($offset = 0; $offset < $monthsBack; $offset++) {
+                $monthStart = $endMonthStart->copy()->subMonths($offset)->startOfMonth();
+                $monthEnd = $monthStart->copy()->endOfMonth();
+                $monthKey = $monthStart->format('Y-m');
+
+                $dailyActual = DB::table('orders')
+                    ->where('kode_outlet', $outlet->qr_code)
+                    ->whereBetween('created_at', [
+                        $monthStart->toDateString() . ' 00:00:00',
+                        $monthEnd->toDateString() . ' 23:59:59',
+                    ])
+                    ->where('status', '!=', 'cancelled')
+                    ->where('grand_total', '>', 0)
+                    ->selectRaw('DATE(created_at) as dt, SUM(grand_total) as revenue')
+                    ->groupBy('dt')
+                    ->pluck('revenue', 'dt');
+
+                $monthlyTarget = (float) collect($dailyActual)->sum();
+                $targetMonthDate = $monthStart->toDateString();
+
+                $existingHeader = DB::table('outlet_revenue_target_headers')
+                    ->where('outlet_id', $outletId)
+                    ->where('target_month', $targetMonthDate)
+                    ->first();
+
+                if ($existingHeader && !$overwrite) {
+                    $skipped++;
+                    continue;
+                }
+
+                if ($existingHeader) {
+                    DB::table('outlet_revenue_target_headers')
+                        ->where('id', $existingHeader->id)
+                        ->update([
+                            'monthly_target' => $monthlyTarget,
+                            'updated_by' => $user->id,
+                            'updated_at' => now(),
+                        ]);
+                    $headerId = (int) $existingHeader->id;
+                    DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
+                } else {
+                    $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
+                        'outlet_id' => $outletId,
+                        'target_month' => $targetMonthDate,
+                        'monthly_target' => $monthlyTarget,
+                        'created_by' => $user->id,
+                        'updated_by' => $user->id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                $rows = [];
+                $cursor = $monthStart->copy();
+                while ($cursor->lte($monthEnd)) {
+                    $dateKey = $cursor->toDateString();
+                    $rows[] = [
+                        'header_id' => $headerId,
+                        'forecast_date' => $dateKey,
+                        'forecast_revenue' => (float) ($dailyActual[$dateKey] ?? 0),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                    $cursor->addDay();
+                }
+
+                if (!empty($rows)) {
+                    DB::table('outlet_revenue_target_details')->insert($rows);
+                }
+
+                $generated++;
+                $processedMonths[] = $monthKey;
+            }
+        });
+
+        return response()->json([
+            'message' => "Generate historis selesai. Generated {$generated} bulan, skipped {$skipped} bulan.",
+            'generated' => $generated,
+            'skipped' => $skipped,
+            'months' => $processedMonths,
+            'overwrite' => $overwrite,
+        ]);
+    }
+
     private function average(array $values): float
     {
         if (empty($values)) {
