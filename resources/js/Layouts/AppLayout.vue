@@ -137,6 +137,7 @@ const menuGroups = [
             { name: () => 'Daily Report', icon: 'fa-solid fa-clipboard-list', route: '/daily-report', code: 'daily_report' },
             { name: () => 'Ticketing System', icon: 'fa-solid fa-ticket-alt', route: '/tickets', code: 'tickets' },
             { name: () => 'PR Tracking Report', icon: 'fa-solid fa-timeline', route: '/purchase-requisitions/tracking-report', code: 'pr_tracking_report' },
+            { name: () => 'RO vs Forecast Harian', icon: 'fa-solid fa-scale-balanced', route: '/reports/floor-order-vs-forecast', code: 'floor_order_vs_forecast' },
           ],
         },
     {

@@ -11,6 +11,41 @@ class OutletRevenueTargetController extends Controller
 {
     public function index(Request $request)
     {
+        $payload = $this->buildRevenueTargetsIndexPayload($request);
+
+        return Inertia::render('RevenueTargets/Index', [
+            'outlets' => $payload['outlets'],
+            'selectedOutletId' => $payload['selectedOutletId'],
+            'selectedMonth' => $payload['selectedMonth'],
+            'monthlyTarget' => $payload['monthlyTarget'],
+            'existingForecasts' => $payload['existingForecasts'],
+            'canSelectOutlet' => $payload['canSelectOutlet'],
+        ]);
+    }
+
+    /**
+     * GET /api/approval-app/outlet-revenue-targets — payload sama seperti halaman web (mobile app).
+     */
+    public function apiIndex(Request $request)
+    {
+        $payload = $this->buildRevenueTargetsIndexPayload($request);
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $payload['outlets'],
+            'selectedOutletId' => $payload['selectedOutletId'],
+            'selectedMonth' => $payload['selectedMonth'],
+            'monthlyTarget' => $payload['monthlyTarget'],
+            'existingForecasts' => $payload['existingForecasts'],
+            'canSelectOutlet' => $payload['canSelectOutlet'],
+        ]);
+    }
+
+    /**
+     * @return array{outlets:\Illuminate\Support\Collection, selectedOutletId:int, selectedMonth:string, monthlyTarget:mixed, existingForecasts:\Illuminate\Support\Collection|array, canSelectOutlet:bool}
+     */
+    protected function buildRevenueTargetsIndexPayload(Request $request): array
+    {
         $user = auth()->user();
         $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
 
@@ -55,14 +90,14 @@ class OutletRevenueTargetController extends Controller
             }
         }
 
-        return Inertia::render('RevenueTargets/Index', [
+        return [
             'outlets' => $outlets,
             'selectedOutletId' => $selectedOutletId,
             'selectedMonth' => $month,
             'monthlyTarget' => $monthlyTarget,
             'existingForecasts' => $existingForecasts,
             'canSelectOutlet' => $isAdminOutlet,
-        ]);
+        ];
     }
 
     public function store(Request $request)
@@ -149,6 +184,95 @@ class OutletRevenueTargetController extends Controller
                 'month' => $validated['month'],
             ])
             ->with('success', 'Monthly target & daily forecast berhasil disimpan.');
+    }
+
+    /**
+     * POST /api/approval-app/outlet-revenue-targets — simpan target (response JSON untuk mobile).
+     */
+    public function apiStore(Request $request)
+    {
+        $user = auth()->user();
+        $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'monthly_target' => 'nullable|numeric|min:0',
+            'forecasts' => 'nullable|array',
+            'forecasts.*.forecast_date' => 'required|date',
+            'forecasts.*.forecast_revenue' => 'nullable|numeric|min:0',
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        if (!$isAdminOutlet) {
+            $outletId = (int) ($user->id_outlet ?? 0);
+        }
+
+        $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth()->toDateString();
+        $startOfMonth = Carbon::parse($monthDate)->startOfMonth();
+        $endOfMonth = Carbon::parse($monthDate)->endOfMonth();
+
+        DB::transaction(function () use ($validated, $outletId, $monthDate, $user, $startOfMonth, $endOfMonth) {
+            $header = DB::table('outlet_revenue_target_headers')
+                ->where('outlet_id', $outletId)
+                ->where('target_month', $monthDate)
+                ->first();
+
+            if ($header) {
+                DB::table('outlet_revenue_target_headers')
+                    ->where('id', $header->id)
+                    ->update([
+                        'monthly_target' => $validated['monthly_target'] ?? 0,
+                        'updated_by' => $user->id,
+                        'updated_at' => now(),
+                    ]);
+                $headerId = $header->id;
+            } else {
+                $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
+                    'outlet_id' => $outletId,
+                    'target_month' => $monthDate,
+                    'monthly_target' => $validated['monthly_target'] ?? 0,
+                    'created_by' => $user->id,
+                    'updated_by' => $user->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
+
+            $rows = [];
+            foreach (($validated['forecasts'] ?? []) as $item) {
+                $forecastDate = Carbon::parse($item['forecast_date'])->startOfDay();
+                if ($forecastDate->lt($startOfMonth) || $forecastDate->gt($endOfMonth)) {
+                    continue;
+                }
+
+                $rawRevenue = $item['forecast_revenue'] ?? null;
+                if ($rawRevenue === null || $rawRevenue === '') {
+                    continue;
+                }
+
+                $rows[] = [
+                    'header_id' => $headerId,
+                    'forecast_date' => $forecastDate->toDateString(),
+                    'forecast_revenue' => $rawRevenue,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+
+            if (!empty($rows)) {
+                DB::table('outlet_revenue_target_details')->insert($rows);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Monthly target & daily forecast berhasil disimpan.',
+            'outlet_id' => $outletId,
+            'month' => $validated['month'],
+        ]);
     }
 
     public function suggest(Request $request)

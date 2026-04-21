@@ -746,9 +746,18 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'store']);
         Route::post('/outlet-internal-use-waste/store-and-submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'storeAndSubmit']);
         Route::post('/outlet-internal-use-waste/{id}/submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'submit']);
+        Route::delete('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'destroy']);
         Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getItemUnits']);
         Route::get('/outlet-internal-use-waste/stock', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getStock']);
         Route::get('/outlet-internal-use-waste/approvers', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovers']);
+
+        // Outlet Revenue Targets (Monthly Target & Daily Forecast) — mirror web OutletRevenueTargetController
+        Route::get('/outlet-revenue-targets', [\App\Http\Controllers\OutletRevenueTargetController::class, 'apiIndex']);
+        Route::post('/outlet-revenue-targets', [\App\Http\Controllers\OutletRevenueTargetController::class, 'apiStore']);
+        Route::post('/outlet-revenue-targets/suggest', [\App\Http\Controllers\OutletRevenueTargetController::class, 'suggest']);
+        Route::post('/outlet-revenue-targets/generate-historical', [\App\Http\Controllers\OutletRevenueTargetController::class, 'generateHistorical']);
+        Route::get('/outlet-revenue-targets/historical-month-detail', [\App\Http\Controllers\OutletRevenueTargetController::class, 'historicalMonthDetail']);
+        Route::get('/company-holidays', [\App\Http\Controllers\CalendarController::class, 'getHolidays']);
 
         // Approval-related endpoints (existing)
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
