@@ -2148,8 +2148,16 @@ PROMPT;
 
         $raw = $this->invokeClassifierPrompt($prompt);
         $json = $this->extractJsonFromAiResponse($raw);
-        if (!$json || empty($json['items']) || !is_array($json['items'])) {
-            throw new \RuntimeException('Gagal memparse jawaban AI (bukan JSON items yang valid).');
+        if (! $json || ! isset($json['items']) || ! is_array($json['items'])) {
+            $json = $this->extractJsonObjectFromText($raw);
+        }
+        if (! $json || ! isset($json['items']) || ! is_array($json['items'])) {
+            Log::warning('Google review classify: AI response is not valid JSON items, fallback to neutral', [
+                'provider' => $this->googleReviewClassifyProvider(),
+                'raw_preview' => mb_substr((string) $raw, 0, 800),
+                'input_count' => count($reviews),
+            ]);
+            $json = ['items' => []];
         }
 
         $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
@@ -2224,6 +2232,62 @@ PROMPT;
             $text = trim($m[1]);
         }
         $decoded = json_decode($text, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function extractJsonObjectFromText(string $text): ?array
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        $start = strpos($text, '{');
+        if ($start === false) {
+            return null;
+        }
+
+        $depth = 0;
+        $inString = false;
+        $escaped = false;
+        $end = null;
+        $len = strlen($text);
+
+        for ($i = $start; $i < $len; $i++) {
+            $ch = $text[$i];
+            if ($escaped) {
+                $escaped = false;
+                continue;
+            }
+            if ($ch === '\\') {
+                $escaped = true;
+                continue;
+            }
+            if ($ch === '"') {
+                $inString = ! $inString;
+                continue;
+            }
+            if ($inString) {
+                continue;
+            }
+            if ($ch === '{') {
+                $depth++;
+            } elseif ($ch === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    $end = $i;
+                    break;
+                }
+            }
+        }
+
+        if ($end === null || $end < $start) {
+            return null;
+        }
+
+        $candidate = substr($text, $start, $end - $start + 1);
+        $decoded = json_decode($candidate, true);
 
         return is_array($decoded) ? $decoded : null;
     }
