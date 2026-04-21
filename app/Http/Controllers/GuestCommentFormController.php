@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\GuestCommentForm;
 use App\Models\Outlet;
+use App\Services\AIAnalyticsService;
 use App\Services\GuestCommentOcrService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -130,7 +132,7 @@ class GuestCommentFormController extends Controller
         ]);
     }
 
-    public function gsiDashboard(Request $request)
+    public function gsiDashboard(Request $request, AIAnalyticsService $ai)
     {
         $userOutletId = (int) ($request->user()->id_outlet ?? 0);
         $canChooseOutlet = ($userOutletId === 1);
@@ -213,6 +215,15 @@ class GuestCommentFormController extends Controller
             $selectedOutlet = Outlet::where('id_outlet', $selectedOutletId)->first(['id_outlet', 'nama_outlet']);
         }
 
+        $issueInsights = $this->buildGsiIssueInsights(
+            $ai,
+            $monthStart,
+            $monthEnd,
+            $selectedOutletId,
+            $canChooseOutlet,
+            $userOutletId
+        );
+
         return Inertia::render('GuestComment/GSIDashboard', [
             'filters' => [
                 'month' => $month,
@@ -234,6 +245,7 @@ class GuestCommentFormController extends Controller
             'outletRanking' => $canChooseOutlet && $selectedOutletId <= 0
                 ? $this->buildGsiOutletRanking($subjectColumns, $monthStart, $monthEnd)
                 : [],
+            'issueInsights' => $issueInsights,
         ]);
     }
 
@@ -359,6 +371,165 @@ class GuestCommentFormController extends Controller
             ->take(10)
             ->values()
             ->all();
+    }
+
+    private function buildGsiIssueInsights(
+        AIAnalyticsService $ai,
+        Carbon $start,
+        Carbon $end,
+        int $selectedOutletId,
+        bool $canChooseOutlet,
+        int $userOutletId
+    ): array {
+        $base = DB::table('guest_comment_forms')
+            ->where('status', 'verified')
+            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereNotNull('comment_text')
+            ->where('comment_text', '!=', '');
+        $this->applyOutletScope($base, $selectedOutletId, $canChooseOutlet, $userOutletId);
+
+        $totalComments = (int) (clone $base)->count();
+        if ($totalComments <= 0) {
+            return [
+                'status' => 'empty',
+                'message' => 'Belum ada komentar terverifikasi untuk dianalisis AI.',
+                'total_comments' => 0,
+                'top_topics' => [],
+                'severity' => [],
+                'topic_examples' => [],
+            ];
+        }
+
+        // Batas aman agar dashboard tetap responsif.
+        $rows = (clone $base)
+            ->select('id', 'guest_name', 'comment_text', 'created_at')
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get();
+        $maxUpdated = (string) ((clone $base)->max('updated_at') ?? '');
+        $fingerprint = implode(':', [
+            $start->toDateString(),
+            $end->toDateString(),
+            $selectedOutletId,
+            $rows->count(),
+            (int) ($rows->max('id') ?? 0),
+            md5($maxUpdated),
+        ]);
+        $cacheKey = 'guest-comment:gsi-issue-insights:'.md5($fingerprint);
+
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($ai, $rows, $totalComments) {
+            $reviewPayload = [];
+            foreach ($rows as $row) {
+                $reviewPayload[] = [
+                    'author' => (string) ($row->guest_name ?? ''),
+                    'rating' => '',
+                    'text' => (string) ($row->comment_text ?? ''),
+                    'date' => (string) ($row->created_at ?? ''),
+                ];
+            }
+
+            try {
+                $classified = $ai->classifyGoogleReviewsInChunks($reviewPayload, 35);
+            } catch (\Throwable $e) {
+                \Log::warning('Guest comment issue insights AI failed', [
+                    'error' => $e->getMessage(),
+                    'total_comments' => $totalComments,
+                ]);
+                return [
+                    'status' => 'error',
+                    'message' => 'AI issue analysis gagal diproses saat ini.',
+                    'total_comments' => $totalComments,
+                    'top_topics' => [],
+                    'severity' => [],
+                    'topic_examples' => [],
+                ];
+            }
+
+            $topicCounts = [];
+            $severityCounts = [];
+            $topicExamples = [];
+            foreach ($classified as $item) {
+                $aiClass = $item['ai_classification'] ?? [];
+                $severity = (string) ($aiClass['severity'] ?? 'neutral');
+                $severityCounts[$severity] = (int) ($severityCounts[$severity] ?? 0) + 1;
+
+                $topics = $aiClass['topics'] ?? [];
+                if (!is_array($topics) || empty($topics)) {
+                    $topics = ['other'];
+                }
+                $summary = (string) ($aiClass['summary_id'] ?? '');
+                foreach ($topics as $topic) {
+                    $topicKey = trim((string) $topic) !== '' ? trim((string) $topic) : 'other';
+                    $topicCounts[$topicKey] = (int) ($topicCounts[$topicKey] ?? 0) + 1;
+                    if (!isset($topicExamples[$topicKey])) {
+                        $topicExamples[$topicKey] = [];
+                    }
+                    if (count($topicExamples[$topicKey]) < 3) {
+                        $topicExamples[$topicKey][] = [
+                            'author' => (string) ($item['author'] ?? '-'),
+                            'text' => mb_substr((string) ($item['text'] ?? ''), 0, 200),
+                            'summary_id' => $summary,
+                            'severity' => $severity,
+                        ];
+                    }
+                }
+            }
+
+            arsort($topicCounts);
+            $topTopics = collect($topicCounts)
+                ->map(function ($count, $topic) {
+                    return [
+                        'topic' => (string) $topic,
+                        'count' => (int) $count,
+                        'label' => $this->mapIssueTopicLabel((string) $topic),
+                    ];
+                })
+                ->take(8)
+                ->values()
+                ->all();
+
+            $topicExampleList = [];
+            foreach ($topTopics as $topicRow) {
+                $key = $topicRow['topic'];
+                $topicExampleList[] = [
+                    'topic' => $key,
+                    'label' => $topicRow['label'],
+                    'examples' => $topicExamples[$key] ?? [],
+                ];
+            }
+
+            return [
+                'status' => 'ready',
+                'message' => null,
+                'total_comments' => $totalComments,
+                'top_topics' => $topTopics,
+                'severity' => $severityCounts,
+                'topic_examples' => $topicExampleList,
+            ];
+        });
+    }
+
+    private function mapIssueTopicLabel(string $topic): string
+    {
+        $map = [
+            'food_quality' => 'Food Quality',
+            'service' => 'Service',
+            'hygiene' => 'Hygiene',
+            'ambiance' => 'Ambiance',
+            'price' => 'Price / Value',
+            'wait_time' => 'Speed / Wait Time',
+            'parking' => 'Parking',
+            'portion' => 'Portion',
+            'noise' => 'Noise',
+            'reservation' => 'Reservation',
+            'other' => 'Other',
+            'beverage' => 'Beverage',
+            'cleanliness' => 'Cleanliness',
+            'staff_attitude' => 'Staff Attitude',
+            'price_value' => 'Price / Value',
+            'speed_wait_time' => 'Speed / Wait Time',
+        ];
+        return $map[$topic] ?? ucfirst(str_replace('_', ' ', $topic));
     }
 
     public function create()

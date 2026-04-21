@@ -13,6 +13,7 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },
   trend: { type: Array, default: () => [] },
   outletRanking: { type: Array, default: () => [] },
+  issueInsights: { type: Object, default: () => ({}) },
 });
 
 const month = ref(props.filters?.month || new Date().toISOString().slice(0, 7));
@@ -77,6 +78,18 @@ const gsiToneClass = computed(() => {
   if (v >= 75) return 'text-amber-700 bg-amber-50 border-amber-200';
   return 'text-red-700 bg-red-50 border-red-200';
 });
+
+const issueTopicBarOptions = computed(() => ({
+  chart: { type: 'bar', toolbar: { show: false } },
+  plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+  dataLabels: { enabled: false },
+  xaxis: { categories: (props.issueInsights?.top_topics || []).map((t) => t.label) },
+  colors: ['#8B5CF6'],
+}));
+
+const issueTopicBarSeries = computed(() => [
+  { name: 'Mentions', data: (props.issueInsights?.top_topics || []).map((t) => t.count || 0) },
+]);
 </script>
 
 <template>
@@ -211,6 +224,62 @@ const gsiToneClass = computed(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h3 class="font-semibold text-slate-800">AI Issue Insights (Komentar)</h3>
+          <span class="text-xs text-slate-500">
+            Dataset: {{ issueInsights?.total_comments || 0 }} komentar terverifikasi
+          </span>
+        </div>
+
+        <div v-if="issueInsights?.status === 'error'" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {{ issueInsights?.message || 'AI issue analysis gagal diproses.' }}
+        </div>
+        <div v-else-if="issueInsights?.status === 'empty'" class="text-sm text-slate-500">
+          {{ issueInsights?.message || 'Belum ada komentar untuk dianalisis.' }}
+        </div>
+        <div v-else class="space-y-4">
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="border border-slate-200 rounded-lg p-3">
+              <h4 class="text-sm font-semibold text-slate-700 mb-2">Top Issues</h4>
+              <apexchart type="bar" height="300" :options="issueTopicBarOptions" :series="issueTopicBarSeries" />
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <h4 class="text-sm font-semibold text-slate-700 mb-2">Issue Buckets</h4>
+              <div v-if="!(issueInsights?.top_topics || []).length" class="text-sm text-slate-500">Belum ada issue terdeteksi.</div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="topic in issueInsights.top_topics"
+                  :key="topic.topic"
+                  class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2"
+                >
+                  <span class="font-medium text-slate-700">{{ topic.label }}</span>
+                  <span class="text-sm font-semibold text-violet-700">{{ topic.count }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div
+              v-for="topic in issueInsights.topic_examples || []"
+              :key="topic.topic"
+              class="border border-slate-200 rounded-lg p-3"
+            >
+              <div class="font-semibold text-slate-700 mb-2">{{ topic.label }}</div>
+              <div v-if="!(topic.examples || []).length" class="text-sm text-slate-500">Belum ada contoh komentar.</div>
+              <div v-else class="space-y-2">
+                <div v-for="(ex, idx) in topic.examples" :key="idx" class="bg-slate-50 border border-slate-200 rounded-md p-2">
+                  <div class="text-xs text-slate-500 mb-1">{{ ex.author || '-' }} · {{ ex.severity || '-' }}</div>
+                  <div class="text-sm text-slate-700">"{{ ex.text }}"</div>
+                  <div v-if="ex.summary_id" class="text-xs text-violet-700 mt-1">AI: {{ ex.summary_id }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
