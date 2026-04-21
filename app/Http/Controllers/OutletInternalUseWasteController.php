@@ -1730,7 +1730,8 @@ class OutletInternalUseWasteController extends Controller
             'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
         ]);
 
-        $rows = DB::table('item_bom as ib')
+        // 1) Material dari item_bom (existing behavior untuk Usage)
+        $itemBomRows = DB::table('item_bom as ib')
             ->join('items as i', 'i.id', '=', 'ib.material_item_id')
             ->join('outlet_food_inventory_items as ofii', 'ofii.item_id', '=', 'i.id')
             ->join('outlet_food_inventory_stocks as ofs', function ($join) use ($request) {
@@ -1765,9 +1766,85 @@ class OutletInternalUseWasteController extends Controller
                 'ofs.qty_medium',
                 'ofs.qty_large'
             )
-            ->orderBy('i.name')
-            ->get()
+            ->get();
+
+        // 2) Material dari modifier_options.modifier_bom_json dengan stock_cut=true
+        $toBool = function ($value): bool {
+            return $value === true || $value === 1 || $value === '1' || $value === 'true';
+        };
+
+        $modifierMaterialItemIds = [];
+        $modifierOptions = DB::table('modifier_options')
+            ->whereNotNull('modifier_bom_json')
+            ->where('modifier_bom_json', '!=', '')
+            ->where('modifier_bom_json', '!=', '[]')
+            ->select('modifier_bom_json')
+            ->get();
+
+        foreach ($modifierOptions as $modifierOption) {
+            $bomRows = json_decode((string) $modifierOption->modifier_bom_json, true);
+            if (!is_array($bomRows)) {
+                continue;
+            }
+            foreach ($bomRows as $bomRow) {
+                if (!is_array($bomRow)) {
+                    continue;
+                }
+                if (!$toBool($bomRow['stock_cut'] ?? false)) {
+                    continue;
+                }
+                $materialItemId = isset($bomRow['item_id']) ? (int) $bomRow['item_id'] : 0;
+                if ($materialItemId > 0) {
+                    $modifierMaterialItemIds[] = $materialItemId;
+                }
+            }
+        }
+
+        $modifierMaterialItemIds = array_values(array_unique($modifierMaterialItemIds));
+
+        $modifierBomRows = collect();
+        if (!empty($modifierMaterialItemIds)) {
+            $modifierBomRows = DB::table('items as i')
+                ->join('outlet_food_inventory_items as ofii', 'ofii.item_id', '=', 'i.id')
+                ->join('outlet_food_inventory_stocks as ofs', function ($join) use ($request) {
+                    $join->on('ofs.inventory_item_id', '=', 'ofii.id')
+                        ->where('ofs.id_outlet', '=', $request->outlet_id)
+                        ->where('ofs.warehouse_outlet_id', '=', $request->warehouse_outlet_id);
+                })
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
+                ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
+                ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
+                ->whereIn('i.id', $modifierMaterialItemIds)
+                ->where('i.status', 'active')
+                ->where(function ($query) {
+                    $query->where('ofs.qty_small', '>', 0)
+                        ->orWhere('ofs.qty_medium', '>', 0)
+                        ->orWhere('ofs.qty_large', '>', 0);
+                })
+                ->select(
+                    'i.id as item_id',
+                    'i.name as item_name',
+                    'c.name as category_name',
+                    'sc.name as sub_category_name',
+                    'i.small_unit_id',
+                    'us.name as unit_small',
+                    'i.medium_unit_id',
+                    'um.name as unit_medium',
+                    'i.large_unit_id',
+                    'ul.name as unit_large',
+                    'ofs.qty_small',
+                    'ofs.qty_medium',
+                    'ofs.qty_large'
+                )
+                ->get();
+        }
+
+        $rows = $itemBomRows
+            ->merge($modifierBomRows)
             ->unique('item_id')
+            ->sortBy('item_name')
             ->values();
 
         $items = $rows->map(function ($row) {
