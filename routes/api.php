@@ -436,6 +436,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Guest Comment OCR (Approval App — selaras web /guest-comment-forms)
         Route::get('/guest-comment-forms/meta', [\App\Http\Controllers\GuestCommentFormApiController::class, 'meta']);
+        Route::get('/guest-comment-forms/gsi-dashboard', [\App\Http\Controllers\GuestCommentFormApiController::class, 'gsiDashboard']);
         Route::get('/guest-comment-forms', [\App\Http\Controllers\GuestCommentFormApiController::class, 'index']);
         Route::post('/guest-comment-forms', [\App\Http\Controllers\GuestCommentFormApiController::class, 'store']);
         Route::get('/guest-comment-forms/{guest_comment_form}', [\App\Http\Controllers\GuestCommentFormApiController::class, 'show']);
