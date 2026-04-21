@@ -759,6 +759,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-revenue-targets/historical-month-detail', [\App\Http\Controllers\OutletRevenueTargetController::class, 'historicalMonthDetail']);
         Route::get('/company-holidays', [\App\Http\Controllers\CalendarController::class, 'getHolidays']);
 
+        Route::get('/floor-order-vs-forecast', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'apiIndex']);
+
         // Approval-related endpoints (existing)
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);

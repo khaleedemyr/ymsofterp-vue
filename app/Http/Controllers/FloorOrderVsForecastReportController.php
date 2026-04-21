@@ -15,6 +15,24 @@ class FloorOrderVsForecastReportController extends Controller
 
     public function index(Request $request)
     {
+        return Inertia::render('Reports/FloorOrderVsForecast', $this->buildReportPayload($request));
+    }
+
+    /**
+     * GET /api/approval-app/floor-order-vs-forecast — payload sama seperti halaman web (mobile app).
+     */
+    public function apiIndex(Request $request)
+    {
+        return response()->json(array_merge([
+            'success' => true,
+        ], $this->buildReportPayload($request)));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildReportPayload(Request $request): array
+    {
         $user = auth()->user();
         $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
 
@@ -165,7 +183,7 @@ class FloorOrderVsForecastReportController extends Controller
             $totals[$k] = round($v, 2);
         }
 
-        return Inertia::render('Reports/FloorOrderVsForecast', [
+        return [
             'outlets' => $outlets,
             'selectedOutletId' => $selectedOutletId,
             'selectedMonth' => $month,
@@ -177,6 +195,6 @@ class FloorOrderVsForecastReportController extends Controller
             'totals' => $totals,
             'has_forecast_header' => $revenueTargetHeaderExists || count($forecastByDate) > 0,
             'canSelectOutlet' => $isAdminOutlet,
-        ]);
+        ];
     }
 }
