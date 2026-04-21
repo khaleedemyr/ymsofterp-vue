@@ -450,7 +450,10 @@ class OutletRevenueTargetController extends Controller
         $generated = 0;
         $skipped = 0;
         $processedMonths = [];
+        $monthCards = [];
 
+        // Bulan di dropdown = acuan (mis. April). N bulan = N bulan SEBELUM acuan (tanpa bulan acuan).
+        // Contoh: April + 2 bulan → Maret, Februari.
         DB::transaction(function () use (
             $monthsBack,
             $endMonthStart,
@@ -460,12 +463,14 @@ class OutletRevenueTargetController extends Controller
             $user,
             &$generated,
             &$skipped,
-            &$processedMonths
+            &$processedMonths,
+            &$monthCards
         ) {
-            for ($offset = 0; $offset < $monthsBack; $offset++) {
-                $monthStart = $endMonthStart->copy()->subMonths($offset)->startOfMonth();
+            for ($k = 1; $k <= $monthsBack; $k++) {
+                $monthStart = $endMonthStart->copy()->subMonths($k)->startOfMonth();
                 $monthEnd = $monthStart->copy()->endOfMonth();
                 $monthKey = $monthStart->format('Y-m');
+                $label = $monthStart->locale('id')->translatedFormat('F Y');
 
                 $dailyActual = DB::table('orders')
                     ->where('kode_outlet', $outlet->qr_code)
@@ -480,6 +485,7 @@ class OutletRevenueTargetController extends Controller
                     ->pluck('revenue', 'dt');
 
                 $monthlyTarget = (float) collect($dailyActual)->sum();
+                $daysWithOrders = $dailyActual->filter(fn ($v) => (float) $v > 0)->count();
                 $targetMonthDate = $monthStart->toDateString();
 
                 $existingHeader = DB::table('outlet_revenue_target_headers')
@@ -489,6 +495,13 @@ class OutletRevenueTargetController extends Controller
 
                 if ($existingHeader && !$overwrite) {
                     $skipped++;
+                    $monthCards[] = [
+                        'ym' => $monthKey,
+                        'label' => $label,
+                        'status' => 'skipped',
+                        'monthly_total' => round($monthlyTarget, 2),
+                        'days_with_orders' => $daysWithOrders,
+                    ];
                     continue;
                 }
 
@@ -534,14 +547,24 @@ class OutletRevenueTargetController extends Controller
 
                 $generated++;
                 $processedMonths[] = $monthKey;
+                $monthCards[] = [
+                    'ym' => $monthKey,
+                    'label' => $label,
+                    'status' => 'generated',
+                    'monthly_total' => round($monthlyTarget, 2),
+                    'days_with_orders' => $daysWithOrders,
+                ];
             }
         });
+
+        usort($monthCards, fn ($a, $b) => strcmp($a['ym'], $b['ym']));
 
         return response()->json([
             'message' => "Generate historis selesai. Generated {$generated} bulan, skipped {$skipped} bulan.",
             'generated' => $generated,
             'skipped' => $skipped,
             'months' => $processedMonths,
+            'month_cards' => $monthCards,
             'overwrite' => $overwrite,
         ]);
     }

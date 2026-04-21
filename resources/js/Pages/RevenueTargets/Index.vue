@@ -26,6 +26,7 @@ const historyMonthsBack = ref(1)
 const historyOverwrite = ref(false)
 const historyLoading = ref(false)
 const historyMessage = ref('')
+const historyMonthCards = ref([])
 const bulkStartDate = ref('')
 const bulkEndDate = ref('')
 const bulkMode = ref('set')
@@ -240,6 +241,7 @@ async function suggestAI() {
 async function generateHistorical() {
   suggestError.value = ''
   historyMessage.value = ''
+  historyMonthCards.value = []
 
   if (!selectedOutletId.value || !selectedMonth.value) {
     suggestError.value = 'Pilih outlet dan bulan dulu sebelum generate historis.'
@@ -256,6 +258,7 @@ async function generateHistorical() {
     })
 
     historyMessage.value = data?.message || 'Generate historis berhasil.'
+    historyMonthCards.value = Array.isArray(data?.month_cards) ? data.month_cards : []
     loadData()
   } catch (error) {
     suggestError.value = error?.response?.data?.message || 'Gagal generate historis revenue.'
@@ -415,6 +418,10 @@ fetchHolidays()
 
         <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Generate Revenue Historis</p>
+          <p class="mb-3 text-[11px] leading-relaxed text-slate-500">
+            Bulan di kolom &quot;Bulan&quot; = acuan (misal April). Jumlah bulan = berapa bulan ke belakang dari acuan,
+            <strong class="font-semibold text-slate-600">tanpa menyertakan bulan acuan</strong>. Contoh: April + 2 bulan → Februari &amp; Maret (dari <code class="rounded bg-slate-200 px-1">orders</code>).
+          </p>
           <div class="grid grid-cols-1 gap-2 md:grid-cols-6">
             <div>
               <label class="mb-1 block text-[11px] font-semibold text-slate-500">Jumlah Bulan</label>
@@ -444,6 +451,48 @@ fetchHolidays()
           </div>
           <div v-if="historyMessage" class="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
             {{ historyMessage }}
+          </div>
+
+          <div v-if="historyMonthCards.length" class="mt-4">
+            <p class="mb-2 text-xs font-semibold text-slate-600">Ringkasan per bulan</p>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div
+                v-for="card in historyMonthCards"
+                :key="card.ym"
+                class="rounded-xl border bg-white p-4 shadow-sm transition hover:shadow-md"
+                :class="
+                  card.status === 'generated'
+                    ? 'border-emerald-200 ring-1 ring-emerald-100'
+                    : 'border-amber-200 ring-1 ring-amber-100'
+                "
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <p class="text-sm font-semibold text-slate-800">{{ card.label }}</p>
+                    <p class="text-[11px] text-slate-500">{{ card.ym }}</p>
+                  </div>
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                    :class="
+                      card.status === 'generated'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-100 text-amber-800'
+                    "
+                  >
+                    {{ card.status === 'generated' ? 'Tersimpan' : 'Dilewati' }}
+                  </span>
+                </div>
+                <p class="mt-3 text-lg font-semibold text-slate-900">
+                  Rp {{ new Intl.NumberFormat('id-ID').format(card.monthly_total || 0) }}
+                </p>
+                <p class="mt-1 text-[11px] text-slate-500">
+                  Hari ada transaksi: <strong>{{ card.days_with_orders }}</strong>
+                </p>
+                <p v-if="card.status === 'skipped'" class="mt-2 text-[11px] text-amber-800">
+                  Data sudah ada; centang Overwrite untuk menimpa.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
