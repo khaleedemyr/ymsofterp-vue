@@ -52,13 +52,31 @@ function parseFormattedNumber(value) {
     multiplier = 1_000_000_000_000
   }
 
-  const normalized = raw
+  const baseRaw = raw
     .trim()
     .replace(/\s/g, '')
     .replace(/(k|rb|jt|juta|m|mil|miliar|t|triliun)$/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.')
-    .replace(/[^0-9.-]/g, '')
+    .replace(/[^0-9,.-]/g, '')
+
+  let normalized = baseRaw
+  const hasDot = normalized.includes('.')
+  const hasComma = normalized.includes(',')
+
+  if (hasDot && hasComma) {
+    // Format Indonesia: 1.234.567,89
+    normalized = normalized.replace(/\./g, '').replace(',', '.')
+  } else if (hasComma) {
+    // Decimal comma: 12345,67
+    normalized = normalized.replace(',', '.')
+  } else if (hasDot) {
+    // Jika pola ribuan bertitik (contoh: 1.200.000.000), hapus titik.
+    // Jika bukan pola ribuan (contoh: 40599145.91), anggap titik sebagai desimal.
+    const isThousandGrouped = /^-?\d{1,3}(\.\d{3})+$/.test(normalized)
+    if (isThousandGrouped) {
+      normalized = normalized.replace(/\./g, '')
+    }
+  }
+
   if (!normalized || normalized === '-' || normalized === '.') return null
   const num = Number(normalized)
   return Number.isFinite(num) ? num * multiplier : null
