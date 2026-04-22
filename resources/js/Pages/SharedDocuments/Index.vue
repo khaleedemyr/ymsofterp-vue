@@ -203,9 +203,9 @@
                             :key="document.id"
                             class="document-card group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
                             :style="{ animationDelay: `${index * 100}ms` }"
-                            :draggable="!documentReadOnly"
-                            @dragstart="!documentReadOnly && handleDocumentDragStart(document)"
-                            @dragend="!documentReadOnly && handleDocumentDragEnd"
+                            :draggable="canMoveDocument(document)"
+                            @dragstart="canMoveDocument(document) && handleDocumentDragStart(document)"
+                            @dragend="canMoveDocument(document) && handleDocumentDragEnd"
                             :class="draggedDocumentId === document.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''"
                             @contextmenu.prevent="openContextMenu($event, 'document', document)"
                         >
@@ -529,7 +529,7 @@ const contextMenu = ref({
     payload: null
 })
 const page = usePage()
-const documentReadOnly = true
+const documentReadOnly = false
 const isFolderLoading = ref(false)
 
 const filteredDocuments = computed(() => {
