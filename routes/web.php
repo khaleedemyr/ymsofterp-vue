@@ -2377,6 +2377,15 @@ Route::middleware(['auth'])->group(function () {
 
 // Shared Documents Routes
 Route::middleware(['auth'])->group(function () {
+    Route::get('shared-documents/scope-options', [SharedDocumentController::class, 'getScopeOptions'])->name('shared-documents.scope-options');
+    Route::post('shared-documents/folders', [SharedDocumentController::class, 'createFolder'])->name('shared-documents.folders.store');
+    Route::patch('shared-documents/folders/{id}/move', [SharedDocumentController::class, 'moveFolder'])->name('shared-documents.folders.move');
+    Route::patch('shared-documents/folders/{id}/rename', [SharedDocumentController::class, 'renameFolder'])->name('shared-documents.folders.rename');
+    Route::delete('shared-documents/folders/{id}', [SharedDocumentController::class, 'deleteFolder'])->name('shared-documents.folders.delete');
+    Route::get('shared-documents/folders/{id}/permissions', [SharedDocumentController::class, 'getFolderPermissions'])->name('shared-documents.folders.permissions.get');
+    Route::post('shared-documents/folders/{id}/permissions', [SharedDocumentController::class, 'updateFolderPermissions'])->name('shared-documents.folders.permissions.update');
+    Route::patch('shared-documents/{id}/move', [SharedDocumentController::class, 'moveDocument'])->name('shared-documents.move');
+    Route::patch('shared-documents/bulk-move', [SharedDocumentController::class, 'bulkMoveDocuments'])->name('shared-documents.bulk-move');
     Route::resource('shared-documents', SharedDocumentController::class);
     Route::get('shared-documents/{id}/download', [SharedDocumentController::class, 'download'])->name('shared-documents.download');
     Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])->name('shared-documents.callback');
@@ -2386,7 +2395,7 @@ Route::middleware(['auth'])->group(function () {
     // Enhanced permission management
     Route::post('shared-documents/{document}/permissions', [SharedDocumentController::class, 'updatePermissions'])->name('shared-documents.permissions.update');
     Route::get('shared-documents/{document}/permissions', [SharedDocumentController::class, 'getPermissions'])->name('shared-documents.permissions.get');
-    
+
     // User search endpoints
     Route::get('shared-documents/users/search', [SharedDocumentController::class, 'searchUsers'])->name('shared-documents.users.search');
     Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');

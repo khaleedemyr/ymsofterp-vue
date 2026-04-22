@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 class SharedDocument extends Model
@@ -17,6 +18,7 @@ class SharedDocument extends Model
     protected $primaryKey = 'id';
 
     protected $fillable = [
+        'folder_id',
         'title',
         'filename',
         'file_path',
@@ -48,6 +50,11 @@ class SharedDocument extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function folder(): BelongsTo
+    {
+        return $this->belongsTo(DocumentFolder::class, 'folder_id');
+    }
+
     public function permissions(): HasMany
     {
         return $this->hasMany(DocumentPermission::class, 'document_id');
@@ -65,38 +72,56 @@ class SharedDocument extends Model
         return $this->hasMany(DocumentVersion::class, 'document_id');
     }
 
+    public function scopes(): HasMany
+    {
+        return $this->hasMany(DocumentAccessScope::class, 'resource_id')
+            ->where('resource_type', DocumentAccessScope::RESOURCE_DOCUMENT);
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        return $query->where(function (Builder $innerQuery) use ($user) {
+            $innerQuery->where('created_by', $user->id)
+                ->orWhere('is_public', true)
+                ->orWhereHas('permissions', function (Builder $legacyPermissionQuery) use ($user) {
+                    $legacyPermissionQuery->where('user_id', $user->id);
+                })
+                ->orWhereHas('scopes', function (Builder $scopeQuery) use ($user) {
+                    $scopeQuery->where(function (Builder $scopeMatchQuery) use ($user) {
+                        $scopeMatchQuery->where(function (Builder $userScopeQuery) use ($user) {
+                            $userScopeQuery->where('scope_type', DocumentAccessScope::SCOPE_USER)
+                                ->where('scope_id', $user->id);
+                        });
+
+                        if (!empty($user->id_jabatan)) {
+                            $scopeMatchQuery->orWhere(function (Builder $jabatanScopeQuery) use ($user) {
+                                $jabatanScopeQuery->where('scope_type', DocumentAccessScope::SCOPE_JABATAN)
+                                    ->where('scope_id', $user->id_jabatan);
+                            });
+                        }
+
+                        if (!empty($user->division_id)) {
+                            $scopeMatchQuery->orWhere(function (Builder $divisionScopeQuery) use ($user) {
+                                $divisionScopeQuery->where('scope_type', DocumentAccessScope::SCOPE_DIVISI)
+                                    ->where('scope_id', $user->division_id);
+                            });
+                        }
+
+                        if (!empty($user->id_outlet)) {
+                            $scopeMatchQuery->orWhere(function (Builder $outletScopeQuery) use ($user) {
+                                $outletScopeQuery->where('scope_type', DocumentAccessScope::SCOPE_OUTLET)
+                                    ->where('scope_id', $user->id_outlet);
+                            });
+                        }
+                    });
+                });
+        });
+    }
+
     public function hasPermission(User $user, string $permission = 'view'): bool
     {
-        // Debug logging
-        \Log::info('hasPermission check', [
-            'document_id' => $this->id,
-            'user_id' => $user->id,
-            'user_name' => $user->nama_lengkap,
-            'requested_permission' => $permission,
-            'is_public' => $this->is_public,
-            'created_by' => $this->created_by,
-            'user_is_creator' => ($this->created_by === $user->id),
-        ]);
-
-        if ($this->is_public) {
-            \Log::info('Access granted: Document is public');
+        if ($this->is_public || $this->created_by === $user->id) {
             return true;
-        }
-
-        if ($this->created_by === $user->id) {
-            \Log::info('Access granted: User is creator');
-            return true;
-        }
-
-        $userPermission = $this->permissions()->where('user_id', $user->id)->first();
-        
-        \Log::info('User permission found', [
-            'user_permission' => $userPermission ? $userPermission->toArray() : null,
-        ]);
-        
-        if (!$userPermission) {
-            \Log::info('Access denied: No permission found');
-            return false;
         }
 
         $permissionLevels = [
@@ -106,17 +131,36 @@ class SharedDocument extends Model
         ];
 
         $requiredLevel = $permissionLevels[$permission] ?? 1;
-        $userLevel = $permissionLevels[$userPermission->permission] ?? 0;
+        $bestLevel = 0;
 
-        $hasAccess = $userLevel >= $requiredLevel;
-        
-        \Log::info('Permission level check', [
-            'required_level' => $requiredLevel,
-            'user_level' => $userLevel,
-            'has_access' => $hasAccess,
-        ]);
+        $legacyPermission = $this->permissions()->where('user_id', $user->id)->first();
+        if ($legacyPermission) {
+            $bestLevel = max($bestLevel, $permissionLevels[$legacyPermission->permission] ?? 0);
+        }
 
-        return $hasAccess;
+        $scopeCandidates = [
+            [DocumentAccessScope::SCOPE_USER, $user->id],
+            [DocumentAccessScope::SCOPE_JABATAN, $user->id_jabatan],
+            [DocumentAccessScope::SCOPE_DIVISI, $user->division_id],
+            [DocumentAccessScope::SCOPE_OUTLET, $user->id_outlet],
+        ];
+
+        foreach ($scopeCandidates as [$scopeType, $scopeId]) {
+            if (empty($scopeId)) {
+                continue;
+            }
+
+            $scope = $this->scopes()
+                ->where('scope_type', $scopeType)
+                ->where('scope_id', $scopeId)
+                ->first();
+
+            if ($scope) {
+                $bestLevel = max($bestLevel, $permissionLevels[$scope->permission] ?? 0);
+            }
+        }
+
+        return $bestLevel >= $requiredLevel;
     }
 
     public function getFileUrl(): string

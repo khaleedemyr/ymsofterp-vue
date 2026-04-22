@@ -60,6 +60,27 @@
                         </p>
                     </div>
 
+                    <!-- Folder -->
+                    <div>
+                        <label for="folder_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            Folder
+                        </label>
+                        <select
+                            id="folder_id"
+                            v-model="form.folder_id"
+                            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                        >
+                            <option :value="null">Root</option>
+                            <option
+                                v-for="folder in props.folders"
+                                :key="folder.id"
+                                :value="folder.id"
+                            >
+                                {{ folder.name }}
+                            </option>
+                        </select>
+                    </div>
+
                     <!-- File Upload -->
                     <div>
                         <label for="file" class="block text-sm font-medium text-gray-700 mb-2">
@@ -75,7 +96,7 @@
                                             id="file"
                                             ref="fileInput"
                                             type="file"
-                                            accept=".xlsx,.xls,.docx,.doc,.pptx,.ppt"
+                                            accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt,.zip,.rar"
                                             class="sr-only"
                                             @change="handleFileSelect"
                                             required
@@ -84,7 +105,7 @@
                                     <p class="pl-1">atau drag and drop</p>
                                 </div>
                                 <p class="text-xs text-gray-500">
-                                    Excel, Word, atau PowerPoint (maksimal 10MB)
+                                    PDF, Office, CSV, TXT, ZIP, RAR (maksimal 20MB)
                                 </p>
                             </div>
                         </div>
@@ -98,6 +119,64 @@
                         <p v-if="form.errors.file" class="mt-1 text-sm text-red-600">
                             {{ form.errors.file }}
                         </p>
+                    </div>
+
+                    <div class="space-y-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                        <h3 class="text-sm font-semibold text-indigo-900">Akses Scope Organisasi</h3>
+                        <p class="text-xs text-indigo-700">
+                            Anda bisa memberi akses ke banyak jabatan/divisi/outlet sekaligus.
+                        </p>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Jabatan</label>
+                            <div class="flex gap-2 mb-2">
+                                <select v-model="jabatanPermission" class="px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                                    <option value="view">View</option>
+                                    <option value="edit">Edit</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                                <span class="text-xs text-gray-500 self-center">Permission untuk pilihan jabatan</span>
+                            </div>
+                            <select v-model="selectedJabatanIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                                <option v-for="jabatan in props.scopeOptions.jabatans" :key="jabatan.id_jabatan" :value="jabatan.id_jabatan">
+                                    {{ jabatan.nama_jabatan }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Divisi</label>
+                            <div class="flex gap-2 mb-2">
+                                <select v-model="divisiPermission" class="px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                                    <option value="view">View</option>
+                                    <option value="edit">Edit</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                                <span class="text-xs text-gray-500 self-center">Permission untuk pilihan divisi</span>
+                            </div>
+                            <select v-model="selectedDivisiIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                                <option v-for="divisi in props.scopeOptions.divisis" :key="divisi.id" :value="divisi.id">
+                                    {{ divisi.nama_divisi }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
+                            <div class="flex gap-2 mb-2">
+                                <select v-model="outletPermission" class="px-3 py-2 text-sm border border-gray-200 rounded-lg">
+                                    <option value="view">View</option>
+                                    <option value="edit">Edit</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                                <span class="text-xs text-gray-500 self-center">Permission untuk pilihan outlet</span>
+                            </div>
+                            <select v-model="selectedOutletIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                                <option v-for="outlet in props.scopeOptions.outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                                    {{ outlet.nama_outlet }}
+                                </option>
+                            </select>
+                        </div>
                     </div>
 
                     <!-- Public Access -->
@@ -208,21 +287,40 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref } from 'vue'
 import { useForm, Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import UserSearchDropdown from '@/Components/UserSearchDropdown.vue'
 
+const props = defineProps({
+    folders: {
+        type: Array,
+        default: () => []
+    },
+    scopeOptions: {
+        type: Object,
+        default: () => ({ jabatans: [], divisis: [], outlets: [] })
+    }
+})
+
 const fileInput = ref(null)
 const selectedFile = ref(null)
 const selectedUsers = ref([])
+const selectedJabatanIds = ref([])
+const selectedDivisiIds = ref([])
+const selectedOutletIds = ref([])
+const jabatanPermission = ref('view')
+const divisiPermission = ref('view')
+const outletPermission = ref('view')
 
 const form = useForm({
+    folder_id: null,
     title: '',
     description: '',
     file: null,
     is_public: false,
-    shared_users: []
+    shared_users: [],
+    scope_permissions: []
 })
 
 const handleFileSelect = (event) => {
@@ -273,6 +371,24 @@ const formatFileSize = (bytes) => {
 }
 
 const submit = () => {
+    form.scope_permissions = [
+        ...selectedJabatanIds.value.map((id) => ({
+            scope_type: 'jabatan',
+            scope_id: id,
+            permission: jabatanPermission.value
+        })),
+        ...selectedDivisiIds.value.map((id) => ({
+            scope_type: 'divisi',
+            scope_id: id,
+            permission: divisiPermission.value
+        })),
+        ...selectedOutletIds.value.map((id) => ({
+            scope_type: 'outlet',
+            scope_id: id,
+            permission: outletPermission.value
+        }))
+    ]
+
     form.post(route('shared-documents.store'))
 }
 </script>
