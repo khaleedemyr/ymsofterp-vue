@@ -19,7 +19,7 @@
                 </div>
             </div>
 
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 animate-fade-in-up animation-delay-200">
+            <div class="relative z-[80] overflow-visible bg-white rounded-2xl shadow-sm border border-slate-200 p-5 animate-fade-in-up animation-delay-200">
                 <div class="flex flex-col lg:flex-row gap-4">
                     <div class="flex-1 relative group">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -42,7 +42,7 @@
                         <option value="pptx">PowerPoint</option>
                         <option value="pdf">PDF</option>
                     </select>
-                    <div class="relative">
+                    <div class="relative z-[90]">
                         <button
                             @click.stop="toggleViewMenu"
                             class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
@@ -227,6 +227,17 @@
 
                     <div v-else-if="filteredDocuments.length > 0" :class="documentContainerClass">
                         <div
+                            v-if="viewMode === 'details'"
+                            class="hidden xl:grid grid-cols-[2fr_1.2fr_1fr_1fr_auto] gap-3 px-4 py-2 rounded-lg border border-slate-200 bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+                        >
+                            <span>Nama</span>
+                            <span>Tipe</span>
+                            <span>Pembuat</span>
+                            <span>Tanggal</span>
+                            <span class="text-right">Aksi</span>
+                        </div>
+
+                        <div
                             v-for="(document, index) in filteredDocuments"
                             :key="document.id"
                             :class="[documentCardClass, draggedDocumentId === document.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : '']"
@@ -238,7 +249,7 @@
                             :data-size-mode="iconSizeMode"
                             @contextmenu.prevent="openContextMenu($event, 'document', document)"
                         >
-                            <div :class="cardBodyClass">
+                            <div v-if="isIconView" :class="cardBodyClass">
                                 <div v-if="!documentReadOnly" class="flex justify-end mb-2">
                                     <input
                                         type="checkbox"
@@ -323,6 +334,67 @@
                                     >
                                         <i class="fas fa-trash"></i>
                                     </button>
+                                </div>
+                            </div>
+
+                            <div v-else class="px-4 py-3">
+                                <div class="flex items-center gap-3">
+                                    <div
+                                        class="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0"
+                                        :class="getFileTypeColor(document.file_type)"
+                                    >
+                                        <i :class="getFileTypeIcon(document.file_type)" class="doc-type-icon text-base"></i>
+                                    </div>
+
+                                    <div class="min-w-0 flex-1 grid gap-2" :class="viewMode === 'details' ? 'xl:grid-cols-[2fr_1.2fr_1fr_1fr_auto] xl:items-center' : 'grid-cols-1 lg:grid-cols-[2fr_1fr_auto] lg:items-center'">
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <h4 class="font-semibold text-slate-900 truncate">{{ document.title }}</h4>
+                                                <span :class="getDocumentAccessBadgeClass(document)" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide shrink-0">
+                                                    {{ getDocumentAccessLabel(document) }}
+                                                </span>
+                                            </div>
+                                            <p class="text-sm text-slate-500 truncate">{{ document.filename }}</p>
+                                        </div>
+
+                                        <div class="text-xs text-slate-600">
+                                            <span class="inline-flex items-center px-2 py-1 rounded-md bg-slate-100 font-semibold uppercase tracking-wide">{{ getFileTypeLabel(document.file_type) }}</span>
+                                            <span class="ml-2">{{ document.folder?.name || 'Root' }}</span>
+                                        </div>
+
+                                        <div class="hidden xl:block text-sm text-slate-700 truncate">
+                                            {{ document.creator?.nama_lengkap || document.creator?.name || '-' }}
+                                        </div>
+
+                                        <div class="hidden xl:block text-sm text-slate-600">
+                                            {{ formatDate(document.created_at) }}
+                                        </div>
+
+                                        <div class="flex items-center gap-2 justify-start xl:justify-end">
+                                            <Link
+                                                :href="route('shared-documents.show', document.id)"
+                                                class="inline-flex items-center justify-center px-3 py-2 bg-slate-900 text-white font-medium rounded-lg shadow-sm hover:bg-slate-800 transition-all duration-200 text-sm"
+                                            >
+                                                <i class="fas fa-eye mr-1"></i>
+                                                Buka
+                                            </Link>
+                                            <a
+                                                :href="route('shared-documents.download', document.id)"
+                                                class="px-3 py-2 bg-emerald-600 text-white rounded-lg shadow-sm hover:bg-emerald-700 transition-all duration-200 text-sm"
+                                                title="Download Dokumen"
+                                            >
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            <button
+                                                v-if="canDeleteDocument(document)"
+                                                @click="deleteDocument(document.id)"
+                                                class="px-3 py-2 bg-red-600 text-white rounded-lg shadow-sm hover:bg-red-700 transition-all duration-200 text-sm"
+                                                title="Hapus Dokumen"
+                                            >
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -591,14 +663,17 @@ const iconSizeMode = computed(() => {
     return viewMode.value
 })
 
+const isIconView = computed(() => viewMode.value.includes('icons'))
+
 const documentContainerClass = computed(() => {
     const base = 'animate-fade-in-up animation-delay-400'
-    return viewMode.value.includes('icons') ? `${base} document-masonry` : `${base} space-y-3`
+    return isIconView.value ? `${base} document-masonry` : `${base} space-y-2`
 })
 
 const documentCardClass = computed(() => {
-    const base = 'group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up'
-    return viewMode.value.includes('icons') ? `${base} document-card` : base
+    const iconBase = 'group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up'
+    const rowBase = 'group bg-white rounded-xl shadow-sm hover:shadow-md border border-slate-200 overflow-hidden transition-all duration-200 animate-fade-in-up'
+    return isIconView.value ? `${iconBase} document-card` : rowBase
 })
 
 const cardBodyClass = computed(() => {
@@ -1410,9 +1485,22 @@ onBeforeUnmount(() => {
     break-inside: avoid;
     margin-bottom: 1.25rem;
 }
+
+.document-card[data-view-mode='list'],
+.document-card[data-view-mode='details'] {
+    break-inside: auto;
+    margin-bottom: 0;
+}
 @media (min-width: 1024px) {
     .document-masonry {
         column-count: 2;
+    }
+}
+
+@media (max-width: 1279px) {
+    .document-card[data-view-mode='details'] .xl\:grid-cols-\[2fr_1\.2fr_1fr_1fr_auto\] {
+        grid-template-columns: 1fr;
+        row-gap: 0.5rem;
     }
 }
 
