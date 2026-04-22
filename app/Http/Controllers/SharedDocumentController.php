@@ -202,45 +202,12 @@ class SharedDocumentController extends Controller
 
     public function edit($id): Response
     {
-        $user = Auth::user();
-        
-        $document = SharedDocument::findOrFail($id);
-        
-        if (!$document->hasPermission($user, 'edit')) {
-            abort(403, 'Anda tidak memiliki izin untuk mengedit dokumen ini.');
-        }
-
-        $document->load(['permissions.user']);
-
-        return Inertia::render('SharedDocuments/Edit', [
-            'document' => $document,
-        ]);
+        abort(403, 'Dokumen bersifat read-only. Hanya view dan download yang diizinkan.');
     }
 
     public function update(Request $request, $id)
     {
-        $user = Auth::user();
-        
-        $document = SharedDocument::findOrFail($id);
-        
-        if (!$document->hasPermission($user, 'edit')) {
-            abort(403, 'Anda tidak memiliki izin untuk mengedit dokumen ini.');
-        }
-
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'is_public' => 'boolean',
-        ]);
-
-        $document->update([
-            'title' => $request->title,
-            'description' => $request->description,
-            'is_public' => $request->is_public ?? false,
-        ]);
-
-        return redirect()->route('shared-documents.show', $document)
-            ->with('success', 'Dokumen berhasil diperbarui!');
+        abort(403, 'Dokumen bersifat read-only. Hanya view dan download yang diizinkan.');
     }
 
     public function destroy($id)
@@ -269,51 +236,12 @@ class SharedDocumentController extends Controller
 
     public function share(Request $request, $id)
     {
-        $user = Auth::user();
-        
-        $document = SharedDocument::findOrFail($id);
-        
-        if (!$document->hasPermission($user, 'edit')) {
-            abort(403, 'Anda tidak memiliki izin untuk membagikan dokumen ini.');
-        }
-
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'permission' => 'required|in:view,edit,admin',
-        ]);
-
-        DocumentPermission::updateOrCreate(
-            [
-                'document_id' => $document->id,
-                'user_id' => $request->user_id,
-            ],
-            [
-                'permission' => $request->permission,
-            ]
-        );
-
-        return back()->with('success', 'Dokumen berhasil dibagikan!');
+        abort(403, 'Dokumen bersifat read-only. Fitur berbagi dinonaktifkan.');
     }
 
     public function removeShare(Request $request, $id)
     {
-        $user = Auth::user();
-        $document = SharedDocument::findOrFail($id);
-        
-        if (!$document->hasPermission($user, 'edit')) {
-            abort(403, 'Anda tidak memiliki izin untuk mengelola akses dokumen ini.');
-        }
-
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-        ]);
-
-        DocumentPermission::where([
-            'document_id' => $document->id,
-            'user_id' => $request->user_id,
-        ])->delete();
-
-        return back()->with('success', 'Akses dokumen berhasil dihapus!');
+        abort(403, 'Dokumen bersifat read-only. Fitur berbagi dinonaktifkan.');
     }
 
     /**
@@ -694,6 +622,31 @@ class SharedDocumentController extends Controller
         ]);
     }
 
+    public function preview($id)
+    {
+        $user = Auth::user();
+
+        $document = SharedDocument::findOrFail($id);
+
+        if (!$document->hasPermission($user)) {
+            abort(403, 'Anda tidak memiliki akses ke dokumen ini.');
+        }
+
+        $filePath = storage_path('app/public/' . $document->file_path);
+
+        if (!file_exists($filePath)) {
+            abort(404, 'File tidak ditemukan.');
+        }
+
+        return response()->file($filePath, [
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization',
+            'Content-Type' => $this->getMimeType($document->file_type),
+            'Content-Disposition' => 'inline; filename="' . addslashes($document->filename) . '"',
+        ]);
+    }
+
     private function getMimeType($fileType)
     {
         $mimeTypes = [
@@ -711,28 +664,10 @@ class SharedDocumentController extends Controller
 
     public function callback(Request $request)
     {
-        // Handle OnlyOffice callback for document changes
-        $status = $request->input('status');
-        $documentKey = $request->input('key');
-        
-        $document = SharedDocument::where('document_key', $documentKey)->first();
-        
-        if (!$document) {
-            return response()->json(['error' => 'Document not found'], 404);
-        }
-
-        if ($status === 2) { // Document is being edited
-            // Document is ready for editing
-            return response()->json(['error' => 0]);
-        } elseif ($status === 3) { // Document is being saved
-            // Document has been saved
-            return response()->json(['error' => 0]);
-        } elseif ($status === 6) { // Document is being closed
-            // Document has been closed
-            return response()->json(['error' => 0]);
-        }
-
-        return response()->json(['error' => 0]);
+        return response()->json([
+            'error' => 0,
+            'message' => 'Document editor callback disabled in read-only mode.',
+        ]);
     }
 
     /**

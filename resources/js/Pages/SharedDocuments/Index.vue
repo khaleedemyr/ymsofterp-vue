@@ -85,7 +85,7 @@
                 </div>
             </div>
 
-            <div v-if="selectedDocumentCount > 0" class="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div v-if="!documentReadOnly && selectedDocumentCount > 0" class="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 <div class="text-sm text-indigo-900 font-semibold">
                     {{ selectedDocumentCount }} dokumen dipilih
                 </div>
@@ -187,14 +187,14 @@
                             :key="document.id"
                             class="group bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-2xl border border-white/20 overflow-hidden transform hover:-translate-y-2 transition-all duration-500 animate-fade-in-up"
                             :style="{ animationDelay: `${index * 100}ms` }"
-                            draggable="true"
-                            @dragstart="handleDocumentDragStart(document)"
-                            @dragend="handleDocumentDragEnd"
+                            :draggable="!documentReadOnly"
+                            @dragstart="!documentReadOnly && handleDocumentDragStart(document)"
+                            @dragend="!documentReadOnly && handleDocumentDragEnd"
                             :class="draggedDocumentId === document.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''"
                             @contextmenu.prevent="openContextMenu($event, 'document', document)"
                         >
                             <div class="p-6">
-                                <div class="flex justify-end mb-2">
+                                <div v-if="!documentReadOnly" class="flex justify-end mb-2">
                                     <input
                                         type="checkbox"
                                         :checked="isDocumentSelected(document.id)"
@@ -243,30 +243,13 @@
                                         <i class="fas fa-eye mr-1"></i>
                                         Buka
                                     </Link>
-                                    <button
-                                        v-if="canManagePermissions(document)"
-                                        @click="openPermissionModalForDocument(document)"
-                                        class="px-3 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
-                                        title="Kelola Permission"
+                                    <a
+                                        :href="route('shared-documents.download', document.id)"
+                                        class="px-3 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                        title="Download Dokumen"
                                     >
-                                        <i class="fas fa-users-cog"></i>
-                                    </button>
-                                    <button
-                                        v-if="canMoveDocument(document)"
-                                        @click="openMoveDocumentModal(document)"
-                                        class="px-3 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
-                                        title="Pindah Folder"
-                                    >
-                                        <i class="fas fa-folder-open"></i>
-                                    </button>
-                                    <button
-                                        v-if="document.created_by === $page.props.auth.user.id"
-                                        @click="deleteDocument(document.id)"
-                                        class="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
-                                        title="Hapus Dokumen"
-                                    >
-                                        <i class="fas fa-trash"></i>
-                                    </button>
+                                        <i class="fas fa-download"></i>
+                                    </a>
                                 </div>
                             </div>
                         </div>
@@ -514,6 +497,7 @@ const contextMenu = ref({
     payload: null
 })
 const page = usePage()
+const documentReadOnly = true
 
 const filteredDocuments = computed(() => {
     let filtered = props.documents
@@ -541,6 +525,7 @@ const selectedDocumentCount = computed(() => selectedDocumentIds.value.size)
 const isDocumentSelected = (documentId) => selectedDocumentIds.value.has(String(documentId))
 
 const setDocumentSelection = (documentId, checked) => {
+    if (documentReadOnly) return
     const next = new Set(selectedDocumentIds.value)
     const normalizedId = String(documentId)
     if (checked) {
@@ -552,6 +537,7 @@ const setDocumentSelection = (documentId, checked) => {
 }
 
 const handleDocumentSelectionChange = (event, documentId, index) => {
+    if (documentReadOnly) return
     const checked = event.target.checked
 
     if (event.shiftKey && lastSelectedDocumentIndex.value !== null) {
@@ -571,11 +557,13 @@ const handleDocumentSelectionChange = (event, documentId, index) => {
 }
 
 const clearSelectedDocuments = () => {
+    if (documentReadOnly) return
     selectedDocumentIds.value = new Set()
     lastSelectedDocumentIndex.value = null
 }
 
 const selectAllVisibleDocuments = () => {
+    if (documentReadOnly) return
     const next = new Set(selectedDocumentIds.value)
     filteredDocuments.value.forEach((document) => {
         next.add(String(document.id))
@@ -759,6 +747,7 @@ const openPermissionModalForFolder = (folder) => {
 }
 
 const openMoveDocumentModal = (document) => {
+    if (documentReadOnly) return
     moveDocumentTarget.value = document
     moveTargetFolderId.value = document.folder_id ?? null
     showMoveDocumentModal.value = true
@@ -780,6 +769,7 @@ const submitMoveDocument = () => {
 }
 
 const openBulkMoveModal = () => {
+    if (documentReadOnly) return
     if (selectedDocumentIds.value.size === 0) return
     bulkMoveTargetFolderId.value = null
     showBulkMoveModal.value = true
@@ -790,6 +780,7 @@ const closeBulkMoveModal = () => {
 }
 
 const submitBulkMoveDocuments = () => {
+    if (documentReadOnly) return
     if (selectedDocumentIds.value.size === 0) {
         closeBulkMoveModal()
         return
@@ -826,6 +817,7 @@ const toggleFolderExpand = (folderId) => {
 }
 
 const setDragOverFolder = (folderId, targetFolderId) => {
+    if (documentReadOnly) return
     if (isTargetDropDisabled(targetFolderId)) {
         dragOverFolderId.value = null
         return
@@ -834,14 +826,17 @@ const setDragOverFolder = (folderId, targetFolderId) => {
 }
 
 const clearDragOverFolder = () => {
+    if (documentReadOnly) return
     dragOverFolderId.value = null
 }
 
 const handleDocumentDragStart = (document) => {
+    if (documentReadOnly) return
     draggedDocumentId.value = document.id
 }
 
 const handleDocumentDragEnd = () => {
+    if (documentReadOnly) return
     draggedDocumentId.value = null
     dragOverFolderId.value = null
 }
@@ -855,6 +850,7 @@ const handleFolderDragEnd = () => {
 }
 
 const dropDocumentToFolder = (folderId) => {
+    if (documentReadOnly) return
     if (!draggedDocument.value) return
     const draggedDoc = draggedDocument.value
     if (!draggedDoc) return
@@ -873,6 +869,7 @@ const dropDocumentToFolder = (folderId) => {
 }
 
 const handleFolderDrop = (targetFolderId) => {
+    if (documentReadOnly) return
     if (draggedFolderId.value) {
         dropFolderToFolder(targetFolderId)
         return
@@ -975,12 +972,14 @@ const isFolderDropDisabled = (targetFolderId) => {
 }
 
 const isTargetDropDisabled = (targetFolderId) => {
+    if (documentReadOnly) return true
     if (draggedFolderId.value) return isFolderDropDisabled(targetFolderId)
     if (draggedDocument.value) return isDropDisabled(targetFolderId)
     return false
 }
 
 const targetDropLabel = (targetFolderId) => {
+    if (documentReadOnly) return 'Mode read-only'
     if (draggedFolderId.value && isFolderDropDisabled(targetFolderId)) return 'Posisi tidak valid'
     if (draggedDocument.value && isDropDisabled(targetFolderId)) return 'Folder sama'
     return 'Drop di sini'
@@ -1008,16 +1007,8 @@ const contextMenuItems = computed(() => {
         const document = contextMenu.value.payload
         const items = [
             { key: 'open', label: 'Buka Dokumen', icon: 'fas fa-eye', action: () => { closeContextMenu(); window.location.href = route('shared-documents.show', document.id) } },
-            { key: 'move', label: 'Pindah Dokumen', icon: 'fas fa-folder-open', action: () => { closeContextMenu(); openMoveDocumentModal(document) } },
+            { key: 'download', label: 'Download Dokumen', icon: 'fas fa-download', action: () => { closeContextMenu(); window.location.href = route('shared-documents.download', document.id) } },
         ]
-
-        if (canManagePermissions(document)) {
-            items.push({ key: 'acl', label: 'Kelola ACL', icon: 'fas fa-users-cog', action: () => { closeContextMenu(); openPermissionModalForDocument(document) } })
-        }
-
-        if (document.created_by === page.props?.auth?.user?.id) {
-            items.push({ key: 'delete', label: 'Hapus Dokumen', icon: 'fas fa-trash', action: () => { closeContextMenu(); deleteDocument(document.id) } })
-        }
 
         return items
     }
@@ -1048,6 +1039,8 @@ const isTypingContext = (target) => {
 
 const handleKeyboardShortcuts = (event) => {
     if (isTypingContext(event.target)) return
+
+    if (documentReadOnly) return
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
         event.preventDefault()

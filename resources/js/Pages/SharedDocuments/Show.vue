@@ -45,12 +45,38 @@
                     Preview
                 </h3>
 
-                <iframe
-                    v-if="isPdf"
-                    :src="previewUrl"
-                    class="w-full rounded-xl border border-gray-200"
-                    style="height: 70vh;"
-                ></iframe>
+                <div v-if="isPdf" class="space-y-4">
+                    <object
+                        :data="previewUrl"
+                        type="application/pdf"
+                        class="w-full rounded-xl border border-gray-200 bg-gray-50"
+                        style="height: 70vh;"
+                    >
+                        <div class="h-full min-h-[320px] flex flex-col items-center justify-center text-center px-6">
+                            <p class="text-gray-700 font-semibold mb-2">Preview PDF tidak bisa ditampilkan di browser ini.</p>
+                            <p class="text-sm text-gray-500 mb-4">Silakan buka di tab baru atau download file.</p>
+                            <div class="flex flex-wrap justify-center gap-2">
+                                <a
+                                    :href="inlinePreviewUrl"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                >
+                                    <i class="fas fa-external-link-alt mr-2"></i>
+                                    Buka di Tab Baru
+                                </a>
+                                <a
+                                    :href="downloadUrl"
+                                    download
+                                    class="inline-flex items-center px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800"
+                                >
+                                    <i class="fas fa-download mr-2"></i>
+                                    Download PDF
+                                </a>
+                            </div>
+                        </div>
+                    </object>
+                </div>
 
                 <div v-else class="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
                     <div class="text-gray-600 mb-4">Preview untuk tipe file ini tidak tersedia.</div>
@@ -80,9 +106,10 @@ const props = defineProps({
     }
 })
 
-const downloadUrl = computed(() => `${window.location.origin}/shared-documents/${props.document.id}/download`)
+const downloadUrl = computed(() => route('shared-documents.download', props.document.id))
+const inlinePreviewUrl = computed(() => route('shared-documents.preview', props.document.id))
 const isPdf = computed(() => (props.document.file_type || '').toLowerCase() === 'pdf')
-const previewUrl = computed(() => `${downloadUrl.value}#toolbar=1`)
+const previewUrl = computed(() => `${inlinePreviewUrl.value}#toolbar=1`)
 
 const formatDate = (date) => {
     return new Date(date).toLocaleDateString('id-ID', {
