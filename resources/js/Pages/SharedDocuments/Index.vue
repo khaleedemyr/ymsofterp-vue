@@ -179,11 +179,29 @@
                         </div>
                     </div>
 
-                    <div v-if="filteredDocuments.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-in-up animation-delay-400">
+                    <div v-if="isFolderLoading" class="document-masonry animate-fade-in-up animation-delay-400">
+                        <div v-for="n in 4" :key="`skeleton-${n}`" class="document-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div class="animate-pulse space-y-4">
+                                <div class="flex items-start gap-4">
+                                    <div class="h-14 w-14 rounded-xl bg-slate-200"></div>
+                                    <div class="flex-1 space-y-2">
+                                        <div class="h-4 w-2/3 rounded bg-slate-200"></div>
+                                        <div class="h-3 w-1/2 rounded bg-slate-200"></div>
+                                    </div>
+                                </div>
+                                <div class="h-9 rounded-lg bg-slate-100"></div>
+                                <div class="h-9 rounded-lg bg-slate-100"></div>
+                                <div class="h-9 rounded-lg bg-slate-100"></div>
+                                <div class="h-10 rounded-lg bg-slate-200"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else-if="filteredDocuments.length > 0" class="document-masonry animate-fade-in-up animation-delay-400">
                         <div
                             v-for="(document, index) in filteredDocuments"
                             :key="document.id"
-                            class="group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
+                            class="document-card group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
                             :style="{ animationDelay: `${index * 100}ms` }"
                             :draggable="!documentReadOnly"
                             @dragstart="!documentReadOnly && handleDocumentDragStart(document)"
@@ -205,16 +223,23 @@
                                         <div class="w-14 h-14 rounded-xl flex items-center justify-center mr-4 shadow-sm transform group-hover:scale-105 transition-transform duration-300"
                                             :class="getFileTypeColor(document.file_type)">
                                             <div class="absolute inset-0 bg-white/10 rounded-xl"></div>
-                                            <svg class="w-8 h-8 text-white relative z-10" fill="currentColor" viewBox="0 0 20 20">
-                                                <path v-if="document.file_type === 'xlsx' || document.file_type === 'xls'" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                <path v-else-if="document.file_type === 'docx' || document.file_type === 'doc'" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                <path v-else d="M7 4V2a1 1 0 011-1h4a1 1 0 011 1v2h4a1 1 0 011 1v14a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h4z"></path>
-                                            </svg>
+                                            <i :class="getFileTypeIcon(document.file_type)" class="doc-type-icon text-2xl text-white relative z-10"></i>
                                         </div>
                                     </div>
                                     <div class="flex-1">
-                                        <h4 class="text-lg font-semibold text-gray-900 truncate group-hover:text-slate-700 transition-colors">{{ document.title }}</h4>
-                                        <p class="text-sm text-gray-500">{{ document.filename }}</p>
+                                        <div class="flex items-start justify-between gap-2">
+                                            <h4 class="text-lg font-semibold text-gray-900 truncate group-hover:text-slate-700 transition-colors">{{ document.title }}</h4>
+                                            <span
+                                                :class="getDocumentAccessBadgeClass(document)"
+                                                class="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap"
+                                            >
+                                                {{ getDocumentAccessLabel(document) }}
+                                            </span>
+                                        </div>
+                                        <p class="text-sm text-gray-500 truncate">{{ document.filename }}</p>
+                                        <span class="inline-flex items-center mt-2 px-2 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wide bg-slate-100 text-slate-600">
+                                            {{ getFileTypeLabel(document.file_type) }}
+                                        </span>
                                     </div>
                                 </div>
 
@@ -505,6 +530,7 @@ const contextMenu = ref({
 })
 const page = usePage()
 const documentReadOnly = true
+const isFolderLoading = ref(false)
 
 const filteredDocuments = computed(() => {
     let filtered = props.documents
@@ -595,23 +621,59 @@ const removeToast = (id) => {
 }
 
 watch(activeFolderId, (newFolderId) => {
+    isFolderLoading.value = true
     router.get(route('shared-documents.index'), { folder_id: newFolderId }, {
         preserveState: true,
         preserveScroll: true,
-        replace: true
+        replace: true,
+        onFinish: () => {
+            isFolderLoading.value = false
+        },
+        onError: () => {
+            isFolderLoading.value = false
+        }
     })
 })
 
 const getFileTypeColor = (fileType) => {
     const colors = {
-        'xlsx': 'bg-green-500',
-        'xls': 'bg-green-500',
-        'docx': 'bg-blue-500',
-        'doc': 'bg-blue-500',
-        'pptx': 'bg-orange-500',
-        'ppt': 'bg-orange-500'
+        'pdf': 'bg-red-600',
+        'xlsx': 'bg-emerald-600',
+        'xls': 'bg-emerald-600',
+        'docx': 'bg-blue-600',
+        'doc': 'bg-blue-600',
+        'pptx': 'bg-amber-600',
+        'ppt': 'bg-amber-600',
+        'zip': 'bg-violet-600',
+        'rar': 'bg-violet-600',
+        'txt': 'bg-slate-600',
+        'csv': 'bg-teal-600'
     }
-    return colors[fileType] || 'bg-gray-500'
+    return colors[(fileType || '').toLowerCase()] || 'bg-slate-600'
+}
+
+const getFileTypeIcon = (fileType) => {
+    const icons = {
+        'pdf': 'fas fa-file-pdf',
+        'xlsx': 'fas fa-file-excel',
+        'xls': 'fas fa-file-excel',
+        'docx': 'fas fa-file-word',
+        'doc': 'fas fa-file-word',
+        'pptx': 'fas fa-file-powerpoint',
+        'ppt': 'fas fa-file-powerpoint',
+        'zip': 'fas fa-file-archive',
+        'rar': 'fas fa-file-archive',
+        'txt': 'fas fa-file-lines',
+        'csv': 'fas fa-file-csv'
+    }
+
+    return icons[(fileType || '').toLowerCase()] || 'fas fa-file'
+}
+
+const getFileTypeLabel = (fileType) => {
+    const normalized = (fileType || '').toLowerCase()
+    if (!normalized) return 'file'
+    return normalized
 }
 
 const formatDate = (date) => {
@@ -697,6 +759,26 @@ const canDeleteDocument = (document) => {
 
     const userPermission = document.permissions?.find(p => p.user_id === userId)
     return userPermission?.permission === 'admin'
+}
+
+const getDocumentAccessLabel = (document) => {
+    const userId = page.props?.auth?.user?.id
+    if (!userId) return 'View'
+    if (document.created_by === userId) return 'Owner'
+
+    const userPermission = document.permissions?.find((p) => p.user_id === userId)
+    if (userPermission?.permission === 'admin') return 'Admin'
+    if (document.is_public) return 'Publik'
+    return 'View'
+}
+
+const getDocumentAccessBadgeClass = (document) => {
+    const access = getDocumentAccessLabel(document)
+
+    if (access === 'Owner') return 'bg-indigo-100 text-indigo-700'
+    if (access === 'Admin') return 'bg-emerald-100 text-emerald-700'
+    if (access === 'Publik') return 'bg-amber-100 text-amber-700'
+    return 'bg-slate-100 text-slate-600'
 }
 
 const openCreateFolderModal = () => {
@@ -1196,6 +1278,28 @@ onBeforeUnmount(() => {
 
 .animation-delay-600 {
     animation-delay: 600ms;
+}
+
+.doc-type-icon {
+    transition: transform 180ms ease, filter 180ms ease;
+}
+
+.group:hover .doc-type-icon {
+    transform: translateY(-1px) scale(1.06);
+    filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.22));
+}
+.document-masonry {
+    column-count: 1;
+    column-gap: 1.25rem;
+}
+.document-card {
+    break-inside: avoid;
+    margin-bottom: 1.25rem;
+}
+@media (min-width: 1024px) {
+    .document-masonry {
+        column-count: 2;
+    }
 }
 
 /* Glass effect enhancement */
