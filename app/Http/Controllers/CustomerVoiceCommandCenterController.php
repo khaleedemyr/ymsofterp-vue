@@ -112,6 +112,167 @@ class CustomerVoiceCommandCenterController extends Controller
                 ->count(),
         ];
 
+        $firstResponseAvgMinutes = DB::table('feedback_cases')
+            ->whereNotNull('first_response_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, first_response_at)) AS avg_minutes')
+            ->value('avg_minutes');
+        $firstResponseMedianMinutes = $this->medianMinutesBetween('event_at', 'first_response_at');
+
+        $resolutionAvgMinutes = DB::table('feedback_cases')
+            ->whereNotNull('resolved_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, resolved_at)) AS avg_minutes')
+            ->value('avg_minutes');
+
+        $slaResolvedBase = DB::table('feedback_cases')
+            ->whereNotNull('due_at')
+            ->whereNotNull('resolved_at');
+        $slaResolvedTotal = (int) (clone $slaResolvedBase)->count();
+        $slaResolvedOnTime = (int) (clone $slaResolvedBase)
+            ->whereColumn('resolved_at', '<=', 'due_at')
+            ->count();
+        $slaCompliancePct = $slaResolvedTotal > 0
+            ? round(($slaResolvedOnTime / $slaResolvedTotal) * 100, 2)
+            : null;
+
+        $repeatBase = DB::table('feedback_cases')
+            ->whereNotNull('summary_id')
+            ->where('summary_id', '!=', '')
+            ->where('event_at', '>=', now()->subDays(30));
+        $repeatTotal = (int) (clone $repeatBase)->count();
+        $repeatGrouped = (clone $repeatBase)
+            ->select('summary_id')
+            ->selectRaw('COUNT(*) AS cnt')
+            ->groupBy('summary_id')
+            ->havingRaw('COUNT(*) > 1')
+            ->get();
+        $repeatCases = (int) $repeatGrouped->sum('cnt');
+        $repeatIssueRatePct = $repeatTotal > 0
+            ? round(($repeatCases / $repeatTotal) * 100, 2)
+            : null;
+
+        $negativeByOutlet = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->whereIn('c.severity', ['mild_negative', 'negative', 'severe'])
+            ->where('c.event_at', '>=', now()->subDays(30))
+            ->groupBy('c.id_outlet', 'o.nama_outlet')
+            ->selectRaw('c.id_outlet, o.nama_outlet, COUNT(*) as total')
+            ->orderByDesc('total')
+            ->limit(1)
+            ->first();
+
+        $kpis = [
+            'first_response_median_minutes' => $firstResponseMedianMinutes,
+            'first_response_avg_minutes' => $firstResponseAvgMinutes !== null ? (float) $firstResponseAvgMinutes : null,
+            'resolution_avg_minutes' => $resolutionAvgMinutes !== null ? (float) $resolutionAvgMinutes : null,
+            'sla_compliance_pct' => $slaCompliancePct,
+            'repeat_issue_rate_pct' => $repeatIssueRatePct,
+            'repeat_issue_window_days' => 30,
+            'negative_top_outlet_30d' => $negativeByOutlet ? [
+                'id_outlet' => $negativeByOutlet->id_outlet !== null ? (int) $negativeByOutlet->id_outlet : null,
+                'nama_outlet' => (string) ($negativeByOutlet->nama_outlet ?? '-'),
+                'total' => (int) ($negativeByOutlet->total ?? 0),
+            ] : null,
+        ];
+
+        $trendDays = 14;
+        $trendStart = now()->subDays($trendDays - 1)->startOfDay();
+        $dailyRows = DB::table('feedback_cases')
+            ->selectRaw('DATE(event_at) as d')
+            ->selectRaw('COUNT(*) as total_cases')
+            ->selectRaw("SUM(CASE WHEN severity IN ('mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+            ->where('event_at', '>=', $trendStart)
+            ->groupBy(DB::raw('DATE(event_at)'))
+            ->orderBy('d')
+            ->get();
+
+        $dailyMap = [];
+        foreach ($dailyRows as $r) {
+            $dailyMap[(string) $r->d] = [
+                'total_cases' => (int) ($r->total_cases ?? 0),
+                'negative_cases' => (int) ($r->negative_cases ?? 0),
+            ];
+        }
+
+        $trend = [];
+        for ($i = $trendDays - 1; $i >= 0; $i--) {
+            $d = now()->subDays($i)->toDateString();
+            $trend[] = [
+                'date' => $d,
+                'total_cases' => $dailyMap[$d]['total_cases'] ?? 0,
+                'negative_cases' => $dailyMap[$d]['negative_cases'] ?? 0,
+            ];
+        }
+
+        $perfWindowDays = 30;
+        $perfSince = now()->subDays($perfWindowDays)->startOfDay();
+
+        $picRows = DB::table('feedback_cases as c')
+            ->leftJoin('users as u', 'u.id', '=', 'c.assigned_to')
+            ->whereNotNull('c.assigned_to')
+            ->where('c.event_at', '>=', $perfSince)
+            ->groupBy('c.assigned_to', 'u.nama_lengkap')
+            ->selectRaw('c.assigned_to')
+            ->selectRaw('u.nama_lengkap as assignee_name')
+            ->selectRaw('COUNT(*) as total_cases')
+            ->selectRaw("SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) as resolved_cases")
+            ->selectRaw("SUM(CASE WHEN c.status IN ('new','in_progress') THEN 1 ELSE 0 END) as open_cases")
+            ->selectRaw("AVG(CASE WHEN c.first_response_at IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, c.event_at, c.first_response_at) END) as avg_first_response_minutes")
+            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
+            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
+            ->orderByDesc('resolved_cases')
+            ->orderBy('avg_first_response_minutes')
+            ->limit(8)
+            ->get();
+
+        $picPerformance = collect($picRows)->map(function ($r) {
+            $slaTotal = (int) ($r->sla_total ?? 0);
+            $slaOnTime = (int) ($r->sla_on_time ?? 0);
+
+            return [
+                'assignee_id' => (int) ($r->assigned_to ?? 0),
+                'assignee_name' => (string) ($r->assignee_name ?? '-'),
+                'total_cases' => (int) ($r->total_cases ?? 0),
+                'resolved_cases' => (int) ($r->resolved_cases ?? 0),
+                'open_cases' => (int) ($r->open_cases ?? 0),
+                'avg_first_response_minutes' => $r->avg_first_response_minutes !== null ? round((float) $r->avg_first_response_minutes, 2) : null,
+                'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
+            ];
+        })->values()->all();
+
+        $outletRows = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->where('c.event_at', '>=', $perfSince)
+            ->groupBy('c.id_outlet', 'o.nama_outlet')
+            ->selectRaw('c.id_outlet')
+            ->selectRaw('o.nama_outlet as outlet_name')
+            ->selectRaw('COUNT(*) as total_cases')
+            ->selectRaw("SUM(CASE WHEN c.severity IN ('mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+            ->selectRaw("SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) as resolved_cases")
+            ->selectRaw("SUM(CASE WHEN c.status IN ('new','in_progress') THEN 1 ELSE 0 END) as open_cases")
+            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
+            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
+            ->orderByDesc('negative_cases')
+            ->limit(8)
+            ->get();
+
+        $outletPerformance = collect($outletRows)->map(function ($r) {
+            $totalCases = (int) ($r->total_cases ?? 0);
+            $negativeCases = (int) ($r->negative_cases ?? 0);
+            $slaTotal = (int) ($r->sla_total ?? 0);
+            $slaOnTime = (int) ($r->sla_on_time ?? 0);
+
+            return [
+                'id_outlet' => $r->id_outlet !== null ? (int) $r->id_outlet : null,
+                'outlet_name' => (string) ($r->outlet_name ?? '-'),
+                'total_cases' => $totalCases,
+                'negative_cases' => $negativeCases,
+                'negative_rate_pct' => $totalCases > 0 ? round(($negativeCases / $totalCases) * 100, 2) : null,
+                'resolved_cases' => (int) ($r->resolved_cases ?? 0),
+                'open_cases' => (int) ($r->open_cases ?? 0),
+                'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
+            ];
+        })->values()->all();
+
         $outlets = Outlet::where('status', 'A')
             ->orderBy('nama_outlet')
             ->get(['id_outlet', 'nama_outlet']);
@@ -124,6 +285,11 @@ class CustomerVoiceCommandCenterController extends Controller
 
         return Inertia::render('CustomerVoiceCommandCenter/Index', [
             'summary' => $summary,
+            'kpis' => $kpis,
+            'trend' => $trend,
+            'picPerformance' => $picPerformance,
+            'outletPerformance' => $outletPerformance,
+            'perfWindowDays' => $perfWindowDays,
             'cases' => $cases,
             'outlets' => $outlets,
             'assignees' => $assignees,
@@ -251,5 +417,30 @@ class CustomerVoiceCommandCenterController extends Controller
         return redirect()
             ->back()
             ->with('success', 'Catatan tersimpan.');
+    }
+
+    private function medianMinutesBetween(string $startColumn, string $endColumn): ?float
+    {
+        $rows = DB::table('feedback_cases')
+            ->whereNotNull($startColumn)
+            ->whereNotNull($endColumn)
+            ->selectRaw("TIMESTAMPDIFF(MINUTE, {$startColumn}, {$endColumn}) as v")
+            ->whereRaw("TIMESTAMPDIFF(MINUTE, {$startColumn}, {$endColumn}) >= 0")
+            ->orderBy('v')
+            ->pluck('v')
+            ->map(fn ($v) => (int) $v)
+            ->values()
+            ->all();
+
+        $count = count($rows);
+        if ($count === 0) {
+            return null;
+        }
+        $mid = intdiv($count, 2);
+        if ($count % 2 === 1) {
+            return (float) $rows[$mid];
+        }
+
+        return round((($rows[$mid - 1] + $rows[$mid]) / 2), 2);
     }
 }

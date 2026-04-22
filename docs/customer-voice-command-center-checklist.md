@@ -55,7 +55,7 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 - [x] Buat menu `Customer Voice Command Center`
 - [-] Buat panel `Overview` (volume, negative rate, top issue, top outlet risk)
 - [-] Buat panel `Action Board` (queue case operasional)
-- [ ] Buat panel `Case Detail` (timeline, assign, resolve, escalate)
+- [x] Buat panel `Case Detail` (timeline, assign, resolve, escalate)
 - [-] Tambah filter cepat (severe, overdue, outlet, channel, unassigned)
 - [-] Tambah pencarian teks komentar/ringkasan
 
@@ -78,12 +78,12 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 
 ## G. KPI & Monitoring
 
-- [ ] First response time (median)
-- [ ] SLA compliance rate
-- [ ] Resolution time
+- [-] First response time (median)
+- [-] SLA compliance rate
+- [-] Resolution time
 - [-] Negative rate trend per outlet
-- [ ] Repeat issue rate
-- [ ] Dashboard performa PIC/outlet
+- [-] Repeat issue rate
+- [-] Dashboard performa PIC/outlet
 
 ## H. Quality, Security, dan Testing
 
@@ -132,4 +132,8 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 - 2026-04-22 - Ditambahkan ingestion service + tombol sinkronisasi untuk menarik data Google/Instagram AI dan Guest Comment ke `feedback_cases`.
 - 2026-04-22 - Ditambahkan aksi operasional case: assign PIC, update status, tambah catatan, dan timeline aktivitas.
 - 2026-04-22 - Ditambahkan indikator SLA/overdue di Action Board + command scheduler `feedback:escalate-overdue` untuk membuat escalation alert log internal.
+- 2026-04-22 - UI dipoles lebih modern/professional + ditambahkan Case Detail drawer dan modal catatan aktivitas.
+- 2026-04-22 - Ditambahkan KPI section (avg first response, avg resolution time, SLA compliance, repeat issue rate, top negative outlet 30 hari).
+- 2026-04-22 - KPI first response di-upgrade ke median + ditambahkan tabel trend harian 14 hari (total vs negatif).
+- 2026-04-22 - Ditambahkan leaderboard performa PIC dan performa outlet (window 30 hari) untuk monitoring eksekusi tim.
 
