@@ -164,14 +164,17 @@
                   <i class="fa-solid fa-arrow-left"></i>
                   Sebelumnya
                 </button>
-                <button v-if="!isPreviewStep" type="button" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" @click="nextStep" :disabled="isSaving">
-                  Selanjutnya
-                  <i class="fa-solid fa-arrow-right"></i>
-                </button>
-                <button v-else type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" :disabled="isSaving">
-                  <i v-if="isSaving" class="fa-solid fa-spinner fa-spin"></i>
-                  <i v-else class="fa-solid fa-save"></i> Simpan
-                </button>
+                <div class="flex items-center gap-2">
+                  <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" :disabled="isSaving">
+                    <i v-if="isSaving" class="fa-solid fa-spinner fa-spin"></i>
+                    <i v-else class="fa-solid fa-save"></i>
+                    Simpan
+                  </button>
+                  <button v-if="!isPreviewStep" type="button" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" @click="nextStep" :disabled="isSaving">
+                    Selanjutnya
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -278,14 +281,17 @@
                   <i class="fa-solid fa-arrow-left"></i>
                   Sebelumnya
                 </button>
-                <button v-if="editStep < parentMenus.length - 1" type="button" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" @click="nextEditStep" :disabled="isSaving">
-                  Selanjutnya
-                  <i class="fa-solid fa-arrow-right"></i>
-                </button>
-                <button v-else type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" :disabled="isSaving">
-                  <i v-if="isSaving" class="fa-solid fa-spinner fa-spin"></i>
-                  <i v-else class="fa-solid fa-save"></i> Simpan
-                </button>
+                <div class="flex items-center gap-2">
+                  <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" :disabled="isSaving">
+                    <i v-if="isSaving" class="fa-solid fa-spinner fa-spin"></i>
+                    <i v-else class="fa-solid fa-save"></i>
+                    Simpan
+                  </button>
+                  <button v-if="editStep < parentMenus.length - 1" type="button" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2" @click="nextEditStep" :disabled="isSaving">
+                    Selanjutnya
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
