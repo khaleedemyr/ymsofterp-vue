@@ -484,6 +484,7 @@ const menuGroups = [
         menus: [
             { name: () => 'Data Member', icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
             { name: () => 'Guest Comment (OCR)', icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
+            { name: () => 'Customer Voice Command Center', icon: 'fa-solid fa-headset', route: '/customer-voice-command-center', code: 'customer_voice_command_center' },
            // { name: () => 'Migrasi Data Member', icon: 'fa-solid fa-database', route: '/member-migration', code: 'member_migration' },
             { name: () => 'Kirim Notifikasi Member', icon: 'fa-solid fa-paper-plane', route: '/member-notification', code: 'member_notification' },
            // { name: () => 'Dashboard CRM', icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },

@@ -51,6 +51,7 @@ use App\Http\Controllers\MKProductionController;
 use App\Http\Controllers\GoogleReviewController;
 use App\Http\Controllers\GuestCommentFormController;
 use App\Http\Controllers\InstagramReviewController;
+use App\Http\Controllers\CustomerVoiceCommandCenterController;
 use App\Http\Controllers\ButcherReportController;
 use App\Http\Controllers\StockCostReportController;
 use App\Http\Controllers\ButcherAnalysisReportController;
@@ -195,6 +196,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/google-review/instagram/progress', [InstagramReviewController::class, 'progress'])->name('google-review.instagram.progress');
     Route::get('/google-review/instagram/stats', [InstagramReviewController::class, 'stats'])->name('google-review.instagram.stats');
     Route::get('/google-review/instagram/recent-posts', [InstagramReviewController::class, 'recentPosts'])->name('google-review.instagram.recent-posts');
+
+    // Customer Voice Command Center (menu terpisah)
+    Route::get('/customer-voice-command-center', [CustomerVoiceCommandCenterController::class, 'index'])
+        ->name('customer-voice-command-center.index');
+    Route::post('/customer-voice-command-center/sync', [CustomerVoiceCommandCenterController::class, 'sync'])
+        ->name('customer-voice-command-center.sync');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
