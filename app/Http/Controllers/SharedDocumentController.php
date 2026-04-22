@@ -197,9 +197,6 @@ class SharedDocumentController extends Controller
 
         return Inertia::render('SharedDocuments/Show', [
             'document' => $document,
-            'canEdit' => $document->hasPermission($user, 'edit'),
-            'canAdmin' => $document->hasPermission($user, 'admin'),
-            'onlyOfficeUrl' => config('app.onlyoffice_url', 'http://localhost:80'),
         ]);
     }
 
