@@ -278,7 +278,7 @@ class CustomerVoiceCommandCenterController extends Controller
             ->get(['id_outlet', 'nama_outlet']);
 
         $assignees = User::active()
-            ->whereIn('id_jabatan', [155, 173])
+            ->whereIn('id_jabatan', [155, 173, 257])
             ->orderBy('nama_lengkap')
             ->limit(300)
             ->get(['id', 'nama_lengkap', 'id_outlet', 'id_jabatan']);
