@@ -202,6 +202,10 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.index');
     Route::post('/customer-voice-command-center/sync', [CustomerVoiceCommandCenterController::class, 'sync'])
         ->name('customer-voice-command-center.sync');
+    Route::post('/customer-voice-command-center/cases/{id}/update', [CustomerVoiceCommandCenterController::class, 'updateCase'])
+        ->name('customer-voice-command-center.cases.update');
+    Route::post('/customer-voice-command-center/cases/{id}/note', [CustomerVoiceCommandCenterController::class, 'addNote'])
+        ->name('customer-voice-command-center.cases.note');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');

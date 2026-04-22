@@ -160,6 +160,14 @@ class Kernel extends ConsoleKernel
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/device-tokens-cleanup.log'))
             ->description('Cleanup old and excess device tokens to prevent notification spam');
+
+        // Escalate overdue feedback cases every 15 minutes (logs to feedback_alert_logs)
+        $schedule->command('feedback:escalate-overdue --limit=500 --cooldown=60')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping()
+            ->runInBackground()
+            ->appendOutputTo(storage_path('logs/feedback-escalation.log'))
+            ->description('Escalate overdue feedback cases and queue internal alerts');
     }
 
     /**

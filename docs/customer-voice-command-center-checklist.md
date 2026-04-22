@@ -43,12 +43,12 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 
 ## C. Rule Engine & SLA
 
-- [ ] Implement rule: `severe` auto-case + alert manager
-- [ ] Implement rule: `negative` auto-case + assign supervisor
-- [ ] Implement rule: `mild_negative` masuk queue normal
-- [ ] Set SLA default per severity
-- [ ] Buat escalation otomatis saat SLA terlewat
-- [ ] Buat anti-spam rule untuk alert berulang
+- [-] Implement rule: `severe` auto-case + alert manager
+- [-] Implement rule: `negative` auto-case + assign supervisor
+- [-] Implement rule: `mild_negative` masuk queue normal
+- [x] Set SLA default per severity
+- [-] Buat escalation otomatis saat SLA terlewat
+- [-] Buat anti-spam rule untuk alert berulang
 
 ## D. UI Operasional
 
@@ -61,16 +61,16 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 
 ## E. Workflow Follow-Up
 
-- [ ] Tombol assign PIC
-- [ ] Tombol ubah status (`new`, `in_progress`, `resolved`, `ignored`)
-- [ ] Catatan internal per case
+- [x] Tombol assign PIC
+- [x] Tombol ubah status (`new`, `in_progress`, `resolved`, `ignored`)
+- [x] Catatan internal per case
 - [ ] Template response draft (human approval)
 - [ ] Tugas follow-up customer (khusus data dengan kontak)
-- [ ] Audit log perubahan status dan assignment
+- [x] Audit log perubahan status dan assignment
 
 ## F. Notifikasi
 
-- [ ] Notifikasi in-app untuk case severe
+- [-] Notifikasi in-app untuk case severe
 - [ ] Integrasi kanal eksternal (WA/Telegram/Slack/Email)
 - [ ] Ringkasan harian otomatis (daily digest)
 - [ ] Ringkasan mingguan otomatis (weekly digest)
@@ -130,4 +130,6 @@ Dokumen ini jadi referensi utama untuk memantau progress fitur **Customer Voice 
 - 2026-04-22 - Ditambahkan query SQL menu+permission terpisah (`database/sql/insert_customer_voice_command_center_erp_menu.sql`).
 - 2026-04-22 - Ditambahkan route + halaman terpisah `customer-voice-command-center` (tidak menyatu ke modul lain).
 - 2026-04-22 - Ditambahkan ingestion service + tombol sinkronisasi untuk menarik data Google/Instagram AI dan Guest Comment ke `feedback_cases`.
+- 2026-04-22 - Ditambahkan aksi operasional case: assign PIC, update status, tambah catatan, dan timeline aktivitas.
+- 2026-04-22 - Ditambahkan indikator SLA/overdue di Action Board + command scheduler `feedback:escalate-overdue` untuk membuat escalation alert log internal.
 
