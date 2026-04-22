@@ -42,6 +42,34 @@
                         <option value="pptx">PowerPoint</option>
                         <option value="pdf">PDF</option>
                     </select>
+                    <div class="relative">
+                        <button
+                            @click.stop="toggleViewMenu"
+                            class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
+                        >
+                            <i class="fas fa-table-cells-large mr-2"></i>
+                            View
+                            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                        </button>
+                        <div
+                            v-if="showViewMenu"
+                            class="absolute right-0 top-full mt-2 z-50 w-56 rounded-xl border border-slate-200 bg-white shadow-xl p-2"
+                        >
+                            <button
+                                v-for="option in viewOptions"
+                                :key="option.value"
+                                @click="setViewMode(option.value)"
+                                class="w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between hover:bg-slate-100"
+                                :class="viewMode === option.value ? 'bg-slate-100 text-slate-900 font-semibold' : 'text-slate-700'"
+                            >
+                                <span class="flex items-center gap-2">
+                                    <i :class="option.icon"></i>
+                                    {{ option.label }}
+                                </span>
+                                <i v-if="viewMode === option.value" class="fas fa-check text-emerald-600"></i>
+                            </button>
+                        </div>
+                    </div>
                     <button
                         @click="openCreateFolderModal"
                         class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
@@ -197,19 +225,20 @@
                         </div>
                     </div>
 
-                    <div v-else-if="filteredDocuments.length > 0" class="document-masonry animate-fade-in-up animation-delay-400">
+                    <div v-else-if="filteredDocuments.length > 0" :class="documentContainerClass">
                         <div
                             v-for="(document, index) in filteredDocuments"
                             :key="document.id"
-                            class="document-card group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
+                            :class="[documentCardClass, draggedDocumentId === document.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : '']"
                             :style="{ animationDelay: `${index * 100}ms` }"
                             :draggable="canMoveDocument(document)"
                             @dragstart="canMoveDocument(document) && handleDocumentDragStart(document)"
                             @dragend="canMoveDocument(document) && handleDocumentDragEnd"
-                            :class="draggedDocumentId === document.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''"
+                            :data-view-mode="viewMode"
+                            :data-size-mode="iconSizeMode"
                             @contextmenu.prevent="openContextMenu($event, 'document', document)"
                         >
-                            <div class="p-6">
+                            <div :class="cardBodyClass">
                                 <div v-if="!documentReadOnly" class="flex justify-end mb-2">
                                     <input
                                         type="checkbox"
@@ -220,10 +249,10 @@
                                 </div>
                                 <div class="flex items-center mb-6">
                                     <div class="relative">
-                                        <div class="w-14 h-14 rounded-xl flex items-center justify-center mr-4 shadow-sm transform group-hover:scale-105 transition-transform duration-300"
-                                            :class="getFileTypeColor(document.file_type)">
+                                        <div class="rounded-xl flex items-center justify-center mr-4 shadow-sm transform group-hover:scale-105 transition-transform duration-300"
+                                            :class="[iconBoxClass, getFileTypeColor(document.file_type)]">
                                             <div class="absolute inset-0 bg-white/10 rounded-xl"></div>
-                                            <i :class="getFileTypeIcon(document.file_type)" class="doc-type-icon text-2xl text-white relative z-10"></i>
+                                            <i :class="getFileTypeIcon(document.file_type)" class="doc-type-icon text-white relative z-10" :style="iconStyle"></i>
                                         </div>
                                     </div>
                                     <div class="flex-1">
@@ -243,7 +272,7 @@
                                     </div>
                                 </div>
 
-                                <div class="space-y-2 mb-6">
+                                <div v-if="viewMode !== 'details'" class="space-y-2 mb-6">
                                     <div class="flex items-center text-sm text-gray-600 bg-slate-50 rounded-lg p-2">
                                         <i class="fas fa-user mr-2 text-blue-500"></i>
                                         {{ document.creator?.nama_lengkap || document.creator?.name || '-' }}
@@ -255,6 +284,19 @@
                                     <div class="flex items-center text-sm text-gray-600 bg-slate-50 rounded-lg p-2">
                                         <i class="fas fa-folder mr-2 text-yellow-500"></i>
                                         {{ document.folder?.name || 'Root' }}
+                                    </div>
+                                </div>
+
+                                <div v-else class="mb-6 rounded-lg border border-slate-200 overflow-hidden">
+                                    <div class="grid grid-cols-3 text-xs font-semibold uppercase tracking-wide bg-slate-100 text-slate-500 px-3 py-2">
+                                        <span>Pembuat</span>
+                                        <span>Tanggal</span>
+                                        <span>Folder</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 text-sm text-slate-700 px-3 py-2">
+                                        <span class="truncate">{{ document.creator?.nama_lengkap || document.creator?.name || '-' }}</span>
+                                        <span>{{ formatDate(document.created_at) }}</span>
+                                        <span class="truncate">{{ document.folder?.name || 'Root' }}</span>
                                     </div>
                                 </div>
 
@@ -531,6 +573,72 @@ const contextMenu = ref({
 const page = usePage()
 const documentReadOnly = false
 const isFolderLoading = ref(false)
+const showViewMenu = ref(false)
+const VIEW_MODE_STORAGE_KEY = 'shared-documents.view-mode'
+const viewMode = ref('medium-icons')
+
+const viewOptions = [
+    { value: 'extra-large-icons', label: 'Extra Large Icons', icon: 'far fa-square' },
+    { value: 'large-icons', label: 'Large Icons', icon: 'far fa-clone' },
+    { value: 'medium-icons', label: 'Medium Icons', icon: 'far fa-window-maximize' },
+    { value: 'small-icons', label: 'Small Icons', icon: 'fas fa-grip' },
+    { value: 'list', label: 'List', icon: 'fas fa-list' },
+    { value: 'details', label: 'Details', icon: 'fas fa-table-list' }
+]
+
+const iconSizeMode = computed(() => {
+    if (!viewMode.value.includes('icons')) return 'medium-icons'
+    return viewMode.value
+})
+
+const documentContainerClass = computed(() => {
+    const base = 'animate-fade-in-up animation-delay-400'
+    return viewMode.value.includes('icons') ? `${base} document-masonry` : `${base} space-y-3`
+})
+
+const documentCardClass = computed(() => {
+    const base = 'group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up'
+    return viewMode.value.includes('icons') ? `${base} document-card` : base
+})
+
+const cardBodyClass = computed(() => {
+    if (viewMode.value === 'small-icons') return 'p-4'
+    return 'p-6'
+})
+
+const iconBoxClass = computed(() => {
+    const sizeMap = {
+        'extra-large-icons': 'w-20 h-20',
+        'large-icons': 'w-16 h-16',
+        'medium-icons': 'w-14 h-14',
+        'small-icons': 'w-10 h-10'
+    }
+    return sizeMap[iconSizeMode.value] || sizeMap['medium-icons']
+})
+
+const iconStyle = computed(() => {
+    const fontSizeMap = {
+        'extra-large-icons': '2rem',
+        'large-icons': '1.5rem',
+        'medium-icons': '1.25rem',
+        'small-icons': '0.95rem'
+    }
+    return { fontSize: fontSizeMap[iconSizeMode.value] || fontSizeMap['medium-icons'] }
+})
+
+const toggleViewMenu = () => {
+    showViewMenu.value = !showViewMenu.value
+}
+
+const closeViewMenu = () => {
+    showViewMenu.value = false
+}
+
+const setViewMode = (mode) => {
+    viewMode.value = mode
+    showViewMenu.value = false
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+}
 
 const filteredDocuments = computed(() => {
     let filtered = props.documents
@@ -1139,6 +1247,7 @@ const openContextMenu = (event, type, payload) => {
 
 const closeContextMenu = () => {
     contextMenu.value.visible = false
+    closeViewMenu()
 }
 
 const contextMenuItems = computed(() => {
@@ -1231,6 +1340,11 @@ watch(() => page.props.flash, (flash) => {
 }, { immediate: true, deep: true })
 
 onMounted(() => {
+    const savedViewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    if (savedViewMode && viewOptions.some((option) => option.value === savedViewMode)) {
+        viewMode.value = savedViewMode
+    }
+
     window.addEventListener('click', closeContextMenu)
     window.addEventListener('scroll', closeContextMenu, true)
     window.addEventListener('keydown', handleKeyboardShortcuts)
