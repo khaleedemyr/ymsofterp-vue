@@ -250,6 +250,14 @@
                                     >
                                         <i class="fas fa-download"></i>
                                     </a>
+                                    <button
+                                        v-if="canDeleteDocument(document)"
+                                        @click="deleteDocument(document.id)"
+                                        class="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                        title="Hapus Dokumen"
+                                    >
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -640,6 +648,17 @@ const canMoveDocument = (document) => {
     return document.created_by === page.props?.auth?.user?.id
 }
 
+const canDeleteDocument = (document) => {
+    const userId = page.props?.auth?.user?.id
+    if (!userId) return false
+
+    if (document.created_by === userId) return true
+    if (document.can_manage_permissions) return true
+
+    const userPermission = document.permissions?.find(p => p.user_id === userId)
+    return userPermission?.permission === 'admin'
+}
+
 const openCreateFolderModal = () => {
     createFolderName.value = ''
     createFolderIsPublic.value = false
@@ -1009,6 +1028,10 @@ const contextMenuItems = computed(() => {
             { key: 'open', label: 'Buka Dokumen', icon: 'fas fa-eye', action: () => { closeContextMenu(); window.location.href = route('shared-documents.show', document.id) } },
             { key: 'download', label: 'Download Dokumen', icon: 'fas fa-download', action: () => { closeContextMenu(); window.location.href = route('shared-documents.download', document.id) } },
         ]
+
+        if (canDeleteDocument(document)) {
+            items.push({ key: 'delete', label: 'Hapus Dokumen', icon: 'fas fa-trash', action: () => { closeContextMenu(); deleteDocument(document.id) } })
+        }
 
         return items
     }
