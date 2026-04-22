@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
+    <div class="w-full max-w-none py-6 px-3 sm:px-4 lg:px-6">
       <div v-if="$page.props.flash?.success" class="mb-4 p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm">
         {{ $page.props.flash.success }}
       </div>
