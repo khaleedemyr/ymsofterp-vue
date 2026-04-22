@@ -1,19 +1,17 @@
 <template>
     <AppLayout>
-        <div class="space-y-6">
-            <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 p-8 text-white shadow-2xl">
-                <div class="absolute inset-0 bg-black/10"></div>
-                <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16 blur-2xl"></div>
-                <div class="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full translate-y-12 -translate-x-12 blur-xl"></div>
+        <div class="shared-docs-shell space-y-6">
+            <div class="relative overflow-hidden rounded-3xl bg-slate-900 p-8 text-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.8)]">
+                <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.22),transparent_45%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.18),transparent_42%)]"></div>
 
                 <div class="relative z-10">
                     <div class="flex items-center justify-between">
                         <div>
                             <h1 class="text-4xl font-bold mb-2 animate-fade-in-up">Dokumen Bersama</h1>
-                            <p class="text-blue-100 text-lg">File explorer dokumen dengan folder dan ACL multi-scope</p>
+                            <p class="text-slate-200 text-base md:text-lg">File explorer dokumen dengan folder dan ACL multi-scope</p>
                         </div>
                         <div class="hidden md:block">
-                            <div class="w-20 h-20 bg-white/20 rounded-2xl backdrop-blur-sm flex items-center justify-center">
+                            <div class="w-20 h-20 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-sm flex items-center justify-center">
                                 <i class="fas fa-file-alt text-3xl text-white"></i>
                             </div>
                         </div>
@@ -21,22 +19,22 @@
                 </div>
             </div>
 
-            <div class="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 p-6 animate-fade-in-up animation-delay-200">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 animate-fade-in-up animation-delay-200">
                 <div class="flex flex-col lg:flex-row gap-4">
                     <div class="flex-1 relative group">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-search text-gray-400 group-focus-within:text-blue-500 transition-colors"></i>
+                            <i class="fas fa-search text-slate-400 group-focus-within:text-slate-700 transition-colors"></i>
                         </div>
                         <input
                             v-model="search"
                             type="text"
                             placeholder="Cari dokumen..."
-                            class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                            class="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition-all duration-200 bg-slate-50"
                         >
                     </div>
                     <select
                         v-model="filterType"
-                        class="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                        class="px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-300 focus:border-slate-400 transition-all duration-200 bg-slate-50"
                     >
                         <option value="">Semua Tipe</option>
                         <option value="xlsx">Excel</option>
@@ -46,7 +44,7 @@
                     </select>
                     <button
                         @click="openCreateFolderModal"
-                        class="inline-flex items-center px-4 py-3 bg-white text-blue-700 font-semibold rounded-xl border border-blue-200 shadow hover:bg-blue-50 transition-all duration-300"
+                        class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
                     >
                         <i class="fas fa-folder-plus mr-2"></i>
                         Folder
@@ -54,7 +52,7 @@
                     <button
                         v-if="selectedFolder"
                         @click="openRenameFolderModal(selectedFolder)"
-                        class="inline-flex items-center px-4 py-3 bg-white text-amber-700 font-semibold rounded-xl border border-amber-200 shadow hover:bg-amber-50 transition-all duration-300"
+                        class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
                     >
                         <i class="fas fa-pen mr-2"></i>
                         Rename Folder
@@ -62,7 +60,7 @@
                     <button
                         v-if="selectedFolder && selectedFolderCanManage"
                         @click="openPermissionModalForFolder(selectedFolder)"
-                        class="inline-flex items-center px-4 py-3 bg-white text-green-700 font-semibold rounded-xl border border-green-200 shadow hover:bg-green-50 transition-all duration-300"
+                        class="inline-flex items-center px-4 py-3 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-all duration-200"
                     >
                         <i class="fas fa-shield-alt mr-2"></i>
                         ACL Folder
@@ -70,14 +68,14 @@
                     <button
                         v-if="selectedFolder && selectedFolderCanManage"
                         @click="openDeleteFolderModal(selectedFolder)"
-                        class="inline-flex items-center px-4 py-3 bg-white text-red-700 font-semibold rounded-xl border border-red-200 shadow hover:bg-red-50 transition-all duration-300"
+                        class="inline-flex items-center px-4 py-3 bg-white text-red-700 font-semibold rounded-xl border border-red-200 hover:bg-red-50 transition-all duration-200"
                     >
                         <i class="fas fa-folder-minus mr-2"></i>
                         Hapus Folder
                     </button>
                     <Link
                         :href="route('shared-documents.create')"
-                        class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                        class="inline-flex items-center px-6 py-3 bg-slate-900 text-white font-semibold rounded-xl shadow-sm hover:bg-slate-800 transition-all duration-200"
                     >
                         <i class="fas fa-plus mr-2"></i>
                         Upload Dokumen
@@ -103,13 +101,13 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div class="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 p-4 lg:col-span-1">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 lg:col-span-1">
                     <h3 class="text-sm font-semibold text-gray-700 mb-3">Folder Explorer</h3>
                     <button
                         @click="openFolder(null)"
-                        class="w-full text-left px-3 py-2 rounded-lg hover:bg-blue-50 transition"
+                        class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 transition"
                         :class="[
-                            activeFolderId == null ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700',
+                            activeFolderId == null ? 'bg-slate-900 text-white font-semibold' : 'text-gray-700',
                             dragOverFolderId === 'root' ? 'ring-2 ring-indigo-400 bg-indigo-50' : '',
                             isTargetDropDisabled(null) ? 'opacity-60 cursor-not-allowed' : ''
                         ]"
@@ -143,7 +141,7 @@
                             <button
                                 v-if="hasChildren(folder.id)"
                                 @click.stop="toggleFolderExpand(folder.id)"
-                                class="w-6 h-6 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100 flex items-center justify-center"
+                                class="w-6 h-6 text-gray-500 hover:text-gray-700 rounded hover:bg-slate-100 flex items-center justify-center"
                             >
                                 <i
                                     class="fas"
@@ -153,8 +151,8 @@
                             <span v-else class="w-6"></span>
                             <button
                                 @click="openFolder(folder.id)"
-                                class="flex-1 text-left px-2 py-2 rounded-lg hover:bg-blue-50 transition"
-                                :class="String(activeFolderId) === String(folder.id) ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700'"
+                                class="flex-1 text-left px-2 py-2 rounded-lg hover:bg-slate-100 transition"
+                                :class="String(activeFolderId) === String(folder.id) ? 'bg-slate-900 text-white font-semibold' : 'text-gray-700'"
                                 @contextmenu.prevent="openContextMenu($event, 'folder', folder)"
                             >
                                 <i class="fas fa-folder mr-2 text-amber-500"></i>
@@ -168,7 +166,7 @@
                 </div>
 
                 <div class="lg:col-span-3 space-y-4">
-                    <div class="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 p-4">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                         <div class="flex flex-wrap items-center gap-2 text-sm">
                             <button
                                 v-for="crumb in breadcrumbs"
@@ -181,11 +179,11 @@
                         </div>
                     </div>
 
-                    <div v-if="filteredDocuments.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in-up animation-delay-400">
+                    <div v-if="filteredDocuments.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-in-up animation-delay-400">
                         <div
                             v-for="(document, index) in filteredDocuments"
                             :key="document.id"
-                            class="group bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-2xl border border-white/20 overflow-hidden transform hover:-translate-y-2 transition-all duration-500 animate-fade-in-up"
+                            class="group bg-white rounded-2xl shadow-sm hover:shadow-lg border border-slate-200 overflow-hidden transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
                             :style="{ animationDelay: `${index * 100}ms` }"
                             :draggable="!documentReadOnly"
                             @dragstart="!documentReadOnly && handleDocumentDragStart(document)"
@@ -204,9 +202,9 @@
                                 </div>
                                 <div class="flex items-center mb-6">
                                     <div class="relative">
-                                        <div class="w-16 h-16 rounded-2xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 transition-transform duration-300"
+                                        <div class="w-14 h-14 rounded-xl flex items-center justify-center mr-4 shadow-sm transform group-hover:scale-105 transition-transform duration-300"
                                             :class="getFileTypeColor(document.file_type)">
-                                            <div class="absolute inset-0 bg-white/20 rounded-2xl blur-sm"></div>
+                                            <div class="absolute inset-0 bg-white/10 rounded-xl"></div>
                                             <svg class="w-8 h-8 text-white relative z-10" fill="currentColor" viewBox="0 0 20 20">
                                                 <path v-if="document.file_type === 'xlsx' || document.file_type === 'xls'" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                 <path v-else-if="document.file_type === 'docx' || document.file_type === 'doc'" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -215,21 +213,21 @@
                                         </div>
                                     </div>
                                     <div class="flex-1">
-                                        <h4 class="text-lg font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">{{ document.title }}</h4>
+                                        <h4 class="text-lg font-semibold text-gray-900 truncate group-hover:text-slate-700 transition-colors">{{ document.title }}</h4>
                                         <p class="text-sm text-gray-500">{{ document.filename }}</p>
                                     </div>
                                 </div>
 
                                 <div class="space-y-2 mb-6">
-                                    <div class="flex items-center text-sm text-gray-600 bg-white/30 rounded-lg p-2 backdrop-blur-sm">
+                                    <div class="flex items-center text-sm text-gray-600 bg-slate-50 rounded-lg p-2">
                                         <i class="fas fa-user mr-2 text-blue-500"></i>
                                         {{ document.creator?.nama_lengkap || document.creator?.name || '-' }}
                                     </div>
-                                    <div class="flex items-center text-sm text-gray-600 bg-white/30 rounded-lg p-2 backdrop-blur-sm">
+                                    <div class="flex items-center text-sm text-gray-600 bg-slate-50 rounded-lg p-2">
                                         <i class="fas fa-calendar mr-2 text-green-500"></i>
                                         {{ formatDate(document.created_at) }}
                                     </div>
-                                    <div class="flex items-center text-sm text-gray-600 bg-white/30 rounded-lg p-2 backdrop-blur-sm">
+                                    <div class="flex items-center text-sm text-gray-600 bg-slate-50 rounded-lg p-2">
                                         <i class="fas fa-folder mr-2 text-yellow-500"></i>
                                         {{ document.folder?.name || 'Root' }}
                                     </div>
@@ -238,14 +236,14 @@
                                 <div class="flex gap-2 flex-wrap">
                                     <Link
                                         :href="route('shared-documents.show', document.id)"
-                                        class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                        class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-slate-900 text-white font-medium rounded-lg shadow-sm hover:bg-slate-800 transition-all duration-200 text-sm"
                                     >
                                         <i class="fas fa-eye mr-1"></i>
                                         Buka
                                     </Link>
                                     <a
                                         :href="route('shared-documents.download', document.id)"
-                                        class="px-3 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                        class="px-3 py-2 bg-emerald-600 text-white rounded-lg shadow-sm hover:bg-emerald-700 transition-all duration-200 text-sm"
                                         title="Download Dokumen"
                                     >
                                         <i class="fas fa-download"></i>
@@ -253,7 +251,7 @@
                                     <button
                                         v-if="canDeleteDocument(document)"
                                         @click="deleteDocument(document.id)"
-                                        class="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 text-sm"
+                                        class="px-3 py-2 bg-red-600 text-white rounded-lg shadow-sm hover:bg-red-700 transition-all duration-200 text-sm"
                                         title="Hapus Dokumen"
                                     >
                                         <i class="fas fa-trash"></i>
@@ -262,15 +260,15 @@
                             </div>
                         </div>
                     </div>
-                    <div v-else class="text-center py-16 animate-fade-in-up animation-delay-600 bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20">
-                        <div class="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl flex items-center justify-center shadow-lg">
-                            <i class="fas fa-file-alt text-3xl text-blue-500"></i>
+                    <div v-else class="text-center py-16 animate-fade-in-up animation-delay-600 bg-white rounded-2xl shadow-sm border border-slate-200">
+                        <div class="w-24 h-24 mx-auto mb-6 bg-slate-100 rounded-2xl flex items-center justify-center shadow-sm">
+                            <i class="fas fa-file-alt text-3xl text-slate-500"></i>
                         </div>
                         <h3 class="text-2xl font-bold text-gray-900 mb-2">Tidak ada dokumen</h3>
                         <p class="text-gray-600 mb-8">Mulai dengan mengupload dokumen pertama Anda.</p>
                         <Link
                             :href="route('shared-documents.create')"
-                            class="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                            class="inline-flex items-center px-8 py-4 bg-slate-900 text-white font-semibold rounded-xl shadow-sm hover:bg-slate-800 transition-all duration-200"
                         >
                             <i class="fas fa-plus mr-2"></i>
                             Upload Dokumen
@@ -436,6 +434,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import DocumentPermissionModal from '@/Components/DocumentPermissionModal.vue'
 
@@ -623,10 +622,51 @@ const formatDate = (date) => {
     })
 }
 
-const deleteDocument = (documentId) => {
-    if (confirm('Apakah Anda yakin ingin menghapus dokumen ini?')) {
-        router.delete(route('shared-documents.destroy', documentId))
-    }
+const deleteDocument = async (documentId) => {
+    const result = await Swal.fire({
+        title: 'Hapus dokumen?',
+        text: 'Dokumen yang dihapus tidak dapat dikembalikan.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, hapus',
+        cancelButtonText: 'Batal',
+        reverseButtons: true,
+        focusCancel: true,
+        customClass: {
+            popup: 'rounded-2xl',
+            confirmButton: 'swal-confirm-delete',
+            cancelButton: 'swal-cancel-delete'
+        }
+    })
+
+    if (!result.isConfirmed) return
+
+    router.delete(route('shared-documents.destroy', documentId), {
+        onStart: () => {
+            Swal.fire({
+                title: 'Menghapus dokumen...',
+                text: 'Mohon tunggu sebentar',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            })
+        },
+        onSuccess: () => {
+            Swal.fire({
+                title: 'Berhasil',
+                text: 'Dokumen berhasil dihapus.',
+                icon: 'success',
+                timer: 1800,
+                showConfirmButton: false
+            })
+        },
+        onError: (errors) => {
+            Swal.fire({
+                title: 'Gagal menghapus',
+                text: errors?.message || 'Terjadi kesalahan saat menghapus dokumen.',
+                icon: 'error'
+            })
+        }
+    })
 }
 
 const canManagePermissions = (document) => {
@@ -1122,6 +1162,15 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.shared-docs-shell {
+    min-height: calc(100vh - 120px);
+    background:
+        radial-gradient(circle at top right, rgba(148, 163, 184, 0.12), transparent 40%),
+        linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 20px;
+    padding: 10px;
+}
+
 @keyframes fade-in-up {
     from {
         opacity: 0;
@@ -1155,18 +1204,24 @@ onBeforeUnmount(() => {
     -webkit-backdrop-filter: blur(20px);
 }
 
-/* 3D hover effects */
-.group:hover .group-hover\:scale-110 {
-    transform: scale(1.1);
+:deep(.swal2-popup.rounded-2xl) {
+    border-radius: 16px;
 }
 
-.group:hover .group-hover\:-translate-y-2 {
-    transform: translateY(-8px);
+:deep(.swal2-styled.swal-confirm-delete) {
+    background-color: #dc2626;
+    border-radius: 10px;
+    font-weight: 600;
 }
 
-/* Smooth transitions */
-* {
-    transition-property: all;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+:deep(.swal2-styled.swal-confirm-delete:hover) {
+    background-color: #b91c1c;
+}
+
+:deep(.swal2-styled.swal-cancel-delete) {
+    background-color: #e2e8f0;
+    color: #0f172a;
+    border-radius: 10px;
+    font-weight: 600;
 }
 </style> 
