@@ -103,6 +103,42 @@ function formatDateTime(value) {
   });
 }
 
+function normalizeSeverity(value) {
+  return String(value || 'neutral').trim().toLowerCase();
+}
+
+function isNegativeSeverity(value) {
+  return normalizeSeverity(value) !== 'neutral';
+}
+
+function severityBadgeClass(value) {
+  const severity = normalizeSeverity(value);
+  if (['critical', 'high', 'severe'].includes(severity)) {
+    return 'bg-red-100 text-red-700';
+  }
+  if (['medium', 'moderate'].includes(severity)) {
+    return 'bg-amber-100 text-amber-700';
+  }
+  if (['low', 'minor'].includes(severity)) {
+    return 'bg-orange-100 text-orange-700';
+  }
+  return 'bg-slate-100 text-slate-600';
+}
+
+function commentCardClass(value) {
+  const severity = normalizeSeverity(value);
+  if (['critical', 'high', 'severe'].includes(severity)) {
+    return 'bg-red-50 border-red-200 ring-1 ring-red-100';
+  }
+  if (['medium', 'moderate'].includes(severity)) {
+    return 'bg-amber-50 border-amber-200 ring-1 ring-amber-100';
+  }
+  if (['low', 'minor'].includes(severity)) {
+    return 'bg-orange-50 border-orange-200 ring-1 ring-orange-100';
+  }
+  return 'bg-slate-50 border-slate-200';
+}
+
 function openIssueTopicDetail(topicKey) {
   if (!topicKey) return;
   const topicMeta = (props.issueInsights?.top_topics || []).find((item) => item.topic === topicKey);
@@ -284,9 +320,30 @@ const issueTopicBarSeries = computed(() => [
       <div class="bg-white rounded-xl border border-slate-200 p-4">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 class="font-semibold text-slate-800">AI Issue Insights (Komentar)</h3>
-          <span class="text-xs text-slate-500">
-            Dataset: {{ issueInsights?.total_comments || 0 }} komentar terverifikasi
-          </span>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <span class="text-xs text-slate-500">
+              Dataset: {{ issueInsights?.total_comments || 0 }} komentar terverifikasi
+            </span>
+            <div class="flex flex-wrap items-center gap-2 text-[11px]">
+              <span class="font-semibold text-slate-500 uppercase tracking-wide">Legend</span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-red-700">
+                <span class="h-2 w-2 rounded-full bg-red-500"></span>
+                High
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-amber-700">
+                <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                Medium
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-1 text-orange-700">
+                <span class="h-2 w-2 rounded-full bg-orange-500"></span>
+                Low
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+                Neutral
+              </span>
+            </div>
+          </div>
         </div>
 
         <div v-if="issueInsights?.status === 'error'" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -333,8 +390,21 @@ const issueTopicBarSeries = computed(() => [
               <div class="font-semibold text-slate-700 mb-2">{{ topic.label }}</div>
               <div v-if="!(topic.examples || []).length" class="text-sm text-slate-500">Belum ada contoh komentar.</div>
               <div v-else class="space-y-2">
-                <div v-for="(ex, idx) in topic.examples" :key="idx" class="bg-slate-50 border border-slate-200 rounded-md p-2">
-                  <div class="text-xs text-slate-500 mb-1">{{ ex.author || '-' }} · {{ ex.severity || '-' }}</div>
+                <div
+                  v-for="(ex, idx) in topic.examples"
+                  :key="idx"
+                  class="border rounded-md p-2"
+                  :class="commentCardClass(ex.severity)"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <div class="text-xs text-slate-500">{{ ex.author || '-' }}</div>
+                    <span
+                      class="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase"
+                      :class="severityBadgeClass(ex.severity)"
+                    >
+                      {{ ex.severity || 'neutral' }}
+                    </span>
+                  </div>
                   <div class="text-sm text-slate-700">"{{ ex.text }}"</div>
                   <div v-if="ex.summary_id" class="text-xs text-violet-700 mt-1">AI: {{ ex.summary_id }}</div>
                 </div>
@@ -360,6 +430,24 @@ const issueTopicBarSeries = computed(() => [
                 <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Issue Detail</div>
                 <h3 class="text-xl font-bold text-slate-800 mt-1">{{ selectedIssueTopic.label }}</h3>
                 <div class="text-sm text-slate-500 mt-1">{{ selectedIssueTopic.count }} komentar terdeteksi pada periode ini</div>
+                <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                  <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-red-700">
+                    <span class="h-2 w-2 rounded-full bg-red-500"></span>
+                    High
+                  </span>
+                  <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-amber-700">
+                    <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                    Medium
+                  </span>
+                  <span class="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-1 text-orange-700">
+                    <span class="h-2 w-2 rounded-full bg-orange-500"></span>
+                    Low
+                  </span>
+                  <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                    <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+                    Neutral
+                  </span>
+                </div>
               </div>
               <button class="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-100" @click="closeIssueTopicDetail">
                 <i class="fa-solid fa-times"></i>
@@ -374,14 +462,23 @@ const issueTopicBarSeries = computed(() => [
                 <div
                   v-for="(comment, idx) in selectedIssueTopic.comments"
                   :key="`${selectedIssueTopic.topic}-${idx}`"
-                  class="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  class="rounded-xl border p-4"
+                  :class="commentCardClass(comment.severity)"
                 >
                   <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <div class="text-sm font-semibold text-slate-800">{{ comment.author || '-' }}</div>
                     <div class="flex flex-wrap items-center gap-2 text-xs">
-                      <span class="rounded-full bg-violet-100 px-2.5 py-1 font-semibold text-violet-700">{{ comment.severity || 'neutral' }}</span>
+                      <span
+                        class="rounded-full px-2.5 py-1 font-semibold uppercase"
+                        :class="severityBadgeClass(comment.severity)"
+                      >
+                        {{ comment.severity || 'neutral' }}
+                      </span>
                       <span class="text-slate-400">{{ formatDateTime(comment.created_at) }}</span>
                     </div>
+                  </div>
+                  <div v-if="isNegativeSeverity(comment.severity)" class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-red-600">
+                    Negative comment highlighted
                   </div>
                   <div class="text-sm leading-6 text-slate-700 whitespace-pre-wrap">{{ comment.text || '-' }}</div>
                   <div v-if="comment.summary_id" class="mt-2 text-xs text-violet-700">AI: {{ comment.summary_id }}</div>
