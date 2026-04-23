@@ -835,6 +835,202 @@ class SharedDocumentController extends Controller
         ]);
     }
 
+    public function apiCreateFolder(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:120',
+            'parent_id' => 'nullable|exists:document_folders,id',
+        ]);
+
+        $user = Auth::user();
+        $parent = null;
+
+        if ($request->filled('parent_id')) {
+            $parent = DocumentFolder::findOrFail($request->parent_id);
+            if (!$parent->hasPermission($user, 'edit')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin membuat subfolder di folder ini.',
+                ], 403);
+            }
+        }
+
+        $folder = DocumentFolder::create([
+            'name' => $request->name,
+            'parent_id' => $request->input('parent_id'),
+            'created_by' => $user->id,
+            'is_public' => false,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Folder berhasil dibuat.',
+            'data' => [
+                'id' => $folder->id,
+                'name' => $folder->name,
+                'parent_id' => $folder->parent_id,
+            ],
+        ]);
+    }
+
+    public function apiRenameFolder(Request $request, $id)
+    {
+        $request->validate([
+            'name' => 'required|string|max:120',
+        ]);
+
+        $user = Auth::user();
+        $folder = DocumentFolder::findOrFail($id);
+
+        if (!$folder->hasPermission($user, 'edit')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin untuk mengubah nama folder ini.',
+            ], 403);
+        }
+
+        $folder->update([
+            'name' => $request->name,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Nama folder berhasil diperbarui.',
+        ]);
+    }
+
+    public function apiMoveFolder(Request $request, $id)
+    {
+        $request->validate([
+            'target_parent_id' => 'nullable|exists:document_folders,id',
+        ]);
+
+        $user = Auth::user();
+        $folder = DocumentFolder::findOrFail($id);
+
+        if (!$folder->hasPermission($user, 'edit')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin memindahkan folder ini.',
+            ], 403);
+        }
+
+        $targetParentId = $request->input('target_parent_id');
+        if (!empty($targetParentId)) {
+            if ((int) $targetParentId === (int) $folder->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Folder tidak bisa dipindah ke dirinya sendiri.',
+                ], 422);
+            }
+
+            if ($this->isDescendantFolder((int) $folder->id, (int) $targetParentId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Folder tidak bisa dipindah ke subfolder-nya sendiri.',
+                ], 422);
+            }
+
+            $targetParentFolder = DocumentFolder::findOrFail($targetParentId);
+            if (!$targetParentFolder->hasPermission($user, 'edit')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin ke folder tujuan.',
+                ], 403);
+            }
+        }
+
+        $folder->update([
+            'parent_id' => $targetParentId,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Folder berhasil dipindahkan.',
+        ]);
+    }
+
+    public function apiDeleteFolder(Request $request, $id)
+    {
+        $request->validate([
+            'mode' => 'nullable|in:move_to_root,move_to_folder',
+            'target_folder_id' => 'nullable|exists:document_folders,id',
+        ]);
+
+        $user = Auth::user();
+        $folder = DocumentFolder::findOrFail($id);
+
+        if (!$folder->hasPermission($user, 'admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin menghapus folder ini.',
+            ], 403);
+        }
+
+        $mode = $request->input('mode', 'move_to_root');
+        $targetFolderId = $mode === 'move_to_folder' ? $request->input('target_folder_id') : null;
+
+        if ($mode === 'move_to_folder') {
+            if (empty($targetFolderId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Folder tujuan wajib dipilih.',
+                ], 422);
+            }
+
+            if ((int) $targetFolderId === (int) $folder->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Folder tujuan tidak boleh folder yang sama.',
+                ], 422);
+            }
+
+            if ($this->isDescendantFolder((int) $folder->id, (int) $targetFolderId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Folder tujuan tidak boleh subfolder dari folder yang dihapus.',
+                ], 422);
+            }
+
+            $targetFolder = DocumentFolder::findOrFail($targetFolderId);
+            if (!$targetFolder->hasPermission($user, 'edit')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin ke folder tujuan.',
+                ], 403);
+            }
+        }
+
+        DB::transaction(function () use ($folder, $targetFolderId, $mode) {
+            $newParentId = $mode === 'move_to_folder' ? $targetFolderId : null;
+            $newDocumentFolderId = $mode === 'move_to_folder' ? $targetFolderId : null;
+
+            DocumentFolder::query()
+                ->where('parent_id', $folder->id)
+                ->update([
+                    'parent_id' => $newParentId,
+                ]);
+
+            SharedDocument::query()
+                ->where('folder_id', $folder->id)
+                ->update([
+                    'folder_id' => $newDocumentFolderId,
+                ]);
+
+            DocumentAccessScope::query()
+                ->where('resource_type', DocumentAccessScope::RESOURCE_FOLDER)
+                ->where('resource_id', $folder->id)
+                ->delete();
+
+            $folder->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Folder berhasil dihapus.',
+        ]);
+    }
+
     private function getMimeType($fileType)
     {
         $mimeTypes = [

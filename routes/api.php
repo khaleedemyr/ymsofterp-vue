@@ -1081,6 +1081,10 @@ Route::prefix('approval-app')->group(function () {
         // Shared Documents routes
         Route::get('/shared-documents', [\App\Http\Controllers\SharedDocumentController::class, 'apiIndex'])->name('api.approval-app.shared-documents.index');
         Route::get('/shared-documents/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiShow'])->name('api.approval-app.shared-documents.show');
+        Route::post('/shared-documents/folders', [\App\Http\Controllers\SharedDocumentController::class, 'apiCreateFolder'])->name('api.approval-app.shared-documents.folders.store');
+        Route::patch('/shared-documents/folders/{id}/rename', [\App\Http\Controllers\SharedDocumentController::class, 'apiRenameFolder'])->name('api.approval-app.shared-documents.folders.rename');
+        Route::patch('/shared-documents/folders/{id}/move', [\App\Http\Controllers\SharedDocumentController::class, 'apiMoveFolder'])->name('api.approval-app.shared-documents.folders.move');
+        Route::delete('/shared-documents/folders/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiDeleteFolder'])->name('api.approval-app.shared-documents.folders.delete');
         Route::post('/shared-documents/{id}/move', [\App\Http\Controllers\SharedDocumentController::class, 'apiMove'])->name('api.approval-app.shared-documents.move');
         Route::get('/shared-documents/{id}/download', [\App\Http\Controllers\SharedDocumentController::class, 'download'])->name('api.approval-app.shared-documents.download');
         Route::get('/shared-documents/{id}/preview', [\App\Http\Controllers\SharedDocumentController::class, 'preview'])->name('api.approval-app.shared-documents.preview');
