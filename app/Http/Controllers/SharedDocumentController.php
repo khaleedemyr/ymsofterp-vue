@@ -50,6 +50,7 @@ class SharedDocumentController extends Controller
             ->map(function (SharedDocument $document) use ($user) {
                 $document->can_manage_permissions = $document->hasPermission($user, 'admin');
                 $document->can_move = $document->hasPermission($user, 'edit');
+                $document->can_delete = $this->canDeleteDocument($document, $user);
                 return $document;
             });
 
@@ -61,6 +62,7 @@ class SharedDocumentController extends Controller
             'breadcrumbs' => $this->buildFolderBreadcrumbs($folders, $selectedFolder),
             'selectedFolder' => $selectedFolder,
             'selectedFolderCanManage' => $selectedFolder ? $selectedFolder->hasPermission($user, 'admin') : false,
+            'selectedFolderCanDelete' => $selectedFolder ? $this->canDeleteFolder($selectedFolder, $user) : false,
         ]);
     }
 
@@ -216,7 +218,7 @@ class SharedDocumentController extends Controller
         
         $document = SharedDocument::findOrFail($id);
         
-        if (!$document->hasPermission($user, 'admin')) {
+        if (!$this->canDeleteDocument($document, $user)) {
             abort(403, 'Anda tidak memiliki izin untuk menghapus dokumen ini.');
         }
 
@@ -475,7 +477,7 @@ class SharedDocumentController extends Controller
         $folder = DocumentFolder::findOrFail($id);
         $user = Auth::user();
 
-        if (!$folder->hasPermission($user, 'admin')) {
+        if (!$this->canDeleteFolder($folder, $user)) {
             abort(403, 'Anda tidak memiliki izin menghapus folder ini.');
         }
 
@@ -713,7 +715,7 @@ class SharedDocumentController extends Controller
                     'creator_name' => optional($document->creator)->nama_lengkap,
                     'permission' => $this->resolvePermissionLabel($document, $user),
                     'can_move' => $document->hasPermission($user, 'edit'),
-                    'can_delete' => $document->created_by === $user->id || $document->hasPermission($user, 'admin'),
+                    'can_delete' => $this->canDeleteDocument($document, $user),
                 ];
             });
 
@@ -765,7 +767,7 @@ class SharedDocumentController extends Controller
                 'creator_name' => optional($document->creator)->nama_lengkap,
                 'permission' => $this->resolvePermissionLabel($document, $user),
                 'can_move' => $document->hasPermission($user, 'edit'),
-                'can_delete' => $document->created_by === $user->id || $document->hasPermission($user, 'admin'),
+                'can_delete' => $this->canDeleteDocument($document, $user),
                 'download_url' => route('api.approval-app.shared-documents.download', ['id' => $document->id]),
                 'preview_url' => route('api.approval-app.shared-documents.preview', ['id' => $document->id]),
             ],
@@ -837,7 +839,7 @@ class SharedDocumentController extends Controller
         $user = Auth::user();
         $document = SharedDocument::findOrFail($id);
 
-        if (!$document->hasPermission($user, 'admin')) {
+        if (!$this->canDeleteDocument($document, $user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Anda tidak memiliki izin untuk menghapus dokumen ini.',
@@ -1020,7 +1022,7 @@ class SharedDocumentController extends Controller
         $user = Auth::user();
         $folder = DocumentFolder::findOrFail($id);
 
-        if (!$folder->hasPermission($user, 'admin')) {
+        if (!$this->canDeleteFolder($folder, $user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Anda tidak memiliki izin menghapus folder ini.',
@@ -1121,6 +1123,21 @@ class SharedDocumentController extends Controller
         }
 
         return 'view';
+    }
+
+    private function isSuperadmin(User $user): bool
+    {
+        return $user->id_role === '5af56935b011a' && $user->status === 'A';
+    }
+
+    private function canDeleteDocument(SharedDocument $document, User $user): bool
+    {
+        return $document->created_by === $user->id || $this->isSuperadmin($user);
+    }
+
+    private function canDeleteFolder(DocumentFolder $folder, User $user): bool
+    {
+        return $folder->created_by === $user->id || $this->isSuperadmin($user);
     }
 
     public function callback(Request $request)

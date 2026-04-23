@@ -94,7 +94,7 @@
                         ACL Folder
                     </button>
                     <button
-                        v-if="selectedFolder && selectedFolderCanManage"
+                        v-if="selectedFolder && selectedFolderCanDelete"
                         @click="openDeleteFolderModal(selectedFolder)"
                         class="inline-flex items-center px-4 py-3 bg-white text-red-700 font-semibold rounded-xl border border-red-200 hover:bg-red-50 transition-all duration-200"
                     >
@@ -605,6 +605,10 @@ const props = defineProps({
     selectedFolderCanManage: {
         type: Boolean,
         default: false
+    },
+    selectedFolderCanDelete: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -934,6 +938,8 @@ const canMoveDocument = (document) => {
 }
 
 const canDeleteDocument = (document) => {
+    if (typeof document.can_delete === 'boolean') return document.can_delete
+
     const userId = page.props?.auth?.user?.id
     if (!userId) return false
 
@@ -1386,7 +1392,7 @@ const handleKeyboardShortcuts = (event) => {
     }
 
     if (event.key === 'Delete') {
-        if (props.selectedFolder && props.selectedFolderCanManage) {
+        if (props.selectedFolder && props.selectedFolderCanDelete) {
             event.preventDefault()
             openDeleteFolderModal(props.selectedFolder)
         }
