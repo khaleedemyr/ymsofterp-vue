@@ -1080,6 +1080,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Shared Documents routes
         Route::get('/shared-documents', [\App\Http\Controllers\SharedDocumentController::class, 'apiIndex'])->name('api.approval-app.shared-documents.index');
+        Route::post('/shared-documents', [\App\Http\Controllers\SharedDocumentController::class, 'apiStore'])->name('api.approval-app.shared-documents.store');
         Route::get('/shared-documents/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiShow'])->name('api.approval-app.shared-documents.show');
         Route::post('/shared-documents/folders', [\App\Http\Controllers\SharedDocumentController::class, 'apiCreateFolder'])->name('api.approval-app.shared-documents.folders.store');
         Route::patch('/shared-documents/folders/{id}/rename', [\App\Http\Controllers\SharedDocumentController::class, 'apiRenameFolder'])->name('api.approval-app.shared-documents.folders.rename');

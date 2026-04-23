@@ -772,6 +772,66 @@ class SharedDocumentController extends Controller
         ]);
     }
 
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'folder_id' => 'nullable|exists:document_folders,id',
+            'file' => 'required|file|mimes:pdf,xlsx,xls,docx,doc,pptx,ppt,csv,txt,zip,rar|max:20480',
+        ]);
+
+        $user = Auth::user();
+        $folder = null;
+        if ($request->filled('folder_id')) {
+            $folder = DocumentFolder::findOrFail($request->folder_id);
+            if (!$folder->hasPermission($user, 'edit')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin untuk upload pada folder ini.',
+                ], 403);
+            }
+        }
+
+        $file = $request->file('file');
+        $filename = time() . '_' . $file->getClientOriginalName();
+        $storageDirectory = $folder
+            ? 'shared-documents/' . $this->buildFolderStoragePath($folder)
+            : 'shared-documents/root';
+        $filePath = $file->storeAs($storageDirectory, $filename, 'public');
+
+        $document = SharedDocument::create([
+            'folder_id' => $request->input('folder_id'),
+            'title' => $request->input('title'),
+            'filename' => $file->getClientOriginalName(),
+            'file_path' => $filePath,
+            'file_type' => $file->getClientOriginalExtension(),
+            'file_size' => $file->getSize(),
+            'description' => $request->input('description'),
+            'created_by' => $user->id,
+            'is_public' => false,
+        ]);
+
+        DocumentVersion::create([
+            'document_id' => $document->id,
+            'version_number' => '1.0',
+            'file_path' => $filePath,
+            'change_description' => 'Initial version',
+            'created_by' => $user->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dokumen berhasil diupload.',
+            'data' => [
+                'id' => $document->id,
+                'title' => $document->title,
+                'filename' => $document->filename,
+                'folder_id' => $document->folder_id,
+            ],
+        ]);
+    }
+
     public function apiDestroy($id)
     {
         $user = Auth::user();
