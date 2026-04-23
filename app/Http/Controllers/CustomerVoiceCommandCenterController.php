@@ -15,6 +15,162 @@ class CustomerVoiceCommandCenterController extends Controller
 {
     public function index(Request $request): Response
     {
+        return Inertia::render('CustomerVoiceCommandCenter/Index', $this->buildPayload($request));
+    }
+
+    public function apiIndex(Request $request)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $this->buildPayload($request),
+        ]);
+    }
+
+    public function sync(Request $request, FeedbackCaseIngestionService $ingestion): RedirectResponse
+    {
+        $result = $ingestion->ingestAll(2500);
+
+        $message = 'Sync selesai. '
+            .'Google/Instagram: '.$result['google_instagram']['upserted'].' baris, '
+            .'Guest Comment: '.$result['guest_comment']['upserted'].' baris.';
+
+        return redirect()
+            ->route('customer-voice-command-center.index')
+            ->with('success', $message);
+    }
+
+    public function apiSync(Request $request, FeedbackCaseIngestionService $ingestion)
+    {
+        $result = $ingestion->ingestAll(2500);
+
+        $message = 'Sync selesai. '
+            .'Google/Instagram: '.$result['google_instagram']['upserted'].' baris, '
+            .'Guest Comment: '.$result['guest_comment']['upserted'].' baris.';
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'result' => $result,
+        ]);
+    }
+
+    public function updateCase(Request $request, int $id): RedirectResponse
+    {
+        $payload = $request->validate([
+            'status' => 'required|string|in:new,in_progress,resolved,ignored',
+            'assigned_to' => 'nullable|integer|exists:users,id',
+        ]);
+
+        $row = DB::table('feedback_cases')->where('id', $id)->first();
+        if (! $row) {
+            return redirect()->route('customer-voice-command-center.index')
+                ->with('error', 'Case tidak ditemukan.');
+        }
+
+        $now = now();
+        $fromStatus = (string) ($row->status ?? 'new');
+        $toStatus = (string) $payload['status'];
+        $oldAssignee = $row->assigned_to !== null ? (int) $row->assigned_to : null;
+        $newAssignee = isset($payload['assigned_to']) && $payload['assigned_to'] !== null
+            ? (int) $payload['assigned_to']
+            : null;
+
+        $update = [
+            'status' => $toStatus,
+            'assigned_to' => $newAssignee,
+            'updated_at' => $now,
+        ];
+        if ($toStatus === 'resolved') {
+            $update['resolved_at'] = $now;
+            if ($row->first_response_at === null) {
+                $update['first_response_at'] = $now;
+            }
+        } elseif ($toStatus === 'in_progress' && $row->first_response_at === null) {
+            $update['first_response_at'] = $now;
+            $update['resolved_at'] = null;
+        } elseif ($toStatus !== 'resolved') {
+            $update['resolved_at'] = null;
+        }
+
+        DB::transaction(function () use ($id, $update, $request, $fromStatus, $toStatus, $oldAssignee, $newAssignee, $now) {
+            DB::table('feedback_cases')->where('id', $id)->update($update);
+
+            if ($fromStatus !== $toStatus) {
+                DB::table('feedback_case_activities')->insert([
+                    'case_id' => $id,
+                    'activity_type' => 'status_changed',
+                    'actor_user_id' => $request->user()->id ?? null,
+                    'from_status' => $fromStatus,
+                    'to_status' => $toStatus,
+                    'note' => null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            if ($oldAssignee !== $newAssignee) {
+                DB::table('feedback_case_activities')->insert([
+                    'case_id' => $id,
+                    'activity_type' => 'assigned',
+                    'actor_user_id' => $request->user()->id ?? null,
+                    'from_status' => null,
+                    'to_status' => null,
+                    'note' => 'Assign PIC: '.($newAssignee ?? 'unassigned'),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        });
+
+        return redirect()
+            ->back()
+            ->with('success', 'Case diperbarui.');
+    }
+
+    public function apiUpdateCase(Request $request, int $id)
+    {
+        $response = $this->handleUpdateCase($request, $id);
+
+        return response()->json($response, $response['success'] ? 200 : 404);
+    }
+
+    public function addNote(Request $request, int $id): RedirectResponse
+    {
+        $payload = $request->validate([
+            'note' => 'required|string|max:2000',
+        ]);
+
+        $exists = DB::table('feedback_cases')->where('id', $id)->exists();
+        if (! $exists) {
+            return redirect()->route('customer-voice-command-center.index')
+                ->with('error', 'Case tidak ditemukan.');
+        }
+
+        DB::table('feedback_case_activities')->insert([
+            'case_id' => $id,
+            'activity_type' => 'note',
+            'actor_user_id' => $request->user()->id ?? null,
+            'from_status' => null,
+            'to_status' => null,
+            'note' => trim((string) $payload['note']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return redirect()
+            ->back()
+            ->with('success', 'Catatan tersimpan.');
+    }
+
+    public function apiAddNote(Request $request, int $id)
+    {
+        $response = $this->handleAddNote($request, $id);
+
+        return response()->json($response, $response['success'] ? 200 : 404);
+    }
+
+    private function buildPayload(Request $request): array
+    {
         $query = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
             ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
@@ -39,32 +195,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.created_at',
             ]);
 
-        if ($request->filled('status')) {
-            $query->where('c.status', $request->input('status'));
-        }
-        if ($request->filled('severity')) {
-            $query->where('c.severity', $request->input('severity'));
-        }
-        if ($request->filled('source_type')) {
-            $query->where('c.source_type', $request->input('source_type'));
-        }
-        if ($request->filled('id_outlet')) {
-            $query->where('c.id_outlet', (int) $request->input('id_outlet'));
-        }
-        if ($request->filled('q')) {
-            $keyword = '%'.trim((string) $request->input('q')).'%';
-            $query->where(function ($q) use ($keyword) {
-                $q->where('c.author_name', 'like', $keyword)
-                    ->orWhere('c.summary_id', 'like', $keyword)
-                    ->orWhere('c.raw_text', 'like', $keyword)
-                    ->orWhere('o.nama_outlet', 'like', $keyword);
-            });
-        }
-        if ($request->boolean('overdue_only')) {
-            $query->whereIn('c.status', ['new', 'in_progress'])
-                ->whereNotNull('c.due_at')
-                ->where('c.due_at', '<', now());
-        }
+        $this->applyFilters($query, $request);
 
         $cases = $query
             ->orderByDesc('c.risk_score')
@@ -72,34 +203,9 @@ class CustomerVoiceCommandCenterController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $caseIds = collect($cases->items())->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
-        $activities = [];
-        if ($caseIds !== []) {
-            $activityRows = DB::table('feedback_case_activities as a')
-                ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
-                ->whereIn('a.case_id', $caseIds)
-                ->orderByDesc('a.id')
-                ->get([
-                    'a.id',
-                    'a.case_id',
-                    'a.activity_type',
-                    'a.from_status',
-                    'a.to_status',
-                    'a.note',
-                    'a.created_at',
-                    'u.nama_lengkap as actor_name',
-                ]);
-
-            foreach ($activityRows as $row) {
-                $caseId = (int) $row->case_id;
-                if (! isset($activities[$caseId])) {
-                    $activities[$caseId] = [];
-                }
-                if (count($activities[$caseId]) < 8) {
-                    $activities[$caseId][] = $row;
-                }
-            }
-        }
+        $activities = $this->loadActivitiesMap(
+            collect($cases->items())->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
+        );
 
         $summary = [
             'total_cases' => (int) DB::table('feedback_cases')->count(),
@@ -186,20 +292,20 @@ class CustomerVoiceCommandCenterController extends Controller
             ->get();
 
         $dailyMap = [];
-        foreach ($dailyRows as $r) {
-            $dailyMap[(string) $r->d] = [
-                'total_cases' => (int) ($r->total_cases ?? 0),
-                'negative_cases' => (int) ($r->negative_cases ?? 0),
+        foreach ($dailyRows as $row) {
+            $dailyMap[(string) $row->d] = [
+                'total_cases' => (int) ($row->total_cases ?? 0),
+                'negative_cases' => (int) ($row->negative_cases ?? 0),
             ];
         }
 
         $trend = [];
         for ($i = $trendDays - 1; $i >= 0; $i--) {
-            $d = now()->subDays($i)->toDateString();
+            $date = now()->subDays($i)->toDateString();
             $trend[] = [
-                'date' => $d,
-                'total_cases' => $dailyMap[$d]['total_cases'] ?? 0,
-                'negative_cases' => $dailyMap[$d]['negative_cases'] ?? 0,
+                'date' => $date,
+                'total_cases' => $dailyMap[$date]['total_cases'] ?? 0,
+                'negative_cases' => $dailyMap[$date]['negative_cases'] ?? 0,
             ];
         }
 
@@ -224,17 +330,17 @@ class CustomerVoiceCommandCenterController extends Controller
             ->limit(8)
             ->get();
 
-        $picPerformance = collect($picRows)->map(function ($r) {
-            $slaTotal = (int) ($r->sla_total ?? 0);
-            $slaOnTime = (int) ($r->sla_on_time ?? 0);
+        $picPerformance = collect($picRows)->map(function ($row) {
+            $slaTotal = (int) ($row->sla_total ?? 0);
+            $slaOnTime = (int) ($row->sla_on_time ?? 0);
 
             return [
-                'assignee_id' => (int) ($r->assigned_to ?? 0),
-                'assignee_name' => (string) ($r->assignee_name ?? '-'),
-                'total_cases' => (int) ($r->total_cases ?? 0),
-                'resolved_cases' => (int) ($r->resolved_cases ?? 0),
-                'open_cases' => (int) ($r->open_cases ?? 0),
-                'avg_first_response_minutes' => $r->avg_first_response_minutes !== null ? round((float) $r->avg_first_response_minutes, 2) : null,
+                'assignee_id' => (int) ($row->assigned_to ?? 0),
+                'assignee_name' => (string) ($row->assignee_name ?? '-'),
+                'total_cases' => (int) ($row->total_cases ?? 0),
+                'resolved_cases' => (int) ($row->resolved_cases ?? 0),
+                'open_cases' => (int) ($row->open_cases ?? 0),
+                'avg_first_response_minutes' => $row->avg_first_response_minutes !== null ? round((float) $row->avg_first_response_minutes, 2) : null,
                 'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
             ];
         })->values()->all();
@@ -255,20 +361,20 @@ class CustomerVoiceCommandCenterController extends Controller
             ->limit(8)
             ->get();
 
-        $outletPerformance = collect($outletRows)->map(function ($r) {
-            $totalCases = (int) ($r->total_cases ?? 0);
-            $negativeCases = (int) ($r->negative_cases ?? 0);
-            $slaTotal = (int) ($r->sla_total ?? 0);
-            $slaOnTime = (int) ($r->sla_on_time ?? 0);
+        $outletPerformance = collect($outletRows)->map(function ($row) {
+            $totalCases = (int) ($row->total_cases ?? 0);
+            $negativeCases = (int) ($row->negative_cases ?? 0);
+            $slaTotal = (int) ($row->sla_total ?? 0);
+            $slaOnTime = (int) ($row->sla_on_time ?? 0);
 
             return [
-                'id_outlet' => $r->id_outlet !== null ? (int) $r->id_outlet : null,
-                'outlet_name' => (string) ($r->outlet_name ?? '-'),
+                'id_outlet' => $row->id_outlet !== null ? (int) $row->id_outlet : null,
+                'outlet_name' => (string) ($row->outlet_name ?? '-'),
                 'total_cases' => $totalCases,
                 'negative_cases' => $negativeCases,
                 'negative_rate_pct' => $totalCases > 0 ? round(($negativeCases / $totalCases) * 100, 2) : null,
-                'resolved_cases' => (int) ($r->resolved_cases ?? 0),
-                'open_cases' => (int) ($r->open_cases ?? 0),
+                'resolved_cases' => (int) ($row->resolved_cases ?? 0),
+                'open_cases' => (int) ($row->open_cases ?? 0),
                 'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
             ];
         })->values()->all();
@@ -283,7 +389,7 @@ class CustomerVoiceCommandCenterController extends Controller
             ->limit(300)
             ->get(['id', 'nama_lengkap', 'id_outlet', 'division_id']);
 
-        return Inertia::render('CustomerVoiceCommandCenter/Index', [
+        return [
             'summary' => $summary,
             'kpis' => $kpis,
             'trend' => $trend,
@@ -302,23 +408,75 @@ class CustomerVoiceCommandCenterController extends Controller
                 'q' => $request->input('q'),
                 'overdue_only' => $request->boolean('overdue_only'),
             ],
-        ]);
+        ];
     }
 
-    public function sync(Request $request, FeedbackCaseIngestionService $ingestion): RedirectResponse
+    private function applyFilters($query, Request $request): void
     {
-        $result = $ingestion->ingestAll(2500);
-
-        $message = 'Sync selesai. '
-            .'Google/Instagram: '.$result['google_instagram']['upserted'].' baris, '
-            .'Guest Comment: '.$result['guest_comment']['upserted'].' baris.';
-
-        return redirect()
-            ->route('customer-voice-command-center.index')
-            ->with('success', $message);
+        if ($request->filled('status')) {
+            $query->where('c.status', $request->input('status'));
+        }
+        if ($request->filled('severity')) {
+            $query->where('c.severity', $request->input('severity'));
+        }
+        if ($request->filled('source_type')) {
+            $query->where('c.source_type', $request->input('source_type'));
+        }
+        if ($request->filled('id_outlet')) {
+            $query->where('c.id_outlet', (int) $request->input('id_outlet'));
+        }
+        if ($request->filled('q')) {
+            $keyword = '%'.trim((string) $request->input('q')).'%';
+            $query->where(function ($q) use ($keyword) {
+                $q->where('c.author_name', 'like', $keyword)
+                    ->orWhere('c.summary_id', 'like', $keyword)
+                    ->orWhere('c.raw_text', 'like', $keyword)
+                    ->orWhere('o.nama_outlet', 'like', $keyword);
+            });
+        }
+        if ($request->boolean('overdue_only')) {
+            $query->whereIn('c.status', ['new', 'in_progress'])
+                ->whereNotNull('c.due_at')
+                ->where('c.due_at', '<', now());
+        }
     }
 
-    public function updateCase(Request $request, int $id): RedirectResponse
+    private function loadActivitiesMap(array $caseIds): array
+    {
+        $activities = [];
+        if ($caseIds === []) {
+            return $activities;
+        }
+
+        $activityRows = DB::table('feedback_case_activities as a')
+            ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
+            ->whereIn('a.case_id', $caseIds)
+            ->orderByDesc('a.id')
+            ->get([
+                'a.id',
+                'a.case_id',
+                'a.activity_type',
+                'a.from_status',
+                'a.to_status',
+                'a.note',
+                'a.created_at',
+                'u.nama_lengkap as actor_name',
+            ]);
+
+        foreach ($activityRows as $row) {
+            $caseId = (int) $row->case_id;
+            if (! isset($activities[$caseId])) {
+                $activities[$caseId] = [];
+            }
+            if (count($activities[$caseId]) < 8) {
+                $activities[$caseId][] = $row;
+            }
+        }
+
+        return $activities;
+    }
+
+    private function handleUpdateCase(Request $request, int $id): array
     {
         $payload = $request->validate([
             'status' => 'required|string|in:new,in_progress,resolved,ignored',
@@ -327,8 +485,10 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
         if (! $row) {
-            return redirect()->route('customer-voice-command-center.index')
-                ->with('error', 'Case tidak ditemukan.');
+            return [
+                'success' => false,
+                'message' => 'Case tidak ditemukan.',
+            ];
         }
 
         $now = now();
@@ -386,12 +546,13 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         });
 
-        return redirect()
-            ->back()
-            ->with('success', 'Case diperbarui.');
+        return [
+            'success' => true,
+            'message' => 'Case diperbarui.',
+        ];
     }
 
-    public function addNote(Request $request, int $id): RedirectResponse
+    private function handleAddNote(Request $request, int $id): array
     {
         $payload = $request->validate([
             'note' => 'required|string|max:2000',
@@ -399,8 +560,10 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $exists = DB::table('feedback_cases')->where('id', $id)->exists();
         if (! $exists) {
-            return redirect()->route('customer-voice-command-center.index')
-                ->with('error', 'Case tidak ditemukan.');
+            return [
+                'success' => false,
+                'message' => 'Case tidak ditemukan.',
+            ];
         }
 
         DB::table('feedback_case_activities')->insert([
@@ -414,9 +577,10 @@ class CustomerVoiceCommandCenterController extends Controller
             'updated_at' => now(),
         ]);
 
-        return redirect()
-            ->back()
-            ->with('success', 'Catatan tersimpan.');
+        return [
+            'success' => true,
+            'message' => 'Catatan tersimpan.',
+        ];
     }
 
     private function medianMinutesBetween(string $startColumn, string $endColumn): ?float

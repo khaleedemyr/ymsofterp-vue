@@ -1090,6 +1090,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/shared-documents/{id}/download', [\App\Http\Controllers\SharedDocumentController::class, 'download'])->name('api.approval-app.shared-documents.download');
         Route::get('/shared-documents/{id}/preview', [\App\Http\Controllers\SharedDocumentController::class, 'preview'])->name('api.approval-app.shared-documents.preview');
         Route::delete('/shared-documents/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiDestroy'])->name('api.approval-app.shared-documents.destroy');
+
+        // Customer Voice Command Center routes
+        Route::get('/customer-voice-command-center', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiIndex'])->name('api.approval-app.customer-voice-command-center.index');
+        Route::post('/customer-voice-command-center/sync', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiSync'])->name('api.approval-app.customer-voice-command-center.sync');
+        Route::post('/customer-voice-command-center/cases/{id}/update', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiUpdateCase'])->name('api.approval-app.customer-voice-command-center.cases.update');
+        Route::post('/customer-voice-command-center/cases/{id}/note', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiAddNote'])->name('api.approval-app.customer-voice-command-center.cases.note');
         
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');
