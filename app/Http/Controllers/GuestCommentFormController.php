@@ -394,17 +394,19 @@ class GuestCommentFormController extends Controller
                 'top_topics' => [],
                 'severity' => [],
                 'topic_examples' => [],
+                'topic_details' => [],
             ];
         }
 
         $rows = (clone $base)
-            ->select('guest_name', 'comment_text', 'issue_severity', 'issue_topics', 'issue_summary_id')
+            ->select('guest_name', 'comment_text', 'issue_severity', 'issue_topics', 'issue_summary_id', 'created_at')
             ->orderByDesc('id')
             ->get();
 
         $topicCounts = [];
         $severityCounts = [];
         $topicExamples = [];
+        $topicDetails = [];
         foreach ($rows as $row) {
             $severity = trim((string) ($row->issue_severity ?? '')) !== ''
                 ? (string) $row->issue_severity
@@ -430,12 +432,25 @@ class GuestCommentFormController extends Controller
                 if (! isset($topicExamples[$topicKey])) {
                     $topicExamples[$topicKey] = [];
                 }
+                if (! isset($topicDetails[$topicKey])) {
+                    $topicDetails[$topicKey] = [];
+                }
                 if (count($topicExamples[$topicKey]) < 3) {
                     $topicExamples[$topicKey][] = [
                         'author' => (string) ($row->guest_name ?? '-'),
                         'text' => mb_substr((string) ($row->comment_text ?? ''), 0, 200),
                         'summary_id' => $summary,
                         'severity' => $severity,
+                        'created_at' => $row->created_at,
+                    ];
+                }
+                if (count($topicDetails[$topicKey]) < 20) {
+                    $topicDetails[$topicKey][] = [
+                        'author' => (string) ($row->guest_name ?? '-'),
+                        'text' => trim((string) ($row->comment_text ?? '')),
+                        'summary_id' => $summary,
+                        'severity' => $severity,
+                        'created_at' => $row->created_at,
                     ];
                 }
             }
@@ -455,12 +470,19 @@ class GuestCommentFormController extends Controller
             ->all();
 
         $topicExampleList = [];
+        $topicDetailList = [];
         foreach ($topTopics as $topicRow) {
             $key = $topicRow['topic'];
             $topicExampleList[] = [
                 'topic' => $key,
                 'label' => $topicRow['label'],
                 'examples' => $topicExamples[$key] ?? [],
+            ];
+            $topicDetailList[] = [
+                'topic' => $key,
+                'label' => $topicRow['label'],
+                'count' => $topicRow['count'],
+                'comments' => $topicDetails[$key] ?? [],
             ];
         }
 
@@ -471,6 +493,7 @@ class GuestCommentFormController extends Controller
             'top_topics' => $topTopics,
             'severity' => $severityCounts,
             'topic_examples' => $topicExampleList,
+            'topic_details' => $topicDetailList,
         ];
     }
 

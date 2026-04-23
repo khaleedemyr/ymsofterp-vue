@@ -79,11 +79,65 @@ const gsiToneClass = computed(() => {
   return 'text-red-700 bg-red-50 border-red-200';
 });
 
+const showIssueDetailModal = ref(false);
+const selectedIssueTopic = ref(null);
+
+const issueTopicDetailMap = computed(() => {
+  const entries = props.issueInsights?.topic_details || [];
+  return entries.reduce((acc, item) => {
+    acc[item.topic] = item;
+    return acc;
+  }, {});
+});
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function openIssueTopicDetail(topicKey) {
+  if (!topicKey) return;
+  const topicMeta = (props.issueInsights?.top_topics || []).find((item) => item.topic === topicKey);
+  const detail = issueTopicDetailMap.value[topicKey];
+  selectedIssueTopic.value = {
+    topic: topicKey,
+    label: detail?.label || topicMeta?.label || topicKey,
+    count: detail?.count || topicMeta?.count || 0,
+    comments: detail?.comments || [],
+  };
+  showIssueDetailModal.value = true;
+}
+
+function closeIssueTopicDetail() {
+  showIssueDetailModal.value = false;
+  selectedIssueTopic.value = null;
+}
+
 const issueTopicBarOptions = computed(() => ({
-  chart: { type: 'bar', toolbar: { show: false } },
+  chart: {
+    type: 'bar',
+    toolbar: { show: false },
+    events: {
+      dataPointSelection: (_event, _chartContext, config) => {
+        const topic = props.issueInsights?.top_topics?.[config?.dataPointIndex]?.topic;
+        openIssueTopicDetail(topic);
+      },
+    },
+  },
   plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
   dataLabels: { enabled: false },
   xaxis: { categories: (props.issueInsights?.top_topics || []).map((t) => t.label) },
+  tooltip: {
+    y: { formatter: (val) => `${Math.round(val)} komentar` },
+  },
   colors: ['#8B5CF6'],
 }));
 
@@ -244,7 +298,10 @@ const issueTopicBarSeries = computed(() => [
         <div v-else class="space-y-4">
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div class="border border-slate-200 rounded-lg p-3">
-              <h4 class="text-sm font-semibold text-slate-700 mb-2">Top Issues</h4>
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <h4 class="text-sm font-semibold text-slate-700">Top Issues</h4>
+                <span class="text-xs text-slate-400">Klik bar untuk lihat komentar</span>
+              </div>
               <apexchart type="bar" height="300" :options="issueTopicBarOptions" :series="issueTopicBarSeries" />
             </div>
             <div class="border border-slate-200 rounded-lg p-3">
@@ -254,10 +311,14 @@ const issueTopicBarSeries = computed(() => [
                 <div
                   v-for="topic in issueInsights.top_topics"
                   :key="topic.topic"
-                  class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2"
+                  class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2 cursor-pointer hover:bg-violet-50 hover:border-violet-200 transition"
+                  @click="openIssueTopicDetail(topic.topic)"
                 >
                   <span class="font-medium text-slate-700">{{ topic.label }}</span>
-                  <span class="text-sm font-semibold text-violet-700">{{ topic.count }}</span>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-slate-400">Lihat detail</span>
+                    <span class="text-sm font-semibold text-violet-700">{{ topic.count }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -277,11 +338,59 @@ const issueTopicBarSeries = computed(() => [
                   <div class="text-sm text-slate-700">"{{ ex.text }}"</div>
                   <div v-if="ex.summary_id" class="text-xs text-violet-700 mt-1">AI: {{ ex.summary_id }}</div>
                 </div>
+                <button
+                  type="button"
+                  class="text-sm font-semibold text-violet-700 hover:text-violet-900"
+                  @click="openIssueTopicDetail(topic.topic)"
+                >
+                  Lihat semua komentar {{ topic.label }}
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <Teleport to="body">
+        <div v-if="showIssueDetailModal && selectedIssueTopic" class="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6">
+          <div class="absolute inset-0 bg-slate-900/55" @click="closeIssueTopicDetail"></div>
+          <div class="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200">
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4 bg-slate-50">
+              <div>
+                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Issue Detail</div>
+                <h3 class="text-xl font-bold text-slate-800 mt-1">{{ selectedIssueTopic.label }}</h3>
+                <div class="text-sm text-slate-500 mt-1">{{ selectedIssueTopic.count }} komentar terdeteksi pada periode ini</div>
+              </div>
+              <button class="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-100" @click="closeIssueTopicDetail">
+                <i class="fa-solid fa-times"></i>
+              </button>
+            </div>
+
+            <div class="max-h-[calc(85vh-96px)] overflow-y-auto px-6 py-5">
+              <div v-if="!(selectedIssueTopic.comments || []).length" class="text-sm text-slate-500">
+                Belum ada komentar detail untuk issue ini.
+              </div>
+              <div v-else class="space-y-3">
+                <div
+                  v-for="(comment, idx) in selectedIssueTopic.comments"
+                  :key="`${selectedIssueTopic.topic}-${idx}`"
+                  class="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="text-sm font-semibold text-slate-800">{{ comment.author || '-' }}</div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                      <span class="rounded-full bg-violet-100 px-2.5 py-1 font-semibold text-violet-700">{{ comment.severity || 'neutral' }}</span>
+                      <span class="text-slate-400">{{ formatDateTime(comment.created_at) }}</span>
+                    </div>
+                  </div>
+                  <div class="text-sm leading-6 text-slate-700 whitespace-pre-wrap">{{ comment.text || '-' }}</div>
+                  <div v-if="comment.summary_id" class="mt-2 text-xs text-violet-700">AI: {{ comment.summary_id }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </div>
   </AppLayout>
 </template>
