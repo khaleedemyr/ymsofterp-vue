@@ -1,183 +1,185 @@
 <template>
-    <div v-if="show" class="fixed inset-0 z-50 overflow-y-auto">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="close"></div>
+    <Teleport to="body">
+        <div v-if="show" class="fixed inset-0 z-[200] overflow-y-auto">
+            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="close"></div>
 
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4 max-h-[80vh] overflow-y-auto">
-                    <div class="flex items-center justify-between mb-6">
-                        <div>
-                            <h3 class="text-lg font-medium text-gray-900">Kelola Permission {{ resourceTypeLabel }}</h3>
-                            <p class="text-sm text-gray-500">{{ resourceTitle }}</p>
-                        </div>
-                        <button @click="close" class="text-gray-400 hover:text-gray-600">
-                            <i class="fas fa-times text-xl"></i>
-                        </button>
-                    </div>
-
-                    <div class="space-y-6">
-                        <div v-if="isDocumentResource">
-                            <h4 class="text-md font-medium text-gray-900 mb-3">User dengan Akses</h4>
-                            <div v-if="permissions.length > 0" class="space-y-2">
-                                <div
-                                    v-for="permission in permissions"
-                                    :key="permission.id"
-                                    class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
-                                >
-                                    <div class="flex-1">
-                                        <div class="font-medium text-gray-900">{{ permission.user.nama_lengkap }}</div>
-                                        <div class="text-sm text-gray-500">{{ permission.user.email }}</div>
-                                    </div>
-                                    <div class="flex items-center gap-3">
-                                        <select
-                                            :value="permission.permission"
-                                            @change="updatePermission(permission.id, $event.target.value)"
-                                            class="px-3 py-1 text-sm border border-gray-300 rounded-md"
-                                        >
-                                            <option value="view">View</option>
-                                            <option value="edit">Edit</option>
-                                            <option value="admin">Admin</option>
-                                        </select>
-                                        <button @click="removePermission(permission.id)" class="text-red-500 hover:text-red-700 p-1">
-                                            <i class="fas fa-trash text-sm"></i>
-                                        </button>
-                                    </div>
-                                </div>
+                <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4 max-h-[80vh] overflow-y-auto">
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-900">Kelola Permission {{ resourceTypeLabel }}</h3>
+                                <p class="text-sm text-gray-500">{{ resourceTitle }}</p>
                             </div>
-                            <div v-else class="text-center py-3 text-gray-500 text-sm">
-                                Belum ada user spesifik
-                            </div>
+                            <button @click="close" class="text-gray-400 hover:text-gray-600">
+                                <i class="fas fa-times text-xl"></i>
+                            </button>
                         </div>
 
-                        <div v-if="isDocumentResource">
-                            <h4 class="text-md font-medium text-gray-900 mb-3">Tambah User Baru</h4>
-                            <div class="space-y-4">
-                                <UserSearchDropdown
-                                    placeholder="Cari user untuk ditambahkan..."
-                                    :selected-users="[]"
-                                    :multiple="false"
-                                    @user-selected="addNewUser"
-                                />
-
-                                <div v-if="newUser" class="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <div class="font-medium text-gray-900">{{ newUser.nama_lengkap }}</div>
-                                            <div class="text-sm text-gray-500">{{ newUser.email }}</div>
+                        <div class="space-y-6">
+                            <div v-if="isDocumentResource">
+                                <h4 class="text-md font-medium text-gray-900 mb-3">User dengan Akses</h4>
+                                <div v-if="permissions.length > 0" class="space-y-2">
+                                    <div
+                                        v-for="permission in permissions"
+                                        :key="permission.id"
+                                        class="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+                                    >
+                                        <div class="flex-1">
+                                            <div class="font-medium text-gray-900">{{ permission.user.nama_lengkap }}</div>
+                                            <div class="text-sm text-gray-500">{{ permission.user.email }}</div>
                                         </div>
                                         <div class="flex items-center gap-3">
-                                            <select v-model="newUserPermission" class="px-3 py-1 text-sm border border-gray-300 rounded-md">
+                                            <select
+                                                :value="permission.permission"
+                                                @change="updatePermission(permission.id, $event.target.value)"
+                                                class="px-3 py-1 text-sm border border-gray-300 rounded-md"
+                                            >
                                                 <option value="view">View</option>
                                                 <option value="edit">Edit</option>
                                                 <option value="admin">Admin</option>
                                             </select>
-                                            <button @click="addPermission" class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">
-                                                Tambah
-                                            </button>
-                                            <button @click="cancelAddUser" class="text-gray-500 hover:text-gray-700">
-                                                <i class="fas fa-times"></i>
+                                            <button @click="removePermission(permission.id)" class="text-red-500 hover:text-red-700 p-1">
+                                                <i class="fas fa-trash text-sm"></i>
                                             </button>
                                         </div>
                                     </div>
                                 </div>
+                                <div v-else class="text-center py-3 text-gray-500 text-sm">
+                                    Belum ada user spesifik
+                                </div>
                             </div>
-                        </div>
 
-                        <div>
-                            <h4 class="text-md font-medium text-gray-900 mb-3">Akses Scope Organisasi</h4>
-                            <div class="grid md:grid-cols-4 gap-2 mb-3">
-                                <select v-model="newScope.scope_type" class="px-3 py-2 text-sm border border-gray-300 rounded-md">
-                                    <option value="user">User</option>
-                                    <option value="jabatan">Jabatan</option>
-                                    <option value="divisi">Divisi</option>
-                                    <option value="outlet">Outlet</option>
-                                </select>
-                                <select v-model="newScope.scope_id" class="px-3 py-2 text-sm border border-gray-300 rounded-md md:col-span-2">
-                                    <option :value="null">Pilih {{ newScope.scope_type }}</option>
-                                    <option
-                                        v-for="option in currentScopeOptions"
-                                        :key="option.id"
-                                        :value="option.id"
-                                    >
-                                        {{ option.name }}
-                                    </option>
-                                </select>
-                                <select v-model="newScope.permission" class="px-3 py-2 text-sm border border-gray-300 rounded-md">
-                                    <option value="view">View</option>
-                                    <option value="edit">Edit</option>
-                                    <option value="admin">Admin</option>
-                                </select>
-                            </div>
-                            <button @click="addScopePermission" class="px-3 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
-                                Tambah Scope
-                            </button>
+                            <div v-if="isDocumentResource">
+                                <h4 class="text-md font-medium text-gray-900 mb-3">Tambah User Baru</h4>
+                                <div class="space-y-4">
+                                    <UserSearchDropdown
+                                        placeholder="Cari user untuk ditambahkan..."
+                                        :selected-users="[]"
+                                        :multiple="false"
+                                        @user-selected="addNewUser"
+                                    />
 
-                            <div v-if="scopePermissions.length > 0" class="space-y-2 mt-3">
-                                <div
-                                    v-for="scope in scopePermissions"
-                                    :key="scope.id"
-                                    class="flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-200"
-                                >
-                                    <div class="text-sm">
-                                        <span class="font-semibold text-indigo-900">{{ scope.scope_type }}</span>
-                                        <span class="text-gray-700"> - {{ getScopeName(scope.scope_type, scope.scope_id) }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-3">
-                                        <select
-                                            :value="scope.permission"
-                                            @change="updateScopePermission(scope.id, $event.target.value)"
-                                            class="px-3 py-1 text-sm border border-gray-300 rounded-md"
-                                        >
-                                            <option value="view">View</option>
-                                            <option value="edit">Edit</option>
-                                            <option value="admin">Admin</option>
-                                        </select>
-                                        <button @click="removeScopePermission(scope.id)" class="text-red-500 hover:text-red-700 p-1">
-                                            <i class="fas fa-trash text-sm"></i>
-                                        </button>
+                                    <div v-if="newUser" class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div class="flex items-center justify-between">
+                                            <div>
+                                                <div class="font-medium text-gray-900">{{ newUser.nama_lengkap }}</div>
+                                                <div class="text-sm text-gray-500">{{ newUser.email }}</div>
+                                            </div>
+                                            <div class="flex items-center gap-3">
+                                                <select v-model="newUserPermission" class="px-3 py-1 text-sm border border-gray-300 rounded-md">
+                                                    <option value="view">View</option>
+                                                    <option value="edit">Edit</option>
+                                                    <option value="admin">Admin</option>
+                                                </select>
+                                                <button @click="addPermission" class="px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">
+                                                    Tambah
+                                                </button>
+                                                <button @click="cancelAddUser" class="text-gray-500 hover:text-gray-700">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div v-else class="text-sm text-gray-500 mt-3">
-                                Belum ada scope organisasi
+
+                            <div>
+                                <h4 class="text-md font-medium text-gray-900 mb-3">Akses Scope Organisasi</h4>
+                                <div class="grid md:grid-cols-4 gap-2 mb-3">
+                                    <select v-model="newScope.scope_type" class="px-3 py-2 text-sm border border-gray-300 rounded-md">
+                                        <option value="user">User</option>
+                                        <option value="jabatan">Jabatan</option>
+                                        <option value="divisi">Divisi</option>
+                                        <option value="outlet">Outlet</option>
+                                    </select>
+                                    <select v-model="newScope.scope_id" class="px-3 py-2 text-sm border border-gray-300 rounded-md md:col-span-2">
+                                        <option :value="null">Pilih {{ newScope.scope_type }}</option>
+                                        <option
+                                            v-for="option in currentScopeOptions"
+                                            :key="option.id"
+                                            :value="option.id"
+                                        >
+                                            {{ option.name }}
+                                        </option>
+                                    </select>
+                                    <select v-model="newScope.permission" class="px-3 py-2 text-sm border border-gray-300 rounded-md">
+                                        <option value="view">View</option>
+                                        <option value="edit">Edit</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                </div>
+                                <button @click="addScopePermission" class="px-3 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+                                    Tambah Scope
+                                </button>
+
+                                <div v-if="scopePermissions.length > 0" class="space-y-2 mt-3">
+                                    <div
+                                        v-for="scope in scopePermissions"
+                                        :key="scope.id"
+                                        class="flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-200"
+                                    >
+                                        <div class="text-sm">
+                                            <span class="font-semibold text-indigo-900">{{ scope.scope_type }}</span>
+                                            <span class="text-gray-700"> - {{ getScopeName(scope.scope_type, scope.scope_id) }}</span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <select
+                                                :value="scope.permission"
+                                                @change="updateScopePermission(scope.id, $event.target.value)"
+                                                class="px-3 py-1 text-sm border border-gray-300 rounded-md"
+                                            >
+                                                <option value="view">View</option>
+                                                <option value="edit">Edit</option>
+                                                <option value="admin">Admin</option>
+                                            </select>
+                                            <button @click="removeScopePermission(scope.id)" class="text-red-500 hover:text-red-700 p-1">
+                                                <i class="fas fa-trash text-sm"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="text-sm text-gray-500 mt-3">
+                                    Belum ada scope organisasi
+                                </div>
+                            </div>
+
+                            <div class="flex items-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                                <input
+                                    id="is_public"
+                                    v-model="isPublic"
+                                    type="checkbox"
+                                    class="h-4 w-4 text-yellow-600 border-gray-300 rounded"
+                                >
+                                <label for="is_public" class="ml-2 block text-sm text-gray-900">
+                                    <span class="font-medium">{{ resourceTypeLabel }} Publik</span>
+                                    <span class="block text-xs text-gray-600">Semua user dapat melihat {{ resourceTypeLabel.toLowerCase() }}</span>
+                                </label>
                             </div>
                         </div>
-
-                        <div class="flex items-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                            <input
-                                id="is_public"
-                                v-model="isPublic"
-                                type="checkbox"
-                                class="h-4 w-4 text-yellow-600 border-gray-300 rounded"
-                            >
-                            <label for="is_public" class="ml-2 block text-sm text-gray-900">
-                                <span class="font-medium">{{ resourceTypeLabel }} Publik</span>
-                                <span class="block text-xs text-gray-600">Semua user dapat melihat {{ resourceTypeLabel.toLowerCase() }}</span>
-                            </label>
-                        </div>
                     </div>
-                </div>
 
-                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <button
-                        @click="savePermissions"
-                        :disabled="loading"
-                        class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 sm:ml-3 sm:w-auto disabled:opacity-50"
-                    >
-                        <i v-if="loading" class="fas fa-spinner fa-spin mr-2"></i>
-                        <i v-else class="fas fa-save mr-2"></i>
-                        Simpan Permission
-                    </button>
-                    <button
-                        @click="close"
-                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto"
-                    >
-                        Batal
-                    </button>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button
+                            @click="savePermissions"
+                            :disabled="loading"
+                            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 sm:ml-3 sm:w-auto disabled:opacity-50"
+                        >
+                            <i v-if="loading" class="fas fa-spinner fa-spin mr-2"></i>
+                            <i v-else class="fas fa-save mr-2"></i>
+                            Simpan Permission
+                        </button>
+                        <button
+                            @click="close"
+                            class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto"
+                        >
+                            Batal
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
+    </Teleport>
 </template>
 
 <script setup>

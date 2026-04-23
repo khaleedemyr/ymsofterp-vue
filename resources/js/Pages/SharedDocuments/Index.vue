@@ -443,114 +443,124 @@
             </div>
         </div>
 
-        <div v-if="showCreateFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div class="absolute inset-0 bg-black/40" @click="closeCreateFolderModal"></div>
-            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Buat Folder Baru</h3>
-                <input
-                    v-model="createFolderName"
-                    type="text"
-                    placeholder="Nama folder"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-xl"
-                >
-                <label class="flex items-center text-sm text-gray-700">
-                    <input v-model="createFolderIsPublic" type="checkbox" class="mr-2">
-                    Folder publik
-                </label>
-                <div class="flex justify-end gap-2">
-                    <button @click="closeCreateFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
-                    <button @click="submitCreateFolder" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Simpan</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showRenameFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div class="absolute inset-0 bg-black/40" @click="closeRenameFolderModal"></div>
-            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Rename Folder</h3>
-                <input
-                    v-model="renameFolderName"
-                    type="text"
-                    placeholder="Nama folder baru"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-xl"
-                >
-                <div class="flex justify-end gap-2">
-                    <button @click="closeRenameFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
-                    <button @click="submitRenameFolder" class="px-4 py-2 rounded-lg bg-amber-600 text-white">Update</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showMoveDocumentModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div class="absolute inset-0 bg-black/40" @click="closeMoveDocumentModal"></div>
-            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Pindah Dokumen</h3>
-                <p class="text-sm text-gray-600">{{ moveDocumentTarget?.title }}</p>
-                <select v-model="moveTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                    <option :value="null">Root</option>
-                    <option v-for="folder in props.folders" :key="folder.id" :value="folder.id">
-                        {{ folder.name }}
-                    </option>
-                </select>
-                <div class="flex justify-end gap-2">
-                    <button @click="closeMoveDocumentModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
-                    <button @click="submitMoveDocument" class="px-4 py-2 rounded-lg bg-amber-600 text-white">Pindah</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showBulkMoveModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div class="absolute inset-0 bg-black/40" @click="closeBulkMoveModal"></div>
-            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Pindah Dokumen Terpilih</h3>
-                <p class="text-sm text-gray-600">{{ selectedDocumentCount }} dokumen akan dipindahkan</p>
-                <select v-model="bulkMoveTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                    <option :value="null">Root</option>
-                    <option v-for="folder in props.folders" :key="folder.id" :value="folder.id">
-                        {{ folder.name }}
-                    </option>
-                </select>
-                <div class="flex justify-end gap-2">
-                    <button @click="closeBulkMoveModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
-                    <button @click="submitBulkMoveDocuments" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Pindah</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showDeleteFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div class="absolute inset-0 bg-black/40" @click="closeDeleteFolderModal"></div>
-            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                <h3 class="text-lg font-semibold text-gray-900">Hapus Folder</h3>
-                <p class="text-sm text-gray-600">
-                    Folder <span class="font-semibold">{{ deleteFolderTarget?.name }}</span> akan dihapus.
-                </p>
-
-                <div class="space-y-2">
+        <Teleport to="body">
+            <div v-if="showCreateFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div class="absolute inset-0 bg-black/40" @click="closeCreateFolderModal"></div>
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Buat Folder Baru</h3>
+                    <input
+                        v-model="createFolderName"
+                        type="text"
+                        placeholder="Nama folder"
+                        class="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                    >
                     <label class="flex items-center text-sm text-gray-700">
-                        <input v-model="deleteFolderMode" value="move_to_root" type="radio" class="mr-2">
-                        Pindahkan isi folder ke Root
+                        <input v-model="createFolderIsPublic" type="checkbox" class="mr-2">
+                        Folder publik
                     </label>
-                    <label class="flex items-center text-sm text-gray-700">
-                        <input v-model="deleteFolderMode" value="move_to_folder" type="radio" class="mr-2">
-                        Pindahkan isi folder ke folder lain
-                    </label>
+                    <div class="flex justify-end gap-2">
+                        <button @click="closeCreateFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
+                        <button @click="submitCreateFolder" class="px-4 py-2 rounded-lg bg-blue-600 text-white">Simpan</button>
+                    </div>
                 </div>
+            </div>
+        </Teleport>
 
-                <div v-if="deleteFolderMode === 'move_to_folder'">
-                    <select v-model="deleteFolderTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                        <option :value="null">Pilih folder tujuan</option>
-                        <option v-for="folder in deleteFolderDestinationOptions" :key="folder.id" :value="folder.id">
+        <Teleport to="body">
+            <div v-if="showRenameFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div class="absolute inset-0 bg-black/40" @click="closeRenameFolderModal"></div>
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Rename Folder</h3>
+                    <input
+                        v-model="renameFolderName"
+                        type="text"
+                        placeholder="Nama folder baru"
+                        class="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                    >
+                    <div class="flex justify-end gap-2">
+                        <button @click="closeRenameFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
+                        <button @click="submitRenameFolder" class="px-4 py-2 rounded-lg bg-amber-600 text-white">Update</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <Teleport to="body">
+            <div v-if="showMoveDocumentModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div class="absolute inset-0 bg-black/40" @click="closeMoveDocumentModal"></div>
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Pindah Dokumen</h3>
+                    <p class="text-sm text-gray-600">{{ moveDocumentTarget?.title }}</p>
+                    <select v-model="moveTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                        <option :value="null">Root</option>
+                        <option v-for="folder in props.folders" :key="folder.id" :value="folder.id">
                             {{ folder.name }}
                         </option>
                     </select>
-                </div>
-
-                <div class="flex justify-end gap-2">
-                    <button @click="closeDeleteFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
-                    <button @click="submitDeleteFolder" class="px-4 py-2 rounded-lg bg-red-600 text-white">Hapus Folder</button>
+                    <div class="flex justify-end gap-2">
+                        <button @click="closeMoveDocumentModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
+                        <button @click="submitMoveDocument" class="px-4 py-2 rounded-lg bg-amber-600 text-white">Pindah</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
+
+        <Teleport to="body">
+            <div v-if="showBulkMoveModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div class="absolute inset-0 bg-black/40" @click="closeBulkMoveModal"></div>
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Pindah Dokumen Terpilih</h3>
+                    <p class="text-sm text-gray-600">{{ selectedDocumentCount }} dokumen akan dipindahkan</p>
+                    <select v-model="bulkMoveTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                        <option :value="null">Root</option>
+                        <option v-for="folder in props.folders" :key="folder.id" :value="folder.id">
+                            {{ folder.name }}
+                        </option>
+                    </select>
+                    <div class="flex justify-end gap-2">
+                        <button @click="closeBulkMoveModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
+                        <button @click="submitBulkMoveDocuments" class="px-4 py-2 rounded-lg bg-indigo-600 text-white">Pindah</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <Teleport to="body">
+            <div v-if="showDeleteFolderModal" class="fixed inset-0 z-50 flex items-center justify-center px-4">
+                <div class="absolute inset-0 bg-black/40" @click="closeDeleteFolderModal"></div>
+                <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Hapus Folder</h3>
+                    <p class="text-sm text-gray-600">
+                        Folder <span class="font-semibold">{{ deleteFolderTarget?.name }}</span> akan dihapus.
+                    </p>
+
+                    <div class="space-y-2">
+                        <label class="flex items-center text-sm text-gray-700">
+                            <input v-model="deleteFolderMode" value="move_to_root" type="radio" class="mr-2">
+                            Pindahkan isi folder ke Root
+                        </label>
+                        <label class="flex items-center text-sm text-gray-700">
+                            <input v-model="deleteFolderMode" value="move_to_folder" type="radio" class="mr-2">
+                            Pindahkan isi folder ke folder lain
+                        </label>
+                    </div>
+
+                    <div v-if="deleteFolderMode === 'move_to_folder'">
+                        <select v-model="deleteFolderTargetFolderId" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                            <option :value="null">Pilih folder tujuan</option>
+                            <option v-for="folder in deleteFolderDestinationOptions" :key="folder.id" :value="folder.id">
+                                {{ folder.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button @click="closeDeleteFolderModal" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700">Batal</button>
+                        <button @click="submitDeleteFolder" class="px-4 py-2 rounded-lg bg-red-600 text-white">Hapus Folder</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         <div
             v-if="contextMenu.visible"
