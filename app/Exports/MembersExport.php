@@ -43,12 +43,8 @@ class MembersExport implements FromCollection, WithHeadings, WithMapping, WithSt
             }
         }
 
-        if (!empty($this->filters['exclusive'])) {
-            if ($this->filters['exclusive'] === 'yes') {
-                $query->where('is_exclusive_member', true);
-            } elseif ($this->filters['exclusive'] === 'no') {
-                $query->where('is_exclusive_member', false);
-            }
+        if (!empty($this->filters['tier'])) {
+            $query->whereRaw('LOWER(member_level) = ?', [strtolower($this->filters['tier'])]);
         }
 
         if (!empty($this->filters['point_balance'])) {
@@ -171,7 +167,6 @@ class MembersExport implements FromCollection, WithHeadings, WithMapping, WithSt
             'Email',
             'No Telepon',
             'Status',
-            'Exclusive Member',
             'Tier',
             'Saldo Point',
             'Total Spending',
@@ -193,7 +188,6 @@ class MembersExport implements FromCollection, WithHeadings, WithMapping, WithSt
             $member->email,
             $member->mobile_phone,
             $member->is_active ? 'Aktif' : 'Nonaktif',
-            $member->is_exclusive_member ? 'Ya' : 'Tidak',
             ucfirst(strtolower($member->member_level ?? 'silver')),
             number_format((float) ($member->point_balance ?? 0), 0, ',', '.'),
             number_format((float) ($member->total_spending_amount ?? 0), 0, ',', '.'),
@@ -220,15 +214,14 @@ class MembersExport implements FromCollection, WithHeadings, WithMapping, WithSt
             'C' => 28,
             'D' => 18,
             'E' => 12,
-            'F' => 16,
-            'G' => 12,
-            'H' => 14,
-            'I' => 18,
-            'J' => 24,
-            'K' => 16,
-            'L' => 24,
+            'F' => 12,
+            'G' => 14,
+            'H' => 18,
+            'I' => 24,
+            'J' => 16,
+            'K' => 24,
+            'L' => 20,
             'M' => 20,
-            'N' => 20,
         ];
     }
 }

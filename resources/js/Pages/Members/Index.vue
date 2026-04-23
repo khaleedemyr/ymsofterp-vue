@@ -142,27 +142,27 @@ async function exportMembers() {
   const currentSearch = search.value || '';
   const currentStatus = statusFilter.value || '';
   const currentPointBalance = pointBalanceFilter.value || '';
-  const currentExclusive = props.filters?.exclusive || '';
+  const currentTier = props.filters?.tier || '';
 
   const { value: formValues } = await Swal.fire({
     title: 'Export Data Member ke Excel',
     html: `
-      <div class="text-left space-y-3">
+      <div class="text-left space-y-4" style="padding: 0 4px;">
         <div>
-          <label class="block text-sm font-medium mb-1">Cari Member</label>
-          <input id="export-search" class="swal2-input" placeholder="Nama, email, telepon, ID member" value="${escapeHtml(currentSearch)}">
+          <label class="block text-sm font-semibold mb-1 text-slate-700">Cari Member</label>
+          <input id="export-search" placeholder="Nama, email, telepon, ID member" value="${escapeHtml(currentSearch)}" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;">
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Status</label>
-          <select id="export-status" class="swal2-input">
+          <label class="block text-sm font-semibold mb-1 text-slate-700">Status</label>
+          <select id="export-status" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;background:#fff;">
             <option value="" ${currentStatus === '' ? 'selected' : ''}>Semua Status</option>
             <option value="active" ${currentStatus === 'active' ? 'selected' : ''}>Aktif</option>
             <option value="inactive" ${currentStatus === 'inactive' ? 'selected' : ''}>Tidak Aktif</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Saldo Point</label>
-          <select id="export-point-balance" class="swal2-input">
+          <label class="block text-sm font-semibold mb-1 text-slate-700">Saldo Point</label>
+          <select id="export-point-balance" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;background:#fff;">
             <option value="" ${currentPointBalance === '' ? 'selected' : ''}>Semua Saldo Point</option>
             <option value="positive" ${currentPointBalance === 'positive' ? 'selected' : ''}>Saldo Positif</option>
             <option value="negative" ${currentPointBalance === 'negative' ? 'selected' : ''}>Saldo Negatif</option>
@@ -171,16 +171,17 @@ async function exportMembers() {
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Exclusive Member</label>
-          <select id="export-exclusive" class="swal2-input">
-            <option value="" ${currentExclusive === '' ? 'selected' : ''}>Semua</option>
-            <option value="yes" ${currentExclusive === 'yes' ? 'selected' : ''}>Ya</option>
-            <option value="no" ${currentExclusive === 'no' ? 'selected' : ''}>Tidak</option>
+          <label class="block text-sm font-semibold mb-1 text-slate-700">Tier Member</label>
+          <select id="export-tier" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;background:#fff;">
+            <option value="" ${currentTier === '' ? 'selected' : ''}>Semua Tier</option>
+            <option value="silver" ${currentTier === 'silver' ? 'selected' : ''}>Silver</option>
+            <option value="gold" ${currentTier === 'gold' ? 'selected' : ''}>Gold</option>
+            <option value="platinum" ${currentTier === 'platinum' ? 'selected' : ''}>Platinum</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Jumlah Data Export</label>
-          <select id="export-limit" class="swal2-input">
+          <label class="block text-sm font-semibold mb-1 text-slate-700">Jumlah Data Export</label>
+          <select id="export-limit" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;background:#fff;">
             <option value="100">100 data</option>
             <option value="500">500 data</option>
             <option value="1000" selected>1000 data</option>
@@ -190,16 +191,24 @@ async function exportMembers() {
         </div>
       </div>
     `,
+    width: 560,
+    customClass: {
+      popup: 'rounded-2xl',
+      title: 'text-2xl font-bold text-slate-800',
+      confirmButton: 'rounded-lg px-4 py-2',
+      cancelButton: 'rounded-lg px-4 py-2',
+    },
     focusConfirm: false,
     showCancelButton: true,
     confirmButtonText: 'Download Excel',
     cancelButtonText: 'Batal',
     confirmButtonColor: '#7c3aed',
+    cancelButtonColor: '#64748b',
     preConfirm: () => ({
       search: document.getElementById('export-search')?.value || '',
       status: document.getElementById('export-status')?.value || '',
       point_balance: document.getElementById('export-point-balance')?.value || '',
-      exclusive: document.getElementById('export-exclusive')?.value || '',
+      tier: document.getElementById('export-tier')?.value || '',
       export_limit: document.getElementById('export-limit')?.value || '1000',
     }),
   });

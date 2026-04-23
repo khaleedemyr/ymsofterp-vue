@@ -712,7 +712,7 @@ class MemberController extends Controller
             'search' => 'nullable|string|max:255',
             'status' => 'nullable|in:active,inactive',
             'point_balance' => 'nullable|in:positive,negative,zero,high',
-            'exclusive' => 'nullable|in:yes,no',
+            'tier' => 'nullable|string|max:50',
             'sort' => 'nullable|string|max:50',
             'direction' => 'nullable|in:asc,desc',
             'export_limit' => 'nullable|in:100,500,1000,5000,all',
