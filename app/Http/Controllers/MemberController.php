@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\MembersExport;
 use App\Models\MemberAppsMember;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
 
 class MemberController extends Controller
 {
@@ -270,7 +272,7 @@ class MemberController extends Controller
 
         return Inertia::render('Members/Index', [
             'members' => $members,
-            'filters' => $request->only(['search', 'status', 'block_status', 'exclusive', 'sort', 'direction', 'per_page']),
+            'filters' => $request->only(['search', 'status', 'point_balance', 'block_status', 'exclusive', 'sort', 'direction', 'per_page']),
             'stats' => $stats,
             'unverifiedCount' => $unverifiedCount,
         ]);
@@ -706,47 +708,19 @@ class MemberController extends Controller
      */
     public function export(Request $request)
     {
-        $query = MemberAppsMember::query();
-
-        // Apply filters
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('nama_lengkap', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('mobile_phone', 'like', "%{$search}%")
-                  ->orWhere('member_id', 'like', "%{$search}%");
-            });
-        }
-
-        if ($request->filled('status')) {
-            if ($request->status === 'active') {
-                $query->where('is_active', true);
-            } elseif ($request->status === 'inactive') {
-                $query->where('is_active', false);
-            }
-        }
-
-        if ($request->filled('exclusive')) {
-            if ($request->exclusive === 'yes') {
-                $query->where('is_exclusive_member', true);
-            }
-        }
-
-        $members = $query->get();
-
-        // Generate Excel file
-        $filename = 'members_' . date('Y-m-d_H-i-s') . '.xlsx';
-        
-        // You can implement Excel export here using Laravel Excel or similar package
-        // For now, we'll return a simple response
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Export berhasil dibuat',
-            'filename' => $filename,
-            'count' => $members->count()
+        $validated = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'status' => 'nullable|in:active,inactive',
+            'point_balance' => 'nullable|in:positive,negative,zero,high',
+            'exclusive' => 'nullable|in:yes,no',
+            'sort' => 'nullable|string|max:50',
+            'direction' => 'nullable|in:asc,desc',
+            'export_limit' => 'nullable|in:100,500,1000,5000,all',
         ]);
+
+        $filename = 'members_export_' . now()->format('Ymd_His') . '.xlsx';
+
+        return Excel::download(new MembersExport($validated), $filename);
     }
 
     /**

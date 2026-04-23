@@ -129,6 +129,102 @@ function reload() {
   router.reload({ preserveState: true, replace: true });
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function exportMembers() {
+  const currentSearch = search.value || '';
+  const currentStatus = statusFilter.value || '';
+  const currentPointBalance = pointBalanceFilter.value || '';
+  const currentExclusive = props.filters?.exclusive || '';
+
+  const { value: formValues } = await Swal.fire({
+    title: 'Export Data Member ke Excel',
+    html: `
+      <div class="text-left space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">Cari Member</label>
+          <input id="export-search" class="swal2-input" placeholder="Nama, email, telepon, ID member" value="${escapeHtml(currentSearch)}">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Status</label>
+          <select id="export-status" class="swal2-input">
+            <option value="" ${currentStatus === '' ? 'selected' : ''}>Semua Status</option>
+            <option value="active" ${currentStatus === 'active' ? 'selected' : ''}>Aktif</option>
+            <option value="inactive" ${currentStatus === 'inactive' ? 'selected' : ''}>Tidak Aktif</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Saldo Point</label>
+          <select id="export-point-balance" class="swal2-input">
+            <option value="" ${currentPointBalance === '' ? 'selected' : ''}>Semua Saldo Point</option>
+            <option value="positive" ${currentPointBalance === 'positive' ? 'selected' : ''}>Saldo Positif</option>
+            <option value="negative" ${currentPointBalance === 'negative' ? 'selected' : ''}>Saldo Negatif</option>
+            <option value="zero" ${currentPointBalance === 'zero' ? 'selected' : ''}>Saldo Nol</option>
+            <option value="high" ${currentPointBalance === 'high' ? 'selected' : ''}>Saldo Tinggi (>=1000)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Exclusive Member</label>
+          <select id="export-exclusive" class="swal2-input">
+            <option value="" ${currentExclusive === '' ? 'selected' : ''}>Semua</option>
+            <option value="yes" ${currentExclusive === 'yes' ? 'selected' : ''}>Ya</option>
+            <option value="no" ${currentExclusive === 'no' ? 'selected' : ''}>Tidak</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Jumlah Data Export</label>
+          <select id="export-limit" class="swal2-input">
+            <option value="100">100 data</option>
+            <option value="500">500 data</option>
+            <option value="1000" selected>1000 data</option>
+            <option value="5000">5000 data</option>
+            <option value="all">Semua data</option>
+          </select>
+        </div>
+      </div>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Download Excel',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#7c3aed',
+    preConfirm: () => ({
+      search: document.getElementById('export-search')?.value || '',
+      status: document.getElementById('export-status')?.value || '',
+      point_balance: document.getElementById('export-point-balance')?.value || '',
+      exclusive: document.getElementById('export-exclusive')?.value || '',
+      export_limit: document.getElementById('export-limit')?.value || '1000',
+    }),
+  });
+
+  if (!formValues) {
+    return;
+  }
+
+  const currentSort = props.filters?.sort || 'created_at';
+  const currentDirection = props.filters?.direction || 'desc';
+  const params = {
+    ...formValues,
+    sort: currentSort,
+    direction: currentDirection,
+  };
+
+  Object.keys(params).forEach((key) => {
+    if (params[key] === '' || params[key] === null || params[key] === undefined) {
+      delete params[key];
+    }
+  });
+
+  window.location.href = route('members.export', params);
+}
+
 function changeSort(sortField) {
   const currentSort = props.filters?.sort || 'created_at';
   const currentDirection = props.filters?.direction || 'desc';
@@ -615,6 +711,10 @@ function formatDate(dateString) {
             <span v-if="unverifiedCount > 0" class="ml-2 bg-white/30 px-2 py-0.5 rounded-full text-sm font-bold">
               ({{ unverifiedCount }})
             </span>
+          </button>
+          <button @click="exportMembers" class="bg-gradient-to-r from-emerald-500 to-emerald-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa-solid fa-file-excel mr-2"></i>
+            Export Excel
           </button>
           <button @click="openCreate" class="bg-gradient-to-r from-purple-500 to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Member Baru
