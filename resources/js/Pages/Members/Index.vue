@@ -175,8 +175,8 @@ async function exportMembers() {
           <select id="export-tier" style="width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;background:#fff;">
             <option value="" ${currentTier === '' ? 'selected' : ''}>Semua Tier</option>
             <option value="silver" ${currentTier === 'silver' ? 'selected' : ''}>Silver</option>
-            <option value="gold" ${currentTier === 'gold' ? 'selected' : ''}>Gold</option>
-            <option value="platinum" ${currentTier === 'platinum' ? 'selected' : ''}>Platinum</option>
+            <option value="elite" ${currentTier === 'elite' ? 'selected' : ''}>Elite</option>
+            <option value="loyal" ${currentTier === 'loyal' ? 'selected' : ''}>Loyal</option>
           </select>
         </div>
         <div>
@@ -937,9 +937,9 @@ function formatDate(dateString) {
                   <div>
                     <span :class="[
                       'font-semibold text-xs px-2 py-1 rounded-full uppercase inline-block',
-                      member.tier === 'platinum' 
+                      member.tier === 'loyal' 
                         ? 'bg-purple-100 text-purple-800 border border-purple-300'
-                        : member.tier === 'gold'
+                        : member.tier === 'elite'
                         ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
                         : member.tier === 'silver'
                         ? 'bg-gray-100 text-gray-800 border border-gray-300'
