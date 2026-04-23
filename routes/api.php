@@ -1077,6 +1077,14 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/roles', [\App\Http\Controllers\RoleController::class, 'store'])->name('api.approval-app.roles.store');
         Route::put('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'update'])->name('api.approval-app.roles.update');
         Route::delete('/roles/{role}', [\App\Http\Controllers\RoleController::class, 'destroy'])->name('api.approval-app.roles.destroy');
+
+        // Shared Documents routes
+        Route::get('/shared-documents', [\App\Http\Controllers\SharedDocumentController::class, 'apiIndex'])->name('api.approval-app.shared-documents.index');
+        Route::get('/shared-documents/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiShow'])->name('api.approval-app.shared-documents.show');
+        Route::post('/shared-documents/{id}/move', [\App\Http\Controllers\SharedDocumentController::class, 'apiMove'])->name('api.approval-app.shared-documents.move');
+        Route::get('/shared-documents/{id}/download', [\App\Http\Controllers\SharedDocumentController::class, 'download'])->name('api.approval-app.shared-documents.download');
+        Route::get('/shared-documents/{id}/preview', [\App\Http\Controllers\SharedDocumentController::class, 'preview'])->name('api.approval-app.shared-documents.preview');
+        Route::delete('/shared-documents/{id}', [\App\Http\Controllers\SharedDocumentController::class, 'apiDestroy'])->name('api.approval-app.shared-documents.destroy');
         
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');

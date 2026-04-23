@@ -647,6 +647,194 @@ class SharedDocumentController extends Controller
         ]);
     }
 
+    public function apiIndex(Request $request)
+    {
+        $user = Auth::user();
+        $folderId = $request->integer('folder_id');
+        $search = trim((string) $request->get('search', ''));
+
+        $allFolders = DocumentFolder::with(['parent'])
+            ->visibleTo($user)
+            ->orderBy('name')
+            ->get();
+
+        $selectedFolder = null;
+        if (!empty($folderId)) {
+            $selectedFolder = $allFolders->firstWhere('id', $folderId);
+            if (!$selectedFolder) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses ke folder ini.',
+                ], 403);
+            }
+        }
+
+        $folders = $allFolders
+            ->where('parent_id', $folderId)
+            ->values()
+            ->map(function (DocumentFolder $folder) use ($user) {
+                return [
+                    'id' => $folder->id,
+                    'name' => $folder->name,
+                    'parent_id' => $folder->parent_id,
+                    'is_public' => (bool) $folder->is_public,
+                    'can_manage' => $folder->hasPermission($user, 'admin'),
+                    'can_edit' => $folder->hasPermission($user, 'edit'),
+                ];
+            });
+
+        $documents = SharedDocument::with(['creator', 'folder'])
+            ->visibleTo($user)
+            ->when($folderId, function ($query, $folderId) {
+                $query->where('folder_id', $folderId);
+            }, function ($query) {
+                $query->whereNull('folder_id');
+            })
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('title', 'like', "%{$search}%")
+                        ->orWhere('filename', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function (SharedDocument $document) use ($user) {
+                return [
+                    'id' => $document->id,
+                    'title' => $document->title,
+                    'filename' => $document->filename,
+                    'file_type' => strtolower((string) $document->file_type),
+                    'file_size' => (int) $document->file_size,
+                    'description' => $document->description,
+                    'folder_id' => $document->folder_id,
+                    'is_public' => (bool) $document->is_public,
+                    'created_at' => optional($document->created_at)->toISOString(),
+                    'creator_name' => optional($document->creator)->nama_lengkap,
+                    'permission' => $this->resolvePermissionLabel($document, $user),
+                    'can_move' => $document->hasPermission($user, 'edit'),
+                    'can_delete' => $document->created_by === $user->id || $document->hasPermission($user, 'admin'),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'current_folder_id' => $folderId,
+                'current_folder' => $selectedFolder ? [
+                    'id' => $selectedFolder->id,
+                    'name' => $selectedFolder->name,
+                    'parent_id' => $selectedFolder->parent_id,
+                    'can_manage' => $selectedFolder->hasPermission($user, 'admin'),
+                    'can_edit' => $selectedFolder->hasPermission($user, 'edit'),
+                ] : null,
+                'folders' => $folders->values(),
+                'documents' => $documents->values(),
+                'breadcrumbs' => $this->buildFolderBreadcrumbs($allFolders, $selectedFolder),
+                'folder_tree_items' => $this->buildFolderTreeItems($allFolders),
+            ],
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $user = Auth::user();
+        $document = SharedDocument::with(['creator', 'folder'])
+            ->findOrFail($id);
+
+        if (!$document->hasPermission($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses ke dokumen ini.',
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $document->id,
+                'title' => $document->title,
+                'filename' => $document->filename,
+                'file_type' => strtolower((string) $document->file_type),
+                'file_size' => (int) $document->file_size,
+                'description' => $document->description,
+                'folder_id' => $document->folder_id,
+                'folder_name' => optional($document->folder)->name,
+                'is_public' => (bool) $document->is_public,
+                'created_at' => optional($document->created_at)->toISOString(),
+                'creator_name' => optional($document->creator)->nama_lengkap,
+                'permission' => $this->resolvePermissionLabel($document, $user),
+                'can_move' => $document->hasPermission($user, 'edit'),
+                'can_delete' => $document->created_by === $user->id || $document->hasPermission($user, 'admin'),
+                'download_url' => route('api.approval-app.shared-documents.download', ['id' => $document->id]),
+                'preview_url' => route('api.approval-app.shared-documents.preview', ['id' => $document->id]),
+            ],
+        ]);
+    }
+
+    public function apiDestroy($id)
+    {
+        $user = Auth::user();
+        $document = SharedDocument::findOrFail($id);
+
+        if (!$document->hasPermission($user, 'admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin untuk menghapus dokumen ini.',
+            ], 403);
+        }
+
+        Storage::disk('public')->delete($document->file_path);
+
+        foreach ($document->versions as $version) {
+            Storage::disk('public')->delete($version->file_path);
+        }
+
+        $document->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dokumen berhasil dihapus.',
+        ]);
+    }
+
+    public function apiMove(Request $request, $id)
+    {
+        $user = Auth::user();
+        $document = SharedDocument::findOrFail($id);
+
+        if (!$document->hasPermission($user, 'edit')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin memindahkan dokumen ini.',
+            ], 403);
+        }
+
+        $request->validate([
+            'target_folder_id' => 'nullable|exists:document_folders,id',
+        ]);
+
+        $targetFolderId = $request->input('target_folder_id');
+        if (!empty($targetFolderId)) {
+            $targetFolder = DocumentFolder::findOrFail($targetFolderId);
+            if (!$targetFolder->hasPermission($user, 'edit')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin ke folder tujuan.',
+                ], 403);
+            }
+        }
+
+        $document->update([
+            'folder_id' => $targetFolderId,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dokumen berhasil dipindahkan.',
+        ]);
+    }
+
     private function getMimeType($fileType)
     {
         $mimeTypes = [
@@ -660,6 +848,23 @@ class SharedDocumentController extends Controller
         ];
         
         return $mimeTypes[$fileType] ?? 'application/octet-stream';
+    }
+
+    private function resolvePermissionLabel(SharedDocument $document, User $user): string
+    {
+        if ($document->created_by === $user->id) {
+            return 'owner';
+        }
+
+        if ($document->hasPermission($user, 'admin')) {
+            return 'admin';
+        }
+
+        if ($document->hasPermission($user, 'edit')) {
+            return 'edit';
+        }
+
+        return 'view';
     }
 
     public function callback(Request $request)
