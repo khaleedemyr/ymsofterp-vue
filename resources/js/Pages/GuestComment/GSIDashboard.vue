@@ -90,6 +90,21 @@ const issueTopicDetailMap = computed(() => {
   }, {});
 });
 
+const negativeTopicSections = computed(() => {
+  const topics = props.issueInsights?.topic_details || [];
+  return topics
+    .map((topic) => ({
+      topic: topic.topic,
+      label: topic.label,
+      comments: (topic.comments || []).filter((comment) => isNegativeSeverity(comment.severity)),
+    }))
+    .filter((topic) => topic.comments.length > 0);
+});
+
+const totalNegativeComments = computed(() => {
+  return negativeTopicSections.value.reduce((sum, topic) => sum + topic.comments.length, 0);
+});
+
 function formatDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -108,32 +123,35 @@ function normalizeSeverity(value) {
 }
 
 function isNegativeSeverity(value) {
-  return normalizeSeverity(value) !== 'neutral';
+  return ['mild_negative', 'negative', 'severe'].includes(normalizeSeverity(value));
 }
 
 function severityBadgeClass(value) {
   const severity = normalizeSeverity(value);
-  if (['critical', 'high', 'severe'].includes(severity)) {
+  if (severity === 'severe') {
     return 'bg-red-100 text-red-700';
   }
-  if (['medium', 'moderate'].includes(severity)) {
+  if (severity === 'negative') {
     return 'bg-amber-100 text-amber-700';
   }
-  if (['low', 'minor'].includes(severity)) {
+  if (severity === 'mild_negative') {
     return 'bg-orange-100 text-orange-700';
+  }
+  if (severity === 'positive') {
+    return 'bg-emerald-100 text-emerald-700';
   }
   return 'bg-slate-100 text-slate-600';
 }
 
 function commentCardClass(value) {
   const severity = normalizeSeverity(value);
-  if (['critical', 'high', 'severe'].includes(severity)) {
+  if (severity === 'severe') {
     return 'bg-red-50 border-red-200 ring-1 ring-red-100';
   }
-  if (['medium', 'moderate'].includes(severity)) {
+  if (severity === 'negative') {
     return 'bg-amber-50 border-amber-200 ring-1 ring-amber-100';
   }
-  if (['low', 'minor'].includes(severity)) {
+  if (severity === 'mild_negative') {
     return 'bg-orange-50 border-orange-200 ring-1 ring-orange-100';
   }
   return 'bg-slate-50 border-slate-200';
@@ -328,19 +346,23 @@ const issueTopicBarSeries = computed(() => [
               <span class="font-semibold text-slate-500 uppercase tracking-wide">Legend</span>
               <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-red-700">
                 <span class="h-2 w-2 rounded-full bg-red-500"></span>
-                High
+                Severe
               </span>
               <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-amber-700">
                 <span class="h-2 w-2 rounded-full bg-amber-500"></span>
-                Medium
+                Negative
               </span>
               <span class="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-1 text-orange-700">
                 <span class="h-2 w-2 rounded-full bg-orange-500"></span>
-                Low
+                Mild Negative
               </span>
               <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
                 <span class="h-2 w-2 rounded-full bg-slate-400"></span>
                 Neutral
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">
+                <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                Positive
               </span>
             </div>
           </div>
@@ -353,68 +375,67 @@ const issueTopicBarSeries = computed(() => [
           {{ issueInsights?.message || 'Belum ada komentar untuk dianalisis.' }}
         </div>
         <div v-else class="space-y-4">
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div class="border border-slate-200 rounded-lg p-3">
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <h4 class="text-sm font-semibold text-slate-700">Top Issues</h4>
-                <span class="text-xs text-slate-400">Klik bar untuk lihat komentar</span>
-              </div>
-              <apexchart type="bar" height="300" :options="issueTopicBarOptions" :series="issueTopicBarSeries" />
+          <div class="border border-slate-200 rounded-lg p-3">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <h4 class="text-sm font-semibold text-slate-700">Top Issues</h4>
+              <span class="text-xs text-slate-400">Klik bar untuk lihat komentar</span>
             </div>
-            <div class="border border-slate-200 rounded-lg p-3">
-              <h4 class="text-sm font-semibold text-slate-700 mb-2">Issue Buckets</h4>
-              <div v-if="!(issueInsights?.top_topics || []).length" class="text-sm text-slate-500">Belum ada issue terdeteksi.</div>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="topic in issueInsights.top_topics"
-                  :key="topic.topic"
-                  class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-md px-3 py-2 cursor-pointer hover:bg-violet-50 hover:border-violet-200 transition"
-                  @click="openIssueTopicDetail(topic.topic)"
-                >
-                  <span class="font-medium text-slate-700">{{ topic.label }}</span>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-slate-400">Lihat detail</span>
-                    <span class="text-sm font-semibold text-violet-700">{{ topic.count }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <apexchart type="bar" height="380" :options="issueTopicBarOptions" :series="issueTopicBarSeries" />
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div
-              v-for="topic in issueInsights.topic_examples || []"
-              :key="topic.topic"
-              class="border border-slate-200 rounded-lg p-3"
-            >
-              <div class="font-semibold text-slate-700 mb-2">{{ topic.label }}</div>
-              <div v-if="!(topic.examples || []).length" class="text-sm text-slate-500">Belum ada contoh komentar.</div>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="(ex, idx) in topic.examples"
-                  :key="idx"
-                  class="border rounded-md p-2"
-                  :class="commentCardClass(ex.severity)"
-                >
-                  <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-                    <div class="text-xs text-slate-500">{{ ex.author || '-' }}</div>
-                    <span
-                      class="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase"
-                      :class="severityBadgeClass(ex.severity)"
-                    >
-                      {{ ex.severity || 'neutral' }}
-                    </span>
-                  </div>
-                  <div class="text-sm text-slate-700">"{{ ex.text }}"</div>
-                  <div v-if="ex.summary_id" class="text-xs text-violet-700 mt-1">AI: {{ ex.summary_id }}</div>
+          <div class="border border-slate-200 rounded-lg p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div>
+                <h4 class="text-sm font-semibold text-slate-700">Komentar Negatif Terdeteksi</h4>
+                <div class="text-xs text-slate-500 mt-1">
+                  Menampilkan {{ totalNegativeComments }} komentar dengan severity negatif dari issue yang terdeteksi.
                 </div>
-                <button
-                  type="button"
-                  class="text-sm font-semibold text-violet-700 hover:text-violet-900"
-                  @click="openIssueTopicDetail(topic.topic)"
-                >
-                  Lihat semua komentar {{ topic.label }}
-                </button>
+              </div>
+            </div>
+
+            <div v-if="!negativeTopicSections.length" class="text-sm text-slate-500">
+              Belum ada komentar negatif pada periode ini.
+            </div>
+
+            <div v-else class="space-y-5">
+              <div v-for="topic in negativeTopicSections" :key="topic.topic" class="space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="font-semibold text-slate-700">{{ topic.label }}</div>
+                  <button
+                    type="button"
+                    class="text-sm font-semibold text-violet-700 hover:text-violet-900"
+                    @click="openIssueTopicDetail(topic.topic)"
+                  >
+                    Lihat semua komentar {{ topic.label }}
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  <div
+                    v-for="(comment, idx) in topic.comments"
+                    :key="`${topic.topic}-${idx}`"
+                    class="border rounded-lg p-3"
+                    :class="commentCardClass(comment.severity)"
+                  >
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                      <div class="text-xs text-slate-500">{{ comment.author || '-' }}</div>
+                      <div class="flex items-center gap-2">
+                        <span
+                          class="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase"
+                          :class="severityBadgeClass(comment.severity)"
+                        >
+                          {{ comment.severity || 'neutral' }}
+                        </span>
+                        <span class="text-[11px] text-slate-400">{{ formatDateTime(comment.created_at) }}</span>
+                      </div>
+                    </div>
+                    <div class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-red-600">
+                      Negative comment highlighted
+                    </div>
+                    <div class="text-sm text-slate-700 whitespace-pre-wrap">"{{ comment.text || '-' }}"</div>
+                    <div v-if="comment.summary_id" class="text-xs text-violet-700 mt-2">AI: {{ comment.summary_id }}</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -433,19 +454,23 @@ const issueTopicBarSeries = computed(() => [
                 <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
                   <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-red-700">
                     <span class="h-2 w-2 rounded-full bg-red-500"></span>
-                    High
+                    Severe
                   </span>
                   <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-amber-700">
                     <span class="h-2 w-2 rounded-full bg-amber-500"></span>
-                    Medium
+                    Negative
                   </span>
                   <span class="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-1 text-orange-700">
                     <span class="h-2 w-2 rounded-full bg-orange-500"></span>
-                    Low
+                    Mild Negative
                   </span>
                   <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600">
                     <span class="h-2 w-2 rounded-full bg-slate-400"></span>
                     Neutral
+                  </span>
+                  <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">
+                    <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                    Positive
                   </span>
                 </div>
               </div>
