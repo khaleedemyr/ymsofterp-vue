@@ -14,7 +14,7 @@ class PendingApprovalController extends Controller
 {
     /**
      * Get all pending approvals dalam 1 response
-     * OPTIMASI: Cache hasil untuk 10 detik untuk mengurangi beban database
+     * OPTIMASI: Cache hasil untuk 60 detik untuk mengurangi beban backend
      * 
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -32,17 +32,17 @@ class PendingApprovalController extends Controller
                 ], 401);
             }
 
-            // OPTIMASI: Cache hasil untuk 10 detik per user
+            // OPTIMASI: Cache hasil untuk 60 detik per user
             // Cache key berdasarkan user ID untuk personalisasi
             $cacheKey = 'all_pending_approvals_' . $user->id;
-            $cacheTTL = 10; // 10 detik
+            $cacheTTL = 60; // 60 detik
             
             // Check if data is cached (before calling Cache::remember)
             $isCached = Cache::has($cacheKey);
             
             $result = Cache::remember($cacheKey, $cacheTTL, function() use ($user, $request) {
-                // Limit per type (default 50, bisa di-override via request)
-                $limit = $request->input('limit', 50);
+                // Limit per type (default 30, bisa di-override via request)
+                $limit = $request->input('limit', 30);
             
             $data = [
                 'purchase_requisitions' => [],
