@@ -631,6 +631,7 @@ async function fetchNotifications() {
         lastNotificationIds.value = new Set(newNotifications.map(n => n.id));
         
         notifications.value = newNotifications;
+        unreadCount.value = newNotifications.filter(n => !n.is_read).length;
     } catch (error) {
         console.error('Error fetching notifications:', error);
         // Don't show error to user, just log it
@@ -639,19 +640,14 @@ async function fetchNotifications() {
     }
 }
 
-async function fetchUnreadCount() {
-    try {
-        const response = await axios.get('/api/notifications/unread-count');
-        unreadCount.value = response.data.count;
-    } catch (error) {
-        console.error('Error fetching unread count:', error);
-    }
-}
-
 async function markAsRead(id) {
     try {
         await axios.post(`/api/notifications/${id}/read`);
-        await fetchUnreadCount();
+        const notif = notifications.value.find(n => n.id === id);
+        if (notif && !notif.is_read) {
+            notif.is_read = true;
+            unreadCount.value = Math.max(0, unreadCount.value - 1);
+        }
     } catch (error) {
         console.error('Error marking notification as read:', error);
     }
@@ -660,8 +656,8 @@ async function markAsRead(id) {
 async function markAllAsRead() {
     try {
         await axios.post('/api/notifications/mark-all-read');
-        await fetchUnreadCount();
-        await fetchNotifications();
+        notifications.value = notifications.value.map(n => ({ ...n, is_read: true }));
+        unreadCount.value = 0;
     } catch (error) {
         console.error('Error marking all notifications as read:', error);
     }
@@ -689,23 +685,21 @@ function handleNotifClick(notif) {
     showNotifDropdown.value = false;
 }
 
-// Fetch notifications on mount and every 60 seconds (reduced from 30s to save server resources)
+// Fetch notifications on mount and every 120 seconds to reduce server load
 onMounted(async () => {
     if (isExternalUser.value) {
         return;
     }
 
     await fetchNotifications();
-    await fetchUnreadCount();
     
-    // Changed from 30s to 60s to reduce server load
+    // Changed from 60s to 120s to further reduce server load
     notificationPollInterval = setInterval(async () => {
         if (document.visibilityState !== 'visible') {
             return;
         }
         await fetchNotifications();
-        await fetchUnreadCount();
-    }, 60000); // 60 seconds instead of 30 seconds
+    }, 120000); // 120 seconds
 
     // Load html5-qrcode library
     if (!window.Html5Qrcode) {
