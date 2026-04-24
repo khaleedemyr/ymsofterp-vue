@@ -220,10 +220,16 @@ async function simpanPayroll() {
   });
   
   try {
+    const normalizedPayrollData = payrollData.value.map((row) => ({
+      ...row,
+      gaji: row.gaji === '' || row.gaji === null || row.gaji === undefined ? 0 : parseInt(parseNumber(row.gaji), 10) || 0,
+      tunjangan: row.tunjangan === '' || row.tunjangan === null || row.tunjangan === undefined ? 0 : parseInt(parseNumber(row.tunjangan), 10) || 0,
+    }));
+
     const payload = {
       outlet_id: outletId.value ? parseInt(outletId.value) : 0,
       division_id: divisionId.value && divisionId.value !== '' ? parseInt(divisionId.value) : 0,
-      payrollData: payrollData.value,
+      payrollData: normalizedPayrollData,
     };
     
     const res = await fetch('/payroll/master', {

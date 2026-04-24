@@ -9,6 +9,25 @@ use App\Models\User;
 
 class PayrollController extends Controller
 {
+    private function normalizePayrollNominal($value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        if (is_numeric($value)) {
+            return (int) round((float) $value);
+        }
+
+        $clean = preg_replace('/[^\d.-]/', '', (string) $value);
+
+        if ($clean === '' || $clean === '-') {
+            return 0;
+        }
+
+        return (int) round((float) $clean);
+    }
+
     public function index(Request $request)
     {
         $outletId = $request->input('outlet_id');
@@ -62,7 +81,11 @@ class PayrollController extends Controller
                 ->when($divisionId, function($q) use ($divisionId) {
                     $q->where('division_id', $divisionId);
                 })
+                ->when(empty($divisionId), function($q) {
+                    $q->where('division_id', 0);
+                })
                 ->whereIn('user_id', $userIds)
+                ->orderByDesc('updated_at')
                 ->get()
                 ->keyBy('user_id');
         }
@@ -104,8 +127,8 @@ class PayrollController extends Controller
                     'division_id' => $divisionId,
                 ],
                 [
-                    'gaji' => $row['gaji'] ?? 0,
-                    'tunjangan' => $row['tunjangan'] ?? 0,
+                    'gaji' => $this->normalizePayrollNominal($row['gaji'] ?? 0),
+                    'tunjangan' => $this->normalizePayrollNominal($row['tunjangan'] ?? 0),
                     'ot' => !empty($row['ot']) ? 1 : 0,
                     'um' => !empty($row['um']) ? 1 : 0,
                     'ph' => !empty($row['ph']) ? 1 : 0,
