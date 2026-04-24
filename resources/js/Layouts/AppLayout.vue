@@ -19,6 +19,7 @@ provideLoading();
 const sidebarOpen = ref(true);
 const showLang = ref(false);
 const { locale, t } = useI18n();
+let notificationPollInterval = null;
 
 const allowedMenus = usePage().props.allowedMenus || [];
 
@@ -698,7 +699,10 @@ onMounted(async () => {
     await fetchUnreadCount();
     
     // Changed from 30s to 60s to reduce server load
-    setInterval(async () => {
+    notificationPollInterval = setInterval(async () => {
+        if (document.visibilityState !== 'visible') {
+            return;
+        }
         await fetchNotifications();
         await fetchUnreadCount();
     }, 60000); // 60 seconds instead of 30 seconds
@@ -717,6 +721,13 @@ onMounted(async () => {
         } catch (error) {
             console.error('Error initializing Firebase Messaging:', error);
         }
+    }
+});
+
+onBeforeUnmount(() => {
+    if (notificationPollInterval) {
+        clearInterval(notificationPollInterval);
+        notificationPollInterval = null;
     }
 });
 

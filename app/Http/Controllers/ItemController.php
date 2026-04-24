@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use App\Exports\ItemsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use PDF;
@@ -28,6 +29,18 @@ use Illuminate\Validation\Rule;
 
 class ItemController extends Controller
 {
+    private function getMasterData(): array
+    {
+        $ttl = 1800; // 30 minutes - master data rarely changes
+        return [
+            'categories'       => Cache::remember('master_categories', $ttl, fn() => Category::all()),
+            'subCategories'    => Cache::remember('master_sub_categories', $ttl, fn() => SubCategory::where('status', 'active')->get()),
+            'warehouseDivisions' => Cache::remember('master_warehouse_divisions', $ttl, fn() => WarehouseDivision::where('status', 'active')->get()),
+            'menuTypes'        => Cache::remember('master_menu_types', $ttl, fn() => \DB::table('menu_type')->where('status', 'active')->get()),
+            'modifiers'        => Cache::remember('master_modifiers_with_options', $ttl, fn() => Modifier::with('options')->get()),
+        ];
+    }
+
     protected function sanitizeBomPayload(Request $request): void
     {
         if (! $request->has('bom') || ! is_array($request->input('bom'))) {
@@ -193,32 +206,25 @@ class ItemController extends Controller
             })->toArray();
             return $item;
         })->toArray();
-        $categories = Category::all();
-        $subCategories = SubCategory::where('status', 'active')->get();
-        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
-        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
-        $modifiers = Modifier::with('options')->get();
+        $master = $this->getMasterData();
         return Inertia::render('Items/Index', [
             'items' => $itemsArr,
-            'categories' => $categories,
-            'subCategories' => $subCategories,
+            'categories' => $master['categories'],
+            'subCategories' => $master['subCategories'],
             'units' => $units,
-            'warehouseDivisions' => $warehouseDivisions,
-            'menuTypes' => $menuTypes,
+            'warehouseDivisions' => $master['warehouseDivisions'],
+            'menuTypes' => $master['menuTypes'],
             'regions' => $regions,
             'outlets' => $outlets,
             'bomItems' => $bomItems,
-            'modifiers' => $modifiers,
+            'modifiers' => $master['modifiers'],
         ]);
     }
 
     public function create()
     {
-        $categories = Category::all();
-        $subCategories = SubCategory::all();
+        $master = $this->getMasterData();
         $units = Unit::all();
-        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
-        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->values();
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->values();
         
@@ -227,19 +233,17 @@ class ItemController extends Controller
             ->where('status', 'active')
             ->orderBy('name')
             ->get();
-        $modifiers = Modifier::with('options')->get();
-        
         
         return Inertia::render('Items/Create', [
-            'categories' => $categories,
-            'subCategories' => $subCategories,
+            'categories' => $master['categories'],
+            'subCategories' => $master['subCategories'],
             'units' => $units,
-            'warehouseDivisions' => $warehouseDivisions,
-            'menuTypes' => $menuTypes,
+            'warehouseDivisions' => $master['warehouseDivisions'],
+            'menuTypes' => $master['menuTypes'],
             'regions' => $regions,
             'outlets' => $outlets,
             'bomItems' => $bomItems,
-            'modifiers' => $modifiers,
+            'modifiers' => $master['modifiers'],
         ]);
     }
 
@@ -400,20 +404,21 @@ class ItemController extends Controller
 
     public function edit(Item $item)
     {
-        $categories = Category::all();
-        $subCategories = SubCategory::all();
+        $master = $this->getMasterData();
         $units = Unit::all();
-        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
-        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->keyBy('id');
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->keyBy('id_outlet');
+        $categories = $master['categories'];
+        $subCategories = $master['subCategories'];
+        $warehouseDivisions = $master['warehouseDivisions'];
+        $menuTypes = $master['menuTypes'];
+        $modifiers = $master['modifiers'];
         // Ambil semua item aktif untuk BOM dropdown (kecuali item itu sendiri)
         $bomItems = \App\Models\Item::with('smallUnit')
             ->where('id', '!=', $item->id)
             ->where('status', 'active')
             ->orderBy('name')
             ->get();
-        $modifiers = Modifier::with('options')->get();
         
 
 
@@ -2503,27 +2508,23 @@ class ItemController extends Controller
 
     public function apiCreateData()
     {
-        $categories = Category::all();
-        $subCategories = SubCategory::where('status', 'active')->get();
+        $master = $this->getMasterData();
         $units = Unit::all();
-        $warehouseDivisions = WarehouseDivision::where('status', 'active')->get();
-        $menuTypes = \DB::table('menu_type')->where('status', 'active')->get();
         $regions = \DB::table('regions')->where('status', 'active')->get()->values();
         $outlets = \DB::table('tbl_data_outlet')->where('status', 'A')->get()->values();
         $bomItems = Item::with('smallUnit')->where('status', 'active')->orderBy('name')->get();
-        $modifiers = Modifier::with('options')->get();
 
         return response()->json([
             'success' => true,
-            'categories' => $categories,
-            'sub_categories' => $subCategories,
+            'categories' => $master['categories'],
+            'sub_categories' => $master['subCategories'],
             'units' => $units,
-            'warehouse_divisions' => $warehouseDivisions,
-            'menu_types' => $menuTypes,
+            'warehouse_divisions' => $master['warehouseDivisions'],
+            'menu_types' => $master['menuTypes'],
             'regions' => $regions,
             'outlets' => $outlets,
             'bom_items' => $bomItems,
-            'modifiers' => $modifiers,
+            'modifiers' => $master['modifiers'],
         ]);
     }
 
