@@ -793,6 +793,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject']);
         
         Route::get('/outlet-transfer/pending-approvals', [OutletTransferController::class, 'getPendingApprovals']);
+        Route::get('/contra-bon', [\App\Http\Controllers\ContraBonController::class, 'apiIndex']);
         Route::get('/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
         Route::get('/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
         Route::post('/contra-bon/{id}/approve', [\App\Http\Controllers\ContraBonController::class, 'approve']);

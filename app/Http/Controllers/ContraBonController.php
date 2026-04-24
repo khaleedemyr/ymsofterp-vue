@@ -121,7 +121,13 @@ class ContraBonController extends Controller
         // Eager load sources with their relations (only for paginated results)
         $sourcesMap = [];
         if (!empty($contraBonIds)) {
-            $sources = ContraBonSource::with(['purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood'])
+            $sources = ContraBonSource::with([
+                'purchaseOrder',
+                'retailFood.outlet',
+                'warehouseRetailFood.warehouse',
+                'warehouseRetailFood.warehouseDivision',
+                'retailNonFood.outlet'
+            ])
                 ->whereIn('contra_bon_id', $contraBonIds)
                 ->get();
             
@@ -515,6 +521,421 @@ class ContraBonController extends Controller
             'contraBons' => $contraBons,
             'filters' => $request->only(['search', 'status', 'date_from', 'date_to', 'per_page']),
             'dataLoaded' => true // Set true if data is actually loaded
+        ]);
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $search = $request->input('search');
+        $status = $request->input('status');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $perPage = (int) $request->input('per_page', 20);
+
+        $query = ContraBon::query()
+            ->leftJoin('suppliers as s', 'food_contra_bons.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'food_contra_bons.created_by', '=', 'u.id')
+            ->leftJoin('purchase_order_foods as po', 'food_contra_bons.po_id', '=', 'po.id')
+            ->leftJoin('retail_food as rf', function($join) {
+                $join->on('food_contra_bons.source_id', '=', 'rf.id')
+                     ->where('food_contra_bons.source_type', '=', 'retail_food');
+            })
+            ->select(
+                'food_contra_bons.*',
+                's.name as supplier_name',
+                'u.nama_lengkap as creator_name',
+                'po.number as po_number',
+                'rf.retail_number as retail_food_number'
+            )
+            ->distinct()
+            ->orderByDesc('food_contra_bons.created_at');
+
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('food_contra_bons.number', 'like', "%$search%")
+                  ->orWhere('food_contra_bons.supplier_invoice_number', 'like', "%$search%")
+                  ->orWhere('s.name', 'like', "%$search%")
+                  ->orWhere('po.number', 'like', "%$search%")
+                  ->orWhere('rf.retail_number', 'like', "%$search%")
+                  ->orWhere('food_contra_bons.total_amount', 'like', "%$search%")
+                  ->orWhere('food_contra_bons.status', 'like', "%$search%")
+                  ->orWhere('u.nama_lengkap', 'like', "%$search%");
+            });
+        }
+
+        if ($status) {
+            $query->where('food_contra_bons.status', $status);
+        }
+        if ($dateFrom) {
+            $query->whereDate('food_contra_bons.date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('food_contra_bons.date', '<=', $dateTo);
+        }
+
+        $contraBons = $query->paginate($perPage)->withQueryString();
+
+        $contraBonIds = $contraBons->getCollection()->pluck('id')->toArray();
+        $supplierIds = $contraBons->getCollection()->pluck('supplier_id')->filter()->unique()->values()->toArray();
+        $creatorIds = $contraBons->getCollection()->pluck('created_by')->filter()->unique()->values()->toArray();
+        $poIds = $contraBons->getCollection()->pluck('po_id')->filter()->unique()->values()->toArray();
+
+        $suppliersMap = [];
+        if (!empty($supplierIds)) {
+            foreach (\App\Models\Supplier::whereIn('id', $supplierIds)->get() as $supplier) {
+                $suppliersMap[$supplier->id] = $supplier;
+            }
+        }
+
+        $creatorsMap = [];
+        if (!empty($creatorIds)) {
+            foreach (\App\Models\User::whereIn('id', $creatorIds)->get() as $creator) {
+                $creatorsMap[$creator->id] = $creator;
+            }
+        }
+
+        $sourcesMap = [];
+        if (!empty($contraBonIds)) {
+            $sources = ContraBonSource::with([
+                'purchaseOrder',
+                'retailFood.outlet',
+                'warehouseRetailFood.warehouse',
+                'warehouseRetailFood.warehouseDivision',
+                'retailNonFood.outlet'
+            ])
+                ->whereIn('contra_bon_id', $contraBonIds)
+                ->get();
+
+            foreach ($sources as $source) {
+                if (!isset($sourcesMap[$source->contra_bon_id])) {
+                    $sourcesMap[$source->contra_bon_id] = collect([]);
+                }
+                $sourcesMap[$source->contra_bon_id]->push($source);
+            }
+        }
+
+        $purchaseOrdersMap = [];
+        if (!empty($poIds)) {
+            foreach (PurchaseOrderFood::whereIn('id', $poIds)->get() as $po) {
+                $purchaseOrdersMap[$po->id] = $po;
+            }
+        }
+
+        $grNumbersMap = [];
+        if (!empty($contraBonIds)) {
+            try {
+                $allGrNumbers = DB::table('food_contra_bon_items as cbi')
+                    ->join('food_good_receive_items as gri', 'cbi.gr_item_id', '=', 'gri.id')
+                    ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
+                    ->whereIn('cbi.contra_bon_id', $contraBonIds)
+                    ->whereNotNull('cbi.gr_item_id')
+                    ->select('cbi.contra_bon_id', 'gr.gr_number')
+                    ->distinct()
+                    ->get();
+
+                foreach ($allGrNumbers as $gr) {
+                    if (!isset($grNumbersMap[$gr->contra_bon_id])) {
+                        $grNumbersMap[$gr->contra_bon_id] = [];
+                    }
+                    $grNumbersMap[$gr->contra_bon_id][] = $gr->gr_number;
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query GR numbers from items (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $grIdsFromSources = [];
+        if (!empty($contraBonIds)) {
+            try {
+                $sourcesWithGr = DB::table('food_contra_bon_sources')
+                    ->whereIn('contra_bon_id', $contraBonIds)
+                    ->whereNotNull('gr_id')
+                    ->select('contra_bon_id', 'gr_id')
+                    ->get();
+
+                $grIds = $sourcesWithGr->pluck('gr_id')->unique()->filter()->toArray();
+                if (!empty($grIds)) {
+                    $grNumbersFromSources = DB::table('food_good_receives')
+                        ->whereIn('id', $grIds)
+                        ->select('id', 'gr_number')
+                        ->get();
+
+                    $grNumbersById = [];
+                    foreach ($grNumbersFromSources as $gr) {
+                        $grNumbersById[$gr->id] = $gr->gr_number;
+                    }
+
+                    foreach ($sourcesWithGr as $source) {
+                        if (!isset($grIdsFromSources[$source->contra_bon_id])) {
+                            $grIdsFromSources[$source->contra_bon_id] = [];
+                        }
+                        if (isset($grNumbersById[$source->gr_id])) {
+                            $grIdsFromSources[$source->contra_bon_id][] = $grNumbersById[$source->gr_id];
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query GR numbers from sources (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $prNumbersMap = [];
+        if (!empty($poIds)) {
+            try {
+                $allPrNumbers = DB::table('pr_foods as pr')
+                    ->join('pr_food_items as pri', 'pr.id', '=', 'pri.pr_food_id')
+                    ->join('purchase_order_food_items as poi', 'pri.id', '=', 'poi.pr_food_item_id')
+                    ->whereIn('poi.purchase_order_food_id', $poIds)
+                    ->select('poi.purchase_order_food_id', 'pr.pr_number')
+                    ->distinct()
+                    ->get();
+
+                foreach ($allPrNumbers as $pr) {
+                    if (!isset($prNumbersMap[$pr->purchase_order_food_id])) {
+                        $prNumbersMap[$pr->purchase_order_food_id] = [];
+                    }
+                    $prNumbersMap[$pr->purchase_order_food_id][] = $pr->pr_number;
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query PR numbers (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $roDataMap = [];
+        if (!empty($poIds)) {
+            try {
+                $allRoData = DB::table('food_floor_orders as fo')
+                    ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->whereIn('poi.purchase_order_food_id', $poIds)
+                    ->select('poi.purchase_order_food_id', 'fo.order_number', 'o.nama_outlet')
+                    ->distinct()
+                    ->get();
+
+                foreach ($allRoData as $ro) {
+                    if (!isset($roDataMap[$ro->purchase_order_food_id])) {
+                        $roDataMap[$ro->purchase_order_food_id] = [
+                            'order_numbers' => [],
+                            'outlets' => []
+                        ];
+                    }
+                    if ($ro->order_number) {
+                        $roDataMap[$ro->purchase_order_food_id]['order_numbers'][] = $ro->order_number;
+                    }
+                    if ($ro->nama_outlet) {
+                        $roDataMap[$ro->purchase_order_food_id]['outlets'][] = $ro->nama_outlet;
+                    }
+                }
+
+                foreach ($roDataMap as $poIdKey => $data) {
+                    $roDataMap[$poIdKey]['order_numbers'] = array_unique($data['order_numbers']);
+                    $roDataMap[$poIdKey]['outlets'] = array_unique($data['outlets']);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query RO data (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $retailFoodIds = $contraBons->getCollection()
+            ->filter(function($cb) {
+                return $cb->source_type === 'retail_food' && $cb->source_id;
+            })
+            ->pluck('source_id')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $retailFoodsMap = [];
+        if (!empty($retailFoodIds)) {
+            try {
+                $retailFoods = \App\Models\RetailFood::with('outlet')
+                    ->whereIn('id', $retailFoodIds)
+                    ->get();
+                foreach ($retailFoods as $rf) {
+                    $retailFoodsMap[$rf->id] = $rf;
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query RetailFood (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $warehouseRetailFoodIds = $contraBons->getCollection()
+            ->filter(function($cb) {
+                return $cb->source_type === 'warehouse_retail_food' && $cb->source_id;
+            })
+            ->pluck('source_id')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $warehouseRetailFoodsMap = [];
+        if (!empty($warehouseRetailFoodIds)) {
+            try {
+                $warehouseRetailFoods = \App\Models\RetailWarehouseFood::with(['warehouse', 'warehouseDivision'])
+                    ->whereIn('id', $warehouseRetailFoodIds)
+                    ->get();
+                foreach ($warehouseRetailFoods as $wrf) {
+                    $warehouseRetailFoodsMap[$wrf->id] = $wrf;
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error batch query RetailWarehouseFood (apiIndex)', ['error' => $e->getMessage()]);
+            }
+        }
+
+        $contraBons->getCollection()->transform(function ($contraBon) use (
+            $sourcesMap,
+            $purchaseOrdersMap,
+            $grNumbersMap,
+            $grIdsFromSources,
+            $prNumbersMap,
+            $roDataMap,
+            $retailFoodsMap,
+            $warehouseRetailFoodsMap,
+            $suppliersMap,
+            $creatorsMap
+        ) {
+            if ($contraBon->supplier_id && isset($suppliersMap[$contraBon->supplier_id])) {
+                $contraBon->supplier = $suppliersMap[$contraBon->supplier_id];
+            }
+            if ($contraBon->created_by && isset($creatorsMap[$contraBon->created_by])) {
+                $contraBon->creator = $creatorsMap[$contraBon->created_by];
+            }
+            $contraBon->sources = isset($sourcesMap[$contraBon->id]) && $sourcesMap[$contraBon->id]->isNotEmpty()
+                ? $sourcesMap[$contraBon->id]
+                : collect([]);
+
+            if ($contraBon->po_id && isset($purchaseOrdersMap[$contraBon->po_id])) {
+                $contraBon->purchaseOrder = $purchaseOrdersMap[$contraBon->po_id];
+            }
+
+            if ($contraBon->sources && $contraBon->sources->count() > 0) {
+                $sourceNumbers = [];
+                $sourceOutlets = [];
+                $sourceTypeDisplays = [];
+
+                if (isset($grNumbersMap[$contraBon->id])) {
+                    $sourceNumbers = array_merge($sourceNumbers, $grNumbersMap[$contraBon->id]);
+                }
+                if (isset($grIdsFromSources[$contraBon->id])) {
+                    $sourceNumbers = array_merge($sourceNumbers, $grIdsFromSources[$contraBon->id]);
+                }
+
+                foreach ($contraBon->sources as $source) {
+                    if ($source->source_type === 'purchase_order' && $source->purchaseOrder) {
+                        $po = $source->purchaseOrder;
+                        if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                            if (isset($prNumbersMap[$po->id])) {
+                                $sourceNumbers = array_merge($sourceNumbers, $prNumbersMap[$po->id]);
+                            }
+                            $sourceTypeDisplays[] = 'PR Foods';
+                        } elseif ($po->source_type === 'ro_supplier') {
+                            if (isset($roDataMap[$po->id])) {
+                                $sourceNumbers = array_merge($sourceNumbers, $roDataMap[$po->id]['order_numbers']);
+                                $sourceOutlets = array_merge($sourceOutlets, $roDataMap[$po->id]['outlets']);
+                            }
+                            $sourceTypeDisplays[] = 'RO Supplier';
+                        }
+                    } elseif ($source->source_type === 'retail_food' && $source->retailFood) {
+                        $sourceNumbers[] = $source->retailFood->retail_number ?? '';
+                        $sourceOutlets[] = $source->retailFood->outlet ? $source->retailFood->outlet->nama_outlet : '';
+                        $sourceTypeDisplays[] = 'Retail Food';
+                    } elseif ($source->source_type === 'warehouse_retail_food' && $source->warehouseRetailFood) {
+                        $sourceNumbers[] = $source->warehouseRetailFood->retail_number ?? '';
+                        $warehouseName = $source->warehouseRetailFood->warehouse ? $source->warehouseRetailFood->warehouse->name : '';
+                        $divisionName = $source->warehouseRetailFood->warehouseDivision ? $source->warehouseRetailFood->warehouseDivision->name : '';
+                        $sourceOutlets[] = $warehouseName . ($divisionName ? ' - ' . $divisionName : '');
+                        $sourceTypeDisplays[] = 'Warehouse Retail Food';
+                    } elseif ($source->source_type === 'retail_non_food' && $source->retailNonFood) {
+                        $sourceNumbers[] = $source->retailNonFood->retail_number ?? '';
+                        $sourceOutlets[] = $source->retailNonFood->outlet ? $source->retailNonFood->outlet->nama_outlet : '';
+                        $sourceTypeDisplays[] = 'Retail Non Food';
+                    }
+                }
+
+                $contraBon->source_numbers = array_values(array_unique(array_filter($sourceNumbers)));
+                $contraBon->source_outlets = array_values(array_unique(array_filter($sourceOutlets)));
+                $contraBon->source_type_display = implode(', ', array_unique($sourceTypeDisplays)) ?: 'Multiple Sources';
+                $contraBon->source_types = array_values(array_unique($sourceTypeDisplays));
+            } elseif ($contraBon->source_type === 'purchase_order' && $contraBon->po_id) {
+                $po = $purchaseOrdersMap[$contraBon->po_id] ?? null;
+
+                if (!$po) {
+                    $contraBon->source_numbers = [];
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'Unknown';
+                    $contraBon->source_types = ['Unknown'];
+                    return $contraBon;
+                }
+
+                $sourceNumbers = [];
+                if (isset($grNumbersMap[$contraBon->id])) {
+                    $sourceNumbers = array_merge($sourceNumbers, $grNumbersMap[$contraBon->id]);
+                }
+
+                if ($po->source_type === 'pr_foods' || !$po->source_type) {
+                    if (isset($prNumbersMap[$po->id])) {
+                        $sourceNumbers = array_merge($sourceNumbers, $prNumbersMap[$po->id]);
+                    }
+                    $contraBon->source_numbers = array_values(array_unique(array_filter($sourceNumbers)));
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'PR Foods';
+                    $contraBon->source_types = ['PR Foods'];
+                } elseif ($po->source_type === 'ro_supplier') {
+                    if (isset($roDataMap[$po->id])) {
+                        $sourceNumbers = array_merge($sourceNumbers, $roDataMap[$po->id]['order_numbers']);
+                        $contraBon->source_outlets = $roDataMap[$po->id]['outlets'];
+                    }
+                    $contraBon->source_numbers = array_values(array_unique(array_filter($sourceNumbers)));
+                    $contraBon->source_type_display = 'RO Supplier';
+                    $contraBon->source_types = ['RO Supplier'];
+                } else {
+                    $contraBon->source_numbers = array_values(array_unique(array_filter($sourceNumbers)));
+                    $contraBon->source_outlets = [];
+                    $contraBon->source_type_display = 'Unknown';
+                    $contraBon->source_types = ['Unknown'];
+                }
+            } elseif ($contraBon->source_type === 'retail_food' && $contraBon->source_id) {
+                $retailFood = $retailFoodsMap[$contraBon->source_id] ?? null;
+                $contraBon->source_numbers = $retailFood ? [$retailFood->retail_number ?? ''] : [];
+                $contraBon->source_outlets = $retailFood ? [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''] : [];
+                $contraBon->source_type_display = 'Retail Food';
+                $contraBon->source_types = ['Retail Food'];
+            } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->source_id) {
+                $warehouseRetailFood = $warehouseRetailFoodsMap[$contraBon->source_id] ?? null;
+                if ($warehouseRetailFood) {
+                    $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                    $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                    $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
+                    $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
+                } else {
+                    $contraBon->source_numbers = [];
+                    $contraBon->source_outlets = [];
+                }
+                $contraBon->source_type_display = 'Warehouse Retail Food';
+                $contraBon->source_types = ['Warehouse Retail Food'];
+            } elseif ($contraBon->source_type === 'retail_non_food' && $contraBon->source_id) {
+                $retailNonFood = \App\Models\RetailNonFood::with('outlet')->find($contraBon->source_id);
+                $contraBon->source_numbers = $retailNonFood ? [$retailNonFood->retail_number ?? ''] : [];
+                $contraBon->source_outlets = $retailNonFood ? [$retailNonFood->outlet ? $retailNonFood->outlet->nama_outlet : ''] : [];
+                $contraBon->source_type_display = 'Retail Non Food';
+                $contraBon->source_types = ['Retail Non Food'];
+            } else {
+                $contraBon->source_numbers = [];
+                $contraBon->source_outlets = [];
+                $contraBon->source_type_display = 'Unknown';
+                $contraBon->source_types = ['Unknown'];
+            }
+
+            return $contraBon;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $contraBons->items(),
+            'current_page' => $contraBons->currentPage(),
+            'last_page' => $contraBons->lastPage(),
+            'per_page' => $contraBons->perPage(),
+            'total' => $contraBons->total(),
         ]);
     }
 
@@ -1568,10 +1989,16 @@ class ContraBonController extends Controller
             $contraBon = ContraBon::with([
                 'supplier',
                 'purchaseOrder',
+                'retailFood.outlet',
+                'warehouseRetailFood.warehouse',
+                'warehouseRetailFood.warehouseDivision',
+                'retailNonFood.outlet',
                 'sources',
                 'sources.purchaseOrder',
-                'sources.retailFood',
-                'sources.warehouseRetailFood',
+                'sources.retailFood.outlet',
+                'sources.warehouseRetailFood.warehouse',
+                'sources.warehouseRetailFood.warehouseDivision',
+                'sources.retailNonFood.outlet',
                 'items.item',
                 'items.unit',
                 'items.grItem.item',
@@ -1694,19 +2121,25 @@ class ContraBonController extends Controller
                     $item->subtotal = $item->total ?? 0;
                 });
             } elseif ($contraBon->source_type === 'retail_food') {
-                $retailFood = \App\Models\RetailFood::find($contraBon->source_id);
-                $contraBon->source_numbers = [$retailFood->retail_number ?? ''];
-                $contraBon->source_outlets = [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''];
+                $retailFood = $contraBon->retailFood;
+                $contraBon->source_numbers = $retailFood ? [$retailFood->retail_number ?? ''] : [];
+                $contraBon->source_outlets = $retailFood ? [$retailFood->outlet ? $retailFood->outlet->nama_outlet : ''] : [];
                 $contraBon->source_type_display = 'Retail Food';
                 $contraBon->source_types = ['Retail Food'];
             } elseif ($contraBon->source_type === 'warehouse_retail_food') {
-                $warehouseRetailFood = \App\Models\RetailWarehouseFood::find($contraBon->source_id);
-                $contraBon->source_numbers = [$warehouseRetailFood->retail_number ?? ''];
-                $warehouseName = $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
-                $divisionName = $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
+                $warehouseRetailFood = $contraBon->warehouseRetailFood;
+                $contraBon->source_numbers = $warehouseRetailFood ? [$warehouseRetailFood->retail_number ?? ''] : [];
+                $warehouseName = $warehouseRetailFood && $warehouseRetailFood->warehouse ? $warehouseRetailFood->warehouse->name : '';
+                $divisionName = $warehouseRetailFood && $warehouseRetailFood->warehouseDivision ? $warehouseRetailFood->warehouseDivision->name : '';
                 $contraBon->source_outlets = [$warehouseName . ($divisionName ? ' - ' . $divisionName : '')];
                 $contraBon->source_type_display = 'Warehouse Retail Food';
                 $contraBon->source_types = ['Warehouse Retail Food'];
+            } elseif ($contraBon->source_type === 'retail_non_food') {
+                $retailNonFood = $contraBon->retailNonFood;
+                $contraBon->source_numbers = $retailNonFood ? [$retailNonFood->retail_number ?? ''] : [];
+                $contraBon->source_outlets = $retailNonFood ? [$retailNonFood->outlet ? $retailNonFood->outlet->nama_outlet : ''] : [];
+                $contraBon->source_type_display = 'Retail Non Food';
+                $contraBon->source_types = ['Retail Non Food'];
             } else {
                 $contraBon->source_numbers = [];
                 $contraBon->source_outlets = [];
@@ -1832,7 +2265,20 @@ class ContraBonController extends Controller
             
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
             
-            $query = ContraBon::with(['supplier', 'purchaseOrder', 'retailFood', 'warehouseRetailFood', 'retailNonFood', 'creator', 'sources'])
+            $query = ContraBon::with([
+                'supplier',
+                'purchaseOrder',
+                'retailFood.outlet',
+                'warehouseRetailFood.warehouse',
+                'warehouseRetailFood.warehouseDivision',
+                'retailNonFood.outlet',
+                'creator',
+                'sources.purchaseOrder',
+                'sources.retailFood.outlet',
+                'sources.warehouseRetailFood.warehouse',
+                'sources.warehouseRetailFood.warehouseDivision',
+                'sources.retailNonFood.outlet'
+            ])
                 ->where('status', 'draft')
                 ->orderByDesc('created_at');
             
