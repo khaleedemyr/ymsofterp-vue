@@ -2508,6 +2508,88 @@ class ContraBonController extends Controller
         return response()->json($result);
     }
 
+    // API: Get available Retail Non Food for Contra Bon create (mobile)
+    public function apiGetRetailNonFoodForCreate(Request $request)
+    {
+        try {
+            $search = $request->input('search');
+            $supplierId = $request->input('supplier_id');
+
+            $query = DB::table('retail_non_food as rnf')
+                ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
+                ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+                ->where('rnf.payment_method', 'contra_bon')
+                ->where('rnf.status', 'approved')
+                ->whereNull('rnf.deleted_at')
+                ->whereNotExists(function ($q) {
+                    $q->select(DB::raw(1))
+                        ->from('food_contra_bon_sources as cbs')
+                        ->whereColumn('cbs.source_id', 'rnf.id')
+                        ->where('cbs.source_type', 'retail_non_food');
+                })
+                ->select(
+                    'rnf.id',
+                    'rnf.retail_number',
+                    'rnf.transaction_date',
+                    'rnf.total_amount',
+                    'rnf.supplier_id',
+                    'rnf.outlet_id',
+                    'rnf.notes',
+                    's.name as supplier_name',
+                    'o.nama_outlet as outlet_name'
+                );
+
+            if ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('rnf.retail_number', 'like', "%{$search}%")
+                      ->orWhere('s.name', 'like', "%{$search}%")
+                      ->orWhere('o.nama_outlet', 'like', "%{$search}%");
+                });
+            }
+
+            if ($supplierId) {
+                $query->where('rnf.supplier_id', $supplierId);
+            }
+
+            $results = $query->orderBy('rnf.transaction_date', 'desc')->limit(100)->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $results,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('apiGetRetailNonFoodForCreate error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // API: Get items for a specific Retail Non Food document (mobile)
+    public function apiGetRetailNonFoodItems($id)
+    {
+        try {
+            $items = DB::table('retail_non_food_items as rnfi')
+                ->where('rnfi.retail_non_food_id', $id)
+                ->select(
+                    'rnfi.id',
+                    'rnfi.retail_non_food_id',
+                    'rnfi.item_name',
+                    'rnfi.unit_name',
+                    'rnfi.qty as quantity',
+                    'rnfi.price',
+                    'rnfi.total'
+                )
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $items,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('apiGetRetailNonFoodItems error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     // API: Get PO list with approved GR for Contra Bon create
     public function getPOWithApprovedGR(Request $request)
     {
