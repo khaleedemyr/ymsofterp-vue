@@ -563,6 +563,7 @@ const newConversationFiles = ref([]);
 
 // Polling interval
 let pollingInterval = null;
+const POLLING_INTERVAL_MS = 15000;
 
 const isSelectedConversationClosed = computed(() => {
     const s = selectedConversation.value?.status;
@@ -1013,23 +1014,27 @@ const scrollToBottom = () => {
 };
 
 const startPolling = () => {
+    stopPolling();
+
     pollingInterval = setInterval(async () => {
-        if (isOpen.value) {
-            const previousMessageCount = messages.value.length;
-            await fetchConversations();
-            if (selectedConversation.value) {
-                await fetchMessages(selectedConversation.value.id);
-                
-                // If new messages were added, scroll to bottom
-                if (messages.value.length > previousMessageCount) {
-                    await nextTick();
-                    setTimeout(() => {
-                        scrollToBottom();
-                    }, 100);
-                }
+        if (document.visibilityState !== 'visible' || !isOpen.value) {
+            return;
+        }
+
+        const previousMessageCount = messages.value.length;
+        await fetchConversations();
+        if (selectedConversation.value) {
+            await fetchMessages(selectedConversation.value.id);
+
+            // If new messages were added, scroll to bottom
+            if (messages.value.length > previousMessageCount) {
+                await nextTick();
+                setTimeout(() => {
+                    scrollToBottom();
+                }, 100);
             }
         }
-    }, 5000); // Poll every 5 seconds
+    }, POLLING_INTERVAL_MS); // Poll every 15 seconds
 };
 
 const stopPolling = () => {
@@ -1276,10 +1281,8 @@ onMounted(() => {
     window.addEventListener('resize', handleWindowResize);
     
     // Handle orientation change on mobile
-    window.addEventListener('orientationchange', () => {
-        // Small delay to allow viewport to update
-        setTimeout(handleWindowResize, 100);
-    });
+    window.addEventListener('orientationchange', handleOrientationChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
 const handleWindowResize = () => {
@@ -1299,12 +1302,28 @@ const handleWindowResize = () => {
     }
 };
 
+const handleOrientationChange = () => {
+    setTimeout(handleWindowResize, 100);
+};
+
+const handleVisibilityChange = () => {
+    if (document.visibilityState !== 'visible') {
+        stopPolling();
+        return;
+    }
+
+    if (isOpen.value) {
+        startPolling();
+    }
+};
+
 onUnmounted(() => {
     stopPolling();
     
     // Remove event listeners
     window.removeEventListener('resize', handleWindowResize);
-    window.removeEventListener('orientationchange', handleWindowResize);
+    window.removeEventListener('orientationchange', handleOrientationChange);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     document.removeEventListener('mousemove', handleDrag);
     document.removeEventListener('mouseup', stopDrag);
     document.removeEventListener('touchmove', handleDrag);
