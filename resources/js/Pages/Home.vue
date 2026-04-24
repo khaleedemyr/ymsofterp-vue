@@ -945,7 +945,7 @@ async function loadAllPendingApprovalsOptimized() {
     
     try {
         const response = await axios.get('/api/pending-approvals/all', {
-            params: { limit: 50 }
+            params: { limit: 30 }
         });
         
         if (response.data.success) {
@@ -4472,7 +4472,7 @@ async function showAllPendingApprovals() {
             }
         } else {
             // Jika user adalah atasan, ambil pending approvals
-            const response = await axios.get('/api/approval/pending?limit=50');
+            const response = await axios.get('/api/approval/pending?limit=30');
             if (response.data.success) {
                 allApprovals = response.data.approvals;
             }
