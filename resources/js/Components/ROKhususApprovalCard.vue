@@ -644,7 +644,7 @@ const selectedAllApprovals = ref(new Set());
 async function loadAllApprovals() {
     loadingAll.value = true;
     try {
-        const response = await axios.get('/api/ro-khusus/pending-approvals?limit=500');
+        const response = await axios.get('/api/ro-khusus/pending-approvals?limit=100');
         if (response.data.success) {
             allApprovals.value = response.data.ro_khusus || [];
             currentPage.value = 1;

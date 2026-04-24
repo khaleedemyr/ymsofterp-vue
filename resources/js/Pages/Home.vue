@@ -1241,7 +1241,7 @@ async function loadPendingContraBonApprovals() {
 async function loadAllContraBonApprovals() {
     loadingAllContraBon.value = true;
     try {
-        const response = await axios.get('/api/contra-bon/pending-approvals?limit=500');
+        const response = await axios.get('/api/contra-bon/pending-approvals?limit=100');
         if (response.data.success) {
             allContraBonApprovals.value = response.data.contra_bons || [];
             contraBonCurrentPage.value = 1; // Reset to first page
@@ -1377,7 +1377,7 @@ watch([contraBonSearchQuery, contraBonStatusFilter, contraBonDateFilter, contraB
 async function loadAllPendingPoOps() {
     loadingAllPoOps.value = true;
     try {
-        const response = await axios.get('/po-ops/pending-approvals?limit=200');
+        const response = await axios.get('/po-ops/pending-approvals?limit=100');
         if (response.data.success) {
             const approvals = response.data.data || [];
             allPendingPoOps.value = approvals.filter(po => isPoOpsVisibleToCurrentUser(po));
@@ -1471,7 +1471,7 @@ async function approveMultipleAllPoOps() {
 async function loadAllPrApprovals() {
     loadingAllPr.value = true;
     try {
-        const response = await axios.get('/api/purchase-requisitions/pending-approvals?limit=500');
+        const response = await axios.get('/api/purchase-requisitions/pending-approvals?limit=100');
         if (response.data.success) {
             allPrApprovals.value = response.data.purchase_requisitions || [];
         }
@@ -3066,7 +3066,7 @@ async function loadPendingHrdApprovals() {
     
     loadingHrdApprovals.value = true;
     try {
-        const response = await axios.get('/api/approval/pending-hrd?limit=200');
+        const response = await axios.get('/api/approval/pending-hrd?limit=100');
         if (response.data.success) {
             const approvals = response.data.approvals || [];
             if (isSuperadmin) {
@@ -4466,7 +4466,7 @@ async function showAllPendingApprovals() {
         
         if (user.division_id === 6) {
             // Jika user adalah HRD, ambil pending HRD approvals
-            const response = await axios.get('/api/approval/pending-hrd?limit=200');
+            const response = await axios.get('/api/approval/pending-hrd?limit=100');
             if (response.data.success) {
                 allApprovals = response.data.approvals;
             }

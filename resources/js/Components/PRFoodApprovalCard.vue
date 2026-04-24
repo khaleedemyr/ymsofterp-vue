@@ -693,7 +693,7 @@ const selectedAllApprovals = ref(new Set());
 async function loadAllApprovals() {
     loadingAll.value = true;
     try {
-        const response = await axios.get('/api/pr-food/pending-approvals?limit=500');
+        const response = await axios.get('/api/pr-food/pending-approvals?limit=100');
         if (response.data.success) {
             allApprovals.value = response.data.pr_foods || [];
             currentPage.value = 1;

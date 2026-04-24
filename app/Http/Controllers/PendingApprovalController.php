@@ -32,10 +32,10 @@ class PendingApprovalController extends Controller
                 ], 401);
             }
 
-            // OPTIMASI: Cache hasil untuk 60 detik per user
+            // OPTIMASI: Cache hasil untuk 120 detik per user
             // Cache key berdasarkan user ID untuk personalisasi
             $cacheKey = 'all_pending_approvals_' . $user->id;
-            $cacheTTL = 60; // 60 detik
+            $cacheTTL = 120; // 120 detik
             
             // Check if data is cached (before calling Cache::remember)
             $isCached = Cache::has($cacheKey);

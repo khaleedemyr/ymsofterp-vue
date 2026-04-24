@@ -775,7 +775,7 @@ const perPage = ref(10);
 async function loadAllApprovals() {
     loadingAll.value = true;
     try {
-        const response = await axios.get('/api/employee-resignations/pending-approvals?limit=500');
+        const response = await axios.get('/api/employee-resignations/pending-approvals?limit=100');
         if (response.data.success) {
             allApprovals.value = response.data.resignations || [];
             currentPage.value = 1;

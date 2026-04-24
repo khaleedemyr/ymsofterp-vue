@@ -683,7 +683,7 @@ function showRejectModal() {
 async function loadAllApprovals() {
     loadingAll.value = true;
     try {
-        const response = await axios.get('/api/food-payment/pending-approvals?limit=500');
+        const response = await axios.get('/api/food-payment/pending-approvals?limit=100');
         if (response.data.success) {
             allApprovals.value = response.data.food_payments || [];
             currentPage.value = 1;

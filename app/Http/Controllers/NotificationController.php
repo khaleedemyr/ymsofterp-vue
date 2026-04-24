@@ -11,14 +11,14 @@ class NotificationController extends Controller
 {
     public function index()
     {
-        // Cache notifications for 30 seconds to reduce database load
+        // Cache notifications for 60 seconds to reduce backend load
         $userId = Auth::id();
         $cacheKey = "notifications_user_{$userId}";
         
-        $notifications = Cache::remember($cacheKey, 30, function () use ($userId) {
+        $notifications = Cache::remember($cacheKey, 60, function () use ($userId) {
             return Notification::where('user_id', $userId)
                 ->orderBy('created_at', 'desc')
-                ->limit(50)
+            ->limit(30)
                 ->get()
                 ->map(function ($notification) {
                     return [
