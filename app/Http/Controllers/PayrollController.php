@@ -28,6 +28,14 @@ class PayrollController extends Controller
         return (int) round((float) $clean);
     }
 
+    private function resolvePayrollScopeForUser(User $user, $outletId, $divisionId): array
+    {
+        $effectiveOutletId = !empty($outletId) ? (int) $outletId : (int) $user->id_outlet;
+        $effectiveDivisionId = !empty($divisionId) ? (int) $divisionId : (int) $user->division_id;
+
+        return [$effectiveOutletId, $effectiveDivisionId];
+    }
+
     public function index(Request $request)
     {
         $outletId = $request->input('outlet_id');
@@ -58,7 +66,7 @@ class PayrollController extends Controller
             $userQuery->where('division_id', $divisionId);
         }
         if ($outletId || $divisionId) {
-            $users = $userQuery->orderBy('nama_lengkap')->get(['id', 'nama_lengkap', 'nik', 'id_jabatan']);
+            $users = $userQuery->orderBy('nama_lengkap')->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'id_outlet', 'division_id']);
             // Join jabatan
             $jabatans = DB::table('tbl_data_jabatan')->pluck('nama_jabatan', 'id_jabatan');
             // Ambil data level dari jabatan
@@ -74,20 +82,28 @@ class PayrollController extends Controller
             }
             // Ambil payroll master untuk user2 tsb
             $userIds = $users->pluck('id');
-            $payrollMaster = DB::table('payroll_master')
+            $payrollRows = DB::table('payroll_master')
                 ->when($outletId, function($q) use ($outletId) {
                     $q->where('outlet_id', $outletId);
                 })
                 ->when($divisionId, function($q) use ($divisionId) {
                     $q->where('division_id', $divisionId);
                 })
-                ->when(empty($divisionId), function($q) {
-                    $q->where('division_id', 0);
-                })
                 ->whereIn('user_id', $userIds)
                 ->orderByDesc('updated_at')
                 ->get()
-                ->keyBy('user_id');
+                ->groupBy('user_id');
+
+            $payrollMaster = $users->mapWithKeys(function ($user) use ($payrollRows, $outletId, $divisionId) {
+                [$effectiveOutletId, $effectiveDivisionId] = $this->resolvePayrollScopeForUser($user, $outletId, $divisionId);
+
+                $payroll = collect($payrollRows->get($user->id, []))->first(function ($row) use ($effectiveOutletId, $effectiveDivisionId) {
+                    return (int) $row->outlet_id === $effectiveOutletId
+                        && (int) $row->division_id === $effectiveDivisionId;
+                });
+
+                return [$user->id => $payroll];
+            })->filter();
         }
 
         return Inertia::render('Payroll/Master', [
@@ -112,19 +128,27 @@ class PayrollController extends Controller
         ]);
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
-        
-        // Jika division_id tidak ada atau 0, gunakan 0 sebagai default
-        if (empty($divisionId) || $divisionId == 0) {
-            $divisionId = 0;
-        }
-        
+
         $rows = $request->input('payrollData');
+        $usersById = User::query()
+            ->whereIn('id', collect($rows)->pluck('user_id')->filter()->all())
+            ->get(['id', 'id_outlet', 'division_id'])
+            ->keyBy('id');
+
         foreach ($rows as $row) {
+            $user = $usersById->get($row['user_id']);
+
+            if (! $user) {
+                continue;
+            }
+
+            [$effectiveOutletId, $effectiveDivisionId] = $this->resolvePayrollScopeForUser($user, $outletId, $divisionId);
+
             DB::table('payroll_master')->updateOrInsert(
                 [
                     'user_id' => $row['user_id'],
-                    'outlet_id' => $outletId,
-                    'division_id' => $divisionId,
+                    'outlet_id' => $effectiveOutletId,
+                    'division_id' => $effectiveDivisionId,
                 ],
                 [
                     'gaji' => $this->normalizePayrollNominal($row['gaji'] ?? 0),
