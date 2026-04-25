@@ -135,10 +135,46 @@ const setOnlyOfficeEditorSize = () => {
     const viewportHeight = window.innerHeight || 900
     const topOffset = el.getBoundingClientRect().top || 0
     const availableHeight = Math.floor(viewportHeight - topOffset - 24)
-    const targetHeight = Math.max(760, availableHeight)
+    const targetHeight = Math.max(900, availableHeight)
 
     el.style.height = `${targetHeight}px`
-    el.style.minHeight = '760px'
+    el.style.minHeight = '900px'
+}
+
+const buildOnlyOfficeClientConfig = () => {
+    const config = JSON.parse(JSON.stringify(props.onlyoffice?.config || {}))
+
+    config.width = '100%'
+    config.height = '100%'
+    config.type = 'desktop'
+    config.editorConfig = {
+        ...(config.editorConfig || {}),
+        customization: {
+            ...((config.editorConfig && config.editorConfig.customization) || {}),
+            compactToolbar: false,
+            toolbarNoTabs: false,
+            hideRightMenu: false,
+            hideRulers: false,
+        },
+    }
+    config.events = {
+        ...(config.events || {}),
+        onAppReady: () => {
+            requestAnimationFrame(() => {
+                setOnlyOfficeEditorSize()
+            })
+        },
+        onDocumentReady: () => {
+            requestAnimationFrame(() => {
+                setOnlyOfficeEditorSize()
+            })
+        },
+        onError: (event) => {
+            console.error('OnlyOffice runtime error:', event)
+        },
+    }
+
+    return config
 }
 
 const props = defineProps({
@@ -248,7 +284,7 @@ onMounted(() => {
         return
     }
 
-    docEditorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor', props.onlyoffice.config)
+    docEditorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor', buildOnlyOfficeClientConfig())
 })
 
 onBeforeUnmount(() => {
