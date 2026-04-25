@@ -63,7 +63,7 @@
                     <div
                         id="onlyoffice-editor"
                         class="onlyoffice-editor-wrap w-full rounded-xl border border-gray-200 bg-gray-50"
-                        style="height: 72vh; min-height: 520px;"
+                        style="height: 74vh; min-height: 560px;"
                     ></div>
                     <div class="text-xs text-slate-500">
                         {{ onlyOfficeModeLabel }}
@@ -125,27 +125,53 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 let docEditorInstance = null
+const ONLYOFFICE_MIN_HEIGHT = 560
+const ONLYOFFICE_MAX_HEIGHT = 920
 
-const setOnlyOfficeEditorSize = () => {
+const getOnlyOfficeTargetHeight = () => {
     const el = document.getElementById('onlyoffice-editor')
-    if (!el) {
+    const viewportHeight = window.innerHeight || 900
+    const topOffset = el ? (el.getBoundingClientRect().top || 0) : 220
+    const availableHeight = Math.floor(viewportHeight - topOffset - 18)
+
+    return Math.max(ONLYOFFICE_MIN_HEIGHT, Math.min(ONLYOFFICE_MAX_HEIGHT, availableHeight))
+}
+
+const applyOnlyOfficeInnerHeights = (targetHeight) => {
+    const root = document.getElementById('onlyoffice-editor')
+    if (!root) {
         return
     }
 
-    const viewportHeight = window.innerHeight || 900
-    const topOffset = el.getBoundingClientRect().top || 0
-    const availableHeight = Math.floor(viewportHeight - topOffset - 20)
-    const targetHeight = Math.max(520, Math.min(820, availableHeight))
+    const height = `${targetHeight}px`
+    root.style.height = height
+    root.style.minHeight = `${ONLYOFFICE_MIN_HEIGHT}px`
 
-    el.style.height = `${targetHeight}px`
-    el.style.minHeight = '520px'
+    const selectors = [
+        '#onlyoffice-editor > div',
+        '#onlyoffice-editor > div > div',
+        '#onlyoffice-editor iframe',
+    ]
+
+    selectors.forEach((selector) => {
+        document.querySelectorAll(selector).forEach((node) => {
+            node.style.height = height
+            node.style.minHeight = `${ONLYOFFICE_MIN_HEIGHT}px`
+        })
+    })
+}
+
+const setOnlyOfficeEditorSize = () => {
+    const targetHeight = getOnlyOfficeTargetHeight()
+    applyOnlyOfficeInnerHeights(targetHeight)
+    return targetHeight
 }
 
 const buildOnlyOfficeClientConfig = () => {
     const config = JSON.parse(JSON.stringify(props.onlyoffice?.config || {}))
 
     config.width = '100%'
-    config.height = '100%'
+    config.height = `${setOnlyOfficeEditorSize()}px`
     config.type = 'desktop'
     config.editorConfig = {
         ...(config.editorConfig || {}),
@@ -285,6 +311,11 @@ onMounted(() => {
     }
 
     docEditorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor', buildOnlyOfficeClientConfig())
+
+    // Ensure iframe wrappers that mount after constructor keep the intended height.
+    setTimeout(() => setOnlyOfficeEditorSize(), 120)
+    setTimeout(() => setOnlyOfficeEditorSize(), 500)
+    setTimeout(() => setOnlyOfficeEditorSize(), 1200)
 })
 
 onBeforeUnmount(() => {
@@ -327,7 +358,9 @@ const formatFileSize = (bytes) => {
 .onlyoffice-editor-wrap {
     width: 100%;
     max-width: 100%;
-    overflow: hidden;
+    overflow: visible;
+    height: 74vh;
+    min-height: 560px;
 }
 
 .onlyoffice-host-shell {
@@ -345,7 +378,7 @@ const formatFileSize = (bytes) => {
 :deep(#onlyoffice-editor iframe) {
     width: 100% !important;
     height: 100% !important;
-    min-height: 520px !important;
+    min-height: 560px !important;
     display: block;
 }
 
