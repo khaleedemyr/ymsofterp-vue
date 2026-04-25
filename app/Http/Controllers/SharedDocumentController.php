@@ -1164,7 +1164,7 @@ class SharedDocumentController extends Controller
             'documentType' => $this->mapDocumentType((string) $document->file_type),
             'editorConfig' => [
                 'mode' => $canEdit ? 'edit' : 'view',
-                'lang' => 'id',
+                'lang' => 'en',
                 'callbackUrl' => route('api.shared-documents.callback', ['id' => $document->id]),
                 'user' => [
                     'id' => (string) $user->id,
