@@ -2401,11 +2401,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');
 });
 
-// OnlyOffice callback must be publicly reachable by Document Server
-Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])
-    ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])
-    ->name('shared-documents.callback');
-
 // Leave Management Routes
 Route::middleware(['auth'])->group(function () {
     Route::prefix('leave-management')->name('leave-management.')->group(function () {

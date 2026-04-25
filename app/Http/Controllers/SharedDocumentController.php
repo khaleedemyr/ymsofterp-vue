@@ -1165,7 +1165,7 @@ class SharedDocumentController extends Controller
             'editorConfig' => [
                 'mode' => $canEdit ? 'edit' : 'view',
                 'lang' => 'id',
-                'callbackUrl' => route('shared-documents.callback', ['id' => $document->id]),
+                'callbackUrl' => route('api.shared-documents.callback', ['id' => $document->id]),
                 'user' => [
                     'id' => (string) $user->id,
                     'name' => $user->nama_lengkap ?: $user->name,

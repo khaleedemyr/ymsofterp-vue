@@ -61,6 +61,11 @@ Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsCont
 // Endpoint API untuk Kanban Maintenance Order
 Route::get('/maintenance-outlet', [MaintenanceOrderController::class, 'getOutlets']);
 Route::get('/ruko', [MaintenanceOrderController::class, 'getRukos']);
+
+// OnlyOffice callback endpoint (API route avoids CSRF middleware)
+Route::post('/shared-documents/{id}/callback', [\App\Http\Controllers\SharedDocumentController::class, 'callback'])
+    ->name('api.shared-documents.callback');
+
 Route::get('/ruko/test', function() {
     try {
         $rukos = DB::table('tbl_data_ruko')->get();
