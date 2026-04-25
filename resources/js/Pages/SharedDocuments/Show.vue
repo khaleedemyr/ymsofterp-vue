@@ -6,7 +6,7 @@
                 <div class="relative z-10 flex items-center justify-between gap-4">
                     <div>
                         <h1 class="text-4xl font-bold mb-2">{{ document.title }}</h1>
-                        <p class="text-slate-200 text-lg">{{ document.description || 'Dokumen read-only' }}</p>
+                        <p class="text-slate-200 text-lg">{{ document.description || 'Tidak ada deskripsi' }}</p>
                     </div>
                     <div class="flex gap-2">
                         <Link
