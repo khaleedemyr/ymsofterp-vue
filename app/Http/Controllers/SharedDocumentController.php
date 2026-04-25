@@ -1195,14 +1195,18 @@ class SharedDocumentController extends Controller
         $extension = strtolower($extension);
 
         if (in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
-            return 'spreadsheet';
+            return 'cell';
         }
 
         if (in_array($extension, ['pptx', 'ppt'], true)) {
-            return 'presentation';
+            return 'slide';
         }
 
-        return 'text';
+        if ($extension === 'pdf') {
+            return 'pdf';
+        }
+
+        return 'word';
     }
 
     private function isOnlyOfficeEditable(string $extension): bool
