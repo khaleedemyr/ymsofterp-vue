@@ -205,6 +205,16 @@ class SharedDocumentController extends Controller
             ? $this->buildOnlyOfficeConfig($document, $user, $canEdit)
             : null;
 
+        if ($onlyOfficeConfig) {
+            \Log::info('OnlyOffice config generated', [
+                'document_id' => $document->id,
+                'callback_url' => $onlyOfficeConfig['editorConfig']['callbackUrl'] ?? 'N/A',
+                'document_url' => $onlyOfficeConfig['document']['url'] ?? 'N/A',
+                'jwt_enabled' => $this->isOnlyOfficeJwtEnabled(),
+                'app_url' => config('app.url'),
+            ]);
+        }
+
         return Inertia::render('SharedDocuments/Show', [
             'document' => $document,
             'onlyoffice' => [
@@ -1329,12 +1339,26 @@ class SharedDocumentController extends Controller
 
     public function callback(Request $request, $id)
     {
+        \Log::info('OnlyOffice callback received', [
+            'document_id' => $id,
+            'status' => $request->input('status'),
+            'has_url' => !empty($request->input('url')),
+            'auth_header' => $request->header('Authorization') ? 'present' : 'missing',
+            'ip' => $request->ip(),
+        ]);
+
         $document = SharedDocument::find($id);
         if (!$document) {
             return response()->json(['error' => 0]);
         }
 
         if (!$this->isOnlyOfficeCallbackAuthorized($request)) {
+            \Log::warning('OnlyOffice callback auth failed', [
+                'document_id' => $id,
+                'jwt_enabled' => $this->isOnlyOfficeJwtEnabled(),
+                'auth_header' => $request->header('Authorization') ? substr($request->header('Authorization'), 0, 30).'...' : 'none',
+                'token_in_body' => !empty($request->input('token')),
+            ]);
             return response()->json(['error' => 1], 401);
         }
 
