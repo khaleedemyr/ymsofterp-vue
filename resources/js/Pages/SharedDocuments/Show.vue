@@ -63,7 +63,7 @@
                     <div
                         id="onlyoffice-editor"
                         class="onlyoffice-editor-wrap w-full rounded-xl border border-gray-200 bg-gray-50"
-                        style="height: calc(100vh - 220px); min-height: 900px;"
+                        style="height: 72vh; min-height: 520px;"
                     ></div>
                     <div class="text-xs text-slate-500">
                         {{ onlyOfficeModeLabel }}
@@ -134,11 +134,11 @@ const setOnlyOfficeEditorSize = () => {
 
     const viewportHeight = window.innerHeight || 900
     const topOffset = el.getBoundingClientRect().top || 0
-    const availableHeight = Math.floor(viewportHeight - topOffset - 24)
-    const targetHeight = Math.max(900, availableHeight)
+    const availableHeight = Math.floor(viewportHeight - topOffset - 20)
+    const targetHeight = Math.max(520, Math.min(820, availableHeight))
 
     el.style.height = `${targetHeight}px`
-    el.style.minHeight = '900px'
+    el.style.minHeight = '520px'
 }
 
 const buildOnlyOfficeClientConfig = () => {
@@ -331,11 +331,11 @@ const formatFileSize = (bytes) => {
 }
 
 .onlyoffice-host-shell {
-    min-height: calc(100vh - 180px);
+    min-height: 0;
 }
 
 .onlyoffice-panel {
-    min-height: calc(100vh - 150px);
+    min-height: 0;
 }
 
 :deep(#onlyoffice-editor),
@@ -345,7 +345,7 @@ const formatFileSize = (bytes) => {
 :deep(#onlyoffice-editor iframe) {
     width: 100% !important;
     height: 100% !important;
-    min-height: 900px !important;
+    min-height: 520px !important;
     display: block;
 }
 
