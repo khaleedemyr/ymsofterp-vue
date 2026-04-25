@@ -63,7 +63,7 @@
                     <div
                         id="onlyoffice-editor"
                         class="onlyoffice-editor-wrap w-full rounded-xl border border-gray-200 bg-gray-50"
-                        style="height: calc(100vh - 260px); min-height: 720px;"
+                        style="height: 860px; min-height: 760px;"
                     ></div>
                     <div class="text-xs text-slate-500">
                         {{ onlyOfficeModeLabel }}
@@ -120,11 +120,26 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 let docEditorInstance = null
+
+const setOnlyOfficeEditorSize = () => {
+    const el = document.getElementById('onlyoffice-editor')
+    if (!el) {
+        return
+    }
+
+    const viewportHeight = window.innerHeight || 900
+    const topOffset = el.getBoundingClientRect().top || 0
+    const availableHeight = Math.floor(viewportHeight - topOffset - 24)
+    const targetHeight = Math.max(760, availableHeight)
+
+    el.style.height = `${targetHeight}px`
+    el.style.minHeight = '760px'
+}
 
 const props = defineProps({
     document: {
@@ -222,6 +237,12 @@ onMounted(() => {
         return
     }
 
+    nextTick(() => {
+        setOnlyOfficeEditorSize()
+    })
+
+    window.addEventListener('resize', setOnlyOfficeEditorSize)
+
     if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
         console.error('OnlyOffice DocsAPI belum tersedia.')
         return
@@ -231,6 +252,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+    window.removeEventListener('resize', setOnlyOfficeEditorSize)
+
     if (docEditorInstance && typeof docEditorInstance.destroyEditor === 'function') {
         docEditorInstance.destroyEditor()
     }
