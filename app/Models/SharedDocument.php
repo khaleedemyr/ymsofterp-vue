@@ -168,20 +168,20 @@ class SharedDocument extends Model
         return asset('storage/' . $this->file_path);
     }
 
-    public function getOnlyOfficeConfig(): array
+    public function getOnlyOfficeConfig(bool $canEdit = true): array
     {
         return [
             'document' => [
-                'fileType' => $this->file_type,
+                'fileType' => strtolower((string) $this->file_type),
                 'key' => $this->document_key,
-                'title' => $this->title,
+                'title' => $this->filename,
                 'url' => $this->getFileUrl(),
             ],
             'documentType' => $this->getDocumentType(),
             'editorConfig' => [
-                'mode' => 'edit',
+                'mode' => $canEdit ? 'edit' : 'view',
                 'lang' => 'id',
-                'callbackUrl' => route('documents.callback'),
+                'callbackUrl' => route('shared-documents.callback', ['id' => $this->id]),
             ],
         ];
     }

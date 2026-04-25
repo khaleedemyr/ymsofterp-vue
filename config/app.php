@@ -88,6 +88,8 @@ return [
      * OnlyOffice Configuration
      */
     'onlyoffice_url' => env('ONLYOFFICE_URL', 'http://localhost:80'),
+    'onlyoffice_jwt_enabled' => env('ONLYOFFICE_JWT_ENABLED', true),
+    'onlyoffice_jwt_secret' => env('ONLYOFFICE_JWT_SECRET', ''),
 
     /*
     |--------------------------------------------------------------------------

@@ -2389,7 +2389,6 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('shared-documents', SharedDocumentController::class);
     Route::get('shared-documents/{id}/download', [SharedDocumentController::class, 'download'])->name('shared-documents.download');
     Route::get('shared-documents/{id}/preview', [SharedDocumentController::class, 'preview'])->name('shared-documents.preview');
-    Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])->name('shared-documents.callback');
     Route::post('shared-documents/{document}/share', [SharedDocumentController::class, 'share'])->name('shared-documents.share');
     Route::delete('shared-documents/{document}/remove-share', [SharedDocumentController::class, 'removeShare'])->name('shared-documents.remove-share');
     
@@ -2401,6 +2400,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('shared-documents/users/search', [SharedDocumentController::class, 'searchUsers'])->name('shared-documents.users.search');
     Route::get('shared-documents/users/dropdown', [SharedDocumentController::class, 'getDropdownData'])->name('shared-documents.users.dropdown');
 });
+
+// OnlyOffice callback must be publicly reachable by Document Server
+Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])->name('shared-documents.callback');
+
 // Leave Management Routes
 Route::middleware(['auth'])->group(function () {
     Route::prefix('leave-management')->name('leave-management.')->group(function () {

@@ -55,11 +55,18 @@
 
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                 <h3 class="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                    <i class="fas fa-eye mr-2 text-slate-500"></i>
-                    Preview
+                    <i :class="canUseOnlyOffice ? 'fas fa-pen-to-square' : 'fas fa-eye'" class="mr-2 text-slate-500"></i>
+                    {{ canUseOnlyOffice ? 'Editor' : 'Preview' }}
                 </h3>
 
-                <div v-if="isPdf" class="space-y-4">
+                <div v-if="canUseOnlyOffice" class="space-y-4">
+                    <div id="onlyoffice-editor" class="w-full rounded-xl border border-gray-200 bg-gray-50" style="height: 78vh;"></div>
+                    <div class="text-xs text-slate-500">
+                        {{ onlyOfficeModeLabel }}
+                    </div>
+                </div>
+
+                <div v-else-if="isPdf" class="space-y-4">
                     <object
                         :data="previewUrl"
                         type="application/pdf"
@@ -109,15 +116,24 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+
+let docEditorInstance = null
 
 const props = defineProps({
     document: {
         type: Object,
         required: true
-    }
+    },
+    onlyoffice: {
+        type: Object,
+        default: () => ({
+            enabled: false,
+            config: null,
+        }),
+    },
 })
 
 const page = usePage()
@@ -125,7 +141,15 @@ const page = usePage()
 const downloadUrl = computed(() => route('shared-documents.download', props.document.id))
 const inlinePreviewUrl = computed(() => route('shared-documents.preview', props.document.id))
 const isPdf = computed(() => (props.document.file_type || '').toLowerCase() === 'pdf')
+const isOnlyOfficeFile = computed(() => ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes((props.document.file_type || '').toLowerCase()))
 const previewUrl = computed(() => `${inlinePreviewUrl.value}#toolbar=1`)
+const canUseOnlyOffice = computed(() => Boolean(props.onlyoffice?.enabled && props.onlyoffice?.config && isOnlyOfficeFile.value))
+const onlyOfficeModeLabel = computed(() => {
+    const mode = props.onlyoffice?.config?.editorConfig?.mode || 'view'
+    return mode === 'edit'
+        ? 'Dokumen terbuka dalam mode edit kolaboratif.'
+        : 'Dokumen terbuka dalam mode view (tanpa edit).'
+})
 
 const fileTypeLabel = computed(() => (props.document.file_type || 'file').toUpperCase())
 
@@ -187,6 +211,25 @@ const accessBadgeClass = computed(() => {
     if (accessLabel.value === 'Admin') return 'bg-emerald-100 text-emerald-700'
     if (accessLabel.value === 'Publik') return 'bg-amber-100 text-amber-700'
     return 'bg-slate-100 text-slate-700'
+})
+
+onMounted(() => {
+    if (!canUseOnlyOffice.value) {
+        return
+    }
+
+    if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
+        console.error('OnlyOffice DocsAPI belum tersedia.')
+        return
+    }
+
+    docEditorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor', props.onlyoffice.config)
+})
+
+onBeforeUnmount(() => {
+    if (docEditorInstance && typeof docEditorInstance.destroyEditor === 'function') {
+        docEditorInstance.destroyEditor()
+    }
 })
 
 const formatDate = (date) => {

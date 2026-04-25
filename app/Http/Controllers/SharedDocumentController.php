@@ -14,9 +14,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 class SharedDocumentController extends Controller
 {
@@ -197,19 +200,45 @@ class SharedDocumentController extends Controller
 
         $document->load(['creator', 'folder', 'permissions.user', 'versions.creator', 'scopes']);
 
+        $canEdit = $document->hasPermission($user, 'edit');
+        $onlyOfficeConfig = $this->isOnlyOfficeEditable((string) $document->file_type)
+            ? $this->buildOnlyOfficeConfig($document, $user, $canEdit)
+            : null;
+
         return Inertia::render('SharedDocuments/Show', [
             'document' => $document,
+            'onlyoffice' => [
+                'enabled' => (bool) $onlyOfficeConfig,
+                'config' => $onlyOfficeConfig,
+            ],
         ]);
     }
 
     public function edit($id): Response
     {
-        abort(403, 'Dokumen bersifat read-only. Hanya view dan download yang diizinkan.');
+        return $this->show($id);
     }
 
     public function update(Request $request, $id)
     {
-        abort(403, 'Dokumen bersifat read-only. Hanya view dan download yang diizinkan.');
+        $document = SharedDocument::findOrFail($id);
+        $user = Auth::user();
+
+        if (!$document->hasPermission($user, 'edit')) {
+            abort(403, 'Anda tidak memiliki izin mengedit metadata dokumen ini.');
+        }
+
+        $request->validate([
+            'title' => 'sometimes|required|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        $document->update([
+            'title' => $request->input('title', $document->title),
+            'description' => $request->input('description', $document->description),
+        ]);
+
+        return back()->with('success', 'Metadata dokumen berhasil diperbarui.');
     }
 
     public function destroy($id)
@@ -1108,6 +1137,164 @@ class SharedDocumentController extends Controller
         return $mimeTypes[$fileType] ?? 'application/octet-stream';
     }
 
+    private function buildOnlyOfficeConfig(SharedDocument $document, User $user, bool $canEdit): ?array
+    {
+        $documentServerUrl = rtrim((string) config('app.onlyoffice_url'), '/');
+        if ($documentServerUrl === '') {
+            return null;
+        }
+
+        $config = [
+            'document' => [
+                'title' => $document->filename,
+                'url' => $document->getFileUrl(),
+                'fileType' => strtolower((string) $document->file_type),
+                'key' => (string) $document->document_key,
+            ],
+            'documentType' => $this->mapDocumentType((string) $document->file_type),
+            'editorConfig' => [
+                'mode' => $canEdit ? 'edit' : 'view',
+                'lang' => 'id',
+                'callbackUrl' => route('shared-documents.callback', ['id' => $document->id]),
+                'user' => [
+                    'id' => (string) $user->id,
+                    'name' => $user->nama_lengkap ?: $user->name,
+                ],
+                'customization' => [
+                    'forcesave' => true,
+                ],
+            ],
+            'permissions' => [
+                'edit' => $canEdit,
+                'download' => true,
+                'print' => true,
+                'comment' => true,
+            ],
+        ];
+
+        $token = $this->generateOnlyOfficeToken($config);
+        if ($token) {
+            $config['token'] = $token;
+        }
+
+        return $config;
+    }
+
+    private function mapDocumentType(string $extension): string
+    {
+        $extension = strtolower($extension);
+
+        if (in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
+            return 'spreadsheet';
+        }
+
+        if (in_array($extension, ['pptx', 'ppt'], true)) {
+            return 'presentation';
+        }
+
+        return 'text';
+    }
+
+    private function isOnlyOfficeEditable(string $extension): bool
+    {
+        return in_array(strtolower($extension), ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'], true);
+    }
+
+    private function generateOnlyOfficeToken(array $payload): ?string
+    {
+        if (!$this->isOnlyOfficeJwtEnabled()) {
+            return null;
+        }
+
+        $secret = (string) config('app.onlyoffice_jwt_secret', '');
+        if ($secret === '') {
+            return null;
+        }
+
+        $header = ['alg' => 'HS256', 'typ' => 'JWT'];
+        $segments = [
+            $this->base64UrlEncode(json_encode($header, JSON_UNESCAPED_SLASHES)),
+            $this->base64UrlEncode(json_encode($payload, JSON_UNESCAPED_SLASHES)),
+        ];
+
+        $signingInput = implode('.', $segments);
+        $signature = hash_hmac('sha256', $signingInput, $secret, true);
+        $segments[] = $this->base64UrlEncode($signature);
+
+        return implode('.', $segments);
+    }
+
+    private function isOnlyOfficeJwtEnabled(): bool
+    {
+        return filter_var(config('app.onlyoffice_jwt_enabled', true), FILTER_VALIDATE_BOOL);
+    }
+
+    private function isOnlyOfficeCallbackAuthorized(Request $request): bool
+    {
+        if (!$this->isOnlyOfficeJwtEnabled()) {
+            return true;
+        }
+
+        $token = '';
+        $authHeader = (string) $request->header('Authorization', '');
+        if (str_starts_with($authHeader, 'Bearer ')) {
+            $token = trim(substr($authHeader, 7));
+        }
+
+        if ($token === '') {
+            $token = (string) $request->input('token', '');
+        }
+
+        if ($token === '') {
+            return false;
+        }
+
+        return $this->isValidOnlyOfficeToken($token);
+    }
+
+    private function isValidOnlyOfficeToken(string $token): bool
+    {
+        $secret = (string) config('app.onlyoffice_jwt_secret', '');
+        if ($secret === '') {
+            return false;
+        }
+
+        $parts = explode('.', $token);
+        if (count($parts) !== 3) {
+            return false;
+        }
+
+        [$header, $payload, $signature] = $parts;
+        $signingInput = $header . '.' . $payload;
+        $expectedSignature = $this->base64UrlEncode(hash_hmac('sha256', $signingInput, $secret, true));
+
+        return hash_equals($expectedSignature, $signature);
+    }
+
+    private function base64UrlEncode(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+    }
+
+    private function nextVersionNumber(SharedDocument $document): string
+    {
+        $lastVersion = DocumentVersion::query()
+            ->where('document_id', $document->id)
+            ->orderByDesc('id')
+            ->value('version_number');
+
+        if (!$lastVersion) {
+            return '1.0';
+        }
+
+        $lastNumeric = (float) preg_replace('/[^0-9.]/', '', (string) $lastVersion);
+        if ($lastNumeric <= 0) {
+            return '1.0';
+        }
+
+        return number_format($lastNumeric + 0.1, 1, '.', '');
+    }
+
     private function resolvePermissionLabel(SharedDocument $document, User $user): string
     {
         if ($document->created_by === $user->id) {
@@ -1140,12 +1327,64 @@ class SharedDocumentController extends Controller
         return $folder->created_by === $user->id || $this->isSuperadmin($user);
     }
 
-    public function callback(Request $request)
+    public function callback(Request $request, $id)
     {
-        return response()->json([
-            'error' => 0,
-            'message' => 'Document editor callback disabled in read-only mode.',
-        ]);
+        $document = SharedDocument::find($id);
+        if (!$document) {
+            return response()->json(['error' => 0]);
+        }
+
+        if (!$this->isOnlyOfficeCallbackAuthorized($request)) {
+            return response()->json(['error' => 1], 401);
+        }
+
+        $status = (int) $request->input('status', 0);
+        $downloadUrl = (string) $request->input('url', '');
+
+        if (in_array($status, [2, 6], true) && $downloadUrl !== '') {
+            try {
+                $response = Http::timeout(60)->get($downloadUrl);
+                if (!$response->successful()) {
+                    Log::error('OnlyOffice callback download failed', [
+                        'document_id' => $document->id,
+                        'status' => $status,
+                        'http_status' => $response->status(),
+                    ]);
+
+                    return response()->json(['error' => 1]);
+                }
+
+                $binary = $response->body();
+                $extension = strtolower(pathinfo($document->filename, PATHINFO_EXTENSION));
+                $versionPath = 'shared-documents/versions/' . $document->id . '/' . now()->format('YmdHis') . '_' . Str::uuid() . '.' . $extension;
+
+                Storage::disk('public')->put($versionPath, $binary);
+                Storage::disk('public')->put($document->file_path, $binary);
+
+                $document->update([
+                    'file_size' => strlen($binary),
+                    'document_key' => (string) Str::uuid(),
+                ]);
+
+                DocumentVersion::create([
+                    'document_id' => $document->id,
+                    'version_number' => $this->nextVersionNumber($document),
+                    'file_path' => $versionPath,
+                    'change_description' => $status === 6 ? 'Autosave (forcesave) from OnlyOffice' : 'Saved from OnlyOffice editor',
+                    'created_by' => $document->created_by,
+                ]);
+            } catch (\Throwable $exception) {
+                Log::error('OnlyOffice callback processing failed', [
+                    'document_id' => $document->id,
+                    'status' => $status,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return response()->json(['error' => 1]);
+            }
+        }
+
+        return response()->json(['error' => 0]);
     }
 
     /**
