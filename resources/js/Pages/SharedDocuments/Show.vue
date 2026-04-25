@@ -60,7 +60,11 @@
                 </h3>
 
                 <div v-if="canUseOnlyOffice" class="space-y-4">
-                    <div id="onlyoffice-editor" class="w-full rounded-xl border border-gray-200 bg-gray-50" style="height: 78vh;"></div>
+                    <div
+                        id="onlyoffice-editor"
+                        class="onlyoffice-editor-wrap w-full rounded-xl border border-gray-200 bg-gray-50"
+                        style="height: calc(100vh - 260px); min-height: 720px;"
+                    ></div>
                     <div class="text-xs text-slate-500">
                         {{ onlyOfficeModeLabel }}
                     </div>
@@ -259,6 +263,18 @@ const formatFileSize = (bytes) => {
         linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     border-radius: 20px;
     padding: 10px;
+}
+
+.onlyoffice-editor-wrap {
+    width: 100%;
+    max-width: 100%;
+}
+
+:deep(.onlyoffice-editor-wrap iframe),
+:deep(#onlyoffice-editor iframe) {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
 }
 
 @keyframes fade-in-up {
