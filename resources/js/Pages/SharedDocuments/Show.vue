@@ -28,7 +28,7 @@
                 </div>
             </div>
 
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 onlyoffice-panel">
                 <div class="flex flex-col md:flex-row md:items-center gap-4 mb-6">
                     <div class="w-14 h-14 rounded-xl flex items-center justify-center text-white" :class="fileTypeColor">
                         <i :class="fileTypeIcon" class="doc-type-icon text-2xl"></i>
@@ -59,11 +59,11 @@
                     {{ canUseOnlyOffice ? 'Editor' : 'Preview' }}
                 </h3>
 
-                <div v-if="canUseOnlyOffice" class="space-y-4">
+                <div v-if="canUseOnlyOffice" class="space-y-4 onlyoffice-host-shell">
                     <div
                         id="onlyoffice-editor"
                         class="onlyoffice-editor-wrap w-full rounded-xl border border-gray-200 bg-gray-50"
-                        style="height: 860px; min-height: 760px;"
+                        style="height: calc(100vh - 220px); min-height: 900px;"
                     ></div>
                     <div class="text-xs text-slate-500">
                         {{ onlyOfficeModeLabel }}
@@ -291,12 +291,25 @@ const formatFileSize = (bytes) => {
 .onlyoffice-editor-wrap {
     width: 100%;
     max-width: 100%;
+    overflow: hidden;
 }
 
+.onlyoffice-host-shell {
+    min-height: calc(100vh - 180px);
+}
+
+.onlyoffice-panel {
+    min-height: calc(100vh - 150px);
+}
+
+:deep(#onlyoffice-editor),
+:deep(#onlyoffice-editor > div),
+:deep(#onlyoffice-editor > div > div),
 :deep(.onlyoffice-editor-wrap iframe),
 :deep(#onlyoffice-editor iframe) {
     width: 100% !important;
     height: 100% !important;
+    min-height: 900px !important;
     display: block;
 }
 
