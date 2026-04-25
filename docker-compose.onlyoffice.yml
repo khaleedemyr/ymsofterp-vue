@@ -12,11 +12,13 @@ services:
       - onlyoffice_logs:/var/log/onlyoffice
       - onlyoffice_cache:/var/cache/onlyoffice
     environment:
-      - JWT_ENABLED=false
-      - JWT_SECRET=your-secret-key-change-this-in-production
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
       - WOPI_ENABLED=true
       - STORAGE_PATH=/var/www/onlyoffice/Data
     restart: unless-stopped
+    extra_hosts:
+      - "ymsofterp.com:127.0.0.1"
     networks:
       - onlyoffice-network
 
