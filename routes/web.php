@@ -2402,7 +2402,9 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // OnlyOffice callback must be publicly reachable by Document Server
-Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])->name('shared-documents.callback');
+Route::post('shared-documents/{id}/callback', [SharedDocumentController::class, 'callback'])
+    ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])
+    ->name('shared-documents.callback');
 
 // Leave Management Routes
 Route::middleware(['auth'])->group(function () {
