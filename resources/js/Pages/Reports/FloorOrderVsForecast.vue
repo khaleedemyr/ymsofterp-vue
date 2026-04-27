@@ -146,7 +146,7 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1100px] border-collapse text-sm">
+          <table class="w-full min-w-[1250px] border-collapse text-sm">
             <thead>
               <tr class="border-b border-slate-200 bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                 <th class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
@@ -154,20 +154,21 @@ const currentOutletDisplayName = computed(() => {
                 </th>
                 <th class="whitespace-nowrap px-3 py-3">Hari</th>
                 <th class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
+                <th class="whitespace-nowrap bg-emerald-50/90 px-3 py-3 text-right text-emerald-900">Revenue</th>
                 <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">
-                  Plafon KB ({{ kitchen_bar_ratio_pct }}%)
+                  F &amp; B Purchase ({{ kitchen_bar_ratio_pct }}%)
                 </th>
                 <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">
-                  RO Kitchen+Bar
+                  F &amp; B Purchased
                 </th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">Δ KB</th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">% vs plafon</th>
+                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">Δ F &amp; B</th>
+                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">% vs purchase</th>
                 <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">
-                  Plafon Svc ({{ service_ratio_pct }}%)
+                  Svc Purchase ({{ service_ratio_pct }}%)
                 </th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">RO Service</th>
+                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">Service Purchased</th>
                 <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">Δ Svc</th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">% vs plafon</th>
+                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">% vs purchase</th>
                 <th class="whitespace-nowrap px-3 py-3 text-right text-slate-600">RO lain*</th>
               </tr>
             </thead>
@@ -186,6 +187,9 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap px-3 py-2 capitalize text-slate-600">{{ row.day_name }}</td>
                 <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-900">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.forecast_revenue) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
+                  {{ row.revenue > 0 ? 'Rp ' + formatRp(row.revenue) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-indigo-950">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.cap_kitchen_bar) : '—' }}
@@ -230,6 +234,9 @@ const currentOutletDisplayName = computed(() => {
                   Total bulan
                 </td>
                 <td class="px-3 py-3 text-right tabular-nums">Rp {{ formatRp(totals.forecast_revenue) }}</td>
+                <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
+                  Rp {{ formatRp(totals.revenue) }}
+                </td>
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums text-indigo-950">
                   Rp {{ formatRp(totals.cap_kitchen_bar) }}
                 </td>

@@ -91,10 +91,28 @@ class FloorOrderVsForecastReportController extends Controller
         $roKitchenBar = [];
         $roService = [];
         $roOther = [];
+        $revenueByDate = [];
 
         if ($selectedOutletId > 0) {
             $rangeStart = $monthStart->toDateString();
             $rangeEnd = $monthEnd->toDateString();
+
+            $outletQr = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $selectedOutletId)
+                ->value('qr_code');
+
+            if ($outletQr) {
+                $revenueRows = DB::table('orders')
+                    ->where('kode_outlet', $outletQr)
+                    ->whereBetween(DB::raw('DATE(created_at)'), [$rangeStart, $rangeEnd])
+                    ->selectRaw('DATE(created_at) as d, SUM(grand_total) as revenue')
+                    ->groupBy(DB::raw('DATE(created_at)'))
+                    ->get();
+
+                foreach ($revenueRows as $rv) {
+                    $revenueByDate[Carbon::parse($rv->d)->toDateString()] = round((float) $rv->revenue, 2);
+                }
+            }
 
             $bucketExpr = 'CASE
                 WHEN LOWER(TRIM(wo.name)) IN (\'kitchen\', \'bar\') THEN \'kitchen_bar\'
@@ -177,10 +195,13 @@ class FloorOrderVsForecastReportController extends Controller
             $pctKb = $capKb > 0 ? round(($kb / $capKb) * 100, 1) : null;
             $pctSvc = $capSvc > 0 ? round(($svc / $capSvc) * 100, 1) : null;
 
+            $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
+
             $rows[] = [
                 'date' => $ds,
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'forecast_revenue' => $forecast,
+                'revenue' => $revenue,
                 'cap_kitchen_bar' => $capKb,
                 'cap_service' => $capSvc,
                 'ro_kitchen_bar' => $kb,
@@ -196,6 +217,7 @@ class FloorOrderVsForecastReportController extends Controller
 
         $totals = [
             'forecast_revenue' => 0,
+            'revenue' => 0,
             'cap_kitchen_bar' => 0,
             'cap_service' => 0,
             'ro_kitchen_bar' => 0,
@@ -206,6 +228,7 @@ class FloorOrderVsForecastReportController extends Controller
         ];
         foreach ($rows as $r) {
             $totals['forecast_revenue'] += $r['forecast_revenue'];
+            $totals['revenue'] += $r['revenue'];
             $totals['cap_kitchen_bar'] += $r['cap_kitchen_bar'];
             $totals['cap_service'] += $r['cap_service'];
             $totals['ro_kitchen_bar'] += $r['ro_kitchen_bar'];
