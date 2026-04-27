@@ -146,7 +146,7 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1250px] border-collapse text-sm">
+          <table class="w-full min-w-[1700px] border-collapse text-sm">
             <thead>
               <tr class="border-b border-slate-200 bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                 <th class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
@@ -155,6 +155,9 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap px-3 py-3">Hari</th>
                 <th class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
                 <th class="whitespace-nowrap bg-emerald-50/90 px-3 py-3 text-right text-emerald-900">Revenue</th>
+                <th class="whitespace-nowrap bg-amber-50/90 px-3 py-3 text-right text-amber-900">SOH F &amp; B</th>
+                <th class="whitespace-nowrap bg-orange-50/90 px-3 py-3 text-right text-orange-900">SOH Service</th>
+                <th class="whitespace-nowrap bg-yellow-50/90 px-3 py-3 text-right text-yellow-900">SOH Total</th>
                 <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">
                   F &amp; B Purchase ({{ kitchen_bar_ratio_pct }}%)
                 </th>
@@ -190,6 +193,15 @@ const currentOutletDisplayName = computed(() => {
                 </td>
                 <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
                   {{ row.revenue > 0 ? 'Rp ' + formatRp(row.revenue) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-amber-50/40 px-3 py-2 text-right tabular-nums font-medium text-amber-950">
+                  {{ row.stock_on_hand_kitchen_bar > 0 ? 'Rp ' + formatRp(row.stock_on_hand_kitchen_bar) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950">
+                  {{ row.stock_on_hand_service > 0 ? 'Rp ' + formatRp(row.stock_on_hand_service) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-yellow-50/40 px-3 py-2 text-right tabular-nums font-medium text-yellow-950">
+                  {{ row.stock_on_hand_total > 0 ? 'Rp ' + formatRp(row.stock_on_hand_total) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-indigo-950">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.cap_kitchen_bar) : '—' }}
@@ -231,11 +243,20 @@ const currentOutletDisplayName = computed(() => {
             <tfoot>
               <tr class="border-t-2 border-slate-300 bg-slate-100 font-semibold text-slate-900">
                 <td class="sticky left-0 z-10 bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]" colspan="2">
-                  Total bulan
+                  Total bulan (SOH: posisi akhir bulan)
                 </td>
                 <td class="px-3 py-3 text-right tabular-nums">Rp {{ formatRp(totals.forecast_revenue) }}</td>
                 <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
                   Rp {{ formatRp(totals.revenue) }}
+                </td>
+                <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
+                  Rp {{ formatRp(totals.stock_on_hand_kitchen_bar_end) }}
+                </td>
+                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
+                  Rp {{ formatRp(totals.stock_on_hand_service_end) }}
+                </td>
+                <td class="bg-yellow-100/80 px-3 py-3 text-right tabular-nums text-yellow-950 font-semibold">
+                  Rp {{ formatRp(totals.stock_on_hand_total_end) }}
                 </td>
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums text-indigo-950">
                   Rp {{ formatRp(totals.cap_kitchen_bar) }}
@@ -268,6 +289,8 @@ const currentOutletDisplayName = computed(() => {
           * <strong>RO lain</strong>: warehouse outlet FO selain nama Kitchen / Bar / Service (misal typo atau warehouse tambahan).
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
           qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
+          Kolom <strong>SOH</strong> menampilkan posisi harta stok <strong>akhir hari</strong> (end-of-day),
+          sedangkan nilai SOH di footer adalah posisi <strong>akhir bulan</strong>.
           Agregasi per tanggal kedatangan =
           <code class="rounded bg-slate-100 px-1">Σ…</code> dikelompokkan ke kolom tersebut.
         </p>

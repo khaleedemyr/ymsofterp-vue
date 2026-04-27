@@ -92,10 +92,29 @@ class FloorOrderVsForecastReportController extends Controller
         $roService = [];
         $roOther = [];
         $revenueByDate = [];
+        $stockOnHandKitchenBarByDate = [];
+        $stockOnHandServiceByDate = [];
+        $stockOnHandTotalByDate = [];
 
         if ($selectedOutletId > 0) {
             $rangeStart = $monthStart->toDateString();
             $rangeEnd = $monthEnd->toDateString();
+
+            $warehouseBucketById = DB::table('warehouse_outlets')
+                ->select('id', 'name')
+                ->get()
+                ->mapWithKeys(function ($w) {
+                    $name = strtolower(trim((string) ($w->name ?? '')));
+                    $bucket = 'other';
+                    if (in_array($name, ['kitchen', 'bar'], true)) {
+                        $bucket = 'kitchen_bar';
+                    } elseif ($name === 'service') {
+                        $bucket = 'service';
+                    }
+
+                    return [(int) $w->id => $bucket];
+                })
+                ->all();
 
             $outletQr = DB::table('tbl_data_outlet')
                 ->where('id_outlet', $selectedOutletId)
@@ -112,6 +131,98 @@ class FloorOrderVsForecastReportController extends Controller
                 foreach ($revenueRows as $rv) {
                     $revenueByDate[Carbon::parse($rv->d)->toDateString()] = round((float) $rv->revenue, 2);
                 }
+            }
+
+            // Stock On Hand harian (nilai harta stok): saldo_value end-of-day per item+warehouse,
+            // lalu dikelompokkan Kitchen+Bar, Service, dan Total.
+            $baselineLatestKeyByTuple = DB::table('outlet_food_inventory_cards as c')
+                ->where('c.id_outlet', $selectedOutletId)
+                ->whereDate('c.date', '<', $rangeStart)
+                ->groupBy('c.warehouse_outlet_id', 'c.inventory_item_id')
+                ->selectRaw("c.warehouse_outlet_id, c.inventory_item_id, MAX(CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0'))) as mx")
+                ->get();
+
+            $baselineSaldoByTuple = [];
+            if ($baselineLatestKeyByTuple->isNotEmpty()) {
+                $baselineRows = DB::table('outlet_food_inventory_cards as c')
+                    ->joinSub($baselineLatestKeyByTuple, 'b', function ($join) {
+                        $join->on('b.warehouse_outlet_id', '=', 'c.warehouse_outlet_id')
+                            ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
+                            ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
+                    })
+                    ->where('c.id_outlet', $selectedOutletId)
+                    ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_value')
+                    ->get();
+
+                foreach ($baselineRows as $row) {
+                    $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                    $baselineSaldoByTuple[$tupleKey] = (float) ($row->saldo_value ?? 0);
+                }
+            }
+
+            $monthCardRows = DB::table('outlet_food_inventory_cards as c')
+                ->where('c.id_outlet', $selectedOutletId)
+                ->whereBetween(DB::raw('DATE(c.date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('c.warehouse_outlet_id, c.inventory_item_id, DATE(c.date) as d, c.id, c.saldo_value')
+                ->orderBy('c.warehouse_outlet_id')
+                ->orderBy('c.inventory_item_id')
+                ->orderBy(DB::raw('DATE(c.date)'))
+                ->orderBy('c.id')
+                ->get();
+
+            $entriesByTuple = [];
+            foreach ($monthCardRows as $row) {
+                $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                if (!isset($entriesByTuple[$tupleKey])) {
+                    $entriesByTuple[$tupleKey] = [];
+                }
+                $entriesByTuple[$tupleKey][] = [
+                    'date' => Carbon::parse($row->d)->toDateString(),
+                    'saldo_value' => (float) ($row->saldo_value ?? 0),
+                ];
+            }
+
+            $tupleKeys = array_values(array_unique(array_merge(array_keys($baselineSaldoByTuple), array_keys($entriesByTuple))));
+            $tupleStates = [];
+            foreach ($tupleKeys as $tupleKey) {
+                $warehouseId = (int) explode('|', $tupleKey, 2)[0];
+                $tupleStates[$tupleKey] = [
+                    'saldo' => (float) ($baselineSaldoByTuple[$tupleKey] ?? 0),
+                    'next_index' => 0,
+                    'entries' => $entriesByTuple[$tupleKey] ?? [],
+                    'bucket' => $warehouseBucketById[$warehouseId] ?? 'other',
+                ];
+            }
+
+            $sohCursor = $monthStart->copy();
+            while ($sohCursor->lte($monthEnd)) {
+                $dayKey = $sohCursor->toDateString();
+                $dayKitchenBar = 0.0;
+                $dayService = 0.0;
+                $dayTotal = 0.0;
+
+                foreach ($tupleStates as &$state) {
+                    $entries = $state['entries'];
+                    $entriesCount = count($entries);
+                    while ($state['next_index'] < $entriesCount && $entries[$state['next_index']]['date'] <= $dayKey) {
+                        $state['saldo'] = (float) $entries[$state['next_index']]['saldo_value'];
+                        $state['next_index']++;
+                    }
+
+                    $saldo = (float) $state['saldo'];
+                    $dayTotal += $saldo;
+                    if ($state['bucket'] === 'kitchen_bar') {
+                        $dayKitchenBar += $saldo;
+                    } elseif ($state['bucket'] === 'service') {
+                        $dayService += $saldo;
+                    }
+                }
+                unset($state);
+
+                $stockOnHandKitchenBarByDate[$dayKey] = round($dayKitchenBar, 2);
+                $stockOnHandServiceByDate[$dayKey] = round($dayService, 2);
+                $stockOnHandTotalByDate[$dayKey] = round($dayTotal, 2);
+                $sohCursor->addDay();
             }
 
             $bucketExpr = 'CASE
@@ -196,12 +307,18 @@ class FloorOrderVsForecastReportController extends Controller
             $pctSvc = $capSvc > 0 ? round(($svc / $capSvc) * 100, 1) : null;
 
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
+            $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
+            $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
+            $stockOnHandTotal = round((float) ($stockOnHandTotalByDate[$ds] ?? 0), 2);
 
             $rows[] = [
                 'date' => $ds,
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'forecast_revenue' => $forecast,
                 'revenue' => $revenue,
+                'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
+                'stock_on_hand_service' => $stockOnHandService,
+                'stock_on_hand_total' => $stockOnHandTotal,
                 'cap_kitchen_bar' => $capKb,
                 'cap_service' => $capSvc,
                 'ro_kitchen_bar' => $kb,
@@ -218,6 +335,9 @@ class FloorOrderVsForecastReportController extends Controller
         $totals = [
             'forecast_revenue' => 0,
             'revenue' => 0,
+            'stock_on_hand_kitchen_bar_end' => 0,
+            'stock_on_hand_service_end' => 0,
+            'stock_on_hand_total_end' => 0,
             'cap_kitchen_bar' => 0,
             'cap_service' => 0,
             'ro_kitchen_bar' => 0,
@@ -236,6 +356,12 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['ro_other'] += $r['ro_other'];
             $totals['diff_kitchen_bar'] += $r['diff_kitchen_bar'];
             $totals['diff_service'] += $r['diff_service'];
+        }
+        if (!empty($rows)) {
+            $last = $rows[count($rows) - 1];
+            $totals['stock_on_hand_kitchen_bar_end'] = round((float) ($last['stock_on_hand_kitchen_bar'] ?? 0), 2);
+            $totals['stock_on_hand_service_end'] = round((float) ($last['stock_on_hand_service'] ?? 0), 2);
+            $totals['stock_on_hand_total_end'] = round((float) ($last['stock_on_hand_total'] ?? 0), 2);
         }
         foreach ($totals as $k => $v) {
             $totals[$k] = round($v, 2);
