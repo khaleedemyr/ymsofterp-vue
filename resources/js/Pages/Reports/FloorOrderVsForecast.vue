@@ -19,6 +19,7 @@ const props = defineProps({
 
 const outletId = ref(props.selectedOutletId || 0)
 const month = ref(props.selectedMonth || new Date().toISOString().slice(0, 7))
+const isLoading = ref(false)
 
 watch(
   () => props.selectedOutletId,
@@ -43,6 +44,9 @@ function formatRp(value) {
 }
 
 function loadReport() {
+  if (isLoading.value) return
+  isLoading.value = true
+
   router.get(
     route('reports.floor-order-vs-forecast'),
     {
@@ -52,6 +56,9 @@ function loadReport() {
     {
       preserveState: true,
       preserveScroll: true,
+      onFinish: () => {
+        isLoading.value = false
+      },
     }
   )
 }
@@ -121,10 +128,13 @@ const currentOutletDisplayName = computed(() => {
           <div class="md:col-span-2 flex gap-2">
             <button
               type="button"
-              class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+              :disabled="isLoading"
+              class="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition"
+              :class="isLoading ? 'cursor-not-allowed bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'"
               @click="loadReport"
             >
-              Tampilkan
+              <i v-if="isLoading" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+              {{ isLoading ? 'Memuat...' : 'Tampilkan' }}
             </button>
           </div>
         </div>
