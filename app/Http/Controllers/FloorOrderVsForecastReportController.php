@@ -139,25 +139,22 @@ class FloorOrderVsForecastReportController extends Controller
                 ->where('c.id_outlet', $selectedOutletId)
                 ->whereDate('c.date', '<', $rangeStart)
                 ->groupBy('c.warehouse_outlet_id', 'c.inventory_item_id')
-                ->selectRaw("c.warehouse_outlet_id, c.inventory_item_id, MAX(CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0'))) as mx")
-                ->get();
+                ->selectRaw("c.warehouse_outlet_id, c.inventory_item_id, MAX(CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0'))) as mx");
 
             $baselineSaldoByTuple = [];
-            if ($baselineLatestKeyByTuple->isNotEmpty()) {
-                $baselineRows = DB::table('outlet_food_inventory_cards as c')
-                    ->joinSub($baselineLatestKeyByTuple, 'b', function ($join) {
-                        $join->on('b.warehouse_outlet_id', '=', 'c.warehouse_outlet_id')
-                            ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
-                            ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
-                    })
-                    ->where('c.id_outlet', $selectedOutletId)
-                    ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_value')
-                    ->get();
+            $baselineRows = DB::table('outlet_food_inventory_cards as c')
+                ->joinSub($baselineLatestKeyByTuple, 'b', function ($join) {
+                    $join->on('b.warehouse_outlet_id', '=', 'c.warehouse_outlet_id')
+                        ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
+                        ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
+                })
+                ->where('c.id_outlet', $selectedOutletId)
+                ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_value')
+                ->get();
 
-                foreach ($baselineRows as $row) {
-                    $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
-                    $baselineSaldoByTuple[$tupleKey] = (float) ($row->saldo_value ?? 0);
-                }
+            foreach ($baselineRows as $row) {
+                $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                $baselineSaldoByTuple[$tupleKey] = (float) ($row->saldo_value ?? 0);
             }
 
             $monthCardRows = DB::table('outlet_food_inventory_cards as c')
