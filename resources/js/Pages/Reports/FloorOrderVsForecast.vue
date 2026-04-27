@@ -9,7 +9,7 @@ const props = defineProps({
   selectedMonth: { type: String, default: '' },
   month_label: { type: String, default: '' },
   monthlyTarget: { type: [Number, String, null], default: null },
-  kitchen_bar_ratio_pct: { type: Number, default: 35 },
+  kitchen_bar_ratio_pct: { type: Number, default: 40 },
   service_ratio_pct: { type: Number, default: 5 },
   rows: { type: Array, default: () => [] },
   totals: { type: Object, default: () => ({}) },

@@ -9,7 +9,7 @@ use Inertia\Inertia;
 
 class FloorOrderVsForecastReportController extends Controller
 {
-    private const KITCHEN_BAR_RATIO = 0.35;
+    private const KITCHEN_BAR_RATIO = 0.40;
 
     private const SERVICE_RATIO = 0.05;
 

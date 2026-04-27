@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class FoodFloorOrderController extends Controller
 {
-    private const FORECAST_KITCHEN_BAR_RATIO = 0.35;
+    private const FORECAST_KITCHEN_BAR_RATIO = 0.40;
 
     private const FORECAST_SERVICE_RATIO = 0.05;
 
@@ -1201,7 +1201,7 @@ class FoodFloorOrderController extends Controller
         }
 
         $bucketLabels = [
-            'kitchen_bar' => 'Kitchen + Bar (35% dari forecast)',
+            'kitchen_bar' => 'Kitchen + Bar (40% dari forecast)',
             'service' => 'Service (5% dari forecast)',
             'other' => 'Lainnya (tanpa plafon K+B / Service)',
         ];
