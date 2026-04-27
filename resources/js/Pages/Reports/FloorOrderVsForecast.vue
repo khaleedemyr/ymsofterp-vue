@@ -63,6 +63,15 @@ function loadReport() {
   )
 }
 
+function exportExcel() {
+  const url = route('reports.floor-order-vs-forecast.export', {
+    outlet_id: outletId.value,
+    month: month.value,
+  })
+
+  window.open(url, '_blank')
+}
+
 function diffClass(diff) {
   const d = Number(diff)
   if (!Number.isFinite(d) || d === 0) return 'text-slate-600'
@@ -80,7 +89,7 @@ const currentOutletDisplayName = computed(() => {
 
 <template>
   <AppLayout>
-    <div class="max-w-[1600px] mx-auto py-8 px-3 sm:px-4">
+    <div class="w-full py-8 px-3 sm:px-4 lg:px-6">
       <div
         class="mb-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-6 text-white shadow-xl"
       >
@@ -126,6 +135,14 @@ const currentOutletDisplayName = computed(() => {
             />
           </div>
           <div class="md:col-span-2 flex gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100"
+              @click="exportExcel"
+            >
+              <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
+              Export Excel
+            </button>
             <button
               type="button"
               :disabled="isLoading"

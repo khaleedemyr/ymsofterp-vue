@@ -1315,6 +1315,7 @@ Route::post('/outlet-revenue-targets/suggest', [\App\Http\Controllers\OutletReve
 Route::post('/outlet-revenue-targets/generate-historical', [\App\Http\Controllers\OutletRevenueTargetController::class, 'generateHistorical'])->name('outlet-revenue-targets.generate-historical');
 Route::get('/outlet-revenue-targets/historical-month-detail', [\App\Http\Controllers\OutletRevenueTargetController::class, 'historicalMonthDetail'])->name('outlet-revenue-targets.historical-month-detail');
 Route::get('/reports/floor-order-vs-forecast', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'index'])->name('reports.floor-order-vs-forecast');
+Route::get('/reports/floor-order-vs-forecast/export', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'export'])->name('reports.floor-order-vs-forecast.export');
 
 // Active Users Monitoring
 Route::get('/monitoring/active-users', [\App\Http\Controllers\ActiveUsersMonitorController::class, 'index'])->name('monitoring.active-users');

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\FloorOrderVsForecastExport;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class FloorOrderVsForecastReportController extends Controller
 {
@@ -16,6 +18,17 @@ class FloorOrderVsForecastReportController extends Controller
     public function index(Request $request)
     {
         return Inertia::render('Reports/FloorOrderVsForecast', $this->buildReportPayload($request));
+    }
+
+    public function export(Request $request)
+    {
+        $payload = $this->buildReportPayload($request);
+        $month = preg_replace('/[^0-9\-]/', '', (string) ($payload['selectedMonth'] ?? now()->format('Y-m')));
+
+        return Excel::download(
+            new FloorOrderVsForecastExport($payload),
+            'floor_order_vs_forecast_'.$month.'_'.now()->format('Ymd_His').'.xlsx'
+        );
     }
 
     /**
