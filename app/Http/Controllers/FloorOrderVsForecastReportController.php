@@ -133,60 +133,113 @@ class FloorOrderVsForecastReportController extends Controller
                 }
             }
 
-            // Stock On Hand harian (nilai harta stok): saldo_value end-of-day per item+warehouse,
-            // lalu dikelompokkan Kitchen+Bar, Service, dan Total.
-            $baselineLatestKeyByTuple = DB::table('outlet_food_inventory_cards as c')
+            // Stock On Hand harian (nilai harta stok): qty dari stock card (saldo_qty_small)
+            // dikalikan MAC dari source yang sama dengan menu Outlet MAC Tracking,
+            // yaitu outlet_food_inventory_cost_histories.new_cost (latest per tanggal).
+            $baselineLatestQtyKeyByTuple = DB::table('outlet_food_inventory_cards as c')
                 ->where('c.id_outlet', $selectedOutletId)
                 ->whereDate('c.date', '<', $rangeStart)
                 ->groupBy('c.warehouse_outlet_id', 'c.inventory_item_id')
                 ->selectRaw("c.warehouse_outlet_id, c.inventory_item_id, MAX(CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0'))) as mx");
 
-            $baselineSaldoByTuple = [];
-            $baselineRows = DB::table('outlet_food_inventory_cards as c')
-                ->joinSub($baselineLatestKeyByTuple, 'b', function ($join) {
+            $baselineQtyByTuple = [];
+            $baselineQtyRows = DB::table('outlet_food_inventory_cards as c')
+                ->joinSub($baselineLatestQtyKeyByTuple, 'b', function ($join) {
                     $join->on('b.warehouse_outlet_id', '=', 'c.warehouse_outlet_id')
                         ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
                         ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
                 })
                 ->where('c.id_outlet', $selectedOutletId)
-                ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_value')
+                ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_qty_small')
                 ->get();
 
-            foreach ($baselineRows as $row) {
+            foreach ($baselineQtyRows as $row) {
                 $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
-                $baselineSaldoByTuple[$tupleKey] = (float) ($row->saldo_value ?? 0);
+                $baselineQtyByTuple[$tupleKey] = (float) ($row->saldo_qty_small ?? 0);
             }
 
-            $monthCardRows = DB::table('outlet_food_inventory_cards as c')
+            $monthQtyCardRows = DB::table('outlet_food_inventory_cards as c')
                 ->where('c.id_outlet', $selectedOutletId)
                 ->whereBetween(DB::raw('DATE(c.date)'), [$rangeStart, $rangeEnd])
-                ->selectRaw('c.warehouse_outlet_id, c.inventory_item_id, DATE(c.date) as d, c.id, c.saldo_value')
+                ->selectRaw('c.warehouse_outlet_id, c.inventory_item_id, DATE(c.date) as d, c.id, c.saldo_qty_small')
                 ->orderBy('c.warehouse_outlet_id')
                 ->orderBy('c.inventory_item_id')
                 ->orderBy(DB::raw('DATE(c.date)'))
                 ->orderBy('c.id')
                 ->get();
 
-            $entriesByTuple = [];
-            foreach ($monthCardRows as $row) {
+            $qtyEntriesByTuple = [];
+            foreach ($monthQtyCardRows as $row) {
                 $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
-                if (!isset($entriesByTuple[$tupleKey])) {
-                    $entriesByTuple[$tupleKey] = [];
+                if (!isset($qtyEntriesByTuple[$tupleKey])) {
+                    $qtyEntriesByTuple[$tupleKey] = [];
                 }
-                $entriesByTuple[$tupleKey][] = [
+                $qtyEntriesByTuple[$tupleKey][] = [
                     'date' => Carbon::parse($row->d)->toDateString(),
-                    'saldo_value' => (float) ($row->saldo_value ?? 0),
+                    'qty_small' => (float) ($row->saldo_qty_small ?? 0),
                 ];
             }
 
-            $tupleKeys = array_values(array_unique(array_merge(array_keys($baselineSaldoByTuple), array_keys($entriesByTuple))));
+            $baselineLatestMacKeyByTuple = DB::table('outlet_food_inventory_cost_histories as h')
+                ->where('h.id_outlet', $selectedOutletId)
+                ->whereDate('h.date', '<', $rangeStart)
+                ->groupBy('h.warehouse_outlet_id', 'h.inventory_item_id')
+                ->selectRaw("h.warehouse_outlet_id, h.inventory_item_id, MAX(CONCAT(DATE(h.date), ' ', LPAD(h.id, 20, '0'))) as mx");
+
+            $baselineMacByTuple = [];
+            $baselineMacRows = DB::table('outlet_food_inventory_cost_histories as h')
+                ->joinSub($baselineLatestMacKeyByTuple, 'b', function ($join) {
+                    $join->on('b.warehouse_outlet_id', '=', 'h.warehouse_outlet_id')
+                        ->on('b.inventory_item_id', '=', 'h.inventory_item_id')
+                        ->whereRaw("CONCAT(DATE(h.date), ' ', LPAD(h.id, 20, '0')) = b.mx");
+                })
+                ->where('h.id_outlet', $selectedOutletId)
+                ->select('h.warehouse_outlet_id', 'h.inventory_item_id', 'h.new_cost')
+                ->get();
+
+            foreach ($baselineMacRows as $row) {
+                $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                $baselineMacByTuple[$tupleKey] = (float) ($row->new_cost ?? 0);
+            }
+
+            $monthMacRows = DB::table('outlet_food_inventory_cost_histories as h')
+                ->where('h.id_outlet', $selectedOutletId)
+                ->whereBetween(DB::raw('DATE(h.date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('h.warehouse_outlet_id, h.inventory_item_id, DATE(h.date) as d, h.id, h.new_cost')
+                ->orderBy('h.warehouse_outlet_id')
+                ->orderBy('h.inventory_item_id')
+                ->orderBy(DB::raw('DATE(h.date)'))
+                ->orderBy('h.id')
+                ->get();
+
+            $macEntriesByTuple = [];
+            foreach ($monthMacRows as $row) {
+                $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                if (!isset($macEntriesByTuple[$tupleKey])) {
+                    $macEntriesByTuple[$tupleKey] = [];
+                }
+                $macEntriesByTuple[$tupleKey][] = [
+                    'date' => Carbon::parse($row->d)->toDateString(),
+                    'mac' => (float) ($row->new_cost ?? 0),
+                ];
+            }
+
+            $tupleKeys = array_values(array_unique(array_merge(
+                array_keys($baselineQtyByTuple),
+                array_keys($qtyEntriesByTuple),
+                array_keys($baselineMacByTuple),
+                array_keys($macEntriesByTuple)
+            )));
             $tupleStates = [];
             foreach ($tupleKeys as $tupleKey) {
                 $warehouseId = (int) explode('|', $tupleKey, 2)[0];
                 $tupleStates[$tupleKey] = [
-                    'saldo' => (float) ($baselineSaldoByTuple[$tupleKey] ?? 0),
-                    'next_index' => 0,
-                    'entries' => $entriesByTuple[$tupleKey] ?? [],
+                    'qty_small' => (float) ($baselineQtyByTuple[$tupleKey] ?? 0),
+                    'mac' => (float) ($baselineMacByTuple[$tupleKey] ?? 0),
+                    'next_qty_index' => 0,
+                    'next_mac_index' => 0,
+                    'qty_entries' => $qtyEntriesByTuple[$tupleKey] ?? [],
+                    'mac_entries' => $macEntriesByTuple[$tupleKey] ?? [],
                     'bucket' => $warehouseBucketById[$warehouseId] ?? 'other',
                 ];
             }
@@ -199,19 +252,26 @@ class FloorOrderVsForecastReportController extends Controller
                 $dayTotal = 0.0;
 
                 foreach ($tupleStates as &$state) {
-                    $entries = $state['entries'];
-                    $entriesCount = count($entries);
-                    while ($state['next_index'] < $entriesCount && $entries[$state['next_index']]['date'] <= $dayKey) {
-                        $state['saldo'] = (float) $entries[$state['next_index']]['saldo_value'];
-                        $state['next_index']++;
+                    $qtyEntries = $state['qty_entries'];
+                    $qtyEntriesCount = count($qtyEntries);
+                    while ($state['next_qty_index'] < $qtyEntriesCount && $qtyEntries[$state['next_qty_index']]['date'] <= $dayKey) {
+                        $state['qty_small'] = (float) $qtyEntries[$state['next_qty_index']]['qty_small'];
+                        $state['next_qty_index']++;
                     }
 
-                    $saldo = (float) $state['saldo'];
-                    $dayTotal += $saldo;
+                    $macEntries = $state['mac_entries'];
+                    $macEntriesCount = count($macEntries);
+                    while ($state['next_mac_index'] < $macEntriesCount && $macEntries[$state['next_mac_index']]['date'] <= $dayKey) {
+                        $state['mac'] = (float) $macEntries[$state['next_mac_index']]['mac'];
+                        $state['next_mac_index']++;
+                    }
+
+                    $value = round(((float) $state['qty_small']) * ((float) $state['mac']), 2);
+                    $dayTotal += $value;
                     if ($state['bucket'] === 'kitchen_bar') {
-                        $dayKitchenBar += $saldo;
+                        $dayKitchenBar += $value;
                     } elseif ($state['bucket'] === 'service') {
-                        $dayService += $saldo;
+                        $dayService += $value;
                     }
                 }
                 unset($state);
