@@ -198,7 +198,7 @@ const currentOutletDisplayName = computed(() => {
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
           <table class="w-full min-w-[2900px] border-collapse text-sm">
-            <thead class="sticky top-0 z-40 bg-slate-100">
+            <thead>
               <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">
                   Tanggal
