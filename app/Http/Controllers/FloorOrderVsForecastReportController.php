@@ -106,6 +106,7 @@ class FloorOrderVsForecastReportController extends Controller
         $roOther = [];
         $costMenuByDate = [];
         $costModifierByDate = [];
+        $categoryCostUsageByDate = [];
         $revenueByDate = [];
         $stockOnHandKitchenBarByDate = [];
         $stockOnHandServiceByDate = [];
@@ -331,6 +332,19 @@ class FloorOrderVsForecastReportController extends Controller
                             }
                         }
                     }
+                }
+
+                $categoryCostUsageRows = DB::table('outlet_internal_use_waste_headers as h')
+                    ->where('h.outlet_id', $selectedOutletId)
+                    ->whereIn('h.type', ['usage', 'stock_cut'])
+                    ->whereIn('h.status', ['APPROVED', 'PROCESSED'])
+                    ->whereBetween('h.date', [$rangeStart, $rangeEnd])
+                    ->selectRaw('DATE(h.date) as d, SUM(COALESCE(h.subtotal_mac, 0)) as total_category_cost_usage')
+                    ->groupBy(DB::raw('DATE(h.date)'))
+                    ->get();
+
+                foreach ($categoryCostUsageRows as $categoryCostUsageRow) {
+                    $categoryCostUsageByDate[Carbon::parse($categoryCostUsageRow->d)->toDateString()] = round((float) ($categoryCostUsageRow->total_category_cost_usage ?? 0), 2);
                 }
             }
 
@@ -567,7 +581,9 @@ class FloorOrderVsForecastReportController extends Controller
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
             $costMenu = round((float) ($costMenuByDate[$ds] ?? 0), 2);
             $costModifier = round((float) ($costModifierByDate[$ds] ?? 0), 2);
-            $costTotal = round($costMenu + $costModifier, 2);
+            $categoryCostUsage = round((float) ($categoryCostUsageByDate[$ds] ?? 0), 2);
+            $costTotal = round($costMenu + $costModifier + $categoryCostUsage, 2);
+            $pctCost = $revenue > 0 ? round(($costTotal / $revenue) * 100, 1) : null;
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
             $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
             $stockOnHandTotal = round((float) ($stockOnHandTotalByDate[$ds] ?? 0), 2);
@@ -579,7 +595,9 @@ class FloorOrderVsForecastReportController extends Controller
                 'revenue' => $revenue,
                 'cost_menu' => $costMenu,
                 'cost_modifier' => $costModifier,
+                'category_cost_usage' => $categoryCostUsage,
                 'cost_total' => $costTotal,
+                'pct_cost' => $pctCost,
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
@@ -601,7 +619,9 @@ class FloorOrderVsForecastReportController extends Controller
             'revenue' => 0,
             'cost_menu' => 0,
             'cost_modifier' => 0,
+            'category_cost_usage' => 0,
             'cost_total' => 0,
+            'pct_cost' => null,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -618,6 +638,7 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['revenue'] += $r['revenue'];
             $totals['cost_menu'] += $r['cost_menu'];
             $totals['cost_modifier'] += $r['cost_modifier'];
+            $totals['category_cost_usage'] += $r['category_cost_usage'];
             $totals['cost_total'] += $r['cost_total'];
             $totals['cap_kitchen_bar'] += $r['cap_kitchen_bar'];
             $totals['cap_service'] += $r['cap_service'];
@@ -636,6 +657,7 @@ class FloorOrderVsForecastReportController extends Controller
         foreach ($totals as $k => $v) {
             $totals[$k] = round($v, 2);
         }
+        $totals['pct_cost'] = $totals['revenue'] > 0 ? round(($totals['cost_total'] / $totals['revenue']) * 100, 1) : null;
 
         return [
             'outlets' => $outlets,
