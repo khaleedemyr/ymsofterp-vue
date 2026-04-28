@@ -229,49 +229,50 @@ const currentOutletDisplayName = computed(() => {
                 </th>
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">Hari</th>
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
-                <th colspan="5" class="bg-emerald-50/90 px-3 py-2 text-emerald-900">Revenue</th>
-                <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900">Begin Stock</th>
-                <th colspan="5" class="bg-fuchsia-50/60 px-3 py-2 text-fuchsia-900">Cost</th>
-                <th v-if="categoryCostTypes.length" :colspan="categoryCostTypes.length" class="bg-cyan-50/90 px-3 py-2 text-cyan-900">Category Cost</th>
-                <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900">F &amp; B Purchase</th>
-                <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900">Service Purchase</th>
-                <th colspan="2" class="bg-orange-50/90 px-3 py-2 text-orange-900">Outlet Transfer</th>
-                <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900">Stock Adjustment</th>
+                <th colspan="4" class="bg-emerald-50/90 px-3 py-2 text-emerald-900 border-r-2 border-slate-400">Revenue</th>
+                <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900 border-r-2 border-slate-400">Begin Stock</th>
+                <th colspan="4" class="bg-fuchsia-50/60 px-3 py-2 text-fuchsia-900 border-r-2 border-slate-400">Cost</th>
+                <th v-if="categoryCostTypes.length" :colspan="categoryCostTypes.length" class="bg-cyan-50/90 px-3 py-2 text-cyan-900 border-r-2 border-slate-400">Category Cost</th>
+                <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900 border-r-2 border-slate-400">F &amp; B Purchase</th>
+                <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900 border-r-2 border-slate-400">Service Purchase</th>
+                <th colspan="2" class="bg-orange-50/90 px-3 py-2 text-orange-900 border-r-2 border-slate-400">Outlet Transfer</th>
+                <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900 border-r-2 border-slate-400">Stock Adjustment</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
               <tr class="border-b border-slate-300 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">No Disc</th>
-                <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">No Tax &amp; Svc</th>
                 <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
-                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">% Disc</th>
+                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900 border-r-2 border-slate-400">% Disc</th>
                 <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">F &amp; B</th>
                 <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Service</th>
-                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Total</th>
+                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900 border-r-2 border-slate-400">Total</th>
                 <th class="whitespace-nowrap bg-cyan-50/60 px-3 py-3 text-right text-cyan-900">Menu</th>
                 <th class="whitespace-nowrap bg-fuchsia-50/60 px-3 py-3 text-right text-fuchsia-900">Modifier</th>
                 <th class="whitespace-nowrap bg-violet-50/60 px-3 py-3 text-right text-violet-900">Usage</th>
-                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">Total</th>
-                <th class="whitespace-nowrap bg-pink-50/60 px-3 py-3 text-right text-pink-900">% Cost</th>
+                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900 border-r-2 border-slate-400">Total</th>
                 <th
                   v-for="type in categoryCostTypes"
                   :key="`head-cat-${type.key}`"
-                  class="whitespace-nowrap bg-cyan-50/60 px-3 py-3 text-right text-cyan-900"
+                  :class="[
+                    'whitespace-nowrap bg-cyan-50/60 px-3 py-3 text-right text-cyan-900',
+                    type.key === categoryCostTypes[categoryCostTypes.length - 1]?.key ? 'border-r-2 border-slate-400' : '',
+                  ]"
                 >
                   {{ type.label }}
                 </th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Budget ({{ kitchen_bar_ratio_pct }}%)</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Purchased</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Variance</th>
-                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">%</th>
+                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900 border-r-2 border-slate-400">%</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Budget ({{ service_ratio_pct }}%)</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Purchased</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Variance</th>
-                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">%</th>
+                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900 border-r-2 border-slate-400">%</th>
                 <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Transfer Out</th>
-                <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Transfer In</th>
+                <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900 border-r-2 border-slate-400">Transfer In</th>
                 <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900">Adj In</th>
-                <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900">Adj Out</th>
+                <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900 border-r-2 border-slate-400">Adj Out</th>
                 <th class="whitespace-nowrap bg-amber-50/60 px-3 py-3 text-right text-amber-900">F &amp; B</th>
                 <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Service</th>
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
@@ -305,9 +306,6 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
                   {{ row.revenue_before_discount > 0 ? 'Rp ' + formatRp(row.revenue_before_discount) : '—' }}
                 </td>
-                <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
-                  {{ row.revenue_without_tax_service > 0 ? 'Rp ' + formatRp(row.revenue_without_tax_service) : '—' }}
-                </td>
                 <td class="whitespace-nowrap bg-red-50/40 px-3 py-2 text-right tabular-nums font-medium text-red-950">
                   {{ row.discount > 0 ? 'Rp ' + formatRp(row.discount) : '—' }}
                 </td>
@@ -332,16 +330,16 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap bg-violet-50/40 px-3 py-2 text-right tabular-nums font-medium text-violet-950">
                   {{ row.category_cost_usage > 0 ? 'Rp ' + formatRp(row.category_cost_usage) : '—' }}
                 </td>
-                <td class="whitespace-nowrap bg-rose-50/40 px-3 py-2 text-right tabular-nums font-semibold text-rose-950">
+                <td class="whitespace-nowrap bg-rose-50/40 px-3 py-2 text-right tabular-nums font-semibold text-rose-950 border-r-2 border-slate-300">
                   {{ row.cost_total > 0 ? 'Rp ' + formatRp(row.cost_total) : '—' }}
-                </td>
-                <td class="whitespace-nowrap bg-pink-50/40 px-3 py-2 text-right tabular-nums font-semibold text-pink-950">
-                  {{ row.pct_cost != null ? row.pct_cost + '%' : '—' }}
                 </td>
                 <td
                   v-for="type in categoryCostTypes"
                   :key="`row-cat-${row.date}-${type.key}`"
-                  class="whitespace-nowrap bg-cyan-50/40 px-3 py-2 text-right tabular-nums font-medium text-cyan-950"
+                  :class="[
+                    'whitespace-nowrap bg-cyan-50/40 px-3 py-2 text-right tabular-nums font-medium text-cyan-950',
+                    type.key === categoryCostTypes[categoryCostTypes.length - 1]?.key ? 'border-r-2 border-slate-300' : '',
+                  ]"
                 >
                   {{ getCategoryCostValue(row, type.key) > 0 ? 'Rp ' + formatRp(getCategoryCostValue(row, type.key)) : '—' }}
                 </td>
@@ -358,7 +356,7 @@ const currentOutletDisplayName = computed(() => {
                       : '—'
                   }}
                 </td>
-                <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-slate-700">
+                <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-slate-700 border-r-2 border-slate-300">
                   {{ row.pct_kitchen_bar_vs_cap != null ? row.pct_kitchen_bar_vs_cap + '%' : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-teal-50/40 px-3 py-2 text-right tabular-nums text-teal-950">
@@ -374,19 +372,19 @@ const currentOutletDisplayName = computed(() => {
                       : '—'
                   }}
                 </td>
-                <td class="whitespace-nowrap bg-teal-50/40 px-3 py-2 text-right tabular-nums text-slate-700">
+                <td class="whitespace-nowrap bg-teal-50/40 px-3 py-2 text-right tabular-nums text-slate-700 border-r-2 border-slate-300">
                   {{ row.pct_service_vs_cap != null ? row.pct_service_vs_cap + '%' : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950">
                   {{ row.transfer_out > 0 ? 'Rp ' + formatRp(row.transfer_out) : '—' }}
                 </td>
-                <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950">
+                <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950 border-r-2 border-slate-300">
                   {{ row.transfer_in > 0 ? 'Rp ' + formatRp(row.transfer_in) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-purple-50/40 px-3 py-2 text-right tabular-nums font-medium text-purple-950">
                   {{ row.adj_in > 0 ? 'Rp ' + formatRp(row.adj_in) : '—' }}
                 </td>
-                <td class="whitespace-nowrap bg-purple-50/40 px-3 py-2 text-right tabular-nums font-medium text-purple-950">
+                <td class="whitespace-nowrap bg-purple-50/40 px-3 py-2 text-right tabular-nums font-medium text-purple-950 border-r-2 border-slate-300">
                   {{ row.adj_out > 0 ? 'Rp ' + formatRp(row.adj_out) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-amber-50/40 px-3 py-2 text-right tabular-nums font-medium text-amber-950">
@@ -411,9 +409,6 @@ const currentOutletDisplayName = computed(() => {
                 </td>
                 <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
                   Rp {{ formatRp(totals.revenue_before_discount) }}
-                </td>
-                <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
-                  Rp {{ formatRp(totals.revenue_without_tax_service) }}
                 </td>
                 <td class="bg-red-100/80 px-3 py-3 text-right tabular-nums text-red-950 font-semibold">
                   Rp {{ formatRp(totals.discount) }}
@@ -442,13 +437,13 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-rose-100/80 px-3 py-3 text-right tabular-nums text-rose-950 font-semibold">
                   Rp {{ formatRp(totals.cost_total) }}
                 </td>
-                <td class="bg-pink-100/80 px-3 py-3 text-right tabular-nums text-pink-950 font-semibold">
-                  {{ totals.pct_cost != null ? totals.pct_cost + '%' : '—' }}
-                </td>
                 <td
                   v-for="type in categoryCostTypes"
                   :key="`total-cat-${type.key}`"
-                  class="bg-cyan-100/80 px-3 py-3 text-right tabular-nums text-cyan-950 font-semibold"
+                  :class="[
+                    'bg-cyan-100/80 px-3 py-3 text-right tabular-nums text-cyan-950 font-semibold',
+                    type.key === categoryCostTypes[categoryCostTypes.length - 1]?.key ? 'border-r-2 border-slate-300' : '',
+                  ]"
                 >
                   Rp {{ formatRp(getCategoryCostTotalValue(type.key)) }}
                 </td>
@@ -461,7 +456,7 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums" :class="diffClass(totals.diff_kitchen_bar)">
                   {{ totals.diff_kitchen_bar >= 0 ? '+' : '' }}Rp {{ formatRp(totals.diff_kitchen_bar) }}
                 </td>
-                <td class="bg-indigo-100/80 px-3 py-3 text-right text-slate-600">—</td>
+                <td class="bg-indigo-100/80 px-3 py-3 text-right text-slate-600 border-r-2 border-slate-300">—</td>
                 <td class="bg-teal-100/80 px-3 py-3 text-right tabular-nums text-teal-950">
                   Rp {{ formatRp(totals.cap_service) }}
                 </td>
@@ -471,17 +466,17 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-teal-100/80 px-3 py-3 text-right tabular-nums" :class="diffClass(totals.diff_service)">
                   {{ totals.diff_service >= 0 ? '+' : '' }}Rp {{ formatRp(totals.diff_service) }}
                 </td>
-                <td class="bg-teal-100/80 px-3 py-3 text-right text-slate-600">—</td>
+                <td class="bg-teal-100/80 px-3 py-3 text-right text-slate-600 border-r-2 border-slate-300">—</td>
                 <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
                   Rp {{ formatRp(totals.transfer_out) }}
                 </td>
-                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
+                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold border-r-2 border-slate-300">
                   Rp {{ formatRp(totals.transfer_in) }}
                 </td>
                 <td class="bg-purple-100/80 px-3 py-3 text-right tabular-nums text-purple-950 font-semibold">
                   Rp {{ formatRp(totals.adj_in) }}
                 </td>
-                <td class="bg-purple-100/80 px-3 py-3 text-right tabular-nums text-purple-950 font-semibold">
+                <td class="bg-purple-100/80 px-3 py-3 text-right tabular-nums text-purple-950 font-semibold border-r-2 border-slate-300">
                   Rp {{ formatRp(totals.adj_out) }}
                 </td>
                 <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
@@ -504,9 +499,7 @@ const currentOutletDisplayName = computed(() => {
           * <strong>Total Cost</strong>: penjumlahan cost menu, cost modifier, dan category cost usage.
           * <strong>Discount</strong>: total <strong>discount + manual discount amount</strong> pada tanggal tersebut.
           * <strong>No Disc</strong>: diambil dari kolom <strong>orders.total</strong>.
-          * <strong>No Tax &amp; Svc</strong>: diambil dari kolom <strong>orders.total</strong>.
           * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
-          * <strong>% Cost</strong>: persentase <strong>Total Cost / Revenue</strong> pada tanggal tersebut.
           * <strong>Category Cost</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> untuk semua type selain <strong>Usage</strong>.
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
           qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.

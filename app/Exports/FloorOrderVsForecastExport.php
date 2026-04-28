@@ -39,9 +39,9 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'Forecast',
         ];
 
-        $this->pushGroup($row1, 'Revenue', 5);
+        $this->pushGroup($row1, 'Revenue', 4);
         $this->pushGroup($row1, 'Begin Stock', 3);
-        $this->pushGroup($row1, 'Cost', 5);
+        $this->pushGroup($row1, 'Cost', 4);
         if (count($categoryCostTypes) > 0) {
             $this->pushGroup($row1, 'Category Cost', count($categoryCostTypes));
         }
@@ -57,7 +57,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             '',
             'Revenue',
             'No Disc',
-            'No Tax & Svc',
             'Discount',
             '% Disc',
             'F & B',
@@ -67,7 +66,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'Modifier',
             'Usage',
             'Total',
-            '% Cost',
         ];
 
         foreach ($categoryCostTypes as $label) {
@@ -110,7 +108,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 (float) ($row['forecast_revenue'] ?? 0),
                 (float) ($row['revenue'] ?? 0),
                 (float) ($row['revenue_before_discount'] ?? 0),
-                (float) ($row['revenue_without_tax_service'] ?? 0),
                 (float) ($row['discount'] ?? 0),
                 $row['pct_discount'] ?? null,
                 (float) ($row['begin_stock_kitchen_bar'] ?? 0),
@@ -120,7 +117,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 (float) ($row['cost_modifier'] ?? 0),
                 (float) ($row['category_cost_usage'] ?? 0),
                 (float) ($row['cost_total'] ?? 0),
-                $row['pct_cost'] ?? null,
             ];
 
             foreach (array_keys($categoryCostTypes) as $typeKey) {
@@ -156,7 +152,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             (float) ($totals['forecast_revenue'] ?? 0),
             (float) ($totals['revenue'] ?? 0),
             (float) ($totals['revenue_before_discount'] ?? 0),
-            (float) ($totals['revenue_without_tax_service'] ?? 0),
             (float) ($totals['discount'] ?? 0),
             $totals['pct_discount'] ?? null,
             (float) ($totals['begin_stock_kitchen_bar_start'] ?? 0),
@@ -166,7 +161,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             (float) ($totals['cost_modifier'] ?? 0),
             (float) ($totals['category_cost_usage'] ?? 0),
             (float) ($totals['cost_total'] ?? 0),
-            $totals['pct_cost'] ?? null,
         ];
 
         foreach (array_keys($categoryCostTypes) as $typeKey) {
@@ -241,9 +235,9 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 ];
 
                 $groupSpans = [
-                    5, // Revenue
+                    4, // Revenue
                     3, // Begin Stock
-                    5, // Cost
+                    4, // Cost
                 ];
                 if ($categoryCount > 0) {
                     $groupSpans[] = $categoryCount; // Category Cost
