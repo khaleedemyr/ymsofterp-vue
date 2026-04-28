@@ -108,6 +108,10 @@ class FloorOrderVsForecastReportController extends Controller
         $categoryCostUsageByDate = [];
         $discountByDate = [];
         $revenueByDate = [];
+        $revenueBeforeDiscountByDate = [];
+        $revenueWithoutTaxServiceByDate = [];
+        $categoryCostByTypeByDate = [];
+        $categoryCostTypes = [];
         $stockOnHandKitchenBarByDate = [];
         $stockOnHandServiceByDate = [];
         $stockOnHandTotalByDate = [];
@@ -154,26 +158,26 @@ class FloorOrderVsForecastReportController extends Controller
                 ->all();
 
             if ($outletQr) {
-                $revenueRows = DB::table('orders')
+                $salesRows = DB::table('orders')
                     ->where('kode_outlet', $outletQr)
                     ->whereBetween(DB::raw('DATE(created_at)'), [$rangeStart, $rangeEnd])
-                    ->selectRaw('DATE(created_at) as d, SUM(grand_total) as revenue')
+                    ->selectRaw('DATE(created_at) as d,
+                        SUM(grand_total) as revenue,
+                        COALESCE(SUM(total), 0) as total_before_discount_tax_service,
+                        COALESCE(SUM(discount), 0) + COALESCE(SUM(manual_discount_amount), 0) as total_discount')
                     ->groupBy(DB::raw('DATE(created_at)'))
                     ->get();
 
-                foreach ($revenueRows as $rv) {
-                    $revenueByDate[Carbon::parse($rv->d)->toDateString()] = round((float) $rv->revenue, 2);
-                }
+                foreach ($salesRows as $salesRow) {
+                    $dateKey = Carbon::parse($salesRow->d)->toDateString();
+                    $revenue = round((float) ($salesRow->revenue ?? 0), 2);
+                    $salesTotal = round((float) ($salesRow->total_before_discount_tax_service ?? 0), 2);
+                    $discount = round((float) ($salesRow->total_discount ?? 0), 2);
 
-                $discountRows = DB::table('orders')
-                    ->where('kode_outlet', $outletQr)
-                    ->whereBetween(DB::raw('DATE(created_at)'), [$rangeStart, $rangeEnd])
-                    ->selectRaw('DATE(created_at) as d, COALESCE(SUM(discount), 0) + COALESCE(SUM(manual_discount_amount), 0) as total_discount')
-                    ->groupBy(DB::raw('DATE(created_at)'))
-                    ->get();
-
-                foreach ($discountRows as $discountRow) {
-                    $discountByDate[Carbon::parse($discountRow->d)->toDateString()] = round((float) ($discountRow->total_discount ?? 0), 2);
+                    $revenueByDate[$dateKey] = $revenue;
+                    $discountByDate[$dateKey] = $discount;
+                    $revenueBeforeDiscountByDate[$dateKey] = $salesTotal;
+                    $revenueWithoutTaxServiceByDate[$dateKey] = $salesTotal;
                 }
 
                 $foodTypes = ['Food Asian', 'Food Western', 'Food'];
@@ -354,7 +358,7 @@ class FloorOrderVsForecastReportController extends Controller
 
                 $categoryCostUsageRows = DB::table('outlet_internal_use_waste_headers as h')
                     ->where('h.outlet_id', $selectedOutletId)
-                    ->whereIn('h.type', ['usage', 'stock_cut'])
+                    ->where('h.type', 'usage')
                     ->whereIn('h.status', ['APPROVED', 'PROCESSED'])
                     ->whereBetween('h.date', [$rangeStart, $rangeEnd])
                     ->selectRaw('DATE(h.date) as d, SUM(COALESCE(h.subtotal_mac, 0)) as total_category_cost_usage')
@@ -363,6 +367,37 @@ class FloorOrderVsForecastReportController extends Controller
 
                 foreach ($categoryCostUsageRows as $categoryCostUsageRow) {
                     $categoryCostUsageByDate[Carbon::parse($categoryCostUsageRow->d)->toDateString()] = round((float) ($categoryCostUsageRow->total_category_cost_usage ?? 0), 2);
+                }
+
+                $categoryCostRows = DB::table('outlet_internal_use_waste_headers as h')
+                    ->where('h.outlet_id', $selectedOutletId)
+                    ->where('h.type', '!=', 'usage')
+                    ->whereNotNull('h.type')
+                    ->where('h.type', '!=', '')
+                    ->whereIn('h.status', ['APPROVED', 'PROCESSED'])
+                    ->whereBetween('h.date', [$rangeStart, $rangeEnd])
+                    ->selectRaw('DATE(h.date) as d, LOWER(TRIM(h.type)) as type_name, SUM(COALESCE(h.subtotal_mac, 0)) as total')
+                    ->groupBy(DB::raw('DATE(h.date)'), DB::raw('LOWER(TRIM(h.type))'))
+                    ->get();
+
+                foreach ($categoryCostRows as $categoryCostRow) {
+                    $typeName = trim((string) ($categoryCostRow->type_name ?? ''));
+                    if ($typeName === '' || $typeName === 'usage') {
+                        continue;
+                    }
+
+                    $typeKey = preg_replace('/[^a-z0-9]+/', '_', strtolower($typeName));
+                    $typeKey = trim((string) $typeKey, '_');
+                    if ($typeKey === '') {
+                        continue;
+                    }
+
+                    $dateKey = Carbon::parse($categoryCostRow->d)->toDateString();
+                    if (!isset($categoryCostByTypeByDate[$typeKey])) {
+                        $categoryCostByTypeByDate[$typeKey] = [];
+                    }
+                    $categoryCostByTypeByDate[$typeKey][$dateKey] = round((float) ($categoryCostByTypeByDate[$typeKey][$dateKey] ?? 0) + (float) ($categoryCostRow->total ?? 0), 2);
+                    $categoryCostTypes[$typeKey] = ucwords(str_replace('_', ' ', $typeKey));
                 }
             }
 
@@ -653,6 +688,7 @@ class FloorOrderVsForecastReportController extends Controller
         }
 
         $rows = [];
+        ksort($categoryCostTypes);
         $cursor = $monthStart->copy();
         while ($cursor->lte($monthEnd)) {
             $ds = $cursor->toDateString();
@@ -669,11 +705,21 @@ class FloorOrderVsForecastReportController extends Controller
             $pctSvc = $capSvc > 0 ? round(($svc / $capSvc) * 100, 1) : null;
 
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
+            $revenueBeforeDiscount = round((float) ($revenueBeforeDiscountByDate[$ds] ?? 0), 2);
+            $revenueWithoutTaxService = round((float) ($revenueWithoutTaxServiceByDate[$ds] ?? 0), 2);
             $discount = round((float) ($discountByDate[$ds] ?? 0), 2);
             $pctDiscount = $revenue > 0 ? round(($discount / $revenue) * 100, 1) : null;
             $costMenu = round((float) ($costMenuByDate[$ds] ?? 0), 2);
             $costModifier = round((float) ($costModifierByDate[$ds] ?? 0), 2);
             $categoryCostUsage = round((float) ($categoryCostUsageByDate[$ds] ?? 0), 2);
+            $categoryCostValues = [];
+            $categoryCostTotalNonUsage = 0.0;
+            foreach ($categoryCostTypes as $typeKey => $typeLabel) {
+                $v = round((float) ($categoryCostByTypeByDate[$typeKey][$ds] ?? 0), 2);
+                $categoryCostValues[$typeKey] = $v;
+                $categoryCostTotalNonUsage += $v;
+            }
+            $categoryCostTotalNonUsage = round($categoryCostTotalNonUsage, 2);
             $costTotal = round($costMenu + $costModifier + $categoryCostUsage, 2);
             $pctCost = $revenue > 0 ? round(($costTotal / $revenue) * 100, 1) : null;
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
@@ -685,16 +731,20 @@ class FloorOrderVsForecastReportController extends Controller
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'forecast_revenue' => $forecast,
                 'revenue' => $revenue,
+                'revenue_before_discount' => $revenueBeforeDiscount,
+                'revenue_without_tax_service' => $revenueWithoutTaxService,
                 'discount' => $discount,
                 'pct_discount' => $pctDiscount,
+                'begin_stock_kitchen_bar' => round((float) ($beginStockKitchenBarByDate[$ds] ?? 0), 2),
+                'begin_stock_service' => round((float) ($beginStockServiceByDate[$ds] ?? 0), 2),
+                'begin_stock_total' => round((float) ($beginStockTotalByDate[$ds] ?? 0), 2),
                 'cost_menu' => $costMenu,
                 'cost_modifier' => $costModifier,
                 'category_cost_usage' => $categoryCostUsage,
                 'cost_total' => $costTotal,
                 'pct_cost' => $pctCost,
-                'begin_stock_kitchen_bar' => round((float) ($beginStockKitchenBarByDate[$ds] ?? 0), 2),
-                'begin_stock_service' => round((float) ($beginStockServiceByDate[$ds] ?? 0), 2),
-                'begin_stock_total' => round((float) ($beginStockTotalByDate[$ds] ?? 0), 2),
+                'category_cost_values' => $categoryCostValues,
+                'category_cost_total_non_usage' => $categoryCostTotalNonUsage,
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
@@ -717,16 +767,20 @@ class FloorOrderVsForecastReportController extends Controller
         $totals = [
             'forecast_revenue' => 0,
             'revenue' => 0,
+            'revenue_before_discount' => 0,
+            'revenue_without_tax_service' => 0,
             'discount' => 0,
             'pct_discount' => null,
-            'cost_menu' => 0,
-            'cost_modifier' => 0,
-            'category_cost_usage' => 0,
-            'cost_total' => 0,
-            'pct_cost' => null,
             'begin_stock_kitchen_bar_start' => 0,
             'begin_stock_service_start' => 0,
             'begin_stock_total_start' => 0,
+            'cost_menu' => 0,
+            'cost_modifier' => 0,
+            'category_cost_usage' => 0,
+            'category_cost_values' => [],
+            'category_cost_total_non_usage' => 0,
+            'cost_total' => 0,
+            'pct_cost' => null,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -741,13 +795,22 @@ class FloorOrderVsForecastReportController extends Controller
             'diff_kitchen_bar' => 0,
             'diff_service' => 0,
         ];
+        foreach (array_keys($categoryCostTypes) as $typeKey) {
+            $totals['category_cost_values'][$typeKey] = 0;
+        }
         foreach ($rows as $r) {
             $totals['forecast_revenue'] += $r['forecast_revenue'];
             $totals['revenue'] += $r['revenue'];
+            $totals['revenue_before_discount'] += $r['revenue_before_discount'];
+            $totals['revenue_without_tax_service'] += $r['revenue_without_tax_service'];
             $totals['discount'] += $r['discount'];
             $totals['cost_menu'] += $r['cost_menu'];
             $totals['cost_modifier'] += $r['cost_modifier'];
             $totals['category_cost_usage'] += $r['category_cost_usage'];
+            $totals['category_cost_total_non_usage'] += $r['category_cost_total_non_usage'];
+            foreach (($r['category_cost_values'] ?? []) as $typeKey => $value) {
+                $totals['category_cost_values'][$typeKey] = ($totals['category_cost_values'][$typeKey] ?? 0) + (float) $value;
+            }
             $totals['cost_total'] += $r['cost_total'];
             $totals['cap_kitchen_bar'] += $r['cap_kitchen_bar'];
             $totals['cap_service'] += $r['cap_service'];
@@ -771,7 +834,13 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['stock_on_hand_total_end'] = round((float) ($last['stock_on_hand_total'] ?? 0), 2);
         }
         foreach ($totals as $k => $v) {
-            $totals[$k] = round($v, 2);
+            if (is_array($v)) {
+                foreach ($v as $vk => $vv) {
+                    $totals[$k][$vk] = round((float) $vv, 2);
+                }
+            } else {
+                $totals[$k] = round((float) $v, 2);
+            }
         }
         $totals['pct_discount'] = $totals['revenue'] > 0 ? round(($totals['discount'] / $totals['revenue']) * 100, 1) : null;
         $totals['pct_cost'] = $totals['revenue'] > 0 ? round(($totals['cost_total'] / $totals['revenue']) * 100, 1) : null;
@@ -786,6 +855,10 @@ class FloorOrderVsForecastReportController extends Controller
             'service_ratio_pct' => (int) round(self::SERVICE_RATIO * 100),
             'rows' => $rows,
             'totals' => $totals,
+            'category_cost_types' => collect($categoryCostTypes)
+                ->map(fn ($label, $key) => ['key' => $key, 'label' => $label])
+                ->values()
+                ->all(),
             'has_forecast_header' => $revenueTargetHeaderExists || count($forecastByDate) > 0,
             'canSelectOutlet' => $isAdminOutlet,
         ];
