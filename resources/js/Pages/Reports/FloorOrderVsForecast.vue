@@ -20,6 +20,7 @@ const props = defineProps({
 const outletId = ref(props.selectedOutletId || 0)
 const month = ref(props.selectedMonth || new Date().toISOString().slice(0, 7))
 const isLoading = ref(false)
+const selectedRowDate = ref(null)
 
 watch(
   () => props.selectedOutletId,
@@ -31,6 +32,15 @@ watch(
   () => props.selectedMonth,
   (v) => {
     month.value = v || new Date().toISOString().slice(0, 7)
+  }
+)
+watch(
+  () => props.rows,
+  (rows) => {
+    const selected = selectedRowDate.value
+    if (!selected) return
+    const exists = Array.isArray(rows) && rows.some((r) => String(r?.date ?? '') === selected)
+    if (!exists) selectedRowDate.value = null
   }
 )
 
@@ -76,6 +86,12 @@ function diffClass(diff) {
   const d = Number(diff)
   if (!Number.isFinite(d) || d === 0) return 'text-slate-600'
   return d > 0 ? 'text-red-700 font-semibold' : 'text-emerald-700'
+}
+
+function toggleRowSelection(date) {
+  const key = String(date ?? '')
+  if (!key) return
+  selectedRowDate.value = selectedRowDate.value === key ? null : key
 }
 
 /** User HO (id_outlet = 1) bisa pilih outlet; selain itu hanya outlet sendiri (tanpa dropdown). */
@@ -230,8 +246,14 @@ const currentOutletDisplayName = computed(() => {
               <tr
                 v-for="(row, idx) in rows"
                 :key="row.date"
-                class="group transition-all duration-100 hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-indigo-400 hover:[&>td]:bg-amber-200/75"
-                :class="idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'"
+                class="group cursor-pointer transition-all duration-100"
+                :class="[
+                  idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
+                  selectedRowDate === String(row.date)
+                    ? 'outline outline-2 -outline-offset-2 outline-indigo-600 [&>td]:!bg-indigo-200/80'
+                    : 'hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-indigo-400 hover:[&>td]:bg-amber-200/75',
+                ]"
+                @click="toggleRowSelection(row.date)"
               >
                 <td
                   class="sticky left-0 z-20 whitespace-nowrap border-r border-slate-100 bg-inherit px-3 py-2 font-medium text-slate-800 shadow-[2px_0_0_rgba(0,0,0,0.04)]"
