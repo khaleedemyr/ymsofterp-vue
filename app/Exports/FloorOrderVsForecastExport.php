@@ -5,11 +5,15 @@ namespace App\Exports;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithStyles, ShouldAutoSize
+class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithStyles, ShouldAutoSize, WithEvents
 {
     /**
      * @var array<string, mixed>
@@ -27,27 +31,56 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
     public function headings(): array
     {
         return [
-            'Tanggal',
-            'Hari',
-            'Forecast',
-            'Revenue',
-            'Cost Menu (Stock Cut)',
-            'Cost Modifier (Stock Cut)',
-            'Category Cost Usage',
-            'Total Cost (Stock Cut)',
-            '% Cost',
-            'SOH F & B',
-            'SOH Service',
-            'SOH Total',
-            'F & B Purchase',
-            'F & B Purchased',
-            'Delta F & B',
-            '% vs purchase F & B',
-            'Svc Purchase',
-            'Service Purchased',
-            'Delta Svc',
-            '% vs purchase Svc',
-            'RO lain',
+            [
+                'Tanggal',
+                'Hari',
+                'Forecast',
+                'Revenue',
+                '',
+                '',
+                'Cost',
+                '',
+                '',
+                '',
+                '',
+                'Stock on Hand',
+                '',
+                '',
+                'F & B Purchase',
+                '',
+                '',
+                '',
+                'Service Purchase',
+                '',
+                '',
+                '',
+                'RO lain',
+            ],
+            [
+                '',
+                '',
+                '',
+                'Revenue',
+                'Discount',
+                '% Disc',
+                'Menu',
+                'Modifier',
+                'Usage',
+                'Total',
+                '% Cost',
+                'F & B',
+                'Service',
+                'Total',
+                'Budget',
+                'Purchased',
+                'Delta',
+                '%',
+                'Budget',
+                'Purchased',
+                'Delta',
+                '%',
+                '',
+            ],
         ];
     }
 
@@ -59,6 +92,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 'day_name' => $row['day_name'] ?? '',
                 'forecast_revenue' => (float) ($row['forecast_revenue'] ?? 0),
                 'revenue' => (float) ($row['revenue'] ?? 0),
+                'discount' => (float) ($row['discount'] ?? 0),
+                'pct_discount' => $row['pct_discount'],
                 'cost_menu' => (float) ($row['cost_menu'] ?? 0),
                 'cost_modifier' => (float) ($row['cost_modifier'] ?? 0),
                 'category_cost_usage' => (float) ($row['category_cost_usage'] ?? 0),
@@ -85,6 +120,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'day_name' => '',
             'forecast_revenue' => (float) ($totals['forecast_revenue'] ?? 0),
             'revenue' => (float) ($totals['revenue'] ?? 0),
+            'discount' => (float) ($totals['discount'] ?? 0),
+            'pct_discount' => $totals['pct_discount'] ?? null,
             'cost_menu' => (float) ($totals['cost_menu'] ?? 0),
             'cost_modifier' => (float) ($totals['cost_modifier'] ?? 0),
             'category_cost_usage' => (float) ($totals['category_cost_usage'] ?? 0),
@@ -115,17 +152,55 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             1 => [
                 'font' => ['bold' => true],
                 'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'E5E7EB'],
+                ],
+            ],
+            2 => [
+                'font' => ['bold' => true],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F8FAFC'],
                 ],
             ],
             $lastRow => [
                 'font' => ['bold' => true],
                 'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'F1F5F9'],
                 ],
             ],
+        ];
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+
+                foreach (['A1:A2', 'B1:B2', 'C1:C2', 'D1:F1', 'G1:K1', 'L1:N1', 'O1:R1', 'S1:V1', 'W1:W2'] as $range) {
+                    $sheet->mergeCells($range);
+                }
+
+                $sheet->getStyle('A1:W2')->applyFromArray([
+                    'alignment' => [
+                        'horizontal' => Alignment::HORIZONTAL_CENTER,
+                        'vertical' => Alignment::VERTICAL_CENTER,
+                        'wrapText' => true,
+                    ],
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                            'color' => ['rgb' => 'CBD5E1'],
+                        ],
+                    ],
+                ]);
+
+                $sheet->freezePane('D3');
+                $sheet->getRowDimension(1)->setRowHeight(24);
+                $sheet->getRowDimension(2)->setRowHeight(22);
+            },
         ];
     }
 }

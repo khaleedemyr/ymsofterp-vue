@@ -107,6 +107,7 @@ class FloorOrderVsForecastReportController extends Controller
         $costMenuByDate = [];
         $costModifierByDate = [];
         $categoryCostUsageByDate = [];
+        $discountByDate = [];
         $revenueByDate = [];
         $stockOnHandKitchenBarByDate = [];
         $stockOnHandServiceByDate = [];
@@ -156,6 +157,17 @@ class FloorOrderVsForecastReportController extends Controller
 
                 foreach ($revenueRows as $rv) {
                     $revenueByDate[Carbon::parse($rv->d)->toDateString()] = round((float) $rv->revenue, 2);
+                }
+
+                $discountRows = DB::table('orders')
+                    ->where('kode_outlet', $outletQr)
+                    ->whereBetween(DB::raw('DATE(created_at)'), [$rangeStart, $rangeEnd])
+                    ->selectRaw('DATE(created_at) as d, COALESCE(SUM(discount), 0) + COALESCE(SUM(manual_discount_amount), 0) as total_discount')
+                    ->groupBy(DB::raw('DATE(created_at)'))
+                    ->get();
+
+                foreach ($discountRows as $discountRow) {
+                    $discountByDate[Carbon::parse($discountRow->d)->toDateString()] = round((float) ($discountRow->total_discount ?? 0), 2);
                 }
 
                 $foodTypes = ['Food Asian', 'Food Western', 'Food'];
@@ -579,6 +591,8 @@ class FloorOrderVsForecastReportController extends Controller
             $pctSvc = $capSvc > 0 ? round(($svc / $capSvc) * 100, 1) : null;
 
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
+            $discount = round((float) ($discountByDate[$ds] ?? 0), 2);
+            $pctDiscount = $revenue > 0 ? round(($discount / $revenue) * 100, 1) : null;
             $costMenu = round((float) ($costMenuByDate[$ds] ?? 0), 2);
             $costModifier = round((float) ($costModifierByDate[$ds] ?? 0), 2);
             $categoryCostUsage = round((float) ($categoryCostUsageByDate[$ds] ?? 0), 2);
@@ -593,6 +607,8 @@ class FloorOrderVsForecastReportController extends Controller
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'forecast_revenue' => $forecast,
                 'revenue' => $revenue,
+                'discount' => $discount,
+                'pct_discount' => $pctDiscount,
                 'cost_menu' => $costMenu,
                 'cost_modifier' => $costModifier,
                 'category_cost_usage' => $categoryCostUsage,
@@ -617,6 +633,8 @@ class FloorOrderVsForecastReportController extends Controller
         $totals = [
             'forecast_revenue' => 0,
             'revenue' => 0,
+            'discount' => 0,
+            'pct_discount' => null,
             'cost_menu' => 0,
             'cost_modifier' => 0,
             'category_cost_usage' => 0,
@@ -636,6 +654,7 @@ class FloorOrderVsForecastReportController extends Controller
         foreach ($rows as $r) {
             $totals['forecast_revenue'] += $r['forecast_revenue'];
             $totals['revenue'] += $r['revenue'];
+            $totals['discount'] += $r['discount'];
             $totals['cost_menu'] += $r['cost_menu'];
             $totals['cost_modifier'] += $r['cost_modifier'];
             $totals['category_cost_usage'] += $r['category_cost_usage'];
@@ -657,6 +676,7 @@ class FloorOrderVsForecastReportController extends Controller
         foreach ($totals as $k => $v) {
             $totals[$k] = round($v, 2);
         }
+        $totals['pct_discount'] = $totals['revenue'] > 0 ? round(($totals['discount'] / $totals['revenue']) * 100, 1) : null;
         $totals['pct_cost'] = $totals['revenue'] > 0 ? round(($totals['cost_total'] / $totals['revenue']) * 100, 1) : null;
 
         return [

@@ -101,6 +101,8 @@ const currentOutletDisplayName = computed(() => {
           Nilai per item: jika sudah ada <strong class="text-white">GR Outlet (completed)</strong>, dipakai
           <strong class="text-white">Σ qty terima × harga RO</strong> per item (sama seperti detail GR di Invoice Outlet); jika belum ada GR untuk baris tersebut, dipakai
           <strong class="text-white">subtotal FO</strong>.
+          Kolom <strong class="text-white">Discount</strong> mengambil referensi dari Sales Report:
+          <strong class="text-white">discount + manual discount amount</strong> per tanggal.
           Kolom <strong class="text-white">Cost Menu</strong> dan <strong class="text-white">Cost Modifier</strong>
           mengambil referensi cost dari logika <strong class="text-white">Report Cost Menu</strong> di Stock Cut
           untuk tanggal yang sama. Kolom <strong class="text-white">Category Cost Usage</strong> mengambil nilai
@@ -178,38 +180,41 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[2350px] border-collapse text-sm">
+          <table class="w-full min-w-[2550px] border-collapse text-sm">
             <thead>
-              <tr class="border-b border-slate-200 bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
-                <th class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
+              <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                <th rowspan="2" class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
                   Tanggal
                 </th>
-                <th class="whitespace-nowrap px-3 py-3">Hari</th>
-                <th class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
-                <th class="whitespace-nowrap bg-emerald-50/90 px-3 py-3 text-right text-emerald-900">Revenue</th>
-                <th class="whitespace-nowrap bg-cyan-50/90 px-3 py-3 text-right text-cyan-900">Cost Menu*</th>
-                <th class="whitespace-nowrap bg-fuchsia-50/90 px-3 py-3 text-right text-fuchsia-900">Cost Modifier*</th>
-                <th class="whitespace-nowrap bg-violet-50/90 px-3 py-3 text-right text-violet-900">Category Cost Usage*</th>
-                <th class="whitespace-nowrap bg-rose-50/90 px-3 py-3 text-right text-rose-900">Total Cost*</th>
-                <th class="whitespace-nowrap bg-pink-50/90 px-3 py-3 text-right text-pink-900">% Cost*</th>
-                <th class="whitespace-nowrap bg-amber-50/90 px-3 py-3 text-right text-amber-900">SOH F &amp; B</th>
-                <th class="whitespace-nowrap bg-orange-50/90 px-3 py-3 text-right text-orange-900">SOH Service</th>
-                <th class="whitespace-nowrap bg-yellow-50/90 px-3 py-3 text-right text-yellow-900">SOH Total</th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">
-                  F &amp; B Purchase ({{ kitchen_bar_ratio_pct }}%)
-                </th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">
-                  F &amp; B Purchased
-                </th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">Δ F &amp; B</th>
-                <th class="whitespace-nowrap bg-indigo-50/90 px-3 py-3 text-right text-indigo-900">% vs purchase</th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">
-                  Svc Purchase ({{ service_ratio_pct }}%)
-                </th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">Service Purchased</th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">Δ Svc</th>
-                <th class="whitespace-nowrap bg-teal-50/90 px-3 py-3 text-right text-teal-900">% vs purchase</th>
-                <th class="whitespace-nowrap px-3 py-3 text-right text-slate-600">RO lain*</th>
+                <th rowspan="2" class="whitespace-nowrap px-3 py-3">Hari</th>
+                <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
+                <th colspan="3" class="bg-emerald-50/90 px-3 py-2 text-emerald-900">Revenue</th>
+                <th colspan="5" class="bg-fuchsia-50/60 px-3 py-2 text-fuchsia-900">Cost</th>
+                <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
+                <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900">F &amp; B Purchase</th>
+                <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900">Service Purchase</th>
+                <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right text-slate-600">RO lain*</th>
+              </tr>
+              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
+                <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
+                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">% Disc</th>
+                <th class="whitespace-nowrap bg-cyan-50/60 px-3 py-3 text-right text-cyan-900">Menu</th>
+                <th class="whitespace-nowrap bg-fuchsia-50/60 px-3 py-3 text-right text-fuchsia-900">Modifier</th>
+                <th class="whitespace-nowrap bg-violet-50/60 px-3 py-3 text-right text-violet-900">Usage</th>
+                <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">Total</th>
+                <th class="whitespace-nowrap bg-pink-50/60 px-3 py-3 text-right text-pink-900">% Cost</th>
+                <th class="whitespace-nowrap bg-amber-50/60 px-3 py-3 text-right text-amber-900">F &amp; B</th>
+                <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Service</th>
+                <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
+                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Budget ({{ kitchen_bar_ratio_pct }}%)</th>
+                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Purchased</th>
+                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Delta</th>
+                <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">%</th>
+                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Budget ({{ service_ratio_pct }}%)</th>
+                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Purchased</th>
+                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Delta</th>
+                <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">%</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -230,6 +235,12 @@ const currentOutletDisplayName = computed(() => {
                 </td>
                 <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
                   {{ row.revenue > 0 ? 'Rp ' + formatRp(row.revenue) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-red-50/40 px-3 py-2 text-right tabular-nums font-medium text-red-950">
+                  {{ row.discount > 0 ? 'Rp ' + formatRp(row.discount) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-rose-50/40 px-3 py-2 text-right tabular-nums font-medium text-rose-950">
+                  {{ row.pct_discount != null ? row.pct_discount + '%' : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-cyan-50/40 px-3 py-2 text-right tabular-nums font-medium text-cyan-950">
                   {{ row.cost_menu > 0 ? 'Rp ' + formatRp(row.cost_menu) : '—' }}
@@ -301,6 +312,12 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
                   Rp {{ formatRp(totals.revenue) }}
                 </td>
+                <td class="bg-red-100/80 px-3 py-3 text-right tabular-nums text-red-950 font-semibold">
+                  Rp {{ formatRp(totals.discount) }}
+                </td>
+                <td class="bg-rose-100/80 px-3 py-3 text-right tabular-nums text-rose-950 font-semibold">
+                  {{ totals.pct_discount != null ? totals.pct_discount + '%' : '—' }}
+                </td>
                 <td class="bg-cyan-100/80 px-3 py-3 text-right tabular-nums text-cyan-950 font-semibold">
                   Rp {{ formatRp(totals.cost_menu) }}
                 </td>
@@ -357,6 +374,8 @@ const currentOutletDisplayName = computed(() => {
           * <strong>Cost Modifier</strong>: cost bahan modifier dari JSON modifier order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
           * <strong>Category Cost Usage</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> dengan type <strong>Usage</strong> pada tanggal tersebut.
           * <strong>Total Cost</strong>: penjumlahan cost menu, cost modifier, dan category cost usage.
+          * <strong>Discount</strong>: total <strong>discount + manual discount amount</strong> pada tanggal tersebut.
+          * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
           * <strong>% Cost</strong>: persentase <strong>Total Cost / Revenue</strong> pada tanggal tersebut.
           * <strong>RO lain</strong>: warehouse outlet FO selain nama Kitchen / Bar / Service (misal typo atau warehouse tambahan).
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
