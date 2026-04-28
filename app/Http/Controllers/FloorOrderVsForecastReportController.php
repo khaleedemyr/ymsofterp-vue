@@ -737,7 +737,6 @@ class FloorOrderVsForecastReportController extends Controller
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
             $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
             $stockOnHandTotal = round((float) ($stockOnHandTotalByDate[$ds] ?? 0), 2);
-            $pctCogs = $stockOnHandTotal > 0 ? round(($costTotal / $stockOnHandTotal) * 100, 2) : null;
 
             $rows[] = [
                 'date' => $ds,
@@ -766,7 +765,6 @@ class FloorOrderVsForecastReportController extends Controller
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
-                'pct_cogs' => $pctCogs,
                 'cap_kitchen_bar' => $capKb,
                 'cap_service' => $capSvc,
                 'ro_kitchen_bar' => $kb,
@@ -808,7 +806,6 @@ class FloorOrderVsForecastReportController extends Controller
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
-            'pct_cogs' => null,
             'cap_kitchen_bar' => 0,
             'cap_service' => 0,
             'ro_kitchen_bar' => 0,
@@ -888,9 +885,6 @@ class FloorOrderVsForecastReportController extends Controller
             : null;
         $totals['cost_x_engineering'] = $totals['engineering'] > 0
             ? round(((float) $totals['cost_percentage_base'] / (float) $totals['engineering']) * 100, 2)
-            : null;
-        $totals['pct_cogs'] = $totals['stock_on_hand_total_end'] > 0
-            ? round(((float) $totals['cost_total'] / (float) $totals['stock_on_hand_total_end']) * 100, 2)
             : null;
 
         return [

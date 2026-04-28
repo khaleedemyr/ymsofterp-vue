@@ -238,8 +238,7 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="2" class="bg-lime-200/90 px-3 py-2 text-lime-950 border-r-2 border-l-2 border-lime-400 border-slate-500">% Cost</th>
                 <th colspan="2" class="bg-orange-50/90 px-3 py-2 text-orange-900 border-r-2 border-slate-400">Outlet Transfer</th>
                 <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900 border-r-2 border-slate-400">Stock Adjustment</th>
-                <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900 border-r-2 border-slate-400">Stock on Hand</th>
-                <th class="bg-yellow-100/90 px-3 py-2 text-yellow-900">% COGS (SOH)</th>
+                <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
               <tr class="border-b border-slate-300 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Budget ({{ kitchen_bar_ratio_pct }}%)</th>
@@ -279,8 +278,7 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900 border-r-2 border-slate-400">Adj Out</th>
                 <th class="whitespace-nowrap bg-amber-50/60 px-3 py-3 text-right text-amber-900">F &amp; B</th>
                 <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Service</th>
-                <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900 border-r-2 border-slate-400">Total</th>
-                <th class="whitespace-nowrap bg-yellow-100 px-3 py-3 text-right text-yellow-900">% COGS (SOH)</th>
+                <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
@@ -407,9 +405,6 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap bg-yellow-50/40 px-3 py-2 text-right tabular-nums font-medium text-yellow-950">
                   {{ row.stock_on_hand_total > 0 ? 'Rp ' + formatRp(row.stock_on_hand_total) : '—' }}
                 </td>
-                <td class="whitespace-nowrap bg-yellow-100/70 px-3 py-2 text-right tabular-nums font-semibold text-yellow-950">
-                  {{ row.pct_cogs != null ? formatRp(row.pct_cogs) + '%' : '—' }}
-                </td>
               </tr>
             </tbody>
             <tfoot>
@@ -508,9 +503,6 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-yellow-100/80 px-3 py-3 text-right tabular-nums text-yellow-950 font-semibold">
                   Rp {{ formatRp(totals.stock_on_hand_total_end) }}
                 </td>
-                <td class="bg-yellow-200/80 px-3 py-3 text-right tabular-nums text-yellow-950 font-bold">
-                  {{ totals.pct_cogs != null ? formatRp(totals.pct_cogs) + '%' : '—' }}
-                </td>
               </tr>
             </tfoot>
           </table>
@@ -524,7 +516,6 @@ const currentOutletDisplayName = computed(() => {
           * <strong>Engineering</strong>: diambil dari kolom <strong>orders.total</strong>.
           * <strong>Cost % Revenue</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Revenue) × 100.
           * <strong>Cost % Engineering</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Engineering) × 100.
-          * <strong>% COGS (SOH)</strong>: persentase <strong>Total Cost / Stock on Hand Total</strong> pada tanggal yang sama.
           * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
           * <strong>Category Cost</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> untuk semua type selain <strong>Usage</strong>.
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =

@@ -51,7 +51,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
         $this->pushGroup($row1, 'Outlet Transfer', 2);
         $this->pushGroup($row1, 'Stock Adjustment', 2);
         $this->pushGroup($row1, 'Stock on Hand', 3);
-        $this->pushGroup($row1, '% COGS (SOH)', 1);
 
         $row2 = [
             '',
@@ -92,8 +91,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'Adj Out',
             'F & B',
             'Service',
-            'Total',
-            '% COGS (SOH)'
+            'Total'
         );
 
         return [
@@ -146,8 +144,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 (float) ($row['adj_out'] ?? 0),
                 (float) ($row['stock_on_hand_kitchen_bar'] ?? 0),
                 (float) ($row['stock_on_hand_service'] ?? 0),
-                (float) ($row['stock_on_hand_total'] ?? 0),
-                $row['pct_cogs'] ?? null
+                (float) ($row['stock_on_hand_total'] ?? 0)
             );
 
             return $line;
@@ -193,8 +190,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             (float) ($totals['adj_out'] ?? 0),
             (float) ($totals['stock_on_hand_kitchen_bar_end'] ?? 0),
             (float) ($totals['stock_on_hand_service_end'] ?? 0),
-            (float) ($totals['stock_on_hand_total_end'] ?? 0),
-            $totals['pct_cogs'] ?? null
+            (float) ($totals['stock_on_hand_total_end'] ?? 0)
         );
 
         $rows->push($totalRow);
@@ -255,7 +251,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 if ($categoryCount > 0) {
                     $groupSpans[] = $categoryCount; // Category Cost
                 }
-                array_push($groupSpans, 2, 2, 2, 3, 1); // % Cost, Transfer, Adjustment, SOH, % COGS
+                array_push($groupSpans, 2, 2, 2, 3); // % Cost, Transfer, Adjustment, SOH
 
                 $startCol = 4;
                 foreach ($groupSpans as $span) {
@@ -283,7 +279,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 $colIndex += $categoryCount; // Category Cost
                 $costXRevenueCol = $colIndex;
                 $costXEngineeringCol = $colIndex + 1;
-                $pctCogsCol = $lastColumnIndex;
 
                 $sheet->getStyle('A1:'.$lastColumnLetter.'2')->applyFromArray([
                     'alignment' => [
@@ -305,10 +300,6 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                     ->getNumberFormat()
                     ->setFormatCode('0.00"%"');
                 $sheet->getStyle($costXEngineeringLetter.'3:'.$costXEngineeringLetter.$lastRow)
-                    ->getNumberFormat()
-                    ->setFormatCode('0.00"%"');
-                $pctCogsLetter = Coordinate::stringFromColumnIndex($pctCogsCol);
-                $sheet->getStyle($pctCogsLetter.'3:'.$pctCogsLetter.$lastRow)
                     ->getNumberFormat()
                     ->setFormatCode('0.00"%"');
 
