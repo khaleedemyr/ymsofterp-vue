@@ -507,28 +507,6 @@ const currentOutletDisplayName = computed(() => {
             </tfoot>
           </table>
         </div>
-        <p class="border-t border-slate-100 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
-          * <strong>Cost Menu</strong>: cost bahan baku menu dari order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
-          * <strong>Cost Modifier</strong>: cost bahan modifier dari JSON modifier order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
-          * <strong>Category Cost Usage</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> dengan type <strong>Usage</strong> pada tanggal tersebut.
-          * <strong>Total Cost</strong>: penjumlahan cost menu, cost modifier, dan category cost usage.
-          * <strong>Discount</strong>: total <strong>discount + manual discount amount</strong> pada tanggal tersebut.
-          * <strong>Engineering</strong>: diambil dari kolom <strong>orders.total</strong>.
-          * <strong>Cost % Revenue</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Revenue) × 100.
-          * <strong>Cost % Engineering</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Engineering) × 100.
-          * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
-          * <strong>Category Cost</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> untuk semua type selain <strong>Usage</strong>.
-          FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
-          qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
-          Kolom <strong>Purchased</strong> (F&amp;B dan Service) mencakup <strong>RO (Floor Order)</strong> dan <strong>Retail Food</strong> (status approved) yang dikategorikan berdasarkan warehouse.
-          Kolom <strong>Outlet Transfer</strong>: <strong>Transfer Out</strong> = nilai stok yang dikirim keluar outlet ini; <strong>Transfer In</strong> = nilai stok yang diterima dari outlet lain (status approved, dari kartu stok).
-          Kolom <strong>Stock Adjustment</strong>: <strong>Adj In</strong> = nilai adjustment penambahan stok; <strong>Adj Out</strong> = nilai adjustment pengurangan stok (dari menu Outlet Stock Adjustment, status approved).
-          Kolom <strong>Begin Stock</strong> menampilkan posisi harta stok <strong>awal hari</strong> (begin-of-day).
-          Kolom <strong>SOH</strong> menampilkan posisi harta stok <strong>akhir hari</strong> (end-of-day),
-          sedangkan nilai SOH di footer adalah posisi <strong>akhir bulan</strong>.
-          Agregasi per tanggal kedatangan =
-          <code class="rounded bg-slate-100 px-1">Σ…</code> dikelompokkan ke kolom tersebut.
-        </p>
       </div>
     </div>
   </AppLayout>
