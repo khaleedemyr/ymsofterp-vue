@@ -1292,7 +1292,7 @@ Route::prefix('mobile/member')->group(function () {
     
     // Auth routes (no auth required)
     Route::get('/auth/member-data', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'getMemberData'])->name('api.mobile.member.auth.member-data');
-    Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register');
+    Route::post('/auth/register', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'register'])->name('api.mobile.member.auth.register')->middleware('throttle:5,1');
     Route::post('/auth/login', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'login'])->name('api.mobile.member.auth.login');
     Route::post('/auth/forgot-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'forgotPassword'])->name('api.mobile.member.auth.forgot-password');
     Route::post('/auth/reset-password', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'resetPassword'])->name('api.mobile.member.auth.reset-password');

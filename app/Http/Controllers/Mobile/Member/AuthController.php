@@ -140,46 +140,16 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Handle referral bonus (50 points to referrer)
+            // REFERRAL BONUS TEMPORARILY DISABLED (2026-04-28)
+            // Reason: Security fix for referral fraud (55 fake accounts)
+            // Re-enable after implementing phone OTP verification and email validation
             if ($request->has('referral_member_id') && $request->referral_member_id) {
-                try {
-                    // Find referrer member by member_id
-                    $referrer = MemberAppsMember::where('member_id', $request->referral_member_id)
-                        ->where('is_active', true)
-                        ->first();
-
-                    if ($referrer) {
-                        // Award 50 points to referrer
-                        $pointEarningService = app(\App\Services\PointEarningService::class);
-                        $pointEarningService->earnBonusPoints(
-                            $referrer->id,
-                            'referral',
-                            50, // 50 points for referral
-                            null, // Use default validity (1 year)
-                            $member->member_id // Reference ID: new member's member_id
-                        );
-
-                        \Log::info('Referral bonus awarded', [
-                            'referrer_id' => $referrer->id,
-                            'referrer_member_id' => $referrer->member_id,
-                            'new_member_id' => $member->id,
-                            'new_member_member_id' => $member->member_id,
-                            'points_awarded' => 50
-                        ]);
-                    } else {
-                        \Log::warning('Referrer not found or inactive', [
-                            'referral_member_id' => $request->referral_member_id,
-                            'new_member_id' => $member->id
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    // Log error but don't fail registration
-                    \Log::error('Failed to award referral bonus points', [
-                        'referral_member_id' => $request->referral_member_id,
-                        'new_member_id' => $member->id,
-                        'error' => $e->getMessage()
-                    ]);
-                }
+                \Log::info('Referral code provided but referral bonus DISABLED', [
+                    'referral_member_id' => $request->referral_member_id,
+                    'new_member_id' => $member->id,
+                    'new_member_member_id' => $member->member_id,
+                    'reason' => 'Security fix for referral fraud'
+                ]);
             }
 
             // Refresh member to get updated points

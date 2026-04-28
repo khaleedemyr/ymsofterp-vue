@@ -1792,17 +1792,6 @@ class RewardController extends Controller
                 // Round up to nearest 100
                 $discountAmount = ceil($discountAmount / 100) * 100;
                 
-                // Deduct points from member (considering point_remainder)
-                $pointEarningService = new \App\Services\PointEarningService();
-                $deductResult = $pointEarningService->deductPoints($member, $reward->points_required);
-                
-                if (!$deductResult['success']) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $deductResult['message'],
-                    ], 400);
-                }
-                
                 // Build reference_id: include order_id if provided, format: "serial_code|order_id" or just "serial_code"
                 $orderId = $request->input('order_id');
                 $referenceId = $serialCode;
@@ -1810,22 +1799,59 @@ class RewardController extends Controller
                     $referenceId = $serialCode . '|' . $orderId;
                 }
                 
-                // Create point transaction for redemption
-                $pointTransaction = MemberAppsPointTransaction::create([
-                    'member_id' => $member->id,
-                    'transaction_type' => 'redeem',
-                    'point_amount' => -$reward->points_required, // Negative for redemption
-                    'reference_id' => $referenceId, // Format: "serial_code|order_id" or just "serial_code"
-                    'channel' => 'redemption',
-                    'transaction_date' => now()->toDateString(),
-                    'description' => "Redeem reward: {$reward->item_name}",
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-
-                // Update point earnings (remaining_points and is_fully_redeemed)
-                // Using FIFO (First In First Out) - oldest expiry first
+                // Check idempotency: if order_id provided, check if already redeemed for this exact order
+                if ($orderId) {
+                    $existingRedemption = DB::table('member_apps_point_transactions')
+                        ->where('member_id', $member->id)
+                        ->where('transaction_type', 'redeem')
+                        ->where('channel', 'redemption')
+                        ->where('reference_id', $referenceId)
+                        ->first();
+                    
+                    if ($existingRedemption) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Reward sudah di-redeem untuk order ini sebelumnya',
+                            'data' => [
+                                'serial_code' => $serialCode,
+                                'order_id' => $orderId,
+                                'already_redeemed_at' => $existingRedemption->created_at
+                            ]
+                        ], 409); // 409 Conflict
+                    }
+                }
+                
+                // Wrap in database transaction to ensure atomicity
                 try {
+                    DB::beginTransaction();
+                    
+                    // Deduct points from member (considering point_remainder)
+                    $pointEarningService = new \App\Services\PointEarningService();
+                    $deductResult = $pointEarningService->deductPoints($member, $reward->points_required);
+                    
+                    if (!$deductResult['success']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => $deductResult['message'],
+                        ], 400);
+                    }
+                    
+                    // Create point transaction for redemption
+                    $pointTransaction = MemberAppsPointTransaction::create([
+                        'member_id' => $member->id,
+                        'transaction_type' => 'redeem',
+                        'point_amount' => -$reward->points_required, // Negative for redemption
+                        'reference_id' => $referenceId, // Format: "serial_code|order_id" or just "serial_code"
+                        'channel' => 'redemption',
+                        'transaction_date' => now()->toDateString(),
+                        'description' => "Redeem reward: {$reward->item_name}",
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                    
+                    // Update point earnings (remaining_points and is_fully_redeemed)
+                    // Using FIFO (First In First Out) - oldest expiry first
                     \Log::info('Starting point earnings redemption update', [
                         'member_id' => $member->id,
                         'point_transaction_id' => $pointTransaction->id,
@@ -1847,6 +1873,7 @@ class RewardController extends Controller
                     );
 
                     if (!$redemptionResult) {
+                        DB::rollBack();
                         \Log::warning('Failed to update point earnings for redemption - returned null', [
                             'member_id' => $member->id,
                             'point_transaction_id' => $pointTransaction->id,
@@ -1863,6 +1890,7 @@ class RewardController extends Controller
                         ]);
                     }
                 } catch (\Exception $e) {
+                    DB::rollBack();
                     \Log::error('Error updating point earnings for redemption', [
                         'member_id' => $member->id,
                         'point_transaction_id' => $pointTransaction->id,
@@ -1872,6 +1900,9 @@ class RewardController extends Controller
                     ]);
                     // Don't fail the redemption, just log error
                 }
+                
+                // Commit transaction if no exception occurred
+                DB::commit();
                 
                 \Log::info('Reward point redeemed by POS', [
                     'serial_code' => $serialCode,
