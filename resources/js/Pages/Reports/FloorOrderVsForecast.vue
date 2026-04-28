@@ -196,10 +196,9 @@ const currentOutletDisplayName = computed(() => {
       </div>
 
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <!-- Header table (fixed) -->
-        <div class="overflow-x-auto border-b border-slate-200">
+        <div class="overflow-x-auto">
           <table class="w-full min-w-[2900px] border-collapse text-sm">
-            <thead>
+            <thead class="sticky top-0 z-10">
               <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">
                   Tanggal
@@ -244,11 +243,6 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
               </tr>
             </thead>
-          </table>
-        </div>
-        <!-- Body table (scrollable) -->
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[2900px] border-collapse text-sm">
             <tbody class="divide-y divide-slate-100">
               <tr
                 v-for="(row, idx) in rows"
