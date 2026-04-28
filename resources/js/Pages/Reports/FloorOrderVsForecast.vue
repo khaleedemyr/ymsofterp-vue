@@ -196,7 +196,7 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="max-h-[72vh] overflow-auto">
-          <table class="w-full min-w-[2900px] border-collapse text-sm">
+          <table class="w-full min-w-[2900px] border-collapse text-sm [&_th]:align-middle [&_th]:border-r [&_th]:border-slate-200 [&_td]:align-middle [&_td]:border-r [&_td]:border-slate-100 [&_tr>*:last-child]:border-r-0">
             <thead>
               <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-30 [&>th]:bg-slate-100">
                 <th rowspan="2" class="sticky left-0 z-40 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
@@ -213,7 +213,7 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900">Stock Adjustment</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
-              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
+              <tr class="border-b border-slate-300 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
                 <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
                 <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">% Disc</th>
@@ -242,7 +242,7 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-slate-200">
               <tr
                 v-for="(row, idx) in rows"
                 :key="row.date"
