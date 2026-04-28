@@ -195,10 +195,11 @@ const currentOutletDisplayName = computed(() => {
         </div>
       </div>
 
-      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="overflow-x-auto">
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <!-- Header table (fixed) -->
+        <div class="overflow-x-auto border-b border-slate-200">
           <table class="w-full min-w-[2900px] border-collapse text-sm">
-            <thead class="sticky top-0 z-20 bg-white">
+            <thead>
               <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">
                   Tanggal
@@ -243,6 +244,11 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
               </tr>
             </thead>
+          </table>
+        </div>
+        <!-- Body table (scrollable) -->
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[2900px] border-collapse text-sm">
             <tbody class="divide-y divide-slate-100">
               <tr
                 v-for="(row, idx) in rows"
@@ -437,6 +443,8 @@ const currentOutletDisplayName = computed(() => {
             </tfoot>
           </table>
         </div>
+      </div>
+      <div class="rounded-2xl border-l border-r border-b border-slate-200 bg-white">
         <p class="border-t border-slate-100 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
           * <strong>Cost Menu</strong>: cost bahan baku menu dari order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
           * <strong>Cost Modifier</strong>: cost bahan modifier dari JSON modifier order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
