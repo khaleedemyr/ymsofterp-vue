@@ -112,6 +112,9 @@ class FloorOrderVsForecastReportController extends Controller
         $stockOnHandKitchenBarByDate = [];
         $stockOnHandServiceByDate = [];
         $stockOnHandTotalByDate = [];
+        $beginStockKitchenBarByDate = [];
+        $beginStockServiceByDate = [];
+        $beginStockTotalByDate = [];
 
         if ($selectedOutletId > 0) {
             $rangeStart = $monthStart->toDateString();
@@ -471,9 +474,29 @@ class FloorOrderVsForecastReportController extends Controller
                 ];
             }
 
+            // Begin Stock untuk hari pertama = saldo baseline (sebelum bulan ini)
+            $baselineSohKb = 0.0;
+            $baselineSohSvc = 0.0;
+            $baselineSohTotal = 0.0;
+            foreach ($tupleStates as $state) {
+                $bv = ((float) $state['qty_small']) * ((float) $state['mac']);
+                $baselineSohTotal += $bv;
+                if ($state['bucket'] === 'kitchen_bar') {
+                    $baselineSohKb += $bv;
+                } elseif ($state['bucket'] === 'service') {
+                    $baselineSohSvc += $bv;
+                }
+            }
+            $prevSohKb = $baselineSohKb;
+            $prevSohSvc = $baselineSohSvc;
+            $prevSohTotal = $baselineSohTotal;
+
             $sohCursor = $monthStart->copy();
             while ($sohCursor->lte($monthEnd)) {
                 $dayKey = $sohCursor->toDateString();
+                $beginStockKitchenBarByDate[$dayKey] = round($prevSohKb, 2);
+                $beginStockServiceByDate[$dayKey] = round($prevSohSvc, 2);
+                $beginStockTotalByDate[$dayKey] = round($prevSohTotal, 2);
                 $dayKitchenBar = 0.0;
                 $dayService = 0.0;
                 $dayTotal = 0.0;
@@ -506,6 +529,9 @@ class FloorOrderVsForecastReportController extends Controller
                 $stockOnHandKitchenBarByDate[$dayKey] = round($dayKitchenBar, 2);
                 $stockOnHandServiceByDate[$dayKey] = round($dayService, 2);
                 $stockOnHandTotalByDate[$dayKey] = round($dayTotal, 2);
+                $prevSohKb = $dayKitchenBar;
+                $prevSohSvc = $dayService;
+                $prevSohTotal = $dayTotal;
                 $sohCursor->addDay();
             }
 
@@ -614,6 +640,9 @@ class FloorOrderVsForecastReportController extends Controller
                 'category_cost_usage' => $categoryCostUsage,
                 'cost_total' => $costTotal,
                 'pct_cost' => $pctCost,
+                'begin_stock_kitchen_bar' => round((float) ($beginStockKitchenBarByDate[$ds] ?? 0), 2),
+                'begin_stock_service' => round((float) ($beginStockServiceByDate[$ds] ?? 0), 2),
+                'begin_stock_total' => round((float) ($beginStockTotalByDate[$ds] ?? 0), 2),
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
@@ -640,6 +669,9 @@ class FloorOrderVsForecastReportController extends Controller
             'category_cost_usage' => 0,
             'cost_total' => 0,
             'pct_cost' => null,
+            'begin_stock_kitchen_bar_start' => 0,
+            'begin_stock_service_start' => 0,
+            'begin_stock_total_start' => 0,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -668,7 +700,11 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['diff_service'] += $r['diff_service'];
         }
         if (!empty($rows)) {
+            $first = $rows[0];
             $last = $rows[count($rows) - 1];
+            $totals['begin_stock_kitchen_bar_start'] = round((float) ($first['begin_stock_kitchen_bar'] ?? 0), 2);
+            $totals['begin_stock_service_start'] = round((float) ($first['begin_stock_service'] ?? 0), 2);
+            $totals['begin_stock_total_start'] = round((float) ($first['begin_stock_total'] ?? 0), 2);
             $totals['stock_on_hand_kitchen_bar_end'] = round((float) ($last['stock_on_hand_kitchen_bar'] ?? 0), 2);
             $totals['stock_on_hand_service_end'] = round((float) ($last['stock_on_hand_service'] ?? 0), 2);
             $totals['stock_on_hand_total_end'] = round((float) ($last['stock_on_hand_total'] ?? 0), 2);
