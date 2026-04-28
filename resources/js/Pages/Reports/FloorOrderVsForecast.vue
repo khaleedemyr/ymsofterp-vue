@@ -20,7 +20,6 @@ const props = defineProps({
 const outletId = ref(props.selectedOutletId || 0)
 const month = ref(props.selectedMonth || new Date().toISOString().slice(0, 7))
 const isLoading = ref(false)
-const selectedRowKey = ref(null)
 
 watch(
   () => props.selectedOutletId,
@@ -34,22 +33,6 @@ watch(
     month.value = v || new Date().toISOString().slice(0, 7)
   }
 )
-watch(
-  () => props.rows,
-  (rows) => {
-    if (!Array.isArray(rows)) {
-      selectedRowKey.value = null
-      return
-    }
-
-    const stillExists = rows.some((r) => r?.date === selectedRowKey.value)
-    if (!stillExists) selectedRowKey.value = null
-  }
-)
-
-function toggleRowSelection(rowKey) {
-  selectedRowKey.value = selectedRowKey.value === rowKey ? null : rowKey
-}
 
 function formatRp(value) {
   const n = Number(value)
@@ -195,12 +178,12 @@ const currentOutletDisplayName = computed(() => {
         </div>
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
+      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="max-h-[72vh] overflow-auto">
           <table class="w-full min-w-[2900px] border-collapse text-sm">
-            <thead class="sticky top-0 z-10">
-              <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                <th rowspan="2" class="whitespace-nowrap px-3 py-3">
+            <thead>
+              <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-30 [&>th]:bg-slate-100">
+                <th rowspan="2" class="sticky left-0 z-40 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
                   Tanggal
                 </th>
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">Hari</th>
@@ -214,7 +197,7 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900">Stock Adjustment</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
-              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
                 <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
                 <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">% Disc</th>
@@ -247,17 +230,11 @@ const currentOutletDisplayName = computed(() => {
               <tr
                 v-for="(row, idx) in rows"
                 :key="row.date"
-                class="group cursor-pointer select-none transition-all duration-100 hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-indigo-400 hover:[&>td]:bg-amber-200/75"
-                :class="[
-                  idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
-                  selectedRowKey === row.date
-                    ? 'outline outline-2 -outline-offset-2 outline-indigo-600 [&>td]:!bg-indigo-200/80 [&>td]:!text-slate-900'
-                    : ''
-                ]"
-                @click="toggleRowSelection(row.date)"
+                class="group transition-all duration-100 hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-indigo-400 hover:[&>td]:bg-amber-200/75"
+                :class="idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'"
               >
                 <td
-                  class="whitespace-nowrap px-3 py-2 font-medium text-slate-800"
+                  class="sticky left-0 z-20 whitespace-nowrap border-r border-slate-100 bg-inherit px-3 py-2 font-medium text-slate-800 shadow-[2px_0_0_rgba(0,0,0,0.04)]"
                 >
                   {{ row.date }}
                 </td>
@@ -355,7 +332,7 @@ const currentOutletDisplayName = computed(() => {
             </tbody>
             <tfoot>
               <tr class="border-t-2 border-slate-300 bg-slate-100 font-semibold text-slate-900">
-                <td class="bg-slate-100 px-3 py-3" colspan="2">
+                <td class="sticky left-0 z-10 bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]" colspan="2">
                   Total bulan (SOH: posisi akhir bulan)
                 </td>
                 <td class="px-3 py-3 text-right tabular-nums">Rp {{ formatRp(totals.forecast_revenue) }}</td>
@@ -437,8 +414,6 @@ const currentOutletDisplayName = computed(() => {
             </tfoot>
           </table>
         </div>
-      </div>
-      <div class="rounded-2xl border-l border-r border-b border-slate-200 bg-white">
         <p class="border-t border-slate-100 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
           * <strong>Cost Menu</strong>: cost bahan baku menu dari order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
           * <strong>Cost Modifier</strong>: cost bahan modifier dari JSON modifier order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
