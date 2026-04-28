@@ -12,7 +12,6 @@ use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithStyles, ShouldAutoSize, WithEvents
@@ -129,8 +128,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
             array_push(
                 $line,
-                (float) ($row['cost_x_revenue'] ?? 0),
-                (float) ($row['cost_x_engineering'] ?? 0),
+                $row['cost_x_revenue'] ?? null,
+                $row['cost_x_engineering'] ?? null,
                 (float) ($row['cap_kitchen_bar'] ?? 0),
                 (float) ($row['ro_kitchen_bar'] ?? 0),
                 (float) ($row['diff_kitchen_bar'] ?? 0),
@@ -175,8 +174,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
         array_push(
             $totalRow,
-            (float) ($totals['cost_x_revenue'] ?? 0),
-            (float) ($totals['cost_x_engineering'] ?? 0),
+            $totals['cost_x_revenue'] ?? null,
+            $totals['cost_x_engineering'] ?? null,
             (float) ($totals['cap_kitchen_bar'] ?? 0),
             (float) ($totals['ro_kitchen_bar'] ?? 0),
             (float) ($totals['diff_kitchen_bar'] ?? 0),
@@ -295,10 +294,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 $costXEngineeringLetter = Coordinate::stringFromColumnIndex($costXEngineeringCol);
                 $sheet->getStyle($costXRevenueLetter.'3:'.$costXRevenueLetter.$lastRow)
                     ->getNumberFormat()
-                    ->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+                    ->setFormatCode('0.00"%"');
                 $sheet->getStyle($costXEngineeringLetter.'3:'.$costXEngineeringLetter.$lastRow)
                     ->getNumberFormat()
-                    ->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+                    ->setFormatCode('0.00"%"');
 
                 $sheet->freezePane('D3');
                 $sheet->getRowDimension(1)->setRowHeight(24);

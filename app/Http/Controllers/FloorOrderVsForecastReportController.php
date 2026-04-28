@@ -731,8 +731,8 @@ class FloorOrderVsForecastReportController extends Controller
             }
             $categoryCostNonUsageExcludingRndMarketing = round($categoryCostNonUsageExcludingRndMarketing, 2);
             $costPercentageBase = round($costTotal + $categoryCostNonUsageExcludingRndMarketing, 2);
-            $costXRevenue = round(($costPercentageBase * $revenue) / 100, 2);
-            $costXEngineering = round(($costPercentageBase * $engineering) / 100, 2);
+            $costXRevenue = $revenue > 0 ? round(($costPercentageBase / $revenue) * 100, 2) : null;
+            $costXEngineering = $engineering > 0 ? round(($costPercentageBase / $engineering) * 100, 2) : null;
             $pctCost = $revenue > 0 ? round(($costTotal / $revenue) * 100, 1) : null;
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
             $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
@@ -801,8 +801,8 @@ class FloorOrderVsForecastReportController extends Controller
             'cost_total' => 0,
             'pct_cost' => null,
             'cost_percentage_base' => 0,
-            'cost_x_revenue' => 0,
-            'cost_x_engineering' => 0,
+            'cost_x_revenue' => null,
+            'cost_x_engineering' => null,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -880,8 +880,12 @@ class FloorOrderVsForecastReportController extends Controller
             (float) $totals['cost_total'] + (float) $totals['category_cost_total_non_usage_excluding_rnd_marketing'],
             2
         );
-        $totals['cost_x_revenue'] = round(((float) $totals['cost_percentage_base'] * (float) $totals['revenue']) / 100, 2);
-        $totals['cost_x_engineering'] = round(((float) $totals['cost_percentage_base'] * (float) $totals['engineering']) / 100, 2);
+        $totals['cost_x_revenue'] = $totals['revenue'] > 0
+            ? round(((float) $totals['cost_percentage_base'] / (float) $totals['revenue']) * 100, 2)
+            : null;
+        $totals['cost_x_engineering'] = $totals['engineering'] > 0
+            ? round(((float) $totals['cost_percentage_base'] / (float) $totals['engineering']) * 100, 2)
+            : null;
 
         return [
             'outlets' => $outlets,

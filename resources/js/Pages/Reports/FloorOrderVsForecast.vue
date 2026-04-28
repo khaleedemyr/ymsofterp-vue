@@ -347,10 +347,10 @@ const currentOutletDisplayName = computed(() => {
                   {{ getCategoryCostValue(row, type.key) > 0 ? 'Rp ' + formatRp(getCategoryCostValue(row, type.key)) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-lime-100/60 px-3 py-2 text-right tabular-nums font-semibold text-lime-950 border-l-2 border-lime-200">
-                  {{ row.cost_x_revenue > 0 ? 'Rp ' + formatRp(row.cost_x_revenue) : '—' }}
+                  {{ row.cost_x_revenue != null ? formatRp(row.cost_x_revenue) + '%' : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-lime-100/60 px-3 py-2 text-right tabular-nums font-semibold text-lime-950 border-r-2 border-slate-300">
-                  {{ row.cost_x_engineering > 0 ? 'Rp ' + formatRp(row.cost_x_engineering) : '—' }}
+                  {{ row.cost_x_engineering != null ? formatRp(row.cost_x_engineering) + '%' : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-indigo-950">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.cap_kitchen_bar) : '—' }}
@@ -457,10 +457,10 @@ const currentOutletDisplayName = computed(() => {
                   Rp {{ formatRp(getCategoryCostTotalValue(type.key)) }}
                 </td>
                 <td class="bg-lime-200/80 px-3 py-3 text-right tabular-nums text-lime-950 font-bold border-l-2 border-lime-300">
-                  Rp {{ formatRp(totals.cost_x_revenue) }}
+                  {{ totals.cost_x_revenue != null ? formatRp(totals.cost_x_revenue) + '%' : '—' }}
                 </td>
                 <td class="bg-lime-200/80 px-3 py-3 text-right tabular-nums text-lime-950 font-bold border-r-2 border-slate-300">
-                  Rp {{ formatRp(totals.cost_x_engineering) }}
+                  {{ totals.cost_x_engineering != null ? formatRp(totals.cost_x_engineering) + '%' : '—' }}
                 </td>
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums text-indigo-950">
                   Rp {{ formatRp(totals.cap_kitchen_bar) }}
@@ -514,8 +514,8 @@ const currentOutletDisplayName = computed(() => {
           * <strong>Total Cost</strong>: penjumlahan cost menu, cost modifier, dan category cost usage.
           * <strong>Discount</strong>: total <strong>discount + manual discount amount</strong> pada tanggal tersebut.
           * <strong>Engineering</strong>: diambil dari kolom <strong>orders.total</strong>.
-          * <strong>Cost x Revenue</strong>: (<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) × Revenue / 100.
-          * <strong>Cost x Engineering</strong>: (<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) × Engineering / 100.
+          * <strong>Cost x Revenue</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Revenue) × 100.
+          * <strong>Cost x Engineering</strong>: ((<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) / Engineering) × 100.
           * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
           * <strong>Category Cost</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> untuk semua type selain <strong>Usage</strong>.
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
