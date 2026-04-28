@@ -597,6 +597,30 @@ class FloorOrderVsForecastReportController extends Controller
                     $roOther[$dateKey] = ($roOther[$dateKey] ?? 0) + $total;
                 }
             }
+
+            // Retail Food — pembelian langsung ke supplier (bukan melalui RO/FO), ikut dihitung sebagai Purchase
+            $retailFoodRows = DB::table('retail_food as rf')
+                ->join('warehouse_outlets as wo', 'wo.id', '=', 'rf.warehouse_outlet_id')
+                ->where('rf.outlet_id', $selectedOutletId)
+                ->where('rf.status', 'approved')
+                ->whereNull('rf.deleted_at')
+                ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('DATE(rf.transaction_date) as d, wo.id as warehouse_outlet_id, SUM(rf.total_amount) as total')
+                ->groupBy(DB::raw('DATE(rf.transaction_date)'), 'wo.id')
+                ->get();
+
+            foreach ($retailFoodRows as $rfRow) {
+                $dateKey = Carbon::parse($rfRow->d)->toDateString();
+                $bucket = $warehouseBucketById[(int) $rfRow->warehouse_outlet_id] ?? 'other';
+                $total = round((float) $rfRow->total, 2);
+                if ($bucket === 'kitchen_bar') {
+                    $roKitchenBar[$dateKey] = ($roKitchenBar[$dateKey] ?? 0) + $total;
+                } elseif ($bucket === 'service') {
+                    $roService[$dateKey] = ($roService[$dateKey] ?? 0) + $total;
+                } else {
+                    $roOther[$dateKey] = ($roOther[$dateKey] ?? 0) + $total;
+                }
+            }
         }
 
         $rows = [];

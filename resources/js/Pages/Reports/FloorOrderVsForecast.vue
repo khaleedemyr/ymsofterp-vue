@@ -190,10 +190,10 @@ const currentOutletDisplayName = computed(() => {
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
                 <th colspan="3" class="bg-emerald-50/90 px-3 py-2 text-emerald-900">Revenue</th>
                 <th colspan="5" class="bg-fuchsia-50/60 px-3 py-2 text-fuchsia-900">Cost</th>
+                <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900">Begin Stock</th>
                 <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900">F &amp; B Purchase</th>
                 <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900">Service Purchase</th>
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right text-slate-600">RO lain*</th>
-                <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900">Begin Stock</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
               <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
@@ -205,6 +205,9 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-violet-50/60 px-3 py-3 text-right text-violet-900">Usage</th>
                 <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">Total</th>
                 <th class="whitespace-nowrap bg-pink-50/60 px-3 py-3 text-right text-pink-900">% Cost</th>
+                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">F &amp; B</th>
+                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Service</th>
+                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Total</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Budget ({{ kitchen_bar_ratio_pct }}%)</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Purchased</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Variance</th>
@@ -213,9 +216,6 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Purchased</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Variance</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">%</th>
-                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">F &amp; B</th>
-                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Service</th>
-                <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">Total</th>
                 <th class="whitespace-nowrap bg-amber-50/60 px-3 py-3 text-right text-amber-900">F &amp; B</th>
                 <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Service</th>
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
@@ -261,6 +261,15 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap bg-pink-50/40 px-3 py-2 text-right tabular-nums font-semibold text-pink-950">
                   {{ row.pct_cost != null ? row.pct_cost + '%' : '—' }}
                 </td>
+                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
+                  {{ row.begin_stock_kitchen_bar > 0 ? 'Rp ' + formatRp(row.begin_stock_kitchen_bar) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
+                  {{ row.begin_stock_service > 0 ? 'Rp ' + formatRp(row.begin_stock_service) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
+                  {{ row.begin_stock_total > 0 ? 'Rp ' + formatRp(row.begin_stock_total) : '—' }}
+                </td>
                 <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-indigo-950">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.cap_kitchen_bar) : '—' }}
                 </td>
@@ -295,15 +304,6 @@ const currentOutletDisplayName = computed(() => {
                 </td>
                 <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">
                   {{ row.ro_other > 0 ? 'Rp ' + formatRp(row.ro_other) : '—' }}
-                </td>
-                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
-                  {{ row.begin_stock_kitchen_bar > 0 ? 'Rp ' + formatRp(row.begin_stock_kitchen_bar) : '—' }}
-                </td>
-                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
-                  {{ row.begin_stock_service > 0 ? 'Rp ' + formatRp(row.begin_stock_service) : '—' }}
-                </td>
-                <td class="whitespace-nowrap bg-sky-50/40 px-3 py-2 text-right tabular-nums font-medium text-sky-950">
-                  {{ row.begin_stock_total > 0 ? 'Rp ' + formatRp(row.begin_stock_total) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-amber-50/40 px-3 py-2 text-right tabular-nums font-medium text-amber-950">
                   {{ row.stock_on_hand_kitchen_bar > 0 ? 'Rp ' + formatRp(row.stock_on_hand_kitchen_bar) : '—' }}
@@ -346,14 +346,14 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-pink-100/80 px-3 py-3 text-right tabular-nums text-pink-950 font-semibold">
                   {{ totals.pct_cost != null ? totals.pct_cost + '%' : '—' }}
                 </td>
-                <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
-                  Rp {{ formatRp(totals.stock_on_hand_kitchen_bar_end) }}
+                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
+                  Rp {{ formatRp(totals.begin_stock_kitchen_bar_start) }}
                 </td>
-                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
-                  Rp {{ formatRp(totals.stock_on_hand_service_end) }}
+                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
+                  Rp {{ formatRp(totals.begin_stock_service_start) }}
                 </td>
-                <td class="bg-yellow-100/80 px-3 py-3 text-right tabular-nums text-yellow-950 font-semibold">
-                  Rp {{ formatRp(totals.stock_on_hand_total_end) }}
+                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
+                  Rp {{ formatRp(totals.begin_stock_total_start) }}
                 </td>
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums text-indigo-950">
                   Rp {{ formatRp(totals.cap_kitchen_bar) }}
@@ -377,15 +377,6 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-teal-100/80 px-3 py-3 text-right text-slate-600">—</td>
                 <td class="px-3 py-3 text-right tabular-nums text-slate-600">
                   {{ totals.ro_other > 0 ? 'Rp ' + formatRp(totals.ro_other) : '—' }}
-                </td>
-                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
-                  Rp {{ formatRp(totals.begin_stock_kitchen_bar_start) }}
-                </td>
-                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
-                  Rp {{ formatRp(totals.begin_stock_service_start) }}
-                </td>
-                <td class="bg-sky-100/80 px-3 py-3 text-right tabular-nums text-sky-950 font-semibold">
-                  Rp {{ formatRp(totals.begin_stock_total_start) }}
                 </td>
                 <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
                   Rp {{ formatRp(totals.stock_on_hand_kitchen_bar_end) }}
@@ -411,6 +402,7 @@ const currentOutletDisplayName = computed(() => {
           * <strong>RO lain</strong>: warehouse outlet FO selain nama Kitchen / Bar / Service (misal typo atau warehouse tambahan).
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
           qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
+          Kolom <strong>Purchased</strong> (F&amp;B dan Service) mencakup <strong>RO (Floor Order)</strong> dan <strong>Retail Food</strong> (status approved) yang dikategorikan berdasarkan warehouse.
           Kolom <strong>Begin Stock</strong> menampilkan posisi harta stok <strong>awal hari</strong> (begin-of-day).
           Kolom <strong>SOH</strong> menampilkan posisi harta stok <strong>akhir hari</strong> (end-of-day),
           sedangkan nilai SOH di footer adalah posisi <strong>akhir bulan</strong>.
