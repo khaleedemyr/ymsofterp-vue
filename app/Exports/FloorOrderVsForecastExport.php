@@ -54,7 +54,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 '',
                 '',
                 '',
-                'RO lain',
+                'Outlet Transfer',
+                '',
+                'Stock Adjustment',
+                '',
                 'Stock on Hand',
                 '',
                 '',
@@ -82,7 +85,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 'Purchased',
                 'Variance',
                 '%',
-                '',
+                'Transfer Out',
+                'Transfer In',
+                'Adj In',
+                'Adj Out',
                 'F & B',
                 'Service',
                 'Total',
@@ -116,7 +122,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 'ro_service' => (float) ($row['ro_service'] ?? 0),
                 'diff_service' => (float) ($row['diff_service'] ?? 0),
                 'pct_service_vs_cap' => $row['pct_service_vs_cap'],
-                'ro_other' => (float) ($row['ro_other'] ?? 0),
+                'transfer_out' => (float) ($row['transfer_out'] ?? 0),
+                'transfer_in' => (float) ($row['transfer_in'] ?? 0),
+                'adj_in' => (float) ($row['adj_in'] ?? 0),
+                'adj_out' => (float) ($row['adj_out'] ?? 0),
                 'stock_on_hand_kitchen_bar' => (float) ($row['stock_on_hand_kitchen_bar'] ?? 0),
                 'stock_on_hand_service' => (float) ($row['stock_on_hand_service'] ?? 0),
                 'stock_on_hand_total' => (float) ($row['stock_on_hand_total'] ?? 0),
@@ -147,7 +156,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'ro_service' => (float) ($totals['ro_service'] ?? 0),
             'diff_service' => (float) ($totals['diff_service'] ?? 0),
             'pct_service_vs_cap' => null,
-            'ro_other' => (float) ($totals['ro_other'] ?? 0),
+            'transfer_out' => (float) ($totals['transfer_out'] ?? 0),
+            'transfer_in' => (float) ($totals['transfer_in'] ?? 0),
+            'adj_in' => (float) ($totals['adj_in'] ?? 0),
+            'adj_out' => (float) ($totals['adj_out'] ?? 0),
             'stock_on_hand_kitchen_bar' => (float) ($totals['stock_on_hand_kitchen_bar_end'] ?? 0),
             'stock_on_hand_service' => (float) ($totals['stock_on_hand_service_end'] ?? 0),
             'stock_on_hand_total' => (float) ($totals['stock_on_hand_total_end'] ?? 0),
@@ -191,11 +203,11 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
 
-                foreach (['A1:A2', 'B1:B2', 'C1:C2', 'D1:F1', 'G1:K1', 'L1:N1', 'O1:R1', 'S1:V1', 'W1:W2', 'X1:Z1'] as $range) {
+                foreach (['A1:A2', 'B1:B2', 'C1:C2', 'D1:F1', 'G1:K1', 'L1:N1', 'O1:R1', 'S1:V1', 'W1:X1', 'Y1:Z1', 'AA1:AC1'] as $range) {
                     $sheet->mergeCells($range);
                 }
 
-                $sheet->getStyle('A1:Z2')->applyFromArray([
+                $sheet->getStyle('A1:AC2')->applyFromArray([
                     'alignment' => [
                         'horizontal' => Alignment::HORIZONTAL_CENTER,
                         'vertical' => Alignment::VERTICAL_CENTER,

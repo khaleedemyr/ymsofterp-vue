@@ -193,7 +193,8 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900">Begin Stock</th>
                 <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900">F &amp; B Purchase</th>
                 <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900">Service Purchase</th>
-                <th rowspan="2" class="whitespace-nowrap px-3 py-3 text-right text-slate-600">RO lain*</th>
+                <th colspan="2" class="bg-orange-50/90 px-3 py-2 text-orange-900">Outlet Transfer</th>
+                <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900">Stock Adjustment</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
               <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
@@ -216,6 +217,10 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Purchased</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">Variance</th>
                 <th class="whitespace-nowrap bg-teal-50/60 px-3 py-3 text-right text-teal-900">%</th>
+                <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Transfer Out</th>
+                <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Transfer In</th>
+                <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900">Adj In</th>
+                <th class="whitespace-nowrap bg-purple-50/60 px-3 py-3 text-right text-purple-900">Adj Out</th>
                 <th class="whitespace-nowrap bg-amber-50/60 px-3 py-3 text-right text-amber-900">F &amp; B</th>
                 <th class="whitespace-nowrap bg-orange-50/60 px-3 py-3 text-right text-orange-900">Service</th>
                 <th class="whitespace-nowrap bg-yellow-50/60 px-3 py-3 text-right text-yellow-900">Total</th>
@@ -302,8 +307,17 @@ const currentOutletDisplayName = computed(() => {
                 <td class="whitespace-nowrap bg-teal-50/40 px-3 py-2 text-right tabular-nums text-slate-700">
                   {{ row.pct_service_vs_cap != null ? row.pct_service_vs_cap + '%' : '—' }}
                 </td>
-                <td class="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">
-                  {{ row.ro_other > 0 ? 'Rp ' + formatRp(row.ro_other) : '—' }}
+                <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950">
+                  {{ row.transfer_out > 0 ? 'Rp ' + formatRp(row.transfer_out) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-orange-50/40 px-3 py-2 text-right tabular-nums font-medium text-orange-950">
+                  {{ row.transfer_in > 0 ? 'Rp ' + formatRp(row.transfer_in) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-purple-50/40 px-3 py-2 text-right tabular-nums font-medium text-purple-950">
+                  {{ row.adj_in > 0 ? 'Rp ' + formatRp(row.adj_in) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-purple-50/40 px-3 py-2 text-right tabular-nums font-medium text-purple-950">
+                  {{ row.adj_out > 0 ? 'Rp ' + formatRp(row.adj_out) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-amber-50/40 px-3 py-2 text-right tabular-nums font-medium text-amber-950">
                   {{ row.stock_on_hand_kitchen_bar > 0 ? 'Rp ' + formatRp(row.stock_on_hand_kitchen_bar) : '—' }}
@@ -375,8 +389,17 @@ const currentOutletDisplayName = computed(() => {
                   {{ totals.diff_service >= 0 ? '+' : '' }}Rp {{ formatRp(totals.diff_service) }}
                 </td>
                 <td class="bg-teal-100/80 px-3 py-3 text-right text-slate-600">—</td>
-                <td class="px-3 py-3 text-right tabular-nums text-slate-600">
-                  {{ totals.ro_other > 0 ? 'Rp ' + formatRp(totals.ro_other) : '—' }}
+                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
+                  Rp {{ formatRp(totals.transfer_out) }}
+                </td>
+                <td class="bg-orange-100/80 px-3 py-3 text-right tabular-nums text-orange-950 font-semibold">
+                  Rp {{ formatRp(totals.transfer_in) }}
+                </td>
+                <td class="bg-purple-100/80 px-3 py-3 text-right tabular-nums text-purple-950 font-semibold">
+                  Rp {{ formatRp(totals.adj_in) }}
+                </td>
+                <td class="bg-purple-100/80 px-3 py-3 text-right tabular-nums text-purple-950 font-semibold">
+                  Rp {{ formatRp(totals.adj_out) }}
                 </td>
                 <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
                   Rp {{ formatRp(totals.stock_on_hand_kitchen_bar_end) }}
@@ -403,6 +426,8 @@ const currentOutletDisplayName = computed(() => {
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
           qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
           Kolom <strong>Purchased</strong> (F&amp;B dan Service) mencakup <strong>RO (Floor Order)</strong> dan <strong>Retail Food</strong> (status approved) yang dikategorikan berdasarkan warehouse.
+          Kolom <strong>Outlet Transfer</strong>: <strong>Transfer Out</strong> = nilai stok yang dikirim keluar outlet ini; <strong>Transfer In</strong> = nilai stok yang diterima dari outlet lain (status approved, dari kartu stok).
+          Kolom <strong>Stock Adjustment</strong>: <strong>Adj In</strong> = nilai adjustment penambahan stok; <strong>Adj Out</strong> = nilai adjustment pengurangan stok (dari menu Outlet Stock Adjustment, status approved).
           Kolom <strong>Begin Stock</strong> menampilkan posisi harta stok <strong>awal hari</strong> (begin-of-day).
           Kolom <strong>SOH</strong> menampilkan posisi harta stok <strong>akhir hari</strong> (end-of-day),
           sedangkan nilai SOH di footer adalah posisi <strong>akhir bulan</strong>.

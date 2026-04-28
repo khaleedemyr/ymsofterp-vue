@@ -103,7 +103,6 @@ class FloorOrderVsForecastReportController extends Controller
 
         $roKitchenBar = [];
         $roService = [];
-        $roOther = [];
         $costMenuByDate = [];
         $costModifierByDate = [];
         $categoryCostUsageByDate = [];
@@ -115,6 +114,10 @@ class FloorOrderVsForecastReportController extends Controller
         $beginStockKitchenBarByDate = [];
         $beginStockServiceByDate = [];
         $beginStockTotalByDate = [];
+        $transferInByDate = [];
+        $transferOutByDate = [];
+        $adjInByDate = [];
+        $adjOutByDate = [];
 
         if ($selectedOutletId > 0) {
             $rangeStart = $monthStart->toDateString();
@@ -593,8 +596,6 @@ class FloorOrderVsForecastReportController extends Controller
                     $roKitchenBar[$dateKey] = ($roKitchenBar[$dateKey] ?? 0) + $total;
                 } elseif ($row->bucket === 'service') {
                     $roService[$dateKey] = ($roService[$dateKey] ?? 0) + $total;
-                } else {
-                    $roOther[$dateKey] = ($roOther[$dateKey] ?? 0) + $total;
                 }
             }
 
@@ -617,9 +618,37 @@ class FloorOrderVsForecastReportController extends Controller
                     $roKitchenBar[$dateKey] = ($roKitchenBar[$dateKey] ?? 0) + $total;
                 } elseif ($bucket === 'service') {
                     $roService[$dateKey] = ($roService[$dateKey] ?? 0) + $total;
-                } else {
-                    $roOther[$dateKey] = ($roOther[$dateKey] ?? 0) + $total;
                 }
+            }
+
+            // Outlet Transfer — nilai keluar (OUT) dan masuk (IN) dari kartu stok outlet transfer
+            $outletTransferCards = DB::table('outlet_food_inventory_cards')
+                ->where('id_outlet', $selectedOutletId)
+                ->where('reference_type', 'outlet_transfer')
+                ->whereBetween(DB::raw('DATE(date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('DATE(date) as d, SUM(COALESCE(value_in, 0)) as total_in, SUM(COALESCE(value_out, 0)) as total_out')
+                ->groupBy(DB::raw('DATE(date)'))
+                ->get();
+
+            foreach ($outletTransferCards as $otRow) {
+                $dateKey = Carbon::parse($otRow->d)->toDateString();
+                $transferInByDate[$dateKey] = round((float) ($otRow->total_in ?? 0), 2);
+                $transferOutByDate[$dateKey] = round((float) ($otRow->total_out ?? 0), 2);
+            }
+
+            // Stock Adjustment — nilai masuk (IN) dan keluar (OUT) dari kartu stok outlet stock adjustment
+            $outletAdjCards = DB::table('outlet_food_inventory_cards')
+                ->where('id_outlet', $selectedOutletId)
+                ->where('reference_type', 'outlet_stock_adjustment')
+                ->whereBetween(DB::raw('DATE(date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('DATE(date) as d, SUM(COALESCE(value_in, 0)) as total_in, SUM(COALESCE(value_out, 0)) as total_out')
+                ->groupBy(DB::raw('DATE(date)'))
+                ->get();
+
+            foreach ($outletAdjCards as $adjRow) {
+                $dateKey = Carbon::parse($adjRow->d)->toDateString();
+                $adjInByDate[$dateKey] = round((float) ($adjRow->total_in ?? 0), 2);
+                $adjOutByDate[$dateKey] = round((float) ($adjRow->total_out ?? 0), 2);
             }
         }
 
@@ -632,7 +661,6 @@ class FloorOrderVsForecastReportController extends Controller
             $capSvc = round($forecast * self::SERVICE_RATIO, 2);
             $kb = round((float) ($roKitchenBar[$ds] ?? 0), 2);
             $svc = round((float) ($roService[$ds] ?? 0), 2);
-            $other = round((float) ($roOther[$ds] ?? 0), 2);
 
             $diffKb = round($kb - $capKb, 2);
             $diffSvc = round($svc - $capSvc, 2);
@@ -674,7 +702,10 @@ class FloorOrderVsForecastReportController extends Controller
                 'cap_service' => $capSvc,
                 'ro_kitchen_bar' => $kb,
                 'ro_service' => $svc,
-                'ro_other' => $other,
+                'transfer_in' => round((float) ($transferInByDate[$ds] ?? 0), 2),
+                'transfer_out' => round((float) ($transferOutByDate[$ds] ?? 0), 2),
+                'adj_in' => round((float) ($adjInByDate[$ds] ?? 0), 2),
+                'adj_out' => round((float) ($adjOutByDate[$ds] ?? 0), 2),
                 'diff_kitchen_bar' => $diffKb,
                 'diff_service' => $diffSvc,
                 'pct_kitchen_bar_vs_cap' => $pctKb,
@@ -703,7 +734,10 @@ class FloorOrderVsForecastReportController extends Controller
             'cap_service' => 0,
             'ro_kitchen_bar' => 0,
             'ro_service' => 0,
-            'ro_other' => 0,
+            'transfer_in' => 0,
+            'transfer_out' => 0,
+            'adj_in' => 0,
+            'adj_out' => 0,
             'diff_kitchen_bar' => 0,
             'diff_service' => 0,
         ];
@@ -719,7 +753,10 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['cap_service'] += $r['cap_service'];
             $totals['ro_kitchen_bar'] += $r['ro_kitchen_bar'];
             $totals['ro_service'] += $r['ro_service'];
-            $totals['ro_other'] += $r['ro_other'];
+            $totals['transfer_in'] += $r['transfer_in'];
+            $totals['transfer_out'] += $r['transfer_out'];
+            $totals['adj_in'] += $r['adj_in'];
+            $totals['adj_out'] += $r['adj_out'];
             $totals['diff_kitchen_bar'] += $r['diff_kitchen_bar'];
             $totals['diff_service'] += $r['diff_service'];
         }
