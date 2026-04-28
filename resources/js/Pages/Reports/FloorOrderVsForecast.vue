@@ -179,11 +179,11 @@ const currentOutletDisplayName = computed(() => {
       </div>
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="overflow-x-auto">
+        <div class="max-h-[72vh] overflow-auto">
           <table class="w-full min-w-[2900px] border-collapse text-sm">
             <thead>
-              <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                <th rowspan="2" class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
+              <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-30 [&>th]:bg-slate-100">
+                <th rowspan="2" class="sticky left-0 z-40 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
                   Tanggal
                 </th>
                 <th rowspan="2" class="whitespace-nowrap px-3 py-3">Hari</th>
@@ -197,7 +197,7 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="2" class="bg-purple-50/90 px-3 py-2 text-purple-900">Stock Adjustment</th>
                 <th colspan="3" class="bg-amber-50/90 px-3 py-2 text-amber-900">Stock on Hand</th>
               </tr>
-              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+              <tr class="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
                 <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
                 <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900">% Disc</th>
@@ -230,11 +230,11 @@ const currentOutletDisplayName = computed(() => {
               <tr
                 v-for="(row, idx) in rows"
                 :key="row.date"
-                class="transition-colors hover:bg-slate-50/80"
+                class="group transition-all duration-100 hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-indigo-400 hover:[&>td]:bg-amber-200/75"
                 :class="idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'"
               >
                 <td
-                  class="sticky left-0 z-10 whitespace-nowrap border-r border-slate-100 bg-inherit px-3 py-2 font-medium text-slate-800 shadow-[2px_0_0_rgba(0,0,0,0.04)]"
+                  class="sticky left-0 z-20 whitespace-nowrap border-r border-slate-100 bg-inherit px-3 py-2 font-medium text-slate-800 shadow-[2px_0_0_rgba(0,0,0,0.04)]"
                 >
                   {{ row.date }}
                 </td>
