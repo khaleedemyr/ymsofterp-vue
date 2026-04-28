@@ -221,7 +221,7 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="max-h-[72vh] overflow-auto">
-          <table class="w-full min-w-[3400px] border-collapse text-sm [&_th]:align-middle [&_th]:border-r [&_th]:border-slate-200 [&_td]:align-middle [&_td]:border-r [&_td]:border-slate-100 [&_tr>*:last-child]:border-r-0">
+          <table class="w-full min-w-[3600px] border-collapse text-sm [&_th]:align-middle [&_th]:border-r [&_th]:border-slate-200 [&_td]:align-middle [&_td]:border-r [&_td]:border-slate-100 [&_tr>*:last-child]:border-r-0">
             <thead>
               <tr class="border-b border-slate-300 bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-0 [&>th]:z-30 [&>th]:bg-slate-100">
                 <th rowspan="2" class="sticky left-0 z-40 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
@@ -233,6 +233,7 @@ const currentOutletDisplayName = computed(() => {
                 <th colspan="3" class="bg-sky-50/90 px-3 py-2 text-sky-900 border-r-2 border-slate-400">Begin Stock</th>
                 <th colspan="4" class="bg-fuchsia-50/60 px-3 py-2 text-fuchsia-900 border-r-2 border-slate-400">Cost</th>
                 <th v-if="categoryCostTypes.length" :colspan="categoryCostTypes.length" class="bg-cyan-50/90 px-3 py-2 text-cyan-900 border-r-2 border-slate-400">Category Cost</th>
+                <th colspan="2" class="bg-lime-200/90 px-3 py-2 text-lime-950 border-r-2 border-l-2 border-lime-400 border-slate-500">% Cost</th>
                 <th colspan="4" class="bg-indigo-50/90 px-3 py-2 text-indigo-900 border-r-2 border-slate-400">F &amp; B Purchase</th>
                 <th colspan="4" class="bg-teal-50/90 px-3 py-2 text-teal-900 border-r-2 border-slate-400">Service Purchase</th>
                 <th colspan="2" class="bg-orange-50/90 px-3 py-2 text-orange-900 border-r-2 border-slate-400">Outlet Transfer</th>
@@ -241,7 +242,7 @@ const currentOutletDisplayName = computed(() => {
               </tr>
               <tr class="border-b border-slate-300 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 [&>th]:sticky [&>th]:top-[42px] [&>th]:z-30 [&>th]:bg-slate-50">
                 <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Revenue</th>
-                <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">No Disc</th>
+                <th class="whitespace-nowrap bg-emerald-50/60 px-3 py-3 text-right text-emerald-900">Engineering</th>
                 <th class="whitespace-nowrap bg-red-50/60 px-3 py-3 text-right text-red-900">Discount</th>
                 <th class="whitespace-nowrap bg-rose-50/60 px-3 py-3 text-right text-rose-900 border-r-2 border-slate-400">% Disc</th>
                 <th class="whitespace-nowrap bg-sky-50/60 px-3 py-3 text-right text-sky-900">F &amp; B</th>
@@ -261,6 +262,8 @@ const currentOutletDisplayName = computed(() => {
                 >
                   {{ type.label }}
                 </th>
+                <th class="whitespace-nowrap bg-lime-100 px-3 py-3 text-right text-lime-950 border-l-2 border-lime-300">Cost x Revenue</th>
+                <th class="whitespace-nowrap bg-lime-100 px-3 py-3 text-right text-lime-950 border-r-2 border-slate-400">Cost x Engineering</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Budget ({{ kitchen_bar_ratio_pct }}%)</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Purchased</th>
                 <th class="whitespace-nowrap bg-indigo-50/60 px-3 py-3 text-right text-indigo-900">Variance</th>
@@ -342,6 +345,12 @@ const currentOutletDisplayName = computed(() => {
                   ]"
                 >
                   {{ getCategoryCostValue(row, type.key) > 0 ? 'Rp ' + formatRp(getCategoryCostValue(row, type.key)) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-lime-100/60 px-3 py-2 text-right tabular-nums font-semibold text-lime-950 border-l-2 border-lime-200">
+                  {{ row.cost_x_revenue > 0 ? 'Rp ' + formatRp(row.cost_x_revenue) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-lime-100/60 px-3 py-2 text-right tabular-nums font-semibold text-lime-950 border-r-2 border-slate-300">
+                  {{ row.cost_x_engineering > 0 ? 'Rp ' + formatRp(row.cost_x_engineering) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-indigo-50/40 px-3 py-2 text-right tabular-nums text-indigo-950">
                   {{ row.forecast_revenue > 0 ? 'Rp ' + formatRp(row.cap_kitchen_bar) : '—' }}
@@ -447,6 +456,12 @@ const currentOutletDisplayName = computed(() => {
                 >
                   Rp {{ formatRp(getCategoryCostTotalValue(type.key)) }}
                 </td>
+                <td class="bg-lime-200/80 px-3 py-3 text-right tabular-nums text-lime-950 font-bold border-l-2 border-lime-300">
+                  Rp {{ formatRp(totals.cost_x_revenue) }}
+                </td>
+                <td class="bg-lime-200/80 px-3 py-3 text-right tabular-nums text-lime-950 font-bold border-r-2 border-slate-300">
+                  Rp {{ formatRp(totals.cost_x_engineering) }}
+                </td>
                 <td class="bg-indigo-100/80 px-3 py-3 text-right tabular-nums text-indigo-950">
                   Rp {{ formatRp(totals.cap_kitchen_bar) }}
                 </td>
@@ -498,7 +513,9 @@ const currentOutletDisplayName = computed(() => {
           * <strong>Category Cost Usage</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> dengan type <strong>Usage</strong> pada tanggal tersebut.
           * <strong>Total Cost</strong>: penjumlahan cost menu, cost modifier, dan category cost usage.
           * <strong>Discount</strong>: total <strong>discount + manual discount amount</strong> pada tanggal tersebut.
-          * <strong>No Disc</strong>: diambil dari kolom <strong>orders.total</strong>.
+          * <strong>Engineering</strong>: diambil dari kolom <strong>orders.total</strong>.
+          * <strong>Cost x Revenue</strong>: (<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) × Revenue / 100.
+          * <strong>Cost x Engineering</strong>: (<strong>Total Cost</strong> + <strong>Category Cost</strong> selain type <strong>rnd</strong> dan <strong>marketing</strong>) × Engineering / 100.
           * <strong>% Disc</strong>: persentase <strong>Discount / Revenue</strong> pada tanggal tersebut.
           * <strong>Category Cost</strong>: subtotal MAC dari <strong>Category Cost Outlet</strong> untuk semua type selain <strong>Usage</strong>.
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =

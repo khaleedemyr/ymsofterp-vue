@@ -707,6 +707,7 @@ class FloorOrderVsForecastReportController extends Controller
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
             $revenueBeforeDiscount = round((float) ($revenueBeforeDiscountByDate[$ds] ?? 0), 2);
             $revenueWithoutTaxService = round((float) ($revenueWithoutTaxServiceByDate[$ds] ?? 0), 2);
+            $engineering = $revenueBeforeDiscount;
             $discount = round((float) ($discountByDate[$ds] ?? 0), 2);
             $pctDiscount = $revenue > 0 ? round(($discount / $revenue) * 100, 1) : null;
             $costMenu = round((float) ($costMenuByDate[$ds] ?? 0), 2);
@@ -721,6 +722,17 @@ class FloorOrderVsForecastReportController extends Controller
             }
             $categoryCostTotalNonUsage = round($categoryCostTotalNonUsage, 2);
             $costTotal = round($costMenu + $costModifier + $categoryCostUsage, 2);
+            $categoryCostNonUsageExcludingRndMarketing = 0.0;
+            foreach ($categoryCostValues as $typeKey => $value) {
+                if (in_array((string) $typeKey, ['rnd', 'marketing'], true)) {
+                    continue;
+                }
+                $categoryCostNonUsageExcludingRndMarketing += (float) $value;
+            }
+            $categoryCostNonUsageExcludingRndMarketing = round($categoryCostNonUsageExcludingRndMarketing, 2);
+            $costPercentageBase = round($costTotal + $categoryCostNonUsageExcludingRndMarketing, 2);
+            $costXRevenue = round(($costPercentageBase * $revenue) / 100, 2);
+            $costXEngineering = round(($costPercentageBase * $engineering) / 100, 2);
             $pctCost = $revenue > 0 ? round(($costTotal / $revenue) * 100, 1) : null;
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
             $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
@@ -732,6 +744,7 @@ class FloorOrderVsForecastReportController extends Controller
                 'forecast_revenue' => $forecast,
                 'revenue' => $revenue,
                 'revenue_before_discount' => $revenueBeforeDiscount,
+                'engineering' => $engineering,
                 'revenue_without_tax_service' => $revenueWithoutTaxService,
                 'discount' => $discount,
                 'pct_discount' => $pctDiscount,
@@ -745,6 +758,10 @@ class FloorOrderVsForecastReportController extends Controller
                 'pct_cost' => $pctCost,
                 'category_cost_values' => $categoryCostValues,
                 'category_cost_total_non_usage' => $categoryCostTotalNonUsage,
+                'category_cost_total_non_usage_excluding_rnd_marketing' => $categoryCostNonUsageExcludingRndMarketing,
+                'cost_percentage_base' => $costPercentageBase,
+                'cost_x_revenue' => $costXRevenue,
+                'cost_x_engineering' => $costXEngineering,
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
@@ -768,6 +785,7 @@ class FloorOrderVsForecastReportController extends Controller
             'forecast_revenue' => 0,
             'revenue' => 0,
             'revenue_before_discount' => 0,
+            'engineering' => 0,
             'revenue_without_tax_service' => 0,
             'discount' => 0,
             'pct_discount' => null,
@@ -779,8 +797,12 @@ class FloorOrderVsForecastReportController extends Controller
             'category_cost_usage' => 0,
             'category_cost_values' => [],
             'category_cost_total_non_usage' => 0,
+            'category_cost_total_non_usage_excluding_rnd_marketing' => 0,
             'cost_total' => 0,
             'pct_cost' => null,
+            'cost_percentage_base' => 0,
+            'cost_x_revenue' => 0,
+            'cost_x_engineering' => 0,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -802,12 +824,14 @@ class FloorOrderVsForecastReportController extends Controller
             $totals['forecast_revenue'] += $r['forecast_revenue'];
             $totals['revenue'] += $r['revenue'];
             $totals['revenue_before_discount'] += $r['revenue_before_discount'];
+            $totals['engineering'] += $r['engineering'];
             $totals['revenue_without_tax_service'] += $r['revenue_without_tax_service'];
             $totals['discount'] += $r['discount'];
             $totals['cost_menu'] += $r['cost_menu'];
             $totals['cost_modifier'] += $r['cost_modifier'];
             $totals['category_cost_usage'] += $r['category_cost_usage'];
             $totals['category_cost_total_non_usage'] += $r['category_cost_total_non_usage'];
+            $totals['category_cost_total_non_usage_excluding_rnd_marketing'] += $r['category_cost_total_non_usage_excluding_rnd_marketing'];
             foreach (($r['category_cost_values'] ?? []) as $typeKey => $value) {
                 $totals['category_cost_values'][$typeKey] = ($totals['category_cost_values'][$typeKey] ?? 0) + (float) $value;
             }
@@ -844,6 +868,20 @@ class FloorOrderVsForecastReportController extends Controller
         }
         $totals['pct_discount'] = $totals['revenue'] > 0 ? round(($totals['discount'] / $totals['revenue']) * 100, 1) : null;
         $totals['pct_cost'] = $totals['revenue'] > 0 ? round(($totals['cost_total'] / $totals['revenue']) * 100, 1) : null;
+        $categoryCostTotalNonUsageExcludingRndMarketing = 0.0;
+        foreach (($totals['category_cost_values'] ?? []) as $typeKey => $value) {
+            if (in_array((string) $typeKey, ['rnd', 'marketing'], true)) {
+                continue;
+            }
+            $categoryCostTotalNonUsageExcludingRndMarketing += (float) $value;
+        }
+        $totals['category_cost_total_non_usage_excluding_rnd_marketing'] = round($categoryCostTotalNonUsageExcludingRndMarketing, 2);
+        $totals['cost_percentage_base'] = round(
+            (float) $totals['cost_total'] + (float) $totals['category_cost_total_non_usage_excluding_rnd_marketing'],
+            2
+        );
+        $totals['cost_x_revenue'] = round(((float) $totals['cost_percentage_base'] * (float) $totals['revenue']) / 100, 2);
+        $totals['cost_x_engineering'] = round(((float) $totals['cost_percentage_base'] * (float) $totals['engineering']) / 100, 2);
 
         return [
             'outlets' => $outlets,

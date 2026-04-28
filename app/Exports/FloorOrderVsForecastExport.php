@@ -12,6 +12,7 @@ use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithStyles, ShouldAutoSize, WithEvents
@@ -45,6 +46,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
         if (count($categoryCostTypes) > 0) {
             $this->pushGroup($row1, 'Category Cost', count($categoryCostTypes));
         }
+        $this->pushGroup($row1, '% Cost', 2);
         $this->pushGroup($row1, 'F & B Purchase', 4);
         $this->pushGroup($row1, 'Service Purchase', 4);
         $this->pushGroup($row1, 'Outlet Transfer', 2);
@@ -56,7 +58,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             '',
             '',
             'Revenue',
-            'No Disc',
+            'Engineering',
             'Discount',
             '% Disc',
             'F & B',
@@ -74,6 +76,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
         array_push(
             $row2,
+            'Cost x Revenue',
+            'Cost x Engineering',
             'Budget',
             'Purchased',
             'Variance',
@@ -125,6 +129,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
             array_push(
                 $line,
+                (float) ($row['cost_x_revenue'] ?? 0),
+                (float) ($row['cost_x_engineering'] ?? 0),
                 (float) ($row['cap_kitchen_bar'] ?? 0),
                 (float) ($row['ro_kitchen_bar'] ?? 0),
                 (float) ($row['diff_kitchen_bar'] ?? 0),
@@ -169,6 +175,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
         array_push(
             $totalRow,
+            (float) ($totals['cost_x_revenue'] ?? 0),
+            (float) ($totals['cost_x_engineering'] ?? 0),
             (float) ($totals['cap_kitchen_bar'] ?? 0),
             (float) ($totals['ro_kitchen_bar'] ?? 0),
             (float) ($totals['diff_kitchen_bar'] ?? 0),
@@ -242,7 +250,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 if ($categoryCount > 0) {
                     $groupSpans[] = $categoryCount; // Category Cost
                 }
-                array_push($groupSpans, 4, 4, 2, 2, 3); // Purchase, Transfer, SOH
+                array_push($groupSpans, 2, 4, 4, 2, 2, 3); // % Cost, Purchase, Transfer, SOH
 
                 $startCol = 4;
                 foreach ($groupSpans as $span) {
@@ -259,6 +267,15 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
                 $lastColumnIndex = $startCol - 1;
                 $lastColumnLetter = Coordinate::stringFromColumnIndex($lastColumnIndex);
+                $lastRow = $sheet->getHighestRow();
+
+                $colIndex = 4; // D
+                $colIndex += 4; // Revenue
+                $colIndex += 3; // Begin Stock
+                $colIndex += 4; // Cost
+                $colIndex += $categoryCount; // Category Cost
+                $costXRevenueCol = $colIndex;
+                $costXEngineeringCol = $colIndex + 1;
 
                 $sheet->getStyle('A1:'.$lastColumnLetter.'2')->applyFromArray([
                     'alignment' => [
@@ -273,6 +290,15 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                         ],
                     ],
                 ]);
+
+                $costXRevenueLetter = Coordinate::stringFromColumnIndex($costXRevenueCol);
+                $costXEngineeringLetter = Coordinate::stringFromColumnIndex($costXEngineeringCol);
+                $sheet->getStyle($costXRevenueLetter.'3:'.$costXRevenueLetter.$lastRow)
+                    ->getNumberFormat()
+                    ->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+                $sheet->getStyle($costXEngineeringLetter.'3:'.$costXEngineeringLetter.$lastRow)
+                    ->getNumberFormat()
+                    ->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
 
                 $sheet->freezePane('D3');
                 $sheet->getRowDimension(1)->setRowHeight(24);
