@@ -104,6 +104,8 @@ class FloorOrderVsForecastReportController extends Controller
         $roKitchenBar = [];
         $roService = [];
         $roOther = [];
+        $costMenuByDate = [];
+        $costModifierByDate = [];
         $revenueByDate = [];
         $stockOnHandKitchenBarByDate = [];
         $stockOnHandServiceByDate = [];
@@ -133,6 +135,16 @@ class FloorOrderVsForecastReportController extends Controller
                 ->where('id_outlet', $selectedOutletId)
                 ->value('qr_code');
 
+            $warehouseIdsByName = DB::table('warehouse_outlets')
+                ->where('outlet_id', $selectedOutletId)
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->get()
+                ->mapWithKeys(function ($warehouse) {
+                    return [strtolower(trim((string) ($warehouse->name ?? ''))) => (int) $warehouse->id];
+                })
+                ->all();
+
             if ($outletQr) {
                 $revenueRows = DB::table('orders')
                     ->where('kode_outlet', $outletQr)
@@ -143,6 +155,182 @@ class FloorOrderVsForecastReportController extends Controller
 
                 foreach ($revenueRows as $rv) {
                     $revenueByDate[Carbon::parse($rv->d)->toDateString()] = round((float) $rv->revenue, 2);
+                }
+
+                $foodTypes = ['Food Asian', 'Food Western', 'Food'];
+                $kitchenWarehouseId = (int) ($warehouseIdsByName['kitchen'] ?? 0);
+                $barWarehouseId = (int) ($warehouseIdsByName['bar'] ?? 0);
+
+                if ($kitchenWarehouseId > 0 || $barWarehouseId > 0) {
+                    $menuCostRows = DB::table('order_items as oi')
+                        ->join('items as menu_item', 'menu_item.id', '=', 'oi.item_id')
+                        ->join('item_bom as bom', 'bom.item_id', '=', 'menu_item.id')
+                        ->join('outlet_food_inventory_items as inventory_item', 'inventory_item.item_id', '=', 'bom.material_item_id')
+                        ->leftJoin('outlet_food_inventory_stocks as stock', function ($join) use ($selectedOutletId, $kitchenWarehouseId, $barWarehouseId, $foodTypes) {
+                            $join->on('stock.inventory_item_id', '=', 'inventory_item.id')
+                                ->where('stock.id_outlet', '=', $selectedOutletId)
+                                ->where(function ($query) use ($kitchenWarehouseId, $barWarehouseId, $foodTypes) {
+                                    if ($kitchenWarehouseId > 0) {
+                                        $query->where(function ($nested) use ($kitchenWarehouseId, $foodTypes) {
+                                            $nested->whereIn('menu_item.type', $foodTypes)
+                                                ->where('stock.warehouse_outlet_id', '=', $kitchenWarehouseId);
+                                        });
+                                    }
+
+                                    if ($barWarehouseId > 0) {
+                                        $method = $kitchenWarehouseId > 0 ? 'orWhere' : 'where';
+                                        $query->{$method}(function ($nested) use ($barWarehouseId) {
+                                            $nested->where('menu_item.type', 'Beverages')
+                                                ->where('stock.warehouse_outlet_id', '=', $barWarehouseId);
+                                        });
+                                    }
+                                });
+                        })
+                        ->where('oi.kode_outlet', $outletQr)
+                        ->where('oi.stock_cut', 1)
+                        ->whereBetween(DB::raw('DATE(oi.created_at)'), [$rangeStart, $rangeEnd])
+                        ->selectRaw('DATE(oi.created_at) as d, SUM(oi.qty * bom.qty * COALESCE(stock.last_cost_small, 0)) as total_menu_cost')
+                        ->groupBy(DB::raw('DATE(oi.created_at)'))
+                        ->get();
+
+                    foreach ($menuCostRows as $menuCostRow) {
+                        $costMenuByDate[Carbon::parse($menuCostRow->d)->toDateString()] = round((float) ($menuCostRow->total_menu_cost ?? 0), 2);
+                    }
+
+                    $modifierOrderItems = DB::table('order_items as oi')
+                        ->join('items as menu_item', 'menu_item.id', '=', 'oi.item_id')
+                        ->where('oi.kode_outlet', $outletQr)
+                        ->where('oi.stock_cut', 1)
+                        ->whereBetween(DB::raw('DATE(oi.created_at)'), [$rangeStart, $rangeEnd])
+                        ->whereNotNull('oi.modifiers')
+                        ->where('oi.modifiers', '!=', '')
+                        ->selectRaw('DATE(oi.created_at) as d, menu_item.type, oi.modifiers')
+                        ->get();
+
+                    $modifierUsageByDate = [];
+                    $modifierNames = [];
+                    foreach ($modifierOrderItems as $modifierOrderItem) {
+                        $parsedModifiers = json_decode((string) $modifierOrderItem->modifiers, true);
+                        if (!is_array($parsedModifiers)) {
+                            continue;
+                        }
+
+                        $warehouseBucket = null;
+                        if (in_array($modifierOrderItem->type, $foodTypes, true)) {
+                            $warehouseBucket = 'kitchen';
+                        } elseif ($modifierOrderItem->type === 'Beverages') {
+                            $warehouseBucket = 'bar';
+                        }
+
+                        if ($warehouseBucket === null) {
+                            continue;
+                        }
+
+                        $dateKey = Carbon::parse($modifierOrderItem->d)->toDateString();
+                        foreach ($parsedModifiers as $group) {
+                            if (!is_array($group)) {
+                                continue;
+                            }
+
+                            foreach ($group as $modifierName => $modifierQty) {
+                                $modifierQty = (float) $modifierQty;
+                                if ($modifierQty <= 0) {
+                                    continue;
+                                }
+
+                                $usageKey = $dateKey.'|'.$warehouseBucket.'|'.$modifierName;
+                                $modifierUsageByDate[$usageKey] = ($modifierUsageByDate[$usageKey] ?? 0) + $modifierQty;
+                                $modifierNames[$modifierName] = true;
+                            }
+                        }
+                    }
+
+                    if (!empty($modifierUsageByDate)) {
+                        $modifierOptions = DB::table('modifier_options')
+                            ->whereIn('name', array_keys($modifierNames))
+                            ->whereNotNull('modifier_bom_json')
+                            ->where('modifier_bom_json', '!=', '')
+                            ->where('modifier_bom_json', '!=', '[]')
+                            ->orderBy('id')
+                            ->get(['id', 'modifier_id', 'name', 'modifier_bom_json']);
+
+                        $modifierOptionByName = [];
+                        $modifierMaterialItemIds = [];
+                        foreach ($modifierOptions as $modifierOption) {
+                            if ((int) ($modifierOption->modifier_id ?? 0) === 1) {
+                                continue;
+                            }
+
+                            if (isset($modifierOptionByName[$modifierOption->name])) {
+                                continue;
+                            }
+
+                            $modifierBom = json_decode((string) $modifierOption->modifier_bom_json, true);
+                            if (!is_array($modifierBom) || empty($modifierBom)) {
+                                continue;
+                            }
+
+                            $modifierOptionByName[$modifierOption->name] = $modifierBom;
+                            foreach ($modifierBom as $bomItem) {
+                                $materialItemId = (int) ($bomItem['item_id'] ?? 0);
+                                if ($materialItemId > 0) {
+                                    $modifierMaterialItemIds[$materialItemId] = true;
+                                }
+                            }
+                        }
+
+                        if (!empty($modifierOptionByName) && !empty($modifierMaterialItemIds)) {
+                            $inventoryItemIdByMaterialId = DB::table('outlet_food_inventory_items')
+                                ->whereIn('item_id', array_keys($modifierMaterialItemIds))
+                                ->pluck('id', 'item_id')
+                                ->map(fn ($id) => (int) $id)
+                                ->all();
+
+                            $stockCosts = DB::table('outlet_food_inventory_stocks')
+                                ->where('id_outlet', $selectedOutletId)
+                                ->whereIn('warehouse_outlet_id', array_values(array_filter([$kitchenWarehouseId, $barWarehouseId])))
+                                ->whereIn('inventory_item_id', array_values($inventoryItemIdByMaterialId))
+                                ->get(['inventory_item_id', 'warehouse_outlet_id', 'last_cost_small']);
+
+                            $stockCostByInventoryWarehouse = [];
+                            foreach ($stockCosts as $stockCost) {
+                                $stockKey = (int) $stockCost->inventory_item_id.'|'.(int) $stockCost->warehouse_outlet_id;
+                                $stockCostByInventoryWarehouse[$stockKey] = (float) ($stockCost->last_cost_small ?? 0);
+                            }
+
+                            foreach ($modifierUsageByDate as $usageKey => $totalModifierQty) {
+                                [$dateKey, $warehouseBucket, $modifierName] = explode('|', $usageKey, 3);
+                                $warehouseId = $warehouseBucket === 'kitchen' ? $kitchenWarehouseId : $barWarehouseId;
+                                $modifierBom = $modifierOptionByName[$modifierName] ?? null;
+
+                                if (!$warehouseId || !$modifierBom) {
+                                    continue;
+                                }
+
+                                $modifierTotalCost = 0.0;
+                                foreach ($modifierBom as $bomItem) {
+                                    $materialItemId = (int) ($bomItem['item_id'] ?? 0);
+                                    $bomQty = (float) ($bomItem['qty'] ?? 0);
+                                    $inventoryItemId = (int) ($inventoryItemIdByMaterialId[$materialItemId] ?? 0);
+                                    if ($materialItemId <= 0 || $bomQty <= 0 || $inventoryItemId <= 0) {
+                                        continue;
+                                    }
+
+                                    $stockKey = $inventoryItemId.'|'.$warehouseId;
+                                    $lastCostSmall = (float) ($stockCostByInventoryWarehouse[$stockKey] ?? 0);
+                                    if ($lastCostSmall <= 0) {
+                                        continue;
+                                    }
+
+                                    $modifierTotalCost += $totalModifierQty * $bomQty * $lastCostSmall;
+                                }
+
+                                if ($modifierTotalCost > 0) {
+                                    $costModifierByDate[$dateKey] = round(($costModifierByDate[$dateKey] ?? 0) + $modifierTotalCost, 2);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -377,6 +565,9 @@ class FloorOrderVsForecastReportController extends Controller
             $pctSvc = $capSvc > 0 ? round(($svc / $capSvc) * 100, 1) : null;
 
             $revenue = round((float) ($revenueByDate[$ds] ?? 0), 2);
+            $costMenu = round((float) ($costMenuByDate[$ds] ?? 0), 2);
+            $costModifier = round((float) ($costModifierByDate[$ds] ?? 0), 2);
+            $costTotal = round($costMenu + $costModifier, 2);
             $stockOnHandKitchenBar = round((float) ($stockOnHandKitchenBarByDate[$ds] ?? 0), 2);
             $stockOnHandService = round((float) ($stockOnHandServiceByDate[$ds] ?? 0), 2);
             $stockOnHandTotal = round((float) ($stockOnHandTotalByDate[$ds] ?? 0), 2);
@@ -386,6 +577,9 @@ class FloorOrderVsForecastReportController extends Controller
                 'day_name' => $cursor->locale('id')->isoFormat('dddd'),
                 'forecast_revenue' => $forecast,
                 'revenue' => $revenue,
+                'cost_menu' => $costMenu,
+                'cost_modifier' => $costModifier,
+                'cost_total' => $costTotal,
                 'stock_on_hand_kitchen_bar' => $stockOnHandKitchenBar,
                 'stock_on_hand_service' => $stockOnHandService,
                 'stock_on_hand_total' => $stockOnHandTotal,
@@ -405,6 +599,9 @@ class FloorOrderVsForecastReportController extends Controller
         $totals = [
             'forecast_revenue' => 0,
             'revenue' => 0,
+            'cost_menu' => 0,
+            'cost_modifier' => 0,
+            'cost_total' => 0,
             'stock_on_hand_kitchen_bar_end' => 0,
             'stock_on_hand_service_end' => 0,
             'stock_on_hand_total_end' => 0,
@@ -419,6 +616,9 @@ class FloorOrderVsForecastReportController extends Controller
         foreach ($rows as $r) {
             $totals['forecast_revenue'] += $r['forecast_revenue'];
             $totals['revenue'] += $r['revenue'];
+            $totals['cost_menu'] += $r['cost_menu'];
+            $totals['cost_modifier'] += $r['cost_modifier'];
+            $totals['cost_total'] += $r['cost_total'];
             $totals['cap_kitchen_bar'] += $r['cap_kitchen_bar'];
             $totals['cap_service'] += $r['cap_service'];
             $totals['ro_kitchen_bar'] += $r['ro_kitchen_bar'];

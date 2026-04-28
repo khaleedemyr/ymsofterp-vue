@@ -101,6 +101,9 @@ const currentOutletDisplayName = computed(() => {
           Nilai per item: jika sudah ada <strong class="text-white">GR Outlet (completed)</strong>, dipakai
           <strong class="text-white">Σ qty terima × harga RO</strong> per item (sama seperti detail GR di Invoice Outlet); jika belum ada GR untuk baris tersebut, dipakai
           <strong class="text-white">subtotal FO</strong>.
+          Kolom <strong class="text-white">Cost Menu</strong> dan <strong class="text-white">Cost Modifier</strong>
+          mengambil referensi cost dari logika <strong class="text-white">Report Cost Menu</strong> di Stock Cut
+          untuk tanggal yang sama, lalu dijumlahkan di <strong class="text-white">Total Cost</strong>.
           Plafon dibandingkan dengan
           <strong class="text-white">{{ kitchen_bar_ratio_pct }}%</strong> dan
           <strong class="text-white">{{ service_ratio_pct }}%</strong> dari
@@ -173,7 +176,7 @@ const currentOutletDisplayName = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1700px] border-collapse text-sm">
+          <table class="w-full min-w-[2050px] border-collapse text-sm">
             <thead>
               <tr class="border-b border-slate-200 bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                 <th class="sticky left-0 z-20 whitespace-nowrap bg-slate-100 px-3 py-3 shadow-[2px_0_0_rgba(0,0,0,0.06)]">
@@ -182,6 +185,9 @@ const currentOutletDisplayName = computed(() => {
                 <th class="whitespace-nowrap px-3 py-3">Hari</th>
                 <th class="whitespace-nowrap px-3 py-3 text-right">Forecast</th>
                 <th class="whitespace-nowrap bg-emerald-50/90 px-3 py-3 text-right text-emerald-900">Revenue</th>
+                <th class="whitespace-nowrap bg-cyan-50/90 px-3 py-3 text-right text-cyan-900">Cost Menu*</th>
+                <th class="whitespace-nowrap bg-fuchsia-50/90 px-3 py-3 text-right text-fuchsia-900">Cost Modifier*</th>
+                <th class="whitespace-nowrap bg-rose-50/90 px-3 py-3 text-right text-rose-900">Total Cost*</th>
                 <th class="whitespace-nowrap bg-amber-50/90 px-3 py-3 text-right text-amber-900">SOH F &amp; B</th>
                 <th class="whitespace-nowrap bg-orange-50/90 px-3 py-3 text-right text-orange-900">SOH Service</th>
                 <th class="whitespace-nowrap bg-yellow-50/90 px-3 py-3 text-right text-yellow-900">SOH Total</th>
@@ -220,6 +226,15 @@ const currentOutletDisplayName = computed(() => {
                 </td>
                 <td class="whitespace-nowrap bg-emerald-50/40 px-3 py-2 text-right tabular-nums font-medium text-emerald-950">
                   {{ row.revenue > 0 ? 'Rp ' + formatRp(row.revenue) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-cyan-50/40 px-3 py-2 text-right tabular-nums font-medium text-cyan-950">
+                  {{ row.cost_menu > 0 ? 'Rp ' + formatRp(row.cost_menu) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-fuchsia-50/40 px-3 py-2 text-right tabular-nums font-medium text-fuchsia-950">
+                  {{ row.cost_modifier > 0 ? 'Rp ' + formatRp(row.cost_modifier) : '—' }}
+                </td>
+                <td class="whitespace-nowrap bg-rose-50/40 px-3 py-2 text-right tabular-nums font-semibold text-rose-950">
+                  {{ row.cost_total > 0 ? 'Rp ' + formatRp(row.cost_total) : '—' }}
                 </td>
                 <td class="whitespace-nowrap bg-amber-50/40 px-3 py-2 text-right tabular-nums font-medium text-amber-950">
                   {{ row.stock_on_hand_kitchen_bar > 0 ? 'Rp ' + formatRp(row.stock_on_hand_kitchen_bar) : '—' }}
@@ -276,6 +291,15 @@ const currentOutletDisplayName = computed(() => {
                 <td class="bg-emerald-100/80 px-3 py-3 text-right tabular-nums text-emerald-950 font-semibold">
                   Rp {{ formatRp(totals.revenue) }}
                 </td>
+                <td class="bg-cyan-100/80 px-3 py-3 text-right tabular-nums text-cyan-950 font-semibold">
+                  Rp {{ formatRp(totals.cost_menu) }}
+                </td>
+                <td class="bg-fuchsia-100/80 px-3 py-3 text-right tabular-nums text-fuchsia-950 font-semibold">
+                  Rp {{ formatRp(totals.cost_modifier) }}
+                </td>
+                <td class="bg-rose-100/80 px-3 py-3 text-right tabular-nums text-rose-950 font-semibold">
+                  Rp {{ formatRp(totals.cost_total) }}
+                </td>
                 <td class="bg-amber-100/80 px-3 py-3 text-right tabular-nums text-amber-950 font-semibold">
                   Rp {{ formatRp(totals.stock_on_hand_kitchen_bar_end) }}
                 </td>
@@ -313,6 +337,9 @@ const currentOutletDisplayName = computed(() => {
           </table>
         </div>
         <p class="border-t border-slate-100 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
+          * <strong>Cost Menu</strong>: cost bahan baku menu dari order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
+          * <strong>Cost Modifier</strong>: cost bahan modifier dari JSON modifier order item yang sudah <strong>stock cut</strong> pada tanggal tersebut.
+          * <strong>Total Cost</strong>: penjumlahan cost menu dan cost modifier, mengikuti referensi Report Cost Menu Stock Cut.
           * <strong>RO lain</strong>: warehouse outlet FO selain nama Kitchen / Bar / Service (misal typo atau warehouse tambahan).
           FO dengan status selain draft / rejected. Nilai Kitchen+Bar dan Service per item =
           qty terima GR × harga RO jika ada GR completed; lainnya subtotal FO.
