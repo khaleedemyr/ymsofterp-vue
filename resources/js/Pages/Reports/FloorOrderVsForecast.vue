@@ -136,24 +136,6 @@ const currentOutletDisplayName = computed(() => {
       >
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200/90">Laporan</p>
         <h1 class="mt-2 text-2xl font-bold tracking-tight">RO Food Floor vs Forecast Harian</h1>
-        <p class="mt-2 max-w-3xl text-sm text-slate-300">
-          Per <strong class="text-white">tanggal kedatangan</strong> FO, pembagian warehouse outlet
-          <strong class="text-white">Kitchen + Bar</strong> vs <strong class="text-white">Service</strong>.
-          Nilai per item: jika sudah ada <strong class="text-white">GR Outlet (completed)</strong>, dipakai
-          <strong class="text-white">Σ qty terima × harga RO</strong> per item (sama seperti detail GR di Invoice Outlet); jika belum ada GR untuk baris tersebut, dipakai
-          <strong class="text-white">subtotal FO</strong>.
-          Kolom <strong class="text-white">Discount</strong> mengambil referensi dari Sales Report:
-          <strong class="text-white">discount + manual discount amount</strong> per tanggal.
-          Kolom <strong class="text-white">Cost Menu</strong> dan <strong class="text-white">Cost Modifier</strong>
-          mengambil referensi cost dari logika <strong class="text-white">Report Cost Menu</strong> di Stock Cut
-          untuk tanggal yang sama. Kolom <strong class="text-white">Category Cost Usage</strong> mengambil nilai
-          dari <strong class="text-white">Category Cost Outlet</strong> type Usage pada tanggal yang sama. Semuanya dijumlahkan di
-          <strong class="text-white">Total Cost</strong>.
-          Plafon dibandingkan dengan
-          <strong class="text-white">{{ kitchen_bar_ratio_pct }}%</strong> dan
-          <strong class="text-white">{{ service_ratio_pct }}%</strong> dari
-          <strong class="text-white">forecast revenue harian</strong> (Revenue Targets).
-        </p>
       </div>
 
       <div class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
