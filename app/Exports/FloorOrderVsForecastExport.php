@@ -39,6 +39,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'Forecast',
         ];
 
+        $this->pushGroup($row1, 'F & B Purchase', 4);
+        $this->pushGroup($row1, 'Service Purchase', 4);
         $this->pushGroup($row1, 'Revenue', 4);
         $this->pushGroup($row1, 'Begin Stock', 3);
         $this->pushGroup($row1, 'Cost', 4);
@@ -46,16 +48,23 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             $this->pushGroup($row1, 'Category Cost', count($categoryCostTypes));
         }
         $this->pushGroup($row1, '% Cost', 2);
-        $this->pushGroup($row1, 'F & B Purchase', 4);
-        $this->pushGroup($row1, 'Service Purchase', 4);
         $this->pushGroup($row1, 'Outlet Transfer', 2);
         $this->pushGroup($row1, 'Stock Adjustment', 2);
         $this->pushGroup($row1, 'Stock on Hand', 3);
+        $this->pushGroup($row1, '% COGS (SOH)', 1);
 
         $row2 = [
             '',
             '',
             '',
+            'Budget',
+            'Purchased',
+            'Variance',
+            '%',
+            'Budget',
+            'Purchased',
+            'Variance',
+            '%',
             'Revenue',
             'Engineering',
             'Discount',
@@ -75,23 +84,16 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
 
         array_push(
             $row2,
-            'Cost x Revenue',
-            'Cost x Engineering',
-            'Budget',
-            'Purchased',
-            'Variance',
-            '%',
-            'Budget',
-            'Purchased',
-            'Variance',
-            '%',
+            'Cost % Revenue',
+            'Cost % Engineering',
             'Transfer Out',
             'Transfer In',
             'Adj In',
             'Adj Out',
             'F & B',
             'Service',
-            'Total'
+            'Total',
+            '% COGS (SOH)'
         );
 
         return [
@@ -109,6 +111,14 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 $row['date'] ?? '',
                 $row['day_name'] ?? '',
                 (float) ($row['forecast_revenue'] ?? 0),
+                (float) ($row['cap_kitchen_bar'] ?? 0),
+                (float) ($row['ro_kitchen_bar'] ?? 0),
+                (float) ($row['diff_kitchen_bar'] ?? 0),
+                $row['pct_kitchen_bar_vs_cap'] ?? null,
+                (float) ($row['cap_service'] ?? 0),
+                (float) ($row['ro_service'] ?? 0),
+                (float) ($row['diff_service'] ?? 0),
+                $row['pct_service_vs_cap'] ?? null,
                 (float) ($row['revenue'] ?? 0),
                 (float) ($row['revenue_before_discount'] ?? 0),
                 (float) ($row['discount'] ?? 0),
@@ -130,21 +140,14 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 $line,
                 $row['cost_x_revenue'] ?? null,
                 $row['cost_x_engineering'] ?? null,
-                (float) ($row['cap_kitchen_bar'] ?? 0),
-                (float) ($row['ro_kitchen_bar'] ?? 0),
-                (float) ($row['diff_kitchen_bar'] ?? 0),
-                $row['pct_kitchen_bar_vs_cap'] ?? null,
-                (float) ($row['cap_service'] ?? 0),
-                (float) ($row['ro_service'] ?? 0),
-                (float) ($row['diff_service'] ?? 0),
-                $row['pct_service_vs_cap'] ?? null,
                 (float) ($row['transfer_out'] ?? 0),
                 (float) ($row['transfer_in'] ?? 0),
                 (float) ($row['adj_in'] ?? 0),
                 (float) ($row['adj_out'] ?? 0),
                 (float) ($row['stock_on_hand_kitchen_bar'] ?? 0),
                 (float) ($row['stock_on_hand_service'] ?? 0),
-                (float) ($row['stock_on_hand_total'] ?? 0)
+                (float) ($row['stock_on_hand_total'] ?? 0),
+                $row['pct_cogs'] ?? null
             );
 
             return $line;
@@ -155,6 +158,14 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             'Total bulan (SOH: posisi akhir bulan)',
             '',
             (float) ($totals['forecast_revenue'] ?? 0),
+            (float) ($totals['cap_kitchen_bar'] ?? 0),
+            (float) ($totals['ro_kitchen_bar'] ?? 0),
+            (float) ($totals['diff_kitchen_bar'] ?? 0),
+            null,
+            (float) ($totals['cap_service'] ?? 0),
+            (float) ($totals['ro_service'] ?? 0),
+            (float) ($totals['diff_service'] ?? 0),
+            null,
             (float) ($totals['revenue'] ?? 0),
             (float) ($totals['revenue_before_discount'] ?? 0),
             (float) ($totals['discount'] ?? 0),
@@ -176,21 +187,14 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
             $totalRow,
             $totals['cost_x_revenue'] ?? null,
             $totals['cost_x_engineering'] ?? null,
-            (float) ($totals['cap_kitchen_bar'] ?? 0),
-            (float) ($totals['ro_kitchen_bar'] ?? 0),
-            (float) ($totals['diff_kitchen_bar'] ?? 0),
-            null,
-            (float) ($totals['cap_service'] ?? 0),
-            (float) ($totals['ro_service'] ?? 0),
-            (float) ($totals['diff_service'] ?? 0),
-            null,
             (float) ($totals['transfer_out'] ?? 0),
             (float) ($totals['transfer_in'] ?? 0),
             (float) ($totals['adj_in'] ?? 0),
             (float) ($totals['adj_out'] ?? 0),
             (float) ($totals['stock_on_hand_kitchen_bar_end'] ?? 0),
             (float) ($totals['stock_on_hand_service_end'] ?? 0),
-            (float) ($totals['stock_on_hand_total_end'] ?? 0)
+            (float) ($totals['stock_on_hand_total_end'] ?? 0),
+            $totals['pct_cogs'] ?? null
         );
 
         $rows->push($totalRow);
@@ -242,6 +246,8 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 ];
 
                 $groupSpans = [
+                    4, // F & B Purchase
+                    4, // Service Purchase
                     4, // Revenue
                     3, // Begin Stock
                     4, // Cost
@@ -249,7 +255,7 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 if ($categoryCount > 0) {
                     $groupSpans[] = $categoryCount; // Category Cost
                 }
-                array_push($groupSpans, 2, 4, 4, 2, 2, 3); // % Cost, Purchase, Transfer, SOH
+                array_push($groupSpans, 2, 2, 2, 3, 1); // % Cost, Transfer, Adjustment, SOH, % COGS
 
                 $startCol = 4;
                 foreach ($groupSpans as $span) {
@@ -269,12 +275,15 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                 $lastRow = $sheet->getHighestRow();
 
                 $colIndex = 4; // D
+                $colIndex += 4; // F & B Purchase
+                $colIndex += 4; // Service Purchase
                 $colIndex += 4; // Revenue
                 $colIndex += 3; // Begin Stock
                 $colIndex += 4; // Cost
                 $colIndex += $categoryCount; // Category Cost
                 $costXRevenueCol = $colIndex;
                 $costXEngineeringCol = $colIndex + 1;
+                $pctCogsCol = $lastColumnIndex;
 
                 $sheet->getStyle('A1:'.$lastColumnLetter.'2')->applyFromArray([
                     'alignment' => [
@@ -296,6 +305,10 @@ class FloorOrderVsForecastExport implements FromCollection, WithHeadings, WithSt
                     ->getNumberFormat()
                     ->setFormatCode('0.00"%"');
                 $sheet->getStyle($costXEngineeringLetter.'3:'.$costXEngineeringLetter.$lastRow)
+                    ->getNumberFormat()
+                    ->setFormatCode('0.00"%"');
+                $pctCogsLetter = Coordinate::stringFromColumnIndex($pctCogsCol);
+                $sheet->getStyle($pctCogsLetter.'3:'.$pctCogsLetter.$lastRow)
                     ->getNumberFormat()
                     ->setFormatCode('0.00"%"');
 
