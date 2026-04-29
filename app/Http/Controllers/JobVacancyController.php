@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\JobVacancy;
+use App\Models\JobVacancyApplication;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class JobVacancyController extends Controller
 {
@@ -134,5 +136,41 @@ class JobVacancyController extends Controller
     {
         $job = JobVacancy::findOrFail($id);
         return response()->json($job);
+    }
+
+    // Public apply endpoint
+    public function applyPublic(Request $request, $id)
+    {
+        $job = JobVacancy::findOrFail($id);
+
+        $data = $request->validate([
+            'full_name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
+            'phone' => 'required|string|max:30',
+            'cover_letter' => 'nullable|string',
+            'cv_file' => 'required|file|mimes:pdf,doc,docx|max:5120',
+        ]);
+
+        $cvPath = null;
+        if ($request->hasFile('cv_file')) {
+            $file = $request->file('cv_file');
+            $fileName = time().'_cv_'.$job->id.'_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $cvPath = $file->storeAs('job_applications/cv', $fileName, 'public');
+        }
+
+        JobVacancyApplication::create([
+            'job_vacancy_id' => $job->id,
+            'full_name' => $data['full_name'],
+            'email' => $data['email'],
+            'phone' => $data['phone'],
+            'cover_letter' => $data['cover_letter'] ?? null,
+            'cv_file' => $cvPath,
+            'status' => 'submitted',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Lamaran berhasil dikirim.',
+        ]);
     }
 } 

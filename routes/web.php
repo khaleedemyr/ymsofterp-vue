@@ -2556,6 +2556,7 @@ Route::prefix('admin/job-vacancy')->middleware(['auth'])->group(function () {
 // Job Vacancy Public List (Landing Page)
 Route::get('/job-vacancies', fn() => inertia('Landing/JobVacancyList'));
 Route::get('/api/job-vacancies', [\App\Http\Controllers\JobVacancyController::class, 'publicList']);
+Route::post('/api/job-vacancies/{id}/apply', [\App\Http\Controllers\JobVacancyController::class, 'applyPublic']);
 
 // Menu Book Public Routes (Customer View - No Auth Required)
 Route::get('/menu', [MenuBookController::class, 'customerIndex'])->name('menu.customer.index');
