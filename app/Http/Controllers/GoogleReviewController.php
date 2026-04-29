@@ -18,6 +18,31 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class GoogleReviewController extends Controller
 {
+    private function getBlockedManualReviewIds(): array
+    {
+        $rows = DB::table('google_review_ai_reports')
+            ->select('source_payload')
+            ->where('source', 'manual_db')
+            ->whereIn('status', ['pending', 'processing', 'completed'])
+            ->whereNotNull('source_payload')
+            ->orderByDesc('id')
+            ->get();
+
+        $blocked = [];
+        foreach ($rows as $row) {
+            $payload = json_decode((string) $row->source_payload, true);
+            $ids = is_array($payload['manual_review_ids'] ?? null) ? $payload['manual_review_ids'] : [];
+            foreach ($ids as $id) {
+                $intId = (int) $id;
+                if ($intId > 0) {
+                    $blocked[$intId] = true;
+                }
+            }
+        }
+
+        return array_map('intval', array_keys($blocked));
+    }
+
     private function encodeTextForLegacyUtf8(string $text): string
     {
         // Store as JSON-unicode escaped ASCII (e.g. emoji => \ud83d\udc99)
@@ -110,10 +135,14 @@ class GoogleReviewController extends Controller
             });
         }
 
+        $blockedManualReviewIds = $this->getBlockedManualReviewIds();
+        $blockedLookup = array_fill_keys($blockedManualReviewIds, true);
+
         $reviews = $query->orderByDesc('id')->paginate(20)->withQueryString();
         $reviews->setCollection(
-            $reviews->getCollection()->map(function ($row) {
+            $reviews->getCollection()->map(function ($row) use ($blockedLookup) {
                 $row->text = $this->decodeTextFromLegacyUtf8($row->text);
+                $row->ai_blocked = isset($blockedLookup[(int) $row->id]);
                 return $row;
             })
         );
@@ -121,6 +150,7 @@ class GoogleReviewController extends Controller
         return Inertia::render('google-review/Manual', [
             'outlets' => $outlets,
             'reviews' => $reviews,
+            'blockedManualReviewIds' => $blockedManualReviewIds,
             'filters' => [
                 'id_outlet' => $request->id_outlet ?? '',
                 'is_active' => $request->is_active ?? '',
@@ -1109,6 +1139,18 @@ class GoogleReviewController extends Controller
                     'error' => 'Pilih minimal 1 manual review.',
                 ], 422);
             }
+
+            $blockedManualReviewIds = $this->getBlockedManualReviewIds();
+            $blockedLookup = array_fill_keys($blockedManualReviewIds, true);
+            $alreadyClassifiedIds = array_values(array_filter($manualIds, fn ($id) => isset($blockedLookup[(int) $id])));
+            if ($alreadyClassifiedIds !== []) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Ada review yang sudah/sedang diproses AI dan tidak bisa diklasifikasikan ulang.',
+                    'blocked_ids' => $alreadyClassifiedIds,
+                ], 422);
+            }
+
             $payload = json_encode([
                 'manual_review_ids' => $manualIds,
             ], JSON_UNESCAPED_UNICODE);

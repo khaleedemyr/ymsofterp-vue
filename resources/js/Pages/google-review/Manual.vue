@@ -58,13 +58,16 @@
           </thead>
           <tbody>
             <tr v-for="r in reviews.data" :key="r.id">
-              <td><input v-model="selectedIds" type="checkbox" :value="r.id" /></td>
+              <td><input v-model="selectedIds" type="checkbox" :value="r.id" :disabled="isBlocked(r)" /></td>
               <td>{{ r.nama_outlet || '-' }}</td>
               <td>{{ r.author }}</td>
               <td>{{ r.rating }}</td>
               <td>{{ r.review_date }}</td>
               <td class="text">{{ r.text }}</td>
-              <td>{{ Number(r.is_active) === 1 ? 'Aktif' : 'Nonaktif' }}</td>
+              <td>
+                <div>{{ Number(r.is_active) === 1 ? 'Aktif' : 'Nonaktif' }}</div>
+                <div v-if="isBlocked(r)" class="tag-blocked">Sudah diproses AI</div>
+              </td>
               <td>
                 <div class="action-row">
                   <button class="btn btn-outline btn-sm" type="button" @click="openEdit(r)">Edit</button>
@@ -113,6 +116,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 const page = usePage()
 const outlets = computed(() => page.props.outlets || [])
 const reviews = computed(() => page.props.reviews || { data: [] })
+const blockedManualReviewIds = computed(() => page.props.blockedManualReviewIds || [])
+const blockedSet = computed(() => new Set((blockedManualReviewIds.value || []).map((id) => Number(id))))
 const submitting = ref(false)
 const aiSubmitting = ref(false)
 const editSubmitting = ref(false)
@@ -167,14 +172,24 @@ async function submitCreate() {
 
 function toggleAll() {
   if (selectAll.value) {
-    selectedIds.value = (reviews.value?.data || []).map((r) => r.id)
+    selectedIds.value = (reviews.value?.data || [])
+      .filter((r) => !isBlocked(r))
+      .map((r) => r.id)
     return
   }
   selectedIds.value = []
 }
 
+function isBlocked(row) {
+  return blockedSet.value.has(Number(row?.id))
+}
+
 async function startManualAi() {
-  if (selectedIds.value.length === 0) return
+  selectedIds.value = selectedIds.value.filter((id) => !blockedSet.value.has(Number(id)))
+  if (selectedIds.value.length === 0) {
+    window.alert('Semua review terpilih sudah pernah/sedang diproses AI.')
+    return
+  }
   aiSubmitting.value = true
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
   try {
@@ -197,7 +212,9 @@ async function startManualAi() {
     if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`)
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    window.alert(e.message || 'Gagal membuat laporan AI')
+    const message = e?.message || 'Gagal membuat laporan AI'
+    window.alert(message)
+    await router.reload({ preserveScroll: true })
   } finally {
     aiSubmitting.value = false
   }
@@ -271,6 +288,7 @@ th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; verti
 .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
 .modal-card { width: min(860px, 96vw); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }
 .modal-actions { grid-column: span 3; display: flex; justify-content: flex-end; gap: 8px; }
+.tag-blocked { margin-top: 4px; display: inline-block; font-size: 11px; color: #9a3412; background: #ffedd5; border: 1px solid #fdba74; border-radius: 999px; padding: 2px 8px; font-weight: 600; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } textarea { grid-column: span 1; } }
 </style>
 
