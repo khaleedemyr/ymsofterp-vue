@@ -22,6 +22,7 @@ const form = useForm({
   status: 'active',
   show_pos: '1',
   outlet_ids: [],
+  is_asset: false,
 });
 
 const availabilityType = ref('byRegion'); // 'byRegion' | 'byOutlet'
@@ -35,6 +36,7 @@ watch(() => props.show, (val) => {
     form.description = props.category.description;
     form.status = props.category.status;
     form.show_pos = String(props.category.show_pos);
+    form.is_asset = !!props.category.is_asset;
 
     // Ambil outlet yang sudah terhubung (selalu isi selectedOutlets)
     const selectedOutletObjs = props.category.outlet_ids
@@ -54,6 +56,7 @@ watch(() => props.show, (val) => {
     form.description = '';
     form.status = 'active';
     form.show_pos = '1';
+    form.is_asset = false;
     selectedRegions.value = [];
     selectedOutlets.value = [];
     availabilityType.value = 'byRegion';
@@ -142,6 +145,22 @@ function outletLabel(option) {
             <label class="block text-sm font-medium text-gray-700">Deskripsi</label>
             <textarea v-model="form.description" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
             <div v-if="form.errors.description" class="text-xs text-red-500 mt-1">{{ form.errors.description }}</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Kategori Asset?</label>
+            <Switch
+              v-model="form.is_asset"
+              :class="form.is_asset ? 'bg-blue-600' : 'bg-gray-200'"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              :checked="form.is_asset"
+              @update:modelValue="val => form.is_asset = val"
+            >
+              <span
+                :class="form.is_asset ? 'translate-x-6' : 'translate-x-1'"
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition"
+              />
+            </Switch>
+            <span class="ml-2 text-gray-700">{{ form.is_asset ? 'Asset' : 'Bukan Asset' }}</span>
           </div>
           <div class="flex gap-4">
             <div class="flex-1">

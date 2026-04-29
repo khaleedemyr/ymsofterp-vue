@@ -57,11 +57,14 @@ class CategoryController extends Controller
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
+            'is_asset' => 'nullable|boolean',
             'outlet_ids' => 'array',
             'outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
         ]);
         $categoryData = $validated;
         unset($categoryData['outlet_ids']);
+        // Default is_asset ke 0 jika null
+        $categoryData['is_asset'] = $request->input('is_asset', 0) ? 1 : 0;
         $category = \App\Models\Category::create($categoryData);
 
         // Simpan relasi ke tabel pivot
@@ -115,6 +118,8 @@ class CategoryController extends Controller
 
         $categoryData = $validated;
         unset($categoryData['outlet_ids']);
+        // Default is_asset ke 0 jika null
+        $categoryData['is_asset'] = $request->input('is_asset', 0) ? 1 : 0;
 
         $cat->update($categoryData);
 

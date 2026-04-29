@@ -126,6 +126,7 @@ function toggleStatus(cat) {
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Deskripsi</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Show POS</th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Asset?</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Availability</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
@@ -150,6 +151,11 @@ function toggleStatus(cat) {
               <td class="px-6 py-3">
                 <span :class="cat.show_pos == 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
                   {{ cat.show_pos == 1 ? 'Yes' : 'No' }}
+                </span>
+              </td>
+              <td class="px-6 py-3">
+                <span :class="cat.is_asset ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
+                  {{ cat.is_asset ? 'Asset' : 'Bukan Asset' }}
                 </span>
               </td>
               <td class="px-6 py-3">
