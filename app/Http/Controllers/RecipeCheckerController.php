@@ -20,8 +20,8 @@ class RecipeCheckerController extends Controller
             ->join('categories', 'categories.id', '=', 'items.category_id')
             ->select('items.id', 'items.name')
             ->where('items.status', 'active')
-            ->where('categories.is_asset', 0)
-            ->where('categories.show_pos', 0)
+            ->where('categories.is_asset', '0')
+            ->where('categories.show_pos', '0')
             ->when($q !== '', function ($query) use ($q) {
                 $query->where('items.name', 'like', "%{$q}%");
             })
@@ -44,16 +44,14 @@ class RecipeCheckerController extends Controller
         $q = trim((string) $request->query('q', ''));
 
         $menus = DB::table('items as i')
-            ->join('item_bom as b', 'b.item_id', '=', 'i.id')
             ->join('categories as c', 'c.id', '=', 'i.category_id')
             ->select('i.id', 'i.name')
             ->where('i.status', 'active')
-            ->where('c.is_asset', 0)
-            ->where('c.show_pos', 1)
+            ->where('c.is_asset', '0')
+            ->where('c.show_pos', '1')
             ->when($q !== '', function ($query) use ($q) {
                 $query->where('i.name', 'like', "%{$q}%");
             })
-            ->groupBy('i.id', 'i.name')
             ->orderBy('i.name')
             ->limit(30)
             ->get()
