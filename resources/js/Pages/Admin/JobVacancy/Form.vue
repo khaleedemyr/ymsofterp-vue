@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40" @click.self="$emit('close')">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 relative animate-fadeIn">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 relative animate-fadeIn max-h-[92vh] overflow-y-auto">
       <button @click="$emit('close')" class="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
       <h2 class="text-xl font-bold mb-4 text-blue-800 flex items-center gap-2">
         <i class="fa-solid fa-briefcase"></i> {{ form.id ? 'Edit' : 'Tambah' }} Lowongan
@@ -12,15 +12,33 @@
         </div>
         <div class="mb-3">
           <label class="block font-semibold mb-1">Deskripsi Pekerjaan</label>
-          <textarea v-model="form.description" required class="w-full border rounded px-3 py-2" rows="3" :disabled="isLoading"></textarea>
+          <textarea
+            v-model="form.description"
+            required
+            class="w-full border rounded px-3 py-2 min-h-[130px] resize-y"
+            rows="5"
+            :disabled="isLoading"
+          ></textarea>
         </div>
         <div class="mb-3">
           <label class="block font-semibold mb-1">Kualifikasi/Persyaratan</label>
-          <textarea v-model="form.requirements" class="w-full border rounded px-3 py-2" rows="2" :disabled="isLoading"></textarea>
+          <textarea
+            v-model="form.requirements"
+            class="w-full border rounded px-3 py-2 min-h-[120px] resize-y"
+            rows="5"
+            :disabled="isLoading"
+          ></textarea>
         </div>
         <div class="mb-3">
           <label class="block font-semibold mb-1">Lokasi Penempatan</label>
           <input v-model="form.location" required class="w-full border rounded px-3 py-2" :disabled="isLoading" />
+        </div>
+        <div class="mb-3">
+          <label class="block font-semibold mb-1">Kategori Lowongan</label>
+          <select v-model="form.job_scope" required class="w-full border rounded px-3 py-2" :disabled="isLoading">
+            <option value="outlet">Outlet</option>
+            <option value="head_office">Head Office</option>
+          </select>
         </div>
         <div class="mb-3">
           <label class="block font-semibold mb-1">Tanggal Penutupan</label>
@@ -66,6 +84,7 @@ const form = ref({
   description: '',
   requirements: '',
   location: '',
+  job_scope: 'outlet',
   closing_date: '',
   is_active: 1,
   banner: null,
@@ -81,6 +100,7 @@ watch(() => props.job, (val) => {
       description: val.description,
       requirements: val.requirements,
       location: val.location,
+      job_scope: val.job_scope || 'outlet',
       closing_date: val.closing_date,
       is_active: val.is_active,
       banner: null,
@@ -93,6 +113,7 @@ watch(() => props.job, (val) => {
       description: '',
       requirements: '',
       location: '',
+      job_scope: 'outlet',
       closing_date: '',
       is_active: 1,
       banner: null,
@@ -122,6 +143,7 @@ async function submitForm() {
     data.append('description', form.value.description);
     data.append('requirements', form.value.requirements);
     data.append('location', form.value.location);
+    data.append('job_scope', form.value.job_scope);
     data.append('closing_date', form.value.closing_date);
     data.append('is_active', form.value.is_active);
     if (form.value.banner) data.append('banner', form.value.banner);

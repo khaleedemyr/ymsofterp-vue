@@ -15,6 +15,10 @@
             <div class="absolute top-4 left-4 bg-white/80 rounded-xl px-4 py-1 text-xs font-bold text-blue-900 shadow animate-fade-in-right">
               Tutup: {{ formatDate(job.closing_date) }}
             </div>
+            <div class="absolute top-4 right-4 rounded-xl px-3 py-1 text-xs font-bold shadow"
+              :class="job.job_scope === 'head_office' ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'">
+              {{ job.job_scope === 'head_office' ? 'HEAD OFFICE' : 'OUTLET' }}
+            </div>
           </div>
           <div class="p-6 flex flex-col gap-2">
             <h2 class="text-2xl font-bold text-blue-800 mb-1 drop-shadow-sm animate-fade-in-up">{{ job.position }}</h2>
@@ -57,7 +61,11 @@ function openDetail(job) {
 }
 onMounted(async () => {
   loading.value = true;
-  const res = await axios.get('/api/job-vacancies');
+  const params = new URLSearchParams(window.location.search);
+  const scope = params.get('scope');
+  const res = await axios.get('/api/job-vacancies', {
+    params: scope ? { scope } : undefined,
+  });
   jobs.value = res.data;
   loading.value = false;
 });

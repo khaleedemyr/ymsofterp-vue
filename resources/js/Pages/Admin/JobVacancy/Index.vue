@@ -18,6 +18,11 @@
           <option value="1">Aktif</option>
           <option value="0">Nonaktif</option>
         </select>
+        <select v-model="filterScope" class="rounded border px-2 py-1">
+          <option value="">Semua Kategori</option>
+          <option value="outlet">Outlet</option>
+          <option value="head_office">Head Office</option>
+        </select>
         <input v-model="search" placeholder="Cari Posisi, Lokasi, Deskripsi..." class="rounded border px-2 py-1 w-64" />
         <button @click="fetchJobs(1)" class="bg-blue-500 text-white px-3 py-1 rounded">Cari</button>
       </div>
@@ -28,6 +33,7 @@
               <th class="px-3 py-2">#</th>
               <th class="px-3 py-2">Banner</th>
               <th class="px-3 py-2">Posisi</th>
+              <th class="px-3 py-2">Kategori</th>
               <th class="px-3 py-2">Lokasi</th>
               <th class="px-3 py-2">Tgl Tutup</th>
               <th class="px-3 py-2">Status</th>
@@ -41,6 +47,12 @@
                 <img v-if="job.banner" :src="bannerUrl(job.banner)" class="w-16 h-10 object-cover rounded shadow" />
               </td>
               <td class="px-3 py-2 font-bold">{{ job.position }}</td>
+              <td class="px-3 py-2">
+                <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                  :class="job.job_scope === 'head_office' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'">
+                  {{ job.job_scope === 'head_office' ? 'Head Office' : 'Outlet' }}
+                </span>
+              </td>
               <td class="px-3 py-2">{{ job.location }}</td>
               <td class="px-3 py-2">{{ job.closing_date }}</td>
               <td class="px-3 py-2">
@@ -57,7 +69,7 @@
               </td>
             </tr>
             <tr v-if="jobs.data.length === 0">
-              <td colspan="7" class="text-center py-8 text-gray-400">Tidak ada data lowongan</td>
+              <td colspan="8" class="text-center py-8 text-gray-400">Tidak ada data lowongan</td>
             </tr>
           </tbody>
         </table>
@@ -86,6 +98,7 @@ const props = defineProps({
 const jobs = ref(props.vacancies);
 const search = ref(props.filters?.search || '');
 const filterActive = ref(props.filters?.is_active ?? '');
+const filterScope = ref(props.filters?.job_scope ?? '');
 const showForm = ref(false);
 const selectedJob = ref(null);
 
@@ -93,11 +106,12 @@ function fetchJobs(page = 1) {
   router.get('/admin/job-vacancy', {
     search: search.value,
     is_active: filterActive.value,
+    job_scope: filterScope.value,
     page,
   }, { preserveState: true, replace: true });
 }
 
-watch([search, filterActive], () => {
+watch([search, filterActive, filterScope], () => {
   fetchJobs(1);
 });
 

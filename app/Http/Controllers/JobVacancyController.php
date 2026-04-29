@@ -23,6 +23,9 @@ class JobVacancyController extends Controller
         if ($request->has('is_active') && $request->is_active !== '') {
             $query->where('is_active', $request->is_active);
         }
+        if ($request->has('job_scope') && $request->job_scope !== '') {
+            $query->where('job_scope', $request->job_scope);
+        }
         $jobs = $query->orderByDesc('created_at')->paginate(20);
         
         // Hybrid: jika request expects JSON (AJAX/axios), return JSON
@@ -31,14 +34,27 @@ class JobVacancyController extends Controller
         }
         // Jika bukan, return Inertia
         return \Inertia\Inertia::render('Admin/JobVacancy/Index', [
-            'vacancies' => $jobs
+            'vacancies' => $jobs,
+            'filters' => [
+                'search' => $request->search ?? '',
+                'is_active' => $request->is_active ?? '',
+                'job_scope' => $request->job_scope ?? '',
+            ],
         ]);
     }
 
     // List untuk landing page (hanya aktif & belum tutup)
-    public function publicList()
+    public function publicList(Request $request)
     {
-        $jobs = JobVacancy::all();
+        $jobs = JobVacancy::query()
+            ->where('is_active', 1)
+            ->when($request->scope, function ($query, $scope) {
+                if (in_array($scope, ['outlet', 'head_office'], true)) {
+                    $query->where('job_scope', $scope);
+                }
+            })
+            ->orderByDesc('created_at')
+            ->get();
         return response()->json($jobs);
     }
 
@@ -50,6 +66,7 @@ class JobVacancyController extends Controller
             'description' => 'required',
             'requirements' => 'nullable',
             'location' => 'required',
+            'job_scope' => 'required|in:outlet,head_office',
             'closing_date' => 'required|date',
             'is_active' => 'required|boolean',
             'banner' => 'nullable|image|max:2048',
@@ -70,6 +87,7 @@ class JobVacancyController extends Controller
             'description' => 'required',
             'requirements' => 'nullable',
             'location' => 'required',
+            'job_scope' => 'required|in:outlet,head_office',
             'closing_date' => 'required|date',
             'is_active' => 'required|boolean',
             'banner' => 'nullable|image|max:2048',

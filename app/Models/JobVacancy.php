@@ -12,6 +12,7 @@ class JobVacancy extends Model
         'description',
         'requirements',
         'location',
+        'job_scope',
         'closing_date',
         'banner',
         'is_active',
