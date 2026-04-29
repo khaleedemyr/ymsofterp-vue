@@ -1191,6 +1191,59 @@ class ItemController extends Controller
                     'type' => $typeString,
                 ]);
 
+                // Handle Prices
+                if (!empty($itemData['Prices'])) {
+                    // Support format: "All=150000;Region1=200000;Outlet2=250000"
+                    $prices = explode(';', $itemData['Prices']);
+                    foreach ($prices as $priceStr) {
+                        if (preg_match('/^(All|Region\\d+|Outlet\\d+)=(\\d+)$/i', trim($priceStr), $matches)) {
+                            $type = strtolower($matches[1]);
+                            $priceValue = (int)$matches[2];
+                            $regionId = null;
+                            $outletId = null;
+                            $priceType = 'all';
+                            if (strpos($type, 'region') === 0) {
+                                $regionId = (int)substr($type, 6);
+                                $priceType = 'region';
+                            } elseif (strpos($type, 'outlet') === 0) {
+                                $outletId = (int)substr($type, 6);
+                                $priceType = 'outlet';
+                            }
+                            $item->prices()->create([
+                                'region_id' => $regionId,
+                                'outlet_id' => $outletId,
+                                'price' => $priceValue,
+                                'availability_price_type' => $priceType,
+                            ]);
+                        }
+                    }
+                }
+
+                // Handle Availabilities
+                if (!empty($itemData['Availabilities'])) {
+                    // Support format: "all;region1;outlet2"
+                    $availabilities = explode(';', $itemData['Availabilities']);
+                    foreach ($availabilities as $avail) {
+                        $avail = strtolower(trim($avail));
+                        $regionId = null;
+                        $outletId = null;
+                        $availabilityType = 'all';
+                        if (strpos($avail, 'region') === 0) {
+                            $regionId = (int)substr($avail, 6);
+                            $availabilityType = 'region';
+                        } elseif (strpos($avail, 'outlet') === 0) {
+                            $outletId = (int)substr($avail, 6);
+                            $availabilityType = 'outlet';
+                        }
+                        $item->availabilities()->create([
+                            'region_id' => $regionId,
+                            'outlet_id' => $outletId,
+                            'availability_type' => $availabilityType,
+                            'status' => 'available',
+                        ]);
+                    }
+                }
+
                 // Generate barcode default jika kategori show_pos = '0' dan item belum punya barcode
                 $category = \DB::table('categories')->where('id', $item->category_id)->first();
                 $barcodeCount = \DB::table('item_barcodes')->where('item_id', $item->id)->count();
