@@ -18,18 +18,20 @@
             <Multiselect
               v-model="selectedMaterial"
               :options="materialOptions"
+              :object="true"
               :searchable="true"
               :loading="loadingMaterials"
-              :internal-search="true"
+              :internal-search="false"
               :clear-on-select="false"
               :close-on-select="true"
               placeholder="Ketik nama bahan baku..."
               label="label"
               track-by="value"
+              @search-change="onSearchMaterials"
             />
             <button
               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="!selectedMaterial?.value || loadingMaterialResult"
+              :disabled="!selectedMaterialId || loadingMaterialResult"
               @click="loadByMaterial"
             >
               {{ loadingMaterialResult ? 'Loading...' : 'Load Penggunaan Bahan' }}
@@ -105,18 +107,20 @@
             <Multiselect
               v-model="selectedTarget"
               :options="targetOptions"
+              :object="true"
               :searchable="true"
               :loading="loadingTargets"
-              :internal-search="true"
+              :internal-search="false"
               :clear-on-select="false"
               :close-on-select="true"
               placeholder="Ketik nama menu atau modifier..."
               label="label"
               track-by="value"
+              @search-change="onSearchTargets"
             />
             <button
               class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="!selectedTarget?.target_type || !selectedTarget?.target_id || loadingTargetResult"
+              :disabled="!selectedTargetType || !selectedTargetId || loadingTargetResult"
               @click="loadByTarget"
             >
               {{ loadingTargetResult ? 'Loading...' : 'Load Resep Target' }}
@@ -161,7 +165,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Multiselect from '@vueform/multiselect'
@@ -178,6 +182,13 @@ const targetOptions = ref([])
 const loadingTargets = ref(false)
 const loadingTargetResult = ref(false)
 const targetResult = ref(null)
+
+const selectedMaterialId = computed(() => Number(selectedMaterial.value?.value || 0))
+const selectedTargetId = computed(() => Number(selectedTarget.value?.target_id || 0))
+const selectedTargetType = computed(() => String(selectedTarget.value?.target_type || ''))
+
+let materialSearchTimer = null
+let targetSearchTimer = null
 
 async function loadMaterialOptions() {
   loadingMaterials.value = true
@@ -199,13 +210,43 @@ async function loadTargetOptions() {
   }
 }
 
+function onSearchMaterials(query) {
+  if (materialSearchTimer) clearTimeout(materialSearchTimer)
+  materialSearchTimer = setTimeout(async () => {
+    loadingMaterials.value = true
+    try {
+      const res = await axios.get('/api/stock-cut/recipe-checker/search-materials', {
+        params: { q: query || '' },
+      })
+      materialOptions.value = res.data?.items || []
+    } finally {
+      loadingMaterials.value = false
+    }
+  }, 180)
+}
+
+function onSearchTargets(query) {
+  if (targetSearchTimer) clearTimeout(targetSearchTimer)
+  targetSearchTimer = setTimeout(async () => {
+    loadingTargets.value = true
+    try {
+      const res = await axios.get('/api/stock-cut/recipe-checker/search-targets', {
+        params: { q: query || '' },
+      })
+      targetOptions.value = res.data?.items || []
+    } finally {
+      loadingTargets.value = false
+    }
+  }, 180)
+}
+
 async function loadByMaterial() {
   materialResult.value = null
-  if (!selectedMaterial.value?.value) return
+  if (!selectedMaterialId.value) return
   loadingMaterialResult.value = true
   try {
     const res = await axios.get('/api/stock-cut/recipe-checker/by-material', {
-      params: { material_item_id: selectedMaterial.value.value },
+      params: { material_item_id: selectedMaterialId.value },
     })
     materialResult.value = res.data
   } finally {
@@ -215,13 +256,13 @@ async function loadByMaterial() {
 
 async function loadByTarget() {
   targetResult.value = null
-  if (!selectedTarget.value?.target_type || !selectedTarget.value?.target_id) return
+  if (!selectedTargetType.value || !selectedTargetId.value) return
   loadingTargetResult.value = true
   try {
     const res = await axios.get('/api/stock-cut/recipe-checker/by-target', {
       params: {
-        target_type: selectedTarget.value.target_type,
-        target_id: selectedTarget.value.target_id,
+        target_type: selectedTargetType.value,
+        target_id: selectedTargetId.value,
       },
     })
     targetResult.value = res.data
