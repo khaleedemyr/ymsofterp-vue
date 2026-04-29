@@ -48,12 +48,10 @@ class RecipeCheckerController extends Controller
             ->select('i.id', 'i.name')
             ->where('i.status', 'active')
             ->where('c.is_asset', '0')
-            ->where('c.show_pos', '1')
             ->when($q !== '', function ($query) use ($q) {
                 $query->where('i.name', 'like', "%{$q}%");
             })
             ->orderBy('i.name')
-            ->limit(30)
             ->get()
             ->map(fn ($row) => [
                 'value' => 'menu:'.(int) $row->id,
@@ -75,7 +73,6 @@ class RecipeCheckerController extends Controller
                 });
             })
             ->orderBy('mo.name')
-            ->limit(30)
             ->get()
             ->map(fn ($row) => [
                 'value' => 'modifier:'.(int) $row->id,
