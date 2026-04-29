@@ -397,6 +397,11 @@ const menuGroups = [
                 code: 'stock_opname_adjustment_report',
             },
             {
+                name: () => 'Cek Resep BOM',
+                icon: 'fa-solid fa-magnifying-glass',
+                route: '/stock-cut/recipe-checker',
+            },
+            {
                 name: () => 'Report Rekap Diskon',
                 icon: 'fa-solid fa-tags',
                 route: '/report-rekap-diskon',

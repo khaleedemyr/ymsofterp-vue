@@ -1988,6 +1988,17 @@ Route::get('/stock-cut/menu-cost', function () {
 Route::get('/api/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
 Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
 Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
+Route::get('/stock-cut/recipe-checker', [\App\Http\Controllers\RecipeCheckerController::class, 'index'])
+    ->middleware(['auth', 'verified'])
+    ->name('stock-cut.recipe-checker');
+Route::get('/api/stock-cut/recipe-checker/search-materials', [\App\Http\Controllers\RecipeCheckerController::class, 'searchMaterials'])
+    ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/search-targets', [\App\Http\Controllers\RecipeCheckerController::class, 'searchTargets'])
+    ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/by-material', [\App\Http\Controllers\RecipeCheckerController::class, 'checkByMaterial'])
+    ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/by-target', [\App\Http\Controllers\RecipeCheckerController::class, 'checkByTarget'])
+    ->middleware(['auth', 'verified']);
 
 Route::get('/stock-cut/form', function () {
     $user = auth()->user();

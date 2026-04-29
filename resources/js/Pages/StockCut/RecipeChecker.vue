@@ -1,0 +1,210 @@
+<template>
+  <AppLayout>
+    <div class="max-w-7xl mx-auto py-8 px-3">
+      <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <i class="fa-solid fa-utensils text-blue-600"></i>
+          Cek Resep BOM (Menu & Modifier)
+        </h1>
+        <p class="text-sm text-gray-600 mt-1">
+          Cari berdasarkan bahan baku atau berdasarkan menu/modifier.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
+          <h2 class="text-lg font-semibold text-gray-800 mb-3">1) Cari dari Bahan Baku</h2>
+          <Multiselect
+            v-model="selectedMaterial"
+            :options="materialOptions"
+            :searchable="true"
+            :loading="loadingMaterials"
+            :internal-search="false"
+            :clear-on-select="false"
+            :close-on-select="true"
+            placeholder="Ketik nama bahan baku..."
+            label="label"
+            track-by="value"
+            @search-change="onSearchMaterials"
+            @change="loadByMaterial"
+          />
+
+          <div v-if="materialResult" class="mt-4 space-y-4">
+            <div class="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-sm">
+              <span class="font-semibold">Bahan baku:</span> {{ materialResult.material.name }}
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-gray-800 mb-2">Dipakai di Menu</h3>
+              <div class="overflow-x-auto border rounded-lg">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Menu</th>
+                      <th class="px-3 py-2 text-left">Qty</th>
+                      <th class="px-3 py-2 text-left">Unit</th>
+                      <th class="px-3 py-2 text-left">Stock Cut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, idx) in materialResult.menus" :key="`m-${idx}`" class="border-t">
+                      <td class="px-3 py-2">{{ row.menu_name }}</td>
+                      <td class="px-3 py-2">{{ row.qty }}</td>
+                      <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
+                      <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                    </tr>
+                    <tr v-if="materialResult.menus.length === 0">
+                      <td class="px-3 py-3 text-gray-500" colspan="4">Tidak dipakai di BOM menu.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-gray-800 mb-2">Dipakai di Modifier</h3>
+              <div class="overflow-x-auto border rounded-lg">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Modifier</th>
+                      <th class="px-3 py-2 text-left">Option</th>
+                      <th class="px-3 py-2 text-left">Qty</th>
+                      <th class="px-3 py-2 text-left">Unit</th>
+                      <th class="px-3 py-2 text-left">Stock Cut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, idx) in materialResult.modifiers" :key="`x-${idx}`" class="border-t">
+                      <td class="px-3 py-2">{{ row.modifier_name || '-' }}</td>
+                      <td class="px-3 py-2">{{ row.modifier_option_name }}</td>
+                      <td class="px-3 py-2">{{ row.qty }}</td>
+                      <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
+                      <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                    </tr>
+                    <tr v-if="materialResult.modifiers.length === 0">
+                      <td class="px-3 py-3 text-gray-500" colspan="5">Tidak dipakai di BOM modifier.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
+          <h2 class="text-lg font-semibold text-gray-800 mb-3">2) Cari Resep Menu/Modifier</h2>
+          <Multiselect
+            v-model="selectedTarget"
+            :options="targetOptions"
+            :searchable="true"
+            :loading="loadingTargets"
+            :internal-search="false"
+            :clear-on-select="false"
+            :close-on-select="true"
+            placeholder="Ketik nama menu atau modifier..."
+            label="label"
+            track-by="value"
+            @search-change="onSearchTargets"
+            @change="loadByTarget"
+          />
+
+          <div v-if="targetResult" class="mt-4">
+            <div class="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm mb-3">
+              <span class="font-semibold">Target:</span>
+              {{ targetResult.target.name }}
+              <span class="ml-2 text-xs uppercase text-emerald-700">({{ targetResult.target.type }})</span>
+            </div>
+
+            <div class="overflow-x-auto border rounded-lg">
+              <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Bahan Baku</th>
+                    <th class="px-3 py-2 text-left">Qty</th>
+                    <th class="px-3 py-2 text-left">Unit</th>
+                    <th class="px-3 py-2 text-left">Stock Cut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in targetResult.recipe" :key="`r-${idx}`" class="border-t">
+                    <td class="px-3 py-2">{{ row.material_name }}</td>
+                    <td class="px-3 py-2">{{ row.qty }}</td>
+                    <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
+                    <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                  </tr>
+                  <tr v-if="targetResult.recipe.length === 0">
+                    <td class="px-3 py-3 text-gray-500" colspan="4">Target ini belum punya BOM.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import axios from 'axios'
+import AppLayout from '@/Layouts/AppLayout.vue'
+import Multiselect from '@vueform/multiselect'
+import '@vueform/multiselect/themes/default.css'
+
+const selectedMaterial = ref(null)
+const materialOptions = ref([])
+const loadingMaterials = ref(false)
+const materialResult = ref(null)
+
+const selectedTarget = ref(null)
+const targetOptions = ref([])
+const loadingTargets = ref(false)
+const targetResult = ref(null)
+
+async function onSearchMaterials(query) {
+  loadingMaterials.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-materials', { params: { q: query || '' } })
+    materialOptions.value = res.data?.items || []
+  } finally {
+    loadingMaterials.value = false
+  }
+}
+
+async function onSearchTargets(query) {
+  loadingTargets.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-targets', { params: { q: query || '' } })
+    targetOptions.value = res.data?.items || []
+  } finally {
+    loadingTargets.value = false
+  }
+}
+
+async function loadByMaterial(option) {
+  materialResult.value = null
+  if (!option?.value) return
+  const res = await axios.get('/api/stock-cut/recipe-checker/by-material', {
+    params: { material_item_id: option.value },
+  })
+  materialResult.value = res.data
+}
+
+async function loadByTarget(option) {
+  targetResult.value = null
+  if (!option?.target_type || !option?.target_id) return
+  const res = await axios.get('/api/stock-cut/recipe-checker/by-target', {
+    params: {
+      target_type: option.target_type,
+      target_id: option.target_id,
+    },
+  })
+  targetResult.value = res.data
+}
+
+onSearchMaterials('')
+onSearchTargets('')
+</script>
+

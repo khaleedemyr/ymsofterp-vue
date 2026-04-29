@@ -5,10 +5,19 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-boxes-stacked text-blue-500"></i> Items
         </h1>
-        <button @click="openCreate" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-          <i class="fa-solid fa-plus"></i>
-          Add New Item
-        </button>
+        <div class="flex items-center gap-2">
+          <Link
+            :href="route('stock-cut.recipe-checker')"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <i class="fa-solid fa-magnifying-glass"></i>
+            Cek Resep BOM
+          </Link>
+          <button @click="openCreate" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+            <i class="fa-solid fa-plus"></i>
+            Add New Item
+          </button>
+        </div>
       </div>
 
       <!-- Search and Filter -->
