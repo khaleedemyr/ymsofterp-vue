@@ -2481,6 +2481,10 @@
               </div>
             </div>
           </div>
+          <!-- SEO Analyzer Guidance -->
+          <div class="mt-6">
+
+          </div>
           <div class="flex justify-end gap-3 mt-6">
             <button type="button" @click="closeWhatsOnModal" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
               Cancel
@@ -3266,6 +3270,7 @@ import 'vue-multiselect/dist/vue-multiselect.min.css'
 import VueEasyLightbox from 'vue-easy-lightbox'
 import axios from 'axios'
 
+
 const props = defineProps({
   banners: Array,
   rewards: Array,
@@ -3354,7 +3359,12 @@ const whatsOnForm = ref({
   published_at: '',
   is_active: true,
   is_featured: false,
-  category_id: ''
+  category_id: '',
+  seo: {
+    title: '',
+    description: '',
+    keywords: ''
+  }
 })
 
 // Category management
@@ -3740,7 +3750,12 @@ const openWhatsOnModal = () => {
     published_at: '',
     is_active: true,
     is_featured: false,
-    category_id: ''
+    category_id: '',
+    seo: {
+      title: '',
+      description: '',
+      keywords: ''
+    }
   }
   showWhatsOnModal.value = true
 }
@@ -4091,7 +4106,13 @@ const editWhatsOn = (news) => {
     image: null,
     published_at: news.published_at ? new Date(news.published_at).toISOString().slice(0, 16) : '',
     is_active: news.is_active,
-    is_featured: news.is_featured
+    is_featured: news.is_featured,
+    category_id: news.category_id || '',
+    seo: {
+      title: news.seo_title || news.title || '',
+      description: news.seo_description || '',
+      keywords: news.seo_keywords || '',
+    }
   }
   showWhatsOnModal.value = true
 }
@@ -4479,9 +4500,19 @@ const saveChallenge = () => {
 
 const saveWhatsOn = () => {
   if (savingWhatsOn.value) return
-  
+
+  // Sinkronkan SEO ke field utama sebelum submit
+  whatsOnForm.value.title = whatsOnForm.value.seo.title
+  // Jika backend mendukung, tambahkan juga description & keywords
+  if (whatsOnForm.value.seo.description) {
+    whatsOnForm.value.description = whatsOnForm.value.seo.description
+  }
+  if (whatsOnForm.value.seo.keywords) {
+    whatsOnForm.value.keywords = whatsOnForm.value.seo.keywords
+  }
+
   savingWhatsOn.value = true
-  
+
   const formData = new FormData()
   formData.append('title', whatsOnForm.value.title)
   formData.append('content', whatsOnForm.value.content)
@@ -4491,17 +4522,20 @@ const saveWhatsOn = () => {
   if (whatsOnForm.value.category_id) {
     formData.append('category_id', whatsOnForm.value.category_id)
   }
-  
   if (whatsOnForm.value.image) {
     formData.append('image', whatsOnForm.value.image)
   }
+  // Kirim juga field SEO jika backend mendukung
+  if (whatsOnForm.value.seo.title) formData.append('seo_title', whatsOnForm.value.seo.title)
+  if (whatsOnForm.value.seo.description) formData.append('seo_description', whatsOnForm.value.seo.description)
+  if (whatsOnForm.value.seo.keywords) formData.append('seo_keywords', whatsOnForm.value.seo.keywords)
 
   const url = editingWhatsOn.value 
     ? `/admin/member-apps-settings/whats-on/${editingWhatsOn.value.id}`
     : '/admin/member-apps-settings/whats-on'
-  
+
   const method = editingWhatsOn.value ? 'put' : 'post'
-  
+
   router[method](url, formData, {
     forceFormData: true,
     onSuccess: () => {

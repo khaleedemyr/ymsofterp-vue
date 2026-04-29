@@ -1473,7 +1473,7 @@ class ItemController extends Controller
         
         $items = Item::whereIn('id', $availableItemIds)
             ->whereHas('category', function ($q) {
-                $q->where('show_pos', '0');
+                $q->where('show_pos', '0')->where('is_asset', '0');
             })
             ->with(['category', 'mediumUnit', 'smallUnit', 'largeUnit'])
             ->get()

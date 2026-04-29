@@ -777,7 +777,7 @@ Route::prefix('approval-app')->group(function () {
         // Warehouse Internal Use & Waste (approval-app)
         Route::get('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiIndex']);
         Route::get('/internal-use-waste/create-data', [\App\Http\Controllers\InternalUseWasteController::class, 'apiCreateData']);
-        Route::get('/internal-use-waste/stock', [\App\Http\Controllers\InternalUseWasteController::class, 'apiStock']);
+        Route::get('/internal-use-waste/
         Route::get('/internal-use-waste/item/{id}/units', [\App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
         Route::get('/internal-use-waste/{id}', [\App\Http\Controllers\InternalUseWasteController::class, 'apiShow']);
         Route::post('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiStore']);

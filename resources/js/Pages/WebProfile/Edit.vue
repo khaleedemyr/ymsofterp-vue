@@ -1,11 +1,12 @@
-<script setup>
-import { ref } from 'vue';
+
+import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -15,14 +16,29 @@ const props = defineProps({
   }
 });
 
+
 const form = ref({
   title: props.page.title || '',
   slug: props.page.slug || '',
   content: props.page.content || '',
   meta_title: props.page.meta_title || '',
   meta_description: props.page.meta_description || '',
+  keywords: props.page.keywords || '',
   is_published: props.page.is_published || false,
   order: props.page.order || 0
+});
+
+const seo = ref({
+  title: props.page.meta_title || '',
+  description: props.page.meta_description || '',
+  keywords: props.page.keywords || ''
+});
+
+// Sinkronisasi SEO analyzer ke form
+watch(seo, (val) => {
+  form.value.meta_title = val.title;
+  form.value.meta_description = val.description;
+  form.value.keywords = val.keywords;
 });
 
 const errors = ref({});
@@ -49,7 +65,7 @@ function submit() {
 function cancel() {
   router.visit('/web-profile');
 }
-</script>
+
 
 <template>
   <AppLayout title="Edit Web Profile Page">
@@ -96,7 +112,7 @@ function cancel() {
             <InputLabel for="content" value="Content" />
             <textarea
               id="content"
-              v-model="form.content"
+              <script setup>
               rows="10"
               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               :class="{ 'border-red-500': errors.content }"
@@ -104,31 +120,11 @@ function cancel() {
             <InputError :message="errors.content" class="mt-2" />
           </div>
 
-          <!-- Meta Title -->
-          <div>
-            <InputLabel for="meta_title" value="Meta Title (SEO)" />
-            <TextInput
-              id="meta_title"
-              v-model="form.meta_title"
-              type="text"
-              class="mt-1 block w-full"
-              :class="{ 'border-red-500': errors.meta_title }"
-            />
-            <InputError :message="errors.meta_title" class="mt-2" />
-          </div>
 
-          <!-- Meta Description -->
-          <div>
-            <InputLabel for="meta_description" value="Meta Description (SEO)" />
-            <textarea
-              id="meta_description"
-              v-model="form.meta_description"
-              rows="3"
-              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              :class="{ 'border-red-500': errors.meta_description }"
-            ></textarea>
-            <InputError :message="errors.meta_description" class="mt-2" />
-          </div>
+          <!-- SEO Analyzer Guidance -->
+          <SeoAnalyzer v-model="seo" />
+          <InputError :message="errors.meta_title" class="mt-2" />
+          <InputError :message="errors.meta_description" class="mt-2" />
 
           <!-- Order -->
           <div>
