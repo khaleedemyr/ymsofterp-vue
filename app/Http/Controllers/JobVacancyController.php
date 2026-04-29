@@ -173,4 +173,64 @@ class JobVacancyController extends Controller
             'message' => 'Lamaran berhasil dikirim.',
         ]);
     }
+
+    // Admin list applications
+    public function applicationsIndex(Request $request)
+    {
+        $query = JobVacancyApplication::with([
+            'jobVacancy:id,position,location,job_scope',
+        ]);
+
+        if ($request->filled('search')) {
+            $q = '%'.$request->search.'%';
+            $query->where(function ($sub) use ($q) {
+                $sub->where('full_name', 'like', $q)
+                    ->orWhere('email', 'like', $q)
+                    ->orWhere('phone', 'like', $q)
+                    ->orWhereHas('jobVacancy', function ($job) use ($q) {
+                        $job->where('position', 'like', $q)
+                            ->orWhere('location', 'like', $q);
+                    });
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('scope') && in_array($request->scope, ['outlet', 'head_office'], true)) {
+            $query->whereHas('jobVacancy', function ($job) use ($request) {
+                $job->where('job_scope', $request->scope);
+            });
+        }
+
+        $applications = $query->orderByDesc('created_at')->paginate(20);
+
+        return \Inertia\Inertia::render('Admin/JobVacancy/Applications', [
+            'applications' => $applications,
+            'filters' => [
+                'search' => $request->search ?? '',
+                'status' => $request->status ?? '',
+                'scope' => $request->scope ?? '',
+            ],
+            'statusOptions' => ['submitted', 'reviewed', 'interview', 'hired', 'rejected'],
+        ]);
+    }
+
+    public function applicationSetStatus(Request $request, $id)
+    {
+        $data = $request->validate([
+            'status' => 'required|in:submitted,reviewed,interview,hired,rejected',
+        ]);
+
+        $application = JobVacancyApplication::findOrFail($id);
+        $application->status = $data['status'];
+        $application->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status pelamar berhasil diperbarui.',
+            'application' => $application,
+        ]);
+    }
 } 

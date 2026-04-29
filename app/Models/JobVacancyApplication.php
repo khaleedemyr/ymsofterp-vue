@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JobVacancyApplication extends Model
 {
@@ -17,5 +18,10 @@ class JobVacancyApplication extends Model
         'cv_file',
         'status',
     ];
+
+    public function jobVacancy(): BelongsTo
+    {
+        return $this->belongsTo(JobVacancy::class, 'job_vacancy_id');
+    }
 }
 
