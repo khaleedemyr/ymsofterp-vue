@@ -43,6 +43,20 @@
 
       <div class="card">
         <h3>Daftar Manual Review</h3>
+        <div class="table-toolbar">
+          <div class="muted">
+            Menampilkan {{ reviews.from || 0 }} - {{ reviews.to || 0 }} dari {{ reviews.total || 0 }} data
+          </div>
+          <div class="per-page">
+            <label for="per-page-select">Per page</label>
+            <select id="per-page-select" :value="String(currentPerPage)" @change="changePerPage">
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
@@ -77,6 +91,24 @@
             </tr>
           </tbody>
         </table>
+        <div class="pagination">
+          <button class="btn btn-outline btn-sm" type="button" :disabled="!reviews.prev_page_url" @click="goToPage((reviews.current_page || 1) - 1)">
+            Prev
+          </button>
+          <button
+            v-for="p in visiblePages"
+            :key="p"
+            class="btn btn-sm"
+            type="button"
+            :class="Number(p) === Number(reviews.current_page) ? 'btn-primary' : 'btn-outline'"
+            @click="goToPage(p)"
+          >
+            {{ p }}
+          </button>
+          <button class="btn btn-outline btn-sm" type="button" :disabled="!reviews.next_page_url" @click="goToPage((reviews.current_page || 1) + 1)">
+            Next
+          </button>
+        </div>
       </div>
 
       <div v-if="editOpen" class="modal-backdrop" @click.self="editOpen = false">
@@ -116,8 +148,19 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 const page = usePage()
 const outlets = computed(() => page.props.outlets || [])
 const reviews = computed(() => page.props.reviews || { data: [] })
+const filters = computed(() => page.props.filters || {})
+const currentPerPage = computed(() => Number(filters.value.per_page || 20))
 const blockedManualReviewIds = computed(() => page.props.blockedManualReviewIds || [])
 const blockedSet = computed(() => new Set((blockedManualReviewIds.value || []).map((id) => Number(id))))
+const visiblePages = computed(() => {
+  const current = Number(reviews.value?.current_page || 1)
+  const last = Number(reviews.value?.last_page || 1)
+  const start = Math.max(1, current - 2)
+  const end = Math.min(last, current + 2)
+  const pages = []
+  for (let p = start; p <= end; p += 1) pages.push(p)
+  return pages
+})
 const submitting = ref(false)
 const aiSubmitting = ref(false)
 const editSubmitting = ref(false)
@@ -178,6 +221,31 @@ function toggleAll() {
     return
   }
   selectedIds.value = []
+}
+
+function baseQuery() {
+  return {
+    id_outlet: filters.value.id_outlet || '',
+    is_active: filters.value.is_active || '',
+    q: filters.value.q || '',
+    per_page: currentPerPage.value,
+  }
+}
+
+function goToPage(pageNum) {
+  const pageNumber = Number(pageNum)
+  if (!Number.isFinite(pageNumber) || pageNumber < 1) return
+  selectedIds.value = []
+  selectAll.value = false
+  router.get('/google-review/manual', { ...baseQuery(), page: pageNumber }, { preserveScroll: true, preserveState: true })
+}
+
+function changePerPage(event) {
+  const value = Number(event?.target?.value || currentPerPage.value)
+  if (!Number.isFinite(value)) return
+  selectedIds.value = []
+  selectAll.value = false
+  router.get('/google-review/manual', { ...baseQuery(), per_page: value, page: 1 }, { preserveScroll: true, preserveState: true })
 }
 
 function isBlocked(row) {
@@ -274,6 +342,10 @@ p { margin: 4px 0 0; color: #6b7280; font-size: 13px; }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 input, select, textarea { border: 1px solid #d1d5db; border-radius: 10px; padding: 10px 12px; width: 100%; }
 textarea { grid-column: span 3; resize: vertical; min-height: 90px; }
+.table-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.per-page { display: flex; align-items: center; gap: 8px; }
+.per-page select { width: 86px; }
+.muted { color: #6b7280; font-size: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
 .text { max-width: 460px; white-space: pre-wrap; word-break: break-word; }
@@ -289,6 +361,7 @@ th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; verti
 .modal-card { width: min(860px, 96vw); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }
 .modal-actions { grid-column: span 3; display: flex; justify-content: flex-end; gap: 8px; }
 .tag-blocked { margin-top: 4px; display: inline-block; font-size: 11px; color: #9a3412; background: #ffedd5; border: 1px solid #fdba74; border-radius: 999px; padding: 2px 8px; font-weight: 600; }
+.pagination { margin-top: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } textarea { grid-column: span 1; } }
 </style>
 

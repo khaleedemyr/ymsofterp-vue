@@ -114,6 +114,9 @@ class GoogleReviewController extends Controller
 
     public function manualIndex(Request $request)
     {
+        $perPage = (int) ($request->query('per_page') ?? 20);
+        $perPage = max(10, min(100, $perPage));
+
         $outlets = \DB::table('tbl_data_outlet')
             ->select('id_outlet as id', 'nama_outlet')
             ->orderBy('nama_outlet')
@@ -138,7 +141,7 @@ class GoogleReviewController extends Controller
         $blockedManualReviewIds = $this->getBlockedManualReviewIds();
         $blockedLookup = array_fill_keys($blockedManualReviewIds, true);
 
-        $reviews = $query->orderByDesc('id')->paginate(20)->withQueryString();
+        $reviews = $query->orderByDesc('id')->paginate($perPage)->withQueryString();
         $reviews->setCollection(
             $reviews->getCollection()->map(function ($row) use ($blockedLookup) {
                 $row->text = $this->decodeTextFromLegacyUtf8($row->text);
@@ -155,6 +158,7 @@ class GoogleReviewController extends Controller
                 'id_outlet' => $request->id_outlet ?? '',
                 'is_active' => $request->is_active ?? '',
                 'q' => $request->q ?? '',
+                'per_page' => $perPage,
             ],
         ]);
     }
