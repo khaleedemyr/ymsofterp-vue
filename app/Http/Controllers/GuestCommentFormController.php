@@ -366,7 +366,6 @@ class GuestCommentFormController extends Controller
             })
             ->filter(fn ($r) => $r['responses'] > 0)
             ->sortByDesc(fn ($r) => $r['gsi_pct'] ?? -1)
-            ->take(10)
             ->values()
             ->all();
     }
