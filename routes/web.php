@@ -2363,6 +2363,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'aboutPageIndex'])->name('index');
         Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'aboutPageStore'])->name('settings');
     });
+    Route::prefix('web-profile/careers-page')->name('web-profile.careers-page.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'careersPageIndex'])->name('index');
+        Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'careersPageStore'])->name('settings');
+    });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');

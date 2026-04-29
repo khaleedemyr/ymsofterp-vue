@@ -100,6 +100,19 @@
             </div>
           </div>
         </Link>
+
+        <!-- Careers Page -->
+        <Link href="/web-profile/careers-page" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-emerald-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Careers Page</h3>
+              <p class="text-sm text-gray-500">Hero banner, wording, cards & tombol loker</p>
+            </div>
+            <div class="bg-emerald-100 p-3 rounded-full">
+              <i class="fa-solid fa-briefcase text-emerald-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <!-- Quick Actions -->

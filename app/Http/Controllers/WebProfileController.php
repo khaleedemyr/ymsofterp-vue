@@ -1593,6 +1593,195 @@ class WebProfileController extends Controller
         ]);
     }
 
+    // ========== CAREERS PAGE (Company profile web) ==========
+
+    public function careersPageIndex()
+    {
+        $keys = [
+            'careers_title',
+            'careers_subtitle',
+            'careers_wording',
+            'careers_cta_title',
+            'careers_primary_button_label',
+            'careers_primary_button_url',
+            'careers_secondary_button_label',
+            'careers_secondary_button_url',
+            'careers_hero_image',
+            'careers_card_1_title',
+            'careers_card_1_image',
+            'careers_card_2_title',
+            'careers_card_2_image',
+            'careers_card_3_title',
+            'careers_card_3_image',
+            'careers_card_4_title',
+            'careers_card_4_image',
+        ];
+
+        $settings = WebProfileSetting::whereIn('key', $keys)->get()->keyBy('key');
+
+        return Inertia::render('WebProfile/CareersPage/Index', [
+            'careers' => [
+                'careers_title' => $settings->get('careers_title')->value ?? 'CAREERS',
+                'careers_subtitle' => $settings->get('careers_subtitle')->value ?? 'Growth Together with Justus Group',
+                'careers_wording' => $settings->get('careers_wording')->value ?? '',
+                'careers_cta_title' => $settings->get('careers_cta_title')->value ?? 'BE PART OF A JOURNEY TO CREATE THE FUTURE OF LIFESTYLE EXPERIENCES',
+                'careers_primary_button_label' => $settings->get('careers_primary_button_label')->value ?? 'HEAD OFFICE Join Us',
+                'careers_primary_button_url' => $settings->get('careers_primary_button_url')->value ?? '',
+                'careers_secondary_button_label' => $settings->get('careers_secondary_button_label')->value ?? 'OPERATION Join Us',
+                'careers_secondary_button_url' => $settings->get('careers_secondary_button_url')->value ?? '',
+                'careers_hero_image_path' => $settings->get('careers_hero_image')->value ?? null,
+                'careers_hero_image_url' => ($settings->get('careers_hero_image')->value ?? null)
+                    ? $this->publicStorageUrl($settings->get('careers_hero_image')->value)
+                    : null,
+                'cards' => collect([1, 2, 3, 4])->map(function ($idx) use ($settings) {
+                    $titleKey = "careers_card_{$idx}_title";
+                    $imageKey = "careers_card_{$idx}_image";
+                    $path = $settings->get($imageKey)->value ?? null;
+                    return [
+                        'title' => $settings->get($titleKey)->value ?? '',
+                        'image_path' => $path,
+                        'image_url' => $path ? $this->publicStorageUrl($path) : null,
+                    ];
+                })->all(),
+            ],
+        ]);
+    }
+
+    public function careersPageStore(Request $request)
+    {
+        $validated = $request->validate([
+            'careers_title' => 'nullable|string|max:255',
+            'careers_subtitle' => 'nullable|string|max:255',
+            'careers_wording' => 'nullable|string',
+            'careers_cta_title' => 'nullable|string|max:255',
+            'careers_primary_button_label' => 'nullable|string|max:255',
+            'careers_primary_button_url' => 'nullable|url|max:255',
+            'careers_secondary_button_label' => 'nullable|string|max:255',
+            'careers_secondary_button_url' => 'nullable|url|max:255',
+            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'card_1_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'card_2_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'card_3_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'card_4_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'remove_hero' => 'nullable|boolean',
+            'remove_card_1' => 'nullable|boolean',
+            'remove_card_2' => 'nullable|boolean',
+            'remove_card_3' => 'nullable|boolean',
+            'remove_card_4' => 'nullable|boolean',
+            'careers_card_1_title' => 'nullable|string|max:255',
+            'careers_card_2_title' => 'nullable|string|max:255',
+            'careers_card_3_title' => 'nullable|string|max:255',
+            'careers_card_4_title' => 'nullable|string|max:255',
+        ]);
+
+        $imageConfig = [
+            'careers_hero_image' => ['input' => 'hero_image', 'remove' => 'remove_hero', 'name' => 'careers_hero'],
+            'careers_card_1_image' => ['input' => 'card_1_image', 'remove' => 'remove_card_1', 'name' => 'careers_card_1'],
+            'careers_card_2_image' => ['input' => 'card_2_image', 'remove' => 'remove_card_2', 'name' => 'careers_card_2'],
+            'careers_card_3_image' => ['input' => 'card_3_image', 'remove' => 'remove_card_3', 'name' => 'careers_card_3'],
+            'careers_card_4_image' => ['input' => 'card_4_image', 'remove' => 'remove_card_4', 'name' => 'careers_card_4'],
+        ];
+
+        foreach ($imageConfig as $settingKey => $cfg) {
+            if ($request->boolean($cfg['remove'])) {
+                $old = WebProfileSetting::where('key', $settingKey)->value('value');
+                if ($old) {
+                    Storage::disk('public')->delete($old);
+                }
+                WebProfileSetting::where('key', $settingKey)->delete();
+            }
+
+            if ($request->hasFile($cfg['input'])) {
+                $old = WebProfileSetting::where('key', $settingKey)->value('value');
+                if ($old) {
+                    Storage::disk('public')->delete($old);
+                }
+                $file = $request->file($cfg['input']);
+                $fileName = time().'_'.$cfg['name'].'.'.$file->getClientOriginalExtension();
+                $path = $file->storeAs('web-profile/careers-page', $fileName, 'public');
+                WebProfileSetting::updateOrCreate(
+                    ['key' => $settingKey],
+                    ['value' => $path, 'type' => 'image']
+                );
+            }
+        }
+
+        $textKeys = [
+            'careers_title',
+            'careers_subtitle',
+            'careers_wording',
+            'careers_cta_title',
+            'careers_primary_button_label',
+            'careers_primary_button_url',
+            'careers_secondary_button_label',
+            'careers_secondary_button_url',
+            'careers_card_1_title',
+            'careers_card_2_title',
+            'careers_card_3_title',
+            'careers_card_4_title',
+        ];
+
+        foreach ($textKeys as $key) {
+            WebProfileSetting::updateOrCreate(
+                ['key' => $key],
+                ['value' => $validated[$key] ?? '', 'type' => 'text']
+            );
+        }
+
+        return redirect()->route('web-profile.careers-page.index')
+            ->with('success', 'Pengaturan Careers Page berhasil disimpan.');
+    }
+
+    public function apiCareersPage()
+    {
+        $keys = [
+            'careers_title',
+            'careers_subtitle',
+            'careers_wording',
+            'careers_cta_title',
+            'careers_primary_button_label',
+            'careers_primary_button_url',
+            'careers_secondary_button_label',
+            'careers_secondary_button_url',
+            'careers_hero_image',
+            'careers_card_1_title',
+            'careers_card_1_image',
+            'careers_card_2_title',
+            'careers_card_2_image',
+            'careers_card_3_title',
+            'careers_card_3_image',
+            'careers_card_4_title',
+            'careers_card_4_image',
+        ];
+
+        $settings = WebProfileSetting::whereIn('key', $keys)->get()->keyBy('key');
+
+        $heroPath = $settings->get('careers_hero_image')->value ?? null;
+
+        $cards = collect([1, 2, 3, 4])->map(function ($idx) use ($settings) {
+            $title = $settings->get("careers_card_{$idx}_title")->value ?? '';
+            $path = $settings->get("careers_card_{$idx}_image")->value ?? null;
+            return [
+                'id' => $idx,
+                'title' => $title,
+                'image_url' => $path ? $this->publicStorageUrl($path) : null,
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'title' => $settings->get('careers_title')->value ?? 'CAREERS',
+            'subtitle' => $settings->get('careers_subtitle')->value ?? 'Growth Together with Justus Group',
+            'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'wording' => $settings->get('careers_wording')->value ?? '',
+            'cards' => $cards,
+            'cta_title' => $settings->get('careers_cta_title')->value ?? 'BE PART OF A JOURNEY TO CREATE THE FUTURE OF LIFESTYLE EXPERIENCES',
+            'primary_button_label' => $settings->get('careers_primary_button_label')->value ?? 'HEAD OFFICE Join Us',
+            'primary_button_url' => $settings->get('careers_primary_button_url')->value ?? null,
+            'secondary_button_label' => $settings->get('careers_secondary_button_label')->value ?? 'OPERATION Join Us',
+            'secondary_button_url' => $settings->get('careers_secondary_button_url')->value ?? null,
+        ]);
+    }
+
     private function publicStorageUrl(string $path): string
     {
         if (strpos($path, 'storage/') === 0) {
