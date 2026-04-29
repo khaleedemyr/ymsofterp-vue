@@ -121,7 +121,7 @@ class GoogleReviewController extends Controller
                 ->first();
         }
 
-        GoogleReviewManualReview::create([
+        $created = GoogleReviewManualReview::create([
             'id_outlet' => $outlet?->id_outlet,
             'nama_outlet' => $outlet?->nama_outlet,
             'author' => $data['author'],
@@ -134,7 +134,15 @@ class GoogleReviewController extends Controller
             'updated_by' => auth()->user()->name ?? null,
         ]);
 
-        return redirect()->back()->with('success', 'Manual review berhasil ditambahkan.');
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Manual review berhasil ditambahkan.',
+                'data' => $created,
+            ]);
+        }
+
+        return redirect()->route('google-review.manual.index')->with('success', 'Manual review berhasil ditambahkan.');
     }
 
     public function manualUpdate(Request $request, int $id)
@@ -170,13 +178,27 @@ class GoogleReviewController extends Controller
             'updated_by' => auth()->user()->name ?? null,
         ]);
 
-        return redirect()->back()->with('success', 'Manual review berhasil diperbarui.');
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Manual review berhasil diperbarui.',
+                'data' => $review->fresh(),
+            ]);
+        }
+
+        return redirect()->route('google-review.manual.index')->with('success', 'Manual review berhasil diperbarui.');
     }
 
-    public function manualDestroy(int $id)
+    public function manualDestroy(Request $request, int $id)
     {
         GoogleReviewManualReview::findOrFail($id)->delete();
-        return redirect()->back()->with('success', 'Manual review berhasil dihapus.');
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Manual review berhasil dihapus.',
+            ]);
+        }
+        return redirect()->route('google-review.manual.index')->with('success', 'Manual review berhasil dihapus.');
     }
 
     public function dashboard()

@@ -17,13 +17,15 @@ class RecipeCheckerController extends Controller
     {
         $q = trim((string) $request->query('q', ''));
         $items = DB::table('items')
-            ->select('id', 'name')
-            ->where('status', 'active')
+            ->join('categories', 'categories.id', '=', 'items.category_id')
+            ->select('items.id', 'items.name')
+            ->where('items.status', 'active')
+            ->where('categories.is_asset', 0)
+            ->where('categories.show_pos', 0)
             ->when($q !== '', function ($query) use ($q) {
-                $query->where('name', 'like', "%{$q}%");
+                $query->where('items.name', 'like', "%{$q}%");
             })
-            ->orderBy('name')
-            ->limit(40)
+            ->orderBy('items.name')
             ->get()
             ->map(fn ($row) => [
                 'value' => (int) $row->id,
@@ -43,8 +45,11 @@ class RecipeCheckerController extends Controller
 
         $menus = DB::table('items as i')
             ->join('item_bom as b', 'b.item_id', '=', 'i.id')
+            ->join('categories as c', 'c.id', '=', 'i.category_id')
             ->select('i.id', 'i.name')
             ->where('i.status', 'active')
+            ->where('c.is_asset', 0)
+            ->where('c.show_pos', 1)
             ->when($q !== '', function ($query) use ($q) {
                 $query->where('i.name', 'like', "%{$q}%");
             })

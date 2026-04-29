@@ -105,13 +105,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import axios from 'axios'
 import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const page = usePage()
-const outlets = page.props.outlets || []
-const reviews = page.props.reviews || { data: [] }
+const outlets = computed(() => page.props.outlets || [])
+const reviews = computed(() => page.props.reviews || { data: [] })
 const submitting = ref(false)
 const aiSubmitting = ref(false)
 const editSubmitting = ref(false)
@@ -140,17 +141,33 @@ const editForm = ref({
   is_active: true,
 })
 
-function submitCreate() {
+async function submitCreate() {
   submitting.value = true
-  router.post('/google-review/manual', form.value, {
-    preserveScroll: true,
-    onFinish: () => { submitting.value = false },
-  })
+  try {
+    await axios.post('/google-review/manual', form.value, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    form.value = {
+      id_outlet: '',
+      author: '',
+      rating: 5,
+      review_date: '',
+      text: '',
+      profile_photo: '',
+      is_active: true,
+    }
+    await router.reload({ preserveScroll: true })
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal menyimpan manual review'
+    window.alert(message)
+  } finally {
+    submitting.value = false
+  }
 }
 
 function toggleAll() {
   if (selectAll.value) {
-    selectedIds.value = reviews.data.map((r) => r.id)
+    selectedIds.value = (reviews.value?.data || []).map((r) => r.id)
     return
   }
   selectedIds.value = []
@@ -200,23 +217,34 @@ function openEdit(row) {
   editOpen.value = true
 }
 
-function submitEdit() {
+async function submitEdit() {
   if (!editingId.value) return
   editSubmitting.value = true
-  router.put(`/google-review/manual/${editingId.value}`, editForm.value, {
-    preserveScroll: true,
-    onFinish: () => {
-      editSubmitting.value = false
-      editOpen.value = false
-    },
-  })
+  try {
+    await axios.put(`/google-review/manual/${editingId.value}`, editForm.value, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    editOpen.value = false
+    await router.reload({ preserveScroll: true })
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal update manual review'
+    window.alert(message)
+  } finally {
+    editSubmitting.value = false
+  }
 }
 
-function removeReview(id) {
+async function removeReview(id) {
   if (!window.confirm('Hapus manual review ini?')) return
-  router.delete(`/google-review/manual/${id}`, {
-    preserveScroll: true,
-  })
+  try {
+    await axios.delete(`/google-review/manual/${id}`, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    await router.reload({ preserveScroll: true })
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal menghapus manual review'
+    window.alert(message)
+  }
 }
 </script>
 
