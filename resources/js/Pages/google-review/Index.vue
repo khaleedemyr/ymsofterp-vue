@@ -13,6 +13,7 @@
           </div>
           <div class="header-actions">
             <button type="button" class="btn-history" @click="scrollToDashboard">Dashboard</button>
+            <a href="/google-review/manual" class="btn-history">Input Manual Review</a>
             <a href="/google-review/ai/reports" class="btn-history">Riwayat laporan AI</a>
           </div>
         </div>

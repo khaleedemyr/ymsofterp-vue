@@ -182,6 +182,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/google-review/dashboard/drilldown/export', [GoogleReviewController::class, 'dashboardDrilldownExport'])->name('google-review.dashboard.drilldown.export');
     Route::post('/google-review/fetch', [GoogleReviewController::class, 'scrapeReviews'])->name('google-review.fetch');
     Route::post('/google-review/fetch-apify', [GoogleReviewController::class, 'scrapeReviewsApify'])->name('google-review.fetch-apify');
+    Route::get('/google-review/manual', [GoogleReviewController::class, 'manualIndex'])->name('google-review.manual.index');
+    Route::post('/google-review/manual', [GoogleReviewController::class, 'manualStore'])->name('google-review.manual.store');
+    Route::put('/google-review/manual/{id}', [GoogleReviewController::class, 'manualUpdate'])->name('google-review.manual.update');
+    Route::delete('/google-review/manual/{id}', [GoogleReviewController::class, 'manualDestroy'])->name('google-review.manual.destroy');
     Route::get('/google-review/apify/items', [GoogleReviewController::class, 'apifyItems'])->name('google-review.apify.items');
     Route::get('/google-review/apify/export', [GoogleReviewController::class, 'exportApify'])->name('google-review.apify.export');
     Route::get('/scraped-reviews', [GoogleReviewController::class, 'getScrapedReviews'])->name('google-review.scraped');

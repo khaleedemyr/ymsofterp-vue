@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exports\GoogleReviewAiReportExport;
 use App\Jobs\ProcessGoogleReviewAiReportJob;
 use App\Jobs\ProcessInstagramCommentAiReportJob;
+use App\Models\GoogleReviewManualReview;
 use App\Services\ApifyGoogleReviewsService;
 use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
@@ -62,6 +63,120 @@ class GoogleReviewController extends Controller
             ],
             'dashboardData' => $this->buildDashboardData(),
         ]);
+    }
+
+    public function manualIndex(Request $request)
+    {
+        $outlets = \DB::table('tbl_data_outlet')
+            ->select('id_outlet as id', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $query = GoogleReviewManualReview::query();
+        if ($request->filled('id_outlet')) {
+            $query->where('id_outlet', (int) $request->id_outlet);
+        }
+        if ($request->filled('is_active')) {
+            $query->where('is_active', (int) $request->is_active);
+        }
+        if ($request->filled('q')) {
+            $q = '%'.$request->q.'%';
+            $query->where(function ($sub) use ($q) {
+                $sub->where('author', 'like', $q)
+                    ->orWhere('text', 'like', $q)
+                    ->orWhere('nama_outlet', 'like', $q);
+            });
+        }
+
+        $reviews = $query->orderByDesc('id')->paginate(20)->withQueryString();
+
+        return Inertia::render('google-review/Manual', [
+            'outlets' => $outlets,
+            'reviews' => $reviews,
+            'filters' => [
+                'id_outlet' => $request->id_outlet ?? '',
+                'is_active' => $request->is_active ?? '',
+                'q' => $request->q ?? '',
+            ],
+        ]);
+    }
+
+    public function manualStore(Request $request)
+    {
+        $data = $request->validate([
+            'id_outlet' => 'nullable|integer',
+            'author' => 'required|string|max:255',
+            'rating' => 'required|numeric|min:1|max:5',
+            'review_date' => 'required|date',
+            'text' => 'required|string',
+            'profile_photo' => 'nullable|url|max:1024',
+            'is_active' => 'required|boolean',
+        ]);
+
+        $outlet = null;
+        if (! empty($data['id_outlet'])) {
+            $outlet = DB::table('tbl_data_outlet')
+                ->select('id_outlet', 'nama_outlet')
+                ->where('id_outlet', (int) $data['id_outlet'])
+                ->first();
+        }
+
+        GoogleReviewManualReview::create([
+            'id_outlet' => $outlet?->id_outlet,
+            'nama_outlet' => $outlet?->nama_outlet,
+            'author' => $data['author'],
+            'rating' => (string) $data['rating'],
+            'review_date' => $data['review_date'],
+            'text' => $data['text'],
+            'profile_photo' => $data['profile_photo'] ?? null,
+            'is_active' => (bool) $data['is_active'],
+            'created_by' => auth()->user()->name ?? null,
+            'updated_by' => auth()->user()->name ?? null,
+        ]);
+
+        return redirect()->back()->with('success', 'Manual review berhasil ditambahkan.');
+    }
+
+    public function manualUpdate(Request $request, int $id)
+    {
+        $review = GoogleReviewManualReview::findOrFail($id);
+        $data = $request->validate([
+            'id_outlet' => 'nullable|integer',
+            'author' => 'required|string|max:255',
+            'rating' => 'required|numeric|min:1|max:5',
+            'review_date' => 'required|date',
+            'text' => 'required|string',
+            'profile_photo' => 'nullable|url|max:1024',
+            'is_active' => 'required|boolean',
+        ]);
+
+        $outlet = null;
+        if (! empty($data['id_outlet'])) {
+            $outlet = DB::table('tbl_data_outlet')
+                ->select('id_outlet', 'nama_outlet')
+                ->where('id_outlet', (int) $data['id_outlet'])
+                ->first();
+        }
+
+        $review->update([
+            'id_outlet' => $outlet?->id_outlet,
+            'nama_outlet' => $outlet?->nama_outlet,
+            'author' => $data['author'],
+            'rating' => (string) $data['rating'],
+            'review_date' => $data['review_date'],
+            'text' => $data['text'],
+            'profile_photo' => $data['profile_photo'] ?? null,
+            'is_active' => (bool) $data['is_active'],
+            'updated_by' => auth()->user()->name ?? null,
+        ]);
+
+        return redirect()->back()->with('success', 'Manual review berhasil diperbarui.');
+    }
+
+    public function manualDestroy(int $id)
+    {
+        GoogleReviewManualReview::findOrFail($id)->delete();
+        return redirect()->back()->with('success', 'Manual review berhasil dihapus.');
     }
 
     public function dashboard()
@@ -134,7 +249,7 @@ class GoogleReviewController extends Controller
                 ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
                 ->select('r.source', 'i.severity', DB::raw('COUNT(*) as total'))
                 ->where('r.status', 'completed')
-                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'instagram_comments_db'])
+                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'manual_db', 'instagram_comments_db'])
                 ->where('r.created_at', '>=', $since30)
                 ->groupBy('r.source', 'i.severity')
                 ->get();
@@ -153,7 +268,7 @@ class GoogleReviewController extends Controller
                 ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
                 ->select('r.source', 'i.severity', 'i.topics')
                 ->where('r.status', 'completed')
-                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'instagram_comments_db'])
+                ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'manual_db', 'instagram_comments_db'])
                 ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
                 ->where('r.created_at', '>=', $since30)
                 ->limit(4000)
@@ -515,7 +630,7 @@ class GoogleReviewController extends Controller
         $since = now()->subDays(max(0, $days - 1))->startOfDay();
         $sources = $channel === 'instagram'
             ? ['instagram_comments_db']
-            : ['apify_dataset', 'places_api', 'scraper_inline'];
+            : ['apify_dataset', 'places_api', 'scraper_inline', 'manual_db'];
 
         $q = DB::table('google_review_ai_items as i')
             ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
@@ -885,7 +1000,7 @@ class GoogleReviewController extends Controller
         }
 
         $request->validate([
-            'source' => 'required|string|in:apify_dataset,places_api,scraper_inline,instagram_comments_db',
+            'source' => 'required|string|in:apify_dataset,places_api,scraper_inline,manual_db,instagram_comments_db',
             'dataset_id' => 'required_if:source,apify_dataset|nullable|string|max:128',
             'date_from' => 'nullable|date_format:Y-m-d',
             'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
@@ -903,6 +1018,8 @@ class GoogleReviewController extends Controller
             ],
             'profile_keys' => 'nullable|array',
             'profile_keys.*' => 'string|max:64',
+            'manual_review_ids' => 'nullable|array',
+            'manual_review_ids.*' => 'integer',
         ]);
 
         $source = $request->input('source');
@@ -929,6 +1046,17 @@ class GoogleReviewController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'profile_keys' => array_values(array_filter((array) $request->input('profile_keys', []))),
+            ], JSON_UNESCAPED_UNICODE);
+        } elseif ($source === 'manual_db') {
+            $manualIds = array_values(array_filter(array_map('intval', (array) $request->input('manual_review_ids', []))));
+            if ($manualIds === []) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Pilih minimal 1 manual review.',
+                ], 422);
+            }
+            $payload = json_encode([
+                'manual_review_ids' => $manualIds,
             ], JSON_UNESCAPED_UNICODE);
         }
 

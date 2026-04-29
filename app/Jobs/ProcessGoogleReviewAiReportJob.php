@@ -90,6 +90,32 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                         $lastLogged = $loaded;
                     }
                 }, $dateFrom, $dateTo);
+            } elseif ($report->source === 'manual_db') {
+                $meta = [];
+                if (! empty($report->source_payload)) {
+                    $decoded = json_decode((string) $report->source_payload, true);
+                    $meta = is_array($decoded) ? $decoded : [];
+                }
+                $ids = array_values(array_filter(array_map('intval', (array) ($meta['manual_review_ids'] ?? []))));
+                if ($ids === []) {
+                    throw new \RuntimeException('Manual review IDs kosong.');
+                }
+
+                $rows = DB::table('google_review_manual_reviews')
+                    ->whereIn('id', $ids)
+                    ->where('is_active', 1)
+                    ->orderBy('id')
+                    ->get();
+
+                $reviews = $rows->map(function ($row) {
+                    return [
+                        'author' => (string) ($row->author ?? ''),
+                        'rating' => (string) ($row->rating ?? ''),
+                        'date' => (string) ($row->review_date ?? ''),
+                        'text' => (string) ($row->text ?? ''),
+                        'profile_photo' => (string) ($row->profile_photo ?? ''),
+                    ];
+                })->values()->all();
             } else {
                 $raw = $report->source_payload;
                 if (empty($raw)) {
