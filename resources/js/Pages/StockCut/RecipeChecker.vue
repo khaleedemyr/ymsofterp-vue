@@ -18,12 +18,12 @@
             <Multiselect
               v-model="selectedMaterial"
               :options="materialOptions"
-              :object="true"
               :searchable="true"
-              :loading="loadingMaterials"
-              :internal-search="false"
-              :clear-on-select="false"
               :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :loading="loadingMaterials"
+              :preselect-first="false"
               placeholder="Ketik nama bahan baku..."
               label="label"
               track-by="value"
@@ -45,9 +45,9 @@
 
             <div>
               <h3 class="font-semibold text-gray-800 mb-2">Dipakai di Menu</h3>
-              <div class="overflow-x-auto border rounded-lg">
+              <div class="overflow-x-auto rounded-xl border border-gray-200">
                 <table class="min-w-full text-sm">
-                  <thead class="bg-gray-50">
+                  <thead class="bg-slate-50">
                     <tr>
                       <th class="px-3 py-2 text-left">Menu</th>
                       <th class="px-3 py-2 text-left">Qty</th>
@@ -56,11 +56,16 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(row, idx) in materialResult.menus" :key="`m-${idx}`" class="border-t">
-                      <td class="px-3 py-2">{{ row.menu_name }}</td>
-                      <td class="px-3 py-2">{{ row.qty }}</td>
+                    <tr v-for="(row, idx) in materialResult.menus" :key="`m-${idx}`" class="border-t hover:bg-slate-50/70">
+                      <td class="px-3 py-2 font-medium text-gray-800">{{ row.menu_name }}</td>
+                      <td class="px-3 py-2 font-mono">{{ formatQty(row.qty) }}</td>
                       <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
-                      <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                      <td class="px-3 py-2">
+                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                          :class="stockCutLabel(row.stock_cut) === 'Ya' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">
+                          {{ stockCutLabel(row.stock_cut) }}
+                        </span>
+                      </td>
                     </tr>
                     <tr v-if="materialResult.menus.length === 0">
                       <td class="px-3 py-3 text-gray-500" colspan="4">Tidak dipakai di BOM menu.</td>
@@ -72,9 +77,9 @@
 
             <div>
               <h3 class="font-semibold text-gray-800 mb-2">Dipakai di Modifier</h3>
-              <div class="overflow-x-auto border rounded-lg">
+              <div class="overflow-x-auto rounded-xl border border-gray-200">
                 <table class="min-w-full text-sm">
-                  <thead class="bg-gray-50">
+                  <thead class="bg-slate-50">
                     <tr>
                       <th class="px-3 py-2 text-left">Modifier</th>
                       <th class="px-3 py-2 text-left">Option</th>
@@ -84,12 +89,17 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(row, idx) in materialResult.modifiers" :key="`x-${idx}`" class="border-t">
+                    <tr v-for="(row, idx) in materialResult.modifiers" :key="`x-${idx}`" class="border-t hover:bg-slate-50/70">
                       <td class="px-3 py-2">{{ row.modifier_name || '-' }}</td>
-                      <td class="px-3 py-2">{{ row.modifier_option_name }}</td>
-                      <td class="px-3 py-2">{{ row.qty }}</td>
+                      <td class="px-3 py-2 font-medium text-gray-800">{{ row.modifier_option_name }}</td>
+                      <td class="px-3 py-2 font-mono">{{ formatQty(row.qty) }}</td>
                       <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
-                      <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                      <td class="px-3 py-2">
+                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                          :class="stockCutLabel(row.stock_cut) === 'Ya' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">
+                          {{ stockCutLabel(row.stock_cut) }}
+                        </span>
+                      </td>
                     </tr>
                     <tr v-if="materialResult.modifiers.length === 0">
                       <td class="px-3 py-3 text-gray-500" colspan="5">Tidak dipakai di BOM modifier.</td>
@@ -107,12 +117,12 @@
             <Multiselect
               v-model="selectedTarget"
               :options="targetOptions"
-              :object="true"
               :searchable="true"
-              :loading="loadingTargets"
-              :internal-search="false"
-              :clear-on-select="false"
               :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :loading="loadingTargets"
+              :preselect-first="false"
               placeholder="Ketik nama menu atau modifier..."
               label="label"
               track-by="value"
@@ -134,9 +144,9 @@
               <span class="ml-2 text-xs uppercase text-emerald-700">({{ targetResult.target.type }})</span>
             </div>
 
-            <div class="overflow-x-auto border rounded-lg">
+            <div class="overflow-x-auto rounded-xl border border-gray-200">
               <table class="min-w-full text-sm">
-                <thead class="bg-gray-50">
+                <thead class="bg-slate-50">
                   <tr>
                     <th class="px-3 py-2 text-left">Bahan Baku</th>
                     <th class="px-3 py-2 text-left">Qty</th>
@@ -145,11 +155,16 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, idx) in targetResult.recipe" :key="`r-${idx}`" class="border-t">
-                    <td class="px-3 py-2">{{ row.material_name }}</td>
-                    <td class="px-3 py-2">{{ row.qty }}</td>
+                  <tr v-for="(row, idx) in targetResult.recipe" :key="`r-${idx}`" class="border-t hover:bg-slate-50/70">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.material_name }}</td>
+                    <td class="px-3 py-2 font-mono">{{ formatQty(row.qty) }}</td>
                     <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
-                    <td class="px-3 py-2">{{ row.stock_cut ? 'Ya' : 'Tidak' }}</td>
+                    <td class="px-3 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                        :class="stockCutLabel(row.stock_cut) === 'Ya' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">
+                        {{ stockCutLabel(row.stock_cut) }}
+                      </span>
+                    </td>
                   </tr>
                   <tr v-if="targetResult.recipe.length === 0">
                     <td class="px-3 py-3 text-gray-500" colspan="4">Target ini belum punya BOM.</td>
@@ -168,8 +183,8 @@
 import { computed, ref } from 'vue'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Multiselect from '@vueform/multiselect'
-import '@vueform/multiselect/themes/default.css'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const selectedMaterial = ref(null)
 const materialOptions = ref([])
@@ -240,6 +255,19 @@ function onSearchTargets(query) {
   }, 180)
 }
 
+function formatQty(value) {
+  const num = Number(value || 0)
+  return num.toLocaleString('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  })
+}
+
+function stockCutLabel(value) {
+  // Sesuai request: 0 = Ya, 1 = Tidak
+  return Number(value) === 0 ? 'Ya' : 'Tidak'
+}
+
 async function loadByMaterial() {
   materialResult.value = null
   if (!selectedMaterialId.value) return
@@ -274,4 +302,28 @@ async function loadByTarget() {
 loadMaterialOptions()
 loadTargetOptions()
 </script>
+
+<style scoped>
+:deep(.multiselect) {
+  min-height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+:deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+:deep(.multiselect__content-wrapper) {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.multiselect__option--highlight) {
+  background: #2563eb;
+  color: #fff;
+}
+</style>
 

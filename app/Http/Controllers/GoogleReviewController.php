@@ -18,6 +18,28 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class GoogleReviewController extends Controller
 {
+    private function encodeTextForLegacyUtf8(string $text): string
+    {
+        // Store as JSON-unicode escaped ASCII (e.g. emoji => \ud83d\udc99)
+        // so it can be saved in non-utf8mb4 columns without DB changes.
+        $encoded = json_encode($text);
+        if (! is_string($encoded) || strlen($encoded) < 2) {
+            return $text;
+        }
+
+        return substr($encoded, 1, -1);
+    }
+
+    private function decodeTextFromLegacyUtf8(?string $text): ?string
+    {
+        if ($text === null || $text === '') {
+            return $text;
+        }
+
+        $decoded = json_decode('"'.addcslashes($text, "\\\"").'"');
+        return is_string($decoded) ? $decoded : $text;
+    }
+
     protected $placesService;
     protected $apifyService;
 
@@ -89,6 +111,12 @@ class GoogleReviewController extends Controller
         }
 
         $reviews = $query->orderByDesc('id')->paginate(20)->withQueryString();
+        $reviews->setCollection(
+            $reviews->getCollection()->map(function ($row) {
+                $row->text = $this->decodeTextFromLegacyUtf8($row->text);
+                return $row;
+            })
+        );
 
         return Inertia::render('google-review/Manual', [
             'outlets' => $outlets,
@@ -112,6 +140,7 @@ class GoogleReviewController extends Controller
             'profile_photo' => 'nullable|url|max:1024',
             'is_active' => 'required|boolean',
         ]);
+        $encodedText = $this->encodeTextForLegacyUtf8((string) $data['text']);
 
         $outlet = null;
         if (! empty($data['id_outlet'])) {
@@ -127,7 +156,7 @@ class GoogleReviewController extends Controller
             'author' => $data['author'],
             'rating' => (string) $data['rating'],
             'review_date' => $data['review_date'],
-            'text' => $data['text'],
+            'text' => $encodedText,
             'profile_photo' => $data['profile_photo'] ?? null,
             'is_active' => (bool) $data['is_active'],
             'created_by' => auth()->user()->name ?? null,
@@ -138,10 +167,11 @@ class GoogleReviewController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Manual review berhasil ditambahkan.',
-                'data' => $created,
+                'data' => array_merge($created->toArray(), [
+                    'text' => $this->decodeTextFromLegacyUtf8($created->text),
+                ]),
             ]);
         }
-
         return redirect()->route('google-review.manual.index')->with('success', 'Manual review berhasil ditambahkan.');
     }
 
@@ -157,6 +187,7 @@ class GoogleReviewController extends Controller
             'profile_photo' => 'nullable|url|max:1024',
             'is_active' => 'required|boolean',
         ]);
+        $encodedText = $this->encodeTextForLegacyUtf8((string) $data['text']);
 
         $outlet = null;
         if (! empty($data['id_outlet'])) {
@@ -172,7 +203,7 @@ class GoogleReviewController extends Controller
             'author' => $data['author'],
             'rating' => (string) $data['rating'],
             'review_date' => $data['review_date'],
-            'text' => $data['text'],
+            'text' => $encodedText,
             'profile_photo' => $data['profile_photo'] ?? null,
             'is_active' => (bool) $data['is_active'],
             'updated_by' => auth()->user()->name ?? null,
@@ -182,10 +213,11 @@ class GoogleReviewController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Manual review berhasil diperbarui.',
-                'data' => $review->fresh(),
+                'data' => array_merge($review->fresh()->toArray(), [
+                    'text' => $this->decodeTextFromLegacyUtf8($review->fresh()->text),
+                ]),
             ]);
         }
-
         return redirect()->route('google-review.manual.index')->with('success', 'Manual review berhasil diperbarui.');
     }
 
