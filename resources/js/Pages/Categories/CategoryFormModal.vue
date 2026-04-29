@@ -36,7 +36,7 @@ watch(() => props.show, (val) => {
     form.description = props.category.description;
     form.status = props.category.status;
     form.show_pos = String(props.category.show_pos);
-    form.is_asset = !!props.category.is_asset;
+    form.is_asset = String(props.category.is_asset) === '1';
 
     // Ambil outlet yang sudah terhubung (selalu isi selectedOutlets)
     const selectedOutletObjs = props.category.outlet_ids
