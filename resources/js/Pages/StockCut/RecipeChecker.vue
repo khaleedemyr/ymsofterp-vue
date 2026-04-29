@@ -14,20 +14,27 @@
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
           <h2 class="text-lg font-semibold text-gray-800 mb-3">1) Cari dari Bahan Baku</h2>
-          <Multiselect
-            v-model="selectedMaterial"
-            :options="materialOptions"
-            :searchable="true"
-            :loading="loadingMaterials"
-            :internal-search="false"
-            :clear-on-select="false"
-            :close-on-select="true"
-            placeholder="Ketik nama bahan baku..."
-            label="label"
-            track-by="value"
-            @search-change="onSearchMaterials"
-            @change="loadByMaterial"
-          />
+          <div class="space-y-3">
+            <Multiselect
+              v-model="selectedMaterial"
+              :options="materialOptions"
+              :searchable="true"
+              :loading="loadingMaterials"
+              :internal-search="true"
+              :clear-on-select="false"
+              :close-on-select="true"
+              placeholder="Ketik nama bahan baku..."
+              label="label"
+              track-by="value"
+            />
+            <button
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="!selectedMaterial?.value || loadingMaterialResult"
+              @click="loadByMaterial"
+            >
+              {{ loadingMaterialResult ? 'Loading...' : 'Load Penggunaan Bahan' }}
+            </button>
+          </div>
 
           <div v-if="materialResult" class="mt-4 space-y-4">
             <div class="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-sm">
@@ -94,20 +101,27 @@
 
         <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
           <h2 class="text-lg font-semibold text-gray-800 mb-3">2) Cari Resep Menu/Modifier</h2>
-          <Multiselect
-            v-model="selectedTarget"
-            :options="targetOptions"
-            :searchable="true"
-            :loading="loadingTargets"
-            :internal-search="false"
-            :clear-on-select="false"
-            :close-on-select="true"
-            placeholder="Ketik nama menu atau modifier..."
-            label="label"
-            track-by="value"
-            @search-change="onSearchTargets"
-            @change="loadByTarget"
-          />
+          <div class="space-y-3">
+            <Multiselect
+              v-model="selectedTarget"
+              :options="targetOptions"
+              :searchable="true"
+              :loading="loadingTargets"
+              :internal-search="true"
+              :clear-on-select="false"
+              :close-on-select="true"
+              placeholder="Ketik nama menu atau modifier..."
+              label="label"
+              track-by="value"
+            />
+            <button
+              class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="!selectedTarget?.target_type || !selectedTarget?.target_id || loadingTargetResult"
+              @click="loadByTarget"
+            >
+              {{ loadingTargetResult ? 'Loading...' : 'Load Resep Target' }}
+            </button>
+          </div>
 
           <div v-if="targetResult" class="mt-4">
             <div class="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm mb-3">
@@ -156,55 +170,67 @@ import '@vueform/multiselect/themes/default.css'
 const selectedMaterial = ref(null)
 const materialOptions = ref([])
 const loadingMaterials = ref(false)
+const loadingMaterialResult = ref(false)
 const materialResult = ref(null)
 
 const selectedTarget = ref(null)
 const targetOptions = ref([])
 const loadingTargets = ref(false)
+const loadingTargetResult = ref(false)
 const targetResult = ref(null)
 
-async function onSearchMaterials(query) {
+async function loadMaterialOptions() {
   loadingMaterials.value = true
   try {
-    const res = await axios.get('/api/stock-cut/recipe-checker/search-materials', { params: { q: query || '' } })
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-materials', { params: { q: '' } })
     materialOptions.value = res.data?.items || []
   } finally {
     loadingMaterials.value = false
   }
 }
 
-async function onSearchTargets(query) {
+async function loadTargetOptions() {
   loadingTargets.value = true
   try {
-    const res = await axios.get('/api/stock-cut/recipe-checker/search-targets', { params: { q: query || '' } })
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-targets', { params: { q: '' } })
     targetOptions.value = res.data?.items || []
   } finally {
     loadingTargets.value = false
   }
 }
 
-async function loadByMaterial(option) {
+async function loadByMaterial() {
   materialResult.value = null
-  if (!option?.value) return
-  const res = await axios.get('/api/stock-cut/recipe-checker/by-material', {
-    params: { material_item_id: option.value },
-  })
-  materialResult.value = res.data
+  if (!selectedMaterial.value?.value) return
+  loadingMaterialResult.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/by-material', {
+      params: { material_item_id: selectedMaterial.value.value },
+    })
+    materialResult.value = res.data
+  } finally {
+    loadingMaterialResult.value = false
+  }
 }
 
-async function loadByTarget(option) {
+async function loadByTarget() {
   targetResult.value = null
-  if (!option?.target_type || !option?.target_id) return
-  const res = await axios.get('/api/stock-cut/recipe-checker/by-target', {
-    params: {
-      target_type: option.target_type,
-      target_id: option.target_id,
-    },
-  })
-  targetResult.value = res.data
+  if (!selectedTarget.value?.target_type || !selectedTarget.value?.target_id) return
+  loadingTargetResult.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/by-target', {
+      params: {
+        target_type: selectedTarget.value.target_type,
+        target_id: selectedTarget.value.target_id,
+      },
+    })
+    targetResult.value = res.data
+  } finally {
+    loadingTargetResult.value = false
+  }
 }
 
-onSearchMaterials('')
-onSearchTargets('')
+loadMaterialOptions()
+loadTargetOptions()
 </script>
 
