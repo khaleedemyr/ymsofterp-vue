@@ -47,7 +47,17 @@ class JobVacancyController extends Controller
     public function publicList(Request $request)
     {
         $jobs = JobVacancy::query()
-            ->where('is_active', 1)
+            ->where(function ($q) {
+                // Be tolerant across schema variants (tinyint/enum/string) on server DB.
+                $q->where('is_active', 1)
+                    ->orWhere('is_active', '1')
+                    ->orWhere('is_active', true)
+                    ->orWhereRaw("LOWER(CAST(is_active AS CHAR)) IN ('active','aktif','true','yes','y')");
+            })
+            ->where(function ($q) {
+                $q->whereNull('closing_date')
+                    ->orWhereDate('closing_date', '>=', now()->toDateString());
+            })
             ->when($request->scope, function ($query, $scope) {
                 if (in_array($scope, ['outlet', 'head_office'], true)) {
                     $query->where('job_scope', $scope);
