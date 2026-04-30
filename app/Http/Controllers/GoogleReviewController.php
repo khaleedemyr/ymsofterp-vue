@@ -1435,6 +1435,13 @@ class GoogleReviewController extends Controller
                 ->orderByDesc('id')
                 ->limit(5000)
                 ->get();
+            $fallbackByAuthorDate = $fallbackCandidates
+                ->filter(fn ($r) => trim((string) ($r->author ?? '')) !== '' && trim((string) ($r->review_date ?? '')) !== '')
+                ->groupBy(fn ($r) => trim((string) $r->author).'|'.trim((string) $r->review_date))
+                ->map(function ($group) {
+                    $hit = $group->first(fn ($r) => trim((string) ($r->nama_outlet ?? '')) !== '');
+                    return $hit ? (string) $hit->nama_outlet : '';
+                });
 
             $itemRows = $itemRows->map(function ($r) use ($idMap, $fallbackCandidates, $report) {
                 $sid = (int) ($r['source_item_id'] ?? 0);
@@ -1638,7 +1645,7 @@ class GoogleReviewController extends Controller
                 ->limit(5000)
                 ->get();
 
-            $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $report) {
+            $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $fallbackByAuthorDate, $report) {
                 $sid = (int) ($row->source_item_id ?? 0);
                 if ($sid > 0 && isset($idMap[$sid])) {
                     $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
@@ -1658,6 +1665,12 @@ class GoogleReviewController extends Controller
                         $row->nama_outlet = (string) ($match->nama_outlet ?? '');
                         return $row;
                     }
+                }
+
+                $authorDateKey = $author.'|'.$reviewDate;
+                if ($author !== '' && $reviewDate !== '' && ! empty($fallbackByAuthorDate[$authorDateKey])) {
+                    $row->nama_outlet = (string) $fallbackByAuthorDate[$authorDateKey];
+                    return $row;
                 }
 
                 $row->nama_outlet = (string) ($report->nama_outlet ?? '');
