@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ProcessGoogleReviewAiReportJob implements ShouldQueue
 {
@@ -53,6 +54,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
         $this->pushLog('Job dimulai (klasifikasi AI).');
 
         try {
+            $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
             $reviews = [];
             if ($report->source === 'apify_dataset') {
                 if (empty($report->dataset_id)) {
@@ -109,6 +111,8 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
                 $reviews = $rows->map(function ($row) {
                     return [
+                        'source_item_id' => (int) ($row->id ?? 0),
+                        'nama_outlet' => (string) ($row->nama_outlet ?? ''),
                         'author' => (string) ($row->author ?? ''),
                         'rating' => (string) ($row->rating ?? ''),
                         'date' => (string) ($row->review_date ?? ''),
@@ -207,6 +211,9 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
+                if ($hasSourceItemId) {
+                    $batch[count($batch) - 1]['source_item_id'] = (int) ($row['source_item_id'] ?? 0);
+                }
                 if (count($batch) >= 150) {
                     DB::table('google_review_ai_items')->insert($batch);
                     $batch = [];

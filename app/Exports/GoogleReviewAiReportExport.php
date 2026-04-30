@@ -52,7 +52,7 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
 
         return [
             (int) $row->sort_order + 1,
-            $this->outletName ?? '-',
+            $row->nama_outlet ?? $this->outletName ?? '-',
             $row->author,
             $row->rating,
             $row->review_date,

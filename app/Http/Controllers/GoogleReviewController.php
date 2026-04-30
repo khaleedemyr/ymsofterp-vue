@@ -1321,6 +1321,7 @@ class GoogleReviewController extends Controller
                 'source_post_url' => property_exists($row, 'source_post_url') ? $row->source_post_url : null,
                 'source_post_shortcode' => property_exists($row, 'source_post_shortcode') ? $row->source_post_shortcode : null,
                 'source_post_caption' => property_exists($row, 'source_post_caption') ? $row->source_post_caption : null,
+                'nama_outlet' => null,
             ];
         });
 
@@ -1406,6 +1407,58 @@ class GoogleReviewController extends Controller
                     }
                 }
 
+                return $r;
+            });
+        }
+        if ($report->source === 'manual_db') {
+            $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
+            $idMap = [];
+            if ($hasSourceItemId) {
+                $sourceIds = $itemRows->pluck('source_item_id')
+                    ->filter(fn ($v) => is_numeric($v) && (int) $v > 0)
+                    ->map(fn ($v) => (int) $v)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if ($sourceIds !== []) {
+                    $idMap = DB::table('google_review_manual_reviews')
+                        ->select('id', 'nama_outlet')
+                        ->whereIn('id', $sourceIds)
+                        ->get()
+                        ->keyBy('id')
+                        ->all();
+                }
+            }
+
+            $fallbackCandidates = DB::table('google_review_manual_reviews')
+                ->select('author', 'review_date', 'text', 'nama_outlet')
+                ->orderByDesc('id')
+                ->limit(5000)
+                ->get();
+
+            $itemRows = $itemRows->map(function ($r) use ($idMap, $fallbackCandidates, $report) {
+                $sid = (int) ($r['source_item_id'] ?? 0);
+                if ($sid > 0 && isset($idMap[$sid])) {
+                    $r['nama_outlet'] = (string) ($idMap[$sid]->nama_outlet ?? '');
+                    return $r;
+                }
+
+                $author = trim((string) ($r['author'] ?? ''));
+                $reviewDate = trim((string) ($r['review_date'] ?? ''));
+                $text = trim((string) ($r['text'] ?? ''));
+                if ($author !== '' && $text !== '') {
+                    $match = $fallbackCandidates->first(function ($c) use ($author, $reviewDate, $text) {
+                        return trim((string) $c->author) === $author
+                            && trim((string) $c->review_date) === $reviewDate
+                            && trim((string) $c->text) === $text;
+                    });
+                    if ($match) {
+                        $r['nama_outlet'] = (string) ($match->nama_outlet ?? '');
+                        return $r;
+                    }
+                }
+
+                $r['nama_outlet'] = (string) ($report->nama_outlet ?? '');
                 return $r;
             });
         }
@@ -1558,6 +1611,37 @@ class GoogleReviewController extends Controller
             ->where('report_id', $id)
             ->orderBy('sort_order')
             ->get();
+
+        if ($report->source === 'manual_db') {
+            $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
+            $idMap = [];
+            if ($hasSourceItemId) {
+                $sourceIds = $rows->pluck('source_item_id')
+                    ->filter(fn ($v) => is_numeric($v) && (int) $v > 0)
+                    ->map(fn ($v) => (int) $v)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if ($sourceIds !== []) {
+                    $idMap = DB::table('google_review_manual_reviews')
+                        ->select('id', 'nama_outlet')
+                        ->whereIn('id', $sourceIds)
+                        ->get()
+                        ->keyBy('id')
+                        ->all();
+                }
+            }
+
+            $rows = $rows->map(function ($row) use ($idMap, $report) {
+                $sid = (int) ($row->source_item_id ?? 0);
+                if ($sid > 0 && isset($idMap[$sid])) {
+                    $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
+                } else {
+                    $row->nama_outlet = (string) ($report->nama_outlet ?? '');
+                }
+                return $row;
+            });
+        }
 
         $filename = 'google-review-ai-' . $id . '-' . date('Ymd-His') . '.xlsx';
 
