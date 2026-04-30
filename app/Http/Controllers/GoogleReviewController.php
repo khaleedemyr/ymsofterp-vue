@@ -1646,7 +1646,7 @@ class GoogleReviewController extends Controller
                 ->get();
 
             $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $fallbackByAuthorDate, $report) {
-                $sid = (int) ($row->source_item_id ?? 0);
+                $sid = property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : 0;
                 if ($sid > 0 && isset($idMap[$sid])) {
                     $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
                     return $row;
