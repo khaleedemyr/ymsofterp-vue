@@ -1403,7 +1403,6 @@ class ItemController extends Controller
                       ->orWhere('items.sku', 'like', '%' . $q . '%');
             })
             ->orderBy('items.name')
-            ->limit(10)
             ->get();
 
             return response()->json($items);
