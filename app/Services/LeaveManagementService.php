@@ -107,7 +107,7 @@ class LeaveManagementService
     /**
      * Burning cuti tahun sebelumnya di bulan Maret
      */
-    public function burnPreviousYearLeave($currentYear = null)
+    public function burnPreviousYearLeave($currentYear = null, $force = false)
     {
         $currentYear = $currentYear ?? date('Y');
         $previousYear = $currentYear - 1;
@@ -129,6 +129,19 @@ class LeaveManagementService
 
             foreach ($activeUsers as $user) {
                 try {
+                    // Cegah burning ganda untuk user+tahun yang sama (kecuali force)
+                    if (!$force) {
+                        $alreadyBurned = LeaveTransaction::where('user_id', $user->id)
+                            ->where('transaction_type', 'burning')
+                            ->where('year', $currentYear)
+                            ->exists();
+
+                        if ($alreadyBurned) {
+                            Log::info("User {$user->nama_lengkap} already burned for year {$currentYear}");
+                            continue;
+                        }
+                    }
+
                     // Hitung sisa cuti tahun sebelumnya
                     $previousYearBalance = $this->calculatePreviousYearBalance($user->id, $previousYear);
                     
@@ -208,7 +221,7 @@ class LeaveManagementService
     {
         // Hitung total kredit tahun sebelumnya
         $totalCredit = LeaveTransaction::where('user_id', $userId)
-            ->where('transaction_type', 'monthly_credit')
+            ->whereIn('transaction_type', ['monthly_credit', 'initial_balance'])
             ->where('year', $previousYear)
             ->sum('amount');
 

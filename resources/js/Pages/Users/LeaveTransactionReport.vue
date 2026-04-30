@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import axios from 'axios'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   rows: Object,
@@ -105,6 +107,46 @@ function amountClass(amount) {
   return 'text-gray-600'
 }
 
+async function runBurningNow() {
+  const currentYear = new Date().getFullYear()
+  const { isConfirmed, value } = await Swal.fire({
+    title: 'Proses Burning Cuti',
+    text: 'Masukkan tahun saat ini. Sistem akan burn sisa cuti tahun sebelumnya.',
+    input: 'number',
+    inputValue: currentYear,
+    inputAttributes: {
+      min: 2020,
+      max: 2035,
+      step: 1,
+    },
+    showCancelButton: true,
+    confirmButtonText: 'Proses Burning',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+
+  if (!isConfirmed || !value) return
+
+  loading.value = true
+  try {
+    const response = await axios.post(route('leave-management.process-burning'), {
+      year: Number(value),
+    })
+
+    if (response.data?.success) {
+      await Swal.fire('Berhasil', response.data.message || 'Burning berhasil diproses', 'success')
+      router.reload()
+      return
+    }
+
+    await Swal.fire('Gagal', response.data?.message || 'Burning gagal diproses', 'error')
+  } catch (error) {
+    await Swal.fire('Error', error?.response?.data?.message || 'Terjadi kesalahan saat proses burning', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
 const filteredUsers = computed(() => {
   const keyword = employeeSearch.value.trim().toLowerCase()
   if (!keyword) return props.users
@@ -129,6 +171,17 @@ const filteredUsers = computed(() => {
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Tracking kapan cuti didapat (kredit) dan kapan cuti digunakan.
           </p>
+        </div>
+        <div>
+          <button
+            type="button"
+            class="inline-flex items-center px-4 py-2 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-60"
+            :disabled="loading"
+            @click="runBurningNow"
+          >
+            <i class="fa-solid fa-fire mr-2"></i>
+            {{ loading ? 'Memproses...' : 'Burning Cuti Tahun Lalu' }}
+          </button>
         </div>
       </div>
 

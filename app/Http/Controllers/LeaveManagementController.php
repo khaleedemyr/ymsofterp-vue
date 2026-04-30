@@ -190,7 +190,7 @@ class LeaveManagementController extends Controller
             'year' => 'required|integer|min:2020|max:2030'
         ]);
 
-        $result = $this->leaveService->burnPreviousYearLeave($request->year);
+        $result = $this->leaveService->burnPreviousYearLeave($request->year, false);
 
         if ($result['success']) {
             return response()->json([

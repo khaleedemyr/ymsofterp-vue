@@ -58,9 +58,9 @@ class Kernel extends ConsoleKernel
             ->monthlyOn(1, '00:00')
             ->description('Memberikan cuti bulanan ke semua karyawan aktif');
 
-        // Burning cuti tahun sebelumnya - jalankan setiap tanggal 1 Maret
+        // Burning cuti tahun sebelumnya - jalankan setiap tanggal 1 April jam 00:01
         $schedule->command('leave:burn-previous-year')
-            ->yearlyOn(3, 1, '00:00')
+            ->yearlyOn(4, 1, '00:01')
             ->description('Burning sisa cuti tahun sebelumnya');
 
         // Update member tiers based on rolling 12-month spending - run monthly on the 1st

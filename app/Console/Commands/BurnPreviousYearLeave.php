@@ -34,7 +34,7 @@ class BurnPreviousYearLeave extends Command
         $this->info("Memproses burning cuti tahun " . ($currentYear - 1) . " untuk tahun {$currentYear}");
 
         $leaveService = new LeaveManagementService();
-        $result = $leaveService->burnPreviousYearLeave($currentYear);
+        $result = $leaveService->burnPreviousYearLeave($currentYear, $force);
 
         if ($result['success']) {
             $this->info("✅ Berhasil memproses {$result['processed_count']} karyawan");
