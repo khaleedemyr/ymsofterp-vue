@@ -1632,13 +1632,35 @@ class GoogleReviewController extends Controller
                 }
             }
 
-            $rows = $rows->map(function ($row) use ($idMap, $report) {
+            $fallbackCandidates = DB::table('google_review_manual_reviews')
+                ->select('author', 'review_date', 'text', 'nama_outlet')
+                ->orderByDesc('id')
+                ->limit(5000)
+                ->get();
+
+            $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $report) {
                 $sid = (int) ($row->source_item_id ?? 0);
                 if ($sid > 0 && isset($idMap[$sid])) {
                     $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
-                } else {
-                    $row->nama_outlet = (string) ($report->nama_outlet ?? '');
+                    return $row;
                 }
+
+                $author = trim((string) ($row->author ?? ''));
+                $reviewDate = trim((string) ($row->review_date ?? ''));
+                $text = trim((string) ($row->text ?? ''));
+                if ($author !== '' && $text !== '') {
+                    $match = $fallbackCandidates->first(function ($c) use ($author, $reviewDate, $text) {
+                        return trim((string) $c->author) === $author
+                            && trim((string) $c->review_date) === $reviewDate
+                            && trim((string) $c->text) === $text;
+                    });
+                    if ($match) {
+                        $row->nama_outlet = (string) ($match->nama_outlet ?? '');
+                        return $row;
+                    }
+                }
+
+                $row->nama_outlet = (string) ($report->nama_outlet ?? '');
                 return $row;
             });
         }

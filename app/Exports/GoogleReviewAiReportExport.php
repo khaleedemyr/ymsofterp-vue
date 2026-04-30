@@ -50,9 +50,14 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
             $topicsStr = '';
         }
 
+        $outletName = trim((string) ($row->nama_outlet ?? $this->outletName ?? ''));
+        if ($outletName === '' || strtolower($outletName) === 'null') {
+            $outletName = '-';
+        }
+
         return [
             (int) $row->sort_order + 1,
-            $row->nama_outlet ?? $this->outletName ?? '-',
+            $outletName,
             $row->author,
             $row->rating,
             $row->review_date,
