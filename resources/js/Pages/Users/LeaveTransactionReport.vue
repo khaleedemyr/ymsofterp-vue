@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -34,6 +34,7 @@ function normalizeFilters(f) {
 
 const filters = ref(normalizeFilters(props.filters))
 const loading = ref(false)
+const employeeSearch = ref('')
 
 watch(
   () => props.filters,
@@ -103,6 +104,17 @@ function amountClass(amount) {
   if (Number(amount) < 0) return 'text-red-600'
   return 'text-gray-600'
 }
+
+const filteredUsers = computed(() => {
+  const keyword = employeeSearch.value.trim().toLowerCase()
+  if (!keyword) return props.users
+
+  return (props.users || []).filter((u) => {
+    const name = (u.nama_lengkap || '').toLowerCase()
+    const nik = (u.nik || '').toLowerCase()
+    return name.includes(keyword) || nik.includes(keyword)
+  })
+})
 </script>
 
 <template>
@@ -151,12 +163,18 @@ function amountClass(amount) {
         <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Karyawan</label>
+            <input
+              v-model="employeeSearch"
+              type="text"
+              placeholder="Cari cepat nama/NIK..."
+              class="w-full mb-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm"
+            />
             <select
               v-model="filters.user_id"
               class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm"
             >
               <option value="">Semua karyawan</option>
-              <option v-for="u in users" :key="u.id" :value="String(u.id)">
+              <option v-for="u in filteredUsers" :key="u.id" :value="String(u.id)">
                 {{ u.nama_lengkap }} ({{ u.nik || '-' }})
               </option>
             </select>
