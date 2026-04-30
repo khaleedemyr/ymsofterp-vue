@@ -1561,6 +1561,6 @@ class GoogleReviewController extends Controller
 
         $filename = 'google-review-ai-' . $id . '-' . date('Ymd-His') . '.xlsx';
 
-        return Excel::download(new GoogleReviewAiReportExport($rows), $filename);
+        return Excel::download(new GoogleReviewAiReportExport($rows, $report->nama_outlet), $filename);
     }
 } 

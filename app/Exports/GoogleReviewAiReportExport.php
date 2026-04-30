@@ -10,7 +10,10 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMapping, ShouldAutoSize
 {
-    public function __construct(protected Collection $rows) {}
+    public function __construct(
+        protected Collection $rows,
+        protected ?string $outletName = null
+    ) {}
 
     public function collection()
     {
@@ -21,6 +24,7 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
     {
         return [
             'No',
+            'Outlet',
             'Penulis',
             'Rating',
             'Tanggal',
@@ -48,6 +52,7 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
 
         return [
             (int) $row->sort_order + 1,
+            $this->outletName ?? '-',
             $row->author,
             $row->rating,
             $row->review_date,

@@ -46,6 +46,10 @@
             <span class="lbl">Sumber</span>
             <span>{{ sourceLabel(report.source) }}</span>
           </div>
+          <div class="row">
+            <span class="lbl">Outlet</span>
+            <span>{{ report.nama_outlet || '—' }}</span>
+          </div>
           <div v-if="report.place_rating" class="row">
             <span class="lbl">Rating tempat</span>
             <span>{{ report.place_rating }}</span>
@@ -87,6 +91,7 @@
                 <tr>
                   <th>#</th>
                   <th>Penulis</th>
+                  <th>Outlet</th>
                   <th v-if="report.source === 'instagram_comments_db'">Akun IG</th>
                   <th v-if="report.source === 'instagram_comments_db'">Post</th>
                   <th v-if="report.source === 'instagram_comments_db'">Caption Post</th>
@@ -102,6 +107,7 @@
                 <tr v-for="it in items.data" :key="it.id">
                   <td>{{ it.sort_order + 1 }}</td>
                   <td>{{ it.author || '—' }}</td>
+                  <td>{{ report.nama_outlet || '—' }}</td>
                   <td v-if="report.source === 'instagram_comments_db'">{{ it.source_account || it.rating || '—' }}</td>
                   <td v-if="report.source === 'instagram_comments_db'">
                     <a v-if="it.source_post_url" :href="it.source_post_url" target="_blank" rel="noopener" class="plink">
