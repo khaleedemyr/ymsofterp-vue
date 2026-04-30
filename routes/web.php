@@ -89,6 +89,7 @@ use App\Http\Controllers\StockCutController;
 use App\Http\Controllers\OutletDashboardController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\EmployeeLeaveBalanceReportController;
+use App\Http\Controllers\LeaveTransactionReportController;
 use App\Http\Controllers\UserPinController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\UserShiftController;
@@ -2085,6 +2086,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('users/export', [UserController::class, 'export'])->name('users.export');
     Route::get('users/leave-balance-report', [EmployeeLeaveBalanceReportController::class, 'index'])->name('users.leave-balance-report');
     Route::get('users/leave-balance-report/export', [EmployeeLeaveBalanceReportController::class, 'export'])->name('users.leave-balance-report.export');
+    Route::get('users/leave-transaction-report', [LeaveTransactionReportController::class, 'index'])->name('users.leave-transaction-report');
 });
 
 Route::resource('users', UserController::class);
