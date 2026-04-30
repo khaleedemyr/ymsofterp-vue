@@ -1644,6 +1644,13 @@ class GoogleReviewController extends Controller
                 ->orderByDesc('id')
                 ->limit(5000)
                 ->get();
+            $fallbackByAuthorDate = $fallbackCandidates
+                ->filter(fn ($r) => trim((string) ($r->author ?? '')) !== '' && trim((string) ($r->review_date ?? '')) !== '')
+                ->groupBy(fn ($r) => trim((string) $r->author).'|'.trim((string) $r->review_date))
+                ->map(function ($group) {
+                    $hit = $group->first(fn ($r) => trim((string) ($r->nama_outlet ?? '')) !== '');
+                    return $hit ? (string) $hit->nama_outlet : '';
+                });
 
             $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $fallbackByAuthorDate, $report) {
                 $sid = property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : 0;
