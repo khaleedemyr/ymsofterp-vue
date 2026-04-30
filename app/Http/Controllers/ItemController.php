@@ -1379,26 +1379,30 @@ class ItemController extends Controller
             $q = $request->input('q');
         // $warehouseId = $request->input('warehouse_id'); // Boleh ada, tapi tidak dipakai di query
 
-            $items = \DB::table('items')
+
+        $items = \DB::table('items')
             ->leftJoin('units as usmall', 'usmall.id', '=', 'items.small_unit_id')
             ->leftJoin('units as umedium', 'umedium.id', '=', 'items.medium_unit_id')
             ->leftJoin('units as ularge', 'ularge.id', '=', 'items.large_unit_id')
             ->select(
-                    'items.id',
-                    'items.name',
-                    'items.sku',
+                'items.id',
+                'items.name',
+                'items.sku',
                 'usmall.name as unit_small',
                 'umedium.name as unit_medium',
                 'ularge.name as unit_large',
-                    'items.small_unit_id',
-                    'items.medium_unit_id',
-                    'items.large_unit_id',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id',
                 'items.medium_conversion_qty',
                 'items.small_conversion_qty'
             )
             ->where('items.status', 'active')
-            ->where('items.name', 'like', '%' . $q . '%')
-                ->orderBy('items.name')
+            ->where(function($query) use ($q) {
+                $query->where('items.name', 'like', '%' . $q . '%')
+                      ->orWhere('items.sku', 'like', '%' . $q . '%');
+            })
+            ->orderBy('items.name')
             ->limit(10)
             ->get();
 
