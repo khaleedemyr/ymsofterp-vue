@@ -4501,34 +4501,47 @@ const saveChallenge = () => {
 const saveWhatsOn = () => {
   if (savingWhatsOn.value) return
 
-  // Sinkronkan SEO ke field utama sebelum submit
-  whatsOnForm.value.title = whatsOnForm.value.seo.title
-  // Jika backend mendukung, tambahkan juga description & keywords
-  if (whatsOnForm.value.seo.description) {
-    whatsOnForm.value.description = whatsOnForm.value.seo.description
+  const title = (whatsOnForm.value.title || '').trim()
+  const content = (whatsOnForm.value.content || '').trim()
+  if (!title || !content) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Perhatian',
+      text: 'Judul dan konten wajib diisi.',
+      confirmButtonText: 'OK',
+    })
+    return
   }
-  if (whatsOnForm.value.seo.keywords) {
-    whatsOnForm.value.keywords = whatsOnForm.value.seo.keywords
-  }
+
+  // Modal tidak punya input SEO terpisah — jangan pernah timpa judul dengan seo.title kosong.
+  const seo = whatsOnForm.value.seo || { title: '', description: '', keywords: '' }
+  const seoTitle = (seo.title || '').trim() || title
+  const seoDescription = (seo.description || '').trim()
+  const seoKeywords = (seo.keywords || '').trim()
 
   savingWhatsOn.value = true
 
   const formData = new FormData()
-  formData.append('title', whatsOnForm.value.title)
-  formData.append('content', whatsOnForm.value.content)
-  formData.append('published_at', whatsOnForm.value.published_at)
-  formData.append('is_active', whatsOnForm.value.is_active)
-  formData.append('is_featured', whatsOnForm.value.is_featured)
+  formData.append('title', title)
+  formData.append('content', content)
+  if (whatsOnForm.value.published_at) {
+    formData.append('published_at', whatsOnForm.value.published_at)
+  }
+  formData.append('is_active', whatsOnForm.value.is_active ? '1' : '0')
+  formData.append('is_featured', whatsOnForm.value.is_featured ? '1' : '0')
   if (whatsOnForm.value.category_id) {
     formData.append('category_id', whatsOnForm.value.category_id)
   }
   if (whatsOnForm.value.image) {
     formData.append('image', whatsOnForm.value.image)
   }
-  // Kirim juga field SEO jika backend mendukung
-  if (whatsOnForm.value.seo.title) formData.append('seo_title', whatsOnForm.value.seo.title)
-  if (whatsOnForm.value.seo.description) formData.append('seo_description', whatsOnForm.value.seo.description)
-  if (whatsOnForm.value.seo.keywords) formData.append('seo_keywords', whatsOnForm.value.seo.keywords)
+  formData.append('seo_title', seoTitle)
+  if (seoDescription) {
+    formData.append('seo_description', seoDescription)
+  }
+  if (seoKeywords) {
+    formData.append('seo_keywords', seoKeywords)
+  }
 
   const url = editingWhatsOn.value 
     ? `/admin/member-apps-settings/whats-on/${editingWhatsOn.value.id}`
@@ -4540,24 +4553,30 @@ const saveWhatsOn = () => {
     forceFormData: true,
     onSuccess: () => {
       savingWhatsOn.value = false
+      const wasEdit = !!editingWhatsOn.value
       closeWhatsOnModal()
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: editingWhatsOn.value ? 'News updated successfully!' : 'News created successfully!',
+        text: wasEdit ? 'News updated successfully!' : 'News created successfully!',
         timer: 2000,
         showConfirmButton: false
       })
     },
-    onError: () => {
+    onError: (errors) => {
       savingWhatsOn.value = false
+      const flat = errors ? Object.values(errors).flat() : []
+      const msg =
+        flat.length > 0
+          ? flat.map((e) => (typeof e === 'string' ? e : String(e))).join(' ')
+          : 'Gagal menyimpan berita. Periksa judul, konten, ukuran gambar (maks. 2MB), atau coba lagi.'
       Swal.fire({
         icon: 'error',
         title: 'Error!',
-        text: 'Failed to save news. Please try again.',
-        confirmButtonText: 'OK'
+        text: msg,
+        confirmButtonText: 'OK',
       })
-    }
+    },
   })
 }
 

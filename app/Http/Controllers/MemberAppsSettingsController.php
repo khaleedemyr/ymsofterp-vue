@@ -707,9 +707,9 @@ class MemberAppsSettingsController extends Controller
                 'title' => $request->title,
                 'content' => $request->content,
                 'is_featured' => $request->boolean('is_featured'),
-                'published_at' => $request->published_at ?? now(),
-                'is_active' => true,
-                'category_id' => $request->category_id ?: null
+                'published_at' => $request->filled('published_at') ? $request->published_at : now(),
+                'is_active' => $request->boolean('is_active', true),
+                'category_id' => $request->category_id ?: null,
             ];
 
             if ($request->hasFile('image')) {
