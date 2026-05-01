@@ -294,6 +294,98 @@ class GoogleReviewController extends Controller
         }
     }
 
+    /**
+     * Snapshot data untuk mobile / Approval App (dashboard + konfigurasi Instagram).
+     */
+    public function apiWorkspace(Request $request)
+    {
+        try {
+            $igPosts = (int) DB::table('instagram_posts')->count();
+            $igComments = (int) DB::table('instagram_comments')->count();
+        } catch (\Throwable) {
+            $igPosts = 0;
+            $igComments = 0;
+        }
+
+        $instagramProfiles = collect(config('instagram.profiles', []))
+            ->map(fn ($meta, $key) => [
+                'key' => $key,
+                'label' => (string) ($meta['label'] ?? $key),
+                'url' => (string) ($meta['url'] ?? ''),
+            ])
+            ->values()
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'instagram_profiles' => $instagramProfiles,
+            'instagram_stats' => [
+                'posts' => $igPosts,
+                'comments' => $igComments,
+            ],
+            'instagram_process_queue' => (string) config('instagram.process_queue', 'instagram-scraper'),
+            'instagram_dispatch_sync' => (bool) config('instagram.dispatch_sync', false),
+            'queue_default_connection' => (string) config('queue.default', 'sync'),
+            'dashboard' => $this->buildDashboardData(),
+        ]);
+    }
+
+    /**
+     * Daftar manual review + outlet (JSON) untuk Approval App.
+     */
+    public function apiManualIndex(Request $request)
+    {
+        $perPage = (int) ($request->query('per_page') ?? 20);
+        $perPage = max(10, min(100, $perPage));
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->select('id_outlet as id', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $query = GoogleReviewManualReview::query();
+        if ($request->filled('id_outlet')) {
+            $query->where('id_outlet', (int) $request->id_outlet);
+        }
+        if ($request->filled('is_active')) {
+            $query->where('is_active', (int) $request->is_active);
+        }
+        if ($request->filled('q')) {
+            $q = '%'.$request->q.'%';
+            $query->where(function ($sub) use ($q) {
+                $sub->where('author', 'like', $q)
+                    ->orWhere('text', 'like', $q)
+                    ->orWhere('nama_outlet', 'like', $q);
+            });
+        }
+
+        $blockedManualReviewIds = $this->getBlockedManualReviewIds();
+        $blockedLookup = array_fill_keys($blockedManualReviewIds, true);
+
+        $reviews = $query->orderByDesc('id')->paginate($perPage)->withQueryString();
+        $reviews->setCollection(
+            $reviews->getCollection()->map(function ($row) use ($blockedLookup) {
+                $row->text = $this->decodeTextFromLegacyUtf8($row->text);
+                $row->ai_blocked = isset($blockedLookup[(int) $row->id]);
+
+                return $row;
+            })
+        );
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $outlets,
+            'reviews' => $reviews,
+            'blocked_manual_review_ids' => $blockedManualReviewIds,
+            'filters' => [
+                'id_outlet' => $request->id_outlet ?? '',
+                'is_active' => $request->is_active ?? '',
+                'q' => $request->q ?? '',
+                'per_page' => $perPage,
+            ],
+        ]);
+    }
+
     protected function buildDashboardData(): array
     {
         $today = now();

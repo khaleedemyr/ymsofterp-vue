@@ -457,12 +457,27 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/manual-point/{id}', [ManualPointController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
         // Scrapper Google Review (Approval App — native mobile support)
+        Route::get('/google-review/workspace', [\App\Http\Controllers\GoogleReviewController::class, 'apiWorkspace']);
         Route::get('/google-review/outlets', [\App\Http\Controllers\GoogleReviewController::class, 'apiOutlets']);
         Route::post('/google-review/fetch', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviews']);
         Route::post('/google-review/fetch-apify', [\App\Http\Controllers\GoogleReviewController::class, 'scrapeReviewsApify']);
         Route::get('/google-review/apify/items', [\App\Http\Controllers\GoogleReviewController::class, 'apifyItems']);
+        Route::get('/google-review/apify/export', [\App\Http\Controllers\GoogleReviewController::class, 'exportApify']);
+        Route::get('/google-review/scraped-reviews', [\App\Http\Controllers\GoogleReviewController::class, 'getScrapedReviews']);
+        Route::get('/google-review/dashboard/drilldown/export', [\App\Http\Controllers\GoogleReviewController::class, 'dashboardDrilldownExport']);
+        Route::get('/google-review/dashboard/drilldown', [\App\Http\Controllers\GoogleReviewController::class, 'dashboardDrilldown']);
+        Route::get('/google-review/manual', [\App\Http\Controllers\GoogleReviewController::class, 'apiManualIndex']);
+        Route::post('/google-review/manual', [\App\Http\Controllers\GoogleReviewController::class, 'manualStore']);
+        Route::put('/google-review/manual/{id}', [\App\Http\Controllers\GoogleReviewController::class, 'manualUpdate'])->where('id', '[0-9]+');
+        Route::delete('/google-review/manual/{id}', [\App\Http\Controllers\GoogleReviewController::class, 'manualDestroy'])->where('id', '[0-9]+');
+        Route::post('/google-review/instagram/sync-posts', [\App\Http\Controllers\InstagramReviewController::class, 'syncPosts']);
+        Route::post('/google-review/instagram/sync-comments', [\App\Http\Controllers\InstagramReviewController::class, 'syncComments']);
+        Route::get('/google-review/instagram/progress', [\App\Http\Controllers\InstagramReviewController::class, 'progress']);
+        Route::get('/google-review/instagram/stats', [\App\Http\Controllers\InstagramReviewController::class, 'stats']);
+        Route::get('/google-review/instagram/recent-posts', [\App\Http\Controllers\InstagramReviewController::class, 'recentPosts']);
         Route::get('/google-review/ai/reports', [\App\Http\Controllers\GoogleReviewController::class, 'apiAiReportsIndex']);
         Route::post('/google-review/ai/reports', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportStore']);
+        Route::get('/google-review/ai/reports/{id}/export', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportExport'])->where('id', '[0-9]+');
         Route::get('/google-review/ai/reports/{id}', [\App\Http\Controllers\GoogleReviewController::class, 'apiAiReportShow'])->where('id', '[0-9]+');
         Route::get('/google-review/ai/reports/{id}/status', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportStatus'])->where('id', '[0-9]+');
 
