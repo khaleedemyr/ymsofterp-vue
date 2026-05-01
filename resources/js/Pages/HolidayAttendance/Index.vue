@@ -169,13 +169,20 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
               <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700 mb-2">Karyawan</label>
-                <select
-                  v-model="injectForm.user_id"
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  <option value="">— Pilih karyawan —</option>
-                  <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.nama_lengkap }} ({{ u.nik || '-' }})</option>
-                </select>
+                <div class="inject-ph-multiselect mt-1">
+                  <Multiselect
+                    v-model="injectSelectedUser"
+                    :options="injectUserOptions"
+                    label="label"
+                    track-by="id"
+                    :searchable="true"
+                    :close-on-select="true"
+                    :show-labels="false"
+                    :clear-on-select="false"
+                    placeholder="Ketik nama atau NIK..."
+                    class="w-full"
+                  />
+                </div>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah hari PH</label>
@@ -657,12 +664,47 @@
 }
 </style>
 
+<style scoped>
+.inject-ph-multiselect :deep(.multiselect) {
+  min-height: 42px;
+  border-radius: 0.375rem;
+  border-color: #d1d5db;
+}
+.inject-ph-multiselect :deep(.multiselect:focus-within) {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 1px #6366f1;
+}
+.inject-ph-multiselect :deep(.multiselect__tags) {
+  min-height: 42px;
+  padding-top: 8px;
+  border-radius: 0.375rem;
+}
+.inject-ph-multiselect :deep(.multiselect__placeholder),
+.inject-ph-multiselect :deep(.multiselect__single) {
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+.inject-ph-multiselect :deep(.multiselect__input),
+.inject-ph-multiselect :deep(.multiselect__single) {
+  font-size: 0.875rem;
+}
+.inject-ph-multiselect :deep(.multiselect__content-wrapper) {
+  border-radius: 0.375rem;
+}
+.inject-ph-multiselect :deep(.multiselect__option--highlight) {
+  background: #e0e7ff;
+  color: #1e1b4b;
+}
+</style>
+
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Modal from '@/Components/Modal.vue'
+import Multiselect from 'vue-multiselect'
 import Swal from 'sweetalert2'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   compensations: Array,
@@ -671,6 +713,18 @@ const props = defineProps({
 })
 
 const usersList = computed(() => props.users || [])
+
+/** Options untuk Multiselect inject PH — searchable by nama + NIK di label */
+const injectUserOptions = computed(() =>
+  usersList.value.map((u) => ({
+    id: u.id,
+    label: `${u.nama_lengkap || ''} (${u.nik || '-'})`.trim(),
+    nama_lengkap: u.nama_lengkap,
+    nik: u.nik,
+  }))
+)
+
+const injectSelectedUser = ref(null)
 
 const statistics = ref({})
 const processing = ref(false)
@@ -711,7 +765,6 @@ function todayLocalYmd() {
 }
 
 const injectForm = ref({
-  user_id: '',
   days: '',
   reference_date: todayLocalYmd(),
   notes: '',
@@ -955,7 +1008,7 @@ const applyFilters = async () => {
 }
 
 const submitInjectManualPh = async () => {
-  if (!injectForm.value.user_id) {
+  if (!injectSelectedUser.value?.id) {
     Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih karyawan terlebih dahulu.', confirmButtonText: 'OK' })
     return
   }
@@ -969,9 +1022,10 @@ const submitInjectManualPh = async () => {
     return
   }
 
+  const empLabel = injectSelectedUser.value.label || `#${injectSelectedUser.value.id}`
   const confirmed = await Swal.fire({
     title: 'Tambah saldo PH manual?',
-    html: `<div class="text-left text-sm">Kredit <strong>${daysNum}</strong> hari PH akan dicatat untuk karyawan yang dipilih.</div>`,
+    html: `<div class="text-left text-sm"><p>Kredit <strong>${daysNum}</strong> hari PH untuk:</p><p class="mt-2 font-medium">${empLabel}</p></div>`,
     icon: 'question',
     showCancelButton: true,
     confirmButtonText: 'Ya, tambahkan',
@@ -991,7 +1045,7 @@ const submitInjectManualPh = async () => {
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
       },
       body: JSON.stringify({
-        user_id: Number(injectForm.value.user_id),
+        user_id: Number(injectSelectedUser.value.id),
         days: daysNum,
         reference_date: injectForm.value.reference_date,
         notes: injectForm.value.notes || null,
@@ -1015,8 +1069,8 @@ const submitInjectManualPh = async () => {
         text: result.message || 'Saldo PH manual berhasil ditambahkan.',
         confirmButtonText: 'OK',
       })
+      injectSelectedUser.value = null
       injectForm.value = {
-        user_id: '',
         days: '',
         reference_date: todayLocalYmd(),
         notes: '',
