@@ -2889,6 +2889,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/holiday-attendance', [\App\Http\Controllers\HolidayAttendanceController::class, 'index'])->name('holiday-attendance.index');
     Route::post('/api/holiday-attendance/process', [\App\Http\Controllers\HolidayAttendanceController::class, 'processHoliday'])->name('api.holiday-attendance.process');
+    Route::post('/api/holiday-attendance/inject-manual-ph', [\App\Http\Controllers\HolidayAttendanceController::class, 'injectManualSaldoPh'])->name('api.holiday-attendance.inject-manual-ph');
     Route::get('/api/holiday-attendance/workers', [\App\Http\Controllers\HolidayAttendanceController::class, 'getHolidayWorkers'])->name('api.holiday-attendance.workers');
     Route::get('/api/holiday-attendance/employee-history/{userId}', [\App\Http\Controllers\HolidayAttendanceController::class, 'getEmployeeHistory'])->name('api.holiday-attendance.employee-history');
     Route::post('/api/holiday-attendance/use-extra-off', [\App\Http\Controllers\HolidayAttendanceController::class, 'useExtraOffDay'])->name('api.holiday-attendance.use-extra-off');

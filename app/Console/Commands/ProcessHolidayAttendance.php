@@ -76,15 +76,15 @@ class ProcessHolidayAttendance extends Command
 
         // Show employees who will be processed
         $this->table(
-            ['Name', 'Position', 'Level', 'Compensation Type', 'Amount'],
+            ['Name', 'Position', 'Level', 'Saldo', 'Besaran'],
             $employees->map(function ($employee) {
                 $compensation = $this->holidayAttendanceService->getEmployeeCompensation($employee->id_jabatan);
                 return [
                     $employee->nama_lengkap,
                     $employee->nama_jabatan,
                     $employee->nama_level,
-                    $compensation['type'] === 'extra_off' ? 'Extra Off Day' : 'Holiday Bonus',
-                    $compensation['type'] === 'extra_off' ? '1 day' : 'Rp ' . number_format($compensation['amount'])
+                    'Saldo PH',
+                    $compensation['amount'].' hari',
                 ];
             })
         );
@@ -100,8 +100,7 @@ class ProcessHolidayAttendance extends Command
         // Display results
         $this->info("Processing completed!");
         $this->info("Total processed: {$results['processed']}");
-        $this->info("Extra off days given: {$results['extra_off_given']}");
-        $this->info("Bonuses paid: {$results['bonus_paid']}");
+        $this->info("Saldo PH dicatat (kredit hari): {$results['bonus_paid']}");
 
         if (!empty($results['errors'])) {
             $this->error("Errors encountered:");

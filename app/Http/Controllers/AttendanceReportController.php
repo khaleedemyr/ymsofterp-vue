@@ -1390,11 +1390,10 @@ class AttendanceReportController extends Controller
                 // Extra off days are counted as 1 day each
                 $phDays += $compensation->compensation_amount;
             } else if ($compensation->compensation_type === 'bonus') {
-                // Bonus compensations are also counted as PH days
-                $phDays += 1; // Each bonus compensation counts as 1 PH day
+                $phDays += $compensation->compensation_amount;
             }
         }
-        
+
         return $phDays;
     }
 
@@ -1418,9 +1417,7 @@ class AttendanceReportController extends Controller
                 // Extra off days are counted as 1 day each
                 $phDays += $compensation->compensation_amount;
             } else if ($compensation->compensation_type === 'bonus') {
-                // Bonus compensations are also counted as PH days
-                $phDays += 1; // Each bonus compensation counts as 1 PH day
-                // Add bonus amount
+                $phDays += $compensation->compensation_amount;
                 $phBonus += $compensation->compensation_amount;
             }
         }

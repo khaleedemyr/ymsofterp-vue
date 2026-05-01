@@ -45,13 +45,13 @@ class HolidayAttendanceExport implements FromCollection, WithHeadings, WithMappi
     public function map($row): array
     {
         // Format compensation type
-        $compensationTypeText = $row->compensation_type === 'extra_off' ? 'Extra Off Day' : 'Holiday Bonus';
-        
+        $compensationTypeText = $row->compensation_type === 'extra_off' ? 'Extra Off Day' : 'Saldo PH';
+
         // Format status
         $statusText = ucfirst($row->status);
-        
-        // Format amount
-        $amount = $row->compensation_type === 'extra_off' ? '1 day' : 'Rp ' . number_format($row->compensation_amount, 0, ',', '.');
+
+        // Format amount (bonus = hari saldo PH, bukan Rupiah)
+        $amount = $row->compensation_type === 'extra_off' ? '1 day' : ($row->compensation_amount.' hari PH');
         
         return [
             $row->holiday_date,

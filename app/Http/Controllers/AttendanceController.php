@@ -1436,7 +1436,7 @@ class AttendanceController extends Controller
                 $totalDays += $compensation->compensation_amount;
             } else if ($compensation->compensation_type === 'bonus') {
                 $totalBonus += $compensation->compensation_amount;
-                $totalDays += 1; // Each bonus compensation counts as 1 PH day
+                $totalDays += $compensation->compensation_amount; // saldo PH dalam hari
             }
         }
 

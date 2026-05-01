@@ -68,6 +68,42 @@ class HolidayAttendanceController extends Controller
     }
 
     /**
+     * Inject manual saldo PH (kredit hari) untuk satu karyawan.
+     */
+    public function injectManualSaldoPh(Request $request)
+    {
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+            'days' => 'required|numeric|min:0.01|max:366',
+            'reference_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $referenceDate = $validated['reference_date'] ?? Carbon::now()->format('Y-m-d');
+
+        try {
+            $id = $this->holidayAttendanceService->injectManualPublicHolidayBalance(
+                (int) $validated['user_id'],
+                (float) $validated['days'],
+                $referenceDate,
+                $validated['notes'] ?? null,
+                $request->user()?->id
+            );
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Saldo PH manual berhasil ditambahkan.',
+            'compensation_id' => $id,
+        ]);
+    }
+
+    /**
      * Get employees who worked on a specific holiday
      */
     public function getHolidayWorkers(Request $request)
@@ -292,9 +328,11 @@ class HolidayAttendanceController extends Controller
         $csvContent = "Date,Employee Name,NIK,Job Position,Level,Outlet,Division,Compensation Type,Amount,Status,Used Date,Notes\n";
         
         foreach ($compensations as $compensation) {
-            $compensationTypeText = $compensation->compensation_type === 'extra_off' ? 'Extra Off Day' : 'Holiday Bonus';
+            $compensationTypeText = $compensation->compensation_type === 'extra_off' ? 'Extra Off Day' : 'Saldo PH';
             $statusText = ucfirst($compensation->status);
-            $amount = $compensation->compensation_type === 'extra_off' ? '1 day' : 'Rp ' . number_format($compensation->compensation_amount, 0, ',', '.');
+            $amount = $compensation->compensation_type === 'extra_off'
+                ? '1 day'
+                : ($compensation->compensation_amount.' hari PH');
             
             $csvContent .= sprintf(
                 "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",

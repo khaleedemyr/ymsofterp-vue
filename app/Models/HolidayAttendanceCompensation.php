@@ -81,7 +81,7 @@ class HolidayAttendanceCompensation extends Model
     {
         return match($this->compensation_type) {
             'extra_off' => 'Extra Off Day',
-            'bonus' => 'Holiday Bonus',
+            'bonus' => 'Saldo PH',
             default => 'Unknown'
         };
     }

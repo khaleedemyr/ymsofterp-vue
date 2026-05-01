@@ -39,14 +39,8 @@ class HolidayAttendanceService
                 try {
                     $this->processEmployeeHolidayAttendance($employee, $date);
                     $results['processed']++;
-
-                    // Check what type of compensation was given
-                    $compensation = $this->getEmployeeCompensation($employee->id_jabatan);
-                    if ($compensation['type'] === 'extra_off') {
-                        $results['extra_off_given']++;
-                    } else {
-                        $results['bonus_paid']++;
-                    }
+                    // Kerja di hari libur selalu mengisi saldo PH (compensation_type bonus), bukan Extra Off.
+                    $results['bonus_paid']++;
 
                 } catch (\Exception $e) {
                     $results['errors'][] = [
@@ -150,52 +144,40 @@ class HolidayAttendanceService
         }
 
         $compensation = $this->getEmployeeCompensation($employee->id_jabatan);
-
-        if ($compensation['type'] === 'extra_off') {
-            $this->giveExtraOffDay($employee->user_id, $date, $employee->nama_lengkap);
-        } else {
-            $this->giveHolidayBonus($employee->user_id, $date, $compensation['amount'], $employee->nama_lengkap);
-        }
+        $this->giveHolidayBonus($employee->user_id, $date, $compensation['amount'], $employee->nama_lengkap);
     }
 
     /**
-     * Get compensation type and amount for employee based on their job level
-     * 
+     * Besaran saldo PH (hari) untuk kerja di hari libur.
+     * Selalu jalur saldo PH (bukan Extra Off). Extra Off adalah modul terpisah.
+     *
      * @param int $jabatanId
-     * @return array
+     * @return array{type: string, amount: int, description: string}
      */
     public function getEmployeeCompensation($jabatanId)
     {
         $jabatan = Jabatan::with('level')->find($jabatanId);
-        
-        if (!$jabatan || !$jabatan->level) {
+
+        if (! $jabatan || ! $jabatan->level) {
             throw new \Exception("Job level not found for jabatan ID: {$jabatanId}");
         }
 
-        $nilaiPublicHoliday = $jabatan->level->nilai_public_holiday;
+        $nilaiPublicHoliday = (int) $jabatan->level->nilai_public_holiday;
+        // Master level > 0: pakai nilai tersebut (hari PH). Master = 0: minimal 1 hari PH per kejadian kerja libur.
+        $amount = $nilaiPublicHoliday > 0 ? $nilaiPublicHoliday : 1;
 
-        if ($nilaiPublicHoliday == 0) {
-            return [
-                'type' => 'extra_off',
-                'amount' => 1, // 1 extra off day
-                'description' => 'Extra Off Day'
-            ];
-        } else {
-            return [
-                'type' => 'bonus',
-                'amount' => $nilaiPublicHoliday,
-                'description' => 'Holiday Bonus'
-            ];
-        }
+        return [
+            'type' => 'bonus',
+            'amount' => $amount,
+            'description' => 'Saldo PH (kerja di hari libur)',
+        ];
     }
 
     /**
-     * Give extra off day to employee
-     * 
-     * @param int $userId
-     * @param string $holidayDate
-     * @param string $employeeName
-     * @return void
+     * Legacy: mencatat kompensasi sebagai Extra Off di tabel yang sama.
+     * Pemrosesan otomatis kerja-hari-libur tidak lagi memakai ini — pakai {@see giveHolidayBonus}.
+     *
+     * @deprecated Gunakan saldo PH ({@see giveHolidayBonus}) untuk kerja di hari libur.
      */
     public function giveExtraOffDay($userId, $holidayDate, $employeeName)
     {
@@ -220,13 +202,8 @@ class HolidayAttendanceService
     }
 
     /**
-     * Give holiday bonus to employee
-     * 
-     * @param int $userId
-     * @param string $holidayDate
-     * @param int $amount
-     * @param string $employeeName
-     * @return void
+     * Catat saldo PH (hari) untuk karyawan yang kerja di hari libur nasional/perusahaan.
+     * Disimpan sebagai compensation_type "bonus" agar konsisten dengan pemakaian saldo PH di aplikasi.
      */
     public function giveHolidayBonus($userId, $holidayDate, $amount, $employeeName)
     {
@@ -235,20 +212,60 @@ class HolidayAttendanceService
             'holiday_date' => $holidayDate,
             'compensation_type' => 'bonus',
             'compensation_amount' => $amount,
-            'compensation_description' => 'Holiday Bonus for working on holiday',
-            'status' => 'approved', // Bonus is automatically approved
+            'compensation_description' => 'Saldo PH untuk kerja di hari libur',
+            'status' => 'approved',
             'created_at' => now(),
-            'updated_at' => now()
+            'updated_at' => now(),
         ]);
 
-        // Log the action
-        \Log::info("Holiday bonus given to employee", [
+        \Log::info('Saldo PH (hari libur) diberikan ke karyawan', [
             'user_id' => $userId,
             'employee_name' => $employeeName,
             'holiday_date' => $holidayDate,
             'compensation_type' => 'bonus',
-            'amount' => $amount
+            'days' => $amount,
         ]);
+    }
+
+    /**
+     * Tambah saldo PH (hari) secara manual oleh admin (tanpa syarat tanggal ada di kalender libur).
+     *
+     * @return int inserted row id
+     */
+    public function injectManualPublicHolidayBalance(int $userId, float $days, string $referenceDate, ?string $notes, ?int $actorUserId): int
+    {
+        if ($days <= 0) {
+            throw new \InvalidArgumentException('Jumlah hari harus lebih dari 0');
+        }
+
+        $description = '[Manual inject saldo PH]';
+        if ($actorUserId) {
+            $description .= ' user_id admin: '.$actorUserId;
+        }
+        if ($notes !== null && $notes !== '') {
+            $description .= ' — '.$notes;
+        }
+
+        $id = (int) DB::table('holiday_attendance_compensations')->insertGetId([
+            'user_id' => $userId,
+            'holiday_date' => $referenceDate,
+            'compensation_type' => 'bonus',
+            'compensation_amount' => $days,
+            'compensation_description' => $description,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        \Log::info('Manual inject saldo PH', [
+            'compensation_id' => $id,
+            'user_id' => $userId,
+            'days' => $days,
+            'reference_date' => $referenceDate,
+            'actor_user_id' => $actorUserId,
+        ]);
+
+        return $id;
     }
 
     /**
@@ -262,12 +279,12 @@ class HolidayAttendanceService
     {
         return DB::table('holiday_attendance_compensations as hac')
             ->join('users as u', 'hac.user_id', '=', 'u.id')
-            ->join('tbl_kalender_perusahaan as kp', 'hac.holiday_date', '=', 'kp.tgl_libur')
+            ->leftJoin('tbl_kalender_perusahaan as kp', 'hac.holiday_date', '=', 'kp.tgl_libur')
             ->where('hac.user_id', $userId)
             ->select([
                 'hac.*',
                 'u.nama_lengkap',
-                'kp.keterangan as holiday_name'
+                'kp.keterangan as holiday_name',
             ])
             ->orderBy('hac.holiday_date', 'desc')
             ->limit($limit)
@@ -276,15 +293,15 @@ class HolidayAttendanceService
 
     /**
      * Get all holiday attendance compensations for admin view
-     * 
-     * @param array $filters
+     *
+     * @param  array  $filters
      * @return \Illuminate\Support\Collection
      */
     public function getAllHolidayCompensations($filters = [])
     {
         $query = DB::table('holiday_attendance_compensations as hac')
             ->join('users as u', 'hac.user_id', '=', 'u.id')
-            ->join('tbl_kalender_perusahaan as kp', 'hac.holiday_date', '=', 'kp.tgl_libur')
+            ->leftJoin('tbl_kalender_perusahaan as kp', 'hac.holiday_date', '=', 'kp.tgl_libur')
             ->join('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
             ->join('tbl_data_level as l', 'j.id_level', '=', 'l.id')
             ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')

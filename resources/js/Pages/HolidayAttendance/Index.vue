@@ -101,7 +101,7 @@
                   </div>
                 </div>
                 <div class="ml-4">
-                  <p class="text-sm font-medium text-gray-500">Bonuses Paid</p>
+                  <p class="text-sm font-medium text-gray-500">Saldo PH dicatat</p>
                   <p class="text-2xl font-semibold text-gray-900">
                     <i v-if="loadingStatistics" class="fas fa-spinner fa-spin text-yellow-500"></i>
                     <span v-else>{{ statistics.bonus_paid || 0 }}</span>
@@ -122,10 +122,10 @@
                   </div>
                 </div>
                 <div class="ml-4">
-                  <p class="text-sm font-medium text-gray-500">Total Bonus Amount</p>
+                  <p class="text-sm font-medium text-gray-500">Total hari PH (periode)</p>
                   <p class="text-2xl font-semibold text-gray-900">
                     <i v-if="loadingStatistics" class="fas fa-spinner fa-spin text-purple-500"></i>
-                    <span v-else>Rp {{ formatNumber(statistics.total_bonus_amount || 0) }}</span>
+                    <span v-else>{{ formatNumber(statistics.total_bonus_amount || 0) }} hari</span>
                   </p>
                 </div>
               </div>
@@ -159,6 +159,69 @@
           </div>
         </div>
 
+        <!-- Inject manual saldo PH -->
+        <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6 border border-amber-100">
+          <div class="p-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-1">Inject manual saldo PH</h3>
+            <p class="text-sm text-gray-600 mb-4">
+              Tambah kredit saldo PH (hari) untuk satu karyawan tanpa pemindaian absen libur. Muncul di daftar seperti kompensasi lain (tipe Saldo PH).
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Karyawan</label>
+                <select
+                  v-model="injectForm.user_id"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="">— Pilih karyawan —</option>
+                  <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.nama_lengkap }} ({{ u.nik || '-' }})</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah hari PH</label>
+                <input
+                  v-model="injectForm.days"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="mis. 1 atau 0.5"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal acuan</label>
+                <input
+                  v-model="injectForm.reference_date"
+                  type="date"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+              <div class="md:col-span-2 lg:col-span-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Catatan (opsional)</label>
+                <input
+                  v-model="injectForm.notes"
+                  type="text"
+                  maxlength="500"
+                  placeholder="Alasan / referensi dokumen"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+              <div class="md:col-span-2 lg:col-span-4 flex justify-end">
+                <button
+                  type="button"
+                  @click="submitInjectManualPh"
+                  :disabled="injecting"
+                  class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-md disabled:opacity-50 flex items-center gap-2"
+                >
+                  <i v-if="injecting" class="fas fa-spinner fa-spin"></i>
+                  <i v-else class="fas fa-plus-circle"></i>
+                  {{ injecting ? 'Menyimpan...' : 'Tambah saldo PH' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Filters -->
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
           <div class="p-6">
@@ -188,7 +251,7 @@
                 >
                   <option value="">All Types</option>
                   <option value="extra_off">Extra Off Day</option>
-                  <option value="bonus">Holiday Bonus</option>
+                  <option value="bonus">Saldo PH</option>
                 </select>
               </div>
               <div>
@@ -290,12 +353,12 @@
                               {{ compensation.nama_jabatan }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap pl-16">
-                              <span :class="compensation.compensation_type === 'extra_off' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
-                                {{ compensation.compensation_type === 'extra_off' ? 'Extra Off Day' : 'Holiday Bonus' }}
+                              <span :class="compensation.compensation_type === 'extra_off' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
+                                {{ compensation.compensation_type === 'extra_off' ? 'Extra Off Day' : 'Saldo PH' }}
                               </span>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 pl-16">
-                              {{ compensation.compensation_type === 'extra_off' ? '1 day' : 'Rp ' + formatNumber(compensation.compensation_amount) }}
+                              {{ compensation.compensation_type === 'extra_off' ? '1 day' : formatNumber(compensation.compensation_amount) + ' hari PH' }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap pl-16">
                               <span :class="getStatusClass(compensation.status)" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
@@ -607,6 +670,8 @@ const props = defineProps({
   filters: Object
 })
 
+const usersList = computed(() => props.users || [])
+
 const statistics = ref({})
 const processing = ref(false)
 const using = ref(false)
@@ -636,6 +701,23 @@ const expandedDivisions = ref([])
 const processForm = ref({
   date: ''
 })
+
+function todayLocalYmd() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const injectForm = ref({
+  user_id: '',
+  days: '',
+  reference_date: todayLocalYmd(),
+  notes: '',
+})
+
+const injecting = ref(false)
 
 const useForm = ref({
   use_date: ''
@@ -829,8 +911,8 @@ const processHoliday = async () => {
             <p><strong>Proses Holiday Attendance Selesai!</strong></p>
             <ul class="mt-3 space-y-1">
               <li>📊 Total diproses: <strong>${result.results.processed}</strong> karyawan</li>
-              <li>🏖️ Extra off days: <strong>${result.results.extra_off_given}</strong></li>
-              <li>💰 Bonuses: <strong>${result.results.bonus_paid}</strong></li>
+              <li>🗓️ Saldo PH (kredit hari): <strong>${result.results.bonus_paid}</strong></li>
+              <li class="text-xs text-gray-600">Kerja di hari libur tidak lagi menambah saldo Extra Off dari modul ini.</li>
             </ul>
           </div>
         `,
@@ -869,6 +951,85 @@ const applyFilters = async () => {
     })
   } finally {
     loadingFilters.value = false
+  }
+}
+
+const submitInjectManualPh = async () => {
+  if (!injectForm.value.user_id) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih karyawan terlebih dahulu.', confirmButtonText: 'OK' })
+    return
+  }
+  const daysNum = Number(injectForm.value.days)
+  if (!injectForm.value.days || Number.isNaN(daysNum) || daysNum <= 0) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Isi jumlah hari PH (> 0).', confirmButtonText: 'OK' })
+    return
+  }
+  if (!injectForm.value.reference_date) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih tanggal acuan.', confirmButtonText: 'OK' })
+    return
+  }
+
+  const confirmed = await Swal.fire({
+    title: 'Tambah saldo PH manual?',
+    html: `<div class="text-left text-sm">Kredit <strong>${daysNum}</strong> hari PH akan dicatat untuk karyawan yang dipilih.</div>`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, tambahkan',
+    cancelButtonText: 'Batal',
+  })
+  if (!confirmed.isConfirmed) {
+    return
+  }
+
+  injecting.value = true
+  try {
+    const response = await fetch('/api/holiday-attendance/inject-manual-ph', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+      },
+      body: JSON.stringify({
+        user_id: Number(injectForm.value.user_id),
+        days: daysNum,
+        reference_date: injectForm.value.reference_date,
+        notes: injectForm.value.notes || null,
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      let msg = result.message || 'Gagal menambah saldo PH.'
+      if (result.errors) {
+        msg = Object.values(result.errors)
+          .flat()
+          .join(' ')
+      }
+      Swal.fire({ icon: 'error', title: 'Gagal', text: msg, confirmButtonText: 'OK' })
+      return
+    }
+    if (result.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: result.message || 'Saldo PH manual berhasil ditambahkan.',
+        confirmButtonText: 'OK',
+      })
+      injectForm.value = {
+        user_id: '',
+        days: '',
+        reference_date: todayLocalYmd(),
+        notes: '',
+      }
+      router.reload()
+      loadStatistics()
+    } else {
+      Swal.fire({ icon: 'error', title: 'Gagal', text: result.message || 'Terjadi kesalahan.', confirmButtonText: 'OK' })
+    }
+  } catch (error) {
+    Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'Request gagal.', confirmButtonText: 'OK' })
+  } finally {
+    injecting.value = false
   }
 }
 
