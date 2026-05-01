@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use App\Models\MarketingVisitChecklist;
 use App\Models\MarketingVisitChecklistItem;
@@ -108,13 +109,7 @@ class MarketingVisitChecklistController extends Controller
             ]);
             foreach ($validated['items'] as $idx => $item) {
                 $checklistItem = $checklist->items()->create($item);
-                // Handle photo upload (if any)
-                if ($request->hasFile("items.$idx.photos")) {
-                    foreach ($request->file("items.$idx.photos") as $photo) {
-                        $path = $photo->store('marketing-visit-photos', 'public');
-                        $checklistItem->photos()->create(['photo_path' => $path]);
-                    }
-                }
+                $this->attachUploadedPhotos($request, $idx, $checklistItem);
             }
             DB::commit();
             return redirect()->route('marketing-visit-checklist.index')
@@ -188,19 +183,17 @@ class MarketingVisitChecklistController extends Controller
             }
             // Upsert items
             foreach ($validated['items'] as $idx => $item) {
-                if (isset($item['id'])) {
-                    $checklistItem = MarketingVisitChecklistItem::find($item['id']);
-                    $checklistItem->update($item);
+                $payload = Arr::only($item, ['no', 'category', 'checklist_point', 'checked', 'actual_condition', 'action', 'remarks']);
+                $checklistItem = null;
+                if (! empty($item['id'])) {
+                    $checklistItem = MarketingVisitChecklistItem::where('checklist_id', $checklist->id)->find($item['id']);
+                }
+                if ($checklistItem) {
+                    $checklistItem->update($payload);
                 } else {
-                    $checklistItem = $checklist->items()->create($item);
+                    $checklistItem = $checklist->items()->create($payload);
                 }
-                // Handle photo upload (if any)
-                if ($request->hasFile("items.$idx.photos")) {
-                    foreach ($request->file("items.$idx.photos") as $photo) {
-                        $path = $photo->store('marketing-visit-photos', 'public');
-                        $checklistItem->photos()->create(['photo_path' => $path]);
-                    }
-                }
+                $this->attachUploadedPhotos($request, $idx, $checklistItem);
             }
             DB::commit();
             return redirect()->route('marketing-visit-checklist.index')
@@ -226,6 +219,234 @@ class MarketingVisitChecklistController extends Controller
         return Excel::download(new MarketingVisitChecklistExport($checklist), 'marketing_visit_checklist_'.$checklist->id.'.xlsx');
     }
 
-    // Export Excel (per checklist atau per item)
-    // Akan dibuat pada tahap selanjutnya
-} 
+    /**
+     * Upload foto per baris checklist — dukungan satu file atau banyak file (items[i][photos][]).
+     */
+    private function attachUploadedPhotos(Request $request, int $idx, MarketingVisitChecklistItem $checklistItem): void
+    {
+        if (! $request->hasFile("items.$idx.photos")) {
+            return;
+        }
+        $bag = $request->file("items.$idx.photos");
+        foreach (Arr::wrap($bag) as $photo) {
+            if (! $photo instanceof \Illuminate\Http\UploadedFile || ! $photo->isValid()) {
+                continue;
+            }
+            $path = $photo->store('marketing-visit-photos', 'public');
+            $checklistItem->photos()->create(['photo_path' => $path]);
+        }
+    }
+
+    private function outletsForSelect()
+    {
+        return Outlet::where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '')
+            ->orderBy('nama_outlet')
+            ->get()
+            ->map(function ($o) {
+                return [
+                    'id' => $o->id_outlet,
+                    'name' => $o->nama_outlet,
+                ];
+            })
+            ->values();
+    }
+
+    /** GET /api/approval-app/marketing-visit-checklist */
+    public function apiIndex(Request $request)
+    {
+        $query = MarketingVisitChecklist::query()->with(['outlet', 'user']);
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', $request->outlet_id);
+        }
+        if ($request->filled('visit_date')) {
+            $query->where('visit_date', $request->visit_date);
+        }
+        $checklists = $query->latest()->get();
+
+        return response()->json([
+            'success' => true,
+            'checklists' => $checklists->map(function ($c) {
+                return [
+                    'id' => $c->id,
+                    'outlet_id' => $c->outlet_id,
+                    'visit_date' => $c->visit_date ? \Carbon\Carbon::parse($c->visit_date)->format('Y-m-d') : null,
+                    'outlet_name' => $c->outlet->nama_outlet ?? '-',
+                    'user_name' => $c->user->nama_lengkap ?? $c->user->name ?? '-',
+                ];
+            }),
+            'outlets' => $this->outletsForSelect(),
+            'filters' => [
+                'outlet_id' => $request->input('outlet_id'),
+                'visit_date' => $request->input('visit_date'),
+            ],
+        ]);
+    }
+
+    /** GET /api/approval-app/marketing-visit-checklist/create-data */
+    public function apiCreateData()
+    {
+        $user = Auth::user();
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $this->outletsForSelect(),
+            'template' => $this->template,
+            'user_name' => $user->nama_lengkap ?? $user->name ?? '-',
+        ]);
+    }
+
+    /** GET /api/approval-app/marketing-visit-checklist/{id} */
+    public function apiShow($id)
+    {
+        $checklist = MarketingVisitChecklist::with(['outlet', 'user', 'items.photos'])->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'checklist' => [
+                'id' => $checklist->id,
+                'outlet_id' => $checklist->outlet_id,
+                'visit_date' => $checklist->visit_date ? \Carbon\Carbon::parse($checklist->visit_date)->format('Y-m-d') : null,
+                'outlet_name' => $checklist->outlet->nama_outlet ?? '-',
+                'user_name' => $checklist->user->nama_lengkap ?? $checklist->user->name ?? '-',
+                'items' => $checklist->items->sortBy('no')->values()->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'no' => $item->no,
+                        'category' => $item->category,
+                        'checklist_point' => $item->checklist_point,
+                        'checked' => (bool) $item->checked,
+                        'actual_condition' => $item->actual_condition,
+                        'action' => $item->action,
+                        'remarks' => $item->remarks,
+                        'photos' => $item->photos->map(function ($p) {
+                            return [
+                                'id' => $p->id,
+                                'photo_path' => $p->photo_path,
+                                'url' => asset('storage/'.$p->photo_path),
+                            ];
+                        }),
+                    ];
+                }),
+            ],
+            'outlets' => $this->outletsForSelect(),
+        ]);
+    }
+
+    /** POST /api/approval-app/marketing-visit-checklist */
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'visit_date' => 'required|date',
+            'items' => 'required|array',
+            'items.*.no' => 'required|integer',
+            'items.*.category' => 'required|string',
+            'items.*.checklist_point' => 'required|string',
+            'items.*.checked' => 'nullable|boolean',
+            'items.*.actual_condition' => 'nullable|string',
+            'items.*.action' => 'nullable|string',
+            'items.*.remarks' => 'nullable|string',
+        ]);
+        DB::beginTransaction();
+        try {
+            $checklist = MarketingVisitChecklist::create([
+                'outlet_id' => $validated['outlet_id'],
+                'visit_date' => $validated['visit_date'],
+                'created_by' => Auth::id(),
+            ]);
+            foreach ($validated['items'] as $idx => $item) {
+                $checklistItem = $checklist->items()->create($item);
+                $this->attachUploadedPhotos($request, $idx, $checklistItem);
+            }
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Checklist berhasil disimpan',
+                'id' => $checklist->id,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed apiStore marketing visit checklist: '.$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan checklist: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /** POST /api/approval-app/marketing-visit-checklist/{id}/update — multipart update (approval app). */
+    public function apiUpdate(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'visit_date' => 'required|date',
+            'items' => 'required|array',
+            'items.*.id' => 'nullable|integer',
+            'items.*.no' => 'required|integer',
+            'items.*.category' => 'required|string',
+            'items.*.checklist_point' => 'required|string',
+            'items.*.checked' => 'nullable|boolean',
+            'items.*.actual_condition' => 'nullable|string',
+            'items.*.action' => 'nullable|string',
+            'items.*.remarks' => 'nullable|string',
+        ]);
+        DB::beginTransaction();
+        try {
+            $checklist = MarketingVisitChecklist::findOrFail($id);
+            $checklist->update([
+                'outlet_id' => $validated['outlet_id'],
+                'visit_date' => $validated['visit_date'],
+            ]);
+            $existingIds = $checklist->items()->pluck('id')->toArray();
+            $sentIds = collect($validated['items'])->pluck('id')->filter()->toArray();
+            $toDelete = array_diff($existingIds, $sentIds);
+            if ($toDelete) {
+                MarketingVisitChecklistItem::whereIn('id', $toDelete)->delete();
+            }
+            foreach ($validated['items'] as $idx => $item) {
+                $payload = Arr::only($item, ['no', 'category', 'checklist_point', 'checked', 'actual_condition', 'action', 'remarks']);
+                $checklistItem = null;
+                if (! empty($item['id'])) {
+                    $checklistItem = MarketingVisitChecklistItem::where('checklist_id', $checklist->id)->find($item['id']);
+                }
+                if ($checklistItem) {
+                    $checklistItem->update($payload);
+                } else {
+                    $checklistItem = $checklist->items()->create($payload);
+                }
+                $this->attachUploadedPhotos($request, $idx, $checklistItem);
+            }
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Checklist berhasil diupdate',
+                'id' => $checklist->id,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed apiUpdate marketing visit checklist: '.$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update checklist: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /** DELETE /api/approval-app/marketing-visit-checklist/{id} */
+    public function apiDestroy($id)
+    {
+        $checklist = MarketingVisitChecklist::findOrFail($id);
+        $checklist->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Checklist berhasil dihapus',
+        ]);
+    }
+}

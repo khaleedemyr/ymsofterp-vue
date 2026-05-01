@@ -768,6 +768,14 @@ Route::prefix('approval-app')->group(function () {
 
         Route::get('/floor-order-vs-forecast', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'apiIndex']);
 
+        // Marketing Visit Checklist (approval app — mirror web + multipart foto per baris)
+        Route::get('/marketing-visit-checklist/create-data', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiCreateData']);
+        Route::get('/marketing-visit-checklist', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiIndex']);
+        Route::post('/marketing-visit-checklist', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiStore']);
+        Route::get('/marketing-visit-checklist/{id}', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiShow']);
+        Route::post('/marketing-visit-checklist/{id}/update', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiUpdate']);
+        Route::delete('/marketing-visit-checklist/{id}', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiDestroy']);
+
         // Approval-related endpoints (existing)
         Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals']);
         Route::get('/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails']);
