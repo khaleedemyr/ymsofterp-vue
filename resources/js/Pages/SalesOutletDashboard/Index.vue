@@ -3877,8 +3877,9 @@ const menuRegionChartOptions = computed(() => ({
         </div>
 
         <!-- Menu Region Analysis Modal -->
-        <div v-if="showMenuModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="closeMenuModal">
-            <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white" @click.stop>
+        <Teleport to="body">
+        <div v-if="showMenuModal" class="fixed inset-0 z-[100] bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" @click="closeMenuModal">
+            <div class="relative z-[110] top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white" @click.stop>
                 <div class="mt-3">
                     <!-- Modal Header -->
                     <div class="flex justify-between items-center mb-4">
@@ -3971,6 +3972,7 @@ const menuRegionChartOptions = computed(() => ({
                 </div>
             </div>
         </div>
+        </Teleport>
 
         <!-- Outlet Details Modal -->
         <OutletDetailsModal
@@ -4011,8 +4013,9 @@ const menuRegionChartOptions = computed(() => ({
         />
 
         <!-- Promo Usage Modal -->
-        <div v-if="showPromoUsageModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" @click="closePromoUsageModal">
-            <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white" @click.stop>
+        <Teleport to="body">
+        <div v-if="showPromoUsageModal" class="fixed inset-0 z-[100] bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full" @click="closePromoUsageModal">
+            <div class="relative z-[110] top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white" @click.stop>
                 <div class="mt-3">
                     <!-- Modal Header -->
                     <div class="flex justify-between items-center mb-4">
@@ -4250,6 +4253,7 @@ const menuRegionChartOptions = computed(() => ({
                 </div>
             </div>
         </div>
+        </Teleport>
     </AppLayout>
 </template>
 
