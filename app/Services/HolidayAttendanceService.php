@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Models\KalenderPerusahaan;
 use App\Models\Jabatan;
 use App\Models\DataLevel;
+use App\Models\HolidayAttendanceCompensation;
+use Illuminate\Support\Collection;
 
 class HolidayAttendanceService
 {
@@ -266,6 +268,38 @@ class HolidayAttendanceService
         ]);
 
         return $id;
+    }
+
+    /**
+     * Kompensasi PH (extra_off + bonus) yang masih punya sisa saldo — sama logika dengan API my-extra-off-days.
+     * Tidak difilter per bulan; dipakai modal izin & ringkasan saldo tersedia.
+     */
+    public function getAvailablePublicHolidayExtraOffRecords(int $userId): Collection
+    {
+        $rows = HolidayAttendanceCompensation::where('user_id', $userId)
+            ->whereIn('compensation_type', ['extra_off', 'bonus'])
+            ->where('status', 'approved')
+            ->with('holiday')
+            ->orderBy('holiday_date', 'desc')
+            ->get();
+
+        return $rows->map(function ($day) {
+            $availableAmount = $day->compensation_amount - ($day->used_amount ?? 0);
+
+            return [
+                ...$day->toArray(),
+                'available_amount' => max(0, $availableAmount),
+                'used_amount' => $day->used_amount ?? 0,
+            ];
+        })->filter(function ($day) {
+            return $day['available_amount'] > 0;
+        })->values();
+    }
+
+    public function getTotalAvailablePublicHolidayExtraOffDays(int $userId): float
+    {
+        return (float) $this->getAvailablePublicHolidayExtraOffRecords($userId)
+            ->sum(fn ($row) => (float) $row['available_amount']);
     }
 
     /**

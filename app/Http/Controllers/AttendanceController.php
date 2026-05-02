@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\LeaveType;
 use App\Services\NotificationService;
+use App\Services\HolidayAttendanceService;
 
 class AttendanceController extends Controller
 {
@@ -128,8 +129,10 @@ class AttendanceController extends Controller
         // Get available approvers for leave request
         $availableApprovers = $this->getAvailableApprovers($user);
         
-        // Get PH and Extra Off data for current month
+        // Get PH and Extra Off data for current month (phData: detail per periode filter; saldo tersedia = global)
         $phData = $this->getPHData($user->id, $startDate, $endDate);
+        $phData['available_leave_days'] = app(HolidayAttendanceService::class)
+            ->getTotalAvailablePublicHolidayExtraOffDays($user->id);
         $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
         
         // Get correction requests for this user
@@ -1862,6 +1865,8 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
         
         // Get PH and Extra Off data
         $phData = $this->getPHData($user->id, $startDate, $endDate);
+        $phData['available_leave_days'] = app(HolidayAttendanceService::class)
+            ->getTotalAvailablePublicHolidayExtraOffDays($user->id);
         $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
         
         // Get correction requests

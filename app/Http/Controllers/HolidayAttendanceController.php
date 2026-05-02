@@ -244,28 +244,8 @@ class HolidayAttendanceController extends Controller
     public function getMyExtraOffDays(Request $request)
     {
         $userId = auth()->id();
-        
-        // Get both extra_off and bonus compensation types for Public Holiday balance
-        $extraOffDays = HolidayAttendanceCompensation::where('user_id', $userId)
-            ->whereIn('compensation_type', ['extra_off', 'bonus'])
-            ->where('status', 'approved')
-            ->with('holiday')
-            ->orderBy('holiday_date', 'desc')
-            ->get();
-
-        // Calculate available balance for each record
-        $processedDays = $extraOffDays->map(function ($day) {
-            $availableAmount = $day->compensation_amount - ($day->used_amount ?? 0);
-            
-            return [
-                ...$day->toArray(),
-                'available_amount' => max(0, $availableAmount),
-                'used_amount' => $day->used_amount ?? 0
-            ];
-        })->filter(function ($day) {
-            // Only include records that have available balance
-            return $day['available_amount'] > 0;
-        })->values();
+        $processedDays = $this->holidayAttendanceService
+            ->getAvailablePublicHolidayExtraOffRecords($userId);
 
         return response()->json([
             'success' => true,

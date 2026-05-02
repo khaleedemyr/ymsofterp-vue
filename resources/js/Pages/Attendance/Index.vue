@@ -511,14 +511,24 @@
                 Public Holiday (PH)
               </h3>
               
-              <!-- PH Summary -->
-              <div class="grid grid-cols-2 gap-4 mb-4">
-                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
+              <!-- PH Summary: saldo tersedia = global (sama logika dengan modal izin); lainnya = per periode filter -->
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border-2 border-blue-400 dark:border-blue-600">
+                  <div class="text-center">
+                    <div class="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                      {{ Number(phData.available_leave_days ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }}
+                    </div>
+                    <div class="text-sm font-medium text-blue-800 dark:text-blue-200">Saldo tersedia (cuti PH)</div>
+                    <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">Digunakan saat ajukan &quot;Public Holiday&quot;</p>
+                  </div>
+                </div>
+                <div class="bg-blue-50/70 dark:bg-blue-900/15 rounded-lg p-3 border border-blue-200 dark:border-blue-700">
                   <div class="text-center">
                     <div class="text-2xl font-bold text-blue-900 dark:text-blue-100">
                       {{ phData.total_days }}
                     </div>
-                    <div class="text-sm text-blue-700 dark:text-blue-300">Total Hari PH</div>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">Hari di periode ini</div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">26 bulan lalu – 25 bulan berjalan</p>
                   </div>
                 </div>
                 <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-700">
@@ -526,7 +536,8 @@
                     <div class="text-2xl font-bold text-green-900 dark:text-green-100">
                       {{ phData.total_bonus.toLocaleString('id-ID') }}
                     </div>
-                    <div class="text-sm text-green-700 dark:text-green-300">Total Bonus (Rp)</div>
+                    <div class="text-sm text-green-700 dark:text-green-300">Total tipe &quot;Saldo PH / bonus&quot; (periode)</div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Jumlah nilai per baris periode (bukan rupiah jika kredit hari)</p>
                   </div>
                 </div>
               </div>
