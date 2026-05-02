@@ -277,8 +277,9 @@
         @hide="lightboxVisible = false"
       />
       <!-- Modal Preview Import -->
-      <div v-if="importPreviewModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 relative max-h-[90vh] overflow-y-auto">
+      <Teleport to="body">
+      <div v-if="importPreviewModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-40">
+        <div class="relative z-[110] bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
           <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
             <i class="fa-solid fa-eye text-blue-500"></i> 
             Preview Import {{ getImportTypeLabel() }}
@@ -347,6 +348,7 @@
           <div v-else class="text-gray-500">Tidak ada data yang bisa dipreview.</div>
         </div>
       </div>
+      </Teleport>
       <ItemBarcodeModal
         :show="showBarcodeModal"
         :item="selectedItem"
@@ -354,8 +356,9 @@
       />
 
       <!-- Modal Filter Price Update -->
-      <div v-if="showPriceUpdateFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+      <Teleport to="body">
+      <div v-if="showPriceUpdateFilterModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-40">
+        <div class="relative z-[110] bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
           <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
             <i class="fa-solid fa-filter text-blue-500"></i> 
             Filter Price Update Template
@@ -458,6 +461,7 @@
           </div>
         </div>
       </div>
+      </Teleport>
     </div>
   </AppLayout>
 </template>

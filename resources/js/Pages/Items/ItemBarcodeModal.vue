@@ -111,9 +111,9 @@
         </div>
     </Modal>
          
-     <teleport to="body">
-       <div v-if="showSmallPrintPreview" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60">
-         <div class="bg-white rounded-xl shadow-lg p-4">
+     <Teleport to="body">
+       <div v-if="showSmallPrintPreview" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/60">
+         <div class="relative z-[130] bg-white rounded-xl shadow-lg p-4">
            <SmallPrintPreview
              :sku="printPreviewData.sku"
              :name="printPreviewData.name"
@@ -124,7 +124,7 @@
            </div>
          </div>
        </div>
-     </teleport>
+     </Teleport>
 </template>
 
 <script setup>

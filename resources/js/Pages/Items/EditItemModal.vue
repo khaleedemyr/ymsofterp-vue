@@ -1,6 +1,7 @@
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 relative max-h-[80vh] overflow-y-auto">
+  <Teleport to="body">
+    <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-40">
+      <div class="relative z-[110] bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 max-h-[80vh] overflow-y-auto">
       <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
         <i class="fa-solid fa-boxes-stacked text-blue-500"></i>
         Edit Item
@@ -498,6 +499,7 @@
       </form>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <script setup>
