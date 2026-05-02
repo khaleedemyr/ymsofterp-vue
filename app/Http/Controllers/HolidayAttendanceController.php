@@ -265,11 +265,11 @@ class HolidayAttendanceController extends Controller
         })->filter(function ($day) {
             // Only include records that have available balance
             return $day['available_amount'] > 0;
-        });
+        })->values();
 
         return response()->json([
             'success' => true,
-            'extra_off_days' => $processedDays
+            'extra_off_days' => $processedDays,
         ]);
     }
 

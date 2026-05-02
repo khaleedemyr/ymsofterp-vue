@@ -1559,10 +1559,13 @@ const isExtraOffType = computed(() => {
 
 // Computed property untuk menghitung total saldo extra off
 const totalExtraOffDays = computed(() => {
-  if (!extraOffDays.value || extraOffDays.value.length === 0) return 0
-  
+  const days = Array.isArray(extraOffDays.value)
+    ? extraOffDays.value
+    : Object.values(extraOffDays.value ?? {})
+  if (days.length === 0) return 0
+
   // Calculate total days based on available_amount
-  return extraOffDays.value.reduce((total, day) => {
+  return days.reduce((total, day) => {
     // Use available_amount if available, otherwise fallback to compensation_amount
     const availableAmount = day.available_amount !== undefined ? day.available_amount : day.compensation_amount
     return total + (parseFloat(availableAmount) || 0)
@@ -1750,7 +1753,8 @@ const loadExtraOffDays = async () => {
   try {
     const response = await axios.get('/api/holiday-attendance/my-extra-off-days')
     if (response.data.success) {
-      extraOffDays.value = response.data.extra_off_days
+      const raw = response.data.extra_off_days
+      extraOffDays.value = Array.isArray(raw) ? raw : Object.values(raw ?? {})
     }
   } catch (error) {
     console.error('Error loading extra off days:', error)
