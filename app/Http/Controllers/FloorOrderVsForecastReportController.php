@@ -32,6 +32,14 @@ class FloorOrderVsForecastReportController extends Controller
     }
 
     /**
+     * GET /api/approval-app/floor-order-vs-forecast/export — file Excel sama seperti web, autentikasi Bearer (approval app).
+     */
+    public function apiExport(Request $request)
+    {
+        return $this->export($request);
+    }
+
+    /**
      * GET /api/approval-app/floor-order-vs-forecast — payload sama seperti halaman web (mobile app).
      */
     public function apiIndex(Request $request)

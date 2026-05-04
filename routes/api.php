@@ -782,6 +782,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/company-holidays', [\App\Http\Controllers\CalendarController::class, 'getHolidays']);
 
         Route::get('/floor-order-vs-forecast', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'apiIndex']);
+        Route::get('/floor-order-vs-forecast/export', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'apiExport']);
 
         // Marketing Visit Checklist (approval app — mirror web + multipart foto per baris)
         Route::get('/marketing-visit-checklist/create-data', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiCreateData']);
