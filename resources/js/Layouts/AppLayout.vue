@@ -267,6 +267,12 @@ const menuGroups = [
                 route: '/report-rekap-fj',
                 code: 'report_rekap_fj',
             },
+            {
+                name: () => 'Rekap PB1 Outlet',
+                icon: 'fa-solid fa-receipt',
+                route: '/reports/rekap-pb1-outlet',
+                code: 'rekap_pb1_outlet',
+            },
             { name: () => 'Report Hutang', icon: 'fa-solid fa-file-invoice-dollar', route: '/debt-report', code: 'debt_report' },
         ],
     },
