@@ -83,10 +83,10 @@ const currentOutletDisplayName = computed(() => {
 
 const warningMessage = computed(() => {
   if (!props.tableExists) {
-    return 'Tabel order_dummy belum ada di database. Buat tabel terlebih dahulu (lihat migration / dokumentasi kolom).';
+    return 'Tabel orders_dummy belum ada di database.';
   }
   if (!props.tableReady) {
-    return 'Struktur order_dummy belum lengkap. Pastikan ada kolom: tanggal, id_outlet, total, disc, dpp, pb1, grand_total, pax, commfee, serta service_amount atau service.';
+    return 'Struktur orders_dummy belum lengkap. Pastikan ada: created_at, kode_outlet, total, discount dan/atau manual_discount_amount, dpp, pb1, service, grand_total, pax, commfee. Filter outlet memakai qr_code di tbl_data_outlet (= kode_outlet di orders_dummy).';
   }
   return '';
 });
@@ -98,7 +98,7 @@ const warningMessage = computed(() => {
       <div class="mb-6 rounded-2xl bg-gradient-to-br from-amber-900 via-amber-800 to-yellow-900 p-6 text-white shadow-xl">
         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200/90">HO Finance</p>
         <h1 class="mt-2 text-2xl font-bold tracking-tight">Rekap PB1 Outlet</h1>
-        <p class="mt-1 text-sm text-amber-100/90">Ringkasan harian dari <code class="rounded bg-black/20 px-1">order_dummy</code></p>
+        <p class="mt-1 text-sm text-amber-100/90">Ringkasan harian dari <code class="rounded bg-black/20 px-1">orders_dummy</code> · Disc = discount + manual_discount · outlet = <code class="rounded bg-black/20 px-1">qr_code</code></p>
       </div>
 
       <div class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

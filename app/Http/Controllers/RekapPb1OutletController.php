@@ -12,8 +12,10 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class RekapPb1OutletController extends Controller
 {
+    private const TABLE = 'orders_dummy';
+
     /**
-     * Kolom yang didukung pada {@see order_dummy}. Kolom service bisa bernama `service_amount` atau `service`.
+     * Map key laporan -> nama kolom DB di {@see orders_dummy} (tanpa Disc; Disc = discount + manual_discount_amount).
      *
      * @var array<string, string|null>
      */
@@ -28,10 +30,11 @@ class RekapPb1OutletController extends Controller
     {
         $payload = $this->buildPayload($request);
         $month = preg_replace('/[^0-9\-]/', '', (string) ($payload['selectedMonth'] ?? now()->format('Y-m')));
+        $suffix = $payload['selectedOutletKode'] ?? $payload['selectedOutletId'];
 
         return Excel::download(
             new RekapPb1OutletExport($payload),
-            'rekap_pb1_outlet_'.$month.'_outlet_'.$payload['selectedOutletId'].'_'.now()->format('Ymd_His').'.xlsx'
+            'rekap_pb1_outlet_'.$month.'_outlet_'.$suffix.'_'.now()->format('Ymd_His').'.xlsx'
         );
     }
 
@@ -58,9 +61,12 @@ class RekapPb1OutletController extends Controller
             $selectedOutletId = 1;
         }
 
-        $outletsQuery = DB::table('tbl_data_outlet')
-            ->select('id_outlet as id', 'nama_outlet as name')
-            ->orderBy('nama_outlet');
+        $outletsSelect = ['id_outlet as id', 'nama_outlet as name'];
+        if (Schema::hasTable('tbl_data_outlet') && Schema::hasColumn('tbl_data_outlet', 'qr_code')) {
+            $outletsSelect[] = 'qr_code';
+        }
+
+        $outletsQuery = DB::table('tbl_data_outlet')->select($outletsSelect)->orderBy('nama_outlet');
 
         if (! $isAdminOutlet) {
             $outletsQuery->where('id_outlet', $selectedOutletId);
@@ -68,18 +74,23 @@ class RekapPb1OutletController extends Controller
 
         $outlets = $outletsQuery->get();
 
-        $tableExists = Schema::hasTable('order_dummy');
-        $this->resolvedColumns = $tableExists ? $this->resolveOrderDummyColumns() : [];
+        $selectedKode = $this->resolveOutletKode($selectedOutletId);
+
+        $tableExists = Schema::hasTable(self::TABLE);
+        $this->resolvedColumns = $tableExists ? $this->resolveOrdersDummyColumns() : [];
 
         $byDate = [];
-        if ($tableExists && $selectedOutletId > 0 && $this->hasRequiredColumns()) {
-            $q = DB::table('order_dummy')
-                ->where('id_outlet', $selectedOutletId)
-                ->whereBetween('tanggal', [$monthStart->toDateString(), $monthEnd->toDateString()])
+        if ($tableExists && $selectedKode !== '' && $this->hasRequiredColumns()) {
+            $from = $monthStart->copy()->startOfDay()->toDateTimeString();
+            $to = $monthEnd->copy()->endOfDay()->toDateTimeString();
+
+            $q = DB::table(self::TABLE)
+                ->where('kode_outlet', $selectedKode)
+                ->whereBetween('created_at', [$from, $to])
                 ->select(
-                    DB::raw('DATE(tanggal) as d'),
+                    DB::raw('DATE(created_at) as d'),
                     DB::raw('COALESCE(SUM('.$this->sumInner('total').'),0) as total'),
-                    DB::raw('COALESCE(SUM('.$this->sumInner('disc').'),0) as disc'),
+                    DB::raw('COALESCE(SUM('.$this->sumDiscPerRow().'),0) as disc'),
                     DB::raw('COALESCE(SUM('.$this->sumInner('dpp').'),0) as dpp'),
                     DB::raw('COALESCE(SUM('.$this->sumInner('pb1').'),0) as pb1'),
                     DB::raw('COALESCE(SUM('.$this->sumInner('service').'),0) as service'),
@@ -87,7 +98,7 @@ class RekapPb1OutletController extends Controller
                     DB::raw('COALESCE(SUM('.$this->sumInner('pax').'),0) as pax'),
                     DB::raw('COALESCE(SUM('.$this->sumInner('commfee').'),0) as commfee')
                 )
-                ->groupBy(DB::raw('DATE(tanggal)'));
+                ->groupBy(DB::raw('DATE(created_at)'));
 
             foreach ($q->get() as $r) {
                 $key = Carbon::parse($r->d)->toDateString();
@@ -110,6 +121,7 @@ class RekapPb1OutletController extends Controller
         return [
             'outlets' => $outlets,
             'selectedOutletId' => $selectedOutletId,
+            'selectedOutletKode' => $selectedKode,
             'selectedMonth' => $month,
             'monthLabel' => $monthStart->copy()->locale(app()->getLocale())->translatedFormat('F Y'),
             'rows' => $rows,
@@ -118,6 +130,25 @@ class RekapPb1OutletController extends Controller
             'tableReady' => $tableExists && $this->hasRequiredColumns(),
             'canSelectOutlet' => $isAdminOutlet,
         ];
+    }
+
+    /**
+     * Nilai untuk join ke orders_dummy.kode_outlet = tbl_data_outlet.qr_code.
+     */
+    private function resolveOutletKode(int $id): string
+    {
+        if (! Schema::hasTable('tbl_data_outlet')) {
+            return (string) $id;
+        }
+
+        if (Schema::hasColumn('tbl_data_outlet', 'qr_code')) {
+            $k = DB::table('tbl_data_outlet')->where('id_outlet', $id)->value('qr_code');
+            if ($k !== null && $k !== '') {
+                return (string) $k;
+            }
+        }
+
+        return (string) $id;
     }
 
     private function buildCalendarRows(Carbon $monthStart, Carbon $monthEnd, array $byDate): array
@@ -161,32 +192,32 @@ class RekapPb1OutletController extends Controller
     }
 
     /**
+     * Kolom aktual di orders_dummy (kolom Disc = discount + manual_discount_amount, dihitung terpisah).
+     *
      * @return array<string, string|null>
      */
-    private function resolveOrderDummyColumns(): array
+    private function resolveOrdersDummyColumns(): array
     {
-        $serviceCol = null;
-        if (Schema::hasColumn('order_dummy', 'service_amount')) {
-            $serviceCol = 'service_amount';
-        } elseif (Schema::hasColumn('order_dummy', 'service')) {
-            $serviceCol = 'service';
-        }
+        $t = self::TABLE;
 
         return [
-            'total' => Schema::hasColumn('order_dummy', 'total') ? 'total' : null,
-            'disc' => Schema::hasColumn('order_dummy', 'disc') ? 'disc' : null,
-            'dpp' => Schema::hasColumn('order_dummy', 'dpp') ? 'dpp' : null,
-            'pb1' => Schema::hasColumn('order_dummy', 'pb1') ? 'pb1' : null,
-            'service' => $serviceCol,
-            'grand_total' => Schema::hasColumn('order_dummy', 'grand_total') ? 'grand_total' : null,
-            'pax' => Schema::hasColumn('order_dummy', 'pax') ? 'pax' : null,
-            'commfee' => Schema::hasColumn('order_dummy', 'commfee') ? 'commfee' : null,
+            'total' => Schema::hasColumn($t, 'total') ? 'total' : null,
+            'dpp' => Schema::hasColumn($t, 'dpp') ? 'dpp' : null,
+            'pb1' => Schema::hasColumn($t, 'pb1') ? 'pb1' : null,
+            'service' => Schema::hasColumn($t, 'service') ? 'service' : null,
+            'grand_total' => Schema::hasColumn($t, 'grand_total') ? 'grand_total' : null,
+            'pax' => Schema::hasColumn($t, 'pax') ? 'pax' : null,
+            'commfee' => Schema::hasColumn($t, 'commfee') ? 'commfee' : null,
         ];
     }
 
     private function hasRequiredColumns(): bool
     {
-        if (! Schema::hasColumn('order_dummy', 'tanggal') || ! Schema::hasColumn('order_dummy', 'id_outlet')) {
+        $t = self::TABLE;
+        if (! Schema::hasColumn($t, 'created_at') || ! Schema::hasColumn($t, 'kode_outlet')) {
+            return false;
+        }
+        if (! Schema::hasColumn($t, 'discount') && ! Schema::hasColumn($t, 'manual_discount_amount')) {
             return false;
         }
         foreach ($this->resolvedColumns as $col) {
@@ -196,6 +227,28 @@ class RekapPb1OutletController extends Controller
         }
 
         return true;
+    }
+
+    /**
+     * Ekspresi per baris untuk Disc: discount + manual_discount_amount (nullable di-COALESCE ke 0).
+     */
+    private function sumDiscPerRow(): string
+    {
+        $t = self::TABLE;
+        $hasD = Schema::hasColumn($t, 'discount');
+        $hasM = Schema::hasColumn($t, 'manual_discount_amount');
+        if (! $hasD && ! $hasM) {
+            return '0';
+        }
+        $parts = [];
+        if ($hasD) {
+            $parts[] = 'COALESCE(`discount`,0)';
+        }
+        if ($hasM) {
+            $parts[] = 'COALESCE(`manual_discount_amount`,0)';
+        }
+
+        return count($parts) === 1 ? $parts[0] : '('.implode('+', $parts).')';
     }
 
     private function sumInner(string $key): string
