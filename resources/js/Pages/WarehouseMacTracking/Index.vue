@@ -80,13 +80,6 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
           <div>
             <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
-            <p class="text-xs text-gray-500 mt-1 max-w-5xl leading-relaxed">
-              <strong>MAC saldo (weighted)</strong> = kolom <code class="rounded bg-gray-100 px-1">mac</code> —
-              rata-rata tertimbang stok setelah transaksi (selaras dengan <code class="rounded bg-gray-100 px-1">last_cost_small</code>).
-              <strong>Ref. lama / Ref. baru</strong> = <code class="rounded bg-gray-100 px-1">old_cost</code> /
-              <code class="rounded bg-gray-100 px-1">new_cost</code>; untuk <strong>good_receive_outlet</strong> itu harga satuan pembelian baris GR, bukan MAC saldo.
-              <strong>Perubahan %</strong> = perbandingan ref. saja. Transfer internal / gudang pusat bisa pola berbeda — lihat type.
-            </p>
           </div>
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-600">Per Page</span>

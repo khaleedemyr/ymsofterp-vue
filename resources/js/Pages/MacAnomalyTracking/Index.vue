@@ -87,16 +87,6 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
           <div>
             <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
-            <p class="text-xs text-gray-500 mt-1 max-w-5xl leading-relaxed">
-              <strong>MAC saldo (weighted)</strong> = kolom <code class="rounded bg-gray-100 px-1">mac</code> —
-              rata-rata tertimbang stok setelah transaksi (sama dengan yang dipakai <code class="rounded bg-gray-100 px-1">last_cost_small</code> di stok).
-              <strong>Ref. lama / Ref. baru</strong> = <code class="rounded bg-gray-100 px-1">old_cost</code> /
-              <code class="rounded bg-gray-100 px-1">new_cost</code>
-              di histori; untuk <strong>good_receive_outlet</strong> itu harga satuan pembelian baris GR (cost small), bukan MAC saldo —
-              makanya bisa sama (mis. 448) sementara MAC saldo beda (mis. lonjakan ke 1159) bila saldo <code class="rounded bg-gray-100 px-1">value/qty</code>
-              tidak selaras dengan angka referensi itu.
-              Kolom <strong>Perubahan %</strong> hanya membandingkan ref. lama vs ref. baru, bukan perubahan MAC saldo.
-            </p>
           </div>
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-600">Per Page</span>
