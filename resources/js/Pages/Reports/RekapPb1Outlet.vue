@@ -13,6 +13,8 @@ const props = defineProps({
   tableExists: { type: Boolean, default: true },
   tableReady: { type: Boolean, default: true },
   canSelectOutlet: { type: Boolean, default: false },
+  outletKodeCandidates: { type: Array, default: () => [] },
+  sampleKodeOutletInPeriod: { type: Array, default: () => [] },
 });
 
 const outletId = ref(props.selectedOutletId || 0);
@@ -90,6 +92,30 @@ const warningMessage = computed(() => {
   }
   return '';
 });
+
+const hasNumericTotals = computed(() => {
+  const t = props.totals || {};
+  const g = Number(t.grand_total);
+  return Number.isFinite(g) && g !== 0;
+});
+
+/** Total nol padahal tabel siap: outlet tidak cocok atau memang belum ada order di bulan itu */
+const zeroDataHint = computed(() => {
+  if (!props.tableReady || hasNumericTotals.value) return '';
+  const tried = (props.outletKodeCandidates || []).filter(Boolean);
+  const samples = props.sampleKodeOutletInPeriod || [];
+  if (samples.length) {
+    return {
+      type: 'mismatch',
+      tried,
+      samples: samples.slice(0, 25),
+    };
+  }
+  return {
+    type: 'empty',
+    tried,
+  };
+});
 </script>
 
 <template>
@@ -158,6 +184,33 @@ const warningMessage = computed(() => {
           class="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
           {{ warningMessage }}
+        </div>
+
+        <div
+          v-if="zeroDataHint && !warningMessage"
+          class="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-800"
+        >
+          <template v-if="zeroDataHint.type === 'mismatch'">
+            <p class="font-semibold text-slate-900">Order ada di bulan ini, tapi tidak cocok dengan outlet yang dipilih.</p>
+            <p class="mt-1">
+              Kode yang dicari untuk outlet ini:
+              <code class="mx-0.5 rounded bg-white px-1.5 py-0.5 text-xs">{{ zeroDataHint.tried.join(', ') || '—' }}</code>
+            </p>
+            <p class="mt-2 text-xs text-slate-600">
+              Contoh nilai <code class="rounded bg-white px-1">kode_outlet</code> di <code class="rounded bg-white px-1">orders_dummy</code> bulan ini:
+              <span class="font-mono text-[11px]">{{ zeroDataHint.samples.join(', ') }}</span>
+            </p>
+            <p class="mt-2 text-xs text-slate-600">
+              Samakan dengan POS/sync (biasanya <code class="rounded bg-white px-1">qr_code</code> atau
+              <code class="rounded bg-white px-1">id_outlet</code> sebagai string).
+            </p>
+          </template>
+          <template v-else>
+            <p class="font-semibold text-slate-900">Tidak ada baris di orders_dummy untuk bulan ini (tanggal dari created_at).</p>
+            <p class="mt-1 text-xs text-slate-600">
+              Periksa sinkronisasi POS → pusat, atau pilih bulan lain.
+            </p>
+          </template>
         </div>
       </div>
 

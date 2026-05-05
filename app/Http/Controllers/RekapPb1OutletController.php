@@ -74,18 +74,34 @@ class RekapPb1OutletController extends Controller
 
         $outlets = $outletsQuery->get();
 
-        $selectedKode = $this->resolveOutletKode($selectedOutletId);
+        $outletKodeCandidates = $this->resolveOutletKodeCandidates($selectedOutletId);
+        $selectedKode = $outletKodeCandidates[0] ?? (string) $selectedOutletId;
 
         $tableExists = Schema::hasTable(self::TABLE);
         $this->resolvedColumns = $tableExists ? $this->resolveOrdersDummyColumns() : [];
 
-        $byDate = [];
-        if ($tableExists && $selectedKode !== '' && $this->hasRequiredColumns()) {
-            $from = $monthStart->copy()->startOfDay()->toDateTimeString();
-            $to = $monthEnd->copy()->endOfDay()->toDateTimeString();
+        $from = $monthStart->copy()->startOfDay()->toDateTimeString();
+        $to = $monthEnd->copy()->endOfDay()->toDateTimeString();
 
+        $sampleKodeOutletInPeriod = [];
+        if ($tableExists && $this->hasRequiredColumns()) {
+            $sampleKodeOutletInPeriod = DB::table(self::TABLE)
+                ->whereBetween('created_at', [$from, $to])
+                ->select('kode_outlet')
+                ->groupBy('kode_outlet')
+                ->orderBy('kode_outlet')
+                ->limit(40)
+                ->pluck('kode_outlet')
+                ->map(fn ($v) => trim((string) $v))
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        $byDate = [];
+        if ($tableExists && $outletKodeCandidates !== [] && $this->hasRequiredColumns()) {
             $q = DB::table(self::TABLE)
-                ->where('kode_outlet', $selectedKode)
+                ->whereIn('kode_outlet', $outletKodeCandidates)
                 ->whereBetween('created_at', [$from, $to])
                 ->select(
                     DB::raw('DATE(created_at) as d'),
@@ -122,6 +138,8 @@ class RekapPb1OutletController extends Controller
             'outlets' => $outlets,
             'selectedOutletId' => $selectedOutletId,
             'selectedOutletKode' => $selectedKode,
+            'outletKodeCandidates' => $outletKodeCandidates,
+            'sampleKodeOutletInPeriod' => $sampleKodeOutletInPeriod,
             'selectedMonth' => $month,
             'monthLabel' => $monthStart->copy()->locale(app()->getLocale())->translatedFormat('F Y'),
             'rows' => $rows,
@@ -133,22 +151,42 @@ class RekapPb1OutletController extends Controller
     }
 
     /**
-     * Nilai untuk join ke orders_dummy.kode_outlet = tbl_data_outlet.qr_code.
+     * Kode yang dipakai untuk cocokkan orders_dummy.kode_outlet.
+     * POS/sync kadang mengisi kode_outlet dengan qr_code, kode master, atau id_outlet — dicoba semua (unik).
+     *
+     * @return list<string>
      */
-    private function resolveOutletKode(int $id): string
+    private function resolveOutletKodeCandidates(int $id): array
     {
-        if (! Schema::hasTable('tbl_data_outlet')) {
-            return (string) $id;
-        }
+        $seen = [];
+        $push = function (?string $v) use (&$seen): void {
+            $t = trim((string) $v);
+            if ($t !== '' && ! isset($seen[$t])) {
+                $seen[$t] = true;
+            }
+        };
 
-        if (Schema::hasColumn('tbl_data_outlet', 'qr_code')) {
-            $k = DB::table('tbl_data_outlet')->where('id_outlet', $id)->value('qr_code');
-            if ($k !== null && $k !== '') {
-                return (string) $k;
+        if (Schema::hasTable('tbl_data_outlet')) {
+            $cols = [];
+            if (Schema::hasColumn('tbl_data_outlet', 'qr_code')) {
+                $cols[] = 'qr_code';
+            }
+            if (Schema::hasColumn('tbl_data_outlet', 'kode_outlet')) {
+                $cols[] = 'kode_outlet';
+            }
+            if ($cols !== []) {
+                $row = DB::table('tbl_data_outlet')->where('id_outlet', $id)->first($cols);
+                if ($row) {
+                    foreach ($cols as $c) {
+                        $push($row->{$c} ?? null);
+                    }
+                }
             }
         }
 
-        return (string) $id;
+        $push((string) $id);
+
+        return array_keys($seen);
     }
 
     private function buildCalendarRows(Carbon $monthStart, Carbon $monthEnd, array $byDate): array
