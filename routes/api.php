@@ -825,8 +825,11 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/contra-bon', [\App\Http\Controllers\ContraBonController::class, 'apiIndex']);
         Route::get('/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
         Route::get('/contra-bon/form/po-with-gr', [\App\Http\Controllers\ContraBonController::class, 'getPOWithApprovedGR']);
+        Route::get('/contra-bon/form/po-gr-detail', [\App\Http\Controllers\ContraBonController::class, 'getPOGRDetail']);
         Route::get('/contra-bon/form/retail-food', [\App\Http\Controllers\ContraBonController::class, 'getRetailFoodContraBon']);
+        Route::get('/contra-bon/form/retail-food-detail/{id}', [\App\Http\Controllers\ContraBonController::class, 'getRetailFoodContraBonDetail']);
         Route::get('/contra-bon/form/warehouse-retail-food', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBon']);
+        Route::get('/contra-bon/form/warehouse-retail-food-detail/{id}', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBonDetail']);
         Route::get('/contra-bon/form/retail-non-food', [\App\Http\Controllers\ContraBonController::class, 'apiGetRetailNonFoodForCreate']);
         Route::get('/contra-bon/form/retail-non-food-items/{id}', [\App\Http\Controllers\ContraBonController::class, 'apiGetRetailNonFoodItems']);
         Route::post('/contra-bon', [\App\Http\Controllers\ContraBonController::class, 'store']);

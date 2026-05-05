@@ -2590,32 +2590,84 @@ class ContraBonController extends Controller
         }
     }
 
+    /**
+     * Map GR line items (belum dipakai contra bon) per good_receive_id.
+     */
+    private function mapGoodReceiveItemsToGroupedCollection(array $grIds): \Illuminate\Support\Collection
+    {
+        if (empty($grIds)) {
+            return collect();
+        }
+
+        $allGRItems = \DB::table('food_good_receive_items as gri')
+            ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            ->whereIn('gri.good_receive_id', $grIds)
+            ->whereNotExists(function ($q) {
+                $q->select(\DB::raw(1))
+                    ->from('food_contra_bon_items as cbi')
+                    ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+                    ->whereColumn('cbi.gr_item_id', 'gri.id');
+                if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
+                    $q->whereNull('cb.deleted_at');
+                }
+            })
+            ->select(
+                'gri.good_receive_id',
+                'gri.id',
+                'gri.item_id',
+                'gri.po_item_id',
+                'gri.unit_id',
+                'gri.qty_received',
+                'poi.price as po_price',
+                'poi.discount_percent',
+                'poi.discount_amount',
+                'poi.total as po_item_total'
+            )
+            ->get();
+
+        $itemIds = $allGRItems->pluck('item_id')->filter()->unique()->toArray();
+        $unitIds = $allGRItems->pluck('unit_id')->filter()->unique()->toArray();
+
+        $itemsMap = [];
+        if (!empty($itemIds)) {
+            $itemsData = \DB::table('items')->whereIn('id', $itemIds)->get();
+            foreach ($itemsData as $item) {
+                $itemsMap[$item->id] = $item->name;
+            }
+        }
+
+        $unitsMap = [];
+        if (!empty($unitIds)) {
+            $unitsData = \DB::table('units')->whereIn('id', $unitIds)->get();
+            foreach ($unitsData as $unit) {
+                $unitsMap[$unit->id] = $unit->name;
+            }
+        }
+
+        $allItems = $allGRItems->map(function ($gri) use ($itemsMap, $unitsMap) {
+            return (object) [
+                'good_receive_id' => $gri->good_receive_id,
+                'id' => $gri->id,
+                'item_id' => $gri->item_id,
+                'po_item_id' => $gri->po_item_id,
+                'unit_id' => $gri->unit_id,
+                'item_name' => (string) ($itemsMap[$gri->item_id] ?? ''),
+                'unit_name' => (string) ($unitsMap[$gri->unit_id] ?? ''),
+                'qty_received' => $gri->qty_received,
+                'po_price' => $gri->po_price,
+                'discount_percent' => $gri->discount_percent,
+                'discount_amount' => $gri->discount_amount,
+                'po_item_total' => $gri->po_item_total,
+            ];
+        });
+
+        return $allItems->groupBy('good_receive_id');
+    }
+
     // API: Get PO list with approved GR for Contra Bon create
     public function getPOWithApprovedGR(Request $request)
     {
         try {
-            // Ambil semua gr_item_id yang sudah ada di contra bon items
-            // Hanya ambil dari contra bon yang masih ada (tidak dihapus)
-            // Join dengan contra_bons untuk memastikan hanya ambil dari contra bon yang masih ada
-            // Jika contra bon dihapus (hard delete), items juga dihapus, jadi join akan otomatis exclude
-            // Jika ada soft delete, tambahkan filter whereNull('cb.deleted_at')
-            $usedGRItemIdsQuery = \DB::table('food_contra_bon_items as cbi')
-                ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
-                ->whereNotNull('cbi.gr_item_id');
-            
-            // Cek apakah ada soft delete
-            if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
-                $usedGRItemIdsQuery->whereNull('cb.deleted_at');
-            }
-            
-            $usedGRItemIds = $usedGRItemIdsQuery->pluck('cbi.gr_item_id')->toArray();
-            
-            // Log untuk debug (bisa dihapus setelah fix)
-            \Log::debug('getPOWithApprovedGR - usedGRItemIds count', [
-                'count' => count($usedGRItemIds),
-                'sample_ids' => array_slice($usedGRItemIds, 0, 10)
-            ]);
-
             // Pagination parameters
             $perPage = $request->get('per_page', 50); // Default 50 items per page
             $page = $request->get('page', 1);
@@ -2689,76 +2741,112 @@ class ContraBonController extends Controller
                 ->take($perPage)
                 ->get();
 
+            $safePerPage = max((int) $perPage, 1);
+
             if ($poWithGR->isEmpty()) {
-                return response()->json([]);
+                return response()->json([
+                    'data' => [],
+                    'pagination' => [
+                        'current_page' => (int) $page,
+                        'per_page' => (int) $perPage,
+                        'total' => (int) $total,
+                        'last_page' => (int) ceil($total / $safePerPage),
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ]);
             }
+
+            $includeItems = $request->boolean('include_items', true);
 
             // Batch query: Get all GR IDs
             $grIds = $poWithGR->pluck('gr_id')->toArray();
-            $poIds = $poWithGR->pluck('po_id')->unique()->toArray();
             $roSupplierPoIds = $poWithGR->where('source_type', 'ro_supplier')->pluck('po_id')->unique()->toArray();
 
-            // REFACTOR: Query items dan units secara terpisah untuk memastikan data benar-benar ada
-            // Step 1: Query semua GR items
-            $allGRItems = \DB::table('food_good_receive_items as gri')
-                ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
-                ->whereIn('gri.good_receive_id', $grIds)
-                ->whereNotIn('gri.id', $usedGRItemIds)
-                ->select(
-                    'gri.good_receive_id',
-                    'gri.id',
-                    'gri.item_id',
-                    'gri.po_item_id',
-                    'gri.unit_id',
-                    'gri.qty_received',
-                    'poi.price as po_price',
-                    'poi.discount_percent',
-                    'poi.discount_amount',
-                    'poi.total as po_item_total'
-                )
-                ->get();
+            // --- Ringkas: tanpa muat detail baris GR (items di-fetch saat user memilih)
+            if (!$includeItems) {
+                $grIdsWithAvailableLines = \DB::table('food_good_receive_items as gri')
+                    ->whereIn('gri.good_receive_id', $grIds)
+                    ->whereNotExists(function ($q) {
+                        $q->select(\DB::raw(1))
+                            ->from('food_contra_bon_items as cbi')
+                            ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+                            ->whereColumn('cbi.gr_item_id', 'gri.id');
+                        if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
+                            $q->whereNull('cb.deleted_at');
+                        }
+                    })
+                    ->distinct()
+                    ->pluck('good_receive_id')
+                    ->all();
+                $grHasLines = array_flip($grIdsWithAvailableLines);
 
-            // Step 2: Get semua item_id dan unit_id yang unik
-            $itemIds = $allGRItems->pluck('item_id')->filter()->unique()->toArray();
-            $unitIds = $allGRItems->pluck('unit_id')->filter()->unique()->toArray();
+                $outletDataMap = [];
+                if (!empty($roSupplierPoIds)) {
+                    $allOutletData = \DB::table('food_floor_orders as fo')
+                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                        ->whereIn('poi.purchase_order_food_id', $roSupplierPoIds)
+                        ->select('poi.purchase_order_food_id', 'o.nama_outlet')
+                        ->distinct()
+                        ->get();
 
-            // Step 3: Query items dan units secara batch
-            $itemsMap = [];
-            if (!empty($itemIds)) {
-                $itemsData = \DB::table('items')->whereIn('id', $itemIds)->get();
-                foreach ($itemsData as $item) {
-                    $itemsMap[$item->id] = $item->name;
+                    foreach ($allOutletData as $outlet) {
+                        if (! isset($outletDataMap[$outlet->purchase_order_food_id])) {
+                            $outletDataMap[$outlet->purchase_order_food_id] = [];
+                        }
+                        if ($outlet->nama_outlet) {
+                            $outletDataMap[$outlet->purchase_order_food_id][] = $outlet->nama_outlet;
+                        }
+                    }
                 }
+
+                $result = [];
+                foreach ($poWithGR as $row) {
+                    if (! isset($grHasLines[$row->gr_id])) {
+                        continue;
+                    }
+                    $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
+                    $outletNames = $outletDataMap[$row->po_id] ?? [];
+                    $poDiscountInfo = [
+                        'discount_total_percent' => $row->discount_total_percent ?? 0,
+                        'discount_total_amount' => $row->discount_total_amount ?? 0,
+                        'subtotal' => $row->subtotal ?? 0,
+                        'grand_total' => $row->grand_total ?? 0,
+                    ];
+                    $result[] = [
+                        'po_id' => $row->po_id,
+                        'po_number' => $row->po_number,
+                        'po_date' => $row->po_date,
+                        'po_creator_name' => $row->po_creator_name,
+                        'gr_id' => $row->gr_id,
+                        'gr_number' => $row->gr_number,
+                        'gr_date' => $row->gr_date,
+                        'gr_receiver_name' => $row->gr_receiver_name,
+                        'supplier_id' => $row->supplier_id,
+                        'supplier_name' => $row->supplier_name,
+                        'source_type' => $row->source_type,
+                        'source_type_display' => $sourceTypeDisplay,
+                        'outlet_names' => array_unique($outletNames),
+                        'items' => [],
+                        'po_discount_info' => $poDiscountInfo,
+                    ];
+                }
+
+                return response()->json([
+                    'data' => $result,
+                    'pagination' => [
+                        'current_page' => (int) $page,
+                        'per_page' => (int) $perPage,
+                        'total' => (int) $total,
+                        'last_page' => (int) ceil($total / $safePerPage),
+                        'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                        'to' => min($page * $perPage, $total),
+                    ],
+                ]);
             }
 
-            $unitsMap = [];
-            if (!empty($unitIds)) {
-                $unitsData = \DB::table('units')->whereIn('id', $unitIds)->get();
-                foreach ($unitsData as $unit) {
-                    $unitsMap[$unit->id] = $unit->name;
-                }
-            }
-
-            // Step 4: Map items dengan item_name dan unit_name - pastikan sebagai array untuk JSON serialization
-            $allItems = $allGRItems->map(function($gri) use ($itemsMap, $unitsMap) {
-                return (object)[
-                    'good_receive_id' => $gri->good_receive_id,
-                    'id' => $gri->id,
-                    'item_id' => $gri->item_id,
-                    'po_item_id' => $gri->po_item_id,
-                    'unit_id' => $gri->unit_id,
-                    'item_name' => (string)($itemsMap[$gri->item_id] ?? ''), // Pastikan string
-                    'unit_name' => (string)($unitsMap[$gri->unit_id] ?? ''), // Pastikan string
-                    'qty_received' => $gri->qty_received,
-                    'po_price' => $gri->po_price,
-                    'discount_percent' => $gri->discount_percent,
-                    'discount_amount' => $gri->discount_amount,
-                    'po_item_total' => $gri->po_item_total,
-                ];
-            });
-
-
-            $allItemsGrouped = $allItems->groupBy('good_receive_id');
+            $allItemsGrouped = $this->mapGoodReceiveItemsToGroupedCollection($grIds);
 
             // Batch query: Get all outlet data for RO Supplier POs at once
             $outletDataMap = [];
@@ -2867,18 +2955,144 @@ class ContraBonController extends Controller
             return response()->json([
                 'data' => $result,
                 'pagination' => [
-                    'current_page' => (int)$page,
-                    'per_page' => (int)$perPage,
+                    'current_page' => (int) $page,
+                    'per_page' => (int) $perPage,
                     'total' => $total,
-                    'last_page' => (int)ceil($total / $perPage),
+                    'last_page' => (int) ceil($total / $safePerPage),
                     'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
                     'to' => min($page * $perPage, $total),
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json(['error' => 'Gagal mengambil data PO/GR: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Detail satu PO/GR (baris item GR) dipakai setelah user memilih dari daftar ringkas.
+     */
+    public function getPOGRDetail(Request $request)
+    {
+        try {
+            $request->validate([
+                'gr_id' => 'required|integer',
+            ]);
+            $grId = (int) $request->gr_id;
+
+            $row = \DB::table('purchase_order_foods as po')
+                ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
+                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
+                ->join('users as gr_receiver', 'gr.received_by', '=', 'gr_receiver.id')
+                ->where('gr.id', $grId)
+                ->select(
+                    'po.id as po_id',
+                    'po.number as po_number',
+                    'po.date as po_date',
+                    'po.source_type',
+                    'po.discount_total_percent',
+                    'po.discount_total_amount',
+                    'po.subtotal',
+                    'po.grand_total',
+                    'po_creator.nama_lengkap as po_creator_name',
+                    'gr.id as gr_id',
+                    'gr.gr_number',
+                    'gr.receive_date as gr_date',
+                    'gr_receiver.nama_lengkap as gr_receiver_name',
+                    's.id as supplier_id',
+                    's.name as supplier_name'
+                )
+                ->first();
+
+            if (! $row) {
+                return response()->json(['error' => 'Data PO/GR tidak ditemukan'], 404);
+            }
+
+            $roSupplierPoIds = $row->source_type === 'ro_supplier' ? [$row->po_id] : [];
+            $outletDataMap = [];
+            if (! empty($roSupplierPoIds)) {
+                $allOutletData = \DB::table('food_floor_orders as fo')
+                    ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
+                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                    ->whereIn('poi.purchase_order_food_id', $roSupplierPoIds)
+                    ->select('poi.purchase_order_food_id', 'o.nama_outlet')
+                    ->distinct()
+                    ->get();
+
+                foreach ($allOutletData as $outlet) {
+                    if (! isset($outletDataMap[$outlet->purchase_order_food_id])) {
+                        $outletDataMap[$outlet->purchase_order_food_id] = [];
+                    }
+                    if ($outlet->nama_outlet) {
+                        $outletDataMap[$outlet->purchase_order_food_id][] = $outlet->nama_outlet;
+                    }
+                }
+            }
+
+            $allItemsGrouped = $this->mapGoodReceiveItemsToGroupedCollection([$grId]);
+            $items = $allItemsGrouped->get($grId, collect());
+            if ($items->isEmpty()) {
+                return response()->json(['error' => 'Tidak ada baris GR yang tersedia untuk Contra Bon'], 422);
+            }
+
+            $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
+            $outletNames = $outletDataMap[$row->po_id] ?? [];
+            $poDiscountInfo = [
+                'discount_total_percent' => $row->discount_total_percent ?? 0,
+                'discount_total_amount' => $row->discount_total_amount ?? 0,
+                'subtotal' => $row->subtotal ?? 0,
+                'grand_total' => $row->grand_total ?? 0,
+            ];
+
+            $itemsArray = [];
+            foreach ($items as $item) {
+                $itemName = (string) ($item->item_name ?? '');
+                $unitName = (string) ($item->unit_name ?? '');
+                if (empty($itemName) || empty($unitName)) {
+                    \Log::warning('Item missing name/unit in getPOGRDetail', [
+                        'gr_item_id' => $item->id,
+                    ]);
+                }
+                $itemsArray[] = [
+                    'id' => (int) $item->id,
+                    'item_id' => $item->item_id ? (int) $item->item_id : null,
+                    'po_item_id' => $item->po_item_id ? (int) $item->po_item_id : null,
+                    'unit_id' => $item->unit_id ? (int) $item->unit_id : null,
+                    'item_name' => $itemName,
+                    'unit_name' => $unitName,
+                    'qty_received' => (float) $item->qty_received,
+                    'po_price' => (float) $item->po_price,
+                    'discount_percent' => $item->discount_percent ? (float) $item->discount_percent : 0,
+                    'discount_amount' => $item->discount_amount ? (float) $item->discount_amount : 0,
+                    'po_item_total' => $item->po_item_total ? (float) $item->po_item_total : ((float) $item->po_price * (float) $item->qty_received),
+                ];
+            }
+
+            return response()->json([
+                'po_id' => $row->po_id,
+                'po_number' => $row->po_number,
+                'po_date' => $row->po_date,
+                'po_creator_name' => $row->po_creator_name,
+                'gr_id' => $row->gr_id,
+                'gr_number' => $row->gr_number,
+                'gr_date' => $row->gr_date,
+                'gr_receiver_name' => $row->gr_receiver_name,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'source_type' => $row->source_type,
+                'source_type_display' => $sourceTypeDisplay,
+                'outlet_names' => array_unique($outletNames),
+                'items' => $itemsArray,
+                'po_discount_info' => $poDiscountInfo,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            \Log::error('Error in getPOGRDetail: ' . $e->getMessage());
+
+            return response()->json(['error' => 'Gagal mengambil detail PO/GR: ' . $e->getMessage()], 500);
         }
     }
     
@@ -2964,9 +3178,100 @@ class ContraBonController extends Controller
         }
     }
 
-    // API: Get Retail Food with contra bon payment method
-    public function getRetailFoodContraBon()
+    /**
+     * Daftar ringkas Retail Food (tanpa line items) + pagination.
+     */
+    private function getRetailFoodContraBonListOnly(Request $request)
     {
+        $perPage = min(max((int) $request->get('per_page', 50), 1), 100);
+        $page = max((int) $request->get('page', 1), 1);
+        $search = trim((string) $request->get('search', ''));
+
+        $baseQuery = \DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->join('users as creator', 'rf.created_by', '=', 'creator.id')
+            ->leftJoin('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'rf.warehouse_outlet_id', '=', 'wo.id')
+            ->where('rf.payment_method', 'contra_bon')
+            ->where('rf.status', 'approved')
+            ->whereNotExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('food_contra_bon_sources as cbs')
+                    ->whereColumn('cbs.source_id', 'rf.id')
+                    ->where('cbs.source_type', 'retail_food');
+            })
+            ->whereExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('retail_food_items as rfi')
+                    ->whereColumn('rfi.retail_food_id', 'rf.id');
+            });
+
+        if ($search !== '') {
+            $term = '%'.$search.'%';
+            $baseQuery->where(function ($q) use ($term) {
+                $q->where('rf.retail_number', 'like', $term)
+                    ->orWhere('s.name', 'like', $term)
+                    ->orWhere('o.nama_outlet', 'like', $term)
+                    ->orWhere('wo.name', 'like', $term);
+            });
+        }
+
+        $total = (clone $baseQuery)->count();
+        $retailFoods = (clone $baseQuery)
+            ->select(
+                'rf.id as retail_food_id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount',
+                'rf.notes',
+                's.id as supplier_id',
+                's.name as supplier_name',
+                'creator.nama_lengkap as creator_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name'
+            )
+            ->orderByDesc('rf.transaction_date')
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
+            ->get();
+
+        $result = [];
+        foreach ($retailFoods as $row) {
+            $result[] = [
+                'retail_food_id' => $row->retail_food_id,
+                'retail_number' => $row->retail_number,
+                'transaction_date' => $row->transaction_date,
+                'total_amount' => $row->total_amount,
+                'notes' => $row->notes,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'creator_name' => $row->creator_name,
+                'outlet_name' => $row->outlet_name,
+                'warehouse_outlet_name' => $row->warehouse_outlet_name,
+                'items' => [],
+            ];
+        }
+
+        return response()->json([
+            'data' => $result,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $perPage),
+                'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                'to' => min($page * $perPage, $total),
+            ],
+        ]);
+    }
+
+    // API: Get Retail Food with contra bon payment method (include_items=true: perilaku lama; false: daftar ringkas)
+    public function getRetailFoodContraBon(Request $request)
+    {
+        if (! $request->boolean('include_items', true)) {
+            return $this->getRetailFoodContraBonListOnly($request);
+        }
+
         try {
             // Get all retail foods in one query
             // Exclude those that already have contra bon
@@ -3009,10 +3314,10 @@ class ContraBonController extends Controller
             // Batch query: Get all items for all retail foods at once
             // Join ke items dan units untuk mendapatkan item_id dan unit_id
             $allItems = \DB::table('retail_food_items as rfi')
-                ->leftJoin('items as i', function($join) {
+                ->leftJoin('items as i', function ($join) {
                     $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rfi.item_name)'));
                 })
-                ->leftJoin('units as u', function($join) {
+                ->leftJoin('units as u', function ($join) {
                     $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rfi.unit)'));
                 })
                 ->whereIn('rfi.retail_food_id', $retailFoodIds)
@@ -3033,12 +3338,12 @@ class ContraBonController extends Controller
             $result = [];
             foreach ($retailFoods as $row) {
                 $items = $allItems->get($row->retail_food_id, collect());
-                
+
                 // Skip if no items
                 if ($items->isEmpty()) {
                     continue;
                 }
-                
+
                 $result[] = [
                     'retail_food_id' => $row->retail_food_id,
                     'retail_number' => $row->retail_number,
@@ -3053,17 +3358,192 @@ class ContraBonController extends Controller
                     'items' => $items->values(),
                 ];
             }
-            
+
             return response()->json($result);
         } catch (\Exception $e) {
             \Log::error('Error in getRetailFoodContraBon: ' . $e->getMessage());
+
             return response()->json(['error' => 'Gagal mengambil data Retail Food: ' . $e->getMessage()], 500);
         }
     }
 
-    // API: Get Warehouse Retail Food with contra bon payment method
-    public function getWarehouseRetailFoodContraBon()
+    /**
+     * Satu Retail Food lengkap dengan line items (setelah dipilih dari daftar ringkas).
+     */
+    public function getRetailFoodContraBonDetail($id)
     {
+        try {
+            $id = (int) $id;
+            $row = \DB::table('retail_food as rf')
+                ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+                ->join('users as creator', 'rf.created_by', '=', 'creator.id')
+                ->leftJoin('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('warehouse_outlets as wo', 'rf.warehouse_outlet_id', '=', 'wo.id')
+                ->where('rf.id', $id)
+                ->where('rf.payment_method', 'contra_bon')
+                ->where('rf.status', 'approved')
+                ->whereNotExists(function ($query) {
+                    $query->select(\DB::raw(1))
+                        ->from('food_contra_bon_sources as cbs')
+                        ->whereColumn('cbs.source_id', 'rf.id')
+                        ->where('cbs.source_type', 'retail_food');
+                })
+                ->select(
+                    'rf.id as retail_food_id',
+                    'rf.retail_number',
+                    'rf.transaction_date',
+                    'rf.total_amount',
+                    'rf.notes',
+                    's.id as supplier_id',
+                    's.name as supplier_name',
+                    'creator.nama_lengkap as creator_name',
+                    'o.nama_outlet as outlet_name',
+                    'wo.name as warehouse_outlet_name'
+                )
+                ->first();
+
+            if (! $row) {
+                return response()->json(['error' => 'Retail Food tidak ditemukan atau sudah dipakai'], 404);
+            }
+
+            $items = \DB::table('retail_food_items as rfi')
+                ->leftJoin('items as i', function ($join) {
+                    $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rfi.item_name)'));
+                })
+                ->leftJoin('units as u', function ($join) {
+                    $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rfi.unit)'));
+                })
+                ->where('rfi.retail_food_id', $id)
+                ->select(
+                    'rfi.retail_food_id',
+                    'rfi.id',
+                    'rfi.item_name',
+                    'rfi.unit as unit_name',
+                    'rfi.qty',
+                    'rfi.price',
+                    'i.id as item_id',
+                    'u.id as unit_id'
+                )
+                ->get();
+
+            if ($items->isEmpty()) {
+                return response()->json(['error' => 'Tidak ada item untuk Retail Food ini'], 422);
+            }
+
+            return response()->json([
+                'retail_food_id' => $row->retail_food_id,
+                'retail_number' => $row->retail_number,
+                'transaction_date' => $row->transaction_date,
+                'total_amount' => $row->total_amount,
+                'notes' => $row->notes,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'creator_name' => $row->creator_name,
+                'outlet_name' => $row->outlet_name,
+                'warehouse_outlet_name' => $row->warehouse_outlet_name,
+                'items' => $items->values(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in getRetailFoodContraBonDetail: ' . $e->getMessage());
+
+            return response()->json(['error' => 'Gagal mengambil detail Retail Food: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Daftar ringkas Warehouse Retail Food (tanpa line items).
+     */
+    private function getWarehouseRetailFoodContraBonListOnly(Request $request)
+    {
+        $perPage = min(max((int) $request->get('per_page', 50), 1), 100);
+        $page = max((int) $request->get('page', 1), 1);
+        $search = trim((string) $request->get('search', ''));
+
+        $baseQuery = \DB::table('retail_warehouse_food as rwf')
+            ->join('suppliers as s', 'rwf.supplier_id', '=', 's.id')
+            ->join('users as creator', 'rwf.created_by', '=', 'creator.id')
+            ->leftJoin('warehouses as w', 'rwf.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_division as wd', 'rwf.warehouse_division_id', '=', 'wd.id')
+            ->where('rwf.payment_method', 'contra_bon')
+            ->where('rwf.status', 'approved')
+            ->whereNotExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('food_contra_bon_sources as cbs')
+                    ->whereColumn('cbs.source_id', 'rwf.id')
+                    ->where('cbs.source_type', 'warehouse_retail_food');
+            })
+            ->whereExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('retail_warehouse_food_items as rwfi')
+                    ->whereColumn('rwfi.retail_warehouse_food_id', 'rwf.id');
+            });
+
+        if ($search !== '') {
+            $term = '%'.$search.'%';
+            $baseQuery->where(function ($q) use ($term) {
+                $q->where('rwf.retail_number', 'like', $term)
+                    ->orWhere('s.name', 'like', $term)
+                    ->orWhere('w.name', 'like', $term)
+                    ->orWhere('wd.name', 'like', $term);
+            });
+        }
+
+        $total = (clone $baseQuery)->count();
+        $warehouseRetailFoods = (clone $baseQuery)
+            ->select(
+                'rwf.id as retail_warehouse_food_id',
+                'rwf.retail_number',
+                'rwf.transaction_date',
+                'rwf.total_amount',
+                'rwf.notes',
+                's.id as supplier_id',
+                's.name as supplier_name',
+                'creator.nama_lengkap as creator_name',
+                'w.name as warehouse_name',
+                'wd.name as warehouse_division_name'
+            )
+            ->orderByDesc('rwf.transaction_date')
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
+            ->get();
+
+        $result = [];
+        foreach ($warehouseRetailFoods as $row) {
+            $result[] = [
+                'retail_warehouse_food_id' => $row->retail_warehouse_food_id,
+                'retail_number' => $row->retail_number,
+                'transaction_date' => $row->transaction_date,
+                'total_amount' => $row->total_amount,
+                'notes' => $row->notes,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'creator_name' => $row->creator_name,
+                'warehouse_name' => $row->warehouse_name,
+                'warehouse_division_name' => $row->warehouse_division_name,
+                'items' => [],
+            ];
+        }
+
+        return response()->json([
+            'data' => $result,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => (int) ceil($total / $perPage),
+                'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                'to' => min($page * $perPage, $total),
+            ],
+        ]);
+    }
+
+    // API: Get Warehouse Retail Food with contra bon payment method
+    public function getWarehouseRetailFoodContraBon(Request $request)
+    {
+        if (! $request->boolean('include_items', true)) {
+            return $this->getWarehouseRetailFoodContraBonListOnly($request);
+        }
+
         try {
             // Get all warehouse retail foods in one query
             // Exclude those that already have contra bon
@@ -3106,10 +3586,10 @@ class ContraBonController extends Controller
             // Batch query: Get all items for all warehouse retail foods at once
             // Join ke items dan units untuk mendapatkan item_id dan unit_id
             $allItems = \DB::table('retail_warehouse_food_items as rwfi')
-                ->leftJoin('items as i', function($join) {
+                ->leftJoin('items as i', function ($join) {
                     $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rwfi.item_name)'));
                 })
-                ->leftJoin('units as u', function($join) {
+                ->leftJoin('units as u', function ($join) {
                     $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rwfi.unit)'));
                 })
                 ->whereIn('rwfi.retail_warehouse_food_id', $warehouseRetailFoodIds)
@@ -3130,12 +3610,12 @@ class ContraBonController extends Controller
             $result = [];
             foreach ($warehouseRetailFoods as $row) {
                 $items = $allItems->get($row->retail_warehouse_food_id, collect());
-                
+
                 // Skip if no items
                 if ($items->isEmpty()) {
                     continue;
                 }
-                
+
                 $result[] = [
                     'retail_warehouse_food_id' => $row->retail_warehouse_food_id,
                     'retail_number' => $row->retail_number,
@@ -3150,11 +3630,95 @@ class ContraBonController extends Controller
                     'items' => $items->values(),
                 ];
             }
-            
+
             return response()->json($result);
         } catch (\Exception $e) {
             \Log::error('Error in getWarehouseRetailFoodContraBon: ' . $e->getMessage());
+
             return response()->json(['error' => 'Gagal mengambil data Warehouse Retail Food: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Satu Warehouse Retail Food lengkap dengan line items.
+     */
+    public function getWarehouseRetailFoodContraBonDetail($id)
+    {
+        try {
+            $id = (int) $id;
+            $row = \DB::table('retail_warehouse_food as rwf')
+                ->join('suppliers as s', 'rwf.supplier_id', '=', 's.id')
+                ->join('users as creator', 'rwf.created_by', '=', 'creator.id')
+                ->leftJoin('warehouses as w', 'rwf.warehouse_id', '=', 'w.id')
+                ->leftJoin('warehouse_division as wd', 'rwf.warehouse_division_id', '=', 'wd.id')
+                ->where('rwf.id', $id)
+                ->where('rwf.payment_method', 'contra_bon')
+                ->where('rwf.status', 'approved')
+                ->whereNotExists(function ($query) {
+                    $query->select(\DB::raw(1))
+                        ->from('food_contra_bon_sources as cbs')
+                        ->whereColumn('cbs.source_id', 'rwf.id')
+                        ->where('cbs.source_type', 'warehouse_retail_food');
+                })
+                ->select(
+                    'rwf.id as retail_warehouse_food_id',
+                    'rwf.retail_number',
+                    'rwf.transaction_date',
+                    'rwf.total_amount',
+                    'rwf.notes',
+                    's.id as supplier_id',
+                    's.name as supplier_name',
+                    'creator.nama_lengkap as creator_name',
+                    'w.name as warehouse_name',
+                    'wd.name as warehouse_division_name'
+                )
+                ->first();
+
+            if (! $row) {
+                return response()->json(['error' => 'Warehouse Retail Food tidak ditemukan atau sudah dipakai'], 404);
+            }
+
+            $items = \DB::table('retail_warehouse_food_items as rwfi')
+                ->leftJoin('items as i', function ($join) {
+                    $join->on(\DB::raw('LOWER(i.name)'), '=', \DB::raw('LOWER(rwfi.item_name)'));
+                })
+                ->leftJoin('units as u', function ($join) {
+                    $join->on(\DB::raw('LOWER(u.name)'), '=', \DB::raw('LOWER(rwfi.unit)'));
+                })
+                ->where('rwfi.retail_warehouse_food_id', $id)
+                ->select(
+                    'rwfi.retail_warehouse_food_id',
+                    'rwfi.id',
+                    'rwfi.item_name',
+                    'rwfi.unit as unit_name',
+                    'rwfi.qty',
+                    'rwfi.price',
+                    'i.id as item_id',
+                    'u.id as unit_id'
+                )
+                ->get();
+
+            if ($items->isEmpty()) {
+                return response()->json(['error' => 'Tidak ada item untuk transaksi ini'], 422);
+            }
+
+            return response()->json([
+                'retail_warehouse_food_id' => $row->retail_warehouse_food_id,
+                'retail_number' => $row->retail_number,
+                'transaction_date' => $row->transaction_date,
+                'total_amount' => $row->total_amount,
+                'notes' => $row->notes,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'creator_name' => $row->creator_name,
+                'warehouse_name' => $row->warehouse_name,
+                'warehouse_division_name' => $row->warehouse_division_name,
+                'items' => $items->values(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in getWarehouseRetailFoodContraBonDetail: ' . $e->getMessage());
+
+            return response()->json(['error' => 'Gagal mengambil detail Warehouse Retail Food: ' . $e->getMessage()], 500);
         }
     }
 

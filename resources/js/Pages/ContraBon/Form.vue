@@ -31,9 +31,27 @@ const fileImagePreview = ref(null);
 
 // Retail Food variables
 const retailFoodList = ref([]);
+const loadingMoreRetailFood = ref(false);
+const retailFoodPagination = ref({
+  current_page: 1,
+  per_page: 50,
+  total: 0,
+  last_page: 1,
+  from: 0,
+  to: 0,
+});
 
 // Warehouse Retail Food variables
 const warehouseRetailFoodList = ref([]);
+const loadingMoreWarehouseRetailFood = ref(false);
+const warehouseRetailFoodPagination = ref({
+  current_page: 1,
+  per_page: 50,
+  total: 0,
+  last_page: 1,
+  from: 0,
+  to: 0,
+});
 
 // Retail Non Food variables
 const retailNonFoodList = ref([]);
@@ -244,6 +262,9 @@ onMounted(async () => {
 
 // Filter functions for modal search - now searches on backend
 let searchTimeout = null;
+let retailFoodSearchTimeout = null;
+let warehouseRetailFoodSearchTimeout = null;
+
 function filterPOList() {
   // Clear previous timeout
   if (searchTimeout) {
@@ -265,33 +286,29 @@ function filterPOList() {
 }
 
 function filterRetailFoodList() {
-  if (!retailFoodSearchQuery.value.trim()) {
-    filteredRetailFoodList.value = retailFoodList.value;
-    return;
+  if (retailFoodSearchTimeout) {
+    clearTimeout(retailFoodSearchTimeout);
   }
-  
-  const query = retailFoodSearchQuery.value.toLowerCase();
-  filteredRetailFoodList.value = retailFoodList.value.filter(rf => 
-    rf.retail_number.toLowerCase().includes(query) ||
-    rf.supplier_name.toLowerCase().includes(query) ||
-    (rf.outlet_name && rf.outlet_name.toLowerCase().includes(query)) ||
-    (rf.warehouse_outlet_name && rf.warehouse_outlet_name.toLowerCase().includes(query))
-  );
+  if (retailFoodSearchQuery.value.trim()) {
+    loadingPOGR.value = true;
+  }
+  retailFoodSearchTimeout = setTimeout(async () => {
+    const query = retailFoodSearchQuery.value.trim();
+    await loadRetailFoodList(1, false, query);
+  }, 500);
 }
 
 function filterWarehouseRetailFoodList() {
-  if (!warehouseRetailFoodSearchQuery.value.trim()) {
-    filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
-    return;
+  if (warehouseRetailFoodSearchTimeout) {
+    clearTimeout(warehouseRetailFoodSearchTimeout);
   }
-  
-  const query = warehouseRetailFoodSearchQuery.value.toLowerCase();
-  filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value.filter(rwf => 
-    rwf.retail_number.toLowerCase().includes(query) ||
-    rwf.supplier_name.toLowerCase().includes(query) ||
-    (rwf.warehouse_name && rwf.warehouse_name.toLowerCase().includes(query)) ||
-    (rwf.warehouse_division_name && rwf.warehouse_division_name.toLowerCase().includes(query))
-  );
+  if (warehouseRetailFoodSearchQuery.value.trim()) {
+    loadingPOGR.value = true;
+  }
+  warehouseRetailFoodSearchTimeout = setTimeout(async () => {
+    const query = warehouseRetailFoodSearchQuery.value.trim();
+    await loadWarehouseRetailFoodList(1, false, query);
+  }, 500);
 }
 
 // Modal functions
@@ -314,6 +331,7 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
     const params = {
       page: page,
       per_page: 50,
+      include_items: false,
     };
     
     // Add search parameter if provided
@@ -359,52 +377,108 @@ async function loadMorePOGR() {
   }
 }
 
+async function loadRetailFoodList(page = 1, append = false, searchQuery = '') {
+  if (append) {
+    loadingMoreRetailFood.value = true;
+  } else {
+    loadingPOGR.value = true;
+  }
+  try {
+    const params = {
+      page,
+      per_page: 50,
+      include_items: false,
+    };
+    if (searchQuery && searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+    const response = await axios.get('/api/contra-bon/retail-food-contra-bon', { params });
+    const data = response.data?.data || [];
+    const pagination = response.data?.pagination || null;
+    if (append && !searchQuery.trim()) {
+      retailFoodList.value = [...retailFoodList.value, ...data];
+    } else {
+      retailFoodList.value = data;
+    }
+    filteredRetailFoodList.value = retailFoodList.value;
+    if (pagination) {
+      retailFoodPagination.value = pagination;
+    }
+  } catch (e) {
+    console.error('Error loading retail food:', e);
+    Swal.fire('Error', 'Gagal mengambil data Retail Food: ' + (e.response?.data?.error || e.message), 'error');
+    if (!append) {
+      retailFoodList.value = [];
+      filteredRetailFoodList.value = [];
+    }
+  } finally {
+    loadingPOGR.value = false;
+    loadingMoreRetailFood.value = false;
+  }
+}
+
+async function loadMoreRetailFood() {
+  if (retailFoodPagination.value.current_page < retailFoodPagination.value.last_page) {
+    await loadRetailFoodList(retailFoodPagination.value.current_page + 1, true, retailFoodSearchQuery.value.trim());
+  }
+}
+
 async function openRetailFoodModal() {
   showRetailFoodModal.value = true;
   retailFoodSearchQuery.value = '';
-  
-  // Lazy load: hanya load data jika belum pernah di-load
-  if (retailFoodList.value.length === 0) {
-    loadingPOGR.value = true;
-    try {
-      const response = await axios.get('/api/contra-bon/retail-food-contra-bon');
-      retailFoodList.value = response.data || [];
-      filteredRetailFoodList.value = retailFoodList.value;
-    } catch (e) {
-      console.error('Error loading retail food:', e);
-      Swal.fire('Error', 'Gagal mengambil data Retail Food', 'error');
-      retailFoodList.value = [];
-      filteredRetailFoodList.value = [];
-    } finally {
-      loadingPOGR.value = false;
-    }
+  await loadRetailFoodList(1, false, '');
+}
+
+async function loadWarehouseRetailFoodList(page = 1, append = false, searchQuery = '') {
+  if (append) {
+    loadingMoreWarehouseRetailFood.value = true;
   } else {
-    filteredRetailFoodList.value = retailFoodList.value;
+    loadingPOGR.value = true;
+  }
+  try {
+    const params = {
+      page,
+      per_page: 50,
+      include_items: false,
+    };
+    if (searchQuery && searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+    const response = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon', { params });
+    const data = response.data?.data || [];
+    const pagination = response.data?.pagination || null;
+    if (append && !searchQuery.trim()) {
+      warehouseRetailFoodList.value = [...warehouseRetailFoodList.value, ...data];
+    } else {
+      warehouseRetailFoodList.value = data;
+    }
+    filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
+    if (pagination) {
+      warehouseRetailFoodPagination.value = pagination;
+    }
+  } catch (e) {
+    console.error('Error loading warehouse retail food:', e);
+    Swal.fire('Error', 'Gagal mengambil data Warehouse Retail Food: ' + (e.response?.data?.error || e.message), 'error');
+    if (!append) {
+      warehouseRetailFoodList.value = [];
+      filteredWarehouseRetailFoodList.value = [];
+    }
+  } finally {
+    loadingPOGR.value = false;
+    loadingMoreWarehouseRetailFood.value = false;
+  }
+}
+
+async function loadMoreWarehouseRetailFood() {
+  if (warehouseRetailFoodPagination.value.current_page < warehouseRetailFoodPagination.value.last_page) {
+    await loadWarehouseRetailFoodList(warehouseRetailFoodPagination.value.current_page + 1, true, warehouseRetailFoodSearchQuery.value.trim());
   }
 }
 
 async function openWarehouseRetailFoodModal() {
   showWarehouseRetailFoodModal.value = true;
   warehouseRetailFoodSearchQuery.value = '';
-  
-  // Lazy load: hanya load data jika belum pernah di-load
-  if (warehouseRetailFoodList.value.length === 0) {
-    loadingPOGR.value = true;
-    try {
-      const response = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon');
-      warehouseRetailFoodList.value = response.data || [];
-      filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
-    } catch (e) {
-      console.error('Error loading warehouse retail food:', e);
-      Swal.fire('Error', 'Gagal mengambil data Warehouse Retail Food', 'error');
-      warehouseRetailFoodList.value = [];
-      filteredWarehouseRetailFoodList.value = [];
-    } finally {
-      loadingPOGR.value = false;
-    }
-  } else {
-    filteredWarehouseRetailFoodList.value = warehouseRetailFoodList.value;
-  }
+  await loadWarehouseRetailFoodList(1, false, '');
 }
 
 function closePOListModal() {
@@ -529,11 +603,24 @@ async function selectRetailNonFoodFromModal(rnf) {
   }
 }
 
-function selectPOFromModal(po) {
-  
+async function selectPOFromModal(po) {
+  let full = po;
+  if (!po.items || !po.items.length) {
+    loadingPOGR.value = true;
+    try {
+      const res = await axios.get('/api/contra-bon/po-gr-detail', { params: { gr_id: po.gr_id } });
+      full = res.data;
+    } catch (e) {
+      Swal.fire('Error', e.response?.data?.error || e.message, 'error');
+      return;
+    } finally {
+      loadingPOGR.value = false;
+    }
+  }
+
   // Check if this source already exists
   const existingSource = selectedSources.value.find(s => 
-    s.type === 'purchase_order' && s.po_id === po.po_id && s.gr_id === po.gr_id
+    s.type === 'purchase_order' && s.po_id === full.po_id && s.gr_id === full.gr_id
   );
   
   if (existingSource) {
@@ -543,22 +630,22 @@ function selectPOFromModal(po) {
   }
   
   // Add source to selectedSources
-  const sourceKey = `po-${po.po_id}-${po.gr_id}`;
+  const sourceKey = `po-${full.po_id}-${full.gr_id}`;
   const sourceData = {
     key: sourceKey,
     type: 'purchase_order',
-    po_id: po.po_id,
-    gr_id: po.gr_id,
-    display: `${po.po_number} - ${po.gr_number} - ${po.supplier_name}`,
-    supplier_id: po.supplier_id,
-    supplier_name: po.supplier_name,
-    data: po
+    po_id: full.po_id,
+    gr_id: full.gr_id,
+    display: `${full.po_number} - ${full.gr_number} - ${full.supplier_name}`,
+    supplier_id: full.supplier_id,
+    supplier_name: full.supplier_name,
+    data: full
   };
   selectedSources.value.push(sourceData);
   
   // Add items from this source to form.items
-  if (po.items && po.items.length > 0) {
-    const newItems = po.items.map(item => {
+  if (full.items && full.items.length > 0) {
+    const newItems = full.items.map(item => {
       // Debug: Log item data untuk troubleshooting
       if (!item.item_name || !item.unit_name) {
         console.warn('Item missing name/unit:', item);
@@ -585,10 +672,10 @@ function selectPOFromModal(po) {
       selected: false, // Default tidak dicentang
       // Source info
       source_type: 'purchase_order',
-      source_id: `${po.po_id}-${po.gr_id}`,
-      source_display: `${po.po_number} - ${po.gr_number}`,
-      po_id: po.po_id,
-      gr_id: po.gr_id,
+      source_id: `${full.po_id}-${full.gr_id}`,
+      source_display: `${full.po_number} - ${full.gr_number}`,
+      po_id: full.po_id,
+      gr_id: full.gr_id,
       _rowKey: Date.now() + '-' + Math.random() + '-po',
       };
       
@@ -609,12 +696,12 @@ function selectPOFromModal(po) {
   }
   
   // Update supplier detail (use first supplier or merge if multiple)
-  if (po.supplier_id) {
+  if (full.supplier_id) {
     if (!supplierDetail.value) {
-      axios.get(`/api/suppliers/${po.supplier_id}`)
+      axios.get(`/api/suppliers/${full.supplier_id}`)
         .then(res => supplierDetail.value = res.data)
         .catch(() => supplierDetail.value = null);
-    } else if (supplierDetail.value.id !== po.supplier_id) {
+    } else if (supplierDetail.value.id !== full.supplier_id) {
       // Multiple suppliers - show info
       Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
     }
@@ -623,10 +710,24 @@ function selectPOFromModal(po) {
   closePOListModal();
 }
 
-function selectRetailFoodFromModal(rf) {
+async function selectRetailFoodFromModal(rf) {
+  let full = rf;
+  if (!rf.items || !rf.items.length) {
+    loadingPOGR.value = true;
+    try {
+      const res = await axios.get(`/api/contra-bon/retail-food-detail/${rf.retail_food_id}`);
+      full = res.data;
+    } catch (e) {
+      Swal.fire('Error', e.response?.data?.error || e.message, 'error');
+      return;
+    } finally {
+      loadingPOGR.value = false;
+    }
+  }
+
   // Check if this source already exists
   const existingSource = selectedSources.value.find(s => 
-    s.type === 'retail_food' && s.source_id === rf.retail_food_id
+    s.type === 'retail_food' && s.source_id === full.retail_food_id
   );
   
   if (existingSource) {
@@ -636,21 +737,21 @@ function selectRetailFoodFromModal(rf) {
   }
   
   // Add source to selectedSources
-  const sourceKey = `rf-${rf.retail_food_id}`;
+  const sourceKey = `rf-${full.retail_food_id}`;
   const sourceData = {
     key: sourceKey,
     type: 'retail_food',
-    source_id: rf.retail_food_id,
-    display: `${rf.retail_number} - ${rf.supplier_name}`,
-    supplier_id: rf.supplier_id,
-    supplier_name: rf.supplier_name,
-    data: rf
+    source_id: full.retail_food_id,
+    display: `${full.retail_number} - ${full.supplier_name}`,
+    supplier_id: full.supplier_id,
+    supplier_name: full.supplier_name,
+    data: full
   };
   selectedSources.value.push(sourceData);
   
   // Add items from this source to form.items
-  if (rf.items && rf.items.length > 0) {
-    const newItems = rf.items.map(item => ({
+  if (full.items && full.items.length > 0) {
+    const newItems = full.items.map(item => ({
       gr_item_id: null,
       item_id: item.item_id || null, // Ambil dari join dengan items table
       po_item_id: null,
@@ -666,8 +767,8 @@ function selectRetailFoodFromModal(rf) {
       selected: false, // Default tidak dicentang
       // Source info
       source_type: 'retail_food',
-      source_id: rf.retail_food_id,
-      source_display: rf.retail_number,
+      source_id: full.retail_food_id,
+      source_display: full.retail_number,
       po_id: null,
       gr_id: null,
       _rowKey: Date.now() + '-' + Math.random() + '-rf',
@@ -676,12 +777,12 @@ function selectRetailFoodFromModal(rf) {
   }
   
   // Update supplier detail
-  if (rf.supplier_id) {
+  if (full.supplier_id) {
     if (!supplierDetail.value) {
-      axios.get(`/api/suppliers/${rf.supplier_id}`)
+      axios.get(`/api/suppliers/${full.supplier_id}`)
         .then(res => supplierDetail.value = res.data)
         .catch(() => supplierDetail.value = null);
-    } else if (supplierDetail.value.id !== rf.supplier_id) {
+    } else if (supplierDetail.value.id !== full.supplier_id) {
       Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
     }
   }
@@ -689,10 +790,24 @@ function selectRetailFoodFromModal(rf) {
   closeRetailFoodModal();
 }
 
-function selectWarehouseRetailFoodFromModal(rwf) {
+async function selectWarehouseRetailFoodFromModal(rwf) {
+  let full = rwf;
+  if (!rwf.items || !rwf.items.length) {
+    loadingPOGR.value = true;
+    try {
+      const res = await axios.get(`/api/contra-bon/warehouse-retail-food-detail/${rwf.retail_warehouse_food_id}`);
+      full = res.data;
+    } catch (e) {
+      Swal.fire('Error', e.response?.data?.error || e.message, 'error');
+      return;
+    } finally {
+      loadingPOGR.value = false;
+    }
+  }
+
   // Check if this source already exists
   const existingSource = selectedSources.value.find(s => 
-    s.type === 'warehouse_retail_food' && s.source_id === rwf.retail_warehouse_food_id
+    s.type === 'warehouse_retail_food' && s.source_id === full.retail_warehouse_food_id
   );
   
   if (existingSource) {
@@ -702,21 +817,21 @@ function selectWarehouseRetailFoodFromModal(rwf) {
   }
   
   // Add source to selectedSources
-  const sourceKey = `rwf-${rwf.retail_warehouse_food_id}`;
+  const sourceKey = `rwf-${full.retail_warehouse_food_id}`;
   const sourceData = {
     key: sourceKey,
     type: 'warehouse_retail_food',
-    source_id: rwf.retail_warehouse_food_id,
-    display: `${rwf.retail_number} - ${rwf.supplier_name}`,
-    supplier_id: rwf.supplier_id,
-    supplier_name: rwf.supplier_name,
-    data: rwf
+    source_id: full.retail_warehouse_food_id,
+    display: `${full.retail_number} - ${full.supplier_name}`,
+    supplier_id: full.supplier_id,
+    supplier_name: full.supplier_name,
+    data: full
   };
   selectedSources.value.push(sourceData);
   
   // Add items from this source to form.items
-  if (rwf.items && rwf.items.length > 0) {
-    const newItems = rwf.items.map(item => ({
+  if (full.items && full.items.length > 0) {
+    const newItems = full.items.map(item => ({
       gr_item_id: null,
       item_id: item.item_id || null, // Ambil dari join dengan items table
       po_item_id: null,
@@ -732,8 +847,8 @@ function selectWarehouseRetailFoodFromModal(rwf) {
       selected: false, // Default tidak dicentang
       // Source info
       source_type: 'warehouse_retail_food',
-      source_id: rwf.retail_warehouse_food_id,
-      source_display: rwf.retail_number,
+      source_id: full.retail_warehouse_food_id,
+      source_display: full.retail_number,
       po_id: null,
       gr_id: null,
       _rowKey: Date.now() + '-' + Math.random() + '-rwf',
@@ -742,12 +857,12 @@ function selectWarehouseRetailFoodFromModal(rwf) {
   }
   
   // Update supplier detail
-  if (rwf.supplier_id) {
+  if (full.supplier_id) {
     if (!supplierDetail.value) {
-      axios.get(`/api/suppliers/${rwf.supplier_id}`)
+      axios.get(`/api/suppliers/${full.supplier_id}`)
         .then(res => supplierDetail.value = res.data)
         .catch(() => supplierDetail.value = null);
-    } else if (supplierDetail.value.id !== rwf.supplier_id) {
+    } else if (supplierDetail.value.id !== full.supplier_id) {
       Swal.fire('Info', 'Contra Bon ini memiliki beberapa supplier. Supplier detail akan menampilkan supplier pertama.', 'info');
     }
   }
@@ -1951,6 +2066,25 @@ function getUnitName(item) {
               </div>
             </div>
           </div>
+          <div v-if="!loadingPOGR && retailFoodPagination.current_page < retailFoodPagination.last_page" class="p-4 border-t text-center">
+            <button 
+              type="button"
+              @click="loadMoreRetailFood" 
+              :disabled="loadingMoreRetailFood"
+              class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span v-if="loadingMoreRetailFood">
+                <i class="fa fa-spinner fa-spin mr-2"></i>Memuat...
+              </span>
+              <span v-else>
+                Muat Lebih Banyak ({{ retailFoodPagination.current_page }} / {{ retailFoodPagination.last_page }})
+              </span>
+            </button>
+            <p class="text-sm text-gray-500 mt-2">
+              Menampilkan {{ retailFoodPagination.from }}-{{ retailFoodPagination.to }} dari {{ retailFoodPagination.total }} data
+              <span v-if="retailFoodSearchQuery.trim()" class="text-purple-600">(hasil pencarian)</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -2058,6 +2192,25 @@ function getUnitName(item) {
                 </div>
               </div>
             </div>
+          </div>
+          <div v-if="!loadingPOGR && warehouseRetailFoodPagination.current_page < warehouseRetailFoodPagination.last_page" class="p-4 border-t text-center">
+            <button 
+              type="button"
+              @click="loadMoreWarehouseRetailFood" 
+              :disabled="loadingMoreWarehouseRetailFood"
+              class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span v-if="loadingMoreWarehouseRetailFood">
+                <i class="fa fa-spinner fa-spin mr-2"></i>Memuat...
+              </span>
+              <span v-else>
+                Muat Lebih Banyak ({{ warehouseRetailFoodPagination.current_page }} / {{ warehouseRetailFoodPagination.last_page }})
+              </span>
+            </button>
+            <p class="text-sm text-gray-500 mt-2">
+              Menampilkan {{ warehouseRetailFoodPagination.from }}-{{ warehouseRetailFoodPagination.to }} dari {{ warehouseRetailFoodPagination.total }} data
+              <span v-if="warehouseRetailFoodSearchQuery.trim()" class="text-indigo-600">(hasil pencarian)</span>
+            </p>
           </div>
         </div>
       </div>
