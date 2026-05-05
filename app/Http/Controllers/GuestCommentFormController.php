@@ -251,10 +251,10 @@ class GuestCommentFormController extends Controller
     {
         if ($canChooseOutlet) {
             if ($selectedOutletId > 0) {
-                $query->where('id_outlet', $selectedOutletId);
+                $query->where('guest_comment_forms.id_outlet', $selectedOutletId);
             }
         } elseif ($userOutletId > 0) {
-            $query->where('id_outlet', $userOutletId);
+            $query->where('guest_comment_forms.id_outlet', $userOutletId);
         } else {
             $query->whereRaw('0=1');
         }
@@ -265,8 +265,8 @@ class GuestCommentFormController extends Controller
     private function buildGsiSubjectStats(array $subjectColumns, Carbon $start, Carbon $end, int $selectedOutletId, bool $canChooseOutlet, int $userOutletId): array
     {
         $base = DB::table('guest_comment_forms')
-            ->where('status', 'verified')
-            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()]);
+            ->where('guest_comment_forms.status', 'verified')
+            ->whereBetween('guest_comment_forms.created_at', [$start->toDateTimeString(), $end->toDateTimeString()]);
         $this->applyOutletScope($base, $selectedOutletId, $canChooseOutlet, $userOutletId);
 
         $totalForms = (int) (clone $base)->count();
@@ -378,10 +378,10 @@ class GuestCommentFormController extends Controller
         int $userOutletId
     ): array {
         $base = DB::table('guest_comment_forms')
-            ->where('status', 'verified')
-            ->whereBetween('created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
-            ->whereNotNull('comment_text')
-            ->where('comment_text', '!=', '');
+            ->where('guest_comment_forms.status', 'verified')
+            ->whereBetween('guest_comment_forms.created_at', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->whereNotNull('guest_comment_forms.comment_text')
+            ->where('guest_comment_forms.comment_text', '!=', '');
         $this->applyOutletScope($base, $selectedOutletId, $canChooseOutlet, $userOutletId);
 
         $totalComments = (int) (clone $base)->count();
@@ -408,7 +408,7 @@ class GuestCommentFormController extends Controller
                 'guest_comment_forms.created_at',
                 'o.nama_outlet as outlet_name'
             )
-            ->orderByDesc('id')
+            ->orderByDesc('guest_comment_forms.id')
             ->get();
 
         $topicCounts = [];
