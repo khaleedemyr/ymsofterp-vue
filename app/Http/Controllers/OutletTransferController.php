@@ -206,8 +206,9 @@ class OutletTransferController extends Controller
     // Submit draft untuk approval
     public function submit(Request $request, $id)
     {
-        $transfer = OutletTransfer::with('approvalFlows')->findOrFail($id);
-        
+        $transfer = OutletTransfer::with(['approvalFlows', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
+        $this->assertUserCanViewOutletTransfer(auth()->user(), $transfer);
+
         if ($transfer->status !== 'draft') {
             return response()->json([
                 'success' => false,
@@ -278,7 +279,8 @@ class OutletTransferController extends Controller
     public function approve(Request $request, $id)
     {
         $user = Auth::user();
-        $transfer = OutletTransfer::with(['approvalFlows', 'items'])->findOrFail($id);
+        $transfer = OutletTransfer::with(['approvalFlows', 'items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
 
         $validated = $request->validate([
             'action' => 'required|in:approve,reject',
@@ -688,22 +690,20 @@ class OutletTransferController extends Controller
             'approvalFlows.approver.jabatan',
         ]);
 
-        // Visibility rule:
-        // - Superadmin: see all
-        // - Non-superadmin: only see transfers related to user's outlet (as source OR destination)
-        //
-        // Note: outlet_transfers.outlet_id is currently used as "outlet tujuan" in store(),
-        // so filtering by that column alone would hide transfers created by outlet asal.
-        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
-        $userOutletId = $user->id_outlet ?? null;
-        if (!$isSuperadmin && $userOutletId) {
-            $query->where(function ($q) use ($userOutletId) {
-                $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
-                    $q2->where('outlet_id', $userOutletId);
-                })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
-                    $q2->where('outlet_id', $userOutletId);
+        // Visibility: users.id_outlet = 1 (HO/pusat) → semua transfer.
+        // Selain itu → hanya transfer yang melibatkan outlet user (gudang asal ATAU gudang tujuan).
+        // outlet_transfers.outlet_id = outlet tujuan saja; filter harus lewat warehouse outlet.
+        if (! $this->userCanViewAllOutletTransfers($user)) {
+            $userOutletId = (int) ($user->id_outlet ?? 0);
+            if ($userOutletId > 0) {
+                $query->where(function ($q) use ($userOutletId) {
+                    $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
+                        $q2->where('outlet_id', $userOutletId);
+                    })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
+                        $q2->where('outlet_id', $userOutletId);
+                    });
                 });
-            });
+            }
         }
 
         if ($request->search) {
@@ -871,14 +871,16 @@ class OutletTransferController extends Controller
             'approvalFlows.approver',
             'approvalFlows.approver.jabatan',
         ])->findOrFail($id);
-        
+
+        $user = auth()->user();
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
+
         // Ambil data outlet untuk mapping
         $outlets = \App\Models\Outlet::where('status', 'A')
             ->select('id_outlet', 'nama_outlet')
             ->get()
             ->keyBy('id_outlet');
 
-        $user = auth()->user();
         $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
 
         // Determine pending flow + canApprove (new flow), fallback to legacy rules if no flows
@@ -937,14 +939,7 @@ class OutletTransferController extends Controller
             'approvalFlows.approver',
         ])->findOrFail($id);
 
-        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
-        $userOutletId = $user->id_outlet ?? null;
-        $fromOutletId = $transfer->warehouseOutletFrom->outlet_id ?? null;
-        $toOutletId = $transfer->warehouseOutletTo->outlet_id ?? null;
-
-        if (!$isSuperadmin && $userOutletId && $fromOutletId != $userOutletId && $toOutletId != $userOutletId) {
-            abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
-        }
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
 
         $items = [];
         $totalValueOut = 0;
@@ -1022,8 +1017,9 @@ class OutletTransferController extends Controller
         
         DB::beginTransaction();
         try {
-            $transfer = OutletTransfer::with('items')->findOrFail($id);
-            
+            $transfer = OutletTransfer::with(['items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
+            $this->assertUserCanViewOutletTransfer($user, $transfer);
+
             // Ambil data warehouse outlet untuk rollback
             $warehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
             $warehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
@@ -1131,8 +1127,9 @@ class OutletTransferController extends Controller
 
         DB::beginTransaction();
         try {
-            $transfer = OutletTransfer::with('items')->findOrFail($id);
-            
+            $transfer = OutletTransfer::with(['items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
+            $this->assertUserCanViewOutletTransfer(auth()->user(), $transfer);
+
             // Ambil data warehouse outlet lama untuk rollback
             $oldWarehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
             $oldWarehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
@@ -1429,7 +1426,8 @@ class OutletTransferController extends Controller
     {
         $user = auth()->user();
         $transfer = OutletTransfer::with(['items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
-        
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
+
         // Ambil data outlet asal berdasarkan id_outlet user
         if ($user->id_outlet == 1) {
             // Admin bisa pilih semua outlet untuk outlet asal
@@ -1655,16 +1653,17 @@ class OutletTransferController extends Controller
             'approvalFlows.approver',
         ]);
 
-        $isSuperadmin = ($user->id_role === '5af56935b011a' && $user->status === 'A');
-        $userOutletId = $user->id_outlet ?? null;
-        if (!$isSuperadmin && $userOutletId) {
-            $query->where(function ($q) use ($userOutletId) {
-                $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
-                    $q2->where('outlet_id', $userOutletId);
-                })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
-                    $q2->where('outlet_id', $userOutletId);
+        if (! $this->userCanViewAllOutletTransfers($user)) {
+            $userOutletId = (int) ($user->id_outlet ?? 0);
+            if ($userOutletId > 0) {
+                $query->where(function ($q) use ($userOutletId) {
+                    $q->whereHas('warehouseOutletFrom', function ($q2) use ($userOutletId) {
+                        $q2->where('outlet_id', $userOutletId);
+                    })->orWhereHas('warehouseOutletTo', function ($q2) use ($userOutletId) {
+                        $q2->where('outlet_id', $userOutletId);
+                    });
                 });
-            });
+            }
         }
 
         if ($request->search) {
@@ -1784,6 +1783,8 @@ class OutletTransferController extends Controller
         ])->findOrFail($id);
 
         $user = auth()->user();
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
+
         $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
         $pendingFlow = null;
         $canApprove = false;
@@ -1948,7 +1949,8 @@ class OutletTransferController extends Controller
     public function apiApprove(Request $request, $id)
     {
         $user = Auth::user();
-        $transfer = OutletTransfer::with(['approvalFlows', 'items'])->findOrFail($id);
+        $transfer = OutletTransfer::with(['approvalFlows', 'items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
+        $this->assertUserCanViewOutletTransfer($user, $transfer);
 
         $validated = $request->validate([
             'action' => 'required|in:approve,reject',
@@ -2050,6 +2052,34 @@ class OutletTransferController extends Controller
             DB::rollBack();
             Log::error('Error apiApprove outlet transfer', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * User HO (users.id_outlet = 1) melihat semua daftar transfer.
+     */
+    private function userCanViewAllOutletTransfers($user): bool
+    {
+        return $user && (int) ($user->id_outlet ?? 0) === 1;
+    }
+
+    /**
+     * Bukan HO: hanya transfer yang gudang asal atau tujuan = outlet user.
+     */
+    private function assertUserCanViewOutletTransfer($user, OutletTransfer $transfer): void
+    {
+        if ($this->userCanViewAllOutletTransfers($user)) {
+            return;
+        }
+        $transfer->loadMissing(['warehouseOutletFrom', 'warehouseOutletTo']);
+        $uid = (int) ($user->id_outlet ?? 0);
+        if ($uid <= 0) {
+            abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
+        }
+        $fromId = (int) ($transfer->warehouseOutletFrom->outlet_id ?? 0);
+        $toId = (int) ($transfer->warehouseOutletTo->outlet_id ?? 0);
+        if ($fromId !== $uid && $toId !== $uid) {
+            abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }
 } 
