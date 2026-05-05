@@ -137,7 +137,7 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                         ->first();
                     if ($macRow) {
                         $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
-                        $macHistories[$macKey] = $macRow->mac;
+                        $macHistories[$macKey] = $macRow->new_cost;
                     }
                 }
             }
@@ -230,7 +230,7 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                             ->orderByDesc('id')
                             ->first();
                         if ($macRow) {
-                            $macHistories[$detail->item_id] = $macRow->mac;
+                            $macHistories[$detail->item_id] = $macRow->new_cost;
                         }
                     }
                 }
