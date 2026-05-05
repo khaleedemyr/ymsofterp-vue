@@ -398,7 +398,16 @@ class GuestCommentFormController extends Controller
         }
 
         $rows = (clone $base)
-            ->select('guest_name', 'comment_text', 'issue_severity', 'issue_topics', 'issue_summary_id', 'created_at')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'guest_comment_forms.id_outlet')
+            ->select(
+                'guest_comment_forms.guest_name',
+                'guest_comment_forms.comment_text',
+                'guest_comment_forms.issue_severity',
+                'guest_comment_forms.issue_topics',
+                'guest_comment_forms.issue_summary_id',
+                'guest_comment_forms.created_at',
+                'o.nama_outlet as outlet_name'
+            )
             ->orderByDesc('id')
             ->get();
 
@@ -437,6 +446,7 @@ class GuestCommentFormController extends Controller
                 if (count($topicExamples[$topicKey]) < 3) {
                     $topicExamples[$topicKey][] = [
                         'author' => (string) ($row->guest_name ?? '-'),
+                        'outlet_name' => (string) ($row->outlet_name ?? '-'),
                         'text' => mb_substr((string) ($row->comment_text ?? ''), 0, 200),
                         'summary_id' => $summary,
                         'severity' => $severity,
@@ -446,6 +456,7 @@ class GuestCommentFormController extends Controller
                 if (count($topicDetails[$topicKey]) < 20) {
                     $topicDetails[$topicKey][] = [
                         'author' => (string) ($row->guest_name ?? '-'),
+                        'outlet_name' => (string) ($row->outlet_name ?? '-'),
                         'text' => trim((string) ($row->comment_text ?? '')),
                         'summary_id' => $summary,
                         'severity' => $severity,

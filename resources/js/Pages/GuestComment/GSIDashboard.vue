@@ -418,7 +418,11 @@ const issueTopicBarSeries = computed(() => [
                     :class="commentCardClass(comment.severity)"
                   >
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-                      <div class="text-xs text-slate-500">{{ comment.author || '-' }}</div>
+                      <div class="text-xs text-slate-500">
+                        {{ comment.author || '-' }}
+                        <span class="mx-1 text-slate-300">•</span>
+                        Outlet: {{ comment.outlet_name || '-' }}
+                      </div>
                       <div class="flex items-center gap-2">
                         <span
                           class="rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase"
@@ -491,7 +495,11 @@ const issueTopicBarSeries = computed(() => [
                   :class="commentCardClass(comment.severity)"
                 >
                   <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    <div class="text-sm font-semibold text-slate-800">{{ comment.author || '-' }}</div>
+                    <div class="text-sm font-semibold text-slate-800">
+                      {{ comment.author || '-' }}
+                      <span class="mx-1 text-slate-300">•</span>
+                      <span class="font-medium text-slate-600">Outlet: {{ comment.outlet_name || '-' }}</span>
+                    </div>
                     <div class="flex flex-wrap items-center gap-2 text-xs">
                       <span
                         class="rounded-full px-2.5 py-1 font-semibold uppercase"
