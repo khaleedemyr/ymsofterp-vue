@@ -1075,6 +1075,14 @@ class GoodReceiveOutletSupplierController extends Controller
                             ->first();
                         
                         $cost = $floorOrderItem ? $floorOrderItem->price : 0;
+                        $cost_small = $cost;
+                        if ($unitId == $unitLarge) {
+                            $cost_small = $cost / (($smallConv ?: 1) * ($mediumConv ?: 1));
+                        } elseif ($unitId == $unitMedium) {
+                            $cost_small = $cost / ($smallConv ?: 1);
+                        }
+                        $cost_medium = $cost_small * $smallConv;
+                        $cost_large = $cost_medium * $mediumConv;
                         
                         // Hitung MAC (Moving Average Cost)
                         $existingStock = DB::table('outlet_food_inventory_stocks')
@@ -1083,11 +1091,9 @@ class GoodReceiveOutletSupplierController extends Controller
                             ->where('warehouse_outlet_id', $floorOrder->warehouse_outlet_id)
                             ->first();
                         
-                        $mac = 0;
+                        $mac = $cost_small;
                         if ($existingStock && $existingStock->qty_small > 0) {
-                            $mac = ($existingStock->value + ($qty_small * $cost)) / ($existingStock->qty_small + $qty_small);
-                        } else {
-                            $mac = $cost;
+                            $mac = ($existingStock->value + ($qty_small * $cost_small)) / ($existingStock->qty_small + $qty_small);
                         }
                         
                         // Update atau insert stock
@@ -1100,6 +1106,8 @@ class GoodReceiveOutletSupplierController extends Controller
                                     'qty_large' => $existingStock->qty_large + $qty_large,
                                     'value' => ($existingStock->qty_small + $qty_small) * $mac,
                                     'last_cost_small' => $mac,
+                                    'last_cost_medium' => $mac * $smallConv,
+                                    'last_cost_large' => $mac * $smallConv * $mediumConv,
                                     'updated_at' => now(),
                                 ]);
                         } else {
@@ -1149,10 +1157,10 @@ class GoodReceiveOutletSupplierController extends Controller
                             'out_qty_small' => 0,
                             'out_qty_medium' => 0,
                             'out_qty_large' => 0,
-                            'cost_per_small' => $mac,
-                            'cost_per_medium' => $mac * $smallConv,
-                            'cost_per_large' => $mac * $smallConv * $mediumConv,
-                            'value_in' => $qty_small * $mac,
+                            'cost_per_small' => $cost_small,
+                            'cost_per_medium' => $cost_medium,
+                            'cost_per_large' => $cost_large,
+                            'value_in' => $qty_small * $cost_small,
                             'value_out' => 0,
                             'saldo_qty_small' => $saldo_qty_small,
                             'saldo_qty_medium' => $saldo_qty_medium,
@@ -1179,7 +1187,9 @@ class GoodReceiveOutletSupplierController extends Controller
                             'warehouse_outlet_id' => $floorOrder->warehouse_outlet_id,
                             'date' => $request->receive_date,
                             'old_cost' => $old_cost,
-                            'new_cost' => $mac,
+                            'new_cost' => $cost_small,
+                            'mac' => $mac,
+                            'type' => 'good_receive_outlet_supplier',
                             'reference_type' => 'good_receive_outlet_supplier',
                             'reference_id' => $grId,
                             'created_at' => now(),

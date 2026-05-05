@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Support\OutletInventoryCostResolver;
 
 class StockOpnameController extends Controller
 {
@@ -224,10 +225,28 @@ class StockOpnameController extends Controller
                 'i.medium_conversion_qty'
             )
             ->orderBy('c.name')
-            ->orderBy('i.name')
-            ->get();
+            ->orderBy('i.name');
 
-        return $query;
+        $result = $query->get();
+
+        $anchors = $this->outletOpnameLatestPurchaseCostMap(
+            (int) $outletId,
+            (int) $warehouseOutletId,
+            $result->pluck('inventory_item_id')->unique()->filter()->values()->all()
+        );
+
+        foreach ($result as $row) {
+            $iid = (int) $row->inventory_item_id;
+            $row->mac = $this->resolveStockOpnameMac(
+                $anchors[$iid] ?? null,
+                (int) $outletId,
+                (int) $warehouseOutletId,
+                $iid,
+                (float) ($row->mac ?? 0)
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -310,6 +329,12 @@ class StockOpnameController extends Controller
                     $stocks[$stock->inventory_item_id] = $stock;
                 }
             }
+
+            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
+                (int) $validated['outlet_id'],
+                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                $inventoryItemIds
+            );
             
             // Prepare items for batch insert
             $itemsToInsert = [];
@@ -327,7 +352,13 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $stock->last_cost_small ?? 0;
+                $mac = $this->resolveStockOpnameMac(
+                    $purchaseAnchors[$inventoryItemId] ?? null,
+                    (int) $validated['outlet_id'],
+                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                    $inventoryItemId,
+                    (float) ($stock->last_cost_small ?? 0)
+                );
 
                 // Get physical qty from request
                 // Check if value is explicitly provided (not null and not empty string)
@@ -719,6 +750,12 @@ class StockOpnameController extends Controller
                     $stocks[$stock->inventory_item_id] = $stock;
                 }
             }
+
+            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
+                (int) $validated['outlet_id'],
+                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                $inventoryItemIds
+            );
             
             // Prepare items for batch operations
             $itemsToInsert = [];
@@ -737,7 +774,13 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $stock->last_cost_small ?? 0;
+                $mac = $this->resolveStockOpnameMac(
+                    $purchaseAnchors[$inventoryItemId] ?? null,
+                    (int) $validated['outlet_id'],
+                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                    $inventoryItemId,
+                    (float) ($stock->last_cost_small ?? 0)
+                );
 
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
                     ? (float)$itemData['qty_physical_small'] 
@@ -1205,6 +1248,9 @@ class StockOpnameController extends Controller
                     'old_cost' => $mac,
                     'new_cost' => $mac, // MAC tidak berubah
                     'mac' => $mac,
+                    'type' => 'stock_opname',
+                    'reference_type' => 'stock_opname',
+                    'reference_id' => $stockOpname->id,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -1502,6 +1548,12 @@ class StockOpnameController extends Controller
                 }
             }
 
+            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
+                (int) $validated['outlet_id'],
+                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                $inventoryItemIds
+            );
+
             $itemsToInsert = [];
             foreach ($items as $itemData) {
                 $inventoryItemId = $itemData['inventory_item_id'];
@@ -1511,7 +1563,13 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $stock->last_cost_small ?? 0;
+                $mac = $this->resolveStockOpnameMac(
+                    $purchaseAnchors[$inventoryItemId] ?? null,
+                    (int) $validated['outlet_id'],
+                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                    $inventoryItemId,
+                    (float) ($stock->last_cost_small ?? 0)
+                );
 
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
                 $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
@@ -1622,6 +1680,12 @@ class StockOpnameController extends Controller
                 }
             }
 
+            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
+                (int) $validated['outlet_id'],
+                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                $inventoryItemIds
+            );
+
             $itemsToInsert = [];
             $inventoryItemIdsToKeep = [];
             foreach ($items as $itemData) {
@@ -1633,7 +1697,13 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $stock->last_cost_small ?? 0;
+                $mac = $this->resolveStockOpnameMac(
+                    $purchaseAnchors[$inventoryItemId] ?? null,
+                    (int) $validated['outlet_id'],
+                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
+                    $inventoryItemId,
+                    (float) ($stock->last_cost_small ?? 0)
+                );
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
                 $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
                 $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
@@ -1826,7 +1896,9 @@ class StockOpnameController extends Controller
                 ]);
                 DB::table('outlet_food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => now()->toDateString(), 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac, 'created_at' => now(), 'updated_at' => now(),
+                    'date' => now()->toDateString(), 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac,
+                    'type' => 'stock_opname', 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
+                    'created_at' => now(), 'updated_at' => now(),
                 ]);
                 StockOpnameAdjustment::create([
                     'stock_opname_id' => $stockOpname->id, 'stock_opname_item_id' => $item->id, 'inventory_item_id' => $inventoryItemId,
@@ -1863,6 +1935,60 @@ class StockOpnameController extends Controller
         }
 
         return 'SO-' . $date . '-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * MAC untuk opname: nilai batch dari outletOpnameLatestPurchaseCostMap jika > 0,
+     * selain itu OutletInventoryCostResolver (new_cost histori lalu last_cost_small stok),
+     * atau hanya last_cost_small jika warehouse tidak diisi.
+     */
+    private function resolveStockOpnameMac(?float $anchorFromBatch, int $outletId, ?int $warehouseOutletId, int $inventoryItemId, float $stockLastCostSmall): float
+    {
+        if ($anchorFromBatch !== null && $anchorFromBatch > 0) {
+            return $anchorFromBatch;
+        }
+        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
+            return OutletInventoryCostResolver::latestNewCostPerSmallUnitOrStockFallback($outletId, $warehouseOutletId, $inventoryItemId);
+        }
+
+        return $stockLastCostSmall;
+    }
+
+    /**
+     * Harga referensi per unit kecil dari baris histori terbaru per item (kolom new_cost), tanpa filter jenis transaksi.
+     * Hanya dibatasi outlet/warehouse/item dan new_cost > 0.
+     *
+     * @param  array<int>  $inventoryItemIds
+     * @return array<int, float> inventory_item_id => new_cost
+     */
+    private function outletOpnameLatestPurchaseCostMap(int $outletId, ?int $warehouseOutletId, array $inventoryItemIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $inventoryItemIds))));
+        if ($ids === []) {
+            return [];
+        }
+
+        $q = DB::table('outlet_food_inventory_cost_histories')
+            ->where('id_outlet', $outletId)
+            ->whereIn('inventory_item_id', $ids)
+            ->whereNotNull('new_cost')
+            ->where('new_cost', '>', 0);
+
+        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
+            $q->where('warehouse_outlet_id', $warehouseOutletId);
+        }
+
+        $rows = $q->orderByDesc('date')->orderByDesc('id')->get(['inventory_item_id', 'new_cost']);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $iid = (int) $row->inventory_item_id;
+            if (! isset($map[$iid])) {
+                $map[$iid] = (float) $row->new_cost;
+            }
+        }
+
+        return $map;
     }
 
     /**
@@ -2007,7 +2133,7 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Import Stock Opname dari Excel. MAC diisi otomatis dari sistem (last_cost_small).
+     * Import Stock Opname dari Excel. MAC dari new_cost histori terbaru (batch + resolver), fallback last_cost_small stok.
      */
     public function import(Request $request)
     {
@@ -2120,7 +2246,7 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Parse Excel Stock Opname (Info + Items). MAC diambil dari outlet_food_inventory_stocks.last_cost_small.
+     * Parse Excel Stock Opname (Info + Items). MAC: new_cost histori terbaru (batch + resolver), fallback last_cost_small stok.
      * Returns: info_errors, outlet_id, warehouse_outlet_id, outlet_name, warehouse_outlet_name, opname_date, notes, item_rows[]
      */
     private function parseStockOpnameFile($file): array
@@ -2307,6 +2433,29 @@ class StockOpnameController extends Controller
                 'error' => null,
             ];
         }
+
+        $idsForAnchors = [];
+        foreach ($out['item_rows'] as $row) {
+            if (! empty($row['error']) || empty($row['inventory_item_id'])) {
+                continue;
+            }
+            $idsForAnchors[] = (int) $row['inventory_item_id'];
+        }
+        $anchors = $this->outletOpnameLatestPurchaseCostMap($outletId, $warehouseOutletId, $idsForAnchors);
+        foreach ($out['item_rows'] as &$row) {
+            if (! empty($row['error']) || empty($row['inventory_item_id'])) {
+                continue;
+            }
+            $iid = (int) $row['inventory_item_id'];
+            $row['mac'] = $this->resolveStockOpnameMac(
+                $anchors[$iid] ?? null,
+                $outletId,
+                $warehouseOutletId,
+                $iid,
+                (float) ($row['mac'] ?? 0)
+            );
+        }
+        unset($row);
 
         return $out;
     }

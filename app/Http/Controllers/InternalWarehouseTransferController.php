@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\InternalWarehouseTransfer;
 use App\Models\InternalWarehouseTransferItem;
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Support\Facades\Log;
 
 class InternalWarehouseTransferController extends Controller
@@ -227,6 +228,12 @@ class InternalWarehouseTransferController extends Controller
                 if (!$stockFrom) {
                     throw new \Exception('Stok tidak ditemukan di warehouse outlet asal');
                 }
+                [$costSmall, $costMedium, $costLarge] = OutletInventoryCostResolver::transferInboundCostRates(
+                    $stockFrom,
+                    (int) $validated['outlet_id'],
+                    (int) $validated['warehouse_outlet_from_id'],
+                    $inventory_item_id
+                );
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
                     ->update([
@@ -253,10 +260,10 @@ class InternalWarehouseTransferController extends Controller
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $qty_small * $stockFrom->last_cost_small,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
+                        'value' => $qty_small * $costSmall,
+                        'last_cost_small' => $costSmall,
+                        'last_cost_medium' => $costMedium,
+                        'last_cost_large' => $costLarge,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -264,9 +271,9 @@ class InternalWarehouseTransferController extends Controller
                         'qty_small' => 0,
                         'qty_medium' => 0,
                         'qty_large' => 0,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
+                        'last_cost_small' => $costSmall,
+                        'last_cost_medium' => $costMedium,
+                        'last_cost_large' => $costLarge,
                     ];
                 } else {
                     // Update stok yang sudah ada
@@ -284,10 +291,10 @@ class InternalWarehouseTransferController extends Controller
                 $qty_lama = $stockTo->qty_small;
                 $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $nilai_baru = $qty_small * $costSmall;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
 
                 // Update MAC di stok warehouse outlet tujuan
                 DB::table('outlet_food_inventory_stocks')
@@ -311,10 +318,10 @@ class InternalWarehouseTransferController extends Controller
                     'out_qty_small' => $qty_small,
                     'out_qty_medium' => $qty_medium,
                     'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'cost_per_small' => $costSmall,
+                    'cost_per_medium' => $costMedium,
+                    'cost_per_large' => $costLarge,
+                    'value_out' => $qty_small * $costSmall,
                     'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
@@ -334,10 +341,10 @@ class InternalWarehouseTransferController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'cost_per_small' => $costSmall,
+                    'cost_per_medium' => $costMedium,
+                    'cost_per_large' => $costLarge,
+                    'value_in' => $qty_small * $costSmall,
                     'saldo_qty_small' => $stockTo->qty_small + $qty_small,
                     'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
                     'saldo_qty_large' => $stockTo->qty_large + $qty_large,
@@ -362,7 +369,7 @@ class InternalWarehouseTransferController extends Controller
                     'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $mac,
+                    'new_cost' => $costSmall,
                     'mac' => $mac,
                     'type' => 'internal_warehouse_transfer',
                     'reference_type' => 'internal_warehouse_transfer',
@@ -800,6 +807,12 @@ class InternalWarehouseTransferController extends Controller
                     ->where('warehouse_outlet_id', $validated['warehouse_outlet_from_id'])
                     ->lockForUpdate()
                     ->first();
+                [$costSmall, $costMedium, $costLarge] = OutletInventoryCostResolver::transferInboundCostRates(
+                    $stockFrom,
+                    (int) $validated['outlet_id'],
+                    (int) $validated['warehouse_outlet_from_id'],
+                    $inventory_item_id
+                );
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
                     ->update([
@@ -825,10 +838,10 @@ class InternalWarehouseTransferController extends Controller
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $qty_small * $stockFrom->last_cost_small,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
+                        'value' => $qty_small * $costSmall,
+                        'last_cost_small' => $costSmall,
+                        'last_cost_medium' => $costMedium,
+                        'last_cost_large' => $costLarge,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -836,9 +849,9 @@ class InternalWarehouseTransferController extends Controller
                         'qty_small' => 0,
                         'qty_medium' => 0,
                         'qty_large' => 0,
-                        'last_cost_small' => $stockFrom->last_cost_small,
-                        'last_cost_medium' => $stockFrom->last_cost_medium,
-                        'last_cost_large' => $stockFrom->last_cost_large,
+                        'last_cost_small' => $costSmall,
+                        'last_cost_medium' => $costMedium,
+                        'last_cost_large' => $costLarge,
                     ];
                 } else {
                     DB::table('outlet_food_inventory_stocks')
@@ -855,10 +868,10 @@ class InternalWarehouseTransferController extends Controller
                 $qty_lama = $stockTo->qty_small;
                 $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $nilai_baru = $qty_small * $costSmall;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
                 
                 // Update MAC di stok warehouse outlet tujuan
                 DB::table('outlet_food_inventory_stocks')
@@ -882,10 +895,10 @@ class InternalWarehouseTransferController extends Controller
                     'out_qty_small' => $qty_small,
                     'out_qty_medium' => $qty_medium,
                     'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'cost_per_small' => $costSmall,
+                    'cost_per_medium' => $costMedium,
+                    'cost_per_large' => $costLarge,
+                    'value_out' => $qty_small * $costSmall,
                     'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
@@ -905,15 +918,15 @@ class InternalWarehouseTransferController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
-                    'cost_per_medium' => $stockFrom->last_cost_medium,
-                    'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'cost_per_small' => $costSmall,
+                    'cost_per_medium' => $costMedium,
+                    'cost_per_large' => $costLarge,
+                    'value_in' => $qty_small * $costSmall,
                     'saldo_qty_small' => $stockTo->qty_small + $qty_small,
                     'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
                     'saldo_qty_large' => $stockTo->qty_large + $qty_large,
                     'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
-                    'description' => 'Stock In - Outlet Transfer',
+                    'description' => 'Stock In - Internal Warehouse Transfer',
                     'created_at' => now(),
                 ]);
                 
@@ -933,7 +946,7 @@ class InternalWarehouseTransferController extends Controller
                     'warehouse_outlet_id' => $validated['warehouse_outlet_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $mac,
+                    'new_cost' => $costSmall,
                     'mac' => $mac,
                     'type' => 'internal_warehouse_transfer',
                     'reference_type' => 'internal_warehouse_transfer',
