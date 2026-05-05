@@ -949,6 +949,9 @@ class OutletTransferController extends Controller
 
         $this->assertUserCanViewOutletTransfer($user, $transfer);
 
+        $fromOutletId = (int) ($transfer->warehouseOutletFrom->outlet_id ?? 0);
+        $toOutletId = (int) ($transfer->warehouseOutletTo->outlet_id ?? 0);
+
         $items = [];
         $totalValueOut = 0;
 
