@@ -80,7 +80,13 @@
         <div class="flex justify-between items-center px-6 py-4 border-b border-gray-200">
           <div>
             <h2 class="text-lg font-semibold text-gray-800">Riwayat Perubahan MAC</h2>
-            <p class="text-xs text-gray-500 mt-1">MAC (Weighted) = harga rata-rata tertimbang setelah transaksi (moving average cost).</p>
+            <p class="text-xs text-gray-500 mt-1 max-w-5xl leading-relaxed">
+              <strong>MAC saldo (weighted)</strong> = kolom <code class="rounded bg-gray-100 px-1">mac</code> —
+              rata-rata tertimbang stok setelah transaksi (selaras dengan <code class="rounded bg-gray-100 px-1">last_cost_small</code>).
+              <strong>Ref. lama / Ref. baru</strong> = <code class="rounded bg-gray-100 px-1">old_cost</code> /
+              <code class="rounded bg-gray-100 px-1">new_cost</code>; untuk <strong>good_receive_outlet</strong> itu harga satuan pembelian baris GR, bukan MAC saldo.
+              <strong>Perubahan %</strong> = perbandingan ref. saja. Transfer internal / gudang pusat bisa pola berbeda — lihat type.
+            </p>
           </div>
           <div class="flex items-center gap-2">
             <span class="text-sm text-gray-600">Per Page</span>
@@ -98,10 +104,10 @@
             <thead class="bg-gray-50 sticky top-0">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC Lama</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC Baru</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Perubahan</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC (Weighted)</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ref. lama<br><span class="font-normal normal-case text-[10px] text-gray-400">(old_cost)</span></th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ref. baru<br><span class="font-normal normal-case text-[10px] text-gray-400">(new_cost)</span></th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Δ ref.<br><span class="font-normal normal-case text-[10px] text-gray-400">(%)</span></th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC saldo<br><span class="font-normal normal-case text-[10px] text-gray-400">(weighted)</span></th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>

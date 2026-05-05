@@ -224,8 +224,8 @@ class MacAnomalyTrackingController extends Controller
             'mac_changes' => $macChanges,
             'summary' => [
                 'total_updates' => $totalUpdates,
-                'current_mac' => number_format((float) ($latest->new_cost ?? 0), 4, '.', ''),
-                'previous_mac' => $previous ? number_format((float) ($previous->new_cost ?? 0), 4, '.', '') : null,
+                'current_mac' => number_format($this->historyWeightedMac($latest), 4, '.', ''),
+                'previous_mac' => $previous ? number_format($this->historyWeightedMac($previous), 4, '.', '') : null,
                 'last_update_date' => $latest->date,
                 'current_qty_small' => number_format($qtySmall, 2, '.', ''),
                 'current_qty_small_unit' => $item->small_unit_name ?? null,
@@ -322,5 +322,15 @@ class MacAnomalyTrackingController extends Controller
         }
 
         return $map;
+    }
+
+    /**
+     * MAC saldo setelah baris histori (kolom mac). Fallback new_cost untuk data lama.
+     */
+    private function historyWeightedMac(object $row): float
+    {
+        $mac = (float) ($row->mac ?? 0);
+
+        return $mac > 0 ? $mac : (float) ($row->new_cost ?? 0);
     }
 }
