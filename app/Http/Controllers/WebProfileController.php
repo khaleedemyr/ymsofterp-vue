@@ -588,6 +588,13 @@ class WebProfileController extends Controller
             'image.max' => 'Ukuran gambar maksimal 10MB',
         ]);
 
+        if ($request->hasFile('image')) {
+            $dimErr = $this->validatePromoSlideImageDimensions($request->file('image'));
+            if ($dimErr !== null) {
+                return redirect()->back()->withErrors(['image' => $dimErr])->withInput();
+            }
+        }
+
         return DB::transaction(function () use ($request, $validated) {
             $file = $request->file('image');
             $label = $validated['title'] ?: 'promo';
@@ -626,6 +633,13 @@ class WebProfileController extends Controller
         ]);
 
         if ($request->hasFile('image')) {
+            $dimErr = $this->validatePromoSlideImageDimensions($request->file('image'));
+            if ($dimErr !== null) {
+                return redirect()->back()->withErrors(['image' => $dimErr])->withInput();
+            }
+        }
+
+        if ($request->hasFile('image')) {
             if ($slide->image) {
                 Storage::disk('public')->delete($slide->image);
             }
@@ -652,6 +666,40 @@ class WebProfileController extends Controller
 
         return redirect()->route('web-profile.promo-slides.index')
             ->with('success', 'Promo slide berhasil dihapus');
+    }
+
+    /**
+     * Ukuran & rasio banner promo (homepage full-width): hindari portrait / terlalu tipis.
+     *
+     * @return string|null Pesan error, atau null jika lolos
+     */
+    private function validatePromoSlideImageDimensions(\Illuminate\Http\UploadedFile $file): ?string
+    {
+        $mime = (string) $file->getMimeType();
+        if ($mime === '' || ! str_starts_with($mime, 'image/')) {
+            return null;
+        }
+
+        $info = @getimagesize($file->getPathname());
+        if (! is_array($info)) {
+            return 'File gambar tidak valid atau rusak.';
+        }
+
+        $w = (int) ($info[0] ?? 0);
+        $h = (int) ($info[1] ?? 0);
+        if ($w < 800 || $h < 240) {
+            return 'Gambar terlalu kecil. Minimal disarankan 1200×380 px (minimal teknis lebar 800 px, tinggi 240 px).';
+        }
+
+        $ratio = $w / max($h, 1);
+        if ($ratio < 1.7) {
+            return 'Rasio terlalu “tinggi” (hampir portrait). Gunakan banner landscape lebar, contoh 1920×600 px (rasio ± 3:1).';
+        }
+        if ($ratio > 5.5) {
+            return 'Rasio terlalu lebar (banner terlalu tipis). Disarankan rasio lebar:tinggi sekitar 2.5:1–4:1.';
+        }
+
+        return null;
     }
 
     // ========== BRAND MANAGEMENT ==========

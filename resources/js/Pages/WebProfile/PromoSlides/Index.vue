@@ -65,11 +65,13 @@ async function destroySlide(id) {
       </div>
 
       <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-900">
-        <p class="font-semibold mb-1">Keterangan</p>
-        <ul class="list-disc pl-5 space-y-1">
-          <li>Slide ini tampil di website public, di <strong>atas Home Blocks</strong>.</li>
-          <li>Gunakan gambar landscape (mis. 1200×400 atau 1920×600), format JPG/PNG/WEBP, maks. 10MB.</li>
-          <li>Opsional: isi <strong>Link URL</strong> agar slide bisa diklik.</li>
+        <p class="font-semibold mb-1">Spesifikasi gambar (disarankan)</p>
+        <ul class="list-disc pl-5 space-y-1.5">
+          <li>Tampil <strong>full width</strong> di homepage (tanpa kotak samping); hindari banner portrait.</li>
+          <li><strong>Ukuran utama:</strong> <code class="rounded bg-amber-100/80 px-1">1920 × 600 px</code> (rasio ± 3,2:1) atau <code class="rounded bg-amber-100/80 px-1">1600 × 500 px</code>.</li>
+          <li><strong>Mobile:</strong> konten penting (teks/logo promo) taruh di <strong>tengah ±40% lebar</strong> supaya tetap terbaca saat layar sempit.</li>
+          <li><strong>Validasi upload:</strong> minimal ±800×240 px; rasio lebar:tinggi antara ±1,7:1 dan 5,5:1.</li>
+          <li>Format JPG/PNG/WEBP, maks. 10MB. Opsional: <strong>Link URL</strong> untuk klik slide.</li>
         </ul>
       </div>
 

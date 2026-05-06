@@ -69,6 +69,11 @@ function submit() {
     <div class="max-w-3xl mx-auto py-8 px-4">
       <h1 class="text-2xl font-bold text-gray-800 mb-6">Edit Promo Slide</h1>
 
+      <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <p class="font-semibold text-amber-900">Rekomendasi gambar</p>
+        <p class="mt-1">Disarankan <strong>1920 × 600 px</strong> (landscape). Ganti file hanya jika perlu; file baru dicek ukuran &amp; rasio yang sama seperti saat buat slide.</p>
+      </div>
+
       <div class="bg-white rounded-lg shadow p-6 space-y-6">
         <div>
           <InputLabel for="title" value="Judul (opsional)" />

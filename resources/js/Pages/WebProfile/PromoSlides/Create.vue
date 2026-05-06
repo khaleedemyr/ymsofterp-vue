@@ -66,6 +66,16 @@ function submit() {
     <div class="max-w-3xl mx-auto py-8 px-4">
       <h1 class="text-2xl font-bold text-gray-800 mb-6">Tambah Promo Slide</h1>
 
+      <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <p class="font-semibold text-amber-900">Rekomendasi file gambar</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          <li><strong>Ideal:</strong> 1920 × 600 px (banner landscape); alternatif 1600 × 500 px.</li>
+          <li>Satu file = satu slide; full width di web — hindari gambar sangat tinggi (portrait).</li>
+          <li>Agar rapi di HP: jangan taruh tegas penting terlalu pinggir; fokus di area tengah.</li>
+          <li>Sistem menolak rasio ekstrem di luar rentang yang disarankan (pesan error menjelaskan).</li>
+        </ul>
+      </div>
+
       <div class="bg-white rounded-lg shadow p-6 space-y-6">
         <div>
           <InputLabel for="title" value="Judul (opsional)" />
