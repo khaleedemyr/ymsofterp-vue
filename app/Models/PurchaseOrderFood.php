@@ -75,6 +75,11 @@ class PurchaseOrderFood extends Model
         return $this->belongsTo(User::class, 'gm_finance_approved_by');
     }
 
+    public function approvalFlows()
+    {
+        return $this->hasMany(PurchaseOrderFoodApprovalFlow::class, 'purchase_order_food_id');
+    }
+
     public function purchase_requests()
     {
         return $this->belongsToMany(

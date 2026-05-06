@@ -743,6 +743,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // Purchase Order Foods routes
     Route::get('/po-foods', [PurchaseOrderFoodsController::class, 'index'])->name('po-foods.index');
     Route::get('/po-foods/create', [PurchaseOrderFoodsController::class, 'create'])->name('po-foods.create');
+    Route::get('/po-foods/approvers', [PurchaseOrderFoodsController::class, 'getApprovers'])->name('po-foods.approvers');
     Route::get('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'show'])->name('po-foods.show');
     Route::get('/po-foods/{id}/edit', [PurchaseOrderFoodsController::class, 'edit'])->name('po-foods.edit');
     Route::put('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'update'])->name('po-foods.update');

@@ -505,18 +505,7 @@ async function approveMultiple() {
             if (!po) return { error: new Error('PO not found'), poId };
             
             try {
-                let endpoint = '';
-                const approvalLevel = po.approval_level;
-                
-                if (approvalLevel === 'purchasing_manager') {
-                    endpoint = `/po-foods/${poId}/approve`;
-                } else if (approvalLevel === 'gm_finance') {
-                    endpoint = `/po-foods/${poId}/approve-gm-finance`;
-                } else {
-                    return { error: new Error('Unknown approval level'), poId };
-                }
-                
-                const response = await axios.post(endpoint, {
+                const response = await axios.post(`/po-foods/${poId}/approve`, {
                     approved: true,
                     note: ''
                 });
@@ -624,19 +613,7 @@ async function approvePO() {
     if (!selectedPO.value) return;
     
     try {
-        let endpoint = '';
-        const approvalLevel = selectedPO.value.approval_level || currentApprovalLevel.value;
-        
-        if (approvalLevel === 'purchasing_manager') {
-            endpoint = `/po-foods/${selectedPO.value.id}/approve`;
-        } else if (approvalLevel === 'gm_finance') {
-            endpoint = `/po-foods/${selectedPO.value.id}/approve-gm-finance`;
-        } else {
-            Swal.fire('Error', 'Tidak dapat menentukan level approval', 'error');
-            return;
-        }
-        
-        const response = await axios.post(endpoint, {
+        const response = await axios.post(`/po-foods/${selectedPO.value.id}/approve`, {
             approved: true,
             note: ''
         });
@@ -684,19 +661,7 @@ function showRejectModal() {
     }).then(async (result) => {
         if (result.isConfirmed && selectedPO.value) {
             try {
-                let endpoint = '';
-                const approvalLevel = selectedPO.value.approval_level || currentApprovalLevel.value;
-                
-                if (approvalLevel === 'purchasing_manager') {
-                    endpoint = `/po-foods/${selectedPO.value.id}/approve`;
-                } else if (approvalLevel === 'gm_finance') {
-                    endpoint = `/po-foods/${selectedPO.value.id}/approve-gm-finance`;
-                } else {
-                    Swal.fire('Error', 'Tidak dapat menentukan level approval', 'error');
-                    return;
-                }
-                
-                const response = await axios.post(endpoint, {
+                const response = await axios.post(`/po-foods/${selectedPO.value.id}/approve`, {
                     approved: false,
                     note: result.value
                 });
@@ -809,18 +774,7 @@ async function approveMultipleAll() {
             if (!po) return { error: new Error('PO not found'), poId };
             
             try {
-                let endpoint = '';
-                const approvalLevel = po.approval_level;
-                
-                if (approvalLevel === 'purchasing_manager') {
-                    endpoint = `/po-foods/${poId}/approve`;
-                } else if (approvalLevel === 'gm_finance') {
-                    endpoint = `/po-foods/${poId}/approve-gm-finance`;
-                } else {
-                    return { error: new Error('Unknown approval level'), poId };
-                }
-                
-                const response = await axios.post(endpoint, {
+                const response = await axios.post(`/po-foods/${poId}/approve`, {
                     approved: true,
                     note: ''
                 });

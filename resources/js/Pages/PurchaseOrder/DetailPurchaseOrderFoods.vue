@@ -99,51 +99,36 @@
             </div>
 
             <!-- Approval Section -->
-            <div v-if="canApprovePurchasingManager || canApproveGMFinance" class="mt-6">
+            <div v-if="canApproveCurrent" class="mt-6">
               <h3 class="text-lg font-semibold mb-4">Approval</h3>
               <div class="bg-gray-50 p-4 rounded-lg">
-                <div v-if="canApprovePurchasingManager">
-                  <button @click="approvePurchasingManager(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (Purchasing Manager)</button>
-                  <button @click="approvePurchasingManager(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
-                </div>
-                <div v-if="canApproveGMFinance">
-                  <button @click="approveGMFinance(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (GM Finance)</button>
-                  <button @click="approveGMFinance(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
-                </div>
+                <p class="text-sm text-gray-600 mb-3">
+                  Anda adalah approver aktif di
+                  <strong>Level {{ nextPendingFlow?.approval_level }}</strong>.
+                </p>
+                <button @click="approvePO(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve</button>
+                <button @click="approvePO(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
               </div>
             </div>
 
             <!-- Approval History -->
             <div class="mt-6">
               <h3 class="text-lg font-semibold mb-4">Riwayat Approval</h3>
-              <div class="space-y-4">
-                <!-- Purchasing Manager Approval -->
-                <div class="bg-gray-50 p-4 rounded-lg">
-                  <h4 class="font-medium mb-2">Purchasing Manager</h4>
-                  <div v-if="po.purchasing_manager_approved_at">
-                    <span class="text-green-600 font-semibold">Approved</span>
-                    oleh <b>{{ po.purchasing_manager?.nama_lengkap || po.purchasing_manager_approved_by }}</b>
-                    pada {{ formatDateTime(po.purchasing_manager_approved_at) }}
-                    <span v-if="po.purchasing_manager_note">- Note: {{ po.purchasing_manager_note }}</span>
+              <div v-if="approvalFlows.length" class="space-y-4">
+                <div class="bg-gray-50 p-4 rounded-lg" v-for="flow in approvalFlows" :key="flow.id">
+                  <h4 class="font-medium mb-2">Level {{ flow.approval_level }} - {{ flow.approver?.nama_lengkap || flow.approver_id }}</h4>
+                  <div v-if="(flow.status || '').toUpperCase() === 'APPROVED'" class="text-green-700">
+                    Approved pada {{ formatDateTime(flow.approved_at) }}
+                    <span v-if="flow.comments">- Note: {{ flow.comments }}</span>
                   </div>
-                  <div v-else>
-                    <span class="text-gray-500">Belum di-approve</span>
+                  <div v-else-if="(flow.status || '').toUpperCase() === 'REJECTED'" class="text-red-700">
+                    Rejected pada {{ formatDateTime(flow.rejected_at) }}
+                    <span v-if="flow.comments">- Note: {{ flow.comments }}</span>
                   </div>
-                </div>
-                <!-- GM Finance Approval -->
-                <div class="bg-gray-50 p-4 rounded-lg">
-                  <h4 class="font-medium mb-2">GM Finance</h4>
-                  <div v-if="po.gm_finance_approved_at">
-                    <span class="text-green-600 font-semibold">Approved</span>
-                    oleh <b>{{ po.gm_finance?.nama_lengkap || po.gm_finance_approved_by }}</b>
-                    pada {{ formatDateTime(po.gm_finance_approved_at) }}
-                    <span v-if="po.gm_finance_note">- Note: {{ po.gm_finance_note }}</span>
-                  </div>
-                  <div v-else>
-                    <span class="text-gray-500">Belum di-approve</span>
-                  </div>
+                  <div v-else class="text-gray-500">Menunggu approval</div>
                 </div>
               </div>
+              <div v-else class="text-sm text-gray-500">Approval flow belum diatur.</div>
             </div>
           </div>
         </div>
@@ -186,17 +171,20 @@ const showPreview = ref(false)
 const isSuperadmin = computed(() =>
   props.user.id_role === '5af56935b011a' && props.user.status === 'A'
 )
-const canApprovePurchasingManager = computed(() =>
-  ((props.user.id_jabatan === 168 && props.user.status === 'A') || isSuperadmin.value)
-  && props.po.status === 'draft'
-  && !props.po.purchasing_manager_approved_at
+const approvalFlows = computed(() =>
+  Array.isArray(props.po.approval_flows) ? props.po.approval_flows : (Array.isArray(props.po.approvalFlows) ? props.po.approvalFlows : [])
 )
-const canApproveGMFinance = computed(() =>
-  (((props.user.id_jabatan === 152 || props.user.id_jabatan === 381) && props.user.status === 'A') || isSuperadmin.value)
-  && props.po.status === 'draft'
-  && props.po.purchasing_manager_approved_at
-  && !props.po.gm_finance_approved_at
-)
+const nextPendingFlow = computed(() => {
+  const pending = approvalFlows.value
+    .filter((f) => (f.status || '').toString().toUpperCase() === 'PENDING')
+    .sort((a, b) => Number(a.approval_level || 0) - Number(b.approval_level || 0))
+  return pending.length ? pending[0] : null
+})
+const canApproveCurrent = computed(() => {
+  if (!nextPendingFlow.value) return false
+  if (props.po.status === 'approved' || props.po.status === 'rejected') return false
+  return isSuperadmin.value || String(nextPendingFlow.value.approver_id) === String(props.user.id)
+})
 
 const formatDate = (date) => {
   if (!date) return '-'
@@ -211,6 +199,7 @@ const formatDateTime = (date) => {
 const getStatusClass = (status) => {
   const classes = {
     draft: 'bg-gray-100 text-gray-800',
+    submitted: 'bg-blue-100 text-blue-800',
     pending_gm_finance: 'bg-yellow-100 text-yellow-800',
     approved: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800'
@@ -236,7 +225,7 @@ const formatRupiah = (value) => {
   return 'Rp ' + value.toLocaleString('id-ID');
 }
 
-async function approvePurchasingManager(approved) {
+async function approvePO(approved) {
   const { value: note } = await Swal.fire({
     title: approved ? 'Approve PO?' : 'Reject PO?',
     input: 'textarea',
@@ -249,33 +238,6 @@ async function approvePurchasingManager(approved) {
   if (note !== undefined) {
     try {
       const response = await axios.post(route('po-foods.approve', props.po.id), { approved, note });
-      if (response.data.success) {
-        await Swal.fire({
-          icon: 'success',
-          title: 'Berhasil',
-          text: approved ? 'PO berhasil diapprove!' : 'PO berhasil direject!',
-        });
-        router.reload();
-      }
-    } catch (e) {
-      Swal.fire('Gagal', 'Terjadi kesalahan saat approve', 'error');
-    }
-  }
-}
-
-async function approveGMFinance(approved) {
-  const { value: note } = await Swal.fire({
-    title: approved ? 'Approve PO?' : 'Reject PO?',
-    input: 'textarea',
-    inputLabel: 'Catatan (opsional)',
-    inputValue: '',
-    showCancelButton: true,
-    confirmButtonText: approved ? 'Approve' : 'Reject',
-    cancelButtonText: 'Batal',
-  });
-  if (note !== undefined) {
-    try {
-      const response = await axios.post(route('po-foods.approve-gm-finance', props.po.id), { approved, note });
       if (response.data.success) {
         await Swal.fire({
           icon: 'success',

@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\PurchaseRequisitionFood;
 use App\Models\PurchaseOrderFood;
+use App\Models\PurchaseOrderFoodApprovalFlow;
 use App\Models\PurchaseOrderFoodItem;
 use App\Models\PurchaseRequisitionFoodItem;
 use App\Models\Supplier;
 use App\Models\Item;
 use App\Models\Unit;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -289,6 +291,8 @@ class PurchaseOrderFoodsController extends Controller
             'discount_total_amount' => 'nullable|numeric|min:0',
             'ppn_enabled' => 'boolean',
             'notes' => 'nullable|string',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|exists:users,id',
         ]);
 
         try {
@@ -434,6 +438,18 @@ class PurchaseOrderFoodsController extends Controller
                 $po = PurchaseOrderFood::create($poData);
 
                 $createdPOs[] = $po;
+
+                // Samakan pola approver dengan PR Ops: level berurutan dari input user.
+                foreach ($request->approvers as $index => $approverId) {
+                    PurchaseOrderFoodApprovalFlow::create([
+                        'purchase_order_food_id' => $po->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+
+                $this->sendNotificationToNextApprover($po);
 
                 // Get items for this supplier (PR or RO)
                 $priceChanges = [];
@@ -886,105 +902,116 @@ class PurchaseOrderFoodsController extends Controller
 
     public function approvePurchasingManager(Request $request, $id)
     {
-        $po = PurchaseOrderFood::findOrFail($id);
-        
-        // Support 'note', 'comment', 'notes', and 'purchasing_manager_note' parameters
-        $note = $request->input('purchasing_manager_note') ?? $request->input('note') ?? 
-                $request->input('comment') ?? $request->input('notes');
-        
-        // Support both 'approved' boolean and 'reject' parameter
-        $isApproved = $request->has('approved') ? $request->approved : 
-                     ($request->has('reject') ? !$request->reject : true);
-        
-        $updateData = [
-            'purchasing_manager_approved_at' => now(),
-            'purchasing_manager_approved_by' => Auth::id(),
-            'purchasing_manager_note' => $note,
-        ];
-        if (!$isApproved) {
-            $updateData['status'] = 'rejected';
-        }
-        $po->update($updateData);
-
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => $isApproved ? 'approve' : 'reject',
-            'module' => 'purchase_order_foods',
-            'description' => ($isApproved ? 'Approve' : 'Reject') . ' PO Foods (Purchasing Manager): ' . $po->number,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => null,
-            'new_data' => $po->fresh()->toArray(),
-        ]);
-
-        if ($isApproved) {
-            // Notifikasi ke GM Finance (id_jabatan=152) dan Senior Manager (id_jabatan=381)
-            $gmFinances = \DB::table('users')
-                ->whereIn('id_jabatan', [152, 381])
-                ->where('status', 'A')
-                ->pluck('id');
-            $this->sendNotification(
-                $gmFinances,
-                'po_approval',
-                'Approval PO Foods',
-                "PO {$po->number} menunggu approval Anda.",
-                route('po-foods.show', $po->id)
-            );
-        }
-        // ... handle notifikasi reject jika perlu
-        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
-            return response()->json([
-                'success' => true,
-                'message' => $isApproved ? 'PO berhasil disetujui' : 'PO berhasil ditolak',
-                'po_food' => $po->fresh()
-            ]);
-        }
-        return redirect()->route('po-foods.show', $po->id);
+        return $this->processApprovalAction($request, $id);
     }
 
     public function approveGMFinance(Request $request, $id)
     {
-        $po = PurchaseOrderFood::findOrFail($id);
-        
-        // Support 'note', 'comment', 'notes', and 'gm_finance_note' parameters
-        $note = $request->input('gm_finance_note') ?? $request->input('note') ?? 
-                $request->input('comment') ?? $request->input('notes');
-        
-        // Support both 'approved' boolean and 'reject' parameter
-        $isApproved = $request->has('approved') ? $request->approved : 
-                     ($request->has('reject') ? !$request->reject : true);
-        
-        $updateData = [
-            'gm_finance_approved_at' => now(),
-            'gm_finance_approved_by' => Auth::id(),
-            'gm_finance_note' => $note,
-        ];
-        if ($isApproved) {
-            $updateData['status'] = 'approved';
-        } else {
-            $updateData['status'] = 'rejected';
-        }
-        $po->update($updateData);
+        return $this->processApprovalAction($request, $id);
+    }
 
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'activity_type' => $isApproved ? 'approve' : 'reject',
-            'module' => 'purchase_order_foods',
-            'description' => ($isApproved ? 'Approve' : 'Reject') . ' PO Foods (GM Finance): ' . $po->number,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => null,
-            'new_data' => $po->fresh()->toArray(),
-        ]);
-        // ... handle notifikasi jika perlu
-        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
-            return response()->json([
-                'success' => true,
-                'message' => $isApproved ? 'PO berhasil disetujui' : 'PO berhasil ditolak',
-                'po_food' => $po->fresh()
+    protected function processApprovalAction(Request $request, $id)
+    {
+        $po = PurchaseOrderFood::with(['approvalFlows'])->findOrFail($id);
+        $user = Auth::user();
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
+
+        $note = $request->input('note')
+            ?? $request->input('comment')
+            ?? $request->input('notes')
+            ?? $request->input('purchasing_manager_note')
+            ?? $request->input('gm_finance_note');
+        $isApproved = $request->has('approved')
+            ? (bool) $request->approved
+            : ($request->has('reject') ? ! (bool) $request->reject : true);
+
+        try {
+            DB::beginTransaction();
+
+            $pendingFlow = PurchaseOrderFoodApprovalFlow::where('purchase_order_food_id', $po->id)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $pendingFlow) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada approver yang pending untuk PO ini.',
+                ], 422);
+            }
+
+            if (! $isSuperadmin && (string) $pendingFlow->approver_id !== (string) Auth::id()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda bukan approver pada level saat ini.',
+                ], 403);
+            }
+
+            $pendingFlow->update([
+                'status' => $isApproved ? 'APPROVED' : 'REJECTED',
+                'approved_at' => $isApproved ? now() : null,
+                'rejected_at' => $isApproved ? null : now(),
+                'comments' => $note,
+                // Jika superadmin approve, simpan user eksekutor supaya jejak audit jelas.
+                'approver_id' => $isSuperadmin ? Auth::id() : $pendingFlow->approver_id,
             ]);
+
+            if (! $isApproved) {
+                $po->update(['status' => 'rejected']);
+            } else {
+                $remainingPending = PurchaseOrderFoodApprovalFlow::where('purchase_order_food_id', $po->id)
+                    ->where('status', 'PENDING')
+                    ->count();
+
+                if ($remainingPending > 0) {
+                    $po->update(['status' => 'draft']);
+                    $this->sendNotificationToNextApprover($po);
+                } else {
+                    $po->update(['status' => 'approved']);
+                }
+            }
+
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'activity_type' => $isApproved ? 'approve' : 'reject',
+                'module' => 'purchase_order_foods',
+                'description' => ($isApproved ? 'Approve' : 'Reject') . ' PO Foods (Flow): ' . $po->number,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $po->fresh()->toArray(),
+            ]);
+
+            DB::commit();
+
+            $po->load(['approvalFlows.approver']);
+
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $isApproved ? 'PO berhasil disetujui' : 'PO berhasil ditolak',
+                    'po_food' => $po,
+                ]);
+            }
+
+            return redirect()->route('po-foods.show', $po->id);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('PO Food approval flow failed', [
+                'po_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses approval: ' . $e->getMessage(),
+            ], 500);
         }
-        return redirect()->route('po-foods.show', $po->id);
     }
 
     // Helper untuk insert notifikasi
@@ -1003,6 +1030,49 @@ class PurchaseOrderFoodsController extends Controller
         NotificationService::createMany($data);
     }
 
+    public function getApprovers(Request $request)
+    {
+        $search = $request->get('search', '');
+
+        $query = User::where('users.status', 'A')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
+
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('users.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhere('users.email', 'like', "%{$search}%")
+                    ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json([
+            'success' => true,
+            'users' => $query->orderBy('users.nama_lengkap')->get(),
+        ]);
+    }
+
+    private function sendNotificationToNextApprover(PurchaseOrderFood $po): void
+    {
+        $nextApprover = PurchaseOrderFoodApprovalFlow::where('purchase_order_food_id', $po->id)
+            ->where('status', 'PENDING')
+            ->orderBy('approval_level')
+            ->with('approver')
+            ->first();
+
+        if (! $nextApprover || ! $nextApprover->approver_id) {
+            return;
+        }
+
+        $this->sendNotification(
+            [$nextApprover->approver_id],
+            'po_approval',
+            'Approval PO Foods',
+            "PO {$po->number} menunggu approval Anda (level {$nextApprover->approval_level}).",
+            route('po-foods.show', $po->id)
+        );
+    }
+
     public function show($id)
     {
         $po = PurchaseOrderFood::with([
@@ -1011,7 +1081,8 @@ class PurchaseOrderFoodsController extends Controller
             'items.item',
             'items.unit',
             'purchasing_manager',
-            'gm_finance'
+            'gm_finance',
+            'approvalFlows.approver',
         ])->findOrFail($id);
 
         // Transform items to ensure proper display for both PR Foods and RO Supplier
@@ -1366,33 +1437,31 @@ class PurchaseOrderFoodsController extends Controller
     {
         try {
             $user = Auth::user();
-            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-            
-            $query = PurchaseOrderFood::with(['supplier', 'creator', 'items', 'purchasing_manager'])
-                ->where('status', 'draft')
+            $isSuperadmin = $user && $user->id_role === '5af56935b011a' && $user->status === 'A';
+
+            $query = PurchaseOrderFood::with(['supplier', 'creator', 'items', 'approvalFlows.approver'])
+                ->whereNotIn('status', ['approved', 'rejected', 'receive', 'payment'])
                 ->orderByDesc('created_at');
-            
-            $pendingApprovals = [];
-            
-            // Purchasing Manager approvals (id_jabatan == 167 atau 168)
-            if ((in_array($user->id_jabatan, [167, 168]) && $user->status == 'A') || $isSuperadmin) {
-                $purchasingManagerApprovals = (clone $query)
-                    ->whereNull('purchasing_manager_approved_at')
-                    ->get();
-                
-                foreach ($purchasingManagerApprovals as $po) {
-                    // Get approver name - Purchasing Manager
-                    $approverName = null;
-                    if ($isSuperadmin) {
-                        // For superadmin, get Purchasing Manager approver
-                        $purchasingManager = \App\Models\User::whereIn('id_jabatan', [167, 168])->where('status', 'A')->first();
-                        $approverName = $purchasingManager ? $purchasingManager->nama_lengkap : 'Purchasing Manager';
-                    } else {
-                        // For Purchasing Manager, they are the approver
-                        $approverName = $user->nama_lengkap;
-                    }
-                    
-                    $pendingApprovals[] = [
+
+            if (! $isSuperadmin) {
+                $query->whereHas('approvalFlows', function ($q) use ($user) {
+                    $q->where('approver_id', $user->id)
+                        ->where('status', 'PENDING');
+                });
+            } else {
+                $query->whereHas('approvalFlows', function ($q) {
+                    $q->where('status', 'PENDING');
+                });
+            }
+
+            $pendingApprovals = $query->get()
+                ->map(function ($po) {
+                    $nextFlow = collect($po->approvalFlows)
+                        ->where('status', 'PENDING')
+                        ->sortBy('approval_level')
+                        ->first();
+
+                    return [
                         'id' => $po->id,
                         'number' => $po->number,
                         'date' => $po->date,
@@ -1402,51 +1471,14 @@ class PurchaseOrderFoodsController extends Controller
                         'items_count' => $po->items->count(),
                         'source_type' => $po->source_type,
                         'notes' => $po->notes,
-                        'approval_level' => 'purchasing_manager',
-                        'approval_level_display' => 'Purchasing Manager',
-                        'approver_name' => $approverName,
-                        'created_at' => $po->created_at
+                        'approval_level' => $nextFlow ? 'level_' . $nextFlow->approval_level : null,
+                        'approval_level_display' => $nextFlow ? 'Level ' . $nextFlow->approval_level : '-',
+                        'approver_name' => $nextFlow && $nextFlow->approver ? $nextFlow->approver->nama_lengkap : null,
+                        'created_at' => $po->created_at,
                     ];
-                }
-            }
-            
-            // GM Finance approvals (id_jabatan == 152 atau 381)
-            if ((in_array($user->id_jabatan, [152, 381]) && $user->status == 'A') || $isSuperadmin) {
-                $gmFinanceApprovals = (clone $query)
-                    ->whereNotNull('purchasing_manager_approved_at')
-                    ->whereNull('gm_finance_approved_at')
-                    ->get();
-                
-                foreach ($gmFinanceApprovals as $po) {
-                    // Get approver name - GM Finance
-                    $approverName = null;
-                    if ($isSuperadmin) {
-                        // For superadmin, get GM Finance approver
-                        $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
-                        $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
-                    } else {
-                        // For GM Finance, they are the approver
-                        $approverName = $user->nama_lengkap;
-                    }
-                    
-                    $pendingApprovals[] = [
-                        'id' => $po->id,
-                        'number' => $po->number,
-                        'date' => $po->date,
-                        'grand_total' => $po->grand_total,
-                        'supplier' => $po->supplier ? ['name' => $po->supplier->name] : null,
-                        'creator' => $po->creator ? ['nama_lengkap' => $po->creator->nama_lengkap] : null,
-                        'items_count' => $po->items->count(),
-                        'source_type' => $po->source_type,
-                        'notes' => $po->notes,
-                        'approval_level' => 'gm_finance',
-                        'approval_level_display' => 'GM Finance',
-                        'approver_name' => $approverName,
-                        'created_at' => $po->created_at
-                    ];
-                }
-            }
-            
+                })
+                ->values();
+
             return response()->json([
                 'success' => true,
                 'po_foods' => $pendingApprovals
@@ -1473,6 +1505,7 @@ class PurchaseOrderFoodsController extends Controller
                 'creator',
                 'purchasing_manager',
                 'gm_finance',
+                'approvalFlows.approver',
                 'items.item',
                 'items.unit'
             ])->findOrFail($id);
@@ -1527,24 +1560,17 @@ class PurchaseOrderFoodsController extends Controller
             $po->source_info = $sourceInfo;
             $po->warehouse_outlet_id = $warehouseOutletId;
             
-            // Determine current approval level and approver info
+            // Determine current approval level and approver info (flow-based).
             $currentApprovalLevel = null;
             $currentApproverId = null;
-            $user = Auth::user();
-            
-            // Check which approval level is pending and if current user can approve
-            if (!$po->purchasing_manager_approved_at) {
-                // Purchasing Manager approval pending
-                if ($user->id_jabatan == 168) { // Purchasing Manager
-                    $currentApprovalLevel = 'purchasing_manager';
-                    $currentApproverId = $user->id;
-                }
-            } elseif (!$po->gm_finance_approved_at && $po->purchasing_manager_approved_at) {
-                // GM Finance approval pending (only if Purchasing Manager already approved)
-                if ($user->id_jabatan == 169) { // GM Finance
-                    $currentApprovalLevel = 'gm_finance';
-                    $currentApproverId = $user->id;
-                }
+            $nextFlow = collect($po->approvalFlows)
+                ->where('status', 'PENDING')
+                ->sortBy('approval_level')
+                ->first();
+
+            if ($nextFlow) {
+                $currentApprovalLevel = 'level_' . $nextFlow->approval_level;
+                $currentApproverId = $nextFlow->approver_id;
             }
             
             return response()->json([

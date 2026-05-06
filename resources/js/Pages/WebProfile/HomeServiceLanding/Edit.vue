@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import { router, usePage, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -7,6 +7,11 @@ import TextInput from '@/Components/TextInput.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import Swal from 'sweetalert2';
+
+/** Sama dengan Home Block: max:102400 KB → 100 MB */
+const MAX_VIDEO_KB = 102400;
+const MAX_VIDEO_BYTES = MAX_VIDEO_KB * 1024;
+const ALLOWED_VIDEO_EXT = ['mp4', 'webm'];
 
 const props = defineProps({
   landing: { type: Object, required: true },
@@ -16,20 +21,41 @@ const page = usePage();
 const errors = ref({});
 const isSubmitting = ref(false);
 
+function emptyBlock(flipText) {
+  return {
+    title: '',
+    body: '',
+    video_url: '',
+    caption: '',
+    text_on_left: flipText !== false,
+    video_path: null,
+    video_storage_url: null,
+    remove_uploaded_video: false,
+    _videoFile: null,
+  };
+}
+
+function fromLandingBlocks(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  if (list.length === 0) {
+    return [emptyBlock(true)];
+  }
+  return list.map((b, idx) => ({
+    title: b.title || '',
+    body: b.body || '',
+    video_url: b.video_url || '',
+    caption: b.caption || '',
+    text_on_left: b.text_on_left !== false,
+    video_path: b.video_path || null,
+    video_storage_url: b.video_storage_url || null,
+    remove_uploaded_video: false,
+    _videoFile: null,
+  }));
+}
+
 const heroTitle = ref(props.landing.hero_title || '');
 const heroSubtitle = ref(props.landing.hero_subtitle || '');
-const blocks = ref(
-  (props.landing.content_blocks || []).length
-    ? JSON.parse(JSON.stringify(props.landing.content_blocks))
-    : [
-        {
-          title: '',
-          body: '',
-          video_url: '',
-          text_on_left: true,
-        },
-      ],
-);
+const blocks = ref(fromLandingBlocks(props.landing.content_blocks));
 
 const collageKeepPaths = ref([]);
 const collageNewFiles = ref([]);
@@ -45,19 +71,64 @@ const menuUrl = ref(props.landing.menu_card_url || '');
 const ctaLabel = ref(props.landing.cta_label || '');
 const ctaUrl = ref(props.landing.cta_url || '');
 
-const collagePreview = computed(() => props.landing.collage_images || []);
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function validateVideoFile(file) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  if (!ALLOWED_VIDEO_EXT.includes(ext)) {
+    return {
+      ok: false,
+      message: 'Format video harus <strong>MP4</strong> atau <strong>WEBM</strong>.',
+    };
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    return {
+      ok: false,
+      message: `Ukuran maksimal <strong>100 MB</strong> (sesuai batas server).<br>File Anda: <strong>${formatFileSize(file.size)}</strong>`,
+    };
+  }
+  return { ok: true };
+}
+
+function onBlockVideoChange(block, event) {
+  const input = event.target;
+  const file = input.files?.[0] || null;
+  block.remove_uploaded_video = false;
+
+  if (!file) {
+    block._videoFile = null;
+    return;
+  }
+
+  const result = validateVideoFile(file);
+  if (!result.ok) {
+    Swal.fire({
+      icon: 'error',
+      title: 'File tidak valid',
+      html: result.message,
+      confirmButtonText: 'OK',
+    });
+    input.value = '';
+    block._videoFile = null;
+    return;
+  }
+
+  block._videoFile = file;
+}
 
 function addBlock() {
-  blocks.value.push({
-    title: '',
-    body: '',
-    video_url: '',
-    text_on_left: blocks.value.length % 2 === 0,
-  });
+  blocks.value.push(emptyBlock(blocks.value.length % 2 === 0));
 }
 
 function removeBlock(idx) {
   blocks.value.splice(idx, 1);
+  if (blocks.value.length === 0) {
+    blocks.value.push(emptyBlock(true));
+  }
 }
 
 function onCollageNewChange(e) {
@@ -69,13 +140,33 @@ function removeCollagePath(path) {
 }
 
 function submit() {
+  for (let i = 0; i < blocks.value.length; i += 1) {
+    const b = blocks.value[i];
+    if (b._videoFile) {
+      const check = validateVideoFile(b._videoFile);
+      if (!check.ok) {
+        Swal.fire({ icon: 'error', title: 'File tidak valid', html: check.message });
+        return;
+      }
+    }
+  }
+
   isSubmitting.value = true;
   errors.value = {};
+
+  const payload = blocks.value.map((b) => ({
+    title: b.title || '',
+    body: b.body || '',
+    video_url: b.video_url || '',
+    caption: b.caption || '',
+    text_on_left: !!b.text_on_left,
+    video_path: b.video_path || null,
+  }));
 
   const fd = new FormData();
   fd.append('hero_title', heroTitle.value || '');
   fd.append('hero_subtitle', heroSubtitle.value || '');
-  fd.append('content_blocks_json', JSON.stringify(blocks.value));
+  fd.append('content_blocks_json', JSON.stringify(payload));
   fd.append('collage_keep_json', JSON.stringify(collageKeepPaths.value));
   fd.append('gallery_card_label', galleryLabel.value || '');
   fd.append('gallery_card_url', galleryUrl.value || '');
@@ -85,6 +176,13 @@ function submit() {
   fd.append('cta_url', ctaUrl.value || '');
   fd.append('remove_gallery_card', removeGalleryCard.value ? '1' : '0');
   fd.append('remove_menu_card', removeMenuCard.value ? '1' : '0');
+
+  blocks.value.forEach((b, idx) => {
+    fd.append(`remove_block_video_${idx}`, b.remove_uploaded_video ? '1' : '0');
+    if (b._videoFile) {
+      fd.append(`block_video_${idx}`, b._videoFile);
+    }
+  });
 
   collageNewFiles.value.forEach((file) => {
     fd.append('collage_new[]', file);
@@ -107,6 +205,10 @@ function submit() {
       collageNewFiles.value = [];
       removeGalleryCard.value = false;
       removeMenuCard.value = false;
+      blocks.value.forEach((b) => {
+        b._videoFile = null;
+        b.remove_uploaded_video = false;
+      });
     },
     onError: (e) => {
       errors.value = e;
@@ -115,11 +217,32 @@ function submit() {
 }
 
 watch(
+  () => props.landing.content_blocks,
+  (raw) => {
+    blocks.value = fromLandingBlocks(raw);
+  },
+);
+
+watch(
   () => props.landing.collage_images,
   (imgs) => {
     collageKeepPaths.value = (imgs || []).map((c) => c.path);
   },
   { immediate: true },
+);
+
+watch(
+  () => props.landing.hero_title,
+  (v) => {
+    heroTitle.value = v || '';
+  },
+);
+
+watch(
+  () => props.landing.hero_subtitle,
+  (v) => {
+    heroSubtitle.value = v || '';
+  },
 );
 
 onMounted(() => {
@@ -163,7 +286,7 @@ onMounted(() => {
               <textarea
                 v-model="heroSubtitle"
                 rows="5"
-                class="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 placeholder="Paragraf pertama&#10;&#10;Paragraf kedua"
               />
               <InputError class="mt-1" :message="errors.hero_subtitle" />
@@ -171,37 +294,81 @@ onMounted(() => {
           </div>
         </section>
 
-        <section class="rounded-lg bg-white p-6 shadow">
+        <section>
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-lg font-semibold text-gray-800">Blok teks &amp; video (bergantian)</h2>
-            <button type="button" class="text-sm text-blue-600 hover:underline" @click="addBlock">+ Tambah blok</button>
+            <button type="button" class="text-sm font-medium text-blue-600 hover:underline" @click="addBlock">
+              + Tambah blok
+            </button>
           </div>
-          <div v-for="(block, idx) in blocks" :key="idx" class="mb-6 rounded border border-gray-200 p-4">
-            <div class="mb-2 flex justify-between">
-              <span class="text-sm font-medium text-gray-600">Blok {{ idx + 1 }}</span>
-              <button type="button" class="text-sm text-red-600 hover:underline" @click="removeBlock(idx)">Hapus</button>
-            </div>
-            <div class="grid gap-4 md:grid-cols-2">
-              <div class="md:col-span-2">
-                <InputLabel :value="`Judul blok ${idx + 1}`" />
-                <TextInput v-model="block.title" type="text" class="mt-1 block w-full" />
+          <p class="mb-4 text-sm text-gray-600">
+            Pola input mengikuti <strong>Home Block</strong>: judul opsional, isi teks, unggah video MP4/WEBM atau isi URL YouTube/tautan file, plus caption di atas video.
+          </p>
+
+          <div v-for="(block, idx) in blocks" :key="idx" class="relative mb-6">
+            <div class="mx-auto max-w-3xl rounded-lg bg-white p-6 shadow space-y-4">
+              <div class="flex items-start justify-between gap-4 border-b border-gray-100 pb-3">
+                <h3 class="text-sm font-semibold text-gray-700">Blok {{ idx + 1 }}</h3>
+                <button type="button" class="text-sm text-red-600 hover:underline" @click="removeBlock(idx)">Hapus</button>
               </div>
-              <div class="md:col-span-2">
-                <InputLabel value="Isi" />
+
+              <div v-if="block.video_storage_url" class="text-sm text-gray-600">
+                <p class="mb-2">Video unggahan saat ini:</p>
+                <video :src="block.video_storage_url" controls class="max-h-48 w-full rounded border border-gray-200" />
+              </div>
+
+              <div>
+                <InputLabel value="Judul (opsional)" />
+                <TextInput v-model="block.title" type="text" class="mt-1 w-full" />
+              </div>
+
+              <div>
+                <InputLabel value="Isi teks" />
+                <textarea v-model="block.body" rows="5" class="mt-1 w-full rounded-md border-gray-300" />
+              </div>
+
+              <div>
+                <InputLabel value="Video (mp4/webm) — unggah atau ganti" />
+                <input
+                  type="file"
+                  accept="video/mp4,video/webm,.mp4,.webm"
+                  class="mt-1 block w-full text-sm"
+                  @change="onBlockVideoChange(block, $event)"
+                />
+                <p class="mt-1 text-xs text-gray-500">
+                  Format: MP4 / WEBM. Maksimal <strong>100 MB</strong> (lebih besar akan ditolak sebelum upload).
+                </p>
+                <p class="mt-1 text-xs text-gray-500">
+                  Justus Nest: kotak tampilan <strong>16:9</strong> (lebar penuh blok); video di-zoom memenuhi kotak sehingga pinggir bisa terpotong. Disarankan ekspor
+                  <strong>1920×1080</strong> atau minimal <strong>1280×720</strong>, rasio 16:9; subjek penting di tengah frame.
+                </p>
+                <label v-if="block.video_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                  <input v-model="block.remove_uploaded_video" type="checkbox" class="rounded border-gray-300" />
+                  Hapus video unggahan (pakai URL saja jika diisi)
+                </label>
+              </div>
+
+              <div>
+                <InputLabel value="Video URL (YouTube / tautan MP4) — jika tidak pakai unggahan" />
+                <TextInput v-model="block.video_url" type="text" class="mt-1 w-full" placeholder="https://..." />
+              </div>
+
+              <div>
+                <InputLabel value="Caption (teks di atas video)" />
                 <textarea
-                  v-model="block.body"
-                  rows="4"
-                  class="mt-1 block w-full rounded-md border border-gray-300 shadow-sm"
+                  v-model="block.caption"
+                  rows="3"
+                  class="mt-1 w-full rounded-md border-gray-300"
+                  placeholder="Contoh: VIDEO Grilling During Event"
                 />
               </div>
-              <div class="md:col-span-2">
-                <InputLabel value="Video URL (YouTube / MP4 embed)" />
-                <TextInput v-model="block.video_url" type="text" class="mt-1 block w-full" placeholder="https://..." />
+
+              <div class="flex items-center gap-2">
+                <input :id="`text-left-${idx}`" v-model="block.text_on_left" type="checkbox" class="rounded border-gray-300" />
+                <label :for="`text-left-${idx}`" class="text-sm text-gray-700">
+                  Teks di kiri (video di kanan). Matikan untuk membalik.
+                </label>
               </div>
-              <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input v-model="block.text_on_left" type="checkbox" class="rounded border-gray-300" />
-                Teks di kiri (video di kanan). Matikan untuk membalik.
-              </label>
             </div>
           </div>
         </section>
@@ -210,7 +377,12 @@ onMounted(() => {
           <h2 class="mb-2 text-lg font-semibold text-gray-800">Collage gambar</h2>
           <p class="mb-4 text-sm text-gray-600">Centang gambar yang tetap dipakai; unggah tambahan di bawah. Urutan: lama (yang dipertahankan) lalu file baru.</p>
           <div class="mb-4 flex flex-wrap gap-3">
-            <div v-for="c in collagePreview" v-show="collageKeepPaths.includes(c.path)" :key="c.path" class="relative">
+            <div
+              v-for="c in landing.collage_images || []"
+              v-show="collageKeepPaths.includes(c.path)"
+              :key="c.path"
+              class="relative"
+            >
               <img :src="c.url" alt="" class="h-24 w-32 rounded border object-cover" />
               <button
                 type="button"

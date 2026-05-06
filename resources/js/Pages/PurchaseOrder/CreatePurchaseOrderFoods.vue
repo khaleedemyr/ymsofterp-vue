@@ -17,6 +17,10 @@ const expandedROs = ref({});
 const expandedWarehouses = ref({});
 const notes = ref('');
 const router = useRouter()
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+const approvers = ref([]);
 
 // Form untuk generate PO
 const poForm = useForm({
@@ -171,6 +175,46 @@ const fetchSuppliers = async () => {
     }
 };
 
+const loadApprovers = async (search = '') => {
+    try {
+        const response = await axios.get('/po-foods/approvers', {
+            params: { search },
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        });
+        if (response.data.success) {
+            approverResults.value = response.data.users || [];
+            showApproverDropdown.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading approvers:', error);
+        approverResults.value = [];
+    }
+};
+
+const addApprover = (user) => {
+    if (!user || !user.id) return;
+    if (!approvers.value.find((a) => a && a.id === user.id)) {
+        approvers.value.push(user);
+    }
+    approverSearch.value = '';
+    showApproverDropdown.value = false;
+};
+
+const removeApprover = (index) => {
+    if (index < 0 || index >= approvers.value.length) return;
+    approvers.value.splice(index, 1);
+};
+
+const moveApprover = (from, to) => {
+    if (from < 0 || from >= approvers.value.length) return;
+    if (to < 0 || to >= approvers.value.length) return;
+    const item = approvers.value.splice(from, 1)[0];
+    approvers.value.splice(to, 0, item);
+};
+
 // Toggle expand/collapse PR
 const togglePR = (prId) => {
     expandedPRs.value[prId] = !expandedPRs.value[prId];
@@ -288,6 +332,10 @@ async function validateSplitQty() {
 
 // Generate PO berdasarkan supplier
 const generatePO = async () => {
+    if (approvers.value.length === 0) {
+        await Swal.fire('Approver diperlukan', 'Tambahkan minimal satu approver sebelum generate PO.', 'warning');
+        return;
+    }
     if (!(await validateSplitQty())) return;
     // Hanya kirim field yang diperlukan
     const itemsBySupplier = {};
@@ -348,7 +396,8 @@ const generatePO = async () => {
             notes: notes.value,
             ppn_enabled: poForm.ppn_enabled,
             discount_total_percent: poForm.discount_total_percent || 0,
-            discount_total_amount: poForm.discount_total_amount || 0
+            discount_total_amount: poForm.discount_total_amount || 0,
+            approvers: approvers.value.map((a) => a.id),
         });
         Swal.fire('Success', 'PO has been generated successfully', 'success')
             .then(() => {
@@ -644,6 +693,51 @@ onMounted(async () => {
                         <div class="mb-6">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                             <textarea v-model="notes" rows="2" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                        </div>
+                        <div class="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                            <h4 class="text-sm font-semibold text-indigo-800 mb-2">Approval Flow</h4>
+                            <p class="text-xs text-indigo-700 mb-3">Tambahkan approver berurutan dari level terendah ke tertinggi.</p>
+                            <div class="relative mb-3">
+                                <input
+                                    v-model="approverSearch"
+                                    type="text"
+                                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="Cari approver (nama, email, jabatan)..."
+                                    @focus="loadApprovers(approverSearch)"
+                                    @input="loadApprovers(approverSearch)"
+                                />
+                                <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-20 mt-1 w-full bg-white border rounded-md shadow max-h-48 overflow-auto">
+                                    <button
+                                        v-for="user in approverResults"
+                                        :key="user.id"
+                                        type="button"
+                                        class="w-full text-left px-3 py-2 hover:bg-gray-50 border-b last:border-b-0"
+                                        @click="addApprover(user)"
+                                    >
+                                        <div class="font-medium text-sm text-gray-800">{{ user.name }}</div>
+                                        <div class="text-xs text-gray-500">{{ user.email }} - {{ user.jabatan }}</div>
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-if="approvers.length > 0" class="space-y-2">
+                                <div
+                                    v-for="(approver, index) in approvers"
+                                    :key="approver.id"
+                                    class="flex items-center justify-between bg-white border rounded px-3 py-2"
+                                >
+                                    <div>
+                                        <div class="text-xs text-indigo-600">Level {{ index + 1 }}</div>
+                                        <div class="font-medium text-sm text-gray-800">{{ approver.name }}</div>
+                                        <div class="text-xs text-gray-500">{{ approver.jabatan }}</div>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <button type="button" class="px-2 py-1 text-xs bg-gray-100 rounded disabled:opacity-40" :disabled="index === 0" @click="moveApprover(index, index - 1)">↑</button>
+                                        <button type="button" class="px-2 py-1 text-xs bg-gray-100 rounded disabled:opacity-40" :disabled="index === approvers.length - 1" @click="moveApprover(index, index + 1)">↓</button>
+                                        <button type="button" class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded" @click="removeApprover(index)">Hapus</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="text-xs text-red-600">Belum ada approver dipilih.</p>
                         </div>
                                                  <!-- Discount Total -->
                          <div class="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">

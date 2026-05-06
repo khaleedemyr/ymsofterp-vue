@@ -1357,11 +1357,21 @@ class WebProfileController extends Controller
     {
         $row = WebProfileHomeServiceLanding::singleton();
 
+        $blocksForEdit = collect($row->content_blocks ?: [])->map(function ($b) {
+            if (! is_array($b)) {
+                return $b;
+            }
+            $path = isset($b['video_path']) && is_string($b['video_path']) ? $b['video_path'] : null;
+            $b['video_storage_url'] = $path ? $this->publicStorageUrl($path) : null;
+
+            return $b;
+        })->all();
+
         return Inertia::render('WebProfile/HomeServiceLanding/Edit', [
             'landing' => [
                 'hero_title' => $row->hero_title,
                 'hero_subtitle' => $row->hero_subtitle,
-                'content_blocks' => $row->content_blocks ?: [],
+                'content_blocks' => $blocksForEdit,
                 'collage_images' => collect($row->collage_images ?: [])->map(fn ($p) => [
                     'path' => $p,
                     'url' => $this->publicStorageUrl($p),
@@ -1407,17 +1417,54 @@ class WebProfileController extends Controller
         if (! is_array($blocksRaw)) {
             $blocksRaw = [];
         }
+
+        $oldBlocks = $row->content_blocks ?: [];
+        $allowedOldVideoPaths = collect($oldBlocks)->pluck('video_path')->filter()->unique()->values()->all();
+
         $contentBlocks = [];
-        foreach ($blocksRaw as $b) {
+        foreach ($blocksRaw as $i => $b) {
             if (! is_array($b)) {
                 continue;
             }
+
+            $clientPath = isset($b['video_path']) && is_string($b['video_path']) ? $b['video_path'] : null;
+            $videoPath = ($clientPath && in_array($clientPath, $allowedOldVideoPaths, true)) ? $clientPath : null;
+
+            if ($request->boolean('remove_block_video_'.$i) && $videoPath) {
+                Storage::disk('public')->delete($videoPath);
+                $videoPath = null;
+            }
+
+            if ($request->hasFile('block_video_'.$i)) {
+                $request->validate([
+                    'block_video_'.$i => ['required', 'file', 'mimes:mp4,webm', 'max:102400'],
+                ]);
+                if ($videoPath) {
+                    Storage::disk('public')->delete($videoPath);
+                }
+                $file = $request->file('block_video_'.$i);
+                $videoPath = $file->storeAs(
+                    'web-profile/home-service/block-videos',
+                    time().'_'.$i.'_'.Str::random(6).'.'.$file->getClientOriginalExtension(),
+                    'public'
+                );
+            }
+
             $contentBlocks[] = [
                 'title' => isset($b['title']) ? (string) $b['title'] : '',
                 'body' => isset($b['body']) ? (string) $b['body'] : '',
                 'video_url' => isset($b['video_url']) ? (string) $b['video_url'] : '',
+                'caption' => isset($b['caption']) ? (string) $b['caption'] : '',
                 'text_on_left' => filter_var($b['text_on_left'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                'video_path' => $videoPath,
             ];
+        }
+
+        $newVideoPaths = collect($contentBlocks)->pluck('video_path')->filter()->unique()->values()->all();
+        foreach ($allowedOldVideoPaths as $op) {
+            if (! in_array($op, $newVideoPaths, true)) {
+                Storage::disk('public')->delete($op);
+            }
         }
 
         $keepCollage = json_decode($request->input('collage_keep_json', '[]'), true);
@@ -1553,10 +1600,14 @@ class WebProfileController extends Controller
                 return null;
             }
 
+            $path = isset($b['video_path']) && is_string($b['video_path']) ? $b['video_path'] : null;
+            $playback = $path ? $this->publicStorageUrl($path) : (string) ($b['video_url'] ?? '');
+
             return [
                 'title' => (string) ($b['title'] ?? ''),
                 'body' => (string) ($b['body'] ?? ''),
-                'video_url' => (string) ($b['video_url'] ?? ''),
+                'video_url' => $playback,
+                'caption' => (string) ($b['caption'] ?? ''),
                 'text_on_left' => filter_var($b['text_on_left'] ?? true, FILTER_VALIDATE_BOOLEAN),
             ];
         })->filter()->values()->all();
