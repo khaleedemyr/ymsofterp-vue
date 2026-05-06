@@ -1615,31 +1615,69 @@ class StockCutController extends Controller
                     ->where('id_outlet', $id_outlet)
                     ->where('date', $tanggal)
                     ->where('reference_type', 'order_items')
+                    ->whereNull('stock_cut_log_id')
                     ->lockForUpdate()
                     ->get();
             }
 
-            // Rollback: tambahkan kembali qty yang sudah dipotong
+            if ($cards->isEmpty()) {
+                DB::rollBack();
+
+                return response()->json([
+                    'error' => 'Tidak ada kartu stok terkait rollback ini. Stok tidak diubah.',
+                ], 422);
+            }
+
+            // Rollback: kembalikan sama seperti saat potong (small/medium/large + value)
             foreach ($cards as $card) {
+                $outSmall = (float) ($card->out_qty_small ?? 0);
+                $outMedium = (float) ($card->out_qty_medium ?? 0);
+                $outLarge = (float) ($card->out_qty_large ?? 0);
+
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('id_outlet', $id_outlet)
+                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $stock) {
+                    DB::rollBack();
+
+                    \Log::error('StockCut rollback - baris stok tidak ditemukan', [
+                        'stock_cut_log_id' => $id,
+                        'inventory_item_id' => $card->inventory_item_id,
+                        'warehouse_outlet_id' => $card->warehouse_outlet_id,
+                        'card_id' => $card->id ?? null,
+                    ]);
+
+                    return response()->json([
+                        'error' => 'Rollback dibatalkan: baris stok tidak ditemukan untuk salah satu item (kartu #'.($card->id ?? '?').').',
+                    ], 500);
+                }
+
+                $newQtySmall = (float) $stock->qty_small + $outSmall;
+                $newQtyMedium = (float) $stock->qty_medium + $outMedium;
+                $newQtyLarge = (float) $stock->qty_large + $outLarge;
+                $newValue = $newQtySmall * (float) $stock->last_cost_small;
+
                 DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $card->inventory_item_id)
                     ->where('id_outlet', $id_outlet)
                     ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
-                    ->increment('qty_small', $card->out_qty_small);
+                    ->update([
+                        'qty_small' => $newQtySmall,
+                        'qty_medium' => $newQtyMedium,
+                        'qty_large' => $newQtyLarge,
+                        'value' => $newValue,
+                        'updated_at' => now(),
+                    ]);
             }
 
-            // Hapus kartu stok
-            if ($isLegacyFallback) {
-                DB::table('outlet_food_inventory_cards')
-                    ->where('id_outlet', $id_outlet)
-                    ->where('date', $tanggal)
-                    ->where('reference_type', 'order_items')
-                    ->delete();
-            } else {
-                DB::table('outlet_food_inventory_cards')
-                    ->where('stock_cut_log_id', $id)
-                    ->where('reference_type', 'order_items')
-                    ->delete();
+            // Hapus hanya kartu yang diproses (hindari delete semua kartu tanggal/outlet)
+            $cardIds = $cards->pluck('id')->filter()->values()->all();
+            if (! empty($cardIds)) {
+                DB::table('outlet_food_inventory_cards')->whereIn('id', $cardIds)->delete();
             }
 
             // Hapus detail stock cut untuk menjaga konsistensi data
