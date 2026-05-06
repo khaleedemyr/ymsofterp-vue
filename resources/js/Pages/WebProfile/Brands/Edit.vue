@@ -23,7 +23,11 @@ const form = ref({
   thumbnail: null,
   logo_cp: null,
   image: null,
-  content: props.brand.content || ''
+  content: props.brand.content || '',
+  hero_title: props.brand.hero_title || '',
+  hero_subtitle: props.brand.hero_subtitle || '',
+  hero_media: null,
+  remove_hero_media: false,
 });
 
 const errors = ref({});
@@ -31,6 +35,8 @@ const isSubmitting = ref(false);
 const thumbnailPreview = ref(props.brand.thumbnail_url || null);
 const logoCpPreview = ref(props.brand.logo_cp_url || null);
 const imagePreview = ref(props.brand.image_url || null);
+const heroMediaPreview = ref(props.brand.hero_media_url || null);
+const heroMediaType = ref(props.brand.hero_media_type || 'image');
 
 function handleThumbnailChange(event) {
   const file = event.target.files[0];
@@ -75,6 +81,16 @@ function handleMenuPdfChange(event) {
   }
 }
 
+function handleHeroMediaChange(event) {
+  const file = event.target.files[0];
+  if (file) {
+    form.value.hero_media = file;
+    form.value.remove_hero_media = false;
+    heroMediaType.value = file.type.startsWith('video/') ? 'video' : 'image';
+    heroMediaPreview.value = URL.createObjectURL(file);
+  }
+}
+
 function submit() {
   isSubmitting.value = true;
   
@@ -83,6 +99,9 @@ function submit() {
   formData.append('slug', form.value.slug);
   formData.append('link_menu', form.value.link_menu || '');
   formData.append('content', form.value.content || '');
+  formData.append('hero_title', form.value.hero_title || '');
+  formData.append('hero_subtitle', form.value.hero_subtitle || '');
+  formData.append('remove_hero_media', form.value.remove_hero_media ? '1' : '0');
   formData.append('_method', 'PUT');
   
   if (form.value.thumbnail) {
@@ -96,6 +115,9 @@ function submit() {
   }
   if (form.value.menu_pdf) {
     formData.append('menu_pdf', form.value.menu_pdf);
+  }
+  if (form.value.hero_media) {
+    formData.append('hero_media', form.value.hero_media);
   }
 
   router.post(`/web-profile/brands/${props.brand.id}`, formData, {
@@ -271,6 +293,53 @@ function cancel() {
               :class="{ 'border-red-500': errors.content }"
             ></textarea>
             <InputError :message="errors.content" class="mt-2" />
+          </div>
+
+          <div class="rounded-lg border border-gray-200 p-4 space-y-4">
+            <h3 class="text-base font-semibold text-gray-800">Brand Page Header (Optional)</h3>
+            <div>
+              <InputLabel for="hero_media" value="Header Media (Image/Video)" />
+              <input
+                id="hero_media"
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp,video/mp4,video/webm"
+                class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                @change="handleHeroMediaChange"
+              />
+              <InputError :message="errors.hero_media" class="mt-2" />
+              <label class="mt-2 inline-flex items-center gap-2 text-sm text-gray-600">
+                <input v-model="form.remove_hero_media" type="checkbox" class="rounded border-gray-300" />
+                Hapus media header saat simpan
+              </label>
+              <div v-if="heroMediaPreview && !form.remove_hero_media" class="mt-3">
+                <video v-if="heroMediaType === 'video'" :src="heroMediaPreview" class="w-full max-w-lg rounded-lg border" controls muted playsinline />
+                <img v-else :src="heroMediaPreview" alt="Hero media preview" class="w-full max-w-lg rounded-lg border object-cover" />
+              </div>
+            </div>
+
+            <div>
+              <InputLabel for="hero_title" value="Header Title (Optional)" />
+              <TextInput
+                id="hero_title"
+                v-model="form.hero_title"
+                type="text"
+                class="mt-1 block w-full"
+                :class="{ 'border-red-500': errors.hero_title }"
+              />
+              <InputError :message="errors.hero_title" class="mt-2" />
+            </div>
+
+            <div>
+              <InputLabel for="hero_subtitle" value="Header Subtitle (Optional)" />
+              <textarea
+                id="hero_subtitle"
+                v-model="form.hero_subtitle"
+                rows="3"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                :class="{ 'border-red-500': errors.hero_subtitle }"
+              ></textarea>
+              <InputError :message="errors.hero_subtitle" class="mt-2" />
+            </div>
           </div>
 
           <!-- Submit -->

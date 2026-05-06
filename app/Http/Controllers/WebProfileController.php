@@ -718,6 +718,7 @@ class WebProfileController extends Controller
 
         // Transform paginated results
         $brands->through(function ($brand) {
+            $hero = $this->getBrandHeroData((int) $brand->id);
             return [
                 'id' => $brand->id,
                 'title' => $brand->title,
@@ -732,6 +733,10 @@ class WebProfileController extends Controller
                 'image' => $brand->image,
                 'image_url' => $brand->image_url,
                 'content' => $brand->content,
+                'hero_title' => $hero['title'],
+                'hero_subtitle' => $hero['subtitle'],
+                'hero_media_url' => $hero['media_url'],
+                'hero_media_type' => $hero['media_type'],
                 'created_at' => $brand->created_at,
                 'updated_at' => $brand->updated_at,
             ];
@@ -765,6 +770,9 @@ class WebProfileController extends Controller
                 'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'content' => 'nullable|string',
+                'hero_title' => 'nullable|string|max:255',
+                'hero_subtitle' => 'nullable|string|max:2000',
+                'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
             ], [
                 'thumbnail.required' => 'Thumbnail image is required',
                 'thumbnail.image' => 'Thumbnail must be an image file',
@@ -839,6 +847,7 @@ class WebProfileController extends Controller
 
                 // Set created_by
                 $validated['created_by'] = auth()->user()->name ?? 'System';
+                unset($validated['hero_title'], $validated['hero_subtitle'], $validated['hero_media']);
 
                 // Create brand record
                 $brand = WebProfileBrand::create($validated);
@@ -849,6 +858,8 @@ class WebProfileController extends Controller
                     }
                     throw new \Exception('Failed to create brand record');
                 }
+
+                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $validated['title']);
 
                 return redirect()->route('web-profile.brands.index')
                     ->with('success', 'Brand created successfully');
@@ -875,6 +886,7 @@ class WebProfileController extends Controller
     public function brandsEdit($id)
     {
         $brand = WebProfileBrand::findOrFail($id);
+        $hero = $this->getBrandHeroData((int) $brand->id);
 
         return Inertia::render('WebProfile/Brands/Edit', [
             'brand' => [
@@ -891,6 +903,10 @@ class WebProfileController extends Controller
                 'image' => $brand->image,
                 'image_url' => $brand->image_url,
                 'content' => $brand->content,
+                'hero_title' => $hero['title'],
+                'hero_subtitle' => $hero['subtitle'],
+                'hero_media_url' => $hero['media_url'],
+                'hero_media_type' => $hero['media_type'],
             ]
         ]);
     }
@@ -912,6 +928,10 @@ class WebProfileController extends Controller
                 'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
                 'content' => 'nullable|string',
+                'hero_title' => 'nullable|string|max:255',
+                'hero_subtitle' => 'nullable|string|max:2000',
+                'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
+                'remove_hero_media' => 'nullable|boolean',
             ]);
 
             return DB::transaction(function () use ($request, $validated, $brand) {
@@ -999,8 +1019,10 @@ class WebProfileController extends Controller
 
                 // Set updated_by
                 $validated['updated_by'] = auth()->user()->name ?? 'System';
+                unset($validated['hero_title'], $validated['hero_subtitle'], $validated['hero_media'], $validated['remove_hero_media']);
 
                 $brand->update($validated);
+                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $validated['title']);
 
                 return redirect()->back()->with('success', 'Brand updated successfully');
             });
@@ -1037,6 +1059,7 @@ class WebProfileController extends Controller
         if ($brand->menu_pdf) {
             Storage::disk('public')->delete($brand->menu_pdf);
         }
+        $this->deleteBrandHeroMediaAndSettings((int) $brand->id);
 
         $brand->delete();
 
@@ -1052,6 +1075,7 @@ class WebProfileController extends Controller
         $brands = WebProfileBrand::orderBy('title')
             ->get()
             ->map(function ($brand) {
+                $hero = $this->getBrandHeroData((int) $brand->id);
                 return [
                     'id' => $brand->id,
                     'title' => $brand->title,
@@ -1062,6 +1086,10 @@ class WebProfileController extends Controller
                     'logo_cp_url' => $brand->logo_cp_url,
                     'image_url' => $brand->image_url,
                     'content' => $brand->content,
+                    'hero_title' => $hero['title'],
+                    'hero_subtitle' => $hero['subtitle'],
+                    'hero_media_url' => $hero['media_url'],
+                    'hero_media_type' => $hero['media_type'],
                 ];
             });
 
@@ -2274,6 +2302,92 @@ class WebProfileController extends Controller
         $encodedPath = implode('/', $encodedParts);
 
         return $baseUrl.'/storage/'.$encodedPath;
+    }
+
+    private function brandHeroSettingKey(int $brandId, string $field): string
+    {
+        return "brand_hero_{$field}_{$brandId}";
+    }
+
+    private function getBrandHeroData(int $brandId): array
+    {
+        if ($brandId <= 0) {
+            return [
+                'title' => null,
+                'subtitle' => null,
+                'media_path' => null,
+                'media_url' => null,
+                'media_type' => null,
+            ];
+        }
+
+        $title = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'title'))->value('value');
+        $subtitle = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'subtitle'))->value('value');
+        $mediaPath = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'media'))->value('value');
+        $mediaType = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'media'))->value('type');
+
+        return [
+            'title' => $title ?: null,
+            'subtitle' => $subtitle ?: null,
+            'media_path' => $mediaPath ?: null,
+            'media_url' => $mediaPath ? $this->publicStorageUrl($mediaPath) : null,
+            'media_type' => $mediaType ?: null,
+        ];
+    }
+
+    private function saveBrandHeroFromRequest(Request $request, int $brandId, string $brandTitle): void
+    {
+        $title = trim((string) $request->input('hero_title', ''));
+        $subtitle = trim((string) $request->input('hero_subtitle', ''));
+
+        WebProfileSetting::updateOrCreate(
+            ['key' => $this->brandHeroSettingKey($brandId, 'title')],
+            ['value' => $title, 'type' => 'text']
+        );
+        WebProfileSetting::updateOrCreate(
+            ['key' => $this->brandHeroSettingKey($brandId, 'subtitle')],
+            ['value' => $subtitle, 'type' => 'text']
+        );
+
+        if ($request->boolean('remove_hero_media')) {
+            $old = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'media'))->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+            WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'media'))->delete();
+        }
+
+        if ($request->hasFile('hero_media')) {
+            $old = WebProfileSetting::where('key', $this->brandHeroSettingKey($brandId, 'media'))->value('value');
+            if ($old) {
+                Storage::disk('public')->delete($old);
+            }
+
+            $file = $request->file('hero_media');
+            $safeTitle = Str::slug($brandTitle ?: ('brand-'.$brandId));
+            $fileName = time().'_'.$safeTitle.'_hero.'.$file->getClientOriginalExtension();
+            $path = $file->storeAs('web-profile/brands/hero', $fileName, 'public');
+            $type = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
+
+            WebProfileSetting::updateOrCreate(
+                ['key' => $this->brandHeroSettingKey($brandId, 'media')],
+                ['value' => $path, 'type' => $type]
+            );
+        }
+    }
+
+    private function deleteBrandHeroMediaAndSettings(int $brandId): void
+    {
+        $mediaKey = $this->brandHeroSettingKey($brandId, 'media');
+        $titleKey = $this->brandHeroSettingKey($brandId, 'title');
+        $subtitleKey = $this->brandHeroSettingKey($brandId, 'subtitle');
+
+        $media = WebProfileSetting::where('key', $mediaKey)->value('value');
+        if ($media) {
+            Storage::disk('public')->delete($media);
+        }
+
+        WebProfileSetting::whereIn('key', [$mediaKey, $titleKey, $subtitleKey])->delete();
     }
 
     /**
