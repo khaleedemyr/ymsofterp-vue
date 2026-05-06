@@ -177,7 +177,6 @@ class FoodGoodReceiveReportController extends Controller
                     'total_suppliers' => 0,
                     'total_transactions' => 0,
                     'grand_total_amount' => 0,
-                    'grand_total_qty' => 0,
                 ],
                 'filters' => $filtersPayload,
                 'data_loaded' => false,
@@ -214,7 +213,6 @@ class FoodGoodReceiveReportController extends Controller
                         'gr_received_by_name' => $row->gr_received_by_name ?? null,
                         'pr_requester_names' => $row->pr_requester_names ?? null,
                         'total_amount' => (float) $row->total_amount,
-                        'total_qty' => (float) $row->total_qty,
                         'items' => $itemsByGr->get($row->good_receive_id, collect())->values()->all(),
                     ];
                 };
@@ -234,7 +232,6 @@ class FoodGoodReceiveReportController extends Controller
                         return [
                             'date' => $dateKey,
                             'total_amount' => (float) $dayRows->sum('total_amount'),
-                            'total_qty' => (float) $dayRows->sum('total_qty'),
                             'transaction_count' => $dayRows->count(),
                             'transactions' => $sortedTrx,
                         ];
@@ -247,7 +244,6 @@ class FoodGoodReceiveReportController extends Controller
                     'supplier_name' => $first->supplier_name,
                     'supplier_code' => $first->supplier_code,
                     'total_amount' => (float) $supplierRows->sum('total_amount'),
-                    'total_qty' => (float) $supplierRows->sum('total_qty'),
                     'total_transactions' => $supplierRows->count(),
                     'days' => $byDate,
                 ];
@@ -259,7 +255,6 @@ class FoodGoodReceiveReportController extends Controller
             'total_suppliers' => $supplierReports->count(),
             'total_transactions' => $supplierReports->sum('total_transactions'),
             'grand_total_amount' => (float) $supplierReports->sum('total_amount'),
-            'grand_total_qty' => (float) $supplierReports->sum('total_qty'),
         ];
 
         return Inertia::render('FoodGoodReceive/ReportSupplierSpending', [
@@ -313,7 +308,6 @@ class FoodGoodReceiveReportController extends Controller
                 'po_created_by_name' => $row->po_created_by_name ?? '',
                 'gr_received_by_name' => $row->gr_received_by_name ?? '',
                 'pr_requester_names' => $row->pr_requester_names ?? '',
-                'total_qty' => (float) $row->total_qty,
                 'total_amount' => (float) $row->total_amount,
             ];
 
@@ -571,8 +565,7 @@ class FoodGoodReceiveReportController extends Controller
                 DB::raw('MAX(ro_meta.ro_order_numbers) as ro_order_numbers'),
                 DB::raw('MAX(fo_meta.fo_outlet_names) as fo_outlet_names'),
                 DB::raw('MAX(fo_meta.fo_creator_names) as fo_creator_names'),
-                DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as total_amount'),
-                DB::raw('SUM(gri.qty_received) as total_qty')
+                DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as total_amount')
             );
 
         $dates = $this->supplierSpendingResolvedDates($request);

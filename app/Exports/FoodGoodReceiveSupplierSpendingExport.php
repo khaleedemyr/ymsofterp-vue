@@ -48,7 +48,6 @@ class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadi
             'User buat PO',
             'User terima GR',
             'User request PR',
-            'Total Qty',
             'Total Belanja',
             'Item',
             'Satuan',
@@ -105,7 +104,6 @@ class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadi
             ! empty($row['po_created_by_name']) ? $row['po_created_by_name'] : '-',
             ! empty($row['gr_received_by_name']) ? $row['gr_received_by_name'] : '-',
             ! empty($row['pr_requester_names']) ? $row['pr_requester_names'] : '-',
-            (float) ($row['total_qty'] ?? 0),
             (float) ($row['total_amount'] ?? 0),
             ! empty($row['item_name']) ? $row['item_name'] : '-',
             ! empty($row['unit_name']) ? $row['unit_name'] : '-',
@@ -130,12 +128,11 @@ class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadi
     public function columnFormats(): array
     {
         return [
-            'O' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
-            'P' => '#,##0',
+            'O' => '#,##0',
+            'R' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
             'S' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
             'T' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
-            'U' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
-            'AB' => '#,##0',
+            'AA' => '#,##0',
         ];
     }
 

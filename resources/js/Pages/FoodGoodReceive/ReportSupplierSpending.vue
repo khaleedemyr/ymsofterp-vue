@@ -87,7 +87,7 @@
         <p class="text-sm mt-1 text-amber-800">Pilih tanggal dari & sampai, lalu klik <strong>Muat data</strong>.</p>
       </div>
 
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div class="bg-white rounded-2xl shadow-2xl p-5">
           <p class="text-sm text-gray-500">Total Supplier</p>
           <p class="text-2xl font-bold text-gray-800">{{ summary.total_suppliers || 0 }}</p>
@@ -95,10 +95,6 @@
         <div class="bg-white rounded-2xl shadow-2xl p-5">
           <p class="text-sm text-gray-500">Total Transaksi GR</p>
           <p class="text-2xl font-bold text-gray-800">{{ summary.total_transactions || 0 }}</p>
-        </div>
-        <div class="bg-white rounded-2xl shadow-2xl p-5">
-          <p class="text-sm text-gray-500">Grand Total Qty</p>
-          <p class="text-2xl font-bold text-gray-800">{{ formatNumber(summary.grand_total_qty) }}</p>
         </div>
         <div class="bg-white rounded-2xl shadow-2xl p-5">
           <p class="text-sm text-gray-500">Grand Total Belanja</p>
@@ -116,7 +112,6 @@
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total GR</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Qty</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Belanja</th>
               </tr>
             </thead>
@@ -136,11 +131,10 @@
                     </div>
                   </td>
                   <td class="px-4 py-3 text-right">{{ supplier.total_transactions }}</td>
-                  <td class="px-4 py-3 text-right">{{ formatNumber(supplier.total_qty) }}</td>
                   <td class="px-4 py-3 text-right font-semibold text-blue-700">{{ formatCurrency(supplier.total_amount) }}</td>
                 </tr>
                 <tr v-if="isExpanded(supplier.supplier_id)" class="bg-gray-50">
-                  <td colspan="4" class="px-6 py-4">
+                  <td colspan="3" class="px-6 py-4">
                     <div class="space-y-3">
                       <p class="text-sm font-medium text-gray-600">Nilai per hari — klik baris untuk detail transaksi</p>
                       <div
@@ -159,10 +153,6 @@
                           <div class="flex-1 min-w-[200px]">
                             <p class="font-semibold text-gray-800">{{ formatDayHeading(day.date) }}</p>
                             <p class="text-xs text-gray-500">{{ day.transaction_count }} transaksi GR</p>
-                          </div>
-                          <div class="text-right">
-                            <p class="text-xs text-gray-500">Qty</p>
-                            <p class="font-medium text-gray-700">{{ formatNumber(day.total_qty) }}</p>
                           </div>
                           <div class="text-right">
                             <p class="text-xs text-gray-500">Belanja</p>
@@ -187,7 +177,6 @@
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Buat PO</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Terima GR</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Request PR</th>
-                                  <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Qty</th>
                                   <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase whitespace-nowrap">Total</th>
                                 </tr>
                               </thead>
@@ -227,11 +216,10 @@
                                     <td class="px-3 py-2 text-gray-700">{{ trx.po_created_by_name || '—' }}</td>
                                     <td class="px-3 py-2 text-gray-700">{{ trx.gr_received_by_name || '—' }}</td>
                                     <td class="px-3 py-2 text-gray-700">{{ trx.pr_requester_names || '—' }}</td>
-                                    <td class="px-3 py-2 text-right text-gray-700 whitespace-nowrap align-top">{{ formatNumber(trx.total_qty) }}</td>
                                     <td class="px-3 py-2 text-right font-semibold text-gray-900 whitespace-nowrap align-top">{{ formatCurrency(trx.total_amount) }}</td>
                                   </tr>
                                   <tr v-if="isTrxExpanded(trx.good_receive_id)" class="bg-slate-50/90">
-                                    <td colspan="12" class="px-3 py-2 border-t border-gray-100">
+                                    <td colspan="11" class="px-3 py-2 border-t border-gray-100">
                                       <p class="text-xs font-medium text-gray-600 mb-2">Rincian item</p>
                                       <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
                                         <table class="min-w-full divide-y divide-gray-200 text-xs">
@@ -297,7 +285,7 @@
                 </tr>
               </template>
               <tr v-if="supplierReports.length === 0">
-                <td colspan="4" class="text-center py-10 text-gray-500">
+                <td colspan="3" class="text-center py-10 text-gray-500">
                   Tidak ada data pembelanjaan supplier untuk filter ini.
                 </td>
               </tr>
