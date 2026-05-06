@@ -182,26 +182,51 @@ class MemberAppsSettingsController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'description' => 'nullable|string',
             'sort_order' => 'nullable|integer|min:0'
+        ], [
+            'image.max' => 'Ukuran gambar maksimal 10MB.',
+            'image.mimes' => 'Format gambar harus jpeg, png, jpg, gif, atau webp.',
         ]);
 
         if ($validator->fails()) {
+            \Log::warning('MemberAppsSettings - Banner validation failed', [
+                'errors' => $validator->errors()->toArray(),
+                'title' => $request->input('title'),
+                'file_name' => $request->file('image')?->getClientOriginalName(),
+                'file_size' => $request->file('image')?->getSize(),
+                'file_mime' => $request->file('image')?->getMimeType(),
+            ]);
             return redirect()->back()->withErrors($validator)->withInput();
         }
+        try {
+            $imagePath = $request->file('image')->store('member-apps/banners', 'public');
 
-        $imagePath = $request->file('image')->store('member-apps/banners', 'public');
+            MemberAppsBanner::create([
+                'title' => $request->title,
+                'image' => $imagePath,
+                'description' => $request->description,
+                'sort_order' => $request->sort_order ?? 0,
+                'is_active' => true
+            ]);
 
-        MemberAppsBanner::create([
-            'title' => $request->title,
-            'image' => $imagePath,
-            'description' => $request->description,
-            'sort_order' => $request->sort_order ?? 0,
-            'is_active' => true
-        ]);
+            return redirect()->back()->with('success', 'Banner berhasil ditambahkan');
+        } catch (\Throwable $e) {
+            \Log::error('MemberAppsSettings - storeBanner failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'title' => $request->input('title'),
+                'file_name' => $request->file('image')?->getClientOriginalName(),
+                'file_size' => $request->file('image')?->getSize(),
+                'file_mime' => $request->file('image')?->getMimeType(),
+            ]);
 
-        return redirect()->back()->with('success', 'Banner berhasil ditambahkan');
+            return redirect()->back()->withErrors([
+                'banner' => 'Gagal menyimpan banner: '.$e->getMessage(),
+            ])->withInput();
+        }
     }
 
     public function updateBanner(Request $request, $id)
@@ -210,34 +235,62 @@ class MemberAppsSettingsController extends Controller
         
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
             'description' => 'nullable|string',
             'sort_order' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean'
+        ], [
+            'image.max' => 'Ukuran gambar maksimal 10MB.',
+            'image.mimes' => 'Format gambar harus jpeg, png, jpg, gif, atau webp.',
         ]);
 
         if ($validator->fails()) {
+            \Log::warning('MemberAppsSettings - Banner update validation failed', [
+                'banner_id' => $id,
+                'errors' => $validator->errors()->toArray(),
+                'title' => $request->input('title'),
+                'file_name' => $request->file('image')?->getClientOriginalName(),
+                'file_size' => $request->file('image')?->getSize(),
+                'file_mime' => $request->file('image')?->getMimeType(),
+            ]);
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
-        $data = [
-            'title' => $request->title,
-            'description' => $request->description,
-            'sort_order' => $request->sort_order ?? 0,
-            'is_active' => $request->has('is_active')
-        ];
+        try {
+            $data = [
+                'title' => $request->title,
+                'description' => $request->description,
+                'sort_order' => $request->sort_order ?? 0,
+                'is_active' => $request->has('is_active')
+            ];
 
-        if ($request->hasFile('image')) {
-            // Delete old image
-            if ($banner->image) {
-                Storage::disk('public')->delete($banner->image);
+            if ($request->hasFile('image')) {
+                // Delete old image
+                if ($banner->image) {
+                    Storage::disk('public')->delete($banner->image);
+                }
+                $data['image'] = $request->file('image')->store('member-apps/banners', 'public');
             }
-            $data['image'] = $request->file('image')->store('member-apps/banners', 'public');
+
+            $banner->update($data);
+
+            return redirect()->back()->with('success', 'Banner berhasil diperbarui');
+        } catch (\Throwable $e) {
+            \Log::error('MemberAppsSettings - updateBanner failed', [
+                'banner_id' => $id,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'title' => $request->input('title'),
+                'file_name' => $request->file('image')?->getClientOriginalName(),
+                'file_size' => $request->file('image')?->getSize(),
+                'file_mime' => $request->file('image')?->getMimeType(),
+            ]);
+
+            return redirect()->back()->withErrors([
+                'banner' => 'Gagal memperbarui banner: '.$e->getMessage(),
+            ])->withInput();
         }
-
-        $banner->update($data);
-
-        return redirect()->back()->with('success', 'Banner berhasil diperbarui');
     }
 
     public function deleteBanner($id)

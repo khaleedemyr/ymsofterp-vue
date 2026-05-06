@@ -4286,12 +4286,15 @@ const saveBanner = () => {
         showConfirmButton: false
       })
     },
-    onError: () => {
+    onError: (errors) => {
       savingBanner.value = false
+      const firstError = errors
+        ? Object.values(errors).flat().find((msg) => typeof msg === 'string' && msg.trim() !== '')
+        : ''
       Swal.fire({
         icon: 'error',
         title: 'Error!',
-        text: 'Failed to save banner. Please try again.',
+        text: firstError || 'Failed to save banner. Please try again.',
         confirmButtonText: 'OK'
       })
     }
