@@ -31,13 +31,15 @@ const form = ref({
   careers_card_3_title: props.careers.cards?.[2]?.title || '',
   careers_card_4_title: props.careers.cards?.[3]?.title || '',
   hero_image: null,
-  cta_image: null,
+  cta_image_1: null,
+  cta_image_2: null,
   card_1_image: null,
   card_2_image: null,
   card_3_image: null,
   card_4_image: null,
   remove_hero: false,
-  remove_cta_image: false,
+  remove_cta_image_1: false,
+  remove_cta_image_2: false,
   remove_card_1: false,
   remove_card_2: false,
   remove_card_3: false,
@@ -77,14 +79,16 @@ function submit() {
   textKeys.forEach((k) => fd.append(k, form.value[k] || ''));
 
   fd.append('remove_hero', form.value.remove_hero ? '1' : '0');
-  fd.append('remove_cta_image', form.value.remove_cta_image ? '1' : '0');
+  fd.append('remove_cta_image_1', form.value.remove_cta_image_1 ? '1' : '0');
+  fd.append('remove_cta_image_2', form.value.remove_cta_image_2 ? '1' : '0');
   fd.append('remove_card_1', form.value.remove_card_1 ? '1' : '0');
   fd.append('remove_card_2', form.value.remove_card_2 ? '1' : '0');
   fd.append('remove_card_3', form.value.remove_card_3 ? '1' : '0');
   fd.append('remove_card_4', form.value.remove_card_4 ? '1' : '0');
 
   if (form.value.hero_image) fd.append('hero_image', form.value.hero_image);
-  if (form.value.cta_image) fd.append('cta_image', form.value.cta_image);
+  if (form.value.cta_image_1) fd.append('cta_image_1', form.value.cta_image_1);
+  if (form.value.cta_image_2) fd.append('cta_image_2', form.value.cta_image_2);
   if (form.value.card_1_image) fd.append('card_1_image', form.value.card_1_image);
   if (form.value.card_2_image) fd.append('card_2_image', form.value.card_2_image);
   if (form.value.card_3_image) fd.append('card_3_image', form.value.card_3_image);
@@ -180,17 +184,37 @@ function submit() {
 
         <section class="space-y-4 border-t border-gray-200 pt-6">
           <h2 class="text-lg font-semibold text-gray-800">CTA + Tombol Loker</h2>
-          <div v-if="careers.careers_cta_image_url">
-            <img :src="careers.careers_cta_image_url" class="max-h-56 w-full rounded border object-cover" alt="" />
-          </div>
-          <div>
-            <InputLabel value="Gambar CTA (Optional)" />
-            <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => { form.cta_image = e.target.files?.[0] || null; form.remove_cta_image = false; }" />
-            <label v-if="careers.careers_cta_image_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
-              <input v-model="form.remove_cta_image" type="checkbox" />
-              Hapus gambar CTA
-            </label>
-            <InputError class="mt-1" :message="errors.cta_image" />
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="rounded border p-4 space-y-3">
+              <h3 class="font-semibold text-gray-700">Gambar untuk Tombol 1</h3>
+              <div v-if="careers.careers_cta_image_1_url">
+                <img :src="careers.careers_cta_image_1_url" class="h-32 w-full rounded border object-cover" alt="" />
+              </div>
+              <div>
+                <InputLabel value="Upload Image Tombol 1 (Optional)" />
+                <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => { form.cta_image_1 = e.target.files?.[0] || null; form.remove_cta_image_1 = false; }" />
+                <label v-if="careers.careers_cta_image_1_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                  <input v-model="form.remove_cta_image_1" type="checkbox" />
+                  Hapus gambar tombol 1
+                </label>
+                <InputError class="mt-1" :message="errors.cta_image_1" />
+              </div>
+            </div>
+            <div class="rounded border p-4 space-y-3">
+              <h3 class="font-semibold text-gray-700">Gambar untuk Tombol 2</h3>
+              <div v-if="careers.careers_cta_image_2_url">
+                <img :src="careers.careers_cta_image_2_url" class="h-32 w-full rounded border object-cover" alt="" />
+              </div>
+              <div>
+                <InputLabel value="Upload Image Tombol 2 (Optional)" />
+                <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => { form.cta_image_2 = e.target.files?.[0] || null; form.remove_cta_image_2 = false; }" />
+                <label v-if="careers.careers_cta_image_2_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                  <input v-model="form.remove_cta_image_2" type="checkbox" />
+                  Hapus gambar tombol 2
+                </label>
+                <InputError class="mt-1" :message="errors.cta_image_2" />
+              </div>
+            </div>
           </div>
           <div>
             <InputLabel value="Judul CTA" />
