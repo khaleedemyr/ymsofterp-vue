@@ -6,13 +6,15 @@ use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadings, WithMapping, WithStyles, ShouldAutoSize, Responsable
+class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadings, WithMapping, WithStyles, ShouldAutoSize, WithColumnFormatting, Responsable
 {
     protected Collection $data;
 
@@ -63,6 +65,18 @@ class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadi
         ];
     }
 
+    /**
+     * Angka untuk Excel harus bertipe numerik (bukan string "156.000"), agar tidak dibaca sebagai 156 desimal.
+     */
+    protected function floatOrNull($value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (float) $value : null;
+    }
+
     public function map($row): array
     {
         $fmtDt = function ($value) {
@@ -91,28 +105,37 @@ class FoodGoodReceiveSupplierSpendingExport implements FromCollection, WithHeadi
             ! empty($row['po_created_by_name']) ? $row['po_created_by_name'] : '-',
             ! empty($row['gr_received_by_name']) ? $row['gr_received_by_name'] : '-',
             ! empty($row['pr_requester_names']) ? $row['pr_requester_names'] : '-',
-            number_format((float) ($row['total_qty'] ?? 0), 2, ',', '.'),
-            number_format((float) ($row['total_amount'] ?? 0), 0, ',', '.'),
+            (float) ($row['total_qty'] ?? 0),
+            (float) ($row['total_amount'] ?? 0),
             ! empty($row['item_name']) ? $row['item_name'] : '-',
             ! empty($row['unit_name']) ? $row['unit_name'] : '-',
-            isset($row['qty_pr']) && $row['qty_pr'] !== null && $row['qty_pr'] !== ''
-                ? number_format((float) $row['qty_pr'], 2, ',', '.')
-                : '-',
-            isset($row['qty_po']) && $row['qty_po'] !== null && $row['qty_po'] !== ''
-                ? number_format((float) $row['qty_po'], 2, ',', '.')
-                : '-',
-            isset($row['qty_gr']) && $row['qty_gr'] !== null && $row['qty_gr'] !== ''
-                ? number_format((float) $row['qty_gr'], 2, ',', '.')
-                : '-',
+            $this->floatOrNull($row['qty_pr'] ?? null),
+            $this->floatOrNull($row['qty_po'] ?? null),
+            $this->floatOrNull($row['qty_gr'] ?? null),
             ! empty($row['line_pr_number']) ? $row['line_pr_number'] : '-',
             $fmtDt($row['line_pr_created_at'] ?? null),
             ! empty($row['line_ro_number']) ? $row['line_ro_number'] : '-',
             $fmtDt($row['line_ro_created_at'] ?? null),
             ! empty($row['line_fo_outlet_name']) ? $row['line_fo_outlet_name'] : '-',
             ! empty($row['line_fo_creator_name']) ? $row['line_fo_creator_name'] : '-',
-            isset($row['line_amount']) && $row['line_amount'] !== null && $row['line_amount'] !== ''
-                ? number_format((float) $row['line_amount'], 0, ',', '.')
-                : '-',
+            $this->floatOrNull($row['line_amount'] ?? null),
+        ];
+    }
+
+    /**
+     * Kolom angka: titik/koma pada output PHP bikin Excel salah parse — pakai format sheet + nilai numerik.
+     *
+     * @return array<string, string>
+     */
+    public function columnFormats(): array
+    {
+        return [
+            'O' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
+            'P' => '#,##0',
+            'S' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
+            'T' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
+            'U' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED2,
+            'AB' => '#,##0',
         ];
     }
 
