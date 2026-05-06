@@ -75,8 +75,21 @@
           </div>
         </Link>
 
+        <!-- Home Service Landing (web) -->
+        <Link href="/web-profile/home-service-landing" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-rose-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Home Service Landing</h3>
+              <p class="text-sm text-gray-500">Hero, blok, collage, kartu Gallery/Menu, CTA</p>
+            </div>
+            <div class="bg-rose-100 p-3 rounded-full">
+              <i class="fa-solid fa-layer-group text-rose-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
+
         <!-- Home Service Menu (web) -->
-        <Link href="/web-profile/home-service-packages" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-rose-500">
+        <Link href="/web-profile/home-service-packages" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-rose-600">
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-lg font-semibold text-gray-800 mb-1">Home Service Menu</h3>

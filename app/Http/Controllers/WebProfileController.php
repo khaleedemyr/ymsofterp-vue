@@ -13,6 +13,7 @@ use App\Models\WebProfilePromoSlide;
 use App\Models\WebProfileBrand;
 use App\Models\WebProfileHomeBlock;
 use App\Models\WebProfileHomeServicePackage;
+use App\Models\WebProfileHomeServiceLanding;
 use App\Models\WebProfileJustusAppsBlock;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -1352,6 +1353,148 @@ class WebProfileController extends Controller
             ->with('success', 'Pengaturan header Home Service disimpan.');
     }
 
+    public function homeServiceLandingEdit()
+    {
+        $row = WebProfileHomeServiceLanding::singleton();
+
+        return Inertia::render('WebProfile/HomeServiceLanding/Edit', [
+            'landing' => [
+                'hero_title' => $row->hero_title,
+                'hero_subtitle' => $row->hero_subtitle,
+                'content_blocks' => $row->content_blocks ?: [],
+                'collage_images' => collect($row->collage_images ?: [])->map(fn ($p) => [
+                    'path' => $p,
+                    'url' => $this->publicStorageUrl($p),
+                ])->values()->all(),
+                'gallery_card_image_path' => $row->gallery_card_image,
+                'gallery_card_image_url' => $row->gallery_card_image ? $this->publicStorageUrl($row->gallery_card_image) : null,
+                'gallery_card_label' => $row->gallery_card_label,
+                'gallery_card_url' => $row->gallery_card_url,
+                'menu_card_image_path' => $row->menu_card_image,
+                'menu_card_image_url' => $row->menu_card_image ? $this->publicStorageUrl($row->menu_card_image) : null,
+                'menu_card_label' => $row->menu_card_label,
+                'menu_card_url' => $row->menu_card_url,
+                'cta_label' => $row->cta_label,
+                'cta_url' => $row->cta_url,
+            ],
+        ]);
+    }
+
+    public function homeServiceLandingUpdate(Request $request)
+    {
+        $row = WebProfileHomeServiceLanding::singleton();
+
+        $request->validate([
+            'hero_title' => 'nullable|string|max:255',
+            'hero_subtitle' => 'nullable|string',
+            'content_blocks_json' => 'nullable|string',
+            'collage_keep_json' => 'nullable|string',
+            'gallery_card_label' => 'nullable|string|max:255',
+            'gallery_card_url' => 'nullable|string|max:2048',
+            'menu_card_label' => 'nullable|string|max:255',
+            'menu_card_url' => 'nullable|string|max:2048',
+            'cta_label' => 'nullable|string|max:255',
+            'cta_url' => 'nullable|string|max:2048',
+            'gallery_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'menu_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'collage_new' => 'nullable|array',
+            'collage_new.*' => 'image|mimes:jpeg,jpg,png,webp|max:10240',
+            'remove_gallery_card' => 'nullable|boolean',
+            'remove_menu_card' => 'nullable|boolean',
+        ]);
+
+        $blocksRaw = json_decode($request->input('content_blocks_json', '[]'), true);
+        if (! is_array($blocksRaw)) {
+            $blocksRaw = [];
+        }
+        $contentBlocks = [];
+        foreach ($blocksRaw as $b) {
+            if (! is_array($b)) {
+                continue;
+            }
+            $contentBlocks[] = [
+                'title' => isset($b['title']) ? (string) $b['title'] : '',
+                'body' => isset($b['body']) ? (string) $b['body'] : '',
+                'video_url' => isset($b['video_url']) ? (string) $b['video_url'] : '',
+                'text_on_left' => filter_var($b['text_on_left'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            ];
+        }
+
+        $keepCollage = json_decode($request->input('collage_keep_json', '[]'), true);
+        if (! is_array($keepCollage)) {
+            $keepCollage = [];
+        }
+        $oldCollage = $row->collage_images ?: [];
+        $keepCollage = array_values(array_intersect($keepCollage, $oldCollage));
+        foreach ($oldCollage as $path) {
+            if (! in_array($path, $keepCollage, true)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
+        $newCollage = [];
+        $collageUploads = $request->file('collage_new');
+        if ($collageUploads instanceof \Illuminate\Http\UploadedFile) {
+            $collageUploads = [$collageUploads];
+        }
+        $collageUploads = is_array($collageUploads) ? $collageUploads : [];
+        foreach ($collageUploads as $file) {
+            if (! $file instanceof \Illuminate\Http\UploadedFile) {
+                continue;
+            }
+            $newCollage[] = $file->storeAs(
+                'web-profile/home-service/collage',
+                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
+                'public'
+            );
+        }
+        $mergedCollage = array_values(array_merge($keepCollage, $newCollage));
+
+        if ($request->boolean('remove_gallery_card') && $row->gallery_card_image) {
+            Storage::disk('public')->delete($row->gallery_card_image);
+            $row->gallery_card_image = null;
+        }
+        if ($request->hasFile('gallery_card_image')) {
+            if ($row->gallery_card_image) {
+                Storage::disk('public')->delete($row->gallery_card_image);
+            }
+            $row->gallery_card_image = $request->file('gallery_card_image')->storeAs(
+                'web-profile/home-service/cards',
+                time().'_gallery.'.$request->file('gallery_card_image')->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        if ($request->boolean('remove_menu_card') && $row->menu_card_image) {
+            Storage::disk('public')->delete($row->menu_card_image);
+            $row->menu_card_image = null;
+        }
+        if ($request->hasFile('menu_card_image')) {
+            if ($row->menu_card_image) {
+                Storage::disk('public')->delete($row->menu_card_image);
+            }
+            $row->menu_card_image = $request->file('menu_card_image')->storeAs(
+                'web-profile/home-service/cards',
+                time().'_menu.'.$request->file('menu_card_image')->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        $row->hero_title = $request->input('hero_title');
+        $row->hero_subtitle = $request->input('hero_subtitle');
+        $row->content_blocks = $contentBlocks;
+        $row->collage_images = $mergedCollage;
+        $row->gallery_card_label = $request->input('gallery_card_label');
+        $row->gallery_card_url = $request->input('gallery_card_url');
+        $row->menu_card_label = $request->input('menu_card_label');
+        $row->menu_card_url = $request->input('menu_card_url');
+        $row->cta_label = $request->input('cta_label');
+        $row->cta_url = $request->input('cta_url');
+        $row->save();
+
+        return redirect()->route('web-profile.home-service-landing.edit')
+            ->with('success', 'Landing Home Service disimpan.');
+    }
+
     /**
      * API: Home Service packages + hero for Justus Group web frontend
      */
@@ -1386,7 +1529,75 @@ class WebProfileController extends Controller
         return response()->json([
             'packages' => $packages,
             'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'landing' => $this->buildHomeServiceLandingApiPayload(),
         ]);
+    }
+
+    private function buildHomeServiceLandingApiPayload(): array
+    {
+        $row = WebProfileHomeServiceLanding::query()->first();
+        if (! $row) {
+            return [
+                'hero_title' => null,
+                'hero_subtitle' => null,
+                'content_blocks' => [],
+                'collage_images' => [],
+                'gallery_card' => null,
+                'menu_card' => null,
+                'cta' => null,
+            ];
+        }
+
+        $blocks = collect($row->content_blocks ?: [])->map(function ($b) {
+            if (! is_array($b)) {
+                return null;
+            }
+
+            return [
+                'title' => (string) ($b['title'] ?? ''),
+                'body' => (string) ($b['body'] ?? ''),
+                'video_url' => (string) ($b['video_url'] ?? ''),
+                'text_on_left' => filter_var($b['text_on_left'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            ];
+        })->filter()->values()->all();
+
+        $collage = collect($row->collage_images ?: [])->map(fn ($p) => $this->publicStorageUrl($p))->filter()->values()->all();
+
+        $gallery = null;
+        if ($row->gallery_card_image) {
+            $gallery = [
+                'image_url' => $this->publicStorageUrl($row->gallery_card_image),
+                'label' => $row->gallery_card_label,
+                'url' => $row->gallery_card_url,
+            ];
+        }
+
+        $menu = null;
+        if ($row->menu_card_image) {
+            $menu = [
+                'image_url' => $this->publicStorageUrl($row->menu_card_image),
+                'label' => $row->menu_card_label,
+                'url' => $row->menu_card_url,
+            ];
+        }
+
+        $cta = null;
+        if ($row->cta_label || $row->cta_url) {
+            $cta = [
+                'label' => $row->cta_label,
+                'url' => $row->cta_url,
+            ];
+        }
+
+        return [
+            'hero_title' => $row->hero_title,
+            'hero_subtitle' => $row->hero_subtitle,
+            'content_blocks' => $blocks,
+            'collage_images' => $collage,
+            'gallery_card' => $gallery,
+            'menu_card' => $menu,
+            'cta' => $cta,
+        ];
     }
 
     // ========== JUSTUS APPS PAGE (Company profile web) ==========

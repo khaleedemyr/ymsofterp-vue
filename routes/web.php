@@ -2372,6 +2372,11 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'homeBlocksDestroy'])->name('destroy');
     });
 
+    Route::prefix('web-profile/home-service-landing')->name('web-profile.home-service-landing.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'homeServiceLandingEdit'])->name('edit');
+        Route::post('/update', [\App\Http\Controllers\WebProfileController::class, 'homeServiceLandingUpdate'])->name('update');
+    });
+
     Route::prefix('web-profile/home-service-packages')->name('web-profile.home-service-packages.')->group(function () {
         Route::post('/hero', [\App\Http\Controllers\WebProfileController::class, 'homeServiceHeroStore'])->name('hero');
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesIndex'])->name('index');

@@ -80,14 +80,22 @@ async function destroyPkg(id) {
 <template>
   <AppLayout title="Web Profile - Home Service">
     <div class="max-w-7xl mx-auto py-8 px-4">
-      <div class="flex justify-between items-center mb-6">
+      <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
         <h1 class="text-2xl font-bold text-gray-800">Home Service Menu (Web)</h1>
-        <Link
-          href="/web-profile/home-service-packages/create"
-          class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-        >
-          <i class="fa-solid fa-plus mr-2"></i> Tambah Paket
-        </Link>
+        <div class="flex flex-wrap gap-2">
+          <Link
+            href="/web-profile/home-service-landing"
+            class="bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 text-sm"
+          >
+            <i class="fa-solid fa-layer-group mr-2"></i> Landing page
+          </Link>
+          <Link
+            href="/web-profile/home-service-packages/create"
+            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <i class="fa-solid fa-plus mr-2"></i> Tambah Paket
+          </Link>
+        </div>
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-8">
