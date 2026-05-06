@@ -1225,11 +1225,15 @@ class WebProfileController extends Controller
 
         $heroPath = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
         $heroUrl = $heroPath ? $this->publicStorageUrl($heroPath) : null;
+        $heroTitle = WebProfileSetting::where('key', 'home_service_hero_title')->value('value');
+        $heroSubtitle = WebProfileSetting::where('key', 'home_service_hero_subtitle')->value('value');
 
         return Inertia::render('WebProfile/HomeServicePackages/Index', [
             'packages' => $packages,
             'hero_image_path' => $heroPath,
             'hero_image_url' => $heroUrl,
+            'hero_title' => $heroTitle,
+            'hero_subtitle' => $heroSubtitle,
         ]);
     }
 
@@ -1322,7 +1326,9 @@ class WebProfileController extends Controller
     public function homeServiceHeroStore(Request $request)
     {
         $request->validate([
-            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'hero_image' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
+            'hero_title' => 'nullable|string|max:255',
+            'hero_subtitle' => 'nullable|string|max:2000',
         ]);
 
         if ($request->boolean('remove_hero')) {
@@ -1342,12 +1348,22 @@ class WebProfileController extends Controller
             $file = $request->file('hero_image');
             $fileName = time().'_home_service_hero.'.$file->getClientOriginalExtension();
             $path = $file->storeAs('web-profile/home-service', $fileName, 'public');
+            $type = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
 
             WebProfileSetting::updateOrCreate(
                 ['key' => 'home_service_hero_image'],
-                ['value' => $path, 'type' => 'image']
+                ['value' => $path, 'type' => $type]
             );
         }
+
+        WebProfileSetting::updateOrCreate(
+            ['key' => 'home_service_hero_title'],
+            ['value' => $request->input('hero_title') ?: null, 'type' => 'text']
+        );
+        WebProfileSetting::updateOrCreate(
+            ['key' => 'home_service_hero_subtitle'],
+            ['value' => $request->input('hero_subtitle') ?: null, 'type' => 'text']
+        );
 
         return redirect()->route('web-profile.home-service-packages.index')
             ->with('success', 'Pengaturan header Home Service disimpan.');
@@ -1572,10 +1588,14 @@ class WebProfileController extends Controller
             });
 
         $heroPath = WebProfileSetting::where('key', 'home_service_hero_image')->value('value');
+        $heroTitle = WebProfileSetting::where('key', 'home_service_hero_title')->value('value');
+        $heroSubtitle = WebProfileSetting::where('key', 'home_service_hero_subtitle')->value('value');
 
         return response()->json([
             'packages' => $packages,
             'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'hero_title' => $heroTitle,
+            'hero_subtitle' => $heroSubtitle,
             'landing' => $this->buildHomeServiceLandingApiPayload(),
         ]);
     }

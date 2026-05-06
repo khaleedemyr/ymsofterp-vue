@@ -11,15 +11,21 @@ const props = defineProps({
   packages: { type: Object, default: () => ({ data: [] }) },
   hero_image_url: { type: String, default: null },
   hero_image_path: { type: String, default: null },
+  hero_title: { type: String, default: '' },
+  hero_subtitle: { type: String, default: '' },
 });
 
 const page = usePage();
 const search = ref('');
 const heroFile = ref(null);
 const removeHero = ref(false);
+const heroIsVideo = ref(false);
+const heroTitle = ref(props.hero_title || '');
+const heroSubtitle = ref(props.hero_subtitle || '');
 
 onMounted(() => {
   const flash = page.props.flash || {};
+  heroIsVideo.value = /\.(mp4|webm)(\?|$)/i.test(String(props.hero_image_url || ''));
   if (flash.success) {
     Swal.fire({ icon: 'success', title: 'Berhasil', text: flash.success, confirmButtonText: 'OK' });
   }
@@ -37,13 +43,15 @@ function handleSearch() {
 
 function submitHero() {
   if (!heroFile.value && !removeHero.value) {
-    Swal.fire({ icon: 'info', title: 'Pilih gambar baru atau centang hapus latar.' });
+    Swal.fire({ icon: 'info', title: 'Pilih file baru (gambar/video) atau centang hapus latar.' });
     return;
   }
   const fd = new FormData();
   if (heroFile.value) {
     fd.append('hero_image', heroFile.value);
   }
+  fd.append('hero_title', heroTitle.value || '');
+  fd.append('hero_subtitle', heroSubtitle.value || '');
   if (removeHero.value) {
     fd.append('remove_hero', '1');
   }
@@ -99,24 +107,47 @@ async function destroyPkg(id) {
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 class="text-lg font-semibold text-gray-800 mb-4">Gambar latar header (halaman Home Service)</h2>
-        <p class="text-sm text-gray-600 mb-4">Opsional. Ditampilkan di belakang judul &amp; logo brand di website.</p>
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Media latar header (halaman Home Service)</h2>
+        <p class="text-sm text-gray-600 mb-4">Opsional. Bisa gambar atau video; ditampilkan di belakang judul &amp; logo brand di website.</p>
+        <div class="grid gap-4 mb-4 md:grid-cols-2">
+          <div>
+            <InputLabel value="Title" />
+            <TextInput v-model="heroTitle" class="mt-1 w-full" placeholder="HOME SERVICE" />
+          </div>
+          <div>
+            <InputLabel value="Subtitle" />
+            <textarea
+              v-model="heroSubtitle"
+              rows="3"
+              class="mt-1 w-full rounded-md border-gray-300 shadow-sm"
+              placeholder="daily canteen dining ...&#10;Guided by efficiency ..."
+            />
+          </div>
+        </div>
         <div v-if="hero_image_url" class="mb-4">
-          <img :src="hero_image_url" alt="Hero" class="max-h-48 rounded border border-gray-200" />
+          <video
+            v-if="heroIsVideo"
+            :src="hero_image_url"
+            class="max-h-48 rounded border border-gray-200"
+            controls
+            playsinline
+            preload="metadata"
+          />
+          <img v-else :src="hero_image_url" alt="Hero" class="max-h-48 rounded border border-gray-200" />
         </div>
         <div class="flex flex-wrap items-end gap-4">
           <div>
-            <InputLabel value="Upload gambar baru" />
+            <InputLabel value="Upload media baru" />
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.mp4,.webm"
               class="mt-1 block text-sm"
               @change="(e) => { heroFile = e.target.files?.[0] || null; removeHero = false; }"
             />
             <p class="mt-2 max-w-3xl text-xs text-gray-500">
               Justus Nest: gambar memenuhi area header (lebar penuh layar, tinggi mengikuti blok judul &amp; logo) dengan crop dari tengah; ada overlay gelap di atasnya.
               Disarankan landscape <strong>1920×1080</strong> atau <strong>2560×1440</strong> (retina), minimal lebar <strong>1920 px</strong>; titik fokus di tengah frame.
-              JPG/PNG/WEBP, maks. <strong>10 MB</strong> (batas upload).
+              Untuk video: MP4/WEBM landscape 16:9. Batas upload media <strong>50 MB</strong>.
             </p>
           </div>
           <label v-if="hero_image_path" class="flex items-center gap-2 text-sm text-gray-700">
