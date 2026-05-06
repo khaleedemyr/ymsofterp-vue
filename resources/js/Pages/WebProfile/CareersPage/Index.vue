@@ -21,6 +21,7 @@ const form = ref({
   careers_subtitle: props.careers.careers_subtitle || 'Growth Together with Justus Group',
   careers_wording: props.careers.careers_wording || '',
   careers_cta_title: props.careers.careers_cta_title || '',
+  careers_cta_subtitle: props.careers.careers_cta_subtitle || '',
   careers_primary_button_label: props.careers.careers_primary_button_label || '',
   careers_primary_button_url: props.careers.careers_primary_button_url || '',
   careers_secondary_button_label: props.careers.careers_secondary_button_label || '',
@@ -30,11 +31,13 @@ const form = ref({
   careers_card_3_title: props.careers.cards?.[2]?.title || '',
   careers_card_4_title: props.careers.cards?.[3]?.title || '',
   hero_image: null,
+  cta_image: null,
   card_1_image: null,
   card_2_image: null,
   card_3_image: null,
   card_4_image: null,
   remove_hero: false,
+  remove_cta_image: false,
   remove_card_1: false,
   remove_card_2: false,
   remove_card_3: false,
@@ -61,6 +64,7 @@ function submit() {
     'careers_subtitle',
     'careers_wording',
     'careers_cta_title',
+    'careers_cta_subtitle',
     'careers_primary_button_label',
     'careers_primary_button_url',
     'careers_secondary_button_label',
@@ -73,12 +77,14 @@ function submit() {
   textKeys.forEach((k) => fd.append(k, form.value[k] || ''));
 
   fd.append('remove_hero', form.value.remove_hero ? '1' : '0');
+  fd.append('remove_cta_image', form.value.remove_cta_image ? '1' : '0');
   fd.append('remove_card_1', form.value.remove_card_1 ? '1' : '0');
   fd.append('remove_card_2', form.value.remove_card_2 ? '1' : '0');
   fd.append('remove_card_3', form.value.remove_card_3 ? '1' : '0');
   fd.append('remove_card_4', form.value.remove_card_4 ? '1' : '0');
 
   if (form.value.hero_image) fd.append('hero_image', form.value.hero_image);
+  if (form.value.cta_image) fd.append('cta_image', form.value.cta_image);
   if (form.value.card_1_image) fd.append('card_1_image', form.value.card_1_image);
   if (form.value.card_2_image) fd.append('card_2_image', form.value.card_2_image);
   if (form.value.card_3_image) fd.append('card_3_image', form.value.card_3_image);
@@ -116,14 +122,22 @@ function submit() {
             <InputError class="mt-1" :message="errors.careers_subtitle" />
           </div>
           <div v-if="careers.careers_hero_image_url">
-            <img :src="careers.careers_hero_image_url" class="max-h-48 w-full rounded border object-cover" alt="" />
+            <video
+              v-if="String(careers.careers_hero_image_type || 'image') === 'video'"
+              :src="careers.careers_hero_image_url"
+              class="max-h-48 w-full rounded border bg-black object-contain"
+              controls
+              muted
+              playsinline
+            />
+            <img v-else :src="careers.careers_hero_image_url" class="max-h-48 w-full rounded border object-cover" alt="" />
           </div>
           <div>
-            <InputLabel value="Gambar Hero (rekomendasi 1920x1080)" />
-            <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => { form.hero_image = e.target.files?.[0] || null; form.remove_hero = false; }" />
+            <InputLabel value="Media Hero (Image/Video, rekomendasi 1920x1080)" />
+            <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" class="mt-1 block w-full text-sm" @change="(e) => { form.hero_image = e.target.files?.[0] || null; form.remove_hero = false; }" />
             <label v-if="careers.careers_hero_image_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
               <input v-model="form.remove_hero" type="checkbox" />
-              Hapus gambar hero
+              Hapus media hero
             </label>
             <InputError class="mt-1" :message="errors.hero_image" />
           </div>
@@ -166,9 +180,25 @@ function submit() {
 
         <section class="space-y-4 border-t border-gray-200 pt-6">
           <h2 class="text-lg font-semibold text-gray-800">CTA + Tombol Loker</h2>
+          <div v-if="careers.careers_cta_image_url">
+            <img :src="careers.careers_cta_image_url" class="max-h-56 w-full rounded border object-cover" alt="" />
+          </div>
+          <div>
+            <InputLabel value="Gambar CTA (Optional)" />
+            <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-sm" @change="(e) => { form.cta_image = e.target.files?.[0] || null; form.remove_cta_image = false; }" />
+            <label v-if="careers.careers_cta_image_path" class="mt-2 flex items-center gap-2 text-sm text-gray-700">
+              <input v-model="form.remove_cta_image" type="checkbox" />
+              Hapus gambar CTA
+            </label>
+            <InputError class="mt-1" :message="errors.cta_image" />
+          </div>
           <div>
             <InputLabel value="Judul CTA" />
             <TextInput v-model="form.careers_cta_title" class="mt-1 w-full" />
+          </div>
+          <div>
+            <InputLabel value="Subtitle CTA (Optional)" />
+            <TextInput v-model="form.careers_cta_subtitle" class="mt-1 w-full" />
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

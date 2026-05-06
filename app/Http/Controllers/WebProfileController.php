@@ -2103,6 +2103,8 @@ class WebProfileController extends Controller
             'careers_subtitle',
             'careers_wording',
             'careers_cta_title',
+            'careers_cta_subtitle',
+            'careers_cta_image',
             'careers_primary_button_label',
             'careers_primary_button_url',
             'careers_secondary_button_label',
@@ -2126,11 +2128,17 @@ class WebProfileController extends Controller
                 'careers_subtitle' => $settings->get('careers_subtitle')->value ?? 'Growth Together with Justus Group',
                 'careers_wording' => $settings->get('careers_wording')->value ?? '',
                 'careers_cta_title' => $settings->get('careers_cta_title')->value ?? 'BE PART OF A JOURNEY TO CREATE THE FUTURE OF LIFESTYLE EXPERIENCES',
+                'careers_cta_subtitle' => $settings->get('careers_cta_subtitle')->value ?? '',
+                'careers_cta_image_path' => $settings->get('careers_cta_image')->value ?? null,
+                'careers_cta_image_url' => ($settings->get('careers_cta_image')->value ?? null)
+                    ? $this->publicStorageUrl($settings->get('careers_cta_image')->value)
+                    : null,
                 'careers_primary_button_label' => $settings->get('careers_primary_button_label')->value ?? 'HEAD OFFICE Join Us',
                 'careers_primary_button_url' => $settings->get('careers_primary_button_url')->value ?? '',
                 'careers_secondary_button_label' => $settings->get('careers_secondary_button_label')->value ?? 'OPERATION Join Us',
                 'careers_secondary_button_url' => $settings->get('careers_secondary_button_url')->value ?? '',
                 'careers_hero_image_path' => $settings->get('careers_hero_image')->value ?? null,
+                'careers_hero_image_type' => $settings->get('careers_hero_image')->type ?? 'image',
                 'careers_hero_image_url' => ($settings->get('careers_hero_image')->value ?? null)
                     ? $this->publicStorageUrl($settings->get('careers_hero_image')->value)
                     : null,
@@ -2155,16 +2163,19 @@ class WebProfileController extends Controller
             'careers_subtitle' => 'nullable|string|max:255',
             'careers_wording' => 'nullable|string',
             'careers_cta_title' => 'nullable|string|max:255',
+            'careers_cta_subtitle' => 'nullable|string|max:255',
             'careers_primary_button_label' => 'nullable|string|max:255',
             'careers_primary_button_url' => 'nullable|url|max:255',
             'careers_secondary_button_label' => 'nullable|string|max:255',
             'careers_secondary_button_url' => 'nullable|url|max:255',
-            'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'hero_image' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
+            'cta_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
             'card_1_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
             'card_2_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
             'card_3_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
             'card_4_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
             'remove_hero' => 'nullable|boolean',
+            'remove_cta_image' => 'nullable|boolean',
             'remove_card_1' => 'nullable|boolean',
             'remove_card_2' => 'nullable|boolean',
             'remove_card_3' => 'nullable|boolean',
@@ -2177,6 +2188,7 @@ class WebProfileController extends Controller
 
         $imageConfig = [
             'careers_hero_image' => ['input' => 'hero_image', 'remove' => 'remove_hero', 'name' => 'careers_hero'],
+            'careers_cta_image' => ['input' => 'cta_image', 'remove' => 'remove_cta_image', 'name' => 'careers_cta'],
             'careers_card_1_image' => ['input' => 'card_1_image', 'remove' => 'remove_card_1', 'name' => 'careers_card_1'],
             'careers_card_2_image' => ['input' => 'card_2_image', 'remove' => 'remove_card_2', 'name' => 'careers_card_2'],
             'careers_card_3_image' => ['input' => 'card_3_image', 'remove' => 'remove_card_3', 'name' => 'careers_card_3'],
@@ -2200,9 +2212,13 @@ class WebProfileController extends Controller
                 $file = $request->file($cfg['input']);
                 $fileName = time().'_'.$cfg['name'].'.'.$file->getClientOriginalExtension();
                 $path = $file->storeAs('web-profile/careers-page', $fileName, 'public');
+                $fileType = 'image';
+                if ($settingKey === 'careers_hero_image') {
+                    $fileType = str_starts_with((string) $file->getMimeType(), 'video/') ? 'video' : 'image';
+                }
                 WebProfileSetting::updateOrCreate(
                     ['key' => $settingKey],
-                    ['value' => $path, 'type' => 'image']
+                    ['value' => $path, 'type' => $fileType]
                 );
             }
         }
@@ -2212,6 +2228,7 @@ class WebProfileController extends Controller
             'careers_subtitle',
             'careers_wording',
             'careers_cta_title',
+            'careers_cta_subtitle',
             'careers_primary_button_label',
             'careers_primary_button_url',
             'careers_secondary_button_label',
@@ -2240,6 +2257,8 @@ class WebProfileController extends Controller
             'careers_subtitle',
             'careers_wording',
             'careers_cta_title',
+            'careers_cta_subtitle',
+            'careers_cta_image',
             'careers_primary_button_label',
             'careers_primary_button_url',
             'careers_secondary_button_label',
@@ -2273,9 +2292,12 @@ class WebProfileController extends Controller
             'title' => $settings->get('careers_title')->value ?? 'CAREERS',
             'subtitle' => $settings->get('careers_subtitle')->value ?? 'Growth Together with Justus Group',
             'hero_image_url' => $heroPath ? $this->publicStorageUrl($heroPath) : null,
+            'hero_image_type' => $settings->get('careers_hero_image')->type ?? 'image',
             'wording' => $settings->get('careers_wording')->value ?? '',
             'cards' => $cards,
             'cta_title' => $settings->get('careers_cta_title')->value ?? 'BE PART OF A JOURNEY TO CREATE THE FUTURE OF LIFESTYLE EXPERIENCES',
+            'cta_subtitle' => $settings->get('careers_cta_subtitle')->value ?? '',
+            'cta_image_url' => ($settings->get('careers_cta_image')->value ?? null) ? $this->publicStorageUrl($settings->get('careers_cta_image')->value) : null,
             'primary_button_label' => $settings->get('careers_primary_button_label')->value ?? 'HEAD OFFICE Join Us',
             'primary_button_url' => $settings->get('careers_primary_button_url')->value ?? null,
             'secondary_button_label' => $settings->get('careers_secondary_button_label')->value ?? 'OPERATION Join Us',
