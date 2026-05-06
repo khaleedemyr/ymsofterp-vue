@@ -2344,6 +2344,15 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'bannersDestroy'])->name('destroy');
     });
 
+    Route::prefix('web-profile/promo-slides')->name('web-profile.promo-slides.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesCreate'])->name('create');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesStore'])->name('store');
+        Route::get('/{id}/edit', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesEdit'])->name('edit');
+        Route::put('/{id}', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesUpdate'])->name('update');
+        Route::delete('/{id}', [\App\Http\Controllers\WebProfileController::class, 'promoSlidesDestroy'])->name('destroy');
+    });
+
     // Web Profile Brands Routes
     Route::prefix('web-profile/brands')->name('web-profile.brands.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'brandsIndex'])->name('index');

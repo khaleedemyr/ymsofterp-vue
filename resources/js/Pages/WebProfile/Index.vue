@@ -36,6 +36,19 @@
           </div>
         </Link>
 
+        <!-- Promo slider (Home, above blocks) -->
+        <Link href="/web-profile/promo-slides" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-teal-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Promo Slider (Home)</h3>
+              <p class="text-sm text-gray-500">Gambar promo bergilir di atas Home Blocks</p>
+            </div>
+            <div class="bg-teal-100 p-3 rounded-full">
+              <i class="fa-solid fa-clapperboard text-teal-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
+
         <!-- Brands Card -->
         <Link href="/web-profile/brands" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-yellow-500">
           <div class="flex items-center justify-between">

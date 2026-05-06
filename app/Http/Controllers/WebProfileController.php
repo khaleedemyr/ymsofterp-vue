@@ -9,6 +9,7 @@ use App\Models\WebProfileGallery;
 use App\Models\WebProfileSetting;
 use App\Models\WebProfileContact;
 use App\Models\WebProfileBanner;
+use App\Models\WebProfilePromoSlide;
 use App\Models\WebProfileBrand;
 use App\Models\WebProfileHomeBlock;
 use App\Models\WebProfileHomeServicePackage;
@@ -515,6 +516,142 @@ class WebProfileController extends Controller
             });
 
         return response()->json($banners);
+    }
+
+    /**
+     * API: Home promo slider slides (public website)
+     */
+    public function apiPromoSlides()
+    {
+        $slides = WebProfilePromoSlide::where('is_active', true)
+            ->orderBy('order')
+            ->limit(20)
+            ->get()
+            ->map(function ($slide) {
+                return [
+                    'id' => $slide->id,
+                    'title' => $slide->title,
+                    'image' => $slide->image_url,
+                    'link_url' => $slide->link_url,
+                ];
+            });
+
+        return response()->json($slides);
+    }
+
+    // ========== PROMO SLIDES (HOME) ==========
+
+    public function promoSlidesIndex(Request $request)
+    {
+        $slides = WebProfilePromoSlide::orderBy('order')
+            ->when($request->search, function ($query, $search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->paginate(15);
+
+        $slides->through(function ($slide) {
+            return [
+                'id' => $slide->id,
+                'title' => $slide->title,
+                'image' => $slide->image,
+                'image_url' => $slide->image_url,
+                'link_url' => $slide->link_url,
+                'order' => $slide->order,
+                'is_active' => $slide->is_active,
+                'created_at' => $slide->created_at,
+                'updated_at' => $slide->updated_at,
+            ];
+        });
+
+        return Inertia::render('WebProfile/PromoSlides/Index', [
+            'slides' => $slides,
+        ]);
+    }
+
+    public function promoSlidesCreate()
+    {
+        return Inertia::render('WebProfile/PromoSlides/Create');
+    }
+
+    public function promoSlidesStore(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'nullable|string|max:255',
+            'image' => 'required|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'link_url' => 'nullable|string|max:2048',
+            'order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ], [
+            'image.required' => 'Gambar promo wajib diupload',
+            'image.image' => 'File harus berupa gambar',
+            'image.mimes' => 'Format gambar: JPG, PNG, atau WEBP',
+            'image.max' => 'Ukuran gambar maksimal 10MB',
+        ]);
+
+        return DB::transaction(function () use ($request, $validated) {
+            $file = $request->file('image');
+            $label = $validated['title'] ?: 'promo';
+            $fileName = time().'_'.Str::slug($label).'_promo.'.$file->getClientOriginalExtension();
+            $path = $file->storeAs('web-profile/promo-slides', $fileName, 'public');
+            if (! $path) {
+                throw new \RuntimeException('Gagal mengupload gambar');
+            }
+            $validated['image'] = $path;
+            WebProfilePromoSlide::create($validated);
+
+            return redirect()->route('web-profile.promo-slides.index')
+                ->with('success', 'Promo slide berhasil ditambahkan');
+        });
+    }
+
+    public function promoSlidesEdit($id)
+    {
+        $slide = WebProfilePromoSlide::findOrFail($id);
+
+        return Inertia::render('WebProfile/PromoSlides/Edit', [
+            'slide' => $slide,
+        ]);
+    }
+
+    public function promoSlidesUpdate(Request $request, $id)
+    {
+        $slide = WebProfilePromoSlide::findOrFail($id);
+
+        $validated = $request->validate([
+            'title' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'link_url' => 'nullable|string|max:2048',
+            'order' => 'integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($slide->image) {
+                Storage::disk('public')->delete($slide->image);
+            }
+            $file = $request->file('image');
+            $label = trim((string) (($validated['title'] ?? '') !== '' ? $validated['title'] : ($slide->title ?? ''))) ?: 'promo';
+            $fileName = time().'_'.Str::slug((string) $label).'_promo.'.$file->getClientOriginalExtension();
+            $validated['image'] = $file->storeAs('web-profile/promo-slides', $fileName, 'public');
+        } else {
+            unset($validated['image']);
+        }
+
+        $slide->update($validated);
+
+        return redirect()->back()->with('success', 'Promo slide berhasil diperbarui');
+    }
+
+    public function promoSlidesDestroy($id)
+    {
+        $slide = WebProfilePromoSlide::findOrFail($id);
+        if ($slide->image) {
+            Storage::disk('public')->delete($slide->image);
+        }
+        $slide->delete();
+
+        return redirect()->route('web-profile.promo-slides.index')
+            ->with('success', 'Promo slide berhasil dihapus');
     }
 
     // ========== BRAND MANAGEMENT ==========

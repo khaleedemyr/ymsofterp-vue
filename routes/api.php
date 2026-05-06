@@ -1591,6 +1591,7 @@ Route::prefix('web-profile')->group(function () {
     Route::get('/menu', [\App\Http\Controllers\WebProfileController::class, 'apiMenu'])->name('api.web-profile.menu');
     Route::get('/gallery', [\App\Http\Controllers\WebProfileController::class, 'apiGallery'])->name('api.web-profile.gallery');
     Route::get('/banners', [\App\Http\Controllers\WebProfileController::class, 'apiBanners'])->name('api.web-profile.banners');
+    Route::get('/promo-slides', [\App\Http\Controllers\WebProfileController::class, 'apiPromoSlides'])->name('api.web-profile.promo-slides');
     Route::get('/brands', [\App\Http\Controllers\WebProfileController::class, 'apiBrands'])->name('api.web-profile.brands');
     Route::get('/home-blocks', [\App\Http\Controllers\WebProfileController::class, 'apiHomeBlocks'])->name('api.web-profile.home-blocks');
     Route::get('/home-service-packages', [\App\Http\Controllers\WebProfileController::class, 'apiHomeServicePackages'])->name('api.web-profile.home-service-packages');
