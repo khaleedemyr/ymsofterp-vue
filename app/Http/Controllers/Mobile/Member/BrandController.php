@@ -258,8 +258,8 @@ class BrandController extends Controller
                 if (is_array($facilityData)) {
                     $facilityInfo = [
                         'wifi' => [
-                            'name' => 'Speed Wi-fi',
-                            'description' => 'High-speed internet access is available to support your connectivity throughout your visit.',
+                            'name' => 'Free Wi-Fi',
+                            'description' => 'Complimentary wireless internet access for your visit.',
                             'image' => 'https://ymsofterp.com/images/WIFI.png'
                         ],
                         'smoking_area' => [
@@ -281,6 +281,11 @@ class BrandController extends Controller
                             'name' => 'Free Valet Parking',
                             'description' => 'Enjoy complimentary parking convenience with our valet service',
                             'image' => 'https://ymsofterp.com/images/VALET.png'
+                        ],
+                        'dedicated_event_space' => [
+                            'name' => 'Dedicated Event Space',
+                            'description' => 'A dedicated space for meetings, gatherings, and special occasions.',
+                            'image' => '/Dedicated%20Event%20Space.png'
                         ],
                     ];
                     

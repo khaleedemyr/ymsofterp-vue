@@ -924,7 +924,7 @@ class MemberAppsSettingsController extends Controller
                 'gallery_images' => 'nullable|array',
                 'gallery_images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
                 'facility' => 'nullable|array',
-                'facility.*' => 'string|in:wifi,smoking_area,mushola,meeting_room,valet_parking',
+                'facility.*' => 'string|in:wifi,smoking_area,mushola,meeting_room,valet_parking,dedicated_event_space',
                 'tripadvisor_link' => 'nullable|url|max:500'
             ]);
 

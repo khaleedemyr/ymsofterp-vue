@@ -2603,7 +2603,7 @@
               <div class="space-y-2">
                 <label class="flex items-center space-x-2 cursor-pointer">
                   <input type="checkbox" v-model="brandForm.facility" value="wifi" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                  <span class="text-sm text-gray-700">Speed Wi-fi</span>
+                  <span class="text-sm text-gray-700">Free Wi-Fi</span>
                 </label>
                 <label class="flex items-center space-x-2 cursor-pointer">
                   <input type="checkbox" v-model="brandForm.facility" value="smoking_area" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
@@ -2620,6 +2620,10 @@
                 <label class="flex items-center space-x-2 cursor-pointer">
                   <input type="checkbox" v-model="brandForm.facility" value="valet_parking" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                   <span class="text-sm text-gray-700">Free Valet Parking</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" v-model="brandForm.facility" value="dedicated_event_space" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-sm text-gray-700">Dedicated Event Space</span>
                 </label>
               </div>
             </div>
@@ -3580,11 +3584,12 @@ const formatDate = (date) => {
 // Helper function to get facility display name
 const getFacilityName = (facilityKey) => {
   const facilityNames = {
-    'wifi': 'Speed Wi-fi',
+    'wifi': 'Free Wi-Fi',
     'smoking_area': 'Smoking Area',
     'mushola': 'Mushola',
     'meeting_room': 'Meeting Room',
-    'valet_parking': 'Free Valet Parking'
+    'valet_parking': 'Free Valet Parking',
+    'dedicated_event_space': 'Dedicated Event Space'
   }
   return facilityNames[facilityKey] || facilityKey
 }
