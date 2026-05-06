@@ -1423,8 +1423,8 @@ class WebProfileController extends Controller
             'cta_url' => 'nullable|string|max:2048',
             'gallery_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
             'menu_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
-            'collage_new' => 'nullable|array',
-            'collage_new.*' => 'image|mimes:jpeg,jpg,png,webp|max:10240',
+            'collage_new' => 'nullable',
+            'collage_new.*' => 'file|image|mimes:jpeg,jpg,png,webp|max:10240',
             'remove_gallery_card' => 'nullable|boolean',
             'remove_menu_card' => 'nullable|boolean',
         ]);
@@ -1496,6 +1496,10 @@ class WebProfileController extends Controller
         }
         $newCollage = [];
         $collageUploads = $request->file('collage_new');
+        if (! $collageUploads) {
+            $allFiles = $request->allFiles();
+            $collageUploads = $allFiles['collage_new[]'] ?? null;
+        }
         if ($collageUploads instanceof \Illuminate\Http\UploadedFile) {
             $collageUploads = [$collageUploads];
         }

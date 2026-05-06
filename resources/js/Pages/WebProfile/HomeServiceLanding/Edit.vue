@@ -64,8 +64,8 @@ const menuCardFile = ref(null);
 const removeGalleryCard = ref(false);
 const removeMenuCard = ref(false);
 
-const galleryLabel = ref(props.landing.gallery_card_label || 'GALLERY');
-const galleryUrl = ref(props.landing.gallery_card_url || '');
+const galleryLabel = ref(props.landing.gallery_card_label || 'BOOKING & RESERVATION');
+const galleryUrl = ref(props.landing.gallery_card_url || '/reservation');
 const menuLabel = ref(props.landing.menu_card_label || 'MENU');
 const menuUrl = ref(props.landing.menu_card_url || '');
 const ctaLabel = ref(props.landing.cta_label || '');
@@ -185,7 +185,7 @@ function submit() {
   });
 
   collageNewFiles.value.forEach((file) => {
-    fd.append('collage_new[]', file);
+    fd.append('collage_new', file);
   });
 
   if (galleryCardFile.value) {
@@ -212,6 +212,14 @@ function submit() {
     },
     onError: (e) => {
       errors.value = e;
+      const msgs = Object.values(e || {}).flat().filter(Boolean);
+      if (msgs.length) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal menyimpan',
+          html: msgs.join('<br>'),
+        });
+      }
     },
   });
 }
@@ -400,10 +408,10 @@ onMounted(() => {
         </section>
 
         <section class="rounded-lg bg-white p-6 shadow">
-          <h2 class="mb-4 text-lg font-semibold text-gray-800">Kartu Gallery &amp; Menu</h2>
+          <h2 class="mb-4 text-lg font-semibold text-gray-800">Kartu Booking &amp; Menu</h2>
           <div class="grid gap-8 md:grid-cols-2">
             <div>
-              <h3 class="font-medium text-gray-700">Gallery</h3>
+              <h3 class="font-medium text-gray-700">Booking &amp; Reservation</h3>
               <div v-if="landing.gallery_card_image_url" class="mt-2">
                 <img :src="landing.gallery_card_image_url" alt="" class="max-h-40 rounded border" />
               </div>
@@ -425,8 +433,8 @@ onMounted(() => {
                 <TextInput v-model="galleryLabel" type="text" class="mt-1 block w-full" />
               </div>
               <div class="mt-3">
-                <InputLabel value="Link URL" />
-                <TextInput v-model="galleryUrl" type="text" class="mt-1 block w-full" placeholder="https://..." />
+                <InputLabel value="Link URL (default: /reservation)" />
+                <TextInput v-model="galleryUrl" type="text" class="mt-1 block w-full" placeholder="/reservation" />
               </div>
             </div>
             <div>
