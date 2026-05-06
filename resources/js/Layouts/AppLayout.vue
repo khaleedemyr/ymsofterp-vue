@@ -362,6 +362,12 @@ const menuGroups = [
                 code: 'cost_report',
             },
             {
+                name: () => 'Report Pembelanjaan Supplier (Warehouse GR)',
+                icon: 'fa-solid fa-sack-dollar',
+                route: '/food-good-receive-report-supplier-spending',
+                code: 'warehouse_gr_supplier_spending_report',
+            },
+            {
                 name: () => 'Report RnD, BM, WM',
                 icon: 'fa-solid fa-chart-line',
                 route: '/internal-use-waste-report',
