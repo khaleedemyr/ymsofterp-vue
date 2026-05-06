@@ -1424,7 +1424,7 @@ class WebProfileController extends Controller
             'gallery_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
             'menu_card_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
             'collage_new' => 'nullable',
-            'collage_new.*' => 'file|image|mimes:jpeg,jpg,png,webp|max:10240',
+            'collage_new.*' => 'file|image|mimes:jpeg,jpg,png,webp|max:51200',
             'remove_gallery_card' => 'nullable|boolean',
             'remove_menu_card' => 'nullable|boolean',
         ]);
