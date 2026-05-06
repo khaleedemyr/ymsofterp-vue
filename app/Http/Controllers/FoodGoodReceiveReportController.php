@@ -295,7 +295,6 @@ class FoodGoodReceiveReportController extends Controller
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('users as u_po_creator', 'po.created_by', '=', 'u_po_creator.id')
             ->leftJoin('users as u_gr_recv', 'gr.received_by', '=', 'u_gr_recv.id')
-            ->whereNull('gr.deleted_at')
             ->select(
                 's.id as supplier_id',
                 DB::raw('COALESCE(s.name, "Tanpa Supplier") as supplier_name'),
