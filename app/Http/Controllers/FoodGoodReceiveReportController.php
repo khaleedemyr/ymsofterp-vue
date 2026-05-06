@@ -191,24 +191,31 @@ class FoodGoodReceiveReportController extends Controller
 
         $rows = $this->getSupplierSpendingRows($request);
 
+        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values());
+
         $supplierReports = $rows
             ->groupBy('supplier_id')
-            ->map(function ($supplierRows) {
+            ->map(function ($supplierRows) use ($itemsByGr) {
                 $first = $supplierRows->first();
 
-                $mapTransaction = function ($row) {
+                $mapTransaction = function ($row) use ($itemsByGr) {
                     return [
                         'good_receive_id' => $row->good_receive_id,
                         'gr_number' => $row->gr_number,
                         'receive_date' => $row->receive_date,
                         'po_number' => $row->po_number,
+                        'gr_created_at' => $row->gr_created_at ?? null,
+                        'po_created_at' => $row->po_created_at ?? null,
                         'pr_numbers' => $row->pr_numbers ?? null,
                         'ro_order_numbers' => $row->ro_order_numbers ?? null,
+                        'fo_outlet_names' => $row->fo_outlet_names ?? null,
+                        'fo_creator_names' => $row->fo_creator_names ?? null,
                         'po_created_by_name' => $row->po_created_by_name ?? null,
                         'gr_received_by_name' => $row->gr_received_by_name ?? null,
                         'pr_requester_names' => $row->pr_requester_names ?? null,
                         'total_amount' => (float) $row->total_amount,
                         'total_qty' => (float) $row->total_qty,
+                        'items' => $itemsByGr->get($row->good_receive_id, collect())->values()->all(),
                     ];
                 };
 
@@ -273,24 +280,67 @@ class FoodGoodReceiveReportController extends Controller
 
         $rows = $this->getSupplierSpendingRows($request);
 
-        $exportRows = $rows->map(function ($row) {
-            return [
+        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values());
+
+        $emptyLine = [
+            'item_name' => '',
+            'unit_name' => '',
+            'qty_pr' => null,
+            'qty_po' => null,
+            'qty_gr' => null,
+            'line_pr_number' => '',
+            'line_pr_created_at' => null,
+            'line_ro_number' => '',
+            'line_ro_created_at' => null,
+            'line_fo_outlet_name' => '',
+            'line_fo_creator_name' => '',
+            'line_amount' => null,
+        ];
+
+        $exportRows = $rows->flatMap(function ($row) use ($itemsByGr, $emptyLine) {
+            $base = [
                 'supplier_name' => $row->supplier_name,
                 'supplier_code' => $row->supplier_code,
                 'gr_number' => $row->gr_number,
                 'receive_date' => $row->receive_date,
+                'gr_created_at' => $row->gr_created_at ?? null,
                 'po_number' => $row->po_number,
+                'po_created_at' => $row->po_created_at ?? null,
                 'pr_numbers' => $row->pr_numbers ?? '',
                 'ro_order_numbers' => $row->ro_order_numbers ?? '',
+                'fo_outlet_names' => $row->fo_outlet_names ?? '',
+                'fo_creator_names' => $row->fo_creator_names ?? '',
                 'po_created_by_name' => $row->po_created_by_name ?? '',
                 'gr_received_by_name' => $row->gr_received_by_name ?? '',
                 'pr_requester_names' => $row->pr_requester_names ?? '',
                 'total_qty' => (float) $row->total_qty,
                 'total_amount' => (float) $row->total_amount,
             ];
-        });
 
-        return (new \App\Exports\FoodGoodReceiveSupplierSpendingExport(collect($exportRows)))->toResponse($request);
+            $lines = $itemsByGr->get($row->good_receive_id, collect());
+            if ($lines->isEmpty()) {
+                return [array_merge($base, $emptyLine)];
+            }
+
+            return $lines->map(function (array $line) use ($base) {
+                return array_merge($base, [
+                    'item_name' => $line['item_name'] ?? '',
+                    'unit_name' => $line['unit_name'] ?? '',
+                    'qty_pr' => $line['qty_pr'],
+                    'qty_po' => $line['qty_po'],
+                    'qty_gr' => $line['qty_gr'],
+                    'line_pr_number' => $line['pr_number'] ?? '',
+                    'line_pr_created_at' => $line['pr_created_at'] ?? null,
+                    'line_ro_number' => $line['ro_number'] ?? '',
+                    'line_ro_created_at' => $line['ro_created_at'] ?? null,
+                    'line_fo_outlet_name' => $line['fo_outlet_name'] ?? '',
+                    'line_fo_creator_name' => $line['fo_creator_name'] ?? '',
+                    'line_amount' => $line['line_amount'],
+                ]);
+            })->all();
+        })->values();
+
+        return (new \App\Exports\FoodGoodReceiveSupplierSpendingExport($exportRows))->toResponse($request);
     }
 
     /**
@@ -370,6 +420,96 @@ class FoodGoodReceiveReportController extends Controller
     }
 
     /**
+     * Outlet + pembuat food_floor_order per PO (baris PO yang punya ro_id).
+     *
+     * @return \Illuminate\Database\Query\Builder
+     */
+    protected function supplierSpendingFloorOrderMetaSubquery($grPoIdScope)
+    {
+        return DB::table('purchase_order_food_items as poi_fo')
+            ->join('food_floor_orders as fo', 'fo.id', '=', 'poi_fo.ro_id')
+            ->leftJoin('tbl_data_outlet as tout', 'tout.id_outlet', '=', 'fo.id_outlet')
+            ->leftJoin('users as u_fo', 'u_fo.id', '=', 'fo.user_id')
+            ->whereNotNull('poi_fo.ro_id')
+            ->whereIn('poi_fo.purchase_order_food_id', $grPoIdScope)
+            ->groupBy('poi_fo.purchase_order_food_id')
+            ->select(
+                'poi_fo.purchase_order_food_id as po_id',
+                DB::raw('GROUP_CONCAT(DISTINCT NULLIF(TRIM(COALESCE(tout.nama_outlet, "")), "") ORDER BY tout.nama_outlet SEPARATOR ", ") as fo_outlet_names'),
+                DB::raw('GROUP_CONCAT(DISTINCT NULLIF(TRIM(COALESCE(u_fo.nama_lengkap, "")), "") ORDER BY u_fo.nama_lengkap SEPARATOR ", ") as fo_creator_names')
+            );
+    }
+
+    /**
+     * Detail baris GR: item + qty PR/PO/GR + metadata dokumen per baris.
+     *
+     * @return Collection<int|string, \Illuminate\Support\Collection<int, array<string, mixed>>>
+     */
+    protected function getSupplierSpendingLineItems(Collection $grIds): Collection
+    {
+        if ($grIds->isEmpty()) {
+            return collect();
+        }
+
+        $lines = DB::table('food_good_receive_items as gri')
+            ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
+            ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            ->leftJoin('purchase_order_foods as pof', 'poi.purchase_order_food_id', '=', 'pof.id')
+            ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
+            ->leftJoin('pr_foods as pr', 'pfi.pr_food_id', '=', 'pr.id')
+            ->leftJoin('food_floor_orders as fo', 'poi.ro_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as tout', 'tout.id_outlet', '=', 'fo.id_outlet')
+            ->leftJoin('users as u_fo', 'u_fo.id', '=', 'fo.user_id')
+            ->whereIn('gri.good_receive_id', $grIds->all())
+            ->orderBy('gri.id')
+            ->select(
+                'gri.good_receive_id',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'gri.qty_received as qty_gr',
+                'poi.quantity as qty_po',
+                'pfi.qty as qty_pr',
+                'pr.pr_number',
+                DB::raw('COALESCE(pr.created_at, pr.tanggal) as pr_datetime'),
+                'pof.created_at as po_created_at',
+                'gr.created_at as gr_created_at',
+                'gr.gr_number',
+                'pof.number as po_number',
+                'fo.order_number as ro_number',
+                'fo.created_at as ro_created_at',
+                'tout.nama_outlet as fo_outlet_name',
+                'u_fo.nama_lengkap as fo_creator_name',
+                DB::raw('(gri.qty_received * COALESCE(poi.price, 0)) as line_amount')
+            )
+            ->get();
+
+        return $lines->groupBy('good_receive_id')->map(function ($group) {
+            return $group->map(function ($l) {
+                return [
+                    'item_name' => $l->item_name,
+                    'unit_name' => $l->unit_name,
+                    'qty_pr' => $l->qty_pr !== null ? (float) $l->qty_pr : null,
+                    'qty_po' => $l->qty_po !== null ? (float) $l->qty_po : null,
+                    'qty_gr' => (float) $l->qty_gr,
+                    'pr_number' => $l->pr_number,
+                    'pr_created_at' => $l->pr_datetime,
+                    'po_number' => $l->po_number,
+                    'po_created_at' => $l->po_created_at,
+                    'gr_number' => $l->gr_number,
+                    'gr_created_at' => $l->gr_created_at,
+                    'ro_number' => $l->ro_number,
+                    'ro_created_at' => $l->ro_created_at,
+                    'fo_outlet_name' => $l->fo_outlet_name,
+                    'fo_creator_name' => $l->fo_creator_name,
+                    'line_amount' => (float) $l->line_amount,
+                ];
+            })->values();
+        });
+    }
+
+    /**
      * @return Collection<int, object>
      */
     protected function getSupplierSpendingRows(Request $request): Collection
@@ -411,6 +551,9 @@ class FoodGoodReceiveReportController extends Controller
             ->leftJoinSub($this->supplierSpendingRoMetaSubquery($grPoIdScope), 'ro_meta', function ($join) {
                 $join->on('ro_meta.po_id', '=', 'gr.po_id');
             })
+            ->leftJoinSub($this->supplierSpendingFloorOrderMetaSubquery($grPoIdScope), 'fo_meta', function ($join) {
+                $join->on('fo_meta.po_id', '=', 'gr.po_id');
+            })
             ->select(
                 's.id as supplier_id',
                 DB::raw('COALESCE(s.name, "Tanpa Supplier") as supplier_name'),
@@ -419,11 +562,15 @@ class FoodGoodReceiveReportController extends Controller
                 'gr.gr_number',
                 'gr.receive_date',
                 'po.number as po_number',
+                DB::raw('MAX(gr.created_at) as gr_created_at'),
+                DB::raw('MAX(po.created_at) as po_created_at'),
                 DB::raw('MAX(u_po_creator.nama_lengkap) as po_created_by_name'),
                 DB::raw('MAX(u_gr_recv.nama_lengkap) as gr_received_by_name'),
                 DB::raw('MAX(pr_meta.pr_numbers) as pr_numbers'),
                 DB::raw('MAX(pr_meta.pr_requester_names) as pr_requester_names'),
                 DB::raw('MAX(ro_meta.ro_order_numbers) as ro_order_numbers'),
+                DB::raw('MAX(fo_meta.fo_outlet_names) as fo_outlet_names'),
+                DB::raw('MAX(fo_meta.fo_creator_names) as fo_creator_names'),
                 DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as total_amount'),
                 DB::raw('SUM(gri.qty_received) as total_qty')
             );

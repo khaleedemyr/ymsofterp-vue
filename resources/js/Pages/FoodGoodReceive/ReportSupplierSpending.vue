@@ -177,10 +177,13 @@
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
                               <thead class="bg-gray-100">
                                 <tr>
+                                  <th class="px-2 py-2 w-8"></th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">GR</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">PO</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">PR</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">RO</th>
+                                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[100px]">Outlet FO</th>
+                                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Pembuat FO</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Buat PO</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Terima GR</th>
                                   <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase min-w-[120px]">Request PR</th>
@@ -189,21 +192,101 @@
                                 </tr>
                               </thead>
                               <tbody class="divide-y divide-gray-200">
-                                <tr v-for="trx in day.transactions" :key="trx.good_receive_id" class="hover:bg-gray-50">
-                                  <td class="px-3 py-2 text-gray-800 font-medium whitespace-nowrap">{{ trx.gr_number }}</td>
-                                  <td class="px-3 py-2 text-gray-700 whitespace-nowrap">{{ trx.po_number || '—' }}</td>
-                                  <td class="px-3 py-2 text-gray-700 max-w-[200px]" :title="trx.pr_numbers || ''">
-                                    {{ trx.pr_numbers || '—' }}
-                                  </td>
-                                  <td class="px-3 py-2 text-gray-700 max-w-[200px]" :title="trx.ro_order_numbers || ''">
-                                    {{ trx.ro_order_numbers || '—' }}
-                                  </td>
-                                  <td class="px-3 py-2 text-gray-700">{{ trx.po_created_by_name || '—' }}</td>
-                                  <td class="px-3 py-2 text-gray-700">{{ trx.gr_received_by_name || '—' }}</td>
-                                  <td class="px-3 py-2 text-gray-700">{{ trx.pr_requester_names || '—' }}</td>
-                                  <td class="px-3 py-2 text-right text-gray-700 whitespace-nowrap">{{ formatNumber(trx.total_qty) }}</td>
-                                  <td class="px-3 py-2 text-right font-semibold text-gray-900 whitespace-nowrap">{{ formatCurrency(trx.total_amount) }}</td>
-                                </tr>
+                                <template v-for="trx in day.transactions" :key="trx.good_receive_id">
+                                  <tr class="hover:bg-gray-50">
+                                    <td
+                                      class="px-2 py-2 align-top cursor-pointer text-gray-500"
+                                      title="Detail item"
+                                      @click.stop="toggleTrxExpand(trx.good_receive_id)"
+                                    >
+                                      <i
+                                        class="fa-solid text-xs transition-transform duration-200"
+                                        :class="isTrxExpanded(trx.good_receive_id) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                                      ></i>
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-800 align-top">
+                                      <div class="font-medium whitespace-nowrap">{{ trx.gr_number }}</div>
+                                      <div class="text-[11px] text-gray-500 whitespace-nowrap">{{ formatDateTime(trx.gr_created_at) }}</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700 align-top whitespace-nowrap">
+                                      <div class="font-medium">{{ trx.po_number || '—' }}</div>
+                                      <div class="text-[11px] text-gray-500">{{ formatDateTime(trx.po_created_at) }}</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700 max-w-[200px] align-top" :title="trx.pr_numbers || ''">
+                                      {{ trx.pr_numbers || '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700 max-w-[200px] align-top" :title="trx.ro_order_numbers || ''">
+                                      {{ trx.ro_order_numbers || '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700 max-w-[160px] align-top" :title="trx.fo_outlet_names || ''">
+                                      {{ trx.fo_outlet_names || '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700 max-w-[180px] align-top" :title="trx.fo_creator_names || ''">
+                                      {{ trx.fo_creator_names || '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700">{{ trx.po_created_by_name || '—' }}</td>
+                                    <td class="px-3 py-2 text-gray-700">{{ trx.gr_received_by_name || '—' }}</td>
+                                    <td class="px-3 py-2 text-gray-700">{{ trx.pr_requester_names || '—' }}</td>
+                                    <td class="px-3 py-2 text-right text-gray-700 whitespace-nowrap align-top">{{ formatNumber(trx.total_qty) }}</td>
+                                    <td class="px-3 py-2 text-right font-semibold text-gray-900 whitespace-nowrap align-top">{{ formatCurrency(trx.total_amount) }}</td>
+                                  </tr>
+                                  <tr v-if="isTrxExpanded(trx.good_receive_id)" class="bg-slate-50/90">
+                                    <td colspan="12" class="px-3 py-2 border-t border-gray-100">
+                                      <p class="text-xs font-medium text-gray-600 mb-2">Rincian item</p>
+                                      <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                                        <table class="min-w-full divide-y divide-gray-200 text-xs">
+                                          <thead class="bg-gray-100">
+                                            <tr>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">Item</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">Satuan</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase whitespace-nowrap">GR</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase whitespace-nowrap">PO</th>
+                                              <th class="px-2 py-1.5 text-right font-medium text-gray-500 uppercase whitespace-nowrap">Qty PR</th>
+                                              <th class="px-2 py-1.5 text-right font-medium text-gray-500 uppercase whitespace-nowrap">Qty PO</th>
+                                              <th class="px-2 py-1.5 text-right font-medium text-gray-500 uppercase whitespace-nowrap">Qty GR</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase min-w-[100px]">PR</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase min-w-[100px]">RO</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase min-w-[90px]">Outlet</th>
+                                              <th class="px-2 py-1.5 text-left font-medium text-gray-500 uppercase min-w-[100px]">Pembuat FO</th>
+                                              <th class="px-2 py-1.5 text-right font-medium text-gray-500 uppercase whitespace-nowrap">Subtotal</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody class="divide-y divide-gray-100">
+                                            <tr v-for="(line, idx) in (trx.items || [])" :key="idx">
+                                              <td class="px-2 py-1.5 text-gray-800">{{ line.item_name || '—' }}</td>
+                                              <td class="px-2 py-1.5 text-gray-600">{{ line.unit_name || '—' }}</td>
+                                              <td class="px-2 py-1.5 text-gray-700 whitespace-nowrap">
+                                                <div class="font-medium">{{ line.gr_number || '—' }}</div>
+                                                <div class="text-[10px] text-gray-500">{{ formatDateTime(line.gr_created_at) }}</div>
+                                              </td>
+                                              <td class="px-2 py-1.5 text-gray-700 whitespace-nowrap">
+                                                <div class="font-medium">{{ line.po_number || '—' }}</div>
+                                                <div class="text-[10px] text-gray-500">{{ formatDateTime(line.po_created_at) }}</div>
+                                              </td>
+                                              <td class="px-2 py-1.5 text-right text-gray-700">{{ formatOptionalQty(line.qty_pr) }}</td>
+                                              <td class="px-2 py-1.5 text-right text-gray-700">{{ formatOptionalQty(line.qty_po) }}</td>
+                                              <td class="px-2 py-1.5 text-right text-gray-800 font-medium">{{ formatNumber(line.qty_gr) }}</td>
+                                              <td class="px-2 py-1.5 text-gray-700">
+                                                <div class="font-medium">{{ line.pr_number || '—' }}</div>
+                                                <div class="text-[10px] text-gray-500">{{ formatDateTime(line.pr_created_at) }}</div>
+                                              </td>
+                                              <td class="px-2 py-1.5 text-gray-700">
+                                                <div class="font-medium">{{ line.ro_number || '—' }}</div>
+                                                <div class="text-[10px] text-gray-500">{{ formatDateTime(line.ro_created_at) }}</div>
+                                              </td>
+                                              <td class="px-2 py-1.5 text-gray-700">{{ line.fo_outlet_name || '—' }}</td>
+                                              <td class="px-2 py-1.5 text-gray-700">{{ line.fo_creator_name || '—' }}</td>
+                                              <td class="px-2 py-1.5 text-right font-medium text-gray-900">{{ formatCurrency(line.line_amount) }}</td>
+                                            </tr>
+                                            <tr v-if="!(trx.items && trx.items.length)">
+                                              <td colspan="12" class="px-2 py-3 text-center text-gray-500">Tidak ada baris item.</td>
+                                            </tr>
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </template>
                               </tbody>
                             </table>
                           </div>
@@ -287,6 +370,7 @@ watch(
 
 const expandedSuppliers = ref({})
 const expandedDays = ref({})
+const expandedTrx = ref({})
 
 const supplierKey = (supplierId) => `supplier-${supplierId ?? 'unknown'}`
 
@@ -310,6 +394,17 @@ const isDayExpanded = (supplierId, dateStr) => {
   return !!expandedDays.value[dayKey(supplierId, dateStr)]
 }
 
+const trxExpandKey = (goodReceiveId) => `trx-${goodReceiveId ?? 'unknown'}`
+
+const toggleTrxExpand = (goodReceiveId) => {
+  const key = trxExpandKey(goodReceiveId)
+  expandedTrx.value[key] = !expandedTrx.value[key]
+}
+
+const isTrxExpanded = (goodReceiveId) => {
+  return !!expandedTrx.value[trxExpandKey(goodReceiveId)]
+}
+
 const loadData = () => {
   if (!filters.value.date_from || !filters.value.date_to) {
     window.alert('Tanggal dari dan tanggal sampai wajib diisi sebelum memuat data.')
@@ -317,6 +412,7 @@ const loadData = () => {
   }
   expandedSuppliers.value = {}
   expandedDays.value = {}
+  expandedTrx.value = {}
   router.get(route('food-good-receive.report-supplier-spending'), {
     load: 1,
     date_from: filters.value.date_from,
@@ -338,6 +434,7 @@ const clearFilters = () => {
   }
   expandedSuppliers.value = {}
   expandedDays.value = {}
+  expandedTrx.value = {}
   router.get(route('food-good-receive.report-supplier-spending'), {}, {
     preserveState: true,
     preserveScroll: true
@@ -358,11 +455,6 @@ const exportToExcel = () => {
   if (filters.value.search) params.append('search', filters.value.search)
   const url = route('food-good-receive.report-supplier-spending.export') + '?' + params.toString()
   window.open(url, '_blank')
-}
-
-const formatDate = (value) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleDateString('id-ID')
 }
 
 const formatDayHeading = (dateKey) => {
@@ -391,5 +483,23 @@ const formatCurrency = (value) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(Number(value) || 0)
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const formatOptionalQty = (value) => {
+  if (value === null || value === undefined || value === '') return '—'
+  return formatNumber(value)
 }
 </script>
