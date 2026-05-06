@@ -6,7 +6,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
-use Carbon\Carbon;
 
 class FoodGoodReceiveReportController extends Controller
 {
@@ -158,6 +157,38 @@ class FoodGoodReceiveReportController extends Controller
 
     public function reportSupplierSpending(Request $request)
     {
+        $suppliers = DB::table('suppliers')
+            ->select('id', 'name', 'code')
+            ->orderBy('name')
+            ->get();
+
+        $filtersPayload = [
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+            'supplier_id' => $request->input('supplier_id'),
+            'search' => $request->input('search'),
+        ];
+
+        if (! $request->boolean('load')) {
+            return Inertia::render('FoodGoodReceive/ReportSupplierSpending', [
+                'supplierReports' => [],
+                'suppliers' => $suppliers,
+                'summary' => [
+                    'total_suppliers' => 0,
+                    'total_transactions' => 0,
+                    'grand_total_amount' => 0,
+                    'grand_total_qty' => 0,
+                ],
+                'filters' => $filtersPayload,
+                'data_loaded' => false,
+            ]);
+        }
+
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
         $rows = $this->getSupplierSpendingRows($request);
 
         $supplierReports = $rows
@@ -224,21 +255,22 @@ class FoodGoodReceiveReportController extends Controller
             'grand_total_qty' => (float) $supplierReports->sum('total_qty'),
         ];
 
-        $suppliers = DB::table('suppliers')
-            ->select('id', 'name', 'code')
-            ->orderBy('name')
-            ->get();
-
         return Inertia::render('FoodGoodReceive/ReportSupplierSpending', [
             'supplierReports' => $supplierReports,
             'suppliers' => $suppliers,
             'summary' => $summary,
-            'filters' => $request->only(['date_from', 'date_to', 'supplier_id', 'search']),
+            'filters' => $filtersPayload,
+            'data_loaded' => true,
         ]);
     }
 
     public function exportSupplierSpending(Request $request)
     {
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
         $rows = $this->getSupplierSpendingRows($request);
 
         $exportRows = $rows->map(function ($row) {
@@ -259,6 +291,82 @@ class FoodGoodReceiveReportController extends Controller
         });
 
         return (new \App\Exports\FoodGoodReceiveSupplierSpendingExport(collect($exportRows)))->toResponse($request);
+    }
+
+    /**
+     * @return array{date_from: ?string, date_to: ?string}
+     */
+    protected function supplierSpendingResolvedDates(Request $request): array
+    {
+        return [
+            'date_from' => $request->filled('date_from') ? $request->date_from : null,
+            'date_to' => $request->filled('date_to') ? $request->date_to : null,
+        ];
+    }
+
+    /**
+     * PO id yang relevan dengan filter GR (tanggal + supplier) — dipakai untuk membatasi agregasi PR/RO.
+     *
+     * @return \Illuminate\Database\Query\Builder
+     */
+    protected function supplierSpendingGrPoIdScope(Request $request)
+    {
+        $dates = $this->supplierSpendingResolvedDates($request);
+
+        $sub = DB::table('food_good_receives as gr')
+            ->select('gr.po_id')
+            ->whereNotNull('gr.po_id');
+
+        if ($dates['date_from']) {
+            $sub->whereDate('gr.receive_date', '>=', $dates['date_from']);
+        }
+        if ($dates['date_to']) {
+            $sub->whereDate('gr.receive_date', '<=', $dates['date_to']);
+        }
+        if ($request->filled('supplier_id')) {
+            $sub->where('gr.supplier_id', $request->supplier_id);
+        }
+
+        return $sub->distinct();
+    }
+
+    /**
+     * Agregasi PR + pemohon per PO (join sekali, bukan subquery per baris hasil).
+     *
+     * @return \Illuminate\Database\Query\Builder
+     */
+    protected function supplierSpendingPrMetaSubquery($grPoIdScope)
+    {
+        return DB::table('purchase_order_food_items as poi_agg')
+            ->join('pr_food_items as pri', 'pri.id', '=', 'poi_agg.pr_food_item_id')
+            ->join('pr_foods as pr', 'pr.id', '=', 'pri.pr_food_id')
+            ->leftJoin('users as ureq', 'pr.requested_by', '=', 'ureq.id')
+            ->whereNotNull('poi_agg.pr_food_item_id')
+            ->whereIn('poi_agg.purchase_order_food_id', $grPoIdScope)
+            ->groupBy('poi_agg.purchase_order_food_id')
+            ->select(
+                'poi_agg.purchase_order_food_id as po_id',
+                DB::raw('GROUP_CONCAT(DISTINCT pr.pr_number ORDER BY pr.pr_number SEPARATOR ", ") as pr_numbers'),
+                DB::raw('GROUP_CONCAT(DISTINCT ureq.nama_lengkap ORDER BY ureq.nama_lengkap SEPARATOR ", ") as pr_requester_names')
+            );
+    }
+
+    /**
+     * Agregasi nomor RO per PO.
+     *
+     * @return \Illuminate\Database\Query\Builder
+     */
+    protected function supplierSpendingRoMetaSubquery($grPoIdScope)
+    {
+        return DB::table('purchase_order_food_items as poi_ro')
+            ->join('food_floor_orders as fo', 'fo.id', '=', 'poi_ro.ro_id')
+            ->whereNotNull('poi_ro.ro_id')
+            ->whereIn('poi_ro.purchase_order_food_id', $grPoIdScope)
+            ->groupBy('poi_ro.purchase_order_food_id')
+            ->select(
+                'poi_ro.purchase_order_food_id as po_id',
+                DB::raw('GROUP_CONCAT(DISTINCT fo.order_number ORDER BY fo.order_number SEPARATOR ", ") as ro_order_numbers')
+            );
     }
 
     /**
@@ -288,6 +396,8 @@ class FoodGoodReceiveReportController extends Controller
      */
     protected function supplierSpendingBaseQuery(Request $request)
     {
+        $grPoIdScope = $this->supplierSpendingGrPoIdScope($request);
+
         $query = DB::table('food_good_receives as gr')
             ->join('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
             ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
@@ -295,6 +405,12 @@ class FoodGoodReceiveReportController extends Controller
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('users as u_po_creator', 'po.created_by', '=', 'u_po_creator.id')
             ->leftJoin('users as u_gr_recv', 'gr.received_by', '=', 'u_gr_recv.id')
+            ->leftJoinSub($this->supplierSpendingPrMetaSubquery($grPoIdScope), 'pr_meta', function ($join) {
+                $join->on('pr_meta.po_id', '=', 'gr.po_id');
+            })
+            ->leftJoinSub($this->supplierSpendingRoMetaSubquery($grPoIdScope), 'ro_meta', function ($join) {
+                $join->on('ro_meta.po_id', '=', 'gr.po_id');
+            })
             ->select(
                 's.id as supplier_id',
                 DB::raw('COALESCE(s.name, "Tanpa Supplier") as supplier_name'),
@@ -305,34 +421,19 @@ class FoodGoodReceiveReportController extends Controller
                 'po.number as po_number',
                 DB::raw('MAX(u_po_creator.nama_lengkap) as po_created_by_name'),
                 DB::raw('MAX(u_gr_recv.nama_lengkap) as gr_received_by_name'),
-                DB::raw('(SELECT GROUP_CONCAT(DISTINCT pr.pr_number ORDER BY pr.pr_number SEPARATOR ", ")
-                    FROM pr_foods pr
-                    INNER JOIN pr_food_items pri ON pr.id = pri.pr_food_id
-                    INNER JOIN purchase_order_food_items poi_src ON pri.id = poi_src.pr_food_item_id
-                    WHERE poi_src.purchase_order_food_id = gr.po_id AND gr.po_id IS NOT NULL
-                ) as pr_numbers'),
-                DB::raw('(SELECT GROUP_CONCAT(DISTINCT ureq.nama_lengkap ORDER BY ureq.nama_lengkap SEPARATOR ", ")
-                    FROM pr_foods pr
-                    INNER JOIN pr_food_items pri ON pr.id = pri.pr_food_id
-                    INNER JOIN purchase_order_food_items poi_src ON pri.id = poi_src.pr_food_item_id
-                    LEFT JOIN users ureq ON pr.requested_by = ureq.id
-                    WHERE poi_src.purchase_order_food_id = gr.po_id AND gr.po_id IS NOT NULL AND pr.requested_by IS NOT NULL
-                ) as pr_requester_names'),
-                DB::raw('(SELECT GROUP_CONCAT(DISTINCT fo.order_number ORDER BY fo.order_number SEPARATOR ", ")
-                    FROM food_floor_orders fo
-                    INNER JOIN purchase_order_food_items poi_ro ON fo.id = poi_ro.ro_id
-                    WHERE poi_ro.purchase_order_food_id = gr.po_id AND gr.po_id IS NOT NULL
-                ) as ro_order_numbers'),
+                DB::raw('MAX(pr_meta.pr_numbers) as pr_numbers'),
+                DB::raw('MAX(pr_meta.pr_requester_names) as pr_requester_names'),
+                DB::raw('MAX(ro_meta.ro_order_numbers) as ro_order_numbers'),
                 DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as total_amount'),
                 DB::raw('SUM(gri.qty_received) as total_qty')
             );
 
-        if ($request->filled('date_from')) {
-            $query->whereDate('gr.receive_date', '>=', $request->date_from);
+        $dates = $this->supplierSpendingResolvedDates($request);
+        if ($dates['date_from']) {
+            $query->whereDate('gr.receive_date', '>=', $dates['date_from']);
         }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('gr.receive_date', '<=', $request->date_to);
+        if ($dates['date_to']) {
+            $query->whereDate('gr.receive_date', '<=', $dates['date_to']);
         }
 
         if ($request->filled('supplier_id')) {

@@ -8,7 +8,8 @@
         </h1>
         <button
           type="button"
-          class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2"
+          class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!data_loaded"
           @click="exportToExcel"
         >
           <i class="fa fa-file-excel"></i>
@@ -17,7 +18,10 @@
       </div>
 
       <div class="bg-white rounded-2xl shadow-2xl p-6 mb-6">
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <p class="text-sm text-gray-500 mb-4">
+          Isi filter (tanggal wajib), lalu klik <strong>Muat data</strong>. Halaman pertama tidak memanggil query sampai Anda memuat data.
+        </p>
+        <form @submit.prevent="loadData" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
             <input
@@ -61,7 +65,7 @@
               type="submit"
               class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
             >
-              <i class="fa fa-search mr-2"></i>Filter
+              <i class="fa fa-download mr-2"></i>Muat data
             </button>
             <button
               type="button"
@@ -74,7 +78,16 @@
         </form>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div
+        v-if="!data_loaded"
+        class="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center text-amber-900 mb-6"
+      >
+        <i class="fa-solid fa-filter text-3xl mb-3 text-amber-600"></i>
+        <p class="font-medium">Belum ada data dimuat.</p>
+        <p class="text-sm mt-1 text-amber-800">Pilih tanggal dari & sampai, lalu klik <strong>Muat data</strong>.</p>
+      </div>
+
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="bg-white rounded-2xl shadow-2xl p-5">
           <p class="text-sm text-gray-500">Total Supplier</p>
           <p class="text-2xl font-bold text-gray-800">{{ summary.total_suppliers || 0 }}</p>
@@ -93,7 +106,7 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div v-if="data_loaded" class="bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div class="p-6 border-b border-gray-200">
           <h3 class="text-lg font-semibold text-gray-800">Ringkasan Supplier</h3>
         </div>
@@ -214,7 +227,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Multiselect from 'vue-multiselect'
@@ -236,15 +249,41 @@ const props = defineProps({
   filters: {
     type: Object,
     default: () => ({})
+  },
+  data_loaded: {
+    type: Boolean,
+    default: false
   }
 })
 
 const filters = ref({
   date_from: props.filters.date_from || '',
   date_to: props.filters.date_to || '',
-  supplier_id: props.filters.supplier_id || null,
+  supplier_id: null,
   search: props.filters.search || ''
 })
+
+const syncFiltersFromProps = () => {
+  const f = props.filters || {}
+  filters.value.date_from = f.date_from || ''
+  filters.value.date_to = f.date_to || ''
+  filters.value.search = f.search || ''
+  const sid = f.supplier_id
+  if (sid == null || sid === '') {
+    filters.value.supplier_id = null
+  } else if (typeof sid === 'object' && sid !== null && 'id' in sid) {
+    filters.value.supplier_id = sid
+  } else {
+    const u = props.suppliers.find((s) => Number(s.id) === Number(sid))
+    filters.value.supplier_id = u || null
+  }
+}
+
+watch(
+  () => [props.filters, props.suppliers],
+  () => syncFiltersFromProps(),
+  { deep: true, immediate: true }
+)
 
 const expandedSuppliers = ref({})
 const expandedDays = ref({})
@@ -271,8 +310,15 @@ const isDayExpanded = (supplierId, dateStr) => {
   return !!expandedDays.value[dayKey(supplierId, dateStr)]
 }
 
-const applyFilters = () => {
+const loadData = () => {
+  if (!filters.value.date_from || !filters.value.date_to) {
+    window.alert('Tanggal dari dan tanggal sampai wajib diisi sebelum memuat data.')
+    return
+  }
+  expandedSuppliers.value = {}
+  expandedDays.value = {}
   router.get(route('food-good-receive.report-supplier-spending'), {
+    load: 1,
     date_from: filters.value.date_from,
     date_to: filters.value.date_to,
     supplier_id: filters.value.supplier_id?.id || filters.value.supplier_id,
@@ -290,13 +336,23 @@ const clearFilters = () => {
     supplier_id: null,
     search: ''
   }
-  applyFilters()
+  expandedSuppliers.value = {}
+  expandedDays.value = {}
+  router.get(route('food-good-receive.report-supplier-spending'), {}, {
+    preserveState: true,
+    preserveScroll: true
+  })
 }
 
 const exportToExcel = () => {
+  if (!props.data_loaded) return
+  if (!filters.value.date_from || !filters.value.date_to) {
+    window.alert('Tanggal dari dan tanggal sampai wajib untuk export.')
+    return
+  }
   const params = new URLSearchParams()
-  if (filters.value.date_from) params.append('date_from', filters.value.date_from)
-  if (filters.value.date_to) params.append('date_to', filters.value.date_to)
+  params.append('date_from', filters.value.date_from)
+  params.append('date_to', filters.value.date_to)
   const supplierId = filters.value.supplier_id?.id ?? filters.value.supplier_id
   if (supplierId) params.append('supplier_id', supplierId)
   if (filters.value.search) params.append('search', filters.value.search)
