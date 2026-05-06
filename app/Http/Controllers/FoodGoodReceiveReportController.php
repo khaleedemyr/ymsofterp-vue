@@ -104,6 +104,8 @@ class FoodGoodReceiveReportController extends Controller
         // Get summary data
         $summary = DB::table('food_good_receives as gr')
             ->leftJoin('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
             ->when($request->filled('from_date'), function($q) use ($request) {
                 $q->whereDate('gr.receive_date', '>=', $request->from_date);
             })
