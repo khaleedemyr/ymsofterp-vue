@@ -1511,11 +1511,10 @@ class WebProfileController extends Controller
             if (! $file instanceof \Illuminate\Http\UploadedFile) {
                 continue;
             }
-            $newCollage[] = $file->storeAs(
-                'web-profile/home-service/collage',
-                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
-                'public'
-            );
+            $stored = $this->storeOptimizedCollageImage($file);
+            if ($stored) {
+                $newCollage[] = $stored;
+            }
         }
         $mergedCollage = array_values(array_merge($keepCollage, $newCollage));
 
@@ -2275,6 +2274,94 @@ class WebProfileController extends Controller
         $encodedPath = implode('/', $encodedParts);
 
         return $baseUrl.'/storage/'.$encodedPath;
+    }
+
+    /**
+     * Auto resize/compress collage image on upload.
+     * - Longest edge max 1920px
+     * - JPEG quality 82
+     * - PNG compression level 7
+     * - WEBP quality 80
+     */
+    private function storeOptimizedCollageImage(\Illuminate\Http\UploadedFile $file): ?string
+    {
+        $raw = @file_get_contents($file->getPathname());
+        if ($raw === false || $raw === '') {
+            return $file->storeAs(
+                'web-profile/home-service/collage',
+                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        $src = @imagecreatefromstring($raw);
+        if (! $src) {
+            return $file->storeAs(
+                'web-profile/home-service/collage',
+                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        $width = imagesx($src);
+        $height = imagesy($src);
+        $maxEdge = 1920;
+        $scale = 1.0;
+        if ($width > $maxEdge || $height > $maxEdge) {
+            $scale = min($maxEdge / max(1, $width), $maxEdge / max(1, $height));
+        }
+        $newW = max(1, (int) round($width * $scale));
+        $newH = max(1, (int) round($height * $scale));
+
+        $canvas = imagecreatetruecolor($newW, $newH);
+        if (! $canvas) {
+            imagedestroy($src);
+            return $file->storeAs(
+                'web-profile/home-service/collage',
+                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        $mime = strtolower((string) $file->getMimeType());
+        if ($mime === 'image/png' || $mime === 'image/webp') {
+            imagealphablending($canvas, false);
+            imagesavealpha($canvas, true);
+            $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+            imagefill($canvas, 0, 0, $transparent);
+        }
+
+        imagecopyresampled($canvas, $src, 0, 0, 0, 0, $newW, $newH, $width, $height);
+        imagedestroy($src);
+
+        ob_start();
+        $saved = false;
+        $ext = 'jpg';
+        if ($mime === 'image/png') {
+            $ext = 'png';
+            $saved = imagepng($canvas, null, 7);
+        } elseif ($mime === 'image/webp' && function_exists('imagewebp')) {
+            $ext = 'webp';
+            $saved = imagewebp($canvas, null, 80);
+        } else {
+            $ext = 'jpg';
+            $saved = imagejpeg($canvas, null, 82);
+        }
+        $binary = ob_get_clean();
+        imagedestroy($canvas);
+
+        if (! $saved || $binary === false || $binary === '') {
+            return $file->storeAs(
+                'web-profile/home-service/collage',
+                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
+                'public'
+            );
+        }
+
+        $path = 'web-profile/home-service/collage/'.time().'_'.Str::random(8).'.'.$ext;
+        Storage::disk('public')->put($path, $binary);
+
+        return $path;
     }
 }
 
