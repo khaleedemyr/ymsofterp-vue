@@ -1500,6 +1500,9 @@ class WebProfileController extends Controller
             $allFiles = $request->allFiles();
             $collageUploads = $allFiles['collage_new[]'] ?? null;
         }
+        if (! $collageUploads && $request->hasFile('collage_new.*')) {
+            $collageUploads = $request->file('collage_new.*');
+        }
         if ($collageUploads instanceof \Illuminate\Http\UploadedFile) {
             $collageUploads = [$collageUploads];
         }

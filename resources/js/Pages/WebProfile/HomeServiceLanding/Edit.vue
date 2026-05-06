@@ -185,7 +185,7 @@ function submit() {
   });
 
   collageNewFiles.value.forEach((file) => {
-    fd.append('collage_new', file);
+    fd.append('collage_new[]', file);
   });
 
   if (galleryCardFile.value) {
