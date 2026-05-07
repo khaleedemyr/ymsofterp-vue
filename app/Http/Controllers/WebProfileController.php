@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\WebProfilePage;
 use App\Models\WebProfilePageSection;
 use App\Models\WebProfileMenuItem;
@@ -30,6 +31,72 @@ class WebProfileController extends Controller
     public function index()
     {
         return Inertia::render('WebProfile/Index');
+    }
+
+    /**
+     * Security monitoring for critical Web Profile changes.
+     */
+    public function securityMonitoringIndex(Request $request)
+    {
+        $q = trim((string) $request->input('q', ''));
+        $activityType = trim((string) $request->input('activity_type', ''));
+        $dateFrom = trim((string) $request->input('date_from', ''));
+        $dateTo = trim((string) $request->input('date_to', ''));
+
+        $logs = ActivityLog::query()
+            ->with(['user:id,name,nama_lengkap,email'])
+            ->where('module', 'web_profile_security')
+            ->when($activityType !== '', function ($query) use ($activityType) {
+                $query->where('activity_type', $activityType);
+            })
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('description', 'like', "%{$q}%")
+                        ->orWhere('ip_address', 'like', "%{$q}%")
+                        ->orWhere('activity_type', 'like', "%{$q}%");
+                });
+            })
+            ->when($dateFrom !== '', function ($query) use ($dateFrom) {
+                $query->whereDate('created_at', '>=', $dateFrom);
+            })
+            ->when($dateTo !== '', function ($query) use ($dateTo) {
+                $query->whereDate('created_at', '<=', $dateTo);
+            })
+            ->orderByDesc('created_at')
+            ->paginate(25)
+            ->withQueryString();
+
+        $logs->through(function ($row) {
+            return [
+                'id' => $row->id,
+                'activity_type' => $row->activity_type,
+                'description' => $row->description,
+                'ip_address' => $row->ip_address,
+                'created_at' => $row->created_at,
+                'user_name' => $row->user?->nama_lengkap ?? $row->user?->name ?? $row->user?->email ?? 'System',
+                'old_data' => is_array($row->old_data) ? $row->old_data : null,
+                'new_data' => is_array($row->new_data) ? $row->new_data : null,
+            ];
+        });
+
+        return Inertia::render('WebProfile/SecurityMonitoring/Index', [
+            'logs' => $logs,
+            'filters' => [
+                'q' => $q,
+                'activity_type' => $activityType,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ],
+            'activityTypes' => [
+                'banner_created',
+                'banner_updated',
+                'banner_deleted',
+                'home_service_landing_updated',
+                'justus_apps_settings_updated',
+                'about_page_settings_updated',
+                'careers_page_settings_updated',
+            ],
+        ]);
     }
 
     /**
@@ -368,6 +435,20 @@ class WebProfileController extends Controller
                     throw new \Exception('Failed to create banner record');
                 }
 
+                $this->logWebProfileSecurityEvent(
+                    $request,
+                    'banner_created',
+                    'Banner dibuat: '.$banner->title,
+                    null,
+                    [
+                        'banner_id' => $banner->id,
+                        'title' => $banner->title,
+                        'order' => $banner->order,
+                        'is_active' => $banner->is_active,
+                        'background_media_type' => $banner->background_media_type,
+                    ]
+                );
+
                 return redirect()->route('web-profile.banners.index')
                     ->with('success', 'Banner created successfully');
             });
@@ -405,6 +486,13 @@ class WebProfileController extends Controller
     public function bannersUpdate(Request $request, $id)
     {
         $banner = WebProfileBanner::findOrFail($id);
+        $oldSnapshot = [
+            'title' => $banner->title,
+            'subtitle' => $banner->subtitle,
+            'order' => $banner->order,
+            'is_active' => $banner->is_active,
+            'background_media_type' => $banner->background_media_type,
+        ];
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -470,6 +558,20 @@ class WebProfileController extends Controller
 
         $banner->update($validated);
 
+        $this->logWebProfileSecurityEvent(
+            $request,
+            'banner_updated',
+            'Banner diperbarui: '.$banner->title,
+            $oldSnapshot,
+            [
+                'title' => $banner->title,
+                'subtitle' => $banner->subtitle,
+                'order' => $banner->order,
+                'is_active' => $banner->is_active,
+                'background_media_type' => $banner->background_media_type,
+            ]
+        );
+
         return redirect()->back()->with('success', 'Banner updated successfully');
     }
 
@@ -479,6 +581,14 @@ class WebProfileController extends Controller
     public function bannersDestroy($id)
     {
         $banner = WebProfileBanner::findOrFail($id);
+        $oldSnapshot = [
+            'banner_id' => $banner->id,
+            'title' => $banner->title,
+            'subtitle' => $banner->subtitle,
+            'order' => $banner->order,
+            'is_active' => $banner->is_active,
+            'background_media_type' => $banner->background_media_type,
+        ];
 
         // Delete images
         if ($banner->background_image) {
@@ -489,6 +599,14 @@ class WebProfileController extends Controller
         }
 
         $banner->delete();
+
+        $this->logWebProfileSecurityEvent(
+            request(),
+            'banner_deleted',
+            'Banner dihapus: '.$oldSnapshot['title'],
+            $oldSnapshot,
+            null
+        );
 
         return redirect()->route('web-profile.banners.index')
             ->with('success', 'Banner deleted successfully');
@@ -1437,6 +1555,14 @@ class WebProfileController extends Controller
     public function homeServiceLandingUpdate(Request $request)
     {
         $row = WebProfileHomeServiceLanding::singleton();
+        $oldSnapshot = [
+            'gallery_card_url' => $row->gallery_card_url,
+            'menu_card_url' => $row->menu_card_url,
+            'cta_url' => $row->cta_url,
+            'gallery_card_label' => $row->gallery_card_label,
+            'menu_card_label' => $row->menu_card_label,
+            'cta_label' => $row->cta_label,
+        ];
 
         $request->validate([
             'hero_title' => 'nullable|string|max:255',
@@ -1587,6 +1713,24 @@ class WebProfileController extends Controller
         $row->cta_label = $request->input('cta_label');
         $row->cta_url = $request->input('cta_url');
         $row->save();
+
+        $newSnapshot = [
+            'gallery_card_url' => $row->gallery_card_url,
+            'menu_card_url' => $row->menu_card_url,
+            'cta_url' => $row->cta_url,
+            'gallery_card_label' => $row->gallery_card_label,
+            'menu_card_label' => $row->menu_card_label,
+            'cta_label' => $row->cta_label,
+        ];
+        if ($oldSnapshot !== $newSnapshot) {
+            $this->logWebProfileSecurityEvent(
+                $request,
+                'home_service_landing_updated',
+                'Home Service Landing diperbarui (link/CTA)',
+                $oldSnapshot,
+                $newSnapshot
+            );
+        }
 
         return redirect()->route('web-profile.home-service-landing.edit')
             ->with('success', 'Landing Home Service disimpan.');
@@ -1822,6 +1966,13 @@ class WebProfileController extends Controller
 
     public function justusAppsSettingsStore(Request $request)
     {
+        $oldSnapshot = [
+            'playstore_url' => WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value'),
+            'appstore_url' => WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value'),
+            'hero_media_path' => WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value'),
+            'hero_media_type' => WebProfileSetting::where('key', 'justus_apps_hero_image')->value('type'),
+        ];
+
         $request->validate([
             'hero_image' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
             'playstore_url' => 'nullable|url|max:255',
@@ -1859,6 +2010,22 @@ class WebProfileController extends Controller
             ['key' => 'justus_apps_appstore_url'],
             ['value' => $request->input('appstore_url', ''), 'type' => 'text']
         );
+
+        $newSnapshot = [
+            'playstore_url' => WebProfileSetting::where('key', 'justus_apps_playstore_url')->value('value'),
+            'appstore_url' => WebProfileSetting::where('key', 'justus_apps_appstore_url')->value('value'),
+            'hero_media_path' => WebProfileSetting::where('key', 'justus_apps_hero_image')->value('value'),
+            'hero_media_type' => WebProfileSetting::where('key', 'justus_apps_hero_image')->value('type'),
+        ];
+        if ($oldSnapshot !== $newSnapshot) {
+            $this->logWebProfileSecurityEvent(
+                $request,
+                'justus_apps_settings_updated',
+                'Pengaturan Justus Apps diperbarui',
+                $oldSnapshot,
+                $newSnapshot
+            );
+        }
 
         return redirect()->route('web-profile.justus-apps.index')
             ->with('success', 'Pengaturan Justus Apps berhasil disimpan.');
@@ -1948,6 +2115,11 @@ class WebProfileController extends Controller
 
     public function aboutPageStore(Request $request)
     {
+        $oldSnapshot = [
+            'about_title' => WebProfileSetting::where('key', 'about_title')->value('value'),
+            'about_subtitle' => WebProfileSetting::where('key', 'about_subtitle')->value('value'),
+        ];
+
         $validated = $request->validate([
             'about_title' => 'nullable|string|max:255',
             'about_subtitle' => 'nullable|string|max:255',
@@ -2026,6 +2198,20 @@ class WebProfileController extends Controller
             WebProfileSetting::updateOrCreate(
                 ['key' => $key],
                 ['value' => $validated[$key] ?? '', 'type' => 'text']
+            );
+        }
+
+        $newSnapshot = [
+            'about_title' => WebProfileSetting::where('key', 'about_title')->value('value'),
+            'about_subtitle' => WebProfileSetting::where('key', 'about_subtitle')->value('value'),
+        ];
+        if ($oldSnapshot !== $newSnapshot) {
+            $this->logWebProfileSecurityEvent(
+                $request,
+                'about_page_settings_updated',
+                'Pengaturan About Page diperbarui',
+                $oldSnapshot,
+                $newSnapshot
             );
         }
 
@@ -2163,6 +2349,13 @@ class WebProfileController extends Controller
 
     public function careersPageStore(Request $request)
     {
+        $oldSnapshot = [
+            'careers_primary_button_url' => WebProfileSetting::where('key', 'careers_primary_button_url')->value('value'),
+            'careers_secondary_button_url' => WebProfileSetting::where('key', 'careers_secondary_button_url')->value('value'),
+            'careers_primary_button_label' => WebProfileSetting::where('key', 'careers_primary_button_label')->value('value'),
+            'careers_secondary_button_label' => WebProfileSetting::where('key', 'careers_secondary_button_label')->value('value'),
+        ];
+
         $validated = $request->validate([
             'careers_title' => 'nullable|string|max:255',
             'careers_subtitle' => 'nullable|string|max:255',
@@ -2251,6 +2444,22 @@ class WebProfileController extends Controller
             WebProfileSetting::updateOrCreate(
                 ['key' => $key],
                 ['value' => $validated[$key] ?? '', 'type' => 'text']
+            );
+        }
+
+        $newSnapshot = [
+            'careers_primary_button_url' => WebProfileSetting::where('key', 'careers_primary_button_url')->value('value'),
+            'careers_secondary_button_url' => WebProfileSetting::where('key', 'careers_secondary_button_url')->value('value'),
+            'careers_primary_button_label' => WebProfileSetting::where('key', 'careers_primary_button_label')->value('value'),
+            'careers_secondary_button_label' => WebProfileSetting::where('key', 'careers_secondary_button_label')->value('value'),
+        ];
+        if ($oldSnapshot !== $newSnapshot) {
+            $this->logWebProfileSecurityEvent(
+                $request,
+                'careers_page_settings_updated',
+                'Pengaturan Careers Page diperbarui',
+                $oldSnapshot,
+                $newSnapshot
             );
         }
 
@@ -2420,6 +2629,26 @@ class WebProfileController extends Controller
         }
 
         WebProfileSetting::whereIn('key', [$mediaKey, $titleKey, $subtitleKey])->delete();
+    }
+
+    private function logWebProfileSecurityEvent(
+        Request $request,
+        string $activityType,
+        string $description,
+        ?array $oldData = null,
+        ?array $newData = null
+    ): void {
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'activity_type' => $activityType,
+            'module' => 'web_profile_security',
+            'description' => $description,
+            'ip_address' => $request->ip(),
+            'user_agent' => (string) $request->userAgent(),
+            'old_data' => $oldData,
+            'new_data' => $newData,
+            'created_at' => now(),
+        ]);
     }
 
     /**

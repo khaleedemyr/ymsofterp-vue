@@ -2331,6 +2331,8 @@ Route::middleware(['auth'])->group(function () {
     
     // Web Profile Routes
     Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);
+    Route::get('web-profile/security-monitoring', [\App\Http\Controllers\WebProfileController::class, 'securityMonitoringIndex'])
+        ->name('web-profile.security-monitoring.index');
     
     // Web Profile Pages Routes
     Route::prefix('web-profile/pages')->name('web-profile.pages.')->group(function () {

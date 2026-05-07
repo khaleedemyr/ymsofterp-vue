@@ -139,6 +139,19 @@
             </div>
           </div>
         </Link>
+
+        <!-- Security Monitoring -->
+        <Link href="/web-profile/security-monitoring" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-red-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Security Monitoring</h3>
+              <p class="text-sm text-gray-500">Audit log perubahan link/banner kritikal</p>
+            </div>
+            <div class="bg-red-100 p-3 rounded-full">
+              <i class="fa-solid fa-shield-halved text-red-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <!-- Quick Actions -->
