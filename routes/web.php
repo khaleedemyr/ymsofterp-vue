@@ -205,6 +205,8 @@ Route::middleware('auth')->group(function () {
     // Customer Voice Command Center (menu terpisah)
     Route::get('/customer-voice-command-center', [CustomerVoiceCommandCenterController::class, 'index'])
         ->name('customer-voice-command-center.index');
+    Route::get('/customer-voice-command-center/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportPdf'])
+        ->name('customer-voice-command-center.export-pdf');
     Route::post('/customer-voice-command-center/sync', [CustomerVoiceCommandCenterController::class, 'sync'])
         ->name('customer-voice-command-center.sync');
     Route::post('/customer-voice-command-center/cases/{id}/update', [CustomerVoiceCommandCenterController::class, 'updateCase'])

@@ -221,6 +221,43 @@
             Overdue saja
           </label>
         </div>
+        <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:flex-wrap md:items-end">
+          <div class="flex flex-wrap gap-3">
+            <label class="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Event dari
+              <input
+                v-model="dateFrom"
+                type="date"
+                class="h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                @change="applyFilters"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Event sampai
+              <input
+                v-model="dateTo"
+                type="date"
+                class="h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                @change="applyFilters"
+              />
+            </label>
+          </div>
+          <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+            <a
+              :href="canExportPdf ? exportPdfHref : '#'"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              :class="{ 'pointer-events-none opacity-45': !canExportPdf }"
+              @click="(e) => { if (!canExportPdf) e.preventDefault() }"
+            >
+              Export PDF (range + filter)
+            </a>
+            <p class="text-xs leading-relaxed text-slate-500">
+              Isi <span class="font-semibold text-slate-600">Event dari / sampai</span>, gunakan filter di atas bila perlu, lalu Export — semua baris yang cocok digabung dalam satu PDF (maks. 5000 baris).
+            </p>
+          </div>
+        </div>
       </div>
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -470,6 +507,9 @@
           class="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           placeholder="Tulis catatan..."
         />
+        <div v-if="page.props.errors?.note" class="mt-2 text-xs text-rose-600">
+          {{ page.props.errors.note }}
+        </div>
         <div class="mt-4 flex justify-end gap-2">
           <button
             type="button"
@@ -494,8 +534,10 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { Link, router } from '@inertiajs/vue3'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
+
+const page = usePage()
 
 const props = defineProps({
   summary: { type: Object, default: () => ({}) },
@@ -527,6 +569,8 @@ const severity = ref(props.filters?.severity || '')
 const sourceType = ref(props.filters?.source_type || '')
 const idOutlet = ref(props.filters?.id_outlet ? String(props.filters.id_outlet) : '')
 const overdueOnly = ref(Boolean(props.filters?.overdue_only))
+const dateFrom = ref(props.filters?.date_from || '')
+const dateTo = ref(props.filters?.date_to || '')
 
 const showNoteModal = ref(false)
 const savingNote = ref(false)
@@ -551,6 +595,52 @@ watch(
   () => initCaseForms()
 )
 
+watch(
+  () => [props.filters?.date_from, props.filters?.date_to],
+  () => {
+    dateFrom.value = props.filters?.date_from || ''
+    dateTo.value = props.filters?.date_to || ''
+  },
+)
+
+function voiceIndexPostExtras() {
+  let pageNum
+  try {
+    pageNum = new URL(window.location.href).searchParams.get('page')
+  } catch {
+    pageNum = null
+  }
+  const payload = {
+    q: q.value || undefined,
+    status: status.value || undefined,
+    severity: severity.value || undefined,
+    source_type: sourceType.value || undefined,
+    id_outlet: idOutlet.value || undefined,
+    overdue_only: overdueOnly.value ? 1 : 0,
+    date_from: dateFrom.value || undefined,
+    date_to: dateTo.value || undefined,
+  }
+  if (pageNum) {
+    payload.page = pageNum
+  }
+  return payload
+}
+
+const canExportPdf = computed(() => Boolean(dateFrom.value && dateTo.value))
+
+const exportPdfHref = computed(() => {
+  const p = new URLSearchParams()
+  p.set('date_from', dateFrom.value)
+  p.set('date_to', dateTo.value)
+  if (q.value) p.set('q', q.value)
+  if (status.value) p.set('status', status.value)
+  if (severity.value) p.set('severity', severity.value)
+  if (sourceType.value) p.set('source_type', sourceType.value)
+  if (idOutlet.value) p.set('id_outlet', idOutlet.value)
+  if (overdueOnly.value) p.set('overdue_only', '1')
+  return `/customer-voice-command-center/export-pdf?${p.toString()}`
+})
+
 function syncNow() {
   syncing.value = true
   router.post('/customer-voice-command-center/sync', {}, {
@@ -568,6 +658,7 @@ function updateCase(caseId) {
   router.post(`/customer-voice-command-center/cases/${caseId}/update`, {
     status: form.status,
     assigned_to: form.assigned_to || null,
+    ...voiceIndexPostExtras(),
   }, {
     preserveScroll: true,
     onFinish: () => {
@@ -593,11 +684,14 @@ function submitNote() {
   savingNote.value = true
   router.post(`/customer-voice-command-center/cases/${noteCaseId.value}/note`, {
     note: noteText.value.trim(),
+    ...voiceIndexPostExtras(),
   }, {
     preserveScroll: true,
+    onSuccess: () => {
+      closeNoteModal()
+    },
     onFinish: () => {
       savingNote.value = false
-      closeNoteModal()
     },
   })
 }
@@ -626,6 +720,8 @@ function applyFilters() {
     source_type: sourceType.value,
     id_outlet: idOutlet.value,
     overdue_only: overdueOnly.value ? 1 : 0,
+    date_from: dateFrom.value || undefined,
+    date_to: dateTo.value || undefined,
   }, {
     preserveState: true,
     replace: true,

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class CustomerVoiceCommandCenterController extends Controller
 {
@@ -122,9 +123,7 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         });
 
-        return redirect()
-            ->back()
-            ->with('success', 'Case diperbarui.');
+        return $this->redirectToVoiceIndex($request)->with('success', 'Case diperbarui.');
     }
 
     public function apiUpdateCase(Request $request, int $id)
@@ -157,9 +156,87 @@ class CustomerVoiceCommandCenterController extends Controller
             'updated_at' => now(),
         ]);
 
-        return redirect()
-            ->back()
-            ->with('success', 'Catatan tersimpan.');
+        return $this->redirectToVoiceIndex($request)->with('success', 'Catatan tersimpan.');
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
+        $query = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
+            ->select([
+                'c.id',
+                'c.source_type',
+                'c.source_ref',
+                'c.id_outlet',
+                'o.nama_outlet',
+                'c.author_name',
+                'c.customer_contact',
+                'c.event_at',
+                'c.severity',
+                'c.summary_id',
+                'c.raw_text',
+                'c.risk_score',
+                'c.status',
+                'c.assigned_to',
+                'assignee.nama_lengkap as assigned_to_name',
+                'c.due_at',
+                'c.resolved_at',
+                'c.created_at',
+            ]);
+
+        $this->applyFilters($query, $request);
+
+        $cases = $query
+            ->orderByDesc('c.event_at')
+            ->limit(5000)
+            ->get();
+
+        $caseIds = $cases->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        $activitiesByCase = [];
+        if ($caseIds !== []) {
+            $activityRows = DB::table('feedback_case_activities as a')
+                ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
+                ->whereIn('a.case_id', $caseIds)
+                ->orderBy('a.case_id')
+                ->orderBy('a.id')
+                ->get([
+                    'a.case_id',
+                    'a.activity_type',
+                    'a.from_status',
+                    'a.to_status',
+                    'a.note',
+                    'a.created_at',
+                    'u.nama_lengkap as actor_name',
+                ]);
+
+            foreach ($activityRows as $row) {
+                $cid = (int) $row->case_id;
+                if (! isset($activitiesByCase[$cid])) {
+                    $activitiesByCase[$cid] = [];
+                }
+                $activitiesByCase[$cid][] = $row;
+            }
+        }
+
+        $pdf = Pdf::loadView('exports.customer_voice_cases_pdf', [
+            'cases' => $cases,
+            'activitiesByCase' => $activitiesByCase,
+            'dateFrom' => (string) $request->input('date_from'),
+            'dateTo' => (string) $request->input('date_to'),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'totalExported' => $cases->count(),
+        ]);
+
+        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function apiAddNote(Request $request, int $id)
@@ -407,6 +484,8 @@ class CustomerVoiceCommandCenterController extends Controller
                 'id_outlet' => $request->input('id_outlet'),
                 'q' => $request->input('q'),
                 'overdue_only' => $request->boolean('overdue_only'),
+                'date_from' => $request->input('date_from'),
+                'date_to' => $request->input('date_to'),
             ],
         ];
     }
@@ -439,6 +518,36 @@ class CustomerVoiceCommandCenterController extends Controller
                 ->whereNotNull('c.due_at')
                 ->where('c.due_at', '<', now());
         }
+        if ($request->filled('date_from')) {
+            $query->whereDate('c.event_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('c.event_at', '<=', $request->input('date_to'));
+        }
+    }
+
+    private function redirectToVoiceIndex(Request $request): RedirectResponse
+    {
+        return redirect()->route('customer-voice-command-center.index', $this->voiceIndexFiltersFromRequest($request));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function voiceIndexFiltersFromRequest(Request $request): array
+    {
+        $params = [];
+        foreach (['q', 'status', 'severity', 'source_type', 'id_outlet', 'page', 'date_from', 'date_to'] as $key) {
+            $val = $request->input($key);
+            if ($val !== null && $val !== '') {
+                $params[$key] = $val;
+            }
+        }
+        if ($request->boolean('overdue_only')) {
+            $params['overdue_only'] = 1;
+        }
+
+        return $params;
     }
 
     private function loadActivitiesMap(array $caseIds): array
