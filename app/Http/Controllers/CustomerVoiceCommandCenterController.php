@@ -342,9 +342,10 @@ class CustomerVoiceCommandCenterController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $activities = $this->loadActivitiesMap(
-            collect($cases->items())->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
-        );
+        $caseIdsPage = collect($cases->items())->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        $activities = $this->loadActivitiesMap($caseIdsPage);
+        $noteCounts = $this->loadNoteCountsMap($caseIdsPage);
 
         $summary = [
             'total_cases' => (int) DB::table('feedback_cases')->count(),
@@ -539,6 +540,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'outlets' => $outlets,
             'assignees' => $assignees,
             'activities' => $activities,
+            'note_counts' => $noteCounts,
             'filters' => [
                 'status' => $request->input('status'),
                 'severity' => $request->input('severity'),
@@ -610,6 +612,37 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         return $params;
+    }
+
+    /**
+     * Jumlah aktivitas bertipe `note` per case (untuk badge di UI).
+     *
+     * @param  array<int, int>  $caseIds
+     * @return array<int, int>
+     */
+    private function loadNoteCountsMap(array $caseIds): array
+    {
+        if ($caseIds === []) {
+            return [];
+        }
+
+        $counts = array_fill_keys($caseIds, 0);
+
+        $rows = DB::table('feedback_case_activities')
+            ->select('case_id', DB::raw('COUNT(*) as cnt'))
+            ->whereIn('case_id', $caseIds)
+            ->where('activity_type', 'note')
+            ->groupBy('case_id')
+            ->get();
+
+        foreach ($rows as $row) {
+            $cid = (int) $row->case_id;
+            if (array_key_exists($cid, $counts)) {
+                $counts[$cid] = (int) ($row->cnt ?? 0);
+            }
+        }
+
+        return $counts;
     }
 
     private function loadActivitiesMap(array $caseIds): array

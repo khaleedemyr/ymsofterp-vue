@@ -282,7 +282,10 @@
                 <td colspan="10" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
-                <tr class="border-t border-slate-100 align-top hover:bg-slate-50/70">
+                <tr
+                  class="align-top transition-colors"
+                  :class="statusRowClasses(caseForms[row.id]?.status || row.status).main"
+                >
                   <td class="px-3 py-3 whitespace-nowrap text-xs text-slate-600">{{ formatDate(row.event_at) }}</td>
                   <td class="px-3 py-3 text-slate-700">{{ row.nama_outlet || '-' }}</td>
                   <td class="px-3 py-3">
@@ -345,10 +348,16 @@
                       </button>
                       <button
                         type="button"
-                        class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+                        class="relative rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 pr-3 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
                         @click="openNoteModal(row.id)"
                       >
                         Catatan
+                        <span
+                          v-if="noteCountFor(row.id) > 0"
+                          class="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm ring-2 ring-white"
+                        >
+                          {{ noteCountFor(row.id) > 99 ? '99+' : noteCountFor(row.id) }}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -360,7 +369,11 @@
                     </div>
                   </td>
                 </tr>
-                <tr v-if="openedActivityCaseId === row.id" class="border-t border-slate-100 bg-slate-50">
+                <tr
+                  v-if="openedActivityCaseId === row.id"
+                  class="border-t"
+                  :class="statusRowClasses(caseForms[row.id]?.status || row.status).timeline"
+                >
                   <td class="px-3 py-3" colspan="10">
                     <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Aktivitas terbaru</div>
                     <div v-if="!activitiesFor(row.id).length" class="text-xs text-slate-400">Belum ada aktivitas.</div>
@@ -550,6 +563,7 @@ const props = defineProps({
   outlets: { type: Array, default: () => [] },
   assignees: { type: Array, default: () => [] },
   activities: { type: Object, default: () => ({}) },
+  note_counts: { type: Object, default: () => ({}) },
   filters: { type: Object, default: () => ({}) },
 })
 
@@ -659,10 +673,12 @@ function updateCase(caseId) {
   const form = caseForms.value[caseId]
   if (!form) return
   updatingCaseId.value = caseId
+  // voiceIndexPostExtras() menyertakan `status` (filter tabel); harus di-spread dulu
+  // agar status/assigned_to case tidak tertimpa jadi "new" / filter lain.
   router.post(`/customer-voice-command-center/cases/${caseId}/update`, {
+    ...voiceIndexPostExtras(),
     status: form.status,
     assigned_to: form.assigned_to || null,
-    ...voiceIndexPostExtras(),
   }, {
     preserveScroll: true,
     onFinish: () => {
@@ -714,6 +730,39 @@ function closeDetail() {
 
 function activitiesFor(caseId) {
   return Array.isArray(props.activities?.[caseId]) ? props.activities[caseId] : []
+}
+
+function noteCountFor(caseId) {
+  const m = props.note_counts || {}
+  const raw = m[caseId] ?? m[String(caseId)]
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+function statusRowClasses(status) {
+  const s = String(status || 'new').toLowerCase()
+  if (s === 'resolved') {
+    return {
+      main: 'border-t border-emerald-200/90 bg-emerald-50/85 hover:bg-emerald-50',
+      timeline: 'border-t border-emerald-200/70 bg-emerald-50/45',
+    }
+  }
+  if (s === 'in_progress') {
+    return {
+      main: 'border-t border-indigo-200/90 bg-indigo-50/85 hover:bg-indigo-50',
+      timeline: 'border-t border-indigo-200/70 bg-indigo-50/45',
+    }
+  }
+  if (s === 'ignored') {
+    return {
+      main: 'border-t border-slate-200 bg-slate-100/75 hover:bg-slate-100',
+      timeline: 'border-t border-slate-200 bg-slate-100/55',
+    }
+  }
+  return {
+    main: 'border-t border-amber-200/90 bg-amber-50/80 hover:bg-amber-50',
+    timeline: 'border-t border-amber-200/70 bg-amber-50/40',
+  }
 }
 
 function applyFilters() {

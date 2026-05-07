@@ -2128,16 +2128,22 @@ class AIAnalyticsService
 
         $payload = json_encode($lines, JSON_UNESCAPED_UNICODE);
         $prompt = <<<PROMPT
-Anda menganalisis review Google Maps untuk restoran / outlet F&B.
-Data review (JSON array): {$payload}
+Anda menganalisis review Google Maps untuk restoran / outlet F&B (teks bisa Bahasa Indonesia atau campuran).
+Data review (JSON array). Setiap item punya field "rating" (biasanya 1–5 bintang) dan "text" (isi ulasan).
+JSON input: {$payload}
+
+PRINSIP UTAMA (ikuti ketat):
+1) Gunakan field "rating" sebagai petunjuk kuat untuk NADA KESELURUHAN. Orang yang memberi 4–5 bintang hampir selalu puas secara keseluruhan.
+2) "neutral" HANYA jika: teks hanya fakta dingin tanpa apresiasi/keluhan (mis. "parkir basement"), atau ulasan sangat ambigu/tanpa opini. JANGAN pakai "neutral" untuk ulasan yang jelas memuji (walaupun ada satu kalimat saran kecil).
+3) Jika rating 4 atau 5 DAN teks berisi pujian, apresiasi, rekomendasi, atau kata positif (enak, mantap, recommended, puas, bagus, favorit, worth it, dll.) → severity HARUS "positive", kecuali ada keluhan UTAMA yang mengubah narasi (lihat poin 5).
+4) "mild_negative" = ada ketidakpuasan TAPI masih seimbang atau minor (mis. "enak tapi agak lama", "harga agak mahal tapi rasa oke"). Bukan untuk ulasan yang didominasi pujian + rating tinggi.
+5) "negative" / "severe" hanya jika keluhan serius mendominasi atau ada risiko besar:
+   - severe: tuduhan keracunan/penyakit serius, kekerasan, pelecehan, diskriminasi keras, ancaman hukum/boikot massal, bahasa sangat menghina.
+   - negative: makanan/pelayanan buruk sebagai fokus utama, kecewa berat, tidak akan kembali, hygiene buruk, dll.
+6) Ulasan singkat yang positif ("mantap", "enak banget", hanya emoji puas) dengan rating tinggi → "positive", bukan "neutral".
 
 Untuk SETIAP item (satu entri per idx), tentukan:
 - severity: salah satu string persis: "positive", "neutral", "mild_negative", "negative", "severe"
-  - severe = sangat parah: ancaman hukum, tuduhan keracunan/penyakit serius, pelecehan keras, diskriminasi, kekerasan, ancaman boikot massal, atau bahasa sangat menghina/dehumanisasi.
-  - negative = keluhan operasional jelas (makanan buruk, pelayanan buruk, kotor, lama, harga tidak sesuai) tanpa eskalasi ekstrem di atas.
-  - mild_negative = ketidakpuasan ringan.
-  - neutral = fakta tanpa emosi kuat, atau teks kosong/tidak jelas.
-  - positive = puas / pujian.
 - topics: array string pendek (maks 5) dari: food_quality, service, hygiene, ambiance, price, wait_time, parking, portion, noise, reservation, other
 - summary_id: satu kalimat Bahasa Indonesia ringkas tentang inti ulasan (maks ~120 karakter).
 
@@ -2190,10 +2196,117 @@ PROMPT;
             } else {
                 $c = $byIdx[$i] ?? ['severity' => 'neutral', 'topics' => [], 'summary_id' => ''];
             }
+            $c = $this->calibrateGoogleReviewClassification($c, $r);
             $out[] = array_merge($r, ['ai_classification' => $c]);
         }
 
         return $out;
+    }
+
+    /**
+     * Sesuaikan severity dengan rating bintang agar 4–5★ yang tidak bermasalah serius tidak tertahan di "neutral".
+     *
+     * @param  array{severity: string, topics: array<int, string>, summary_id: string}  $classification
+     * @param  array<string, mixed>  $review
+     * @return array{severity: string, topics: array<int, string>, summary_id: string}
+     */
+    private function calibrateGoogleReviewClassification(array $classification, array $review): array
+    {
+        $text = trim((string) ($review['text'] ?? ''));
+        if ($text === '') {
+            return $classification;
+        }
+
+        $stars = $this->parseGoogleReviewStarRating($review['rating'] ?? null);
+        if ($stars === null) {
+            return $classification;
+        }
+
+        $sev = (string) ($classification['severity'] ?? 'neutral');
+        if (in_array($sev, ['negative', 'severe'], true) && $stars >= 4) {
+            return $classification;
+        }
+
+        if ($this->googleReviewTextHasStrongNegativeSignal($text)) {
+            return $classification;
+        }
+
+        if ($stars >= 4) {
+            if ($sev === 'neutral') {
+                $classification['severity'] = 'positive';
+
+                return $classification;
+            }
+            if ($stars === 5 && $sev === 'mild_negative' && ! $this->googleReviewTextHasOperationalComplaint($text)) {
+                $classification['severity'] = 'positive';
+
+                return $classification;
+            }
+        }
+
+        return $classification;
+    }
+
+    private function parseGoogleReviewStarRating(mixed $rating): ?int
+    {
+        if ($rating === null || $rating === '') {
+            return null;
+        }
+        $s = trim((string) $rating);
+        if (preg_match('/^([1-5])(?:\.0+)?\s*$/', $s, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/([1-5])\s*(?:bintang|star|stars)\b/i', $s, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/(?:^|[^\d])([1-5])(?:[^\d]|$)/', $s, $m)) {
+            return (int) $m[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Sinyal risiko / keluhan berat (jangan naikkan ke positive otomatis).
+     */
+    private function googleReviewTextHasStrongNegativeSignal(string $text): bool
+    {
+        $t = mb_strtolower($text);
+        $patterns = [
+            'keracun', 'keracunan', 'muntah', 'mual', 'diare', 'diarr', 'sakit perut', 'rs ', 'rumah sakit',
+            'lapor polisi', 'tuntut', 'pengacara', 'ancaman', 'pelecehan', 'kekerasan', 'diskriminasi',
+            'lalat', 'kecoa', 'tikus', 'belatung', 'sampah makanan',
+        ];
+        foreach ($patterns as $p) {
+            if ($p !== '' && mb_strpos($t, $p) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Keluhan operasional yang layak tetap mild_negative/negative meski rating tinggi (kontradiksi / fokus komplain).
+     */
+    private function googleReviewTextHasOperationalComplaint(string $text): bool
+    {
+        $t = mb_strtolower($text);
+        $patterns = [
+            'kecewa', 'buruk', 'jelek', 'tidak enak', 'ga enak', 'gak enak', 'hambar', 'mentah', 'gosong',
+            'pelayanan buruk', 'pelayanan jelek', 'kasar', 'tidak ramah', 'lama banget', 'antri lama',
+            'kotor', 'jorok', 'bau', 'tikus', 'lalat',
+            'mahal banget', 'overprice', 'tidak worth', 'gak worth', 'ga worth', 'tidak recommended',
+            'gak recommended', 'ga recommended', 'tidak akan balik', 'gak akan balik', 'ga akan balik',
+            'bintang 1', '1 bintang', 'bintang satu', 'rating 1',
+        ];
+        foreach ($patterns as $p) {
+            if ($p !== '' && mb_strpos($t, $p) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
