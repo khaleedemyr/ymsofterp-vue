@@ -244,7 +244,7 @@
           </div>
           <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
             <a
-              :href="canExportPdf ? exportPdfHref : '#'"
+              :href="exportPdfHref"
               target="_blank"
               rel="noopener noreferrer"
               class="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800"
@@ -629,16 +629,20 @@ function voiceIndexPostExtras() {
 const canExportPdf = computed(() => Boolean(dateFrom.value && dateTo.value))
 
 const exportPdfHref = computed(() => {
-  const p = new URLSearchParams()
-  p.set('date_from', dateFrom.value)
-  p.set('date_to', dateTo.value)
-  if (q.value) p.set('q', q.value)
-  if (status.value) p.set('status', status.value)
-  if (severity.value) p.set('severity', severity.value)
-  if (sourceType.value) p.set('source_type', sourceType.value)
-  if (idOutlet.value) p.set('id_outlet', idOutlet.value)
-  if (overdueOnly.value) p.set('overdue_only', '1')
-  return `/customer-voice-command-center/export-pdf?${p.toString()}`
+  if (!dateFrom.value || !dateTo.value) {
+    return '#'
+  }
+  const params = {
+    date_from: dateFrom.value,
+    date_to: dateTo.value,
+  }
+  if (q.value) params.q = q.value
+  if (status.value) params.status = status.value
+  if (severity.value) params.severity = severity.value
+  if (sourceType.value) params.source_type = sourceType.value
+  if (idOutlet.value) params.id_outlet = idOutlet.value
+  if (overdueOnly.value) params.overdue_only = 1
+  return route('customer-voice-command-center.export-pdf', params)
 })
 
 function syncNow() {

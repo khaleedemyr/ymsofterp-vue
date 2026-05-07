@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
-use Barryvdh\DomPDF\Facade\Pdf;
 
 class CustomerVoiceCommandCenterController extends Controller
 {
@@ -225,14 +224,14 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         }
 
-        $pdf = Pdf::loadView('exports.customer_voice_cases_pdf', [
+        $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
             'cases' => $cases,
             'activitiesByCase' => $activitiesByCase,
             'dateFrom' => (string) $request->input('date_from'),
             'dateTo' => (string) $request->input('date_to'),
             'generatedAt' => now()->format('Y-m-d H:i'),
             'totalExported' => $cases->count(),
-        ]);
+        ])->setPaper('a4', 'landscape');
 
         $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
 
