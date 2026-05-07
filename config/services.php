@@ -42,6 +42,13 @@ return [
         'places_api_key' => env('GOOGLE_PLACES_API_KEY'),
     ],
 
+    'recaptcha' => [
+        'site_key' => env('RECAPTCHA_SITE_KEY'),
+        'secret_key' => env('RECAPTCHA_SECRET_KEY'),
+        'min_score' => env('RECAPTCHA_MIN_SCORE', 0.5),
+        'timeout' => env('RECAPTCHA_TIMEOUT', 5),
+    ],
+
     'fcm' => [
         // Legacy API (deprecated - tidak bisa digunakan lagi)
         'server_key' => env('FCM_SERVER_KEY'), // Default/fallback key (can be used for both iOS and Android)

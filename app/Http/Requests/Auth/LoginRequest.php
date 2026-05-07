@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\RecaptchaService;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -26,9 +27,20 @@ class LoginRequest extends FormRequest
      */
     public function rules(): array
     {
+        $recaptchaService = app(RecaptchaService::class);
+
         return [
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+            'recaptcha_token' => [
+                $recaptchaService->enabled() ? 'required' : 'nullable',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) use ($recaptchaService) {
+                    if (! $recaptchaService->verify($value, $this->ip(), 'login')) {
+                        $fail('Verifikasi reCAPTCHA gagal. Silakan coba lagi.');
+                    }
+                },
+            ],
         ];
     }
 

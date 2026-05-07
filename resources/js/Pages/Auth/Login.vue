@@ -9,6 +9,7 @@ import RegisterModal from '@/Components/RegisterModal.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import axios from 'axios';
+import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
 
 defineProps({
     canResetPassword: {
@@ -30,14 +31,19 @@ const submit = async () => {
     errorMsg.value = '';
     processing.value = true;
     try {
+        const recaptchaToken = await getRecaptchaToken('login');
+
         await axios.post('/login', {
             email: email.value,
             password: password.value,
             remember: remember.value,
+            recaptcha_token: recaptchaToken,
         });
         window.location.href = '/home';
     } catch (error) {
-        errorMsg.value = error.response?.data?.message || 'Login gagal';
+        const errors = error.response?.data?.errors;
+        const firstError = errors?.recaptcha_token?.[0] || errors?.email?.[0];
+        errorMsg.value = firstError || error.response?.data?.message || 'Login gagal';
     } finally {
         processing.value = false;
     }
@@ -108,6 +114,9 @@ const onRegisterSuccess = () => {
                 <PrimaryButton class="w-full mt-2" :class="{ 'opacity-25': processing }" :disabled="processing">
                     Log in
                 </PrimaryButton>
+                <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-center">
+                    Halaman ini dilindungi Google reCAPTCHA.
+                </div>
                 <div v-if="errorMsg" class="text-red-600 text-sm mt-2 text-center">{{ errorMsg }}</div>
             </form>
             

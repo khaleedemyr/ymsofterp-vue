@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\RecaptchaService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,6 +31,8 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $recaptchaService = app(RecaptchaService::class);
+
         
         $request->validate([
             // Personal Info
@@ -80,6 +83,15 @@ class RegisteredUserController extends Controller
             'foto_ktp' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             'foto_kk' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+            'recaptcha_token' => [
+                $recaptchaService->enabled() ? 'required' : 'nullable',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) use ($recaptchaService, $request) {
+                    if (! $recaptchaService->verify($value, $request->ip(), 'register')) {
+                        $fail('Verifikasi reCAPTCHA gagal. Silakan coba lagi.');
+                    }
+                },
+            ],
         ]);
 
         // Generate NIK

@@ -8,6 +8,7 @@ import { useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
 
 
 const props = defineProps({
@@ -159,7 +160,7 @@ watch(() => props.show, (val) => {
     }
 });
 
-const submitRegister = () => {
+const submitRegister = async () => {
     // Validasi field yang wajib diisi
     const requiredFields = {
         // Personal Info
@@ -225,6 +226,15 @@ const submitRegister = () => {
     }
 
     isLoading.value = true;
+
+    let recaptchaToken = null;
+    try {
+        recaptchaToken = await getRecaptchaToken('register');
+    } catch (error) {
+        showModalAlert('Gagal memuat reCAPTCHA. Silakan refresh halaman lalu coba lagi.', 'error');
+        isLoading.value = false;
+        return;
+    }
     
     console.log('Form data before sending:', form.data());
     console.log('no_ktp value:', form.no_ktp);
@@ -236,6 +246,10 @@ const submitRegister = () => {
             console.log(`Adding to FormData: ${key} = ${value}`);
         }
     });
+
+    if (recaptchaToken) {
+        fd.append('recaptcha_token', recaptchaToken);
+    }
     
     console.log('FormData contents:');
     for (let [key, value] of fd.entries()) {
@@ -693,6 +707,9 @@ const submitRegister = () => {
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
                     </div>
+                    <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
+                        Form ini dilindungi Google reCAPTCHA.
+                    </div>
                 </form>
             </div>
 
@@ -795,6 +812,9 @@ const submitRegister = () => {
                             <span v-if="isLoading">Mendaftar...</span>
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
+                    </div>
+                    <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
+                        Form ini dilindungi Google reCAPTCHA.
                     </div>
                 </form>
             </div>
@@ -955,6 +975,9 @@ const submitRegister = () => {
                             <span v-if="isLoading">Mendaftar...</span>
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
+                    </div>
+                    <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
+                        Form ini dilindungi Google reCAPTCHA.
                     </div>
                 </form>
             </div>

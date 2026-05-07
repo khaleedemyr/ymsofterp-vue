@@ -6,12 +6,14 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
 
 const form = useForm({
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
+    recaptcha_token: null,
 });
 
 // Field display names mapping
@@ -54,7 +56,20 @@ const getFieldDisplayName = (field) => {
     return fieldNames[field] || field;
 };
 
-const submit = () => {
+const submit = async () => {
+    try {
+        form.recaptcha_token = await getRecaptchaToken('register');
+    } catch (error) {
+        Swal.fire({
+            icon: 'error',
+            title: 'reCAPTCHA Gagal',
+            text: 'Gagal memuat reCAPTCHA. Silakan refresh halaman lalu coba lagi.',
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: 'OK',
+        });
+        return;
+    }
+
     form.post(route('register'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
         onError: (errors) => {
@@ -185,6 +200,10 @@ const submit = () => {
                 >
                     Register
                 </PrimaryButton>
+            </div>
+
+            <div v-if="isRecaptchaEnabled()" class="mt-3 text-xs text-gray-500 text-right">
+                Form ini dilindungi Google reCAPTCHA.
             </div>
         </form>
     </GuestLayout>
