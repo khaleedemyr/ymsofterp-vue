@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use App\Models\Notification;
+use App\Models\WebProfileMenuItem;
 use App\Observers\NotificationObserver;
+use App\Observers\WebProfileMenuItemObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -30,6 +32,8 @@ class AppServiceProvider extends ServiceProvider
 
         // Register Notification Observer for FCM push notifications
         Notification::observe(NotificationObserver::class);
+
+        WebProfileMenuItem::observe(WebProfileMenuItemObserver::class);
 
         // Log slow queries untuk identify performance issues
         // Hanya log jika LOG_SLOW_QUERIES=true di .env (tidak otomatis aktif di debug mode)

@@ -4,7 +4,13 @@
       <div class="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-gray-800">Security Monitoring</h1>
-          <p class="text-sm text-gray-500">Audit trail perubahan link/banner kritikal Web Profile.</p>
+          <p class="text-sm text-gray-500">
+            Audit trail perubahan link/banner kritikal Web Profile.
+            URL halaman reservasi/booking yang dikelola di Home Service Landing (kartu Gallery, Menu, CTA) tercatat sebagai
+            <span class="font-medium text-gray-700">reservation_web_links_updated</span>.
+            Perubahan item menu navbar (tabel <span class="font-medium text-gray-700">web_profile_menu_items</span>) tercatat sebagai
+            <span class="font-medium text-gray-700">navbar_menu_*</span> selama penyimpanan memakai model Eloquent.
+          </p>
         </div>
         <Link href="/web-profile" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
           Kembali
@@ -165,7 +171,7 @@ const applyFilters = () => {
 };
 
 const severityLabel = (type) => {
-  if (['banner_deleted'].includes(type)) return 'high';
+  if (['banner_deleted', 'reservation_web_links_updated', 'navbar_menu_created', 'navbar_menu_updated', 'navbar_menu_deleted'].includes(type)) return 'high';
   if (['banner_updated', 'home_service_landing_updated', 'justus_apps_settings_updated'].includes(type)) return 'medium';
   return 'low';
 };

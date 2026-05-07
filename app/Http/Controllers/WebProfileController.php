@@ -88,6 +88,10 @@ class WebProfileController extends Controller
                 'date_to' => $dateTo,
             ],
             'activityTypes' => [
+                'navbar_menu_created',
+                'navbar_menu_updated',
+                'navbar_menu_deleted',
+                'reservation_web_links_updated',
                 'banner_created',
                 'banner_updated',
                 'banner_deleted',
@@ -1723,13 +1727,35 @@ class WebProfileController extends Controller
             'cta_label' => $row->cta_label,
         ];
         if ($oldSnapshot !== $newSnapshot) {
-            $this->logWebProfileSecurityEvent(
-                $request,
-                'home_service_landing_updated',
-                'Home Service Landing diperbarui (link/CTA)',
-                $oldSnapshot,
-                $newSnapshot
-            );
+            $urlsOld = [
+                'gallery_card_url' => $oldSnapshot['gallery_card_url'],
+                'menu_card_url' => $oldSnapshot['menu_card_url'],
+                'cta_url' => $oldSnapshot['cta_url'],
+            ];
+            $urlsNew = [
+                'gallery_card_url' => $newSnapshot['gallery_card_url'],
+                'menu_card_url' => $newSnapshot['menu_card_url'],
+                'cta_url' => $newSnapshot['cta_url'],
+            ];
+            $reservationUrlsChanged = $urlsOld !== $urlsNew;
+
+            if ($reservationUrlsChanged) {
+                $this->logWebProfileSecurityEvent(
+                    $request,
+                    'reservation_web_links_updated',
+                    'Link reservasi/booking web diubah (Home Service Landing: kartu Gallery, Menu, atau CTA)',
+                    $oldSnapshot,
+                    $newSnapshot
+                );
+            } else {
+                $this->logWebProfileSecurityEvent(
+                    $request,
+                    'home_service_landing_updated',
+                    'Home Service Landing diperbarui (label/teks kartu, tanpa ubah URL reservasi)',
+                    $oldSnapshot,
+                    $newSnapshot
+                );
+            }
         }
 
         return redirect()->route('web-profile.home-service-landing.edit')
