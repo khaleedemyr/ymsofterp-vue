@@ -601,12 +601,24 @@ class CustomerVoiceCommandCenterController extends Controller
     private function voiceIndexFiltersFromRequest(Request $request): array
     {
         $params = [];
-        foreach (['q', 'status', 'severity', 'source_type', 'id_outlet', 'page', 'date_from', 'date_to'] as $key) {
+        foreach (['q', 'severity', 'source_type', 'id_outlet', 'page', 'date_from', 'date_to'] as $key) {
             $val = $request->input($key);
             if ($val !== null && $val !== '') {
                 $params[$key] = $val;
             }
         }
+
+        // Setelah POST simpan case, body punya `status` = status baris; filter tabel dikirim sebagai `list_status`.
+        // Pakai exists() bukan has(), agar filter "semua status" (string kosong) tetap dikenali dan tidak jatuh ke `status` case.
+        if ($request->exists('list_status')) {
+            $filterStatus = trim((string) $request->input('list_status', ''));
+            if ($filterStatus !== '') {
+                $params['status'] = $filterStatus;
+            }
+        } elseif ($request->filled('status')) {
+            $params['status'] = $request->input('status');
+        }
+
         if ($request->boolean('overdue_only')) {
             $params['overdue_only'] = 1;
         }

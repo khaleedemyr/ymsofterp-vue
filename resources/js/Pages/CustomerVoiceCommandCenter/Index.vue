@@ -624,9 +624,10 @@ function voiceIndexPostExtras() {
   } catch {
     pageNum = null
   }
+  // `list_status` = filter dropdown halaman (bukan status case). Hindari bentrok dengan field `status` di POST update case.
   const payload = {
     q: q.value || undefined,
-    status: status.value || undefined,
+    list_status: status.value ?? '',
     severity: severity.value || undefined,
     source_type: sourceType.value || undefined,
     id_outlet: idOutlet.value || undefined,
