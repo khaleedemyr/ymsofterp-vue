@@ -8,6 +8,7 @@ use App\Services\FeedbackCaseIngestionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -160,10 +161,16 @@ class CustomerVoiceCommandCenterController extends Controller
 
     public function exportPdf(Request $request)
     {
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '180');
+
         $request->validate([
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
         ]);
+
+        $maxRows = 600;
+        $maxActivitiesPerCase = 8;
 
         $query = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
@@ -191,20 +198,72 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $this->applyFilters($query, $request);
 
+        $totalMatching = (clone $query)->count();
+
         $cases = $query
             ->orderByDesc('c.event_at')
-            ->limit(5000)
+            ->limit($maxRows)
             ->get();
 
         $caseIds = $cases->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
 
+        $activitiesByCase = $this->loadActivitiesForExportPdf($caseIds, $maxActivitiesPerCase);
+
+        $casesForPdf = $cases->map(function ($case) {
+            return (object) [
+                'id' => $case->id,
+                'event_at' => $case->event_at,
+                'nama_outlet' => $case->nama_outlet,
+                'source_type' => $case->source_type,
+                'severity' => $case->severity,
+                'summary_short' => Str::limit((string) ($case->summary_id ?? ''), 90),
+                'raw_short' => Str::limit(preg_replace('/\s+/u', ' ', (string) ($case->raw_text ?? '')), 200),
+                'risk_score' => $case->risk_score ?? 0,
+                'status' => $case->status,
+                'assigned_to_name' => $case->assigned_to_name,
+            ];
+        });
+
+        unset($cases);
+
+        $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
+            'cases' => $casesForPdf,
+            'activitiesByCase' => $activitiesByCase,
+            'dateFrom' => (string) $request->input('date_from'),
+            'dateTo' => (string) $request->input('date_to'),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'totalExported' => $casesForPdf->count(),
+            'totalMatching' => $totalMatching,
+            'maxRows' => $maxRows,
+            'maxActivitiesPerCase' => $maxActivitiesPerCase,
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    /**
+     * @param  array<int, int>  $caseIds
+     * @return array<int, list<object>>
+     */
+    private function loadActivitiesForExportPdf(array $caseIds, int $perCase): array
+    {
+        if ($caseIds === []) {
+            return [];
+        }
+
         $activitiesByCase = [];
-        if ($caseIds !== []) {
-            $activityRows = DB::table('feedback_case_activities as a')
+        foreach ($caseIds as $cid) {
+            $activitiesByCase[$cid] = [];
+        }
+
+        foreach ($caseIds as $cid) {
+            $rows = DB::table('feedback_case_activities as a')
                 ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
-                ->whereIn('a.case_id', $caseIds)
-                ->orderBy('a.case_id')
-                ->orderBy('a.id')
+                ->where('a.case_id', $cid)
+                ->orderByDesc('a.id')
+                ->limit($perCase)
                 ->get([
                     'a.case_id',
                     'a.activity_type',
@@ -215,27 +274,31 @@ class CustomerVoiceCommandCenterController extends Controller
                     'u.nama_lengkap as actor_name',
                 ]);
 
-            foreach ($activityRows as $row) {
-                $cid = (int) $row->case_id;
-                if (! isset($activitiesByCase[$cid])) {
-                    $activitiesByCase[$cid] = [];
-                }
-                $activitiesByCase[$cid][] = $row;
+            if ($rows->isEmpty()) {
+                continue;
             }
+
+            $chronological = $rows->reverse()->values();
+            $trimmed = [];
+            foreach ($chronological as $row) {
+                $note = (string) ($row->note ?? '');
+                if ($note !== '') {
+                    $note = Str::limit(preg_replace('/\s+/u', ' ', $note), 140);
+                }
+                $trimmed[] = (object) [
+                    'case_id' => $row->case_id,
+                    'activity_type' => $row->activity_type,
+                    'from_status' => $row->from_status,
+                    'to_status' => $row->to_status,
+                    'note' => $note,
+                    'created_at' => $row->created_at,
+                    'actor_name' => $row->actor_name,
+                ];
+            }
+            $activitiesByCase[$cid] = $trimmed;
         }
 
-        $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
-            'cases' => $cases,
-            'activitiesByCase' => $activitiesByCase,
-            'dateFrom' => (string) $request->input('date_from'),
-            'dateTo' => (string) $request->input('date_to'),
-            'generatedAt' => now()->format('Y-m-d H:i'),
-            'totalExported' => $cases->count(),
-        ])->setPaper('a4', 'landscape');
-
-        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
-
-        return $pdf->download($filename);
+        return $activitiesByCase;
     }
 
     public function apiAddNote(Request $request, int $id)

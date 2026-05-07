@@ -254,7 +254,7 @@
               Export PDF (range + filter)
             </a>
             <p class="text-xs leading-relaxed text-slate-500">
-              Isi <span class="font-semibold text-slate-600">Event dari / sampai</span>, gunakan filter di atas bila perlu, lalu Export — semua baris yang cocok digabung dalam satu PDF (maks. 5000 baris).
+              Isi <span class="font-semibold text-slate-600">Event dari / sampai</span>, gunakan filter di atas bila perlu, lalu Export — hingga <span class="font-semibold text-slate-600">600</span> baris terbaru per file (jika lebih banyak, persempit filter atau export beberapa kali). Timeline di PDF: 8 aktivitas terakhir per case.
             </p>
           </div>
         </div>

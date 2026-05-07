@@ -15,7 +15,12 @@
 <body>
     <h2>Customer Voice Command Center — Export</h2>
     <div class="meta">
-        Periode event: {{ $dateFrom }} s/d {{ $dateTo }} · Diekspor: {{ $generatedAt }} · Jumlah baris: {{ $totalExported }} (maks. 5000)
+        Periode event: {{ $dateFrom }} s/d {{ $dateTo }} · Diekspor: {{ $generatedAt }} ·
+        Ditampilkan {{ $totalExported }} baris
+        @if (($totalMatching ?? $totalExported) > $totalExported)
+            (dari total {{ $totalMatching }} sesuai filter; sisanya persempit tanggal/filter atau export berulang)
+        @endif
+        · Maks. {{ $maxRows ?? 600 }} baris/file · Timeline: {{ $maxActivitiesPerCase ?? 8 }} aktivitas terakhir/case
     </div>
     <table>
         <thead>
@@ -39,8 +44,8 @@
                     <td>{{ $case->nama_outlet ?? '-' }}</td>
                     <td>{{ $case->source_type }}</td>
                     <td>{{ $case->severity ?? '-' }}</td>
-                    <td>{{ \Illuminate\Support\Str::limit((string) ($case->summary_id ?? ''), 120) }}</td>
-                    <td>{{ \Illuminate\Support\Str::limit((string) ($case->raw_text ?? ''), 400) }}</td>
+                    <td>{{ $case->summary_short ?? '-' }}</td>
+                    <td>{{ $case->raw_short ?? '-' }}</td>
                     <td>{{ $case->risk_score ?? 0 }}</td>
                     <td>{{ $case->status }}</td>
                     <td>{{ $case->assigned_to_name ?? '-' }}</td>
@@ -58,7 +63,7 @@
                                     ({{ $a->from_status ?? '-' }}→{{ $a->to_status ?? '-' }})
                                 @endif
                                 @if (!empty($a->note))
-                                    — {{ \Illuminate\Support\Str::limit((string) $a->note, 320) }}
+                                    — {{ $a->note }}
                                 @endif
                             </div>
                         @empty
