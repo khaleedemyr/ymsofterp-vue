@@ -12,6 +12,11 @@ const props = defineProps({
   selected_outlet_id: { type: Number, default: 0 },
   qris_image_path: { type: String, default: null },
   qris_image_url: { type: String, default: null },
+  qris_checksum_sha256: { type: String, default: null },
+  pending_qris_path: { type: String, default: null },
+  pending_qris_checksum_sha256: { type: String, default: null },
+  pending_qris_meta: { type: Object, default: null },
+  can_approve_pending_qris: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -62,6 +67,12 @@ function handleOutletChange() {
     preserveScroll: true,
   });
 }
+
+function approvePending() {
+  router.post('/web-profile/payment-settings/qris/approve', {
+    outlet_id: selectedOutletId.value || null,
+  });
+}
 </script>
 
 <template>
@@ -91,6 +102,23 @@ function handleOutletChange() {
             <span v-if="selectedOutletId" class="text-sm font-normal text-gray-500">(Outlet spesifik)</span>
             <span v-else class="text-sm font-normal text-gray-500">(Default)</span>
           </h2>
+          <p v-if="qris_checksum_sha256" class="text-xs text-gray-500 break-all">
+            SHA256 aktif: {{ qris_checksum_sha256 }}
+          </p>
+        </div>
+
+        <div v-if="pending_qris_path" class="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <p class="font-semibold">Ada perubahan QRIS menunggu approval (maker-checker).</p>
+          <p v-if="pending_qris_meta?.maker_name">Maker: {{ pending_qris_meta.maker_name }}</p>
+          <p v-if="pending_qris_meta?.submitted_at">Diajukan: {{ pending_qris_meta.submitted_at }}</p>
+          <p v-if="pending_qris_meta?.action">Aksi: {{ pending_qris_meta.action }}</p>
+          <p v-if="pending_qris_checksum_sha256" class="break-all">SHA256 pending: {{ pending_qris_checksum_sha256 }}</p>
+          <div v-if="can_approve_pending_qris" class="mt-2">
+            <PrimaryButton type="button" @click="approvePending">Approve Perubahan QRIS</PrimaryButton>
+          </div>
+          <p v-else class="mt-1 text-xs">
+            Approval harus oleh user lain (checker) yang berbeda dari maker.
+          </p>
         </div>
 
         <div v-if="qris_image_url" class="space-y-2">

@@ -2439,6 +2439,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('web-profile/payment-settings')->name('web-profile.payment-settings.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsIndex'])->name('index');
         Route::post('/qris', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsStore'])->name('qris.store');
+        Route::post('/qris/approve', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsApprove'])->name('qris.approve');
     });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');

@@ -1600,7 +1600,9 @@ Route::prefix('web-profile')->group(function () {
     Route::get('/about-page', [\App\Http\Controllers\WebProfileController::class, 'apiAboutPage'])->name('api.web-profile.about-page');
     Route::get('/careers-page', [\App\Http\Controllers\WebProfileController::class, 'apiCareersPage'])->name('api.web-profile.careers-page');
     Route::get('/settings', [\App\Http\Controllers\WebProfileController::class, 'apiSettings'])->name('api.web-profile.settings');
-    Route::get('/qris-image', [\App\Http\Controllers\WebProfileController::class, 'apiQrisImage'])->name('api.web-profile.qris-image');
+    Route::get('/qris-image', [\App\Http\Controllers\WebProfileController::class, 'apiQrisImage'])
+        ->middleware('throttle:20,1')
+        ->name('api.web-profile.qris-image');
     Route::post('/contact', [\App\Http\Controllers\WebProfileController::class, 'apiContact'])->name('api.web-profile.contact');
 });
 

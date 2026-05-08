@@ -19,12 +19,15 @@ use App\Models\WebProfileJustusAppsBlock;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 
 class WebProfileController extends Controller
 {
+    private const QRIS_APPROVER_ROLE_ID = '5af56935b011a';
     /**
      * Display admin dashboard
      */
@@ -45,17 +48,35 @@ class WebProfileController extends Controller
 
         $selectedOutletId = (int) request()->query('outlet_id', 0);
         $key = $this->qrisSettingKey($selectedOutletId ?: null);
-        $fallbackKey = 'reservation_qris_image_path';
+        $hashKey = $this->qrisHashSettingKey($selectedOutletId ?: null);
+        $fallbackKey = $this->qrisSettingKey(null);
+        $fallbackHashKey = $this->qrisHashSettingKey(null);
 
         $qrisImagePath = WebProfileSetting::where('key', $key)->value('value');
+        $qrisHash = WebProfileSetting::where('key', $hashKey)->value('value');
         if (!$qrisImagePath && $selectedOutletId > 0) {
             $qrisImagePath = WebProfileSetting::where('key', $fallbackKey)->value('value');
+            $qrisHash = WebProfileSetting::where('key', $fallbackHashKey)->value('value');
         }
+
+        $pendingPath = WebProfileSetting::where('key', $this->qrisPendingSettingKey($selectedOutletId ?: null))->value('value');
+        $pendingHash = WebProfileSetting::where('key', $this->qrisPendingHashSettingKey($selectedOutletId ?: null))->value('value');
+        $pendingMetaRaw = WebProfileSetting::where('key', $this->qrisPendingMetaSettingKey($selectedOutletId ?: null))->value('value');
+        $pendingMeta = $pendingMetaRaw ? json_decode($pendingMetaRaw, true) : null;
+        $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
+        $currentUser = Auth::user();
+        $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
+        $canApprove = $isApproverRole && !empty($pendingPath) && $makerId > 0 && $makerId !== (int) Auth::id();
 
         return Inertia::render('WebProfile/PaymentSettings/Index', [
             'outlets' => $outlets,
             'selected_outlet_id' => $selectedOutletId,
             'qris_image_path' => $qrisImagePath,
+            'qris_checksum_sha256' => $qrisHash,
+            'pending_qris_path' => $pendingPath,
+            'pending_qris_checksum_sha256' => $pendingHash,
+            'pending_qris_meta' => $pendingMeta,
+            'can_approve_pending_qris' => $canApprove,
             'qris_image_url' => $qrisImagePath
                 ? route('api.web-profile.qris-image', ['outlet_id' => $selectedOutletId ?: null])
                 : null,
@@ -74,44 +95,179 @@ class WebProfileController extends Controller
         ]);
 
         $outletId = $request->filled('outlet_id') ? (int) $request->outlet_id : null;
-        $key = $this->qrisSettingKey($outletId);
-        $oldPath = WebProfileSetting::where('key', $key)->value('value');
+        $activeKey = $this->qrisSettingKey($outletId);
+        $activeHashKey = $this->qrisHashSettingKey($outletId);
+        $pendingKey = $this->qrisPendingSettingKey($outletId);
+        $pendingHashKey = $this->qrisPendingHashSettingKey($outletId);
+        $pendingMetaKey = $this->qrisPendingMetaSettingKey($outletId);
 
-        if ($request->boolean('remove_qris') && $oldPath) {
-            Storage::disk('local')->delete($oldPath);
-            WebProfileSetting::where('key', $key)->delete();
-            $oldPath = null;
+        $oldActivePath = WebProfileSetting::where('key', $activeKey)->value('value');
+        $oldActiveHash = WebProfileSetting::where('key', $activeHashKey)->value('value');
+        $oldPendingPath = WebProfileSetting::where('key', $pendingKey)->value('value');
+
+        if (!$request->hasFile('qris_image') && !$request->boolean('remove_qris')) {
+            return redirect()
+                ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                ->with('error', 'Tidak ada perubahan yang diajukan.');
         }
 
-        if ($request->hasFile('qris_image')) {
-            if ($oldPath) {
-                Storage::disk('local')->delete($oldPath);
-            }
+        if ($oldPendingPath && Storage::disk('local')->exists($oldPendingPath)) {
+            Storage::disk('local')->delete($oldPendingPath);
+        }
 
+        $pendingPath = null;
+        $pendingHash = null;
+        $pendingAction = 'update';
+
+        if ($request->boolean('remove_qris')) {
+            $pendingAction = 'remove';
+            $pendingPath = '__REMOVE__';
+            $pendingHash = '';
+        } elseif ($request->hasFile('qris_image')) {
             $file = $request->file('qris_image');
-            $fileName = time().'_qris_'.Str::random(8).'.'.$file->getClientOriginalExtension();
-            $path = $file->storeAs('web-profile/qris', $fileName, 'local');
-
-            WebProfileSetting::updateOrCreate(
-                ['key' => $key],
-                ['value' => $path, 'type' => 'image']
-            );
+            $fileName = time().'_qris_pending_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $pendingPath = $file->storeAs('web-profile/qris', $fileName, 'local');
+            $absolutePendingPath = Storage::disk('local')->path($pendingPath);
+            $pendingHash = hash_file('sha256', $absolutePendingPath) ?: '';
+            if ($pendingHash === '') {
+                Storage::disk('local')->delete($pendingPath);
+                return redirect()
+                    ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                    ->with('error', 'Gagal menghitung checksum file QRIS.');
+            }
         }
 
-        $newPath = WebProfileSetting::where('key', $key)->value('value');
-        if ($oldPath !== $newPath) {
-            $this->logWebProfileSecurityEvent(
-                $request,
-                'payment_qris_updated',
-                'QRIS pembayaran reservasi diperbarui',
-                ['qris_setting_key' => $key, 'reservation_qris_image_path' => $oldPath],
-                ['qris_setting_key' => $key, 'reservation_qris_image_path' => $newPath]
-            );
-        }
+        WebProfileSetting::updateOrCreate(
+            ['key' => $pendingKey],
+            ['value' => $pendingPath, 'type' => 'image']
+        );
+        WebProfileSetting::updateOrCreate(
+            ['key' => $pendingHashKey],
+            ['value' => $pendingHash, 'type' => 'text']
+        );
+        WebProfileSetting::updateOrCreate(
+            ['key' => $pendingMetaKey],
+            ['value' => json_encode([
+                'maker_id' => (int) Auth::id(),
+                'maker_name' => (string) (Auth::user()->nama_lengkap ?? Auth::user()->name ?? ''),
+                'submitted_at' => now()->toDateTimeString(),
+                'action' => $pendingAction,
+                'outlet_id' => $outletId,
+                'old_path' => $oldActivePath,
+                'old_hash' => $oldActiveHash,
+            ]), 'type' => 'json']
+        );
+
+        $this->logWebProfileSecurityEvent(
+            $request,
+            'payment_qris_change_submitted',
+            'Perubahan QRIS diajukan (menunggu approval)',
+            ['qris_setting_key' => $activeKey, 'active_path' => $oldActivePath],
+            ['qris_setting_key' => $activeKey, 'pending_path' => $pendingPath, 'pending_action' => $pendingAction]
+        );
 
         return redirect()
             ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
-            ->with('success', 'Pengaturan QRIS berhasil disimpan.');
+            ->with('success', 'Perubahan QRIS berhasil diajukan dan menunggu approval.');
+    }
+
+    public function paymentSettingsApprove(Request $request)
+    {
+        $currentUser = Auth::user();
+        $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
+        if (!$isApproverRole) {
+            return redirect()
+                ->route('web-profile.payment-settings.index')
+                ->with('error', 'Anda tidak memiliki hak approve QRIS.');
+        }
+
+        $request->validate([
+            'outlet_id' => 'nullable|integer|min:1',
+        ]);
+
+        $outletId = $request->filled('outlet_id') ? (int) $request->outlet_id : null;
+        $activeKey = $this->qrisSettingKey($outletId);
+        $activeHashKey = $this->qrisHashSettingKey($outletId);
+        $pendingKey = $this->qrisPendingSettingKey($outletId);
+        $pendingHashKey = $this->qrisPendingHashSettingKey($outletId);
+        $pendingMetaKey = $this->qrisPendingMetaSettingKey($outletId);
+
+        $pendingPath = WebProfileSetting::where('key', $pendingKey)->value('value');
+        $pendingHash = WebProfileSetting::where('key', $pendingHashKey)->value('value');
+        $pendingMetaRaw = WebProfileSetting::where('key', $pendingMetaKey)->value('value');
+        $pendingMeta = $pendingMetaRaw ? json_decode($pendingMetaRaw, true) : [];
+
+        if (!$pendingPath) {
+            return redirect()
+                ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                ->with('error', 'Tidak ada perubahan QRIS yang menunggu approval.');
+        }
+
+        $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
+        if ($makerId > 0 && $makerId === (int) Auth::id()) {
+            return redirect()
+                ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                ->with('error', 'Maker dan checker harus user yang berbeda.');
+        }
+
+        $oldActivePath = WebProfileSetting::where('key', $activeKey)->value('value');
+        $oldActiveHash = WebProfileSetting::where('key', $activeHashKey)->value('value');
+
+        if ($pendingPath === '__REMOVE__') {
+            if ($oldActivePath && Storage::disk('local')->exists($oldActivePath)) {
+                Storage::disk('local')->delete($oldActivePath);
+            }
+            WebProfileSetting::where('key', $activeKey)->delete();
+            WebProfileSetting::where('key', $activeHashKey)->delete();
+        } else {
+            if (!Storage::disk('local')->exists($pendingPath)) {
+                return redirect()
+                    ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                    ->with('error', 'File pending QRIS tidak ditemukan.');
+            }
+            $currentHash = hash_file('sha256', Storage::disk('local')->path($pendingPath)) ?: '';
+            if ($pendingHash && $currentHash !== $pendingHash) {
+                return redirect()
+                    ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+                    ->with('error', 'Checksum file pending QRIS tidak valid.');
+            }
+
+            if ($oldActivePath && $oldActivePath !== $pendingPath && Storage::disk('local')->exists($oldActivePath)) {
+                Storage::disk('local')->delete($oldActivePath);
+            }
+
+            WebProfileSetting::updateOrCreate(
+                ['key' => $activeKey],
+                ['value' => $pendingPath, 'type' => 'image']
+            );
+            WebProfileSetting::updateOrCreate(
+                ['key' => $activeHashKey],
+                ['value' => $currentHash, 'type' => 'text']
+            );
+        }
+
+        WebProfileSetting::whereIn('key', [$pendingKey, $pendingHashKey, $pendingMetaKey])->delete();
+
+        $this->logWebProfileSecurityEvent(
+            $request,
+            'payment_qris_change_approved',
+            'Perubahan QRIS disetujui checker',
+            [
+                'qris_setting_key' => $activeKey,
+                'old_active_path' => $oldActivePath,
+                'old_active_hash' => $oldActiveHash,
+            ],
+            [
+                'qris_setting_key' => $activeKey,
+                'new_active_path' => $pendingPath === '__REMOVE__' ? null : $pendingPath,
+                'checker_id' => (int) Auth::id(),
+                'maker_id' => $makerId,
+            ]
+        );
+
+        return redirect()
+            ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
+            ->with('success', 'Perubahan QRIS berhasil di-approve.');
     }
 
     /**
@@ -363,6 +519,11 @@ class WebProfileController extends Controller
 
         if (!empty($settings['reservation_qris_image_path'])) {
             $settings['reservation_qris_image_url'] = route('api.web-profile.qris-image');
+            $settings['reservation_qris_image_signed_url'] = URL::temporarySignedRoute(
+                'api.web-profile.qris-image',
+                now()->addMinutes(5),
+                ['signed' => 1]
+            );
         }
 
         return response()->json($settings);
@@ -373,14 +534,25 @@ class WebProfileController extends Controller
      */
     public function apiQrisImage()
     {
+        if (request()->query('signed') === '1' && !request()->hasValidSignature()) {
+            abort(403, 'Invalid or expired signed URL.');
+        }
+
         $outletId = request()->filled('outlet_id') ? (int) request()->query('outlet_id') : null;
         $path = WebProfileSetting::where('key', $this->qrisSettingKey($outletId))->value('value');
+        $hash = WebProfileSetting::where('key', $this->qrisHashSettingKey($outletId))->value('value');
         if (!$path && $outletId) {
-            $path = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+            $path = WebProfileSetting::where('key', $this->qrisSettingKey(null))->value('value');
+            $hash = WebProfileSetting::where('key', $this->qrisHashSettingKey(null))->value('value');
         }
 
         if (!$path || !Storage::disk('local')->exists($path)) {
             abort(404, 'QRIS image not found.');
+        }
+
+        $currentHash = hash_file('sha256', Storage::disk('local')->path($path)) ?: '';
+        if (!empty($hash) && $currentHash !== $hash) {
+            abort(409, 'QRIS checksum mismatch.');
         }
 
         $absolutePath = Storage::disk('local')->path($path);
@@ -397,6 +569,26 @@ class WebProfileController extends Controller
     private function qrisSettingKey(?int $outletId): string
     {
         return $outletId ? "reservation_qris_image_path_outlet_{$outletId}" : 'reservation_qris_image_path';
+    }
+
+    private function qrisHashSettingKey(?int $outletId): string
+    {
+        return $outletId ? "reservation_qris_sha256_outlet_{$outletId}" : 'reservation_qris_sha256';
+    }
+
+    private function qrisPendingSettingKey(?int $outletId): string
+    {
+        return $outletId ? "reservation_qris_pending_path_outlet_{$outletId}" : 'reservation_qris_pending_path';
+    }
+
+    private function qrisPendingHashSettingKey(?int $outletId): string
+    {
+        return $outletId ? "reservation_qris_pending_sha256_outlet_{$outletId}" : 'reservation_qris_pending_sha256';
+    }
+
+    private function qrisPendingMetaSettingKey(?int $outletId): string
+    {
+        return $outletId ? "reservation_qris_pending_meta_outlet_{$outletId}" : 'reservation_qris_pending_meta';
     }
 
     /**
