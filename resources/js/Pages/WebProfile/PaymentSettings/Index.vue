@@ -114,7 +114,14 @@ async function destroyQris(outletId) {
                 <div class="flex flex-wrap gap-2">
                   <PrimaryButton type="button" @click="goCreate(row.outlet_id)">Create</PrimaryButton>
                   <PrimaryButton type="button" @click="goEdit(row.outlet_id)">Edit</PrimaryButton>
-                  <button class="px-3 py-1.5 rounded bg-red-600 text-white" type="button" @click="destroyQris(row.outlet_id)">Delete</button>
+                  <button
+                    class="px-3 py-1.5 rounded bg-red-600 text-white disabled:opacity-50"
+                    type="button"
+                    :disabled="!row.can_delete"
+                    @click="destroyQris(row.outlet_id)"
+                  >
+                    Delete
+                  </button>
                   <button
                     v-if="row.pending_path"
                     class="px-3 py-1.5 rounded bg-amber-600 text-white disabled:opacity-50"

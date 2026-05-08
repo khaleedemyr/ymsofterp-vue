@@ -64,7 +64,7 @@ class WebProfileController extends Controller
             $pendingMetaRaw = WebProfileSetting::where('key', $this->qrisPendingMetaSettingKey($outletId))->value('value');
             $pendingMeta = $pendingMetaRaw ? json_decode($pendingMetaRaw, true) : null;
             $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
-            $canApprove = $canApproveByRole && !empty($pendingPath) && ($isSuperAdmin || ($makerId > 0 && $makerId !== (int) Auth::id()));
+            $canApprove = $canApproveByRole && !empty($pendingPath);
 
             $rows[] = [
                 'outlet_id' => $outletId,
@@ -76,6 +76,7 @@ class WebProfileController extends Controller
                 'pending_hash' => $pendingHash,
                 'pending_meta' => $pendingMeta,
                 'can_approve' => $canApprove,
+                'can_delete' => $isApproverRole,
             ];
         }
 
@@ -243,12 +244,6 @@ class WebProfileController extends Controller
         }
 
         $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
-        if (!$isSuperAdmin && $makerId > 0 && $makerId === (int) Auth::id()) {
-            return redirect()
-                ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
-                ->with('error', 'Maker dan checker harus user yang berbeda.');
-        }
-
         $oldActivePath = WebProfileSetting::where('key', $activeKey)->value('value');
         $oldActiveHash = WebProfileSetting::where('key', $activeHashKey)->value('value');
 
@@ -311,6 +306,14 @@ class WebProfileController extends Controller
 
     public function paymentSettingsDestroy(Request $request)
     {
+        $currentUser = Auth::user();
+        $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
+        if (!$isApproverRole) {
+            return redirect()
+                ->route('web-profile.payment-settings.index')
+                ->with('error', 'Anda tidak memiliki hak hapus QRIS.');
+        }
+
         $request->validate([
             'outlet_id' => 'nullable|integer|min:1',
         ]);
