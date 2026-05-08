@@ -29,6 +29,7 @@ class ReservationController extends Controller
 
     public function index(Request $request)
     {
+        $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : 'self_orders';
         $user = auth()->user();
         $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
         $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
@@ -113,10 +114,10 @@ class ReservationController extends Controller
 
         if (
             $reservationNumbers->isNotEmpty() &&
-            Schema::hasTable('self_orders') &&
-            Schema::hasColumn('self_orders', 'reservation_number')
+            Schema::hasTable($selfOrderTable) &&
+            Schema::hasColumn($selfOrderTable, 'reservation_number')
         ) {
-            $selfOrderByReservationNumber = DB::table('self_orders')
+            $selfOrderByReservationNumber = DB::table($selfOrderTable)
                 ->whereIn('reservation_number', $reservationNumbers)
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
@@ -135,7 +136,7 @@ class ReservationController extends Controller
                 });
         }
 
-        if (Schema::hasTable('self_orders')) {
+        if (Schema::hasTable($selfOrderTable)) {
             $reservationMeta = collect($paginatedReservations->items())
                 ->map(function ($reservation) {
                     return [
@@ -154,7 +155,7 @@ class ReservationController extends Controller
             $createdAtMax = $reservationMeta->pluck('created_at')->filter()->max();
 
             if ($outletIds->isNotEmpty() && $createdAtMin && $createdAtMax) {
-                $fallbackRows = DB::table('self_orders')
+                $fallbackRows = DB::table($selfOrderTable)
                     ->whereIn('outlet_id', $outletIds)
                     ->whereBetween('created_at', [
                         Carbon::parse($createdAtMin)->subDays(7),
@@ -417,6 +418,9 @@ class ReservationController extends Controller
 
     public function show(Reservation $reservation)
     {
+        $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : 'self_orders';
+        $selfOrderItemTable = Schema::hasTable('web_self_order_items') ? 'web_self_order_items' : 'self_order_items';
+        $selfOrderItemFk = $selfOrderItemTable === 'web_self_order_items' ? 'web_self_order_id' : 'self_order_id';
         $reservation->load(['outlet', 'creator', 'salesUser', 'paymentType']);
 
         // Transaksi POS yang ter-link ke reservasi ini (order sync dari POS ke pusat)
@@ -442,10 +446,10 @@ class ReservationController extends Controller
         $reservationNumber = strtoupper(trim((string) ($reservation->reservation_number ?? '')));
         if (
             $reservationNumber !== '' &&
-            Schema::hasTable('self_orders') &&
-            Schema::hasColumn('self_orders', 'reservation_number')
+            Schema::hasTable($selfOrderTable) &&
+            Schema::hasColumn($selfOrderTable, 'reservation_number')
         ) {
-            $selfOrderRows = DB::table('self_orders')
+            $selfOrderRows = DB::table($selfOrderTable)
                 ->where('reservation_number', $reservationNumber)
                 ->orderByDesc('created_at')
                 ->get([
@@ -465,13 +469,14 @@ class ReservationController extends Controller
 
             $selfOrderIds = $selfOrderRows->pluck('id')->filter()->values();
             $itemsBySelfOrder = collect();
-            if ($selfOrderIds->isNotEmpty() && Schema::hasTable('self_order_items')) {
-                $itemsBySelfOrder = DB::table('self_order_items')
-                    ->whereIn('self_order_id', $selfOrderIds)
+            $modifierOptionNames = [];
+            if ($selfOrderIds->isNotEmpty() && Schema::hasTable($selfOrderItemTable)) {
+                $selfOrderItems = DB::table($selfOrderItemTable)
+                    ->whereIn($selfOrderItemFk, $selfOrderIds)
                     ->orderBy('id')
                     ->get([
                         'id',
-                        'self_order_id',
+                        DB::raw($selfOrderItemFk . ' as self_order_id'),
                         'item_id',
                         'item_name',
                         'qty',
@@ -479,11 +484,26 @@ class ReservationController extends Controller
                         'subtotal',
                         'notes',
                         'modifiers',
-                    ])
-                    ->groupBy('self_order_id');
+                    ]);
+
+                $itemsBySelfOrder = $selfOrderItems->groupBy('self_order_id');
+
+                $modifierOptionIds = $selfOrderItems
+                    ->flatMap(fn ($item) => $this->extractModifierOptionIds($item->modifiers))
+                    ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($modifierOptionIds->isNotEmpty() && Schema::hasTable('modifier_options')) {
+                    $modifierOptionNames = DB::table('modifier_options')
+                        ->whereIn('id', $modifierOptionIds->all())
+                        ->pluck('name', 'id')
+                        ->toArray();
+                }
             }
 
-            $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder) {
+            $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder, $modifierOptionNames) {
                 $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
                     return [
                         'id' => $item->id,
@@ -494,6 +514,7 @@ class ReservationController extends Controller
                         'subtotal' => (float) $item->subtotal,
                         'notes' => $item->notes,
                         'modifiers' => $item->modifiers,
+                        'modifier_labels' => $this->buildModifierLabels($item->modifiers, $modifierOptionNames),
                     ];
                 })->values()->all();
 
@@ -515,11 +536,11 @@ class ReservationController extends Controller
             })->values()->all();
         }
 
-        if (empty($selfOrders) && Schema::hasTable('self_orders')) {
+        if (empty($selfOrders) && Schema::hasTable($selfOrderTable)) {
             $phoneNorm = $this->normalizePhone((string) ($reservation->phone ?? ''));
             $nameNorm = $this->normalizeName((string) ($reservation->name ?? ''));
             if (($phoneNorm !== '' || $nameNorm !== '') && !empty($reservation->outlet_id)) {
-                $candidateRows = DB::table('self_orders')
+                $candidateRows = DB::table($selfOrderTable)
                     ->where('outlet_id', $reservation->outlet_id)
                     ->orderByDesc('created_at')
                     ->get([
@@ -560,13 +581,14 @@ class ReservationController extends Controller
                 if ($selfOrderRows->isNotEmpty()) {
                     $selfOrderIds = $selfOrderRows->pluck('id')->filter()->values();
                     $itemsBySelfOrder = collect();
-                    if ($selfOrderIds->isNotEmpty() && Schema::hasTable('self_order_items')) {
-                        $itemsBySelfOrder = DB::table('self_order_items')
-                            ->whereIn('self_order_id', $selfOrderIds)
+                    $modifierOptionNames = [];
+                    if ($selfOrderIds->isNotEmpty() && Schema::hasTable($selfOrderItemTable)) {
+                        $selfOrderItems = DB::table($selfOrderItemTable)
+                            ->whereIn($selfOrderItemFk, $selfOrderIds)
                             ->orderBy('id')
                             ->get([
                                 'id',
-                                'self_order_id',
+                                DB::raw($selfOrderItemFk . ' as self_order_id'),
                                 'item_id',
                                 'item_name',
                                 'qty',
@@ -574,11 +596,26 @@ class ReservationController extends Controller
                                 'subtotal',
                                 'notes',
                                 'modifiers',
-                            ])
-                            ->groupBy('self_order_id');
+                            ]);
+
+                        $itemsBySelfOrder = $selfOrderItems->groupBy('self_order_id');
+
+                        $modifierOptionIds = $selfOrderItems
+                            ->flatMap(fn ($item) => $this->extractModifierOptionIds($item->modifiers))
+                            ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+                            ->map(fn ($id) => (int) $id)
+                            ->unique()
+                            ->values();
+
+                        if ($modifierOptionIds->isNotEmpty() && Schema::hasTable('modifier_options')) {
+                            $modifierOptionNames = DB::table('modifier_options')
+                                ->whereIn('id', $modifierOptionIds->all())
+                                ->pluck('name', 'id')
+                                ->toArray();
+                        }
                     }
 
-                    $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder) {
+                    $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder, $modifierOptionNames) {
                         $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
                             return [
                                 'id' => $item->id,
@@ -589,6 +626,7 @@ class ReservationController extends Controller
                                 'subtotal' => (float) $item->subtotal,
                                 'notes' => $item->notes,
                                 'modifiers' => $item->modifiers,
+                                'modifier_labels' => $this->buildModifierLabels($item->modifiers, $modifierOptionNames),
                             ];
                         })->values()->all();
 
@@ -851,6 +889,90 @@ class ReservationController extends Controller
         }
 
         return false;
+    }
+
+    private function decodeModifiersPayload($modifiers)
+    {
+        if (empty($modifiers)) {
+            return null;
+        }
+
+        if (is_string($modifiers)) {
+            $decoded = json_decode($modifiers, true);
+            return json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
+        if (is_array($modifiers)) {
+            return $modifiers;
+        }
+
+        return null;
+    }
+
+    private function extractModifierOptionIds($modifiers): array
+    {
+        $decoded = $this->decodeModifiersPayload($modifiers);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($decoded as $groupVal) {
+            if (!is_array($groupVal)) {
+                continue;
+            }
+            foreach ($groupVal as $optionKey => $qtyVal) {
+                if (is_numeric($optionKey) && (int) $qtyVal > 0) {
+                    $ids[] = (int) $optionKey;
+                    continue;
+                }
+
+                if (is_array($qtyVal)) {
+                    foreach ($qtyVal as $innerKey => $innerQty) {
+                        if (is_numeric($innerKey) && (int) $innerQty > 0) {
+                            $ids[] = (int) $innerKey;
+                        }
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    private function buildModifierLabels($modifiers, array $modifierOptionNames = []): array
+    {
+        $decoded = $this->decodeModifiersPayload($modifiers);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $labels = [];
+        foreach ($decoded as $groupVal) {
+            if (!is_array($groupVal)) {
+                continue;
+            }
+
+            foreach ($groupVal as $optionKey => $qtyVal) {
+                if (!is_numeric($optionKey)) {
+                    continue;
+                }
+
+                $qty = (int) $qtyVal;
+                if ($qty <= 0) {
+                    continue;
+                }
+
+                $optionId = (int) $optionKey;
+                $optionName = $modifierOptionNames[$optionId] ?? null;
+                $baseLabel = is_string($optionName) && trim($optionName) !== ''
+                    ? trim($optionName)
+                    : ('Option #' . $optionId);
+                $labels[] = $qty > 1 ? ($baseLabel . ' x' . $qty) : $baseLabel;
+            }
+        }
+
+        return array_values(array_unique($labels));
     }
 
     public function destroy(Reservation $reservation)

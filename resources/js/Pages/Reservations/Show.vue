@@ -210,9 +210,9 @@
                           <td class="py-2 pr-3">
                             <p class="font-medium text-slate-800">{{ item.item_name }}</p>
                             <p v-if="item.notes" class="mt-1 text-xs italic text-slate-500">Notes: {{ item.notes }}</p>
-                            <div v-if="formatModifiers(item.modifiers).length" class="mt-1 flex flex-wrap gap-1.5">
+                            <div v-if="(item.modifier_labels?.length || formatModifiers(item.modifiers).length)" class="mt-1 flex flex-wrap gap-1.5">
                               <span
-                                v-for="(modifierLabel, idx) in formatModifiers(item.modifiers)"
+                                v-for="(modifierLabel, idx) in (item.modifier_labels?.length ? item.modifier_labels : formatModifiers(item.modifiers))"
                                 :key="`${item.id}-mod-${idx}`"
                                 class="inline-flex items-center rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700"
                               >

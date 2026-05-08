@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use App\Models\ActivityLog;
@@ -763,6 +764,11 @@ class MenuBookController extends Controller
             $totalQty += $qty;
         }
 
+        $service = (float) round($subtotal * 0.05);
+        $dpp = (float) round($subtotal + $service);
+        $pb1 = (float) round($dpp * 0.10);
+        $grandTotal = (float) round($dpp + $pb1);
+
         DB::beginTransaction();
         try {
             $now = now();
@@ -1023,10 +1029,13 @@ class MenuBookController extends Controller
     // API checkout self-order by menu_book_id (tanpa route model binding)
     public function apiSelfOrderCheckout(Request $request)
     {
-        if (!Schema::hasTable('self_orders') || !Schema::hasTable('self_order_items')) {
+        $webOrderTable = 'web_self_orders';
+        $webItemTable = 'web_self_order_items';
+
+        if (!Schema::hasTable($webOrderTable) || !Schema::hasTable($webItemTable)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Self order table belum tersedia. Jalankan SQL create table terlebih dahulu.',
+                'message' => 'Tabel web self order belum tersedia. Jalankan SQL create table web_self_orders dan web_self_order_items terlebih dahulu.',
             ], 500);
         }
 
@@ -1158,62 +1167,92 @@ class MenuBookController extends Controller
             $totalQty += $qty;
         }
 
+        $service = (float) round($subtotal * 0.05);
+        $dpp = (float) round($subtotal + $service);
+        $pb1 = (float) round($dpp * 0.10);
+        $grandTotal = (float) round($dpp + $pb1);
+
         DB::beginTransaction();
         try {
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
+            $webSelfOrderId = (string) Str::uuid();
 
-            $selfOrderPayload = [
-                'order_no' => $orderNo,
-                'menu_book_id' => $menuBook?->id,
-                'outlet_id' => $outlet->id_outlet,
-                'kode_outlet' => $outlet->qr_code,
-                'customer_name' => $validated['customer_name'],
-                'customer_phone' => $validated['customer_phone'] ?? null,
-                'order_type' => $validated['order_type'],
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'pending',
-                'total_item' => $totalQty,
-                'subtotal' => $subtotal,
-                'grand_total' => $subtotal,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+            $selfOrderPayload = ['id' => $webSelfOrderId];
+            $setOrder = function (string $column, $value) use (&$selfOrderPayload, $webOrderTable) {
+                if (Schema::hasColumn($webOrderTable, $column)) {
+                    $selfOrderPayload[$column] = $value;
+                }
+            };
 
-            if (Schema::hasColumn('self_orders', 'reservation_number')) {
-                $selfOrderPayload['reservation_number'] = !empty($validated['reservation_number'])
-                    ? strtoupper(trim((string) $validated['reservation_number']))
-                    : null;
-            }
+            $setOrder('reservation_number', !empty($validated['reservation_number']) ? strtoupper(trim((string) $validated['reservation_number'])) : null);
+            $setOrder('order_no', $orderNo);
+            $setOrder('outlet_id', (int) $outlet->id_outlet);
+            $setOrder('outlet_code', $outlet->qr_code);
+            $setOrder('customer_name', $validated['customer_name']);
+            $setOrder('customer_phone', $validated['customer_phone'] ?? null);
+            $setOrder('customer_email', null);
+            $setOrder('order_channel', 'self_order_web');
+            $setOrder('order_type', $validated['order_type']);
+            $setOrder('pax', null);
+            $setOrder('table_ids_json', null);
+            $setOrder('notes', $validated['notes'] ?? null);
+            $setOrder('subtotal', (int) round($subtotal));
+            $setOrder('discount', 0);
+            $setOrder('cashback', 0);
+            $setOrder('dpp', (int) round($dpp));
+            $setOrder('pb1', (int) round($pb1));
+            $setOrder('service', (int) round($service));
+            $setOrder('grand_total', (int) round($grandTotal));
+            $setOrder('commfee', 0);
+            $setOrder('rounding', 0);
+            $setOrder('status', 'pending');
+            $setOrder('paid_status', 'unpaid');
+            $setOrder('sync_attempt_count', 0);
+            $setOrder('last_sync_at', null);
+            $setOrder('sync_error', null);
+            $setOrder('created_at', $now);
+            $setOrder('updated_at', $now);
 
-            $selfOrderId = DB::table('self_orders')->insertGetId($selfOrderPayload);
+            DB::table($webOrderTable)->insert($selfOrderPayload);
 
-            $rows = array_map(function ($item) use ($selfOrderId, $now) {
-                return [
-                    'self_order_id' => $selfOrderId,
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'price' => $item['price'],
-                    'modifiers' => $item['modifiers'],
-                    'subtotal' => $item['subtotal'],
-                    'notes' => $item['notes'],
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
+            $rows = array_map(function ($item) use ($webSelfOrderId, $now, $webItemTable) {
+                $row = ['id' => (string) Str::uuid()];
+                $setItem = function (string $column, $value) use (&$row, $webItemTable) {
+                    if (Schema::hasColumn($webItemTable, $column)) {
+                        $row[$column] = $value;
+                    }
+                };
+
+                $setItem('web_self_order_id', $webSelfOrderId);
+                $setItem('item_id', (string) $item['item_id']);
+                $setItem('item_name', $item['item_name']);
+                $setItem('qty', (int) $item['qty']);
+                $setItem('price', (int) round($item['price']));
+                $setItem('subtotal', (int) round($item['subtotal']));
+                $setItem('tally', null);
+                $setItem('modifiers', $item['modifiers']);
+                $setItem('notes', $item['notes']);
+                $setItem('created_at', $now);
+                $setItem('updated_at', $now);
+                return $row;
             }, $normalizedItems);
 
-            DB::table('self_order_items')->insert($rows);
+            DB::table($webItemTable)->insert($rows);
             DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Self order berhasil dibuat.',
                 'data' => [
-                    'id' => $selfOrderId,
+                    'id' => $webSelfOrderId,
                     'order_no' => $orderNo,
                     'total_item' => $totalQty,
-                    'grand_total' => $subtotal,
+                    'subtotal' => $subtotal,
+                    'service' => $service,
+                    'dpp' => $dpp,
+                    'pb1' => $pb1,
+                    'grand_total' => $grandTotal,
                 ],
             ]);
         } catch (\Throwable $e) {
