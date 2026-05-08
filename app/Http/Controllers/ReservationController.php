@@ -140,6 +140,7 @@ class ReservationController extends Controller
                 ->map(function ($reservation) {
                     return [
                         'id' => $reservation->id,
+                        'name_norm' => $this->normalizeName((string) ($reservation->name ?? '')),
                         'outlet_id' => $reservation->outlet_id,
                         'created_at' => $reservation->created_at,
                         'phone_norm' => $this->normalizePhone((string) ($reservation->phone ?? '')),
@@ -156,8 +157,8 @@ class ReservationController extends Controller
                 $fallbackRows = DB::table('self_orders')
                     ->whereIn('outlet_id', $outletIds)
                     ->whereBetween('created_at', [
-                        Carbon::parse($createdAtMin)->subDays(2),
-                        Carbon::parse($createdAtMax)->addDays(2),
+                        Carbon::parse($createdAtMin)->subDays(7),
+                        Carbon::parse($createdAtMax)->addDays(7),
                     ])
                     ->orderByDesc('updated_at')
                     ->orderByDesc('id')
@@ -165,6 +166,7 @@ class ReservationController extends Controller
                         'id',
                         'reservation_number',
                         'order_no',
+                        'customer_name',
                         'status',
                         'updated_at',
                         'created_at',
@@ -173,7 +175,7 @@ class ReservationController extends Controller
                     ]);
 
                 $selfOrderByReservationIdFallback = $reservationMeta->mapWithKeys(function ($meta) use ($fallbackRows, $selfOrderByReservationNumber) {
-                    if (empty($meta['id']) || empty($meta['phone_norm']) || empty($meta['outlet_id'])) {
+                    if (empty($meta['id']) || empty($meta['outlet_id'])) {
                         return [$meta['id'] => null];
                     }
 
@@ -189,7 +191,14 @@ class ReservationController extends Controller
                                 return false;
                             }
 
-                            if ($this->normalizePhone((string) ($row->customer_phone ?? '')) !== $meta['phone_norm']) {
+                            $phoneMatched = $this->isLikelySamePhone(
+                                (string) ($row->customer_phone ?? ''),
+                                (string) ($meta['phone_norm'] ?? '')
+                            );
+                            $nameMatched = !empty($meta['name_norm'])
+                                && $this->normalizeName((string) ($row->customer_name ?? '')) === $meta['name_norm'];
+
+                            if (!$phoneMatched && !$nameMatched) {
                                 return false;
                             }
 
@@ -198,7 +207,7 @@ class ReservationController extends Controller
                             }
 
                             $rowCreatedAt = Carbon::parse($row->created_at);
-                            return $rowCreatedAt->between($createdAt->copy()->subDays(2), $createdAt->copy()->addDays(2));
+                            return $rowCreatedAt->between($createdAt->copy()->subDays(7), $createdAt->copy()->addDays(7));
                         })
                         ->values();
 
@@ -508,7 +517,8 @@ class ReservationController extends Controller
 
         if (empty($selfOrders) && Schema::hasTable('self_orders')) {
             $phoneNorm = $this->normalizePhone((string) ($reservation->phone ?? ''));
-            if ($phoneNorm !== '' && !empty($reservation->outlet_id)) {
+            $nameNorm = $this->normalizeName((string) ($reservation->name ?? ''));
+            if (($phoneNorm !== '' || $nameNorm !== '') && !empty($reservation->outlet_id)) {
                 $candidateRows = DB::table('self_orders')
                     ->where('outlet_id', $reservation->outlet_id)
                     ->orderByDesc('created_at')
@@ -529,8 +539,12 @@ class ReservationController extends Controller
 
                 $reservationCreatedAt = $reservation->created_at ? Carbon::parse($reservation->created_at) : null;
                 $selfOrderRows = $candidateRows
-                    ->filter(function ($row) use ($phoneNorm, $reservationCreatedAt) {
-                        if ($this->normalizePhone((string) ($row->customer_phone ?? '')) !== $phoneNorm) {
+                    ->filter(function ($row) use ($phoneNorm, $nameNorm, $reservationCreatedAt) {
+                        $phoneMatched = $this->isLikelySamePhone((string) ($row->customer_phone ?? ''), $phoneNorm);
+                        $nameMatched = !empty($nameNorm)
+                            && $this->normalizeName((string) ($row->customer_name ?? '')) === $nameNorm;
+
+                        if (!$phoneMatched && !$nameMatched) {
                             return false;
                         }
 
@@ -539,7 +553,7 @@ class ReservationController extends Controller
                         }
 
                         $rowCreatedAt = Carbon::parse($row->created_at);
-                        return $rowCreatedAt->between($reservationCreatedAt->copy()->subDays(2), $reservationCreatedAt->copy()->addDays(2));
+                        return $rowCreatedAt->between($reservationCreatedAt->copy()->subDays(7), $reservationCreatedAt->copy()->addDays(7));
                     })
                     ->values();
 
@@ -794,6 +808,49 @@ class ReservationController extends Controller
     private function normalizePhone(string $phone): string
     {
         return preg_replace('/\D+/', '', $phone) ?? '';
+    }
+
+    private function normalizeName(string $name): string
+    {
+        $lower = mb_strtolower(trim($name));
+        return preg_replace('/\s+/', ' ', $lower) ?? '';
+    }
+
+    private function isLikelySamePhone(string $leftPhone, string $rightPhone): bool
+    {
+        $left = $this->normalizePhone($leftPhone);
+        $right = $this->normalizePhone($rightPhone);
+
+        if ($left === '' || $right === '') {
+            return false;
+        }
+
+        if ($left === $right) {
+            return true;
+        }
+
+        $leftAlt = preg_replace('/^(62|0)/', '', $left) ?? $left;
+        $rightAlt = preg_replace('/^(62|0)/', '', $right) ?? $right;
+        if ($leftAlt !== '' && $leftAlt === $rightAlt) {
+            return true;
+        }
+
+        $minCommon = 9;
+        if (strlen($leftAlt) >= $minCommon && strlen($rightAlt) >= $minCommon) {
+            if (substr($leftAlt, -$minCommon) === substr($rightAlt, -$minCommon)) {
+                return true;
+            }
+        }
+
+        if (strlen($leftAlt) >= $minCommon && str_ends_with($leftAlt, $rightAlt)) {
+            return true;
+        }
+
+        if (strlen($rightAlt) >= $minCommon && str_ends_with($rightAlt, $leftAlt)) {
+            return true;
+        }
+
+        return false;
     }
 
     public function destroy(Reservation $reservation)
