@@ -46,44 +46,78 @@ class WebProfileController extends Controller
             ->orderBy('nama_outlet')
             ->get(['id_outlet', 'nama_outlet']);
 
-        $selectedOutletId = (int) request()->query('outlet_id', 0);
-        $key = $this->qrisSettingKey($selectedOutletId ?: null);
-        $hashKey = $this->qrisHashSettingKey($selectedOutletId ?: null);
-        $fallbackKey = $this->qrisSettingKey(null);
-        $fallbackHashKey = $this->qrisHashSettingKey(null);
-
-        $qrisImagePath = WebProfileSetting::where('key', $key)->value('value');
-        $qrisHash = WebProfileSetting::where('key', $hashKey)->value('value');
-        if (!$qrisImagePath && $selectedOutletId > 0) {
-            $qrisImagePath = WebProfileSetting::where('key', $fallbackKey)->value('value');
-            $qrisHash = WebProfileSetting::where('key', $fallbackHashKey)->value('value');
-        }
-
-        $pendingPath = WebProfileSetting::where('key', $this->qrisPendingSettingKey($selectedOutletId ?: null))->value('value');
-        $pendingHash = WebProfileSetting::where('key', $this->qrisPendingHashSettingKey($selectedOutletId ?: null))->value('value');
-        $pendingMetaRaw = WebProfileSetting::where('key', $this->qrisPendingMetaSettingKey($selectedOutletId ?: null))->value('value');
-        $pendingMeta = $pendingMetaRaw ? json_decode($pendingMetaRaw, true) : null;
-        $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
         $currentUser = Auth::user();
         $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
         $isSuperAdmin = (bool) ($currentUser->is_admin ?? false);
         $canApproveByRole = $isApproverRole || $isSuperAdmin;
-        $canApprove = $canApproveByRole
-            && !empty($pendingPath)
-            && ($isSuperAdmin || ($makerId > 0 && $makerId !== (int) Auth::id()));
+
+        $rows = [];
+        $scopeList = collect([['outlet_id' => null, 'outlet_name' => 'Default (Semua Outlet)']])
+            ->concat($outlets->map(fn ($o) => ['outlet_id' => (int) $o->id_outlet, 'outlet_name' => $o->nama_outlet]));
+
+        foreach ($scopeList as $scope) {
+            $outletId = $scope['outlet_id'];
+            $activePath = WebProfileSetting::where('key', $this->qrisSettingKey($outletId))->value('value');
+            $activeHash = WebProfileSetting::where('key', $this->qrisHashSettingKey($outletId))->value('value');
+            $pendingPath = WebProfileSetting::where('key', $this->qrisPendingSettingKey($outletId))->value('value');
+            $pendingHash = WebProfileSetting::where('key', $this->qrisPendingHashSettingKey($outletId))->value('value');
+            $pendingMetaRaw = WebProfileSetting::where('key', $this->qrisPendingMetaSettingKey($outletId))->value('value');
+            $pendingMeta = $pendingMetaRaw ? json_decode($pendingMetaRaw, true) : null;
+            $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
+            $canApprove = $canApproveByRole && !empty($pendingPath) && ($isSuperAdmin || ($makerId > 0 && $makerId !== (int) Auth::id()));
+
+            $rows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => $scope['outlet_name'],
+                'active_path' => $activePath,
+                'active_url' => $activePath ? route('api.web-profile.qris-image', ['outlet_id' => $outletId ?: null]) : null,
+                'active_hash' => $activeHash,
+                'pending_path' => $pendingPath,
+                'pending_hash' => $pendingHash,
+                'pending_meta' => $pendingMeta,
+                'can_approve' => $canApprove,
+            ];
+        }
 
         return Inertia::render('WebProfile/PaymentSettings/Index', [
+            'rows' => $rows,
+        ]);
+    }
+
+    public function paymentSettingsCreate(Request $request)
+    {
+        $outletId = $request->filled('outlet_id') ? (int) $request->query('outlet_id') : null;
+        $outlets = \App\Models\Outlet::query()
+            ->active()
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet']);
+
+        return Inertia::render('WebProfile/PaymentSettings/Form', [
+            'mode' => 'create',
             'outlets' => $outlets,
-            'selected_outlet_id' => $selectedOutletId,
-            'qris_image_path' => $qrisImagePath,
-            'qris_checksum_sha256' => $qrisHash,
-            'pending_qris_path' => $pendingPath,
-            'pending_qris_checksum_sha256' => $pendingHash,
-            'pending_qris_meta' => $pendingMeta,
-            'can_approve_pending_qris' => $canApprove,
-            'qris_image_url' => $qrisImagePath
-                ? route('api.web-profile.qris-image', ['outlet_id' => $selectedOutletId ?: null])
-                : null,
+            'selected_outlet_id' => $outletId,
+            'active_qris_url' => null,
+            'active_qris_hash' => null,
+        ]);
+    }
+
+    public function paymentSettingsEdit(Request $request)
+    {
+        $outletId = $request->filled('outlet_id') ? (int) $request->query('outlet_id') : null;
+        $outlets = \App\Models\Outlet::query()
+            ->active()
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet']);
+
+        $activePath = WebProfileSetting::where('key', $this->qrisSettingKey($outletId))->value('value');
+        $activeHash = WebProfileSetting::where('key', $this->qrisHashSettingKey($outletId))->value('value');
+
+        return Inertia::render('WebProfile/PaymentSettings/Form', [
+            'mode' => 'edit',
+            'outlets' => $outlets,
+            'selected_outlet_id' => $outletId,
+            'active_qris_url' => $activePath ? route('api.web-profile.qris-image', ['outlet_id' => $outletId ?: null]) : null,
+            'active_qris_hash' => $activeHash,
         ]);
     }
 
@@ -273,6 +307,42 @@ class WebProfileController extends Controller
         return redirect()
             ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
             ->with('success', 'Perubahan QRIS berhasil di-approve.');
+    }
+
+    public function paymentSettingsDestroy(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'nullable|integer|min:1',
+        ]);
+
+        $outletId = $request->filled('outlet_id') ? (int) $request->outlet_id : null;
+        $activeKey = $this->qrisSettingKey($outletId);
+        $activeHashKey = $this->qrisHashSettingKey($outletId);
+        $pendingKey = $this->qrisPendingSettingKey($outletId);
+        $pendingHashKey = $this->qrisPendingHashSettingKey($outletId);
+        $pendingMetaKey = $this->qrisPendingMetaSettingKey($outletId);
+
+        $activePath = WebProfileSetting::where('key', $activeKey)->value('value');
+        $pendingPath = WebProfileSetting::where('key', $pendingKey)->value('value');
+
+        if ($activePath && Storage::disk('local')->exists($activePath)) {
+            Storage::disk('local')->delete($activePath);
+        }
+        if ($pendingPath && $pendingPath !== '__REMOVE__' && Storage::disk('local')->exists($pendingPath)) {
+            Storage::disk('local')->delete($pendingPath);
+        }
+
+        WebProfileSetting::whereIn('key', [$activeKey, $activeHashKey, $pendingKey, $pendingHashKey, $pendingMetaKey])->delete();
+
+        $this->logWebProfileSecurityEvent(
+            $request,
+            'payment_qris_deleted',
+            'QRIS pembayaran reservasi dihapus',
+            ['qris_setting_key' => $activeKey],
+            ['qris_setting_key' => $activeKey, 'deleted_by' => (int) Auth::id()]
+        );
+
+        return redirect()->route('web-profile.payment-settings.index')->with('success', 'QRIS berhasil dihapus.');
     }
 
     /**

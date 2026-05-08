@@ -2438,8 +2438,12 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('web-profile/payment-settings')->name('web-profile.payment-settings.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsIndex'])->name('index');
+        Route::get('/create', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsCreate'])->name('create');
+        Route::get('/edit', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsEdit'])->name('edit');
+        Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsStore'])->name('store');
         Route::post('/qris', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsStore'])->name('qris.store');
         Route::post('/qris/approve', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsApprove'])->name('qris.approve');
+        Route::delete('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsDestroy'])->name('destroy');
     });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
