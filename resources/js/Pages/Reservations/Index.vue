@@ -121,6 +121,7 @@
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200">
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">No</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Reservation Number</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Nama</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">No. Telepon</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Outlet</th>
@@ -129,6 +130,7 @@
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">DP</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Kode DP</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Jenis Pembayaran</th>
+                  <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Mode</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Sales</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Area</th>
                   <th class="px-5 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
@@ -138,7 +140,7 @@
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr v-if="!reservationRows.length">
-                  <td colspan="14" class="px-5 py-16 text-center">
+                  <td colspan="16" class="px-5 py-16 text-center">
                     <div class="flex flex-col items-center gap-4">
                       <span class="flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-100 text-slate-400">
                         <i class="fa-solid fa-calendar-xmark text-2xl"></i>
@@ -163,6 +165,9 @@
                   class="hover:bg-rose-50/50 transition group"
                 >
                   <td class="px-5 py-4 text-sm text-slate-500">{{ rowNumber(idx) }}</td>
+                  <td class="px-5 py-4">
+                    <span class="font-mono text-sm font-semibold text-emerald-700">{{ reservation.reservation_number || '–' }}</span>
+                  </td>
                   <td class="px-5 py-4">
                     <span class="font-medium text-slate-800">{{ reservation.name }}</span>
                   </td>
@@ -190,6 +195,20 @@
                   </td>
                   <td class="px-5 py-4 font-mono text-sm font-semibold text-emerald-700">{{ reservation.dp_code || '–' }}</td>
                   <td class="px-5 py-4 text-sm text-slate-600">{{ reservation.payment_type_name || '–' }}</td>
+                  <td class="px-5 py-4">
+                    <span
+                      :class="reservation.order_mode === 'self_order' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'"
+                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium"
+                    >
+                      {{ reservation.order_mode === 'self_order' ? 'Self Order' : 'Manual WhatsApp' }}
+                    </span>
+                    <p
+                      v-if="reservation.order_mode === 'self_order' && reservation.self_order_latest_no"
+                      class="mt-1 text-xs font-mono text-slate-500"
+                    >
+                      {{ reservation.self_order_latest_no }}
+                    </p>
+                  </td>
                   <td class="px-5 py-4">
                     <span :class="reservation.from_sales ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium">
                       {{ reservation.from_sales ? 'Dari Sales' : 'Bukan' }}

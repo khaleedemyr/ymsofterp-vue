@@ -1034,6 +1034,7 @@ class MenuBookController extends Controller
             'menu_book_id' => 'required|integer|exists:menu_books,id',
             'customer_name' => 'required|string|max:100',
             'customer_phone' => 'nullable|string|max:30',
+            'reservation_number' => 'nullable|string|max:32',
             'order_type' => 'required|in:dine_in,take_away',
             'notes' => 'nullable|string|max:500',
             'items' => 'required|array|min:1',
@@ -1138,7 +1139,7 @@ class MenuBookController extends Controller
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
 
-            $selfOrderId = DB::table('self_orders')->insertGetId([
+            $selfOrderPayload = [
                 'order_no' => $orderNo,
                 'menu_book_id' => $menuBook->id,
                 'outlet_id' => $outlet->id_outlet,
@@ -1153,7 +1154,15 @@ class MenuBookController extends Controller
                 'grand_total' => $subtotal,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]);
+            ];
+
+            if (Schema::hasColumn('self_orders', 'reservation_number')) {
+                $selfOrderPayload['reservation_number'] = !empty($validated['reservation_number'])
+                    ? strtoupper(trim((string) $validated['reservation_number']))
+                    : null;
+            }
+
+            $selfOrderId = DB::table('self_orders')->insertGetId($selfOrderPayload);
 
             $rows = array_map(function ($item) use ($selfOrderId, $now) {
                 return [

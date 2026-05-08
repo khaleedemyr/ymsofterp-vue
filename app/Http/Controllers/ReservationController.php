@@ -102,8 +102,45 @@ class ReservationController extends Controller
                 });
         }
 
-        $reservations = $paginatedReservations->through(function ($reservation) use ($orderByReservation) {
+        $selfOrderByReservationNumber = collect();
+        $reservationNumbers = collect($paginatedReservations->items())
+            ->pluck('reservation_number')
+            ->filter(fn ($number) => is_string($number) && trim($number) !== '')
+            ->map(fn ($number) => strtoupper(trim((string) $number)))
+            ->unique()
+            ->values();
+
+        if (
+            $reservationNumbers->isNotEmpty() &&
+            Schema::hasTable('self_orders') &&
+            Schema::hasColumn('self_orders', 'reservation_number')
+        ) {
+            $selfOrderByReservationNumber = DB::table('self_orders')
+                ->whereIn('reservation_number', $reservationNumbers)
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->get(['reservation_number', 'order_no', 'status', 'updated_at'])
+                ->groupBy(function ($row) {
+                    return strtoupper(trim((string) $row->reservation_number));
+                })
+                ->map(function ($rows) {
+                    $latest = $rows->first();
+                    return [
+                        'count' => $rows->count(),
+                        'latest_order_no' => $latest?->order_no,
+                        'latest_status' => $latest?->status,
+                        'latest_at' => $latest?->updated_at ? Carbon::parse($latest->updated_at)->toIso8601String() : null,
+                    ];
+                });
+        }
+
+        $reservations = $paginatedReservations->through(function ($reservation) use ($orderByReservation, $selfOrderByReservationNumber) {
                 $orderRef = $orderByReservation->get($reservation->id, ['paid_number' => null, 'used_order_at' => null]);
+                $reservationNumberKey = strtoupper(trim((string) ($reservation->reservation_number ?? '')));
+                $selfOrderRef = $reservationNumberKey !== ''
+                    ? $selfOrderByReservationNumber->get($reservationNumberKey)
+                    : null;
+                $orderMode = $selfOrderRef ? 'self_order' : 'manual_whatsapp';
                 return [
                 'id' => $reservation->id,
                 'reservation_number' => $reservation->reservation_number,
@@ -122,6 +159,9 @@ class ReservationController extends Controller
                 'sales_user_id' => $reservation->sales_user_id,
                 'sales_user_name' => $reservation->salesUser ? $reservation->salesUser->nama_lengkap : null,
                 'menu' => $reservation->menu,
+                'order_mode' => $orderMode,
+                'self_order_count' => $selfOrderRef['count'] ?? 0,
+                'self_order_latest_no' => $selfOrderRef['latest_order_no'] ?? null,
                 'status' => $reservation->status,
                 'dp_used_at' => $reservation->dp_used_at?->toIso8601String(),
                 'dp_used_paid_number' => $orderRef['paid_number'] ?? null,
@@ -301,9 +341,90 @@ class ReservationController extends Controller
             ->values()
             ->all();
 
+        $selfOrders = [];
+        $reservationNumber = strtoupper(trim((string) ($reservation->reservation_number ?? '')));
+        if (
+            $reservationNumber !== '' &&
+            Schema::hasTable('self_orders') &&
+            Schema::hasColumn('self_orders', 'reservation_number')
+        ) {
+            $selfOrderRows = DB::table('self_orders')
+                ->where('reservation_number', $reservationNumber)
+                ->orderByDesc('created_at')
+                ->get([
+                    'id',
+                    'order_no',
+                    'customer_name',
+                    'customer_phone',
+                    'order_type',
+                    'notes',
+                    'status',
+                    'total_item',
+                    'subtotal',
+                    'grand_total',
+                    'created_at',
+                    'updated_at',
+                ]);
+
+            $selfOrderIds = $selfOrderRows->pluck('id')->filter()->values();
+            $itemsBySelfOrder = collect();
+            if ($selfOrderIds->isNotEmpty() && Schema::hasTable('self_order_items')) {
+                $itemsBySelfOrder = DB::table('self_order_items')
+                    ->whereIn('self_order_id', $selfOrderIds)
+                    ->orderBy('id')
+                    ->get([
+                        'id',
+                        'self_order_id',
+                        'item_id',
+                        'item_name',
+                        'qty',
+                        'price',
+                        'subtotal',
+                        'notes',
+                        'modifiers',
+                    ])
+                    ->groupBy('self_order_id');
+            }
+
+            $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder) {
+                $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'item_id' => $item->item_id,
+                        'item_name' => $item->item_name,
+                        'qty' => (int) $item->qty,
+                        'price' => (float) $item->price,
+                        'subtotal' => (float) $item->subtotal,
+                        'notes' => $item->notes,
+                        'modifiers' => $item->modifiers,
+                    ];
+                })->values()->all();
+
+                return [
+                    'id' => $row->id,
+                    'order_no' => $row->order_no,
+                    'customer_name' => $row->customer_name,
+                    'customer_phone' => $row->customer_phone,
+                    'order_type' => $row->order_type,
+                    'notes' => $row->notes,
+                    'status' => $row->status,
+                    'total_item' => (int) $row->total_item,
+                    'subtotal' => (float) $row->subtotal,
+                    'grand_total' => (float) $row->grand_total,
+                    'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
+                    'updated_at' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,
+                    'items' => $items,
+                ];
+            })->values()->all();
+        }
+
+        $orderMode = !empty($selfOrders) ? 'self_order' : 'manual_whatsapp';
+        $reservation->setAttribute('order_mode', $orderMode);
+
         return Inertia::render('Reservations/Show', [
             'reservation' => $reservation,
             'linked_orders' => $linkedOrders,
+            'self_orders' => $selfOrders,
         ]);
     }
 

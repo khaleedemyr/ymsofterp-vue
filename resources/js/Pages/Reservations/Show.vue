@@ -103,6 +103,15 @@
             </div>
             <div class="p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
+                <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Mode Pemesanan</p>
+                <span
+                  :class="reservation.order_mode === 'self_order' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'"
+                  class="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium"
+                >
+                  {{ reservation.order_mode === 'self_order' ? 'Self Order' : 'Manual WhatsApp' }}
+                </span>
+              </div>
+              <div>
                 <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">DP (Down Payment)</p>
                 <p class="text-slate-800 font-semibold">{{ formatDp(reservation.dp) }}</p>
               </div>
@@ -120,6 +129,58 @@
                   {{ reservation.from_sales ? 'Dari Sales' : 'Bukan' }}
                 </span>
                 <p v-if="reservation.from_sales && salesName" class="text-slate-700 text-sm mt-2">{{ salesName }}</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Self Order terkait -->
+          <section v-if="selfOrders && selfOrders.length" class="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+              <span class="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600">
+                <i class="fa-solid fa-bag-shopping text-lg"></i>
+              </span>
+              <h2 class="font-semibold text-slate-800">Detail Self Order</h2>
+            </div>
+            <div class="p-6 space-y-5">
+              <div
+                v-for="selfOrder in selfOrders"
+                :key="selfOrder.id"
+                class="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+                  <div>
+                    <p class="font-mono text-sm font-semibold text-violet-700">{{ selfOrder.order_no || '-' }}</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(selfOrder.created_at) }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-xs uppercase tracking-wider text-slate-500">Total</p>
+                    <p class="font-semibold text-slate-800">{{ formatCurrency(selfOrder.grand_total) }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-3 overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th class="py-2 pr-3">Item</th>
+                        <th class="py-2 pr-3">Qty</th>
+                        <th class="py-2 pr-3">Harga</th>
+                        <th class="py-2 pr-3">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in selfOrder.items" :key="item.id" class="border-b border-slate-100 align-top">
+                        <td class="py-2 pr-3">
+                          <p class="font-medium text-slate-800">{{ item.item_name }}</p>
+                          <p v-if="item.notes" class="mt-1 text-xs italic text-slate-500">{{ item.notes }}</p>
+                        </td>
+                        <td class="py-2 pr-3 text-slate-700">{{ item.qty }}</td>
+                        <td class="py-2 pr-3 text-slate-700">{{ formatCurrency(item.price) }}</td>
+                        <td class="py-2 pr-3 font-medium text-slate-800">{{ formatCurrency(item.subtotal) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
@@ -236,11 +297,13 @@ import { computed } from 'vue';
 
 const props = defineProps({
   reservation: Object,
-  linked_orders: Array
+  linked_orders: Array,
+  self_orders: Array,
 });
 
 const reservation = computed(() => props.reservation || {});
 const linkedOrders = computed(() => props.linked_orders || []);
+const selfOrders = computed(() => props.self_orders || []);
 
 const menuFileName = computed(() => {
   const path = reservation.value.menu_file;
