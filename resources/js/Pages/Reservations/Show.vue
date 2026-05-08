@@ -133,58 +133,6 @@
             </div>
           </section>
 
-          <!-- Self Order terkait -->
-          <section v-if="selfOrders && selfOrders.length" class="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
-              <span class="flex items-center justify-center w-10 h-10 rounded-xl bg-violet-100 text-violet-600">
-                <i class="fa-solid fa-bag-shopping text-lg"></i>
-              </span>
-              <h2 class="font-semibold text-slate-800">Detail Self Order</h2>
-            </div>
-            <div class="p-6 space-y-5">
-              <div
-                v-for="selfOrder in selfOrders"
-                :key="selfOrder.id"
-                class="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4"
-              >
-                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
-                  <div>
-                    <p class="font-mono text-sm font-semibold text-violet-700">{{ selfOrder.order_no || '-' }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(selfOrder.created_at) }}</p>
-                  </div>
-                  <div class="text-right">
-                    <p class="text-xs uppercase tracking-wider text-slate-500">Total</p>
-                    <p class="font-semibold text-slate-800">{{ formatCurrency(selfOrder.grand_total) }}</p>
-                  </div>
-                </div>
-
-                <div class="mt-3 overflow-x-auto">
-                  <table class="w-full text-sm">
-                    <thead>
-                      <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <th class="py-2 pr-3">Item</th>
-                        <th class="py-2 pr-3">Qty</th>
-                        <th class="py-2 pr-3">Harga</th>
-                        <th class="py-2 pr-3">Subtotal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="item in selfOrder.items" :key="item.id" class="border-b border-slate-100 align-top">
-                        <td class="py-2 pr-3">
-                          <p class="font-medium text-slate-800">{{ item.item_name }}</p>
-                          <p v-if="item.notes" class="mt-1 text-xs italic text-slate-500">{{ item.notes }}</p>
-                        </td>
-                        <td class="py-2 pr-3 text-slate-700">{{ item.qty }}</td>
-                        <td class="py-2 pr-3 text-slate-700">{{ formatCurrency(item.price) }}</td>
-                        <td class="py-2 pr-3 font-medium text-slate-800">{{ formatCurrency(item.subtotal) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-
           <!-- Transaksi POS terkait -->
           <section v-if="linkedOrders && linkedOrders.length" class="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
             <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
@@ -229,7 +177,61 @@
               <h2 class="font-semibold text-slate-800">Menu</h2>
             </div>
             <div class="p-6 space-y-4">
-              <p class="text-slate-800 whitespace-pre-wrap">{{ reservation.menu || '–' }}</p>
+              <template v-if="selfOrders.length">
+                <div
+                  v-for="selfOrder in selfOrders"
+                  :key="selfOrder.id"
+                  class="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+                    <div>
+                      <p class="font-mono text-sm font-semibold text-violet-700">{{ selfOrder.order_no || '-' }}</p>
+                      <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(selfOrder.created_at) }}</p>
+                      <p v-if="selfOrder.notes" class="mt-1 text-xs italic text-slate-600">Catatan order: {{ selfOrder.notes }}</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-xs uppercase tracking-wider text-slate-500">Total</p>
+                      <p class="font-semibold text-slate-800">{{ formatCurrency(selfOrder.grand_total) }}</p>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">Item</th>
+                          <th class="py-2 pr-3">Qty</th>
+                          <th class="py-2 pr-3">Harga</th>
+                          <th class="py-2 pr-3">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="item in selfOrder.items" :key="item.id" class="border-b border-slate-100 align-top">
+                          <td class="py-2 pr-3">
+                            <p class="font-medium text-slate-800">{{ item.item_name }}</p>
+                            <p v-if="item.notes" class="mt-1 text-xs italic text-slate-500">Notes: {{ item.notes }}</p>
+                            <div v-if="formatModifiers(item.modifiers).length" class="mt-1 flex flex-wrap gap-1.5">
+                              <span
+                                v-for="(modifierLabel, idx) in formatModifiers(item.modifiers)"
+                                :key="`${item.id}-mod-${idx}`"
+                                class="inline-flex items-center rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+                              >
+                                {{ modifierLabel }}
+                              </span>
+                            </div>
+                          </td>
+                          <td class="py-2 pr-3 text-slate-700">{{ item.qty }}</td>
+                          <td class="py-2 pr-3 text-slate-700">{{ formatCurrency(item.price) }}</td>
+                          <td class="py-2 pr-3 font-medium text-slate-800">{{ formatCurrency(item.subtotal) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </template>
+
+              <p v-else class="text-slate-800 whitespace-pre-wrap">{{ reservation.menu || '–' }}</p>
+
               <div v-if="reservation.menu_file || reservation.menu_file_url" class="pt-2 border-t border-slate-100">
                 <p class="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">File menu</p>
                 <a
@@ -358,6 +360,64 @@ function formatDp(val) {
 function formatCurrency(val) {
   if (val == null || val === '') return '–';
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(Number(val));
+}
+
+function formatModifiers(modifiers) {
+  if (!modifiers) return [];
+
+  let parsed = modifiers;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [String(modifiers)];
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((entry) => {
+        if (entry == null) return null;
+        if (typeof entry === 'string') return entry;
+        if (typeof entry === 'object') {
+          const name = entry.name || entry.label || entry.option_name || entry.modifier_name;
+          const qty = Number(entry.qty || entry.quantity || 0);
+          if (!name) return null;
+          return qty > 1 ? `${name} x${qty}` : String(name);
+        }
+        return String(entry);
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof parsed === 'object') {
+    const labels = [];
+    Object.entries(parsed).forEach(([groupKey, options]) => {
+      if (options && typeof options === 'object' && !Array.isArray(options)) {
+        Object.entries(options).forEach(([optionKey, qtyRaw]) => {
+          const qty = Number(qtyRaw || 0);
+          if (qty <= 0) return;
+          labels.push(qty > 1 ? `${optionKey} x${qty}` : optionKey);
+        });
+        return;
+      }
+
+      if (Array.isArray(options)) {
+        options.forEach((opt) => {
+          if (opt == null) return;
+          labels.push(String(opt));
+        });
+        return;
+      }
+
+      if (options) {
+        labels.push(`${groupKey}: ${String(options)}`);
+      }
+    });
+    return labels;
+  }
+
+  return [String(modifiers)];
 }
 
 function getStatusClass(status) {
