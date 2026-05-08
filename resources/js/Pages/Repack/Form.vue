@@ -23,18 +23,18 @@ const loading = ref(false);
 // Watch itemAsal dan itemHasil untuk set default unit
 watch(() => itemAsal.value, (val) => {
   const item = props.items.find(i => i.id == val);
-  if (item) unitAsal.value = item.unit?.id || '';
+  if (item) unitAsal.value = item.smallUnit?.id || '';
 });
 watch(() => itemHasil.value, (val) => {
   const item = props.items.find(i => i.id == val);
-  if (item) unitHasil.value = item.unit?.id || '';
+  if (item) unitHasil.value = item.smallUnit?.id || '';
 });
 
 const getAvailableUnits = (item) => {
   const arr = [];
-  if (item?.unit) arr.push(item.unit);
-  if (item?.medium_unit) arr.push(item.medium_unit);
-  if (item?.large_unit) arr.push(item.large_unit);
+  if (item?.smallUnit) arr.push(item.smallUnit);
+  if (item?.mediumUnit) arr.push(item.mediumUnit);
+  if (item?.largeUnit) arr.push(item.largeUnit);
   return arr;
 };
 
@@ -92,7 +92,7 @@ const submit = async () => {
           <select v-model="itemAsal" class="w-full px-4 py-2 rounded-xl border border-blue-200">
             <option value="">Pilih Item Asal</option>
             <option v-for="item in props.items" :key="item.id" :value="item.id">
-              {{ item.name }}{{ item.unit ? ' (' + item.unit.name + ')' : '' }}
+              {{ item.name }}{{ item.smallUnit ? ' (' + item.smallUnit.name + ')' : '' }}
             </option>
           </select>
         </div>
@@ -114,7 +114,7 @@ const submit = async () => {
           <select v-model="itemHasil" class="w-full px-4 py-2 rounded-xl border border-blue-200">
             <option value="">Pilih Item Hasil</option>
             <option v-for="item in props.items" :key="item.id" :value="item.id">
-              {{ item.name }}{{ item.unit ? ' (' + item.unit.name + ')' : '' }}
+              {{ item.name }}{{ item.smallUnit ? ' (' + item.smallUnit.name + ')' : '' }}
             </option>
           </select>
         </div>

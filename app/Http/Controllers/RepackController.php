@@ -38,7 +38,7 @@ class RepackController extends Controller
 
     public function create()
     {
-        $items = \App\Models\Item::with(['unit', 'mediumUnit', 'largeUnit'])->get();
+        $items = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->get();
         $units = \App\Models\Unit::all();
         $warehouses = \App\Models\Warehouse::where('status', 'active')->get();
         return \Inertia\Inertia::render('Repack/Form', [
