@@ -1104,6 +1104,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/butcher-processes/stock-cost-report', [\App\Http\Controllers\StockCostReportController::class, 'index'])->name('butcher-processes.stock-cost-report');
     Route::get('/butcher-processes/{id}', [ButcherProcessController::class, 'show'])->name('butcher-processes.show');
     Route::delete('/butcher-processes/{id}', [\App\Http\Controllers\ButcherProcessController::class, 'destroy'])->name('butcher-processes.destroy');
+    Route::get('/api/butcher-processes/{id}/serial-summary', [\App\Http\Controllers\ButcherProcessController::class, 'serialSummary'])->name('butcher-processes.serial-summary');
+    Route::post('/api/butcher-process-items/{id}/generate-serials', [\App\Http\Controllers\ButcherProcessController::class, 'generateSerials'])->name('butcher-processes.generate-serials');
+    Route::get('/api/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'serialList'])->name('butcher-processes.serial-list');
+    Route::delete('/api/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'rollbackSerials'])->name('butcher-processes.rollback-serials');
 });
 
 // MK Production & Outlet WIP Production

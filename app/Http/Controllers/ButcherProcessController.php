@@ -21,6 +21,7 @@ use App\Models\FoodInventoryStock;
 use Illuminate\Support\Facades\Log;
 use App\Models\FoodInventoryItem;
 use App\Models\GoodReceive;
+use Illuminate\Support\Str;
 
 class ButcherProcessController extends Controller
 {
@@ -548,5 +549,161 @@ class ButcherProcessController extends Controller
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    public function serialSummary($id)
+    {
+        $summary = DB::table('inventory_item_serials')
+            ->select('source_item_id as butcher_process_item_id', DB::raw('COUNT(*) as total'))
+            ->where('source_type', 'butcher_process')
+            ->where('source_id', $id)
+            ->groupBy('source_item_id')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    public function generateSerials($id)
+    {
+        $butcherItem = DB::table('butcher_process_items as bpi')
+            ->join('butcher_processes as bp', 'bp.id', '=', 'bpi.butcher_process_id')
+            ->leftJoin('butcher_process_item_details as bpid', 'bpid.butcher_process_item_id', '=', 'bpi.id')
+            ->join('items as pcs_item', 'pcs_item.id', '=', 'bpi.pcs_item_id')
+            ->select(
+                'bpi.id',
+                'bpi.butcher_process_id',
+                'bpi.pcs_item_id as item_id',
+                'bpi.pcs_qty',
+                'bpi.unit_id',
+                'bp.warehouse_id',
+                'bp.number as butcher_number',
+                'bpid.mac_pcs',
+                'pcs_item.small_unit_id',
+                'pcs_item.medium_unit_id',
+                'pcs_item.large_unit_id',
+                'pcs_item.small_conversion_qty',
+                'pcs_item.medium_conversion_qty'
+            )
+            ->where('bpi.id', $id)
+            ->first();
+
+        if (!$butcherItem) {
+            return response()->json(['message' => 'Butcher item tidak ditemukan'], 404);
+        }
+
+        $qtyPcs = (float) ($butcherItem->pcs_qty ?: 0);
+        $serialCount = (int) round($qtyPcs);
+        if ($serialCount <= 0 || abs($qtyPcs - $serialCount) > 0.00001) {
+            return response()->json([
+                'message' => 'PCS Qty harus bilangan bulat positif agar bisa generate serial.',
+                'pcs_qty' => round($qtyPcs, 4),
+            ], 422);
+        }
+
+        $inventoryItemId = DB::table('food_inventory_items')
+            ->where('item_id', $butcherItem->item_id)
+            ->value('id');
+
+        $smallConv = (float) ($butcherItem->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($butcherItem->medium_conversion_qty ?: 1);
+        $baseCost = (float) ($butcherItem->mac_pcs ?: 0);
+        $costSmall = $baseCost;
+        $costMedium = $costSmall * $smallConv;
+        $costLarge = $costMedium * $mediumConv;
+
+        DB::beginTransaction();
+        try {
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'butcher_process')
+                ->where('source_item_id', $butcherItem->id)
+                ->delete();
+
+            $now = now();
+            $rows = [];
+            for ($i = 0; $i < $serialCount; $i++) {
+                $rows[] = [
+                    'source_type' => 'butcher_process',
+                    'source_id' => $butcherItem->butcher_process_id,
+                    'source_item_id' => $butcherItem->id,
+                    'warehouse_id' => $butcherItem->warehouse_id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'item_id' => $butcherItem->item_id,
+                    'unit_id' => $butcherItem->unit_id,
+                    'serial_number' => $this->generateUniqueSerialNumber(),
+                    'source_qty' => $qtyPcs,
+                    'source_unit_id' => $butcherItem->unit_id,
+                    'generated_qty_unit' => $qtyPcs,
+                    'cost_small' => $costSmall,
+                    'cost_medium' => $costMedium,
+                    'cost_large' => $costLarge,
+                    'ref_po_number' => $butcherItem->butcher_number,
+                    'generated_by' => Auth::id(),
+                    'generated_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            DB::table('inventory_item_serials')->insert($rows);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil generate {$serialCount} serial untuk PCS item.",
+                'total' => $serialCount,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function serialList($id)
+    {
+        $rows = DB::table('inventory_item_serials as s')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.generated_at',
+                'u.name as unit_name'
+            )
+            ->where('s.source_type', 'butcher_process')
+            ->where('s.source_item_id', $id)
+            ->orderBy('s.id')
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    public function rollbackSerials($id)
+    {
+        $deleted = DB::table('inventory_item_serials')
+            ->where('source_type', 'butcher_process')
+            ->where('source_item_id', $id)
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Rollback serial butcher berhasil. Terhapus: {$deleted}",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    private function generateUniqueSerialNumber(): string
+    {
+        $prefix = now()->format('ymdHi');
+
+        for ($i = 0; $i < 10; $i++) {
+            $serial = $prefix . strtoupper(Str::random(4));
+            $exists = DB::table('inventory_item_serials')
+                ->where('serial_number', $serial)
+                ->exists();
+            if (!$exists) {
+                return $serial;
+            }
+        }
+
+        return $prefix . strtoupper(Str::random(6));
     }
 } 
