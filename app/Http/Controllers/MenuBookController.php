@@ -784,13 +784,8 @@ class MenuBookController extends Controller
             $reservationNumber = !empty($validated['reservation_number'])
                 ? strtoupper(trim((string) $validated['reservation_number']))
                 : null;
-            $reservationId = null;
-            if ($reservationNumber && Schema::hasTable('reservations')) {
-                $reservationId = DB::table('reservations')
-                    ->where('outlet_id', $outlet->id_outlet)
-                    ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber])
-                    ->value('id');
-            }
+            $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+            $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
 
             $selfOrderPayload = [
                 'order_no' => $orderNo,
@@ -1211,17 +1206,8 @@ class MenuBookController extends Controller
             $reservationNumber = !empty($validated['reservation_number'])
                 ? strtoupper(trim((string) $validated['reservation_number']))
                 : null;
-            $reservationId = null;
-            $reservationRow = null;
-
-            if ($reservationNumber && Schema::hasTable('reservations')) {
-                $reservationRow = DB::table('reservations')
-                    ->where('outlet_id', (int) $outlet->id_outlet)
-                    ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber])
-                    ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
-
-                $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
-            }
+            $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+            $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
 
             $customerEmail = !empty($validated['customer_email'])
                 ? trim((string) $validated['customer_email'])
@@ -1363,6 +1349,36 @@ class MenuBookController extends Controller
                     ->where('ip_all.availability_price_type', 'all');
             })
             ->where('i.status', 'active');
+    }
+
+    private function resolveReservationRow(?string $reservationNumber, ?int $outletId = null)
+    {
+        if (!$reservationNumber || !Schema::hasTable('reservations')) {
+            return null;
+        }
+
+        $normalized = strtoupper(trim((string) $reservationNumber));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $baseQuery = DB::table('reservations')
+            ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$normalized]);
+
+        if ($outletId) {
+            $byOutlet = (clone $baseQuery)
+                ->where('outlet_id', $outletId)
+                ->orderByDesc('id')
+                ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
+
+            if ($byOutlet) {
+                return $byOutlet;
+            }
+        }
+
+        return $baseQuery
+            ->orderByDesc('id')
+            ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
     }
 
     private function applyPosVisibilityFilter($query, int $outletId, ?int $regionId): void
