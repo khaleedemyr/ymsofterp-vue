@@ -215,6 +215,21 @@ class PosSyncController extends Controller
                 'last_updated' => $reservationsLastUpdated
             ];
 
+            // Check self-order cache source (web_self_orders/self_orders)
+            $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : (Schema::hasTable('self_orders') ? 'self_orders' : null);
+            $selfOrdersLastUpdated = null;
+            if ($selfOrderTable) {
+                $selfOrdersLastUpdated = DB::table($selfOrderTable)
+                    ->where('outlet_id', $idOutlet)
+                    ->max('updated_at');
+            }
+
+            $changes['self_orders'] = [
+                'has_changes' => !isset($lastSync['self_orders']) ||
+                    ($selfOrdersLastUpdated && $selfOrdersLastUpdated > $lastSync['self_orders']),
+                'last_updated' => $selfOrdersLastUpdated,
+            ];
+
             // Check investors
             $investorsLastUpdated = DB::table('investors')
                 ->join('investor_outlet', 'investors.id', '=', 'investor_outlet.investor_id')
