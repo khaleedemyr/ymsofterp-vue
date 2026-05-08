@@ -707,6 +707,7 @@ class MenuBookController extends Controller
             'items.*.qty' => 'required|integer|min:1|max:99',
             'items.*.notes' => 'nullable|string|max:255',
             'items.*.modifiers' => 'nullable|array',
+            'items.*.modifiers_named' => 'nullable|array',
         ]);
 
         $outlet = $this->getMenuBookOutlet($menuBook->id);
@@ -769,19 +770,43 @@ class MenuBookController extends Controller
         $subtotal = 0;
         $totalQty = 0;
 
+        $modifierOptionNameMap = [];
+        if (Schema::hasTable('modifier_options')) {
+            $modifierOptionIds = collect($validated['items'])
+                ->flatMap(fn ($item) => $this->extractModifierOptionIds($item['modifiers'] ?? null))
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($modifierOptionIds)) {
+                $modifierOptionNameMap = DB::table('modifier_options')
+                    ->whereIn('id', $modifierOptionIds)
+                    ->pluck('name', 'id')
+                    ->mapWithKeys(fn ($name, $id) => [(int) $id => (string) $name])
+                    ->all();
+            }
+        }
+
         foreach ($validated['items'] as $itemInput) {
             $itemId = (int) $itemInput['item_id'];
             $qty = (int) $itemInput['qty'];
             $itemMaster = $availableItems->get($itemId);
             $price = (float) ($itemMaster->price ?? 0);
             $lineSubtotal = $price * $qty;
+            $modifierNames = null;
+            if (!empty($itemInput['modifiers_named']) && is_array($itemInput['modifiers_named'])) {
+                $modifierNames = $itemInput['modifiers_named'];
+            } else {
+                $normalizedModifierNames = $this->normalizeModifiersForStorage($itemInput['modifiers'] ?? null, $modifierOptionNameMap);
+                $modifierNames = !empty($normalizedModifierNames) ? $normalizedModifierNames : null;
+            }
 
             $normalizedItems[] = [
                 'item_id' => $itemId,
                 'item_name' => $itemMaster->name,
                 'qty' => $qty,
                 'price' => $price,
-                'modifiers' => !empty($itemInput['modifiers']) ? json_encode($itemInput['modifiers'], JSON_UNESCAPED_UNICODE) : null,
+                'modifiers' => !empty($modifierNames) ? json_encode($modifierNames, JSON_UNESCAPED_UNICODE) : null,
                 'subtotal' => $lineSubtotal,
                 'notes' => $itemInput['notes'] ?? null,
             ];
@@ -1205,19 +1230,37 @@ class MenuBookController extends Controller
         $subtotal = 0;
         $totalQty = 0;
 
+        $modifierOptionNameMap = [];
+        if (Schema::hasTable('modifier_options')) {
+            $modifierOptionIds = collect($validated['items'])
+                ->flatMap(fn ($item) => $this->extractModifierOptionIds($item['modifiers'] ?? null))
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($modifierOptionIds)) {
+                $modifierOptionNameMap = DB::table('modifier_options')
+                    ->whereIn('id', $modifierOptionIds)
+                    ->pluck('name', 'id')
+                    ->mapWithKeys(fn ($name, $id) => [(int) $id => (string) $name])
+                    ->all();
+            }
+        }
+
         foreach ($validated['items'] as $itemInput) {
             $itemId = (int) $itemInput['item_id'];
             $qty = (int) $itemInput['qty'];
             $itemMaster = $availableItems->get($itemId);
             $price = (float) ($itemMaster->price ?? 0);
             $lineSubtotal = $price * $qty;
+            $modifierNames = $this->normalizeModifiersForStorage($itemInput['modifiers'] ?? null, $modifierOptionNameMap);
 
             $normalizedItems[] = [
                 'item_id' => $itemId,
                 'item_name' => $itemMaster->name,
                 'qty' => $qty,
                 'price' => $price,
-                'modifiers' => !empty($itemInput['modifiers']) ? json_encode($itemInput['modifiers'], JSON_UNESCAPED_UNICODE) : null,
+                'modifiers' => !empty($modifierNames) ? json_encode($modifierNames, JSON_UNESCAPED_UNICODE) : null,
                 'subtotal' => $lineSubtotal,
                 'notes' => $itemInput['notes'] ?? null,
             ];
@@ -1588,6 +1631,182 @@ class MenuBookController extends Controller
         }
 
         return collect($map);
+    }
+
+    private function decodeModifierPayload($modifiers): array
+    {
+        if (empty($modifiers)) {
+            return [];
+        }
+
+        if (is_string($modifiers)) {
+            $decoded = json_decode($modifiers, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+
+            $trimmed = trim($modifiers);
+            return $trimmed !== '' ? [$trimmed] : [];
+        }
+
+        if (is_array($modifiers)) {
+            return $modifiers;
+        }
+
+        return [];
+    }
+
+    private function extractModifierOptionIds($modifiers): array
+    {
+        $payload = $this->decodeModifierPayload($modifiers);
+        if (empty($payload)) {
+            return [];
+        }
+
+        $ids = [];
+        $walk = function ($entry) use (&$walk, &$ids) {
+            if (is_int($entry) || (is_string($entry) && ctype_digit(trim($entry)))) {
+                $ids[] = (int) $entry;
+                return;
+            }
+
+            if (!is_array($entry)) {
+                return;
+            }
+
+            $idLikeKeys = ['modifier_option_id', 'modifierOptionId', 'option_id', 'optionId'];
+            foreach ($idLikeKeys as $key) {
+                if (array_key_exists($key, $entry)) {
+                    $value = $entry[$key];
+                    if (is_int($value) || (is_string($value) && ctype_digit(trim($value)))) {
+                        $ids[] = (int) $value;
+                    }
+                }
+            }
+
+            if (array_key_exists('selected_option_ids', $entry) && is_array($entry['selected_option_ids'])) {
+                foreach ($entry['selected_option_ids'] as $optionId) {
+                    if (is_int($optionId) || (is_string($optionId) && ctype_digit(trim($optionId)))) {
+                        $ids[] = (int) $optionId;
+                    }
+                }
+            }
+
+            if (array_is_list($entry)) {
+                foreach ($entry as $value) {
+                    $walk($value);
+                }
+                return;
+            }
+
+            foreach ($entry as $key => $value) {
+                if ($key === 'modifier_id') {
+                    continue;
+                }
+                $walk($value);
+            }
+        };
+
+        $walk($payload);
+
+        return collect($ids)
+            ->filter(fn ($id) => is_int($id) && $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeModifiersForStorage($modifiers, array $modifierOptionNameMap): array
+    {
+        $payload = $this->decodeModifierPayload($modifiers);
+        if (empty($payload)) {
+            return [];
+        }
+
+        $names = [];
+        $pushName = function ($value) use (&$names) {
+            $name = trim((string) $value);
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        };
+
+        $walk = function ($entry) use (&$walk, &$names, $modifierOptionNameMap, $pushName) {
+            if (is_int($entry) || (is_string($entry) && ctype_digit(trim($entry)))) {
+                $optionId = (int) $entry;
+                if ($optionId > 0 && !empty($modifierOptionNameMap[$optionId])) {
+                    $pushName($modifierOptionNameMap[$optionId]);
+                }
+                return;
+            }
+
+            if (is_string($entry)) {
+                $pushName($entry);
+                return;
+            }
+
+            if (!is_array($entry)) {
+                return;
+            }
+
+            $nameKeys = ['modifier_option_name', 'option_name', 'name', 'label'];
+            foreach ($nameKeys as $key) {
+                if (!empty($entry[$key]) && is_string($entry[$key])) {
+                    $pushName($entry[$key]);
+                }
+            }
+
+            $idLikeKeys = ['modifier_option_id', 'modifierOptionId', 'option_id', 'optionId', 'id'];
+            foreach ($idLikeKeys as $key) {
+                if (!array_key_exists($key, $entry)) {
+                    continue;
+                }
+
+                $value = $entry[$key];
+                if (is_int($value) || (is_string($value) && ctype_digit(trim($value)))) {
+                    $optionId = (int) $value;
+                    if ($optionId > 0 && !empty($modifierOptionNameMap[$optionId])) {
+                        $pushName($modifierOptionNameMap[$optionId]);
+                    }
+                } elseif (is_string($value)) {
+                    $pushName($value);
+                }
+            }
+
+            if (array_key_exists('selected_option_ids', $entry) && is_array($entry['selected_option_ids'])) {
+                foreach ($entry['selected_option_ids'] as $optionId) {
+                    if (is_int($optionId) || (is_string($optionId) && ctype_digit(trim($optionId)))) {
+                        $resolved = $modifierOptionNameMap[(int) $optionId] ?? null;
+                        if ($resolved) {
+                            $pushName($resolved);
+                        }
+                    }
+                }
+            }
+
+            if (array_is_list($entry)) {
+                foreach ($entry as $value) {
+                    $walk($value);
+                }
+                return;
+            }
+
+            foreach ($entry as $key => $value) {
+                if ($key === 'modifier_id') {
+                    continue;
+                }
+                $walk($value);
+            }
+        };
+
+        $walk($payload);
+
+        return collect($names)
+            ->map(fn ($name) => trim((string) $name))
+            ->filter(fn ($name) => $name !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function getMenuBookOutletByOutletId(int $menuBookId, int $outletId)
