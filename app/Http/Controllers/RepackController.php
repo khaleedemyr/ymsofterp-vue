@@ -54,22 +54,19 @@ class RepackController extends Controller
         $request->validate([
             'warehouse_id' => 'required|exists:warehouses,id',
             'item_asal_id' => 'required|exists:items,id',
-            'unit_asal_id' => 'required|exists:units,id',
-            'qty_asal' => 'required|numeric|min:0.0001',
             'item_hasil_id' => 'required|exists:items,id',
             'unit_hasil_id' => 'required|exists:units,id',
             'qty_hasil' => 'required|numeric|min:0.0001',
         ]);
 
         $warehouseId = (int) $request->warehouse_id;
-        $qtyAsal = (float) $request->qty_asal;
         $qtyHasil = (float) $request->qty_hasil;
 
         $itemAsal = Item::findOrFail($request->item_asal_id);
         $itemHasil = Item::findOrFail($request->item_hasil_id);
 
-        $qtyAsalConv = $this->convertQtyByUnit($itemAsal, (int) $request->unit_asal_id, $qtyAsal);
         $qtyHasilConv = $this->convertQtyByUnit($itemHasil, (int) $request->unit_hasil_id, $qtyHasil);
+        $qtyAsalConv = $this->convertSmallToAll($itemAsal, $qtyHasilConv['small']);
 
         DB::beginTransaction();
         try {
@@ -180,8 +177,8 @@ class RepackController extends Controller
             $repack = Repack::create([
                 'repack_number' => 'RP-' . date('Ymd') . '-' . Str::upper(Str::random(4)),
                 'item_asal_id' => $request->item_asal_id,
-                'unit_asal_id' => $request->unit_asal_id,
-                'qty_asal' => $request->qty_asal,
+                'unit_asal_id' => $itemAsal->small_unit_id,
+                'qty_asal' => $qtyAsalConv['small'],
                 'item_hasil_id' => $request->item_hasil_id,
                 'unit_hasil_id' => $request->unit_hasil_id,
                 'qty_hasil' => $request->qty_hasil,
@@ -295,6 +292,42 @@ class RepackController extends Controller
         }
     }
 
+    public function itemStocks(Request $request)
+    {
+        $request->validate([
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'item_id' => 'required|exists:items,id',
+        ]);
+
+        $item = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->findOrFail($request->item_id);
+        $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item->id)->first();
+
+        if (!$inventoryItem) {
+            return response()->json([
+                'qty_small' => 0,
+                'qty_medium' => 0,
+                'qty_large' => 0,
+                'small_unit_name' => $item->smallUnit->name ?? null,
+                'medium_unit_name' => $item->mediumUnit->name ?? null,
+                'large_unit_name' => $item->largeUnit->name ?? null,
+            ]);
+        }
+
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('warehouse_id', $request->warehouse_id)
+            ->first();
+
+        return response()->json([
+            'qty_small' => (float) ($stock->qty_small ?? 0),
+            'qty_medium' => (float) ($stock->qty_medium ?? 0),
+            'qty_large' => (float) ($stock->qty_large ?? 0),
+            'small_unit_name' => $item->smallUnit->name ?? null,
+            'medium_unit_name' => $item->mediumUnit->name ?? null,
+            'large_unit_name' => $item->largeUnit->name ?? null,
+        ]);
+    }
+
     public function printBarcodes($repackId)
     {
         $repack = Repack::with(['itemHasil'])->findOrFail($repackId);
@@ -404,5 +437,20 @@ class RepackController extends Controller
         }
 
         return $prefix . strtoupper(Str::random(6));
+    }
+
+    private function convertSmallToAll(Item $item, float $qtySmall): array
+    {
+        $smallConv = (float) ($item->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($item->medium_conversion_qty ?: 1);
+
+        $qtyMedium = $smallConv > 0 ? $qtySmall / $smallConv : 0;
+        $qtyLarge = ($smallConv > 0 && $mediumConv > 0) ? $qtySmall / ($smallConv * $mediumConv) : 0;
+
+        return [
+            'small' => $qtySmall,
+            'medium' => $qtyMedium,
+            'large' => $qtyLarge,
+        ];
     }
 } 

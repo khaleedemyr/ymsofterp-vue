@@ -13,21 +13,62 @@ const props = defineProps({
 
 const warehouseId = ref('');
 const itemAsal = ref('');
-const unitAsal = ref('');
-const qtyAsal = ref('');
 const itemHasil = ref('');
 const unitHasil = ref('');
 const qtyHasil = ref('');
 const loading = ref(false);
+const sourceStock = ref({
+  qty_small: 0,
+  qty_medium: 0,
+  qty_large: 0,
+  small_unit_name: '',
+  medium_unit_name: '',
+  large_unit_name: '',
+});
 
 // Watch itemAsal dan itemHasil untuk set default unit
-watch(() => itemAsal.value, (val) => {
-  const item = props.items.find(i => i.id == val);
-  if (item) unitAsal.value = item.smallUnit?.id || item.small_unit?.id || '';
-});
 watch(() => itemHasil.value, (val) => {
   const item = props.items.find(i => i.id == val);
   if (item) unitHasil.value = item.smallUnit?.id || item.small_unit?.id || '';
+});
+watch([() => warehouseId.value, () => itemAsal.value], async ([warehouse, item]) => {
+  if (!warehouse || !item) {
+    sourceStock.value = {
+      qty_small: 0,
+      qty_medium: 0,
+      qty_large: 0,
+      small_unit_name: '',
+      medium_unit_name: '',
+      large_unit_name: '',
+    };
+    return;
+  }
+
+  try {
+    const { data } = await axios.get('/api/repack/item-stocks', {
+      params: {
+        warehouse_id: warehouse,
+        item_id: item,
+      },
+    });
+    sourceStock.value = {
+      qty_small: Number(data?.qty_small || 0),
+      qty_medium: Number(data?.qty_medium || 0),
+      qty_large: Number(data?.qty_large || 0),
+      small_unit_name: data?.small_unit_name || '',
+      medium_unit_name: data?.medium_unit_name || '',
+      large_unit_name: data?.large_unit_name || '',
+    };
+  } catch (error) {
+    sourceStock.value = {
+      qty_small: 0,
+      qty_medium: 0,
+      qty_large: 0,
+      small_unit_name: '',
+      medium_unit_name: '',
+      large_unit_name: '',
+    };
+  }
 });
 
 const getAvailableUnits = (item) => {
@@ -47,8 +88,6 @@ const submit = async () => {
     const response = await axios.post('/repack', {
       warehouse_id: warehouseId.value,
       item_asal_id: itemAsal.value,
-      unit_asal_id: unitAsal.value,
-      qty_asal: qtyAsal.value,
       item_hasil_id: itemHasil.value,
       unit_hasil_id: unitHasil.value,
       qty_hasil: qtyHasil.value,
@@ -100,17 +139,12 @@ const submit = async () => {
           </select>
         </div>
         <div class="mb-4">
-          <label class="block mb-1 font-semibold">Satuan Asal</label>
-          <select v-model="unitAsal" class="w-full px-4 py-2 rounded-xl border border-blue-200">
-            <option value="">Pilih Satuan</option>
-            <option v-for="unit in getAvailableUnits(props.items.find(i => i.id == itemAsal))" :key="unit.id" :value="unit.id">
-              {{ unit.name }}
-            </option>
-          </select>
-        </div>
-        <div class="mb-4">
-          <label class="block mb-1 font-semibold">Qty Asal</label>
-          <input v-model="qtyAsal" type="number" min="0" class="w-full px-4 py-2 rounded-xl border border-blue-200" />
+          <label class="block mb-1 font-semibold">Stok Item Asal Saat Ini</label>
+          <div class="w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 text-sm">
+            <div>{{ sourceStock.qty_small }} {{ sourceStock.small_unit_name || '-' }}</div>
+            <div v-if="sourceStock.medium_unit_name">{{ sourceStock.qty_medium }} {{ sourceStock.medium_unit_name }}</div>
+            <div v-if="sourceStock.large_unit_name">{{ sourceStock.qty_large }} {{ sourceStock.large_unit_name }}</div>
+          </div>
         </div>
         <div class="mb-4">
           <label class="block mb-1 font-semibold">Item Hasil</label>
