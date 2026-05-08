@@ -2443,6 +2443,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsStore'])->name('store');
         Route::post('/qris', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsStore'])->name('qris.store');
         Route::post('/qris/approve', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsApprove'])->name('qris.approve');
+        Route::post('/delete', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsDestroy'])->name('delete');
         Route::delete('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsDestroy'])->name('destroy');
     });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');

@@ -64,8 +64,9 @@ async function destroyQris(outletId) {
   });
   if (!confirmed.isConfirmed) return;
 
-  router.delete('/web-profile/payment-settings', {
-    data: { outlet_id: outletId || null },
+  router.post('/web-profile/payment-settings/delete', {
+    outlet_id: outletId || null,
+  }, {
     onSuccess: () => {
       Swal.fire({ icon: 'success', title: 'Berhasil', text: 'QRIS berhasil dihapus.' });
     },
