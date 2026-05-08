@@ -263,46 +263,50 @@ const downloadSerialPDF = (serials, itemName) => {
   const gap = 5; // 0.5cm
   const marginLeft = 5;
   const marginTop = 5;
-  const numRows = Math.ceil(serials.length / 3);
+  const columnsPerRow = 3;
   const pdfWidth = 297; // A4 landscape
   const pdfHeight = 210;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
+  const rowHeight = labelHeight + gap;
+  const usableHeight = pdfHeight - (marginTop * 2);
+  const rowsPerPage = Math.max(1, Math.floor(usableHeight / rowHeight));
 
-  let y = marginTop;
-  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
-    for (let colIdx = 0; colIdx < 3; colIdx++) {
-      const idx = rowIdx * 3 + colIdx;
-      if (idx >= serials.length) continue;
-
-      const x = marginLeft + colIdx * (labelWidth + gap);
-      const serial = serials[idx];
-
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.5);
-      doc.rect(x, y, labelWidth, labelHeight);
-
-      const areaBarcodeW = labelWidth - 10;
-      const areaBarcodeH = 20;
-      const scale = 3;
-      const canvas = document.createElement('canvas');
-      canvas.width = areaBarcodeW * scale;
-      canvas.height = areaBarcodeH * scale;
-      JsBarcode(canvas, serial, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
-
-      const barcodeX = x + (labelWidth - areaBarcodeW) / 2;
-      doc.addImage(canvas, 'PNG', barcodeX, y + 3, areaBarcodeW, areaBarcodeH);
-
-      let currentY = y + areaBarcodeH + 5;
-      doc.setFontSize(8);
-      doc.setFont(undefined, 'bold');
-      doc.text(`SERIAL: ${serial}`, x + labelWidth / 2, currentY, { align: 'center' });
-      currentY += 4.5;
-      doc.setFontSize(9);
-      doc.setFont(undefined, 'bold');
-      doc.text(`${itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' });
+  serials.forEach((serial, idx) => {
+    const itemsPerPage = columnsPerRow * rowsPerPage;
+    const indexInPage = idx % itemsPerPage;
+    if (idx > 0 && indexInPage === 0) {
+      doc.addPage([pdfWidth, pdfHeight], 'landscape');
     }
-    y += labelHeight + gap;
-  }
+
+    const rowIdx = Math.floor(indexInPage / columnsPerRow);
+    const colIdx = indexInPage % columnsPerRow;
+    const x = marginLeft + colIdx * (labelWidth + gap);
+    const y = marginTop + rowIdx * rowHeight;
+
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.rect(x, y, labelWidth, labelHeight);
+
+    const areaBarcodeW = labelWidth - 10;
+    const areaBarcodeH = 20;
+    const scale = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = areaBarcodeW * scale;
+    canvas.height = areaBarcodeH * scale;
+    JsBarcode(canvas, serial, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false });
+
+    const barcodeX = x + (labelWidth - areaBarcodeW) / 2;
+    doc.addImage(canvas, 'PNG', barcodeX, y + 3, areaBarcodeW, areaBarcodeH);
+
+    let currentY = y + areaBarcodeH + 5;
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.text(`SERIAL: ${serial}`, x + labelWidth / 2, currentY, { align: 'center' });
+    currentY += 4.5;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'bold');
+    doc.text(`${itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' });
+  });
 
   const firstSerial = serials[0] || 'serial';
   doc.save(`${firstSerial}_labels_10x5cm.pdf`);
