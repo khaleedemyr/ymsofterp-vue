@@ -1055,7 +1055,7 @@ class FoodGoodReceiveController extends Controller
                 'poi.unit_id as po_item_unit_id',
                 'poi.price as po_item_price',
                 'pf.id as pr_food_id',
-                'pf.number as pr_number',
+                'pf.pr_number as pr_number',
                 'pf.warehouse_id as warehouse_id',
                 'pfi.id as pr_food_item_id',
                 'i.small_unit_id',
