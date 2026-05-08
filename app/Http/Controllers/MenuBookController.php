@@ -1071,8 +1071,12 @@ class MenuBookController extends Controller
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'customer_name' => 'required|string|max:100',
             'customer_phone' => 'nullable|string|max:30',
+            'customer_email' => 'nullable|email|max:190',
             'reservation_number' => 'nullable|string|max:32',
             'order_type' => 'required|in:dine_in,take_away',
+            'pax' => 'nullable|integer|min:1|max:100',
+            'table_ids' => 'nullable|array',
+            'table_ids.*' => 'integer|min:1',
             'notes' => 'nullable|string|max:500',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|integer',
@@ -1208,13 +1212,50 @@ class MenuBookController extends Controller
                 ? strtoupper(trim((string) $validated['reservation_number']))
                 : null;
             $reservationId = null;
+            $reservationRow = null;
 
             if ($reservationNumber && Schema::hasTable('reservations')) {
-                $reservationId = DB::table('reservations')
+                $reservationRow = DB::table('reservations')
                     ->where('outlet_id', (int) $outlet->id_outlet)
                     ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber])
-                    ->value('id');
+                    ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
+
+                $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
             }
+
+            $customerEmail = !empty($validated['customer_email'])
+                ? trim((string) $validated['customer_email'])
+                : null;
+            if (!$customerEmail && !empty($reservationRow?->email)) {
+                $customerEmail = trim((string) $reservationRow->email);
+            }
+
+            $pax = isset($validated['pax']) ? (int) $validated['pax'] : null;
+            if (!$pax && !empty($reservationRow?->number_of_guests)) {
+                $pax = (int) $reservationRow->number_of_guests;
+            }
+
+            $tableIds = collect($validated['table_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($tableIds) && !empty($reservationRow?->selected_table_ids)) {
+                $rawSelected = $reservationRow->selected_table_ids;
+                $decodedSelected = is_array($rawSelected) ? $rawSelected : json_decode((string) $rawSelected, true);
+                if (is_array($decodedSelected)) {
+                    $tableIds = collect($decodedSelected)
+                        ->map(fn ($id) => (int) $id)
+                        ->filter(fn ($id) => $id > 0)
+                        ->unique()
+                        ->values()
+                        ->all();
+                }
+            }
+
+            $tableIdsJson = !empty($tableIds) ? json_encode($tableIds, JSON_UNESCAPED_UNICODE) : null;
 
             $selfOrderPayload = ['id' => $webSelfOrderId];
             $setOrder = function (string $column, $value) use (&$selfOrderPayload, $webOrderTable) {
@@ -1230,11 +1271,11 @@ class MenuBookController extends Controller
             $setOrder('outlet_code', $outlet->qr_code);
             $setOrder('customer_name', $validated['customer_name']);
             $setOrder('customer_phone', $validated['customer_phone'] ?? null);
-            $setOrder('customer_email', null);
+            $setOrder('customer_email', $customerEmail);
             $setOrder('order_channel', 'self_order_web');
             $setOrder('order_type', $validated['order_type']);
-            $setOrder('pax', null);
-            $setOrder('table_ids_json', null);
+            $setOrder('pax', $pax);
+            $setOrder('table_ids_json', $tableIdsJson);
             $setOrder('notes', $validated['notes'] ?? null);
             $setOrder('subtotal', (int) round($subtotal));
             $setOrder('discount', 0);
