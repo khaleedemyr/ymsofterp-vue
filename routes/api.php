@@ -1531,6 +1531,7 @@ Route::prefix('pos/sync')->group(function () {
     Route::get('/promos', [PosSyncController::class, 'syncPromos'])->name('api.pos.sync.promos');
     Route::get('/payment-types', [PosSyncController::class, 'syncPaymentTypes'])->name('api.pos.sync.payment-types');
     Route::get('/reservations', [PosSyncController::class, 'syncReservations'])->name('api.pos.sync.reservations');
+    Route::get('/self-orders', [PosSyncController::class, 'syncSelfOrders'])->name('api.pos.sync.self-orders');
     Route::get('/investors', [PosSyncController::class, 'syncInvestors'])->name('api.pos.sync.investors');
     Route::get('/officer-checks', [PosSyncController::class, 'syncOfficerChecks'])->name('api.pos.sync.officer-checks');
     Route::get('/retail-food', [PosSyncController::class, 'syncRetailFood'])->name('api.pos.sync.retail-food');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -1264,6 +1265,20 @@ class PosSyncController extends Controller
             $idOutlet = $outlet->id_outlet;
             $today = Carbon::today()->toDateString();
 
+            $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : (Schema::hasTable('self_orders') ? 'self_orders' : null);
+            $selfOrderByReservationNumber = collect();
+            if ($selfOrderTable && Schema::hasColumn($selfOrderTable, 'reservation_number')) {
+                $selfOrderByReservationNumber = DB::table($selfOrderTable)
+                    ->where('outlet_id', $idOutlet)
+                    ->whereNotNull('reservation_number')
+                    ->select('reservation_number', DB::raw('COUNT(*) as total_orders'), DB::raw('MAX(order_no) as latest_order_no'))
+                    ->groupBy('reservation_number')
+                    ->get()
+                    ->keyBy(function ($row) {
+                        return strtoupper(trim((string) $row->reservation_number));
+                    });
+            }
+
             // Get reservations from today onwards
             $reservations = DB::table('reservations')
                 ->where('outlet_id', $idOutlet)
@@ -1287,11 +1302,25 @@ class PosSyncController extends Controller
                     'from_sales' => (bool) ($res->from_sales ?? false),
                     'sales_user_id' => $res->sales_user_id ?? null,
                     'menu' => $res->menu ?? null,
+                    'reservation_number' => $res->reservation_number ?? null,
+                    'order_mode' => null,
+                    'self_order_count' => 0,
+                    'self_order_latest_no' => null,
                     'status' => $res->status ?? 'pending',
                     'smoking_preference' => $res->smoking_preference ?? null,
                     'created_at' => $res->created_at,
                     'updated_at' => $res->updated_at
                 ];
+
+                $reservationNumber = strtoupper(trim((string) ($res->reservation_number ?? '')));
+                if ($reservationNumber !== '' && $selfOrderByReservationNumber->has($reservationNumber)) {
+                    $selfOrderRef = $selfOrderByReservationNumber->get($reservationNumber);
+                    $payload['order_mode'] = 'self_order';
+                    $payload['self_order_count'] = (int) ($selfOrderRef->total_orders ?? 0);
+                    $payload['self_order_latest_no'] = $selfOrderRef->latest_order_no ?? null;
+                }
+
+                return $payload;
             }, $reservations->toArray());
 
             return response()->json([
@@ -1310,6 +1339,168 @@ class PosSyncController extends Controller
                 'success' => false,
                 'message' => 'Failed to sync reservations: ' . $e->getMessage(),
                 'data' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync self-order headers + items untuk cache lokal POS.
+     */
+    public function syncSelfOrders(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'kode_outlet' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            $kodeOutlet = $request->input('kode_outlet');
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('qr_code', $kodeOutlet)
+                ->first();
+
+            if (!$outlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet not found',
+                    'data' => [
+                        'orders' => [],
+                        'items' => [],
+                    ],
+                ], 404);
+            }
+
+            $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : (Schema::hasTable('self_orders') ? 'self_orders' : null);
+            $selfOrderItemTable = Schema::hasTable('web_self_order_items') ? 'web_self_order_items' : (Schema::hasTable('self_order_items') ? 'self_order_items' : null);
+
+            if (!$selfOrderTable || !$selfOrderItemTable) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'orders' => [],
+                        'items' => [],
+                    ],
+                    'count' => 0,
+                ]);
+            }
+
+            $orderColumnsRaw = Schema::getColumnListing($selfOrderTable);
+            $orderColumns = collect($orderColumnsRaw)->map(fn ($c) => strtolower((string) $c));
+            $hasOrderReservationId = $orderColumns->contains('reservation_id');
+            $hasOrderReservationNumber = $orderColumns->contains('reservation_number');
+
+            $query = DB::table($selfOrderTable)
+                ->where('outlet_id', $outlet->id_outlet)
+                ->where(function ($q) use ($hasOrderReservationId, $hasOrderReservationNumber) {
+                    if ($hasOrderReservationId) {
+                        $q->whereNotNull('reservation_id');
+                    }
+                    if ($hasOrderReservationNumber) {
+                        if ($hasOrderReservationId) {
+                            $q->orWhereNotNull('reservation_number');
+                        } else {
+                            $q->whereNotNull('reservation_number');
+                        }
+                    }
+                })
+                ->orderByDesc('created_at')
+                ->limit(500);
+
+            $orders = $query->get();
+            $orderIds = $orders->pluck('id')->filter()->values();
+
+            $itemFk = $selfOrderItemTable === 'web_self_order_items' ? 'web_self_order_id' : 'self_order_id';
+            $itemColumnsRaw = Schema::getColumnListing($selfOrderItemTable);
+            $itemColumns = collect($itemColumnsRaw)->map(fn ($c) => strtolower((string) $c));
+            $itemSelect = ['id', $itemFk, 'item_id', 'item_name', 'qty', 'price'];
+            if ($itemColumns->contains('subtotal')) {
+                $itemSelect[] = 'subtotal';
+            }
+            if ($itemColumns->contains('notes')) {
+                $itemSelect[] = 'notes';
+            }
+            if ($itemColumns->contains('modifiers')) {
+                $itemSelect[] = 'modifiers';
+            }
+            if ($itemColumns->contains('created_at')) {
+                $itemSelect[] = 'created_at';
+            }
+            if ($itemColumns->contains('updated_at')) {
+                $itemSelect[] = 'updated_at';
+            }
+
+            $items = $orderIds->isNotEmpty()
+                ? DB::table($selfOrderItemTable)
+                    ->whereIn($itemFk, $orderIds)
+                    ->orderBy('id')
+                    ->get($itemSelect)
+                : collect();
+
+            $formattedOrders = $orders->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'reservation_id' => $row->reservation_id ?? null,
+                    'reservation_number' => $row->reservation_number ?? null,
+                    'order_no' => $row->order_no ?? null,
+                    'outlet_id' => $row->outlet_id ?? null,
+                    'customer_name' => $row->customer_name ?? null,
+                    'customer_phone' => $row->customer_phone ?? null,
+                    'order_type' => $row->order_type ?? null,
+                    'status' => $row->status ?? null,
+                    'subtotal' => isset($row->subtotal) ? (float) $row->subtotal : null,
+                    'service' => isset($row->service) ? (float) $row->service : null,
+                    'pb1' => isset($row->pb1) ? (float) $row->pb1 : null,
+                    'grand_total' => isset($row->grand_total) ? (float) $row->grand_total : null,
+                    'notes' => $row->notes ?? null,
+                    'created_at' => $row->created_at ?? null,
+                    'updated_at' => $row->updated_at ?? null,
+                ];
+            })->values()->all();
+
+            $formattedItems = $items->map(function ($row) use ($itemFk) {
+                return [
+                    'id' => $row->id,
+                    'self_order_id' => $row->{$itemFk} ?? null,
+                    'item_id' => $row->item_id ?? null,
+                    'item_name' => $row->item_name ?? null,
+                    'qty' => isset($row->qty) ? (int) $row->qty : 0,
+                    'price' => isset($row->price) ? (float) $row->price : 0,
+                    'subtotal' => isset($row->subtotal) ? (float) $row->subtotal : null,
+                    'notes' => $row->notes ?? null,
+                    'modifiers' => $row->modifiers ?? null,
+                    'created_at' => $row->created_at ?? null,
+                    'updated_at' => $row->updated_at ?? null,
+                ];
+            })->values()->all();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'orders' => $formattedOrders,
+                    'items' => $formattedItems,
+                ],
+                'count' => count($formattedOrders),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('POS Sync: Sync Self Orders Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync self orders: ' . $e->getMessage(),
+                'data' => [
+                    'orders' => [],
+                    'items' => [],
+                ],
             ], 500);
         }
     }
