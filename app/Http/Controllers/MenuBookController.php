@@ -1031,7 +1031,8 @@ class MenuBookController extends Controller
         }
 
         $validated = $request->validate([
-            'menu_book_id' => 'required|integer|exists:menu_books,id',
+            'menu_book_id' => 'nullable|integer|exists:menu_books,id',
+            'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'customer_name' => 'required|string|max:100',
             'customer_phone' => 'nullable|string|max:30',
             'reservation_number' => 'nullable|string|max:32',
@@ -1044,20 +1045,43 @@ class MenuBookController extends Controller
             'items.*.modifiers' => 'nullable|array',
         ]);
 
-        $menuBook = MenuBook::find($validated['menu_book_id']);
-        if (!$menuBook || $menuBook->status !== 'active') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Menu book tidak aktif.',
-            ], 404);
+        $menuBook = null;
+        $outlet = null;
+
+        if (!empty($validated['menu_book_id'])) {
+            $menuBook = MenuBook::find($validated['menu_book_id']);
+            if (!$menuBook || $menuBook->status !== 'active') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Menu book tidak aktif.',
+                ], 404);
+            }
+
+            $outlet = $this->getMenuBookOutlet($menuBook->id);
         }
 
-        $outlet = $this->getMenuBookOutlet($menuBook->id);
+        if (!$outlet && !empty($validated['outlet_id'])) {
+            $outlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $validated['outlet_id'])
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet', 'qr_code', 'region_id')
+                ->first();
+        }
+
         if (!$outlet) {
             return response()->json([
                 'success' => false,
                 'message' => 'Outlet tidak ditemukan untuk menu book ini.',
             ], 404);
+        }
+
+        if (!$menuBook) {
+            $menuBook = MenuBook::where('status', 'active')
+                ->whereHas('outlets', function ($q) use ($outlet) {
+                    $q->where('id_outlet', (int) $outlet->id_outlet);
+                })
+                ->orderBy('id')
+                ->first();
         }
 
         $requestItemIds = collect($validated['items'])
@@ -1141,7 +1165,7 @@ class MenuBookController extends Controller
 
             $selfOrderPayload = [
                 'order_no' => $orderNo,
-                'menu_book_id' => $menuBook->id,
+                'menu_book_id' => $menuBook?->id,
                 'outlet_id' => $outlet->id_outlet,
                 'kode_outlet' => $outlet->qr_code,
                 'customer_name' => $validated['customer_name'],

@@ -1824,18 +1824,8 @@ class ReservationController extends Controller
             return 0;
         }
 
-        $raw = trim($reservationNumber);
-        if ($raw === '') {
-            return (float) $base;
-        }
-
-        $hash = 0;
-        $length = strlen($raw);
-        for ($i = 0; $i < $length; $i++) {
-            $hash = (($hash * 31) + ord($raw[$i])) % 1000;
-        }
-
-        $uniqueCode = $hash === 0 ? 123 : $hash;
+        // Unique suffix untuk transfer DP: random 1..100 sesuai kebutuhan bisnis.
+        $uniqueCode = random_int(1, 100);
         return (float) ($base + $uniqueCode);
     }
 } 
