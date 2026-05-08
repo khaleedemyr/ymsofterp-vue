@@ -724,8 +724,16 @@ class ReservationController extends Controller
 
         $paymentTypes = $this->getPaymentTypesForReservationForm();
 
+        $reservationPayload = $reservation->toArray();
+        $reservationPayload['reservation_date'] = $reservation->reservation_date
+            ? Carbon::parse($reservation->reservation_date)->format('Y-m-d')
+            : null;
+        $reservationPayload['reservation_time'] = $reservation->reservation_time
+            ? Carbon::parse($reservation->reservation_time)->format('H:i')
+            : null;
+
         return Inertia::render('Reservations/Form', [
-            'reservation' => $reservation,
+            'reservation' => $reservationPayload,
             'outlets' => $outlets,
             'salesUsers' => $salesUsers,
             'paymentTypes' => $paymentTypes,
