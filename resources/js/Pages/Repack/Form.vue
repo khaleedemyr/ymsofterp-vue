@@ -25,6 +25,7 @@ const sourceStock = ref({
   medium_unit_name: '',
   large_unit_name: '',
 });
+const itemAsalSearch = ref('');
 
 // Watch itemAsal dan itemHasil untuk set default unit
 watch(() => itemHasil.value, (val) => {
@@ -82,6 +83,22 @@ const getAvailableUnits = (item) => {
   return arr.filter((unit, index, self) => unit?.id && self.findIndex((x) => x.id === unit.id) === index);
 };
 
+const getItemLabel = (item) => {
+  const unitName = item.smallUnit?.name || item.small_unit?.name;
+  return `${item.name}${unitName ? ` (${unitName})` : ''}`;
+};
+
+const normalizedKeyword = (value) => String(value || '').toLowerCase();
+const filteredItemAsal = () => {
+  const keyword = normalizedKeyword(itemAsalSearch.value).trim();
+  if (!keyword) return props.items;
+  return props.items.filter((item) => {
+    const name = normalizedKeyword(item.name);
+    const sku = normalizedKeyword(item.sku);
+    return name.includes(keyword) || sku.includes(keyword);
+  });
+};
+
 const submit = async () => {
   loading.value = true;
   try {
@@ -131,10 +148,16 @@ const submit = async () => {
         </div>
         <div class="mb-4">
           <label class="block mb-1 font-semibold">Item Asal</label>
+          <input
+            v-model="itemAsalSearch"
+            type="text"
+            placeholder="Search item asal (nama / SKU)..."
+            class="w-full mb-2 px-4 py-2 rounded-xl border border-blue-200"
+          />
           <select v-model="itemAsal" class="w-full px-4 py-2 rounded-xl border border-blue-200">
             <option value="">Pilih Item Asal</option>
-            <option v-for="item in props.items" :key="item.id" :value="item.id">
-              {{ item.name }}{{ (item.smallUnit || item.small_unit) ? ' (' + (item.smallUnit?.name || item.small_unit?.name) + ')' : '' }}
+            <option v-for="item in filteredItemAsal()" :key="item.id" :value="item.id">
+              {{ getItemLabel(item) }}
             </option>
           </select>
         </div>
