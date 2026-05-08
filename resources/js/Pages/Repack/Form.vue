@@ -1,15 +1,17 @@
 <script setup>
 import { ref, watch } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 const props = defineProps({
   items: Array,
   units: Array,
+  warehouses: Array,
   user: Object,
 });
 
+const warehouseId = ref('');
 const itemAsal = ref('');
 const unitAsal = ref('');
 const qtyAsal = ref('');
@@ -39,7 +41,8 @@ const getAvailableUnits = (item) => {
 const submit = async () => {
   loading.value = true;
   try {
-    const response = await router.post('/repack', {
+    const response = await axios.post('/repack', {
+      warehouse_id: warehouseId.value,
       item_asal_id: itemAsal.value,
       unit_asal_id: unitAsal.value,
       qty_asal: qtyAsal.value,
@@ -50,7 +53,7 @@ const submit = async () => {
     Swal.fire({ 
       icon: 'success', 
       title: 'Berhasil', 
-      text: 'Repack berhasil disimpan!',
+      text: response?.data?.message || 'Repack berhasil disimpan!',
       showCancelButton: true,
       confirmButtonText: 'Print Barcode',
       cancelButtonText: 'Kembali ke List'
@@ -75,6 +78,15 @@ const submit = async () => {
         <i class="fa-solid fa-box-open text-blue-500"></i> Buat Repack
       </h1>
       <div class="bg-white rounded-2xl shadow-2xl p-8">
+        <div class="mb-4">
+          <label class="block mb-1 font-semibold">Warehouse</label>
+          <select v-model="warehouseId" class="w-full px-4 py-2 rounded-xl border border-blue-200">
+            <option value="">Pilih Warehouse</option>
+            <option v-for="warehouse in props.warehouses" :key="warehouse.id" :value="warehouse.id">
+              {{ warehouse.name }}
+            </option>
+          </select>
+        </div>
         <div class="mb-4">
           <label class="block mb-1 font-semibold">Item Asal</label>
           <select v-model="itemAsal" class="w-full px-4 py-2 rounded-xl border border-blue-200">

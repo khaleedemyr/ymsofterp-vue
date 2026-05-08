@@ -1078,6 +1078,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/repack/available-items', [RepackController::class, 'availableItems'])->name('repack.available-items');
     Route::get('/api/repack/item-stocks', [RepackController::class, 'itemStocks'])->name('repack.item-stocks');
     Route::post('/api/repack/generate-number', [RepackController::class, 'generateRepackNumber'])->name('repack.generate-number');
+    Route::get('/api/repack/{id}/serial-summary', [RepackController::class, 'serialSummary'])->name('repack.serial-summary');
+    Route::get('/api/repack/{id}/serials', [RepackController::class, 'serialList'])->name('repack.serial-list');
+    Route::delete('/api/repack/{id}/serials', [RepackController::class, 'rollbackSerials'])->name('repack.rollback-serials');
     
     // Approval routes
     Route::post('/repack/{id}/approve', [RepackController::class, 'approve'])->name('repack.approve');

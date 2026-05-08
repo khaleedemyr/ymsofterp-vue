@@ -12,8 +12,10 @@ class Repack extends Model
     protected $fillable = [
         'repack_number',
         'item_asal_id',
+        'unit_asal_id',
         'qty_asal',
         'item_hasil_id',
+        'unit_hasil_id',
         'qty_hasil',
         'status',
         'created_by',
