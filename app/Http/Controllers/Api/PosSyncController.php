@@ -1300,7 +1300,76 @@ class PosSyncController extends Controller
                 ->where('reservation_date', '>=', $today)
                 ->get();
 
-            $formatted = array_map(function($res) {
+            $hasSelectedTableIds = Schema::hasColumn('reservations', 'selected_table_ids');
+            $tableNameById = collect();
+            if ($hasSelectedTableIds && Schema::hasTable('pos_design_tables_sync')) {
+                $selectedTableIds = $reservations
+                    ->flatMap(function ($res) {
+                        $raw = $res->selected_table_ids ?? null;
+                        if (is_array($raw)) {
+                            return collect($raw);
+                        }
+                        if (is_string($raw) && trim($raw) !== '') {
+                            $decoded = json_decode($raw, true);
+                            if (is_array($decoded)) {
+                                return collect($decoded);
+                            }
+                        }
+                        return collect();
+                    })
+                    ->map(function ($id) {
+                        return (int) $id;
+                    })
+                    ->filter(function ($id) {
+                        return $id > 0;
+                    })
+                    ->unique()
+                    ->values();
+
+                if ($selectedTableIds->isNotEmpty()) {
+                    $tableNameById = DB::table('pos_design_tables_sync')
+                        ->whereIn('source_table_id', $selectedTableIds->all())
+                        ->pluck('nama', 'source_table_id');
+                }
+            }
+
+            $formatted = array_map(function($res) use ($selfOrderByReservationNumber, $hasSelectedTableIds, $tableNameById) {
+                $reservationNumber = strtoupper(trim((string) ($res->reservation_number ?? '')));
+                $selfOrderRef = ($reservationNumber !== '' && $selfOrderByReservationNumber->has($reservationNumber))
+                    ? $selfOrderByReservationNumber->get($reservationNumber)
+                    : null;
+
+                $selectedTableIds = [];
+                if ($hasSelectedTableIds) {
+                    $rawSelected = $res->selected_table_ids ?? null;
+                    if (is_array($rawSelected)) {
+                        $selectedTableIds = $rawSelected;
+                    } elseif (is_string($rawSelected) && trim($rawSelected) !== '') {
+                        $decoded = json_decode($rawSelected, true);
+                        if (is_array($decoded)) {
+                            $selectedTableIds = $decoded;
+                        }
+                    }
+                }
+
+                $selectedTableIds = collect($selectedTableIds)
+                    ->map(function ($id) {
+                        return (int) $id;
+                    })
+                    ->filter(function ($id) {
+                        return $id > 0;
+                    })
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $selectedTableNames = collect($selectedTableIds)
+                    ->map(function ($id) use ($tableNameById) {
+                        return $tableNameById[$id] ?? ('Table ' . $id);
+                    })
+                    ->values()
+                    ->all();
+
                 return [
                     'id' => $res->id,
                     'name' => $res->name ?? '',
@@ -1318,24 +1387,16 @@ class PosSyncController extends Controller
                     'sales_user_id' => $res->sales_user_id ?? null,
                     'menu' => $res->menu ?? null,
                     'reservation_number' => $res->reservation_number ?? null,
-                    'order_mode' => null,
-                    'self_order_count' => 0,
-                    'self_order_latest_no' => null,
+                    'order_mode' => $selfOrderRef ? 'self_order' : 'manual_whatsapp',
+                    'self_order_count' => (int) ($selfOrderRef->total_orders ?? 0),
+                    'self_order_latest_no' => $selfOrderRef->latest_order_no ?? null,
+                    'selected_table_ids' => $selectedTableIds,
+                    'selected_table_names' => $selectedTableNames,
                     'status' => $res->status ?? 'pending',
                     'smoking_preference' => $res->smoking_preference ?? null,
                     'created_at' => $res->created_at,
                     'updated_at' => $res->updated_at
                 ];
-
-                $reservationNumber = strtoupper(trim((string) ($res->reservation_number ?? '')));
-                if ($reservationNumber !== '' && $selfOrderByReservationNumber->has($reservationNumber)) {
-                    $selfOrderRef = $selfOrderByReservationNumber->get($reservationNumber);
-                    $payload['order_mode'] = 'self_order';
-                    $payload['self_order_count'] = (int) ($selfOrderRef->total_orders ?? 0);
-                    $payload['self_order_latest_no'] = $selfOrderRef->latest_order_no ?? null;
-                }
-
-                return $payload;
             }, $reservations->toArray());
 
             return response()->json([
