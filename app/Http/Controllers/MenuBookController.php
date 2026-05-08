@@ -1148,6 +1148,8 @@ class MenuBookController extends Controller
             'items.*.qty' => 'required|integer|min:1|max:99',
             'items.*.notes' => 'nullable|string|max:255',
             'items.*.modifiers' => 'nullable|array',
+            'items.*.modifiers_named' => 'nullable|array',
+            'items.*.modifiers_id_map' => 'nullable|array',
         ]);
 
         $menuBook = null;
@@ -1265,6 +1267,10 @@ class MenuBookController extends Controller
         if (Schema::hasTable('modifier_options')) {
             $modifierOptionIds = collect($validated['items'])
                 ->flatMap(fn ($item) => $this->extractModifierOptionIds($item['modifiers'] ?? null))
+                ->merge(
+                    collect($validated['items'])
+                        ->flatMap(fn ($item) => $this->extractModifierOptionIds($item['modifiers_id_map'] ?? null))
+                )
                 ->unique()
                 ->values()
                 ->all();
@@ -1278,13 +1284,45 @@ class MenuBookController extends Controller
             }
         }
 
+        $modifierNameMap = [];
+        if (Schema::hasTable('modifiers')) {
+            $modifierIds = collect($validated['items'])
+                ->flatMap(function ($item) {
+                    $payload = $this->decodeModifierPayload($item['modifiers_id_map'] ?? null);
+                    if (!is_array($payload)) {
+                        return [];
+                    }
+
+                    return collect(array_keys($payload))
+                        ->map(fn ($id) => is_numeric($id) ? (int) $id : null)
+                        ->filter(fn ($id) => is_int($id) && $id > 0)
+                        ->values()
+                        ->all();
+                })
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($modifierIds)) {
+                $modifierNameMap = DB::table('modifiers')
+                    ->whereIn('id', $modifierIds)
+                    ->pluck('name', 'id')
+                    ->mapWithKeys(fn ($name, $id) => [(int) $id => (string) $name])
+                    ->all();
+            }
+        }
+
         foreach ($validated['items'] as $itemInput) {
             $itemId = (int) $itemInput['item_id'];
             $qty = (int) $itemInput['qty'];
             $itemMaster = $availableItems->get($itemId);
             $price = (float) ($itemMaster->price ?? 0);
             $lineSubtotal = $price * $qty;
-            $modifierNames = $this->normalizeModifiersForStorage($itemInput['modifiers'] ?? null, $modifierOptionNameMap);
+            $modifierNames = $this->resolveSelfOrderModifiersForStorage(
+                $itemInput,
+                $modifierNameMap,
+                $modifierOptionNameMap
+            );
 
             $normalizedItems[] = [
                 'item_id' => $itemId,
