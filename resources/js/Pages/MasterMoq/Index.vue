@@ -150,14 +150,21 @@
                 <td class="px-3 py-2 border">{{ row.item_name }}</td>
                 <td class="px-3 py-2 border">{{ row.item_sku }}</td>
                 <td class="px-3 py-2 border">{{ row.unit_name }}</td>
-                <td class="px-3 py-2 border">{{ row.conversion_qty }}</td>
-                <td class="px-3 py-2 border font-semibold">{{ row.moq_qty }}</td>
+                <td class="px-3 py-2 border">{{ formatQty(row.conversion_qty) }}</td>
+                <td class="px-3 py-2 border font-semibold">{{ formatQty(row.moq_qty) }}</td>
                 <td class="px-3 py-2 border">
                   <span :class="row.is_active ? 'text-green-600' : 'text-red-600'">
                     {{ row.is_active ? 'Aktif' : 'Nonaktif' }}
                   </span>
                 </td>
-                <td class="px-3 py-2 border">
+                <td class="px-3 py-2 border space-x-1">
+                  <button
+                    type="button"
+                    @click="editRow(row)"
+                    class="px-2 py-1 rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     @click="removeRow(row.id)"
@@ -198,6 +205,15 @@ const form = ref({
 });
 
 const selectedUnit = computed(() => unitOptions.value.find((u) => u.unit_id === Number(form.value.unit_id)));
+
+const formatQty = (value) => {
+  const number = Number(value);
+  if (Number.isNaN(number)) return '-';
+  return number.toLocaleString('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  });
+};
 
 const onSearchItem = async () => {
   if (!itemKeyword.value || itemKeyword.value.length < 2) {
@@ -271,6 +287,44 @@ const removeRow = async (id) => {
     await loadRows();
   } catch (error) {
     const message = error?.response?.data?.message || 'Gagal menghapus data.';
+    Swal.fire('Error', message, 'error');
+  }
+};
+
+const editRow = async (row) => {
+  const result = await Swal.fire({
+    title: `Edit MoQ - ${row.item_name}`,
+    input: 'number',
+    inputLabel: `MoQ (${row.unit_name})`,
+    inputValue: Number(row.moq_qty),
+    inputAttributes: {
+      min: 0.0001,
+      step: 0.0001,
+    },
+    showCancelButton: true,
+    confirmButtonText: 'Simpan',
+    cancelButtonText: 'Batal',
+    inputValidator: (value) => {
+      const num = Number(value);
+      if (!value || Number.isNaN(num) || num <= 0) {
+        return 'MoQ harus lebih dari 0.';
+      }
+      return null;
+    },
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    await axios.put(`/api/master-moq/${row.id}`, {
+      moq_qty: Number(result.value),
+      notes: row.notes || null,
+      is_active: Boolean(row.is_active),
+    });
+    await Swal.fire('Berhasil', 'Nilai MoQ berhasil diupdate.', 'success');
+    await loadRows();
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal update data MoQ.';
     Swal.fire('Error', message, 'error');
   }
 };
