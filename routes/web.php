@@ -823,6 +823,14 @@ Route::get('/items/{id}/detail', [App\Http\Controllers\ItemController::class, 's
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);
 Route::get('/api/items/{id}/barcodes', [App\Http\Controllers\ItemController::class, 'getItemBarcodes']);
 
+Route::get('/master-moq', [\App\Http\Controllers\MasterMoqController::class, 'index'])->name('master-moq.index');
+Route::get('/api/master-moq', [\App\Http\Controllers\MasterMoqController::class, 'list'])->name('master-moq.list');
+Route::get('/api/master-moq/items', [\App\Http\Controllers\MasterMoqController::class, 'searchItems'])->name('master-moq.items');
+Route::get('/api/master-moq/items/{itemId}/units', [\App\Http\Controllers\MasterMoqController::class, 'itemUnits'])->name('master-moq.item-units');
+Route::post('/api/master-moq', [\App\Http\Controllers\MasterMoqController::class, 'store'])->name('master-moq.store');
+Route::put('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController::class, 'update'])->name('master-moq.update');
+Route::delete('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController::class, 'destroy'])->name('master-moq.destroy');
+
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);

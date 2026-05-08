@@ -106,6 +106,7 @@ const menuGroups = [
             { name: () => 'Item Schedule', icon: 'fa-solid fa-calendar-days', route: '/item-schedules', code: 'item_schedules' },
             { name: () => 'RO Schedule', icon: 'fa-solid fa-calendar-days', route: '/fo-schedules', code: 'fo_schedules' },
             { name: () => 'Items Supplier', icon: 'fa-solid fa-link', route: '/item-supplier', code: 'view-item-supplier' },
+            { name: () => 'Master MoQ', icon: 'fa-solid fa-scale-balanced', route: '/master-moq', code: 'master_moq' },
             { name: () => 'Data Investor Outlet', icon: 'fa-solid fa-user-tie', route: '/investors', code: 'data_investor_outlet' },
             { name: () => 'Officer Check', icon: 'fa-solid fa-user-check', route: '/officer-check', code: 'officer_check' },
             { name: () => 'Jenis Pembayaran', icon: 'fa-solid fa-money-bill', route: '/payment-types', code: 'payment_types' },
