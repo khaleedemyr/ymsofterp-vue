@@ -1116,6 +1116,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/mk-production/report', [\App\Http\Controllers\MKProductionController::class, 'report'])->name('mk-production.report');
     Route::get('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'show'])->name('mk-production.show');
     Route::delete('/mk-production/{id}', [\App\Http\Controllers\MKProductionController::class, 'destroy'])->name('mk-production.destroy');
+    Route::post('/api/mk-production/{id}/generate-serials', [\App\Http\Controllers\MKProductionController::class, 'generateSerials'])->name('mk-production.generate-serials');
+    Route::get('/api/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList'])->name('mk-production.serial-list');
+    Route::get('/api/mk-production/{id}/serial-summary', [\App\Http\Controllers\MKProductionController::class, 'serialSummary'])->name('mk-production.serial-summary');
+    Route::delete('/api/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'rollbackSerials'])->name('mk-production.rollback-serials');
     Route::get('/mk-production/test/bom-data', [\App\Http\Controllers\MKProductionController::class, 'testBomData'])->name('mk-production.test-bom-data');
     
     // Outlet WIP Production

@@ -29,6 +29,27 @@
             <i class="fas fa-print text-lg"></i>
             <span>Print Label</span>
           </button>
+          <button
+            @click="generateSerial"
+            class="group inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
+          >
+            <i class="fas fa-barcode text-lg"></i>
+            <span>Generate Serial</span>
+          </button>
+          <button
+            @click="showSerials"
+            class="group inline-flex items-center gap-2 bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
+          >
+            <i class="fas fa-list text-lg"></i>
+            <span>Serial List ({{ serialTotal }})</span>
+          </button>
+          <button
+            @click="rollbackSerial"
+            class="group inline-flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
+          >
+            <i class="fas fa-rotate-left text-lg"></i>
+            <span>Rollback Serial</span>
+          </button>
         </div>
       </div>
 
@@ -415,6 +436,7 @@ const props = defineProps({
 const showLabelModal = ref(false)
 const barcodes = ref([])
 const selectedBarcode = ref('')
+const serialTotal = ref(0)
 const labelData = ref({
   itemName: '',
   volume: '',
@@ -459,6 +481,8 @@ onMounted(async () => {
   } else {
     labelData.value.expiredDate = 'Data tidak tersedia'
   }
+
+  await loadSerialSummary()
 })
 
 // Watch for production date changes to auto-calculate expired date
@@ -483,6 +507,205 @@ const formatDate = (date) => {
   if (!date) return '-'
   return new Date(date).toLocaleDateString('id-ID')
 }
+
+const loadSerialSummary = async () => {
+  try {
+    const { data } = await axios.get(`/api/mk-production/${props.prod.id}/serial-summary`)
+    serialTotal.value = Number(data?.total || 0)
+  } catch (error) {
+    serialTotal.value = 0
+  }
+}
+
+const generateSerial = async () => {
+  const confirm = await Swal.fire({
+    title: 'Generate serial MK Production?',
+    text: `Generate berdasarkan Qty In ${Number(props.prod?.qty_jadi || 0)} ${itemUnitName.value || ''}`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, generate',
+    cancelButtonText: 'Batal'
+  })
+
+  if (!confirm.isConfirmed) return
+
+  try {
+    const { data } = await axios.post(`/api/mk-production/${props.prod.id}/generate-serials`)
+    await Swal.fire('Berhasil', data?.message || 'Serial berhasil digenerate', 'success')
+    await loadSerialSummary()
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal generate serial'
+    await Swal.fire('Error', message, 'error')
+  }
+}
+
+const showSerials = async () => {
+  try {
+    const { data } = await axios.get(`/api/mk-production/${props.prod.id}/serials`)
+    if (!data || !data.length) {
+      await Swal.fire('Info', 'Belum ada serial MK Production.', 'info')
+      return
+    }
+
+    const rowsHtml = data.slice(0, 200).map((row, idx) => `
+      <tr>
+        <td style="border:1px solid #ddd;padding:4px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #ddd;padding:4px;">${row.serial_number}</td>
+        <td style="border:1px solid #ddd;padding:4px;">${row.unit_name || '-'}</td>
+        <td style="border:1px solid #ddd;padding:4px;">${row.generated_at || '-'}</td>
+        <td style="border:1px solid #ddd;padding:4px;text-align:center;">
+          <button
+            type="button"
+            class="serial-pdf-btn"
+            data-serial="${row.serial_number}"
+            style="padding:2px 8px;background:#dbeafe;color:#1d4ed8;border-radius:4px;border:0;cursor:pointer;"
+          >
+            PDF 10x5
+          </button>
+        </td>
+      </tr>
+    `).join('')
+
+    await Swal.fire({
+      title: `Serial - ${props.item?.name || ''}`,
+      width: 980,
+      html: `
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+          <button
+            id="download-all-serial-pdf-btn"
+            type="button"
+            style="padding:6px 10px;background:#dbeafe;color:#1d4ed8;border-radius:6px;border:0;cursor:pointer;font-size:12px;font-weight:600;"
+          >
+            Download All PDF (10x5cm)
+          </button>
+        </div>
+        <div style="max-height:420px;overflow:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr>
+                <th style="border:1px solid #ddd;padding:4px;">No</th>
+                <th style="border:1px solid #ddd;padding:4px;">Serial</th>
+                <th style="border:1px solid #ddd;padding:4px;">Unit</th>
+                <th style="border:1px solid #ddd;padding:4px;">Generated At</th>
+                <th style="border:1px solid #ddd;padding:4px;">Print</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `,
+      didOpen: () => {
+        const downloadAllBtn = document.getElementById('download-all-serial-pdf-btn')
+        if (downloadAllBtn) {
+          downloadAllBtn.addEventListener('click', () => {
+            downloadSerialPDF(
+              data.map((row) => row.serial_number),
+              props.item?.name || ''
+            )
+          })
+        }
+
+        const rowPdfButtons = document.querySelectorAll('.serial-pdf-btn')
+        rowPdfButtons.forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            const serial = event.target?.getAttribute('data-serial')
+            if (serial) {
+              downloadSerialPDF([serial], props.item?.name || '')
+            }
+          })
+        })
+      }
+    })
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal mengambil serial'
+    await Swal.fire('Error', message, 'error')
+  }
+}
+
+const downloadSerialPDF = (serials, itemName) => {
+  if (!serials?.length) return
+
+  // Meniru Items > Manage Barcode > Download PDF (10x5cm)
+  const labelWidth = 100 // 10cm
+  const labelHeight = 50 // 5cm
+  const gap = 5 // 0.5cm
+  const marginLeft = 5
+  const marginTop = 5
+  const numRows = Math.ceil(serials.length / 3)
+  const pdfWidth = 297 // A4 landscape
+  const pdfHeight = 210
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] })
+
+  let y = marginTop
+  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+    for (let colIdx = 0; colIdx < 3; colIdx++) {
+      const idx = rowIdx * 3 + colIdx
+      if (idx >= serials.length) continue
+
+      const x = marginLeft + colIdx * (labelWidth + gap)
+      const serial = serials[idx]
+
+      doc.setDrawColor(0, 0, 0)
+      doc.setLineWidth(0.5)
+      doc.rect(x, y, labelWidth, labelHeight)
+
+      const areaBarcodeW = labelWidth - 10
+      const areaBarcodeH = 20
+      const scale = 3
+      const canvas = document.createElement('canvas')
+      canvas.width = areaBarcodeW * scale
+      canvas.height = areaBarcodeH * scale
+      JsBarcode(canvas, serial, { width: 1.5 * scale, height: areaBarcodeH * scale, displayValue: false })
+
+      const barcodeX = x + (labelWidth - areaBarcodeW) / 2
+      doc.addImage(canvas, 'PNG', barcodeX, y + 3, areaBarcodeW, areaBarcodeH)
+
+      let currentY = y + areaBarcodeH + 5
+      doc.setFontSize(8)
+      doc.setFont(undefined, 'bold')
+      doc.text(`SERIAL: ${serial}`, x + labelWidth / 2, currentY, { align: 'center' })
+      currentY += 4.5
+      doc.setFontSize(9)
+      doc.setFont(undefined, 'bold')
+      doc.text(`${itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' })
+    }
+    y += labelHeight + gap
+  }
+
+  const firstSerial = serials[0] || 'serial'
+  doc.save(`${firstSerial}_mk_production_labels_10x5cm.pdf`)
+}
+
+const rollbackSerial = async () => {
+  const confirm = await Swal.fire({
+    title: 'Rollback serial MK Production?',
+    text: 'Semua serial untuk produksi ini akan dihapus.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, rollback',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#d33'
+  })
+
+  if (!confirm.isConfirmed) return
+
+  try {
+    const { data } = await axios.delete(`/api/mk-production/${props.prod.id}/serials`)
+    await Swal.fire('Berhasil', data?.message || 'Rollback serial berhasil', 'success')
+    await loadSerialSummary()
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Gagal rollback serial'
+    await Swal.fire('Error', message, 'error')
+  }
+}
+
+const itemUnitName = computed(() => {
+  if (!props.item) return ''
+  if (props.prod?.unit_id === props.item.small_unit_id) return props.item.small_unit_name || ''
+  if (props.prod?.unit_id === props.item.medium_unit_id) return props.item.medium_unit_name || ''
+  if (props.prod?.unit_id === props.item.large_unit_id) return props.item.large_unit_name || ''
+  return ''
+})
 
 const printLabel = () => {
   if (!selectedBarcode.value) {

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class MKProductionController extends Controller
 {
@@ -822,6 +823,150 @@ class MKProductionController extends Controller
         }
     }
 
+    public function serialSummary($id)
+    {
+        $total = DB::table('inventory_item_serials')
+            ->where('source_type', 'mk_production')
+            ->where('source_id', $id)
+            ->count();
+
+        return response()->json([
+            'total' => $total,
+        ]);
+    }
+
+    public function serialList($id)
+    {
+        $rows = DB::table('inventory_item_serials as s')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.ref_pr_number',
+                's.ref_po_number',
+                's.ref_gr_number',
+                's.generated_at',
+                'u.name as unit_name'
+            )
+            ->where('s.source_type', 'mk_production')
+            ->where('s.source_id', $id)
+            ->orderBy('s.id')
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    public function rollbackSerials($id)
+    {
+        $deleted = DB::table('inventory_item_serials')
+            ->where('source_type', 'mk_production')
+            ->where('source_id', $id)
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Rollback serial MK Production berhasil. Terhapus: {$deleted}",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    public function generateSerials($id)
+    {
+        $prod = DB::table('mk_productions as mp')
+            ->join('items as i', 'i.id', '=', 'mp.item_id')
+            ->select(
+                'mp.id',
+                'mp.item_id',
+                'mp.unit_id',
+                'mp.qty_jadi',
+                'mp.warehouse_id',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty'
+            )
+            ->where('mp.id', $id)
+            ->first();
+
+        if (!$prod) {
+            return response()->json(['message' => 'Data MK Production tidak ditemukan'], 404);
+        }
+
+        $qtyIn = (float) ($prod->qty_jadi ?: 0);
+        $serialCount = (int) round($qtyIn);
+        if ($serialCount <= 0 || abs($qtyIn - $serialCount) > 0.00001) {
+            return response()->json([
+                'message' => 'Qty In (qty jadi) harus bilangan bulat positif agar bisa generate serial.',
+                'qty_in' => round($qtyIn, 4),
+            ], 422);
+        }
+
+        $inventoryItemId = DB::table('food_inventory_items')
+            ->where('item_id', $prod->item_id)
+            ->value('id');
+
+        $card = DB::table('food_inventory_cards')
+            ->where('reference_type', 'mk_production')
+            ->where('reference_id', $prod->id)
+            ->where('warehouse_id', $prod->warehouse_id)
+            ->where('in_qty_small', '>', 0)
+            ->orderByDesc('id')
+            ->first();
+
+        $smallConv = (float) ($prod->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($prod->medium_conversion_qty ?: 1);
+
+        $costSmall = (float) ($card->cost_per_small ?? 0);
+        $costMedium = (float) ($card->cost_per_medium ?? ($costSmall * $smallConv));
+        $costLarge = (float) ($card->cost_per_large ?? ($costMedium * $mediumConv));
+
+        DB::beginTransaction();
+        try {
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'mk_production')
+                ->where('source_id', $prod->id)
+                ->delete();
+
+            $now = now();
+            $rows = [];
+            for ($i = 0; $i < $serialCount; $i++) {
+                $rows[] = [
+                    'source_type' => 'mk_production',
+                    'source_id' => $prod->id,
+                    'source_item_id' => $prod->id,
+                    'warehouse_id' => $prod->warehouse_id,
+                    'inventory_item_id' => $inventoryItemId,
+                    'item_id' => $prod->item_id,
+                    'unit_id' => $prod->unit_id,
+                    'serial_number' => $this->generateUniqueSerialNumber(),
+                    'source_qty' => $qtyIn,
+                    'source_unit_id' => $prod->unit_id,
+                    'generated_qty_unit' => $qtyIn,
+                    'cost_small' => $costSmall,
+                    'cost_medium' => $costMedium,
+                    'cost_large' => $costLarge,
+                    'generated_by' => Auth::id(),
+                    'generated_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            DB::table('inventory_item_serials')->insert($rows);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil generate {$serialCount} serial MK Production.",
+                'total' => $serialCount,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
     public function report(Request $request)
     {
         $query = DB::table('mk_productions')
@@ -894,5 +1039,22 @@ class MKProductionController extends Controller
             'bom_data' => $bomData,
             'warehouses' => $warehouses
         ]);
+    }
+
+    private function generateUniqueSerialNumber(): string
+    {
+        $prefix = now()->format('ymdHi');
+
+        for ($i = 0; $i < 10; $i++) {
+            $serial = $prefix . strtoupper(Str::random(4));
+            $exists = DB::table('inventory_item_serials')
+                ->where('serial_number', $serial)
+                ->exists();
+            if (!$exists) {
+                return $serial;
+            }
+        }
+
+        return $prefix . strtoupper(Str::random(6));
     }
 } 
