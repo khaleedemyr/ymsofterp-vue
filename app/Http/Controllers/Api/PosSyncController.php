@@ -1301,21 +1301,37 @@ class PosSyncController extends Controller
                 ->get();
 
             $hasSelectedTableIds = Schema::hasColumn('reservations', 'selected_table_ids');
+            $parseSelectedTableIds = function ($raw) {
+                if (is_array($raw)) {
+                    return collect($raw);
+                }
+
+                if (is_string($raw)) {
+                    $trimmed = trim($raw);
+                    if ($trimmed === '') {
+                        return collect();
+                    }
+
+                    $decoded = json_decode($trimmed, true);
+                    if (is_array($decoded)) {
+                        return collect($decoded);
+                    }
+
+                    return collect(explode(',', $trimmed));
+                }
+
+                if (is_numeric($raw)) {
+                    return collect([$raw]);
+                }
+
+                return collect();
+            };
+
             $tableNameById = collect();
             if ($hasSelectedTableIds && Schema::hasTable('pos_design_tables_sync')) {
                 $selectedTableIds = $reservations
-                    ->flatMap(function ($res) {
-                        $raw = $res->selected_table_ids ?? null;
-                        if (is_array($raw)) {
-                            return collect($raw);
-                        }
-                        if (is_string($raw) && trim($raw) !== '') {
-                            $decoded = json_decode($raw, true);
-                            if (is_array($decoded)) {
-                                return collect($decoded);
-                            }
-                        }
-                        return collect();
+                    ->flatMap(function ($res) use ($parseSelectedTableIds) {
+                        return $parseSelectedTableIds($res->selected_table_ids ?? null);
                     })
                     ->map(function ($id) {
                         return (int) $id;
@@ -1327,13 +1343,21 @@ class PosSyncController extends Controller
                     ->values();
 
                 if ($selectedTableIds->isNotEmpty()) {
-                    $tableNameById = DB::table('pos_design_tables_sync')
-                        ->whereIn('source_table_id', $selectedTableIds->all())
-                        ->pluck('nama', 'source_table_id');
+                    $tableColumns = collect(Schema::getColumnListing('pos_design_tables_sync'))
+                        ->map(fn ($c) => strtolower((string) $c));
+
+                    $tableIdColumn = $tableColumns->contains('source_table_id') ? 'source_table_id' : ($tableColumns->contains('id') ? 'id' : null);
+                    $tableNameColumn = $tableColumns->contains('nama') ? 'nama' : ($tableColumns->contains('name') ? 'name' : ($tableColumns->contains('table_name') ? 'table_name' : null));
+
+                    if ($tableIdColumn && $tableNameColumn) {
+                        $tableNameById = DB::table('pos_design_tables_sync')
+                            ->whereIn($tableIdColumn, $selectedTableIds->all())
+                            ->pluck($tableNameColumn, $tableIdColumn);
+                    }
                 }
             }
 
-            $formatted = array_map(function($res) use ($selfOrderByReservationNumber, $hasSelectedTableIds, $tableNameById) {
+            $formatted = array_map(function($res) use ($selfOrderByReservationNumber, $hasSelectedTableIds, $tableNameById, $parseSelectedTableIds) {
                 $reservationNumber = strtoupper(trim((string) ($res->reservation_number ?? '')));
                 $selfOrderRef = ($reservationNumber !== '' && $selfOrderByReservationNumber->has($reservationNumber))
                     ? $selfOrderByReservationNumber->get($reservationNumber)
@@ -1342,14 +1366,7 @@ class PosSyncController extends Controller
                 $selectedTableIds = [];
                 if ($hasSelectedTableIds) {
                     $rawSelected = $res->selected_table_ids ?? null;
-                    if (is_array($rawSelected)) {
-                        $selectedTableIds = $rawSelected;
-                    } elseif (is_string($rawSelected) && trim($rawSelected) !== '') {
-                        $decoded = json_decode($rawSelected, true);
-                        if (is_array($decoded)) {
-                            $selectedTableIds = $decoded;
-                        }
-                    }
+                    $selectedTableIds = $parseSelectedTableIds($rawSelected)->all();
                 }
 
                 $selectedTableIds = collect($selectedTableIds)
