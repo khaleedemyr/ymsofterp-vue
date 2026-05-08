@@ -437,6 +437,12 @@ class ReservationController extends Controller
         if (Schema::hasColumn($selfOrderTable, 'total_item')) {
             $selfOrderColumns[] = 'total_item';
         }
+        if (Schema::hasColumn($selfOrderTable, 'service')) {
+            $selfOrderColumns[] = 'service';
+        }
+        if (Schema::hasColumn($selfOrderTable, 'pb1')) {
+            $selfOrderColumns[] = 'pb1';
+        }
         $reservation->load(['outlet', 'creator', 'salesUser', 'paymentType']);
 
         // Transaksi POS yang ter-link ke reservasi ini (order sync dari POS ke pusat)
@@ -531,6 +537,8 @@ class ReservationController extends Controller
                     'status' => $row->status,
                     'total_item' => (int) ($row->total_item ?? count($items)),
                     'subtotal' => (float) $row->subtotal,
+                    'service' => (float) ($row->service ?? 0),
+                    'pb1' => (float) ($row->pb1 ?? 0),
                     'grand_total' => (float) $row->grand_total,
                     'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
                     'updated_at' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,
@@ -630,6 +638,8 @@ class ReservationController extends Controller
                             'status' => $row->status,
                             'total_item' => (int) ($row->total_item ?? count($items)),
                             'subtotal' => (float) $row->subtotal,
+                            'service' => (float) ($row->service ?? 0),
+                            'pb1' => (float) ($row->pb1 ?? 0),
                             'grand_total' => (float) $row->grand_total,
                             'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
                             'updated_at' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,

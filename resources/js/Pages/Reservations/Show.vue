@@ -189,9 +189,23 @@
                       <p class="mt-1 text-xs text-slate-500">{{ formatDateTime(selfOrder.created_at) }}</p>
                       <p v-if="selfOrder.notes" class="mt-1 text-xs italic text-slate-600">Catatan order: {{ selfOrder.notes }}</p>
                     </div>
-                    <div class="text-right">
-                      <p class="text-xs uppercase tracking-wider text-slate-500">Total</p>
-                      <p class="font-semibold text-slate-800">{{ formatCurrency(selfOrder.grand_total) }}</p>
+                    <div class="min-w-[180px] rounded-lg border border-slate-200 bg-white/80 p-2.5 text-xs">
+                      <div class="flex items-center justify-between gap-2 text-slate-500">
+                        <span>Subtotal</span>
+                        <span class="font-medium text-slate-700">{{ formatCurrency(selfOrder.subtotal) }}</span>
+                      </div>
+                      <div class="mt-1 flex items-center justify-between gap-2 text-slate-500">
+                        <span>Service</span>
+                        <span class="font-medium text-slate-700">{{ formatCurrency(selfOrder.service) }}</span>
+                      </div>
+                      <div class="mt-1 flex items-center justify-between gap-2 text-slate-500">
+                        <span>PB1</span>
+                        <span class="font-medium text-slate-700">{{ formatCurrency(selfOrder.pb1) }}</span>
+                      </div>
+                      <div class="mt-1 border-t border-slate-200 pt-1.5 flex items-center justify-between gap-2">
+                        <span class="font-semibold text-slate-600">Total</span>
+                        <span class="font-semibold text-slate-800">{{ formatCurrency(selfOrder.grand_total) }}</span>
+                      </div>
                     </div>
                   </div>
 
