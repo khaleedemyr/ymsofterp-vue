@@ -600,7 +600,12 @@ const showSerials = async () => {
           downloadAllBtn.addEventListener('click', () => {
             downloadSerialPDF(
               data.map((row) => row.serial_number),
-              props.item?.name || ''
+              {
+                itemName: props.item?.name || '',
+                batch: props.prod?.batch_number || '-',
+                productionDate: props.prod?.production_date || null,
+                expDays: Number(props.item?.exp || 0),
+              }
             )
           })
         }
@@ -610,7 +615,12 @@ const showSerials = async () => {
           btn.addEventListener('click', (event) => {
             const serial = event.target?.getAttribute('data-serial')
             if (serial) {
-              downloadSerialPDF([serial], props.item?.name || '')
+              downloadSerialPDF([serial], {
+                itemName: props.item?.name || '',
+                batch: props.prod?.batch_number || '-',
+                productionDate: props.prod?.production_date || null,
+                expDays: Number(props.item?.exp || 0),
+              })
             }
           })
         })
@@ -622,7 +632,7 @@ const showSerials = async () => {
   }
 }
 
-const downloadSerialPDF = (serials, itemName) => {
+const downloadSerialPDF = (serials, meta) => {
   if (!serials?.length) return
 
   // Meniru Items > Manage Barcode > Download PDF (10x5cm)
@@ -667,17 +677,31 @@ const downloadSerialPDF = (serials, itemName) => {
     doc.addImage(canvas, 'PNG', barcodeX, y + 3, areaBarcodeW, areaBarcodeH)
 
     let currentY = y + areaBarcodeH + 5
-    doc.setFontSize(8)
+    doc.setFontSize(7)
     doc.setFont(undefined, 'bold')
     doc.text(`SERIAL: ${serial}`, x + labelWidth / 2, currentY, { align: 'center' })
-    currentY += 4.5
-    doc.setFontSize(9)
+    currentY += 3.8
+    doc.setFontSize(8)
     doc.setFont(undefined, 'bold')
-    doc.text(`${itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' })
+    doc.text(`${meta?.itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' })
+    currentY += 3.2
+    doc.setFontSize(7)
+    doc.setFont(undefined, 'normal')
+    doc.text(`BATCH: ${meta?.batch || '-'}`, x + labelWidth / 2, currentY, { align: 'center' })
+    currentY += 3
+    doc.text(`EXP: ${calculateExpDate(meta?.productionDate, meta?.expDays)}`, x + labelWidth / 2, currentY, { align: 'center' })
   })
 
   const firstSerial = serials[0] || 'serial'
   doc.save(`${firstSerial}_mk_production_labels_10x5cm.pdf`)
+}
+
+const calculateExpDate = (productionDate, expDays) => {
+  if (!productionDate) return '-'
+  const d = new Date(productionDate)
+  if (Number.isNaN(d.getTime())) return '-'
+  d.setDate(d.getDate() + (Number(expDays) || 0))
+  return formatDateForLabel(d.toISOString().split('T')[0])
 }
 
 const rollbackSerial = async () => {
