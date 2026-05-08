@@ -717,6 +717,25 @@ class MenuBookController extends Controller
             ], 404);
         }
 
+        $reservationNumber = !empty($validated['reservation_number'])
+            ? strtoupper(trim((string) $validated['reservation_number']))
+            : null;
+        $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+
+        // Jika reservasi mengarah ke outlet lain, pakai outlet reservasi agar order tidak nyasar.
+        if ($reservationRow?->outlet_id && (int) $reservationRow->outlet_id !== (int) $outlet->id_outlet) {
+            $reservedOutlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $reservationRow->outlet_id)
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet', 'qr_code', 'region_id')
+                ->first();
+
+            if ($reservedOutlet) {
+                $outlet = $reservedOutlet;
+                $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+            }
+        }
+
         $requestItemIds = collect($validated['items'])
             ->pluck('item_id')
             ->map(fn ($id) => (int) $id)
@@ -780,11 +799,6 @@ class MenuBookController extends Controller
         try {
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
-
-            $reservationNumber = !empty($validated['reservation_number'])
-                ? strtoupper(trim((string) $validated['reservation_number']))
-                : null;
-            $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
             $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
 
             $selfOrderPayload = [
@@ -1119,6 +1133,25 @@ class MenuBookController extends Controller
                 ->first();
         }
 
+        $reservationNumber = !empty($validated['reservation_number'])
+            ? strtoupper(trim((string) $validated['reservation_number']))
+            : null;
+        $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+
+        // Jika reservasi mengarah ke outlet lain, pakai outlet reservasi agar order tidak nyasar.
+        if ($reservationRow?->outlet_id && (int) $reservationRow->outlet_id !== (int) $outlet->id_outlet) {
+            $reservedOutlet = DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $reservationRow->outlet_id)
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet', 'qr_code', 'region_id')
+                ->first();
+
+            if ($reservedOutlet) {
+                $outlet = $reservedOutlet;
+                $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
+            }
+        }
+
         $requestItemIds = collect($validated['items'])
             ->pluck('item_id')
             ->map(fn ($id) => (int) $id)
@@ -1203,10 +1236,6 @@ class MenuBookController extends Controller
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
             $webSelfOrderId = (string) Str::uuid();
-            $reservationNumber = !empty($validated['reservation_number'])
-                ? strtoupper(trim((string) $validated['reservation_number']))
-                : null;
-            $reservationRow = $this->resolveReservationRow($reservationNumber, (int) $outlet->id_outlet);
             $reservationId = $reservationRow?->id ? (int) $reservationRow->id : null;
 
             $customerEmail = !empty($validated['customer_email'])
@@ -1369,7 +1398,7 @@ class MenuBookController extends Controller
             $byOutlet = (clone $baseQuery)
                 ->where('outlet_id', $outletId)
                 ->orderByDesc('id')
-                ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
+                ->first(['id', 'outlet_id', 'email', 'number_of_guests', 'selected_table_ids']);
 
             if ($byOutlet) {
                 return $byOutlet;
@@ -1378,7 +1407,7 @@ class MenuBookController extends Controller
 
         return $baseQuery
             ->orderByDesc('id')
-            ->first(['id', 'email', 'number_of_guests', 'selected_table_ids']);
+            ->first(['id', 'outlet_id', 'email', 'number_of_guests', 'selected_table_ids']);
     }
 
     private function applyPosVisibilityFilter($query, int $outletId, ?int $regionId): void
