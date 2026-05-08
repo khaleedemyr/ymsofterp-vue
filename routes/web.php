@@ -774,6 +774,11 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'show'])->name('food-good-receive.show');
     Route::put('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'update'])->name('food-good-receive.update');
     Route::delete('/food-good-receive/{id}', [FoodGoodReceiveController::class, 'destroy'])->name('food-good-receive.destroy');
+Route::get('/api/food-good-receive/{id}/serial-summary', [FoodGoodReceiveController::class, 'serialSummary'])->name('food-good-receive.serial-summary');
+Route::get('/api/food-good-receive-items/{id}/serial-units', [FoodGoodReceiveController::class, 'serialUnits'])->name('food-good-receive.serial-units');
+Route::post('/api/food-good-receive-items/{id}/generate-serials', [FoodGoodReceiveController::class, 'generateSerials'])->name('food-good-receive.generate-serials');
+Route::get('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveController::class, 'serialList'])->name('food-good-receive.serial-list');
+Route::delete('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveController::class, 'rollbackSerials'])->name('food-good-receive.rollback-serials');
 
     // Food Good Receive Report routes
     Route::get('/food-good-receive-report', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'index'])->name('food-good-receive.report');

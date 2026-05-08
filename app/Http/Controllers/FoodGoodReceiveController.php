@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use App\Models\ActivityLog;
 use Carbon\Carbon;
 
@@ -938,5 +939,313 @@ class FoodGoodReceiveController extends Controller
             'notes' => $gr->notes,
             'items' => $items
         ]);
+    }
+
+    public function serialSummary($goodReceiveId)
+    {
+        $summary = DB::table('inventory_item_serials')
+            ->select('source_item_id as good_receive_item_id', DB::raw('COUNT(*) as total'))
+            ->where('source_type', 'good_receive')
+            ->where('source_id', $goodReceiveId)
+            ->groupBy('source_item_id')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    public function serialUnits($goodReceiveItemId)
+    {
+        $grItem = DB::table('food_good_receive_items as gri')
+            ->join('items as i', 'i.id', '=', 'gri.item_id')
+            ->leftJoin('units as u_received', 'u_received.id', '=', 'gri.unit_id')
+            ->select(
+                'gri.id',
+                'gri.good_receive_id',
+                'gri.item_id',
+                'gri.po_item_id',
+                'gri.qty_received',
+                'gri.unit_id as received_unit_id',
+                'u_received.name as received_unit_name',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty'
+            )
+            ->where('gri.id', $goodReceiveItemId)
+            ->first();
+
+        if (!$grItem) {
+            return response()->json(['message' => 'Item GR tidak ditemukan'], 404);
+        }
+
+        $smallConv = (float) ($grItem->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($grItem->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($grItem->qty_received ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ((int) $grItem->received_unit_id === (int) $grItem->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ((int) $grItem->received_unit_id === (int) $grItem->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $unitIds = collect([
+            $grItem->small_unit_id,
+            $grItem->medium_unit_id,
+            $grItem->large_unit_id,
+        ])->filter()->unique()->values();
+
+        $unitsMaster = DB::table('units')
+            ->whereIn('id', $unitIds)
+            ->pluck('name', 'id');
+
+        $units = [];
+        foreach ($unitIds as $unitId) {
+            $unitIdInt = (int) $unitId;
+            $convertedQty = $qtySmall;
+            if ($unitIdInt === (int) $grItem->medium_unit_id) {
+                $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+            } elseif ($unitIdInt === (int) $grItem->large_unit_id) {
+                $divider = $smallConv * $mediumConv;
+                $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+            }
+
+            $units[] = [
+                'unit_id' => $unitIdInt,
+                'unit_name' => $unitsMaster[$unitIdInt] ?? "Unit {$unitIdInt}",
+                'converted_qty' => round($convertedQty, 4),
+            ];
+        }
+
+        return response()->json([
+            'good_receive_item_id' => (int) $grItem->id,
+            'item_name' => $grItem->item_name,
+            'qty_received' => round($qtyReceived, 4),
+            'received_unit_name' => $grItem->received_unit_name,
+            'units' => $units,
+        ]);
+    }
+
+    public function generateSerials(Request $request, $goodReceiveItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'required|integer|exists:units,id',
+        ]);
+
+        $grItem = DB::table('food_good_receive_items as gri')
+            ->join('food_good_receives as gr', 'gr.id', '=', 'gri.good_receive_id')
+            ->join('purchase_order_foods as po', 'po.id', '=', 'gr.po_id')
+            ->join('items as i', 'i.id', '=', 'gri.item_id')
+            ->leftJoin('purchase_order_food_items as poi', 'poi.id', '=', 'gri.po_item_id')
+            ->leftJoin('pr_food_items as pfi', 'pfi.id', '=', 'poi.pr_food_item_id')
+            ->leftJoin('pr_foods as pf', 'pf.id', '=', 'pfi.pr_food_id')
+            ->select(
+                'gri.id',
+                'gri.good_receive_id',
+                'gri.item_id',
+                'gri.po_item_id',
+                'gri.qty_received',
+                'gri.unit_id as received_unit_id',
+                'gr.gr_number',
+                'gr.po_id',
+                'po.number as po_number',
+                'po.source_type as po_source_type',
+                'poi.unit_id as po_item_unit_id',
+                'poi.price as po_item_price',
+                'pf.id as pr_food_id',
+                'pf.number as pr_number',
+                'pf.warehouse_id as warehouse_id',
+                'pfi.id as pr_food_item_id',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty'
+            )
+            ->where('gri.id', $goodReceiveItemId)
+            ->first();
+
+        if (!$grItem) {
+            return response()->json(['message' => 'Item GR tidak ditemukan'], 404);
+        }
+
+        $targetUnitId = (int) $validated['unit_id'];
+        $validUnitIds = collect([$grItem->small_unit_id, $grItem->medium_unit_id, $grItem->large_unit_id])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!in_array($targetUnitId, $validUnitIds, true)) {
+            return response()->json(['message' => 'Unit tidak sesuai konversi item'], 422);
+        }
+
+        $smallConv = (float) ($grItem->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($grItem->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($grItem->qty_received ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ((int) $grItem->received_unit_id === (int) $grItem->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ((int) $grItem->received_unit_id === (int) $grItem->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $convertedQty = $qtySmall;
+        if ($targetUnitId === (int) $grItem->medium_unit_id) {
+            $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+        } elseif ($targetUnitId === (int) $grItem->large_unit_id) {
+            $divider = $smallConv * $mediumConv;
+            $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+        }
+
+        $serialCount = (int) round($convertedQty);
+        if ($serialCount <= 0 || abs($convertedQty - $serialCount) > 0.00001) {
+            return response()->json([
+                'message' => 'Qty hasil konversi harus bilangan bulat positif agar bisa generate serial.',
+                'converted_qty' => round($convertedQty, 4),
+            ], 422);
+        }
+
+        $warehouseId = null;
+        if ($grItem->po_source_type === 'ro_supplier') {
+            $warehouseId = 1;
+        } else {
+            $warehouseId = $grItem->warehouse_id;
+        }
+
+        if (!$warehouseId) {
+            $warehouseId = DB::table('warehouses')->value('id');
+        }
+
+        $inventoryItemId = DB::table('food_inventory_items')
+            ->where('item_id', $grItem->item_id)
+            ->value('id');
+
+        $price = (float) ($grItem->po_item_price ?: 0);
+        $priceUnitId = (int) ($grItem->po_item_unit_id ?: $grItem->received_unit_id);
+        $costSmall = $price;
+        if ($priceUnitId === (int) $grItem->large_unit_id) {
+            $divider = ($smallConv ?: 1) * ($mediumConv ?: 1);
+            $costSmall = $divider > 0 ? ($price / $divider) : 0;
+        } elseif ($priceUnitId === (int) $grItem->medium_unit_id) {
+            $costSmall = ($smallConv ?: 1) > 0 ? ($price / ($smallConv ?: 1)) : 0;
+        }
+        $costMedium = $costSmall * ($smallConv ?: 1);
+        $costLarge = $costMedium * ($mediumConv ?: 1);
+
+        DB::beginTransaction();
+        try {
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'good_receive')
+                ->where('source_item_id', $grItem->id)
+                ->where('unit_id', $targetUnitId)
+                ->delete();
+
+            $now = now();
+            $rows = [];
+            for ($i = 0; $i < $serialCount; $i++) {
+                $rows[] = [
+                    'source_type' => 'good_receive',
+                    'source_id' => $grItem->good_receive_id,
+                    'source_item_id' => $grItem->id,
+                    'warehouse_id' => $warehouseId,
+                    'inventory_item_id' => $inventoryItemId,
+                    'item_id' => $grItem->item_id,
+                    'unit_id' => $targetUnitId,
+                    'serial_number' => $this->generateUniqueSerialNumber(),
+                    'source_qty' => $qtyReceived,
+                    'source_unit_id' => (int) $grItem->received_unit_id,
+                    'generated_qty_unit' => $convertedQty,
+                    'cost_small' => $costSmall,
+                    'cost_medium' => $costMedium,
+                    'cost_large' => $costLarge,
+                    'ref_gr_number' => $grItem->gr_number,
+                    'ref_po_number' => $grItem->po_number,
+                    'ref_pr_number' => $grItem->pr_number,
+                    'generated_by' => Auth::id(),
+                    'generated_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            DB::table('inventory_item_serials')->insert($rows);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil generate {$serialCount} nomor seri.",
+                'total' => $serialCount,
+                'converted_qty' => round($convertedQty, 4),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function rollbackSerials(Request $request, $goodReceiveItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'nullable|integer|exists:units,id',
+        ]);
+
+        $query = DB::table('inventory_item_serials')
+            ->where('source_type', 'good_receive')
+            ->where('source_item_id', $goodReceiveItemId);
+
+        if (!empty($validated['unit_id'])) {
+            $query->where('unit_id', (int) $validated['unit_id']);
+        }
+
+        $deleted = $query->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Rollback serial berhasil. Terhapus: {$deleted}",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    public function serialList($goodReceiveItemId)
+    {
+        $rows = DB::table('inventory_item_serials as s')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.ref_gr_number as gr_number',
+                's.ref_po_number as po_number',
+                's.ref_pr_number as pr_number',
+                's.generated_at',
+                'u.name as unit_name'
+            )
+            ->where('s.source_type', 'good_receive')
+            ->where('s.source_item_id', $goodReceiveItemId)
+            ->orderBy('s.id')
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    private function generateUniqueSerialNumber(): string
+    {
+        $prefix = now()->format('ymdHi');
+
+        for ($i = 0; $i < 10; $i++) {
+            $serial = $prefix . strtoupper(Str::random(4));
+            $exists = DB::table('inventory_item_serials')
+                ->where('serial_number', $serial)
+                ->exists();
+            if (!$exists) {
+                return $serial;
+            }
+        }
+
+        return $prefix . strtoupper(Str::random(6));
     }
 } 
