@@ -919,6 +919,16 @@ class ReservationController extends Controller
                 'menu_file' => 'nullable|file|mimes:jpg,jpeg,png,gif,webp,pdf,xls,xlsx|max:10240',
                 'status' => 'required|in:pending,confirmed,cancelled',
             ]);
+
+            $dpProvided = array_key_exists('dp', $validated) && $validated['dp'] !== null;
+            if (!$dpProvided) {
+                $validated['dp'] = (float) ($validated['number_of_guests'] ?? 0) * 100000;
+            }
+
+            if (empty($validated['payment_type_id'])) {
+                $validated['payment_type_id'] = $this->resolveDefaultQrisPaymentTypeId();
+            }
+
             $validated['created_by'] = auth()->check() ? auth()->id() : null;
             $validated['email'] = $request->filled('email') ? trim((string) $request->input('email')) : null;
             $validated['from_sales'] = filter_var($request->input('from_sales'), FILTER_VALIDATE_BOOLEAN);
@@ -943,10 +953,27 @@ class ReservationController extends Controller
             }
             $reservation = Reservation::create($validated);
             $this->assignReservationNumberIfMissing($reservation);
+
+            if (!$dpProvided && (float) $reservation->dp > 0) {
+                $uniqueDp = $this->buildUniqueDpAmount((float) $reservation->dp, (string) $reservation->reservation_number);
+                if ($uniqueDp > 0 && (float) $reservation->dp !== (float) $uniqueDp) {
+                    $reservation->dp = $uniqueDp;
+                    $reservation->saveQuietly();
+                }
+            }
+
+            $this->syncDpCode($reservation, (float) ($reservation->dp ?? 0));
+            $reservation->load('paymentType');
+
             return response()->json([
                 'message' => 'Reservasi berhasil ditambahkan',
                 'id' => $reservation->id,
                 'reservation_number' => $reservation->reservation_number,
+                'dp' => $reservation->dp ? (float) $reservation->dp : null,
+                'dp_code' => $reservation->dp_code,
+                'payment_type_id' => $reservation->payment_type_id,
+                'payment_type_name' => $reservation->paymentType?->name,
+                'payment_verification_status' => $reservation->dp_used_at ? 'verified' : 'pending',
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422);
@@ -1411,5 +1438,41 @@ class ReservationController extends Controller
                 'region_ids' => $pt->regions->pluck('id')->values()->all(),
             ];
         })->values()->all();
+    }
+
+    private function resolveDefaultQrisPaymentTypeId(): ?int
+    {
+        $qris = PaymentType::query()
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereRaw('LOWER(COALESCE(code, "")) like ?', ['%qris%'])
+                    ->orWhereRaw('LOWER(COALESCE(name, "")) like ?', ['%qris%']);
+            })
+            ->orderBy('id')
+            ->first(['id']);
+
+        return $qris?->id;
+    }
+
+    private function buildUniqueDpAmount(float $baseAmount, string $reservationNumber): float
+    {
+        $base = (int) round($baseAmount);
+        if ($base <= 0) {
+            return 0;
+        }
+
+        $raw = trim($reservationNumber);
+        if ($raw === '') {
+            return (float) $base;
+        }
+
+        $hash = 0;
+        $length = strlen($raw);
+        for ($i = 0; $i < $length; $i++) {
+            $hash = (($hash * 31) + ord($raw[$i])) % 1000;
+        }
+
+        $uniqueCode = $hash === 0 ? 123 : $hash;
+        return (float) ($base + $uniqueCode);
     }
 } 

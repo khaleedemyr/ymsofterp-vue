@@ -59,10 +59,6 @@ function submit() {
       <form class="bg-white rounded-lg shadow p-6 space-y-6" @submit.prevent="submit">
         <div class="space-y-2">
           <h2 class="text-lg font-semibold text-gray-800">QRIS Reservasi</h2>
-          <p class="text-sm text-gray-600">
-            File disimpan ke private storage (storage/app/private), bukan public storage.
-            Frontend mengakses gambar melalui endpoint backend yang terkontrol.
-          </p>
         </div>
 
         <div v-if="qris_image_url" class="space-y-2">
