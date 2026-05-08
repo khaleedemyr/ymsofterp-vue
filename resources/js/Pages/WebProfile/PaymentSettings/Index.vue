@@ -8,6 +8,8 @@ import InputError from '@/Components/InputError.vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
+  outlets: { type: Array, default: () => [] },
+  selected_outlet_id: { type: Number, default: 0 },
   qris_image_path: { type: String, default: null },
   qris_image_url: { type: String, default: null },
 });
@@ -17,6 +19,7 @@ const errors = ref({});
 const isSubmitting = ref(false);
 const qrisImage = ref(null);
 const removeQris = ref(false);
+const selectedOutletId = ref(props.selected_outlet_id || 0);
 
 onMounted(() => {
   const flash = page.props.flash || {};
@@ -33,6 +36,9 @@ function submit() {
   errors.value = {};
 
   const fd = new FormData();
+  if (selectedOutletId.value) {
+    fd.append('outlet_id', String(selectedOutletId.value));
+  }
   if (qrisImage.value) {
     fd.append('qris_image', qrisImage.value);
   }
@@ -49,6 +55,13 @@ function submit() {
     },
   });
 }
+
+function handleOutletChange() {
+  router.get('/web-profile/payment-settings', { outlet_id: selectedOutletId.value || undefined }, {
+    preserveState: false,
+    preserveScroll: true,
+  });
+}
 </script>
 
 <template>
@@ -57,8 +70,27 @@ function submit() {
       <h1 class="text-2xl font-bold text-gray-800 mb-6">Pengaturan Payment QRIS</h1>
 
       <form class="bg-white rounded-lg shadow p-6 space-y-6" @submit.prevent="submit">
+        <div>
+          <InputLabel value="Outlet" />
+          <select
+            v-model.number="selectedOutletId"
+            class="mt-1 block w-full rounded border-gray-300"
+            @change="handleOutletChange"
+          >
+            <option :value="0">Default (Semua Outlet)</option>
+            <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+              {{ outlet.nama_outlet }}
+            </option>
+          </select>
+          <p class="mt-2 text-xs text-gray-500">Pilih outlet untuk upload QRIS khusus outlet tersebut.</p>
+        </div>
+
         <div class="space-y-2">
-          <h2 class="text-lg font-semibold text-gray-800">QRIS Reservasi</h2>
+          <h2 class="text-lg font-semibold text-gray-800">
+            QRIS Reservasi
+            <span v-if="selectedOutletId" class="text-sm font-normal text-gray-500">(Outlet spesifik)</span>
+            <span v-else class="text-sm font-normal text-gray-500">(Default)</span>
+          </h2>
         </div>
 
         <div v-if="qris_image_url" class="space-y-2">

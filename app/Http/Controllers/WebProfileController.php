@@ -38,11 +38,27 @@ class WebProfileController extends Controller
      */
     public function paymentSettingsIndex()
     {
-        $qrisImagePath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+        $outlets = \App\Models\Outlet::query()
+            ->active()
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet']);
+
+        $selectedOutletId = (int) request()->query('outlet_id', 0);
+        $key = $this->qrisSettingKey($selectedOutletId ?: null);
+        $fallbackKey = 'reservation_qris_image_path';
+
+        $qrisImagePath = WebProfileSetting::where('key', $key)->value('value');
+        if (!$qrisImagePath && $selectedOutletId > 0) {
+            $qrisImagePath = WebProfileSetting::where('key', $fallbackKey)->value('value');
+        }
 
         return Inertia::render('WebProfile/PaymentSettings/Index', [
+            'outlets' => $outlets,
+            'selected_outlet_id' => $selectedOutletId,
             'qris_image_path' => $qrisImagePath,
-            'qris_image_url' => $qrisImagePath ? route('api.web-profile.qris-image') : null,
+            'qris_image_url' => $qrisImagePath
+                ? route('api.web-profile.qris-image', ['outlet_id' => $selectedOutletId ?: null])
+                : null,
         ]);
     }
 
@@ -51,16 +67,19 @@ class WebProfileController extends Controller
      */
     public function paymentSettingsStore(Request $request)
     {
-        $oldPath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
-
         $request->validate([
+            'outlet_id' => 'nullable|integer|min:1',
             'qris_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
             'remove_qris' => 'nullable|boolean',
         ]);
 
+        $outletId = $request->filled('outlet_id') ? (int) $request->outlet_id : null;
+        $key = $this->qrisSettingKey($outletId);
+        $oldPath = WebProfileSetting::where('key', $key)->value('value');
+
         if ($request->boolean('remove_qris') && $oldPath) {
             Storage::disk('local')->delete($oldPath);
-            WebProfileSetting::where('key', 'reservation_qris_image_path')->delete();
+            WebProfileSetting::where('key', $key)->delete();
             $oldPath = null;
         }
 
@@ -74,23 +93,24 @@ class WebProfileController extends Controller
             $path = $file->storeAs('web-profile/qris', $fileName, 'local');
 
             WebProfileSetting::updateOrCreate(
-                ['key' => 'reservation_qris_image_path'],
+                ['key' => $key],
                 ['value' => $path, 'type' => 'image']
             );
         }
 
-        $newPath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+        $newPath = WebProfileSetting::where('key', $key)->value('value');
         if ($oldPath !== $newPath) {
             $this->logWebProfileSecurityEvent(
                 $request,
                 'payment_qris_updated',
                 'QRIS pembayaran reservasi diperbarui',
-                ['reservation_qris_image_path' => $oldPath],
-                ['reservation_qris_image_path' => $newPath]
+                ['qris_setting_key' => $key, 'reservation_qris_image_path' => $oldPath],
+                ['qris_setting_key' => $key, 'reservation_qris_image_path' => $newPath]
             );
         }
 
-        return redirect()->route('web-profile.payment-settings.index')
+        return redirect()
+            ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
             ->with('success', 'Pengaturan QRIS berhasil disimpan.');
     }
 
@@ -353,7 +373,11 @@ class WebProfileController extends Controller
      */
     public function apiQrisImage()
     {
-        $path = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+        $outletId = request()->filled('outlet_id') ? (int) request()->query('outlet_id') : null;
+        $path = WebProfileSetting::where('key', $this->qrisSettingKey($outletId))->value('value');
+        if (!$path && $outletId) {
+            $path = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+        }
 
         if (!$path || !Storage::disk('local')->exists($path)) {
             abort(404, 'QRIS image not found.');
@@ -366,6 +390,11 @@ class WebProfileController extends Controller
             'Content-Type' => $mimeType,
             'Cache-Control' => 'public, max-age=300',
         ]);
+    }
+
+    private function qrisSettingKey(?int $outletId): string
+    {
+        return $outletId ? "reservation_qris_image_path_outlet_{$outletId}" : 'reservation_qris_image_path';
     }
 
     /**
