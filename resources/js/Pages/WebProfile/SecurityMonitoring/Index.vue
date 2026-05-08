@@ -8,6 +8,8 @@
             Audit trail perubahan link/banner kritikal Web Profile.
             URL halaman reservasi/booking yang dikelola di Home Service Landing (kartu Gallery, Menu, CTA) tercatat sebagai
             <span class="font-medium text-gray-700">reservation_web_links_updated</span>.
+            Perubahan gambar QRIS reservasi tercatat sebagai
+            <span class="font-medium text-gray-700">payment_qris_updated</span>.
             Perubahan item menu navbar (tabel <span class="font-medium text-gray-700">web_profile_menu_items</span>) tercatat sebagai
             <span class="font-medium text-gray-700">navbar_menu_*</span> selama penyimpanan memakai model Eloquent.
           </p>
@@ -171,7 +173,7 @@ const applyFilters = () => {
 };
 
 const severityLabel = (type) => {
-  if (['banner_deleted', 'reservation_web_links_updated', 'navbar_menu_created', 'navbar_menu_updated', 'navbar_menu_deleted'].includes(type)) return 'high';
+  if (['banner_deleted', 'reservation_web_links_updated', 'payment_qris_updated', 'navbar_menu_created', 'navbar_menu_updated', 'navbar_menu_deleted'].includes(type)) return 'high';
   if (['banner_updated', 'home_service_landing_updated', 'justus_apps_settings_updated'].includes(type)) return 'medium';
   return 'low';
 };

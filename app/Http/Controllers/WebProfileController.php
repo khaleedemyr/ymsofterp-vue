@@ -34,6 +34,67 @@ class WebProfileController extends Controller
     }
 
     /**
+     * Display payment settings (QRIS).
+     */
+    public function paymentSettingsIndex()
+    {
+        $qrisImagePath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+
+        return Inertia::render('WebProfile/PaymentSettings/Index', [
+            'qris_image_path' => $qrisImagePath,
+            'qris_image_url' => $qrisImagePath ? route('api.web-profile.qris-image') : null,
+        ]);
+    }
+
+    /**
+     * Store payment settings (QRIS) using private storage.
+     */
+    public function paymentSettingsStore(Request $request)
+    {
+        $oldPath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+
+        $request->validate([
+            'qris_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'remove_qris' => 'nullable|boolean',
+        ]);
+
+        if ($request->boolean('remove_qris') && $oldPath) {
+            Storage::disk('local')->delete($oldPath);
+            WebProfileSetting::where('key', 'reservation_qris_image_path')->delete();
+            $oldPath = null;
+        }
+
+        if ($request->hasFile('qris_image')) {
+            if ($oldPath) {
+                Storage::disk('local')->delete($oldPath);
+            }
+
+            $file = $request->file('qris_image');
+            $fileName = time().'_qris_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $path = $file->storeAs('web-profile/qris', $fileName, 'local');
+
+            WebProfileSetting::updateOrCreate(
+                ['key' => 'reservation_qris_image_path'],
+                ['value' => $path, 'type' => 'image']
+            );
+        }
+
+        $newPath = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+        if ($oldPath !== $newPath) {
+            $this->logWebProfileSecurityEvent(
+                $request,
+                'payment_qris_updated',
+                'QRIS pembayaran reservasi diperbarui',
+                ['reservation_qris_image_path' => $oldPath],
+                ['reservation_qris_image_path' => $newPath]
+            );
+        }
+
+        return redirect()->route('web-profile.payment-settings.index')
+            ->with('success', 'Pengaturan QRIS berhasil disimpan.');
+    }
+
+    /**
      * Security monitoring for critical Web Profile changes.
      */
     public function securityMonitoringIndex(Request $request)
@@ -92,6 +153,7 @@ class WebProfileController extends Controller
                 'navbar_menu_updated',
                 'navbar_menu_deleted',
                 'reservation_web_links_updated',
+                'payment_qris_updated',
                 'banner_created',
                 'banner_updated',
                 'banner_deleted',
@@ -277,8 +339,33 @@ class WebProfileController extends Controller
      */
     public function apiSettings()
     {
-        $settings = WebProfileSetting::all()->pluck('value', 'key');
+        $settings = WebProfileSetting::all()->pluck('value', 'key')->toArray();
+
+        if (!empty($settings['reservation_qris_image_path'])) {
+            $settings['reservation_qris_image_url'] = route('api.web-profile.qris-image');
+        }
+
         return response()->json($settings);
+    }
+
+    /**
+     * API: Serve reservation QRIS image from private storage.
+     */
+    public function apiQrisImage()
+    {
+        $path = WebProfileSetting::where('key', 'reservation_qris_image_path')->value('value');
+
+        if (!$path || !Storage::disk('local')->exists($path)) {
+            abort(404, 'QRIS image not found.');
+        }
+
+        $absolutePath = Storage::disk('local')->path($path);
+        $mimeType = Storage::disk('local')->mimeType($path) ?: 'application/octet-stream';
+
+        return response()->file($absolutePath, [
+            'Content-Type' => $mimeType,
+            'Cache-Control' => 'public, max-age=300',
+        ]);
     }
 
     /**

@@ -140,6 +140,19 @@
           </div>
         </Link>
 
+        <!-- Payment QRIS Settings -->
+        <Link href="/web-profile/payment-settings" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-amber-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Payment QRIS</h3>
+              <p class="text-sm text-gray-500">Upload gambar QRIS reservasi (private storage)</p>
+            </div>
+            <div class="bg-amber-100 p-3 rounded-full">
+              <i class="fa-solid fa-qrcode text-amber-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
+
         <!-- Security Monitoring -->
         <Link href="/web-profile/security-monitoring" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-red-500">
           <div class="flex items-center justify-between">
