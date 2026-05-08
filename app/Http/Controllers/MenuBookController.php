@@ -665,11 +665,17 @@ class MenuBookController extends Controller
             ->unique('id')
             ->values();
 
+        $reservationNumber = strtoupper(trim((string) $request->query('reservation_number', '')));
+        if ($reservationNumber === '') {
+            $reservationNumber = null;
+        }
+
         return Inertia::render('MenuBook/Customer/SelfOrder', [
             'menuBook' => $menuBook,
             'outlet' => $outlet,
             'items' => $items,
             'categories' => $categories,
+            'reservationNumber' => $reservationNumber,
         ]);
     }
 
@@ -693,6 +699,7 @@ class MenuBookController extends Controller
         $validated = $request->validate([
             'customer_name' => 'required|string|max:100',
             'customer_phone' => 'nullable|string|max:30',
+            'reservation_number' => 'nullable|string|max:32',
             'order_type' => 'required|in:dine_in,take_away',
             'notes' => 'nullable|string|max:500',
             'items' => 'required|array|min:1',
@@ -774,7 +781,18 @@ class MenuBookController extends Controller
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
 
-            $selfOrderId = DB::table('self_orders')->insertGetId([
+            $reservationNumber = !empty($validated['reservation_number'])
+                ? strtoupper(trim((string) $validated['reservation_number']))
+                : null;
+            $reservationId = null;
+            if ($reservationNumber && Schema::hasTable('reservations')) {
+                $reservationId = DB::table('reservations')
+                    ->where('outlet_id', $outlet->id_outlet)
+                    ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber])
+                    ->value('id');
+            }
+
+            $selfOrderPayload = [
                 'order_no' => $orderNo,
                 'menu_book_id' => $menuBook->id,
                 'outlet_id' => $outlet->id_outlet,
@@ -789,7 +807,16 @@ class MenuBookController extends Controller
                 'grand_total' => $subtotal,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]);
+            ];
+
+            if (Schema::hasColumn('self_orders', 'reservation_number')) {
+                $selfOrderPayload['reservation_number'] = $reservationNumber;
+            }
+            if (Schema::hasColumn('self_orders', 'reservation_id')) {
+                $selfOrderPayload['reservation_id'] = $reservationId;
+            }
+
+            $selfOrderId = DB::table('self_orders')->insertGetId($selfOrderPayload);
 
             $rows = array_map(function ($item) use ($selfOrderId, $now) {
                 return [
@@ -1177,6 +1204,17 @@ class MenuBookController extends Controller
             $now = now();
             $orderNo = $this->generateSelfOrderNumber();
             $webSelfOrderId = (string) Str::uuid();
+            $reservationNumber = !empty($validated['reservation_number'])
+                ? strtoupper(trim((string) $validated['reservation_number']))
+                : null;
+            $reservationId = null;
+
+            if ($reservationNumber && Schema::hasTable('reservations')) {
+                $reservationId = DB::table('reservations')
+                    ->where('outlet_id', (int) $outlet->id_outlet)
+                    ->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber])
+                    ->value('id');
+            }
 
             $selfOrderPayload = ['id' => $webSelfOrderId];
             $setOrder = function (string $column, $value) use (&$selfOrderPayload, $webOrderTable) {
@@ -1185,7 +1223,8 @@ class MenuBookController extends Controller
                 }
             };
 
-            $setOrder('reservation_number', !empty($validated['reservation_number']) ? strtoupper(trim((string) $validated['reservation_number'])) : null);
+            $setOrder('reservation_id', $reservationId ? (int) $reservationId : null);
+            $setOrder('reservation_number', $reservationNumber);
             $setOrder('order_no', $orderNo);
             $setOrder('outlet_id', (int) $outlet->id_outlet);
             $setOrder('outlet_code', $outlet->qr_code);

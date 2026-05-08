@@ -1486,74 +1486,101 @@ class PosSyncController extends Controller
 
             $orderColumnsRaw = Schema::getColumnListing($selfOrderTable);
             $orderColumns = collect($orderColumnsRaw)->map(fn ($c) => strtolower((string) $c));
-            $hasOrderReservationId = $orderColumns->contains('reservation_id');
-            $hasOrderReservationNumber = $orderColumns->contains('reservation_number');
+
+            // Backfill reservation_id untuk data lama yang hanya punya reservation_number.
+            if ($orderColumns->contains('reservation_id') && $orderColumns->contains('reservation_number') && Schema::hasTable('reservations')) {
+                DB::statement(
+                    "UPDATE {$selfOrderTable} so
+                     INNER JOIN reservations r
+                        ON r.outlet_id = so.outlet_id
+                       AND UPPER(TRIM(r.reservation_number)) = UPPER(TRIM(so.reservation_number))
+                    SET so.reservation_id = r.id
+                    WHERE so.outlet_id = ?
+                      AND so.reservation_id IS NULL
+                      AND so.reservation_number IS NOT NULL
+                      AND TRIM(so.reservation_number) <> ''",
+                    [$outlet->id_outlet]
+                );
+            }
+
+            $reservationIdByNumber = collect();
+            if (Schema::hasTable('reservations')) {
+                $reservationIdByNumber = DB::table('reservations')
+                    ->where('outlet_id', $outlet->id_outlet)
+                    ->whereNotNull('reservation_number')
+                    ->pluck('id', 'reservation_number')
+                    ->mapWithKeys(function ($id, $number) {
+                        return [strtoupper(trim((string) $number)) => (int) $id];
+                    });
+            }
 
             $query = DB::table($selfOrderTable)
                 ->where('outlet_id', $outlet->id_outlet)
-                ->where(function ($q) use ($hasOrderReservationId, $hasOrderReservationNumber) {
-                    if ($hasOrderReservationId) {
-                        $q->whereNotNull('reservation_id');
-                    }
-                    if ($hasOrderReservationNumber) {
-                        if ($hasOrderReservationId) {
-                            $q->orWhereNotNull('reservation_number');
-                        } else {
-                            $q->whereNotNull('reservation_number');
-                        }
-                    }
-                })
                 ->orderByDesc('created_at')
                 ->limit(500);
 
             $orders = $query->get();
             $orderIds = $orders->pluck('id')->filter()->values();
 
-            $itemFk = $selfOrderItemTable === 'web_self_order_items' ? 'web_self_order_id' : 'self_order_id';
             $itemColumnsRaw = Schema::getColumnListing($selfOrderItemTable);
             $itemColumns = collect($itemColumnsRaw)->map(fn ($c) => strtolower((string) $c));
-            $itemSelect = ['id', $itemFk, 'item_id', 'item_name', 'qty', 'price'];
-            if ($itemColumns->contains('subtotal')) {
-                $itemSelect[] = 'subtotal';
-            }
-            if ($itemColumns->contains('notes')) {
-                $itemSelect[] = 'notes';
-            }
-            if ($itemColumns->contains('modifiers')) {
-                $itemSelect[] = 'modifiers';
-            }
-            if ($itemColumns->contains('created_at')) {
-                $itemSelect[] = 'created_at';
-            }
-            if ($itemColumns->contains('updated_at')) {
-                $itemSelect[] = 'updated_at';
+            $itemFk = $itemColumns->contains('web_self_order_id')
+                ? 'web_self_order_id'
+                : ($itemColumns->contains('self_order_id') ? 'self_order_id' : null);
+
+            if (!$itemFk) {
+                Log::warning('POS Sync: Self order item FK column not found', [
+                    'table' => $selfOrderItemTable,
+                    'columns' => $itemColumnsRaw,
+                ]);
             }
 
-            $items = $orderIds->isNotEmpty()
+            $itemSelect = collect(['id'])
+                ->merge($itemFk ? [$itemFk] : [])
+                ->merge($itemColumns->contains('item_id') ? ['item_id'] : [])
+                ->merge($itemColumns->contains('item_name') ? ['item_name'] : [])
+                ->merge($itemColumns->contains('qty') ? ['qty'] : [])
+                ->merge($itemColumns->contains('price') ? ['price'] : [])
+                ->merge($itemColumns->contains('subtotal') ? ['subtotal'] : [])
+                ->merge($itemColumns->contains('notes') ? ['notes'] : [])
+                ->merge($itemColumns->contains('modifiers') ? ['modifiers'] : [])
+                ->merge($itemColumns->contains('created_at') ? ['created_at'] : [])
+                ->merge($itemColumns->contains('updated_at') ? ['updated_at'] : [])
+                ->values()
+                ->all();
+
+            $items = ($itemFk && $orderIds->isNotEmpty())
                 ? DB::table($selfOrderItemTable)
                     ->whereIn($itemFk, $orderIds)
                     ->orderBy('id')
                     ->get($itemSelect)
                 : collect();
 
-            $formattedOrders = $orders->map(function ($row) {
+            $formattedOrders = $orders->map(function ($row) use ($orderColumns, $reservationIdByNumber) {
+                $reservationNumber = $orderColumns->contains('reservation_number') ? ($row->reservation_number ?? null) : null;
+                $reservationKey = strtoupper(trim((string) ($reservationNumber ?? '')));
+                $reservationId = $orderColumns->contains('reservation_id') ? ($row->reservation_id ?? null) : null;
+                if (!$reservationId && $reservationKey !== '' && $reservationIdByNumber->has($reservationKey)) {
+                    $reservationId = (int) $reservationIdByNumber->get($reservationKey);
+                }
+
                 return [
                     'id' => $row->id,
-                    'reservation_id' => $row->reservation_id ?? null,
-                    'reservation_number' => $row->reservation_number ?? null,
-                    'order_no' => $row->order_no ?? null,
+                    'reservation_id' => $reservationId,
+                    'reservation_number' => $reservationNumber,
+                    'order_no' => $orderColumns->contains('order_no') ? ($row->order_no ?? null) : null,
                     'outlet_id' => $row->outlet_id ?? null,
-                    'customer_name' => $row->customer_name ?? null,
-                    'customer_phone' => $row->customer_phone ?? null,
-                    'order_type' => $row->order_type ?? null,
-                    'status' => $row->status ?? null,
-                    'subtotal' => isset($row->subtotal) ? (float) $row->subtotal : null,
-                    'service' => isset($row->service) ? (float) $row->service : null,
-                    'pb1' => isset($row->pb1) ? (float) $row->pb1 : null,
-                    'grand_total' => isset($row->grand_total) ? (float) $row->grand_total : null,
-                    'notes' => $row->notes ?? null,
-                    'created_at' => $row->created_at ?? null,
-                    'updated_at' => $row->updated_at ?? null,
+                    'customer_name' => $orderColumns->contains('customer_name') ? ($row->customer_name ?? null) : null,
+                    'customer_phone' => $orderColumns->contains('customer_phone') ? ($row->customer_phone ?? null) : null,
+                    'order_type' => $orderColumns->contains('order_type') ? ($row->order_type ?? null) : null,
+                    'status' => $orderColumns->contains('status') ? ($row->status ?? null) : null,
+                    'subtotal' => $orderColumns->contains('subtotal') && isset($row->subtotal) ? (float) $row->subtotal : null,
+                    'service' => $orderColumns->contains('service') && isset($row->service) ? (float) $row->service : null,
+                    'pb1' => $orderColumns->contains('pb1') && isset($row->pb1) ? (float) $row->pb1 : null,
+                    'grand_total' => $orderColumns->contains('grand_total') && isset($row->grand_total) ? (float) $row->grand_total : null,
+                    'notes' => $orderColumns->contains('notes') ? ($row->notes ?? null) : null,
+                    'created_at' => $orderColumns->contains('created_at') ? ($row->created_at ?? null) : null,
+                    'updated_at' => $orderColumns->contains('updated_at') ? ($row->updated_at ?? null) : null,
                 ];
             })->values()->all();
 

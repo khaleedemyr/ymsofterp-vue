@@ -250,6 +250,7 @@ const props = defineProps({
   outlet: { type: Object, default: () => ({}) },
   items: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
+  reservationNumber: { type: String, default: null },
 });
 
 const search = ref('');
@@ -358,6 +359,7 @@ const submitOrder = async () => {
     const payload = {
       customer_name: form.value.customer_name,
       customer_phone: form.value.customer_phone,
+      reservation_number: props.reservationNumber || null,
       order_type: form.value.order_type,
       notes: form.value.notes,
       items: cartItems.value.map((row) => ({

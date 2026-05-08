@@ -290,7 +290,10 @@ const goBack = () => {
 };
 
 const openSelfOrder = () => {
-  router.visit(`/menu/book/${props.menuBook.id}/self-order`);
+  const urlParams = new URLSearchParams(window.location.search || '');
+  const reservationNumber = (urlParams.get('reservation_number') || '').trim();
+  const query = reservationNumber ? `?reservation_number=${encodeURIComponent(reservationNumber)}` : '';
+  router.visit(`/menu/book/${props.menuBook.id}/self-order${query}`);
 };
 
 // Keyboard navigation

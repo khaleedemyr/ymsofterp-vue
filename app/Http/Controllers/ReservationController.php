@@ -1005,7 +1005,75 @@ class ReservationController extends Controller
 
     public function destroy(Reservation $reservation)
     {
-        $reservation->delete();
+        DB::beginTransaction();
+        try {
+            $reservationNumber = strtoupper(trim((string) ($reservation->reservation_number ?? '')));
+            $orderTablePairs = [
+                ['orders' => 'web_self_orders', 'items' => 'web_self_order_items'],
+                ['orders' => 'self_orders', 'items' => 'self_order_items'],
+            ];
+
+            foreach ($orderTablePairs as $pair) {
+                $orderTable = $pair['orders'];
+                $itemTable = $pair['items'];
+
+                if (!Schema::hasTable($orderTable)) {
+                    continue;
+                }
+
+                $orderCols = collect(Schema::getColumnListing($orderTable))
+                    ->map(fn ($c) => strtolower((string) $c));
+
+                $orderIds = DB::table($orderTable)
+                    ->when($orderCols->contains('reservation_id') || ($reservationNumber !== '' && $orderCols->contains('reservation_number')), function ($q) use ($reservation, $reservationNumber, $orderCols) {
+                        $q->where(function ($q2) use ($reservation, $reservationNumber, $orderCols) {
+                            if ($orderCols->contains('reservation_id')) {
+                                $q2->where('reservation_id', $reservation->id);
+                            }
+                            if ($reservationNumber !== '' && $orderCols->contains('reservation_number')) {
+                                if ($orderCols->contains('reservation_id')) {
+                                    $q2->orWhereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber]);
+                                } else {
+                                    $q2->whereRaw('UPPER(TRIM(reservation_number)) = ?', [$reservationNumber]);
+                                }
+                            }
+                        });
+                    }, function ($q) {
+                        $q->whereRaw('1=0');
+                    })
+                    ->pluck('id')
+                    ->filter()
+                    ->values();
+
+                if ($orderIds->isEmpty()) {
+                    continue;
+                }
+
+                if (Schema::hasTable($itemTable)) {
+                    $itemCols = collect(Schema::getColumnListing($itemTable))
+                        ->map(fn ($c) => strtolower((string) $c));
+                    $itemFk = $itemCols->contains('web_self_order_id')
+                        ? 'web_self_order_id'
+                        : ($itemCols->contains('self_order_id') ? 'self_order_id' : null);
+
+                    if ($itemFk) {
+                        DB::table($itemTable)
+                            ->whereIn($itemFk, $orderIds->all())
+                            ->delete();
+                    }
+                }
+
+                DB::table($orderTable)
+                    ->whereIn('id', $orderIds->all())
+                    ->delete();
+            }
+
+            $reservation->delete();
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
 
         return redirect()->route('reservations.index')
             ->with('success', 'Reservasi berhasil dihapus!');
