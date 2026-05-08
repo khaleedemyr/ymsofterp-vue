@@ -421,6 +421,22 @@ class ReservationController extends Controller
         $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : 'self_orders';
         $selfOrderItemTable = Schema::hasTable('web_self_order_items') ? 'web_self_order_items' : 'self_order_items';
         $selfOrderItemFk = $selfOrderItemTable === 'web_self_order_items' ? 'web_self_order_id' : 'self_order_id';
+        $selfOrderColumns = [
+            'id',
+            'order_no',
+            'customer_name',
+            'customer_phone',
+            'order_type',
+            'notes',
+            'status',
+            'subtotal',
+            'grand_total',
+            'created_at',
+            'updated_at',
+        ];
+        if (Schema::hasColumn($selfOrderTable, 'total_item')) {
+            $selfOrderColumns[] = 'total_item';
+        }
         $reservation->load(['outlet', 'creator', 'salesUser', 'paymentType']);
 
         // Transaksi POS yang ter-link ke reservasi ini (order sync dari POS ke pusat)
@@ -452,20 +468,7 @@ class ReservationController extends Controller
             $selfOrderRows = DB::table($selfOrderTable)
                 ->where('reservation_number', $reservationNumber)
                 ->orderByDesc('created_at')
-                ->get([
-                    'id',
-                    'order_no',
-                    'customer_name',
-                    'customer_phone',
-                    'order_type',
-                    'notes',
-                    'status',
-                    'total_item',
-                    'subtotal',
-                    'grand_total',
-                    'created_at',
-                    'updated_at',
-                ]);
+                ->get($selfOrderColumns);
 
             $selfOrderIds = $selfOrderRows->pluck('id')->filter()->values();
             $itemsBySelfOrder = collect();
@@ -504,7 +507,7 @@ class ReservationController extends Controller
             }
 
             $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder, $modifierOptionNames) {
-                $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
+                $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) use ($modifierOptionNames) {
                     return [
                         'id' => $item->id,
                         'item_id' => $item->item_id,
@@ -526,7 +529,7 @@ class ReservationController extends Controller
                     'order_type' => $row->order_type,
                     'notes' => $row->notes,
                     'status' => $row->status,
-                    'total_item' => (int) $row->total_item,
+                    'total_item' => (int) ($row->total_item ?? count($items)),
                     'subtotal' => (float) $row->subtotal,
                     'grand_total' => (float) $row->grand_total,
                     'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
@@ -543,20 +546,7 @@ class ReservationController extends Controller
                 $candidateRows = DB::table($selfOrderTable)
                     ->where('outlet_id', $reservation->outlet_id)
                     ->orderByDesc('created_at')
-                    ->get([
-                        'id',
-                        'order_no',
-                        'customer_name',
-                        'customer_phone',
-                        'order_type',
-                        'notes',
-                        'status',
-                        'total_item',
-                        'subtotal',
-                        'grand_total',
-                        'created_at',
-                        'updated_at',
-                    ]);
+                    ->get($selfOrderColumns);
 
                 $reservationCreatedAt = $reservation->created_at ? Carbon::parse($reservation->created_at) : null;
                 $selfOrderRows = $candidateRows
@@ -616,7 +606,7 @@ class ReservationController extends Controller
                     }
 
                     $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder, $modifierOptionNames) {
-                        $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
+                        $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) use ($modifierOptionNames) {
                             return [
                                 'id' => $item->id,
                                 'item_id' => $item->item_id,
@@ -638,7 +628,7 @@ class ReservationController extends Controller
                             'order_type' => $row->order_type,
                             'notes' => $row->notes,
                             'status' => $row->status,
-                            'total_item' => (int) $row->total_item,
+                            'total_item' => (int) ($row->total_item ?? count($items)),
                             'subtotal' => (float) $row->subtotal,
                             'grand_total' => (float) $row->grand_total,
                             'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
