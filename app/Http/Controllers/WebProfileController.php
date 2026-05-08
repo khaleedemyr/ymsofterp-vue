@@ -66,7 +66,11 @@ class WebProfileController extends Controller
         $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
         $currentUser = Auth::user();
         $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
-        $canApprove = $isApproverRole && !empty($pendingPath) && $makerId > 0 && $makerId !== (int) Auth::id();
+        $isSuperAdmin = (bool) ($currentUser->is_admin ?? false);
+        $canApproveByRole = $isApproverRole || $isSuperAdmin;
+        $canApprove = $canApproveByRole
+            && !empty($pendingPath)
+            && ($isSuperAdmin || ($makerId > 0 && $makerId !== (int) Auth::id()));
 
         return Inertia::render('WebProfile/PaymentSettings/Index', [
             'outlets' => $outlets,
@@ -175,7 +179,8 @@ class WebProfileController extends Controller
     {
         $currentUser = Auth::user();
         $isApproverRole = (string) ($currentUser->id_role ?? '') === self::QRIS_APPROVER_ROLE_ID;
-        if (!$isApproverRole) {
+        $isSuperAdmin = (bool) ($currentUser->is_admin ?? false);
+        if (!$isApproverRole && !$isSuperAdmin) {
             return redirect()
                 ->route('web-profile.payment-settings.index')
                 ->with('error', 'Anda tidak memiliki hak approve QRIS.');
@@ -204,7 +209,7 @@ class WebProfileController extends Controller
         }
 
         $makerId = (int) ($pendingMeta['maker_id'] ?? 0);
-        if ($makerId > 0 && $makerId === (int) Auth::id()) {
+        if (!$isSuperAdmin && $makerId > 0 && $makerId === (int) Auth::id()) {
             return redirect()
                 ->route('web-profile.payment-settings.index', ['outlet_id' => $outletId])
                 ->with('error', 'Maker dan checker harus user yang berbeda.');
