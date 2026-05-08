@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class WebProfileController extends Controller
 {
@@ -41,6 +42,13 @@ class WebProfileController extends Controller
      */
     public function paymentSettingsIndex()
     {
+        $q = trim((string) request()->query('q', ''));
+        $status = trim((string) request()->query('status', ''));
+        $perPage = (int) request()->query('per_page', 15);
+        if (!in_array($perPage, [10, 15, 25, 50, 100], true)) {
+            $perPage = 15;
+        }
+
         $outlets = \App\Models\Outlet::query()
             ->active()
             ->orderBy('nama_outlet')
@@ -75,13 +83,45 @@ class WebProfileController extends Controller
                 'pending_path' => $pendingPath,
                 'pending_hash' => $pendingHash,
                 'pending_meta' => $pendingMeta,
+                'status' => !empty($pendingPath) ? 'pending' : (!empty($activePath) ? 'active' : 'none'),
                 'can_approve' => $canApprove,
                 'can_delete' => $isApproverRole,
             ];
         }
 
+        $rowsCollection = collect($rows)
+            ->when($q !== '', function ($collection) use ($q) {
+                $keyword = mb_strtolower($q);
+                return $collection->filter(function ($row) use ($keyword) {
+                    return str_contains(mb_strtolower((string) ($row['outlet_name'] ?? '')), $keyword);
+                });
+            })
+            ->when(in_array($status, ['active', 'pending', 'none'], true), function ($collection) use ($status) {
+                return $collection->filter(fn ($row) => ($row['status'] ?? 'none') === $status);
+            })
+            ->values();
+
+        $currentPage = LengthAwarePaginator::resolveCurrentPage('page');
+        $total = $rowsCollection->count();
+        $items = $rowsCollection->forPage($currentPage, $perPage)->values();
+        $paginatedRows = new LengthAwarePaginator(
+            $items,
+            $total,
+            $perPage,
+            $currentPage,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
+
         return Inertia::render('WebProfile/PaymentSettings/Index', [
-            'rows' => $rows,
+            'rows' => $paginatedRows,
+            'filters' => [
+                'q' => $q,
+                'status' => $status,
+                'per_page' => $perPage,
+            ],
         ]);
     }
 
