@@ -22,20 +22,34 @@ onMounted(() => {
 });
 
 function goCreate(outletId) {
-  router.visit('/web-profile/payment-settings/create', {
-    data: { outlet_id: outletId || undefined },
+  router.get('/web-profile/payment-settings/create', {
+    outlet_id: outletId || undefined,
   });
 }
 
 function goEdit(outletId) {
-  router.visit('/web-profile/payment-settings/edit', {
-    data: { outlet_id: outletId || undefined },
+  router.get('/web-profile/payment-settings/edit', {
+    outlet_id: outletId || undefined,
   });
 }
 
-function approvePending(outletId) {
+async function approvePending(outletId) {
+  const confirmed = await Swal.fire({
+    icon: 'question',
+    title: 'Approve perubahan QRIS?',
+    text: 'Perubahan pending akan dijadikan QRIS aktif.',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, approve',
+    cancelButtonText: 'Tidak',
+  });
+  if (!confirmed.isConfirmed) return;
+
   router.post('/web-profile/payment-settings/qris/approve', {
     outlet_id: outletId || null,
+  }, {
+    onSuccess: () => {
+      Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Approve QRIS berhasil.' });
+    },
   });
 }
 
@@ -52,6 +66,9 @@ async function destroyQris(outletId) {
 
   router.delete('/web-profile/payment-settings', {
     data: { outlet_id: outletId || null },
+    onSuccess: () => {
+      Swal.fire({ icon: 'success', title: 'Berhasil', text: 'QRIS berhasil dihapus.' });
+    },
   });
 }
 </script>

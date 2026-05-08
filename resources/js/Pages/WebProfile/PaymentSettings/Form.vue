@@ -28,7 +28,18 @@ onMounted(() => {
   if (flash.error) Swal.fire({ icon: 'error', title: 'Gagal', text: flash.error });
 });
 
-function submit() {
+async function submit() {
+  const actionLabel = props.mode === 'edit' ? 'edit' : 'create';
+  const confirmed = await Swal.fire({
+    icon: 'question',
+    title: `Konfirmasi ${actionLabel} QRIS`,
+    text: 'Lanjut simpan perubahan QRIS?',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, simpan',
+    cancelButtonText: 'Tidak',
+  });
+  if (!confirmed.isConfirmed) return;
+
   isSubmitting.value = true;
   errors.value = {};
 
@@ -42,6 +53,13 @@ function submit() {
     onError: (e) => {
       errors.value = e || {};
       isSubmitting.value = false;
+    },
+    onSuccess: () => {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: 'Perubahan QRIS berhasil diajukan.',
+      });
     },
     onFinish: () => {
       isSubmitting.value = false;
