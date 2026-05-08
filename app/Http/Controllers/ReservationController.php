@@ -103,6 +103,7 @@ class ReservationController extends Controller
         }
 
         $selfOrderByReservationNumber = collect();
+        $selfOrderByReservationIdFallback = collect();
         $reservationNumbers = collect($paginatedReservations->items())
             ->pluck('reservation_number')
             ->filter(fn ($number) => is_string($number) && trim($number) !== '')
@@ -134,12 +135,99 @@ class ReservationController extends Controller
                 });
         }
 
-        $reservations = $paginatedReservations->through(function ($reservation) use ($orderByReservation, $selfOrderByReservationNumber) {
+        if (Schema::hasTable('self_orders')) {
+            $reservationMeta = collect($paginatedReservations->items())
+                ->map(function ($reservation) {
+                    return [
+                        'id' => $reservation->id,
+                        'outlet_id' => $reservation->outlet_id,
+                        'created_at' => $reservation->created_at,
+                        'phone_norm' => $this->normalizePhone((string) ($reservation->phone ?? '')),
+                        'reservation_number' => strtoupper(trim((string) ($reservation->reservation_number ?? ''))),
+                    ];
+                })
+                ->values();
+
+            $outletIds = $reservationMeta->pluck('outlet_id')->filter()->unique()->values();
+            $createdAtMin = $reservationMeta->pluck('created_at')->filter()->min();
+            $createdAtMax = $reservationMeta->pluck('created_at')->filter()->max();
+
+            if ($outletIds->isNotEmpty() && $createdAtMin && $createdAtMax) {
+                $fallbackRows = DB::table('self_orders')
+                    ->whereIn('outlet_id', $outletIds)
+                    ->whereBetween('created_at', [
+                        Carbon::parse($createdAtMin)->subDays(2),
+                        Carbon::parse($createdAtMax)->addDays(2),
+                    ])
+                    ->orderByDesc('updated_at')
+                    ->orderByDesc('id')
+                    ->get([
+                        'id',
+                        'reservation_number',
+                        'order_no',
+                        'status',
+                        'updated_at',
+                        'created_at',
+                        'outlet_id',
+                        'customer_phone',
+                    ]);
+
+                $selfOrderByReservationIdFallback = $reservationMeta->mapWithKeys(function ($meta) use ($fallbackRows, $selfOrderByReservationNumber) {
+                    if (empty($meta['id']) || empty($meta['phone_norm']) || empty($meta['outlet_id'])) {
+                        return [$meta['id'] => null];
+                    }
+
+                    if (!empty($meta['reservation_number']) && $selfOrderByReservationNumber->has($meta['reservation_number'])) {
+                        return [$meta['id'] => null];
+                    }
+
+                    $createdAt = $meta['created_at'] ? Carbon::parse($meta['created_at']) : null;
+
+                    $matched = $fallbackRows
+                        ->filter(function ($row) use ($meta, $createdAt) {
+                            if ((int) $row->outlet_id !== (int) $meta['outlet_id']) {
+                                return false;
+                            }
+
+                            if ($this->normalizePhone((string) ($row->customer_phone ?? '')) !== $meta['phone_norm']) {
+                                return false;
+                            }
+
+                            if (!$createdAt || empty($row->created_at)) {
+                                return true;
+                            }
+
+                            $rowCreatedAt = Carbon::parse($row->created_at);
+                            return $rowCreatedAt->between($createdAt->copy()->subDays(2), $createdAt->copy()->addDays(2));
+                        })
+                        ->values();
+
+                    if ($matched->isEmpty()) {
+                        return [$meta['id'] => null];
+                    }
+
+                    $latest = $matched->first();
+                    return [
+                        $meta['id'] => [
+                            'count' => $matched->count(),
+                            'latest_order_no' => $latest?->order_no,
+                            'latest_status' => $latest?->status,
+                            'latest_at' => $latest?->updated_at ? Carbon::parse($latest->updated_at)->toIso8601String() : null,
+                        ],
+                    ];
+                });
+            }
+        }
+
+        $reservations = $paginatedReservations->through(function ($reservation) use ($orderByReservation, $selfOrderByReservationNumber, $selfOrderByReservationIdFallback) {
                 $orderRef = $orderByReservation->get($reservation->id, ['paid_number' => null, 'used_order_at' => null]);
                 $reservationNumberKey = strtoupper(trim((string) ($reservation->reservation_number ?? '')));
                 $selfOrderRef = $reservationNumberKey !== ''
                     ? $selfOrderByReservationNumber->get($reservationNumberKey)
                     : null;
+                if (!$selfOrderRef) {
+                    $selfOrderRef = $selfOrderByReservationIdFallback->get($reservation->id);
+                }
                 $orderMode = $selfOrderRef ? 'self_order' : 'manual_whatsapp';
                 return [
                 'id' => $reservation->id,
@@ -418,6 +506,98 @@ class ReservationController extends Controller
             })->values()->all();
         }
 
+        if (empty($selfOrders) && Schema::hasTable('self_orders')) {
+            $phoneNorm = $this->normalizePhone((string) ($reservation->phone ?? ''));
+            if ($phoneNorm !== '' && !empty($reservation->outlet_id)) {
+                $candidateRows = DB::table('self_orders')
+                    ->where('outlet_id', $reservation->outlet_id)
+                    ->orderByDesc('created_at')
+                    ->get([
+                        'id',
+                        'order_no',
+                        'customer_name',
+                        'customer_phone',
+                        'order_type',
+                        'notes',
+                        'status',
+                        'total_item',
+                        'subtotal',
+                        'grand_total',
+                        'created_at',
+                        'updated_at',
+                    ]);
+
+                $reservationCreatedAt = $reservation->created_at ? Carbon::parse($reservation->created_at) : null;
+                $selfOrderRows = $candidateRows
+                    ->filter(function ($row) use ($phoneNorm, $reservationCreatedAt) {
+                        if ($this->normalizePhone((string) ($row->customer_phone ?? '')) !== $phoneNorm) {
+                            return false;
+                        }
+
+                        if (!$reservationCreatedAt || empty($row->created_at)) {
+                            return true;
+                        }
+
+                        $rowCreatedAt = Carbon::parse($row->created_at);
+                        return $rowCreatedAt->between($reservationCreatedAt->copy()->subDays(2), $reservationCreatedAt->copy()->addDays(2));
+                    })
+                    ->values();
+
+                if ($selfOrderRows->isNotEmpty()) {
+                    $selfOrderIds = $selfOrderRows->pluck('id')->filter()->values();
+                    $itemsBySelfOrder = collect();
+                    if ($selfOrderIds->isNotEmpty() && Schema::hasTable('self_order_items')) {
+                        $itemsBySelfOrder = DB::table('self_order_items')
+                            ->whereIn('self_order_id', $selfOrderIds)
+                            ->orderBy('id')
+                            ->get([
+                                'id',
+                                'self_order_id',
+                                'item_id',
+                                'item_name',
+                                'qty',
+                                'price',
+                                'subtotal',
+                                'notes',
+                                'modifiers',
+                            ])
+                            ->groupBy('self_order_id');
+                    }
+
+                    $selfOrders = $selfOrderRows->map(function ($row) use ($itemsBySelfOrder) {
+                        $items = ($itemsBySelfOrder->get($row->id) ?? collect())->map(function ($item) {
+                            return [
+                                'id' => $item->id,
+                                'item_id' => $item->item_id,
+                                'item_name' => $item->item_name,
+                                'qty' => (int) $item->qty,
+                                'price' => (float) $item->price,
+                                'subtotal' => (float) $item->subtotal,
+                                'notes' => $item->notes,
+                                'modifiers' => $item->modifiers,
+                            ];
+                        })->values()->all();
+
+                        return [
+                            'id' => $row->id,
+                            'order_no' => $row->order_no,
+                            'customer_name' => $row->customer_name,
+                            'customer_phone' => $row->customer_phone,
+                            'order_type' => $row->order_type,
+                            'notes' => $row->notes,
+                            'status' => $row->status,
+                            'total_item' => (int) $row->total_item,
+                            'subtotal' => (float) $row->subtotal,
+                            'grand_total' => (float) $row->grand_total,
+                            'created_at' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
+                            'updated_at' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,
+                            'items' => $items,
+                        ];
+                    })->values()->all();
+                }
+            }
+        }
+
         $orderMode = !empty($selfOrders) ? 'self_order' : 'manual_whatsapp';
         $reservation->setAttribute('order_mode', $orderMode);
 
@@ -609,6 +789,11 @@ class ReservationController extends Controller
         }
 
         throw new \RuntimeException('Gagal membuat reservation_number unik.');
+    }
+
+    private function normalizePhone(string $phone): string
+    {
+        return preg_replace('/\D+/', '', $phone) ?? '';
     }
 
     public function destroy(Reservation $reservation)
