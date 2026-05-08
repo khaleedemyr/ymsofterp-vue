@@ -776,6 +776,26 @@ class ReservationController extends Controller
             ->with('success', 'Reservasi berhasil diupdate!');
     }
 
+    public function updateStatus(Request $request, Reservation $reservation)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:pending,confirmed,arrived,cancelled,no_show',
+        ]);
+
+        $reservation->status = $validated['status'];
+        $reservation->save();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Status reservasi berhasil diupdate.',
+                'status' => $reservation->status,
+            ]);
+        }
+
+        return back()->with('success', 'Status reservasi berhasil diupdate.');
+    }
+
     /**
      * Set atau clear dp_code & dp_used_at berdasarkan nilai DP.
      * Jika dp > 0: generate kode unik 8 karakter (angka+huruf). Jika dp 0/null: clear kode.

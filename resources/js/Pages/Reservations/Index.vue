@@ -224,6 +224,24 @@
                     <span :class="getStatusClass(reservation.status)" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold">
                       {{ getStatusText(reservation.status) }}
                     </span>
+                    <div class="mt-2 flex items-center gap-2">
+                      <select
+                        :value="statusDrafts[reservation.id] ?? reservation.status"
+                        @change="handleStatusChange(reservation, $event.target.value)"
+                        :disabled="loadingStatusId === reservation.id"
+                        class="min-w-[125px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="arrived">Datang</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="no_show">No Show</option>
+                      </select>
+                      <span v-if="loadingStatusId === reservation.id" class="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                        Menyimpan...
+                      </span>
+                    </div>
                   </td>
                   <td class="px-5 py-4">
                     <div class="text-sm text-slate-700">{{ reservation.created_by || '–' }}</div>
@@ -322,6 +340,8 @@ const dateTo = ref(props.dateTo || '');
 const perPage = ref(props.per_page || props.reservations?.per_page || 10);
 const outlets = ref(props.outlets || []);
 const loadingDeleteId = ref(null);
+const loadingStatusId = ref(null);
+const statusDrafts = ref({});
 const reservationRows = computed(() => props.reservations?.data || []);
 const paginationLinks = computed(() => props.reservations?.links || []);
 
@@ -398,6 +418,40 @@ async function handleDelete(id) {
       loadingDeleteId.value = null;
       Swal.fire({ title: 'Error', text: 'Gagal menghapus reservasi', icon: 'error' });
     }
+  });
+}
+
+function setStatusDraft(id, value) {
+  statusDrafts.value = {
+    ...statusDrafts.value,
+    [id]: value,
+  };
+}
+
+function handleStatusChange(reservation, value) {
+  setStatusDraft(reservation.id, value);
+  handleUpdateStatus(reservation, value);
+}
+
+async function handleUpdateStatus(reservation, forcedStatus = null) {
+  const nextStatus = forcedStatus ?? statusDrafts.value[reservation.id] ?? reservation.status;
+  if (!nextStatus || nextStatus === reservation.status) return;
+
+  loadingStatusId.value = reservation.id;
+  router.patch(route('reservations.update-status', { reservation: reservation.id }), {
+    status: nextStatus,
+  }, {
+    preserveState: true,
+    preserveScroll: true,
+    onSuccess: () => {
+      loadingStatusId.value = null;
+      Swal.fire({ title: 'Berhasil', text: 'Status reservasi diupdate.', icon: 'success' });
+    },
+    onError: () => {
+      setStatusDraft(reservation.id, reservation.status);
+      loadingStatusId.value = null;
+      Swal.fire({ title: 'Error', text: 'Gagal mengupdate status reservasi.', icon: 'error' });
+    },
   });
 }
 
