@@ -1493,7 +1493,8 @@ class PosSyncController extends Controller
                     "UPDATE {$selfOrderTable} so
                      INNER JOIN reservations r
                         ON r.outlet_id = so.outlet_id
-                       AND UPPER(TRIM(r.reservation_number)) = UPPER(TRIM(so.reservation_number))
+                                             AND UPPER(TRIM(CONVERT(r.reservation_number USING utf8mb4))) COLLATE utf8mb4_unicode_ci =
+                                                     UPPER(TRIM(CONVERT(so.reservation_number USING utf8mb4))) COLLATE utf8mb4_unicode_ci
                     SET so.reservation_id = r.id
                     WHERE so.outlet_id = ?
                       AND so.reservation_id IS NULL
