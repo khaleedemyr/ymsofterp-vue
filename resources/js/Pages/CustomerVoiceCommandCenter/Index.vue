@@ -289,11 +289,11 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1760px] text-sm">
+          <table class="w-full min-w-[1860px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
-                <th class="px-3 py-3 text-left font-semibold">Outlet</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[180px]">Outlet / Source</th>
                 <th
                   class="px-3 py-3 text-left font-semibold min-w-[200px]"
                   title="Pilih satu atau lebih user regional. Saat Simpan, notifikasi FU &amp; CAPA otomatis ke user terpilih (bukan ke akun yang sedang login)."
@@ -302,11 +302,8 @@
                 </th>
                 <th class="px-3 py-3 text-left font-semibold">Source</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[140px]">Tamu</th>
-                <th class="px-3 py-3 text-left font-semibold">FU target</th>
-                <th class="px-3 py-3 text-left font-semibold">Severity</th>
-                <th class="px-3 py-3 text-left font-semibold max-w-[220px]">Jenis komplain</th>
-                <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
-                <th class="px-3 py-3 text-left font-semibold">Risk</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[260px]">FU / Severity / Jenis komplain</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[340px]">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[100px]" title="Berdasarkan isian tersimpan di meta CAPA">CAPA</th>
                 <th
                   class="px-3 py-3 text-left font-semibold min-w-[108px]"
@@ -322,7 +319,7 @@
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="16" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="12" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -330,7 +327,12 @@
                   :class="statusRowClasses(caseForms[row.id]?.status || row.status).main"
                 >
                   <td class="px-3 py-3 whitespace-nowrap text-xs text-slate-600">{{ formatDate(row.event_at) }}</td>
-                  <td class="px-3 py-3 text-slate-700">{{ row.nama_outlet || '-' }}</td>
+                  <td class="px-3 py-3">
+                    <div class="font-semibold text-slate-700">{{ row.nama_outlet || '-' }}</div>
+                    <span class="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
+                      {{ sourceLabel(row.source_type) }}
+                    </span>
+                  </td>
                   <td class="px-3 py-3 align-top min-w-[200px]">
                     <NotifyUserMultiPicker
                       v-model="caseForms[row.id].regional_user_ids"
@@ -339,48 +341,45 @@
                       placeholder="Cari nama…"
                     />
                   </td>
-                  <td class="px-3 py-3">
-                    <span class="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
-                      {{ sourceLabel(row.source_type) }}
-                    </span>
-                  </td>
                   <td class="px-3 py-3 max-w-[200px]">
                     <div class="font-semibold text-slate-800">{{ row.author_name || '—' }}</div>
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_contact || '—' }}</div>
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_email || '—' }}</div>
                   </td>
-                  <td class="px-3 py-3 align-top">
-                    <span
-                      v-if="row.follow_up_target"
-                      class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                      :class="row.follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-700'"
-                    >
-                      {{ followUpLabel(row.follow_up_target) }}
-                    </span>
-                    <span v-else class="text-[11px] leading-snug text-slate-400" title="Terisi setelah klasifikasi AI pada sumber data + tombol Sync Data">
-                      —
-                    </span>
-                  </td>
-                  <td class="px-3 py-3">
-                    <span class="inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="severityClass(row.severity)">
-                      {{ row.severity || 'neutral' }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-3 align-top max-w-[220px]">
-                    <div v-if="complaintTypeLabelsFor(row).length" class="flex flex-wrap gap-1">
-                      <span
-                        v-for="(lbl, idx) in complaintTypeLabelsFor(row)"
-                        :key="`${row.id}-ct-${idx}`"
-                        class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
-                      >
-                        {{ lbl }}
+                  <td class="px-3 py-3 align-top min-w-[260px]">
+                    <div class="space-y-1.5">
+                      <div>
+                        <span
+                          v-if="row.follow_up_target"
+                          class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                          :class="row.follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-700'"
+                        >
+                          {{ followUpLabel(row.follow_up_target) }}
+                        </span>
+                        <span v-else class="text-[11px] leading-snug text-slate-400" title="Terisi setelah klasifikasi AI pada sumber data + tombol Sync Data">
+                          —
+                        </span>
+                      </div>
+                      <div>
+                        <span class="inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="severityClass(row.severity)">
+                          {{ row.severity || 'neutral' }}
+                        </span>
+                      </div>
+                      <div v-if="complaintTypeLabelsFor(row).length" class="flex flex-wrap gap-1">
+                        <span
+                          v-for="(lbl, idx) in complaintTypeLabelsFor(row)"
+                          :key="`${row.id}-ct-${idx}`"
+                          class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
+                        >
+                          {{ lbl }}
+                        </span>
+                      </div>
+                      <span v-else class="text-[11px] text-slate-400" title="Terisi dari klasifikasi AI (topics) setelah sync">
+                        —
                       </span>
                     </div>
-                    <span v-else class="text-[11px] text-slate-400" title="Terisi dari klasifikasi AI (topics) setelah sync">
-                      —
-                    </span>
                   </td>
-                  <td class="px-3 py-3">
+                  <td class="px-3 py-3 min-w-[340px]">
                     <div class="text-[11px] text-slate-500">{{ row.summary_id || '-' }}</div>
                     <div
                       class="mt-1 max-h-28 overflow-y-auto pr-1 text-[12px] font-semibold leading-relaxed text-slate-800 whitespace-pre-wrap"
@@ -389,7 +388,6 @@
                       {{ row.raw_text || 'Komentar asli tidak tersedia' }}
                     </div>
                   </td>
-                  <td class="px-3 py-3 text-sm font-semibold text-slate-800">{{ row.risk_score ?? 0 }}</td>
                   <td class="px-3 py-3 align-top">
                     <div class="space-y-1">
                       <div
