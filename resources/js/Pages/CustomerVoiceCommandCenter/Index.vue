@@ -649,6 +649,11 @@
             :initial-capa="selectedCase.capa"
             :initial-capa-divisions="selectedCase.capa_divisions || {}"
             :active-division="selectedCase.capa_active_division || 'service'"
+            :source-type="selectedCase.source_type || ''"
+            :source-complaint-topics="Array.isArray(selectedCase.topics) ? selectedCase.topics : []"
+            :source-complaint-text="selectedCase.raw_text || ''"
+            :source-severity="selectedCase.severity || ''"
+            :source-impact="Array.isArray(selectedCase.impact) ? selectedCase.impact : []"
             :outlet-name="selectedCase.nama_outlet || ''"
             :assignees="assignees"
             :auth-user="capa_auth_user"
@@ -1547,8 +1552,18 @@ function resetCapaDraft() {
   capaResetKey.value += 1
 }
 
-function deleteStoredCapa() {
+async function deleteStoredCapa() {
   if (!detailCaseId.value) return
+  const res = await Swal.fire({
+    icon: 'warning',
+    title: 'Hapus data CAPA?',
+    text: 'Lampiran file akan dihapus dari server. Status kasus dan komentar pelanggan tidak diubah.',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+  })
+  if (!res.isConfirmed) return
   capaDeleting.value = true
   router.delete(route('customer-voice-command-center.cases.capa.destroy', detailCaseId.value), {
     data: voiceIndexPostExtras(),

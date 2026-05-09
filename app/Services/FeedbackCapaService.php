@@ -336,7 +336,7 @@ class FeedbackCapaService
         }
 
         $ch = strtolower((string) ($merged['a']['channel'] ?? ''));
-        $merged['a']['channel'] = in_array($ch, ['dine_in', 'online_review', 'delivery', 'walk_in', 'other'], true) ? $ch : null;
+        $merged['a']['channel'] = in_array($ch, ['dine_in', 'online_review', 'delivery', 'walk_in', 'other', 'google_review', 'instagram_comment', 'guest_comment'], true) ? $ch : null;
 
         foreach (['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as $sec) {
             if (! isset($merged[$sec]) || ! is_array($merged[$sec])) {

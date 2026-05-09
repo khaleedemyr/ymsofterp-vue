@@ -10,6 +10,38 @@
         <strong>Preventive</strong> = cegah kejadian berulang.
       </p>
     </div>
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">A. Informasi umum (dari source)</h3>
+      <p class="mt-1 text-[11px] text-slate-500">Data ini berasal dari source komentar dan ditampilkan di paling atas sebagai referensi CAPA.</p>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Source</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Channel complaint</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
+        </div>
+      </div>
+      <div class="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div class="text-[11px] font-bold uppercase tracking-wide text-slate-600">Kategori severity (source)</div>
+        <div class="mt-2">
+          <span class="inline-flex rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">
+            {{ sourceSeverityLabel }}
+          </span>
+        </div>
+        <div class="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-600">Impact (source)</div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <span
+            v-for="imp in sourceImpactBadges"
+            :key="`src-impact-${imp}`"
+            class="inline-flex rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+          >
+            {{ impactLabel(imp) }}
+          </span>
+        </div>
+      </div>
+    </section>
     <div class="rounded-xl border border-slate-200 bg-white p-2">
       <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA aktif</div>
       <div class="mt-1 text-xs font-semibold text-indigo-900">{{ divisionLabel(activeDivision) }}</div>
@@ -17,13 +49,7 @@
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div class="mb-3 flex items-center justify-between gap-2">
         <h3 class="text-sm font-bold text-slate-900">List CAPA</h3>
-        <button
-          type="button"
-          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
-          @click="createCapaEntry"
-        >
-          + Create
-        </button>
+        <span class="text-[11px] text-slate-500">Tidak wajib semua divisi terisi.</span>
       </div>
       <div class="space-y-2">
         <div
@@ -167,19 +193,8 @@
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
           Channel complaint
-          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Dine-in / Online Review / Delivery / Walk-in / dll</span>
-          <select v-model="local.a.channel" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
-            <option :value="null">— pilih channel —</option>
-            <option value="dine_in">Dine-in</option>
-            <option value="online_review">Online Review</option>
-            <option value="delivery">Delivery</option>
-            <option value="walk_in">Walk-in</option>
-            <option value="other">Lainnya (dll)</option>
-          </select>
-        </label>
-        <label v-if="local.a.channel === 'other'" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Jelaskan channel lainnya
-          <input v-model="local.a.channel_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Otomatis dari source (tidak perlu diubah manual).</span>
+          <input :value="sourceLabel" type="text" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" />
         </label>
         <div class="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 sm:col-span-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-900">PIC penerima complaint</div>
@@ -199,22 +214,21 @@
     <!-- B -->
     <section id="capa-b" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">B. Detail complaint</h3>
-      <p class="mt-1 text-[11px] font-semibold text-slate-600">Jenis complaint</p>
-      <p class="text-[10px] text-slate-500">Centang semua yang sesuai.</p>
+      <p class="mt-1 text-[11px] font-semibold text-slate-600">Jenis complaint (dari source)</p>
+      <p class="text-[10px] text-slate-500">Auto dari source, bukan input manual.</p>
       <div class="mt-3 flex flex-wrap gap-2">
-        <label v-for="opt in complaintTypes" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
-          <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasType(opt.v)" @change="toggleType(opt.v)" />
+        <span
+          v-for="opt in sourceComplaintTypeBadges"
+          :key="`src-topic-${opt.key}`"
+          class="inline-flex items-center rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900"
+        >
           {{ opt.label }}
-        </label>
+        </span>
       </div>
-      <label v-if="local.b.types?.includes('other')" class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Others — jelaskan
-        <input v-model="local.b.types_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Isi jika memilih Lainnya" />
-      </label>
       <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Deskripsi complaint
-        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Tuliskan kronologi lengkap secara objektif.</span>
-        <textarea v-model="local.b.description" rows="6" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-relaxed outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Ringkas fakta apa yang terjadi, urutan waktu, tanpa menyalahkan pihak tertentu…" />
+        Deskripsi complaint (source)
+        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Auto dari komentar source.</span>
+        <textarea :value="sourceComplaintDescription || '-'" rows="6" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700" />
       </label>
     </section>
 
@@ -291,14 +305,6 @@
             <input v-model="local.e.deadline" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
           </label>
         </div>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Status
-          <select v-model="local.e.status" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <option value="open">Open — terbuka</option>
-            <option value="on_progress">On progress — berjalan</option>
-            <option value="closed">Closed — selesai</option>
-          </select>
-        </label>
       </div>
     </section>
 
@@ -429,21 +435,7 @@
       </label>
 
       <div class="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
-        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-600">Kategori severity</p>
-        <div class="mt-2 inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
-          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === null ? 'bg-slate-100 text-slate-900' : 'text-slate-500'" @click="local.h.documented_severity = null">—</button>
-          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'minor' ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300' : 'text-slate-600'" @click="local.h.documented_severity = 'minor'">Minor</button>
-          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'major' ? 'bg-orange-100 text-orange-900 ring-1 ring-orange-300' : 'text-slate-600'" @click="local.h.documented_severity = 'major'">Major</button>
-          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'critical' ? 'bg-rose-100 text-rose-900 ring-1 ring-rose-300' : 'text-slate-600'" @click="local.h.documented_severity = 'critical'">Critical</button>
-        </div>
-        <p class="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-600">Impact</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <label v-for="opt in impactOpts" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm">
-            <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasImpact(opt.v)" @change="toggleImpact(opt.v)" />
-            {{ opt.label }}
-          </label>
-        </div>
-        <p class="mt-3 text-[10px] leading-snug text-slate-500">Angka severity/dampak di atas untuk dokumentasi CAPA; klasifikasi AI pada kartu ringkas tetap ditampilkan terpisah.</p>
+        <p class="text-[10px] leading-snug text-slate-500">Kategori severity dan impact mengikuti data source di bagian atas form.</p>
       </div>
     </section>
 
@@ -495,6 +487,7 @@
 
 <script setup>
 import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
+import Swal from 'sweetalert2'
 import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
@@ -502,6 +495,11 @@ const props = defineProps({
   initialCapa: { type: Object, default: () => ({}) },
   initialCapaDivisions: { type: Object, default: () => ({}) },
   activeDivision: { type: String, default: 'service' },
+  sourceType: { type: String, default: '' },
+  sourceComplaintTopics: { type: Array, default: () => [] },
+  sourceComplaintText: { type: String, default: '' },
+  sourceSeverity: { type: String, default: '' },
+  sourceImpact: { type: Array, default: () => [] },
   outletName: { type: String, default: '' },
   saving: { type: Boolean, default: false },
   assignees: { type: Array, default: () => [] },
@@ -528,14 +526,6 @@ const divisionDrafts = ref({
 })
 
 function askDeleteStoredCapa() {
-  if (
-    !confirm(
-      'Hapus seluruh data CAPA yang sudah tersimpan untuk kasus ini?\n\n' +
-        'Lampiran file akan dihapus dari server. Status kasus dan komentar pelanggan tidak diubah.',
-    )
-  ) {
-    return
-  }
   emit('delete-capa')
 }
 
@@ -573,6 +563,70 @@ const assigneesMerged = computed(() => {
   }
 
   return base
+})
+const sourceLabel = computed(() => {
+  const s = String(props.sourceType || '').toLowerCase()
+  if (s === 'google_review') return 'Google Review'
+  if (s === 'instagram_comment') return 'Instagram'
+  if (s === 'guest_comment') return 'Guest Comment'
+  return '—'
+})
+const sourceChannelValue = computed(() => {
+  const s = String(props.sourceType || '').toLowerCase()
+  if (s === 'google_review') return 'google_review'
+  if (s === 'instagram_comment') return 'instagram_comment'
+  if (s === 'guest_comment') return 'guest_comment'
+  return null
+})
+const sourceComplaintTypeBadges = computed(() => {
+  const raw = Array.isArray(props.sourceComplaintTopics) ? props.sourceComplaintTopics : []
+  const keyMap = {
+    food_quality: { key: 'food_quality', label: 'Food Quality' },
+    service: { key: 'service', label: 'Service' },
+    hygiene: { key: 'cleanliness', label: 'Cleanliness' },
+    cleanliness: { key: 'cleanliness', label: 'Cleanliness' },
+    wait_time: { key: 'waiting_time', label: 'Waiting Time' },
+    waiting_time: { key: 'waiting_time', label: 'Waiting Time' },
+    speed_wait_time: { key: 'waiting_time', label: 'Waiting Time' },
+    billing: { key: 'billing', label: 'Billing' },
+    price: { key: 'billing', label: 'Billing' },
+    price_value: { key: 'billing', label: 'Billing' },
+    other: { key: 'other', label: 'Others' },
+  }
+  const out = []
+  const seen = new Set()
+  for (const t of raw) {
+    const k = String(t || '').toLowerCase().trim()
+    if (!k) continue
+    const mapped = keyMap[k] || { key: 'other', label: 'Others' }
+    if (seen.has(mapped.key)) continue
+    seen.add(mapped.key)
+    out.push(mapped)
+  }
+  return out.length ? out : [{ key: 'other', label: 'Others' }]
+})
+const sourceComplaintDescription = computed(() => String(props.sourceComplaintText || '').trim())
+const sourceSeverityLabel = computed(() => {
+  const s = String(props.sourceSeverity || '').toLowerCase().trim()
+  if (s === 'minor') return 'Minor'
+  if (s === 'major') return 'Major'
+  if (s === 'critical') return 'Critical'
+  if (s === 'neutral') return 'Neutral'
+  if (s === 'positive') return 'Positive'
+  return '—'
+})
+const sourceImpactBadges = computed(() => {
+  const raw = Array.isArray(props.sourceImpact) ? props.sourceImpact : []
+  const out = []
+  const seen = new Set()
+  for (const x of raw) {
+    const k = String(x || '').toLowerCase().trim()
+    if (!k) continue
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(k)
+  }
+  return out.length ? out : ['-']
 })
 
 const local = ref(ensureShape({}))
@@ -656,6 +710,17 @@ watch(
       if (merged.e.pic_user_id == null) merged.e.pic_user_id = uid
       if (merged.f.pic_user_id == null) merged.f.pic_user_id = uid
     }
+    merged.b.types = sourceComplaintTypeBadges.value.map((x) => x.key)
+    merged.b.types_other = null
+    merged.b.description = sourceComplaintDescription.value || null
+    merged.h.documented_severity = ['minor', 'major', 'critical'].includes(String(props.sourceSeverity || '').toLowerCase())
+      ? String(props.sourceSeverity).toLowerCase()
+      : null
+    merged.h.documented_impact = sourceImpactBadges.value.filter((x) => ['reputasi', 'finansial', 'operasional'].includes(x))
+    merged.a.channel = sourceChannelValue.value
+    if (sourceChannelValue.value) {
+      merged.a.channel_other = sourceLabel.value
+    }
     local.value = merged
   },
   { immediate: true, deep: true },
@@ -693,29 +758,42 @@ function switchDivision(div) {
   activeDivision.value = div
 }
 
+function impactLabel(v) {
+  const k = String(v || '').toLowerCase()
+  if (k === 'reputasi') return 'Reputasi'
+  if (k === 'finansial') return 'Finansial'
+  if (k === 'operasional') return 'Operasional'
+  return '—'
+}
+
 function isDivisionFilled(div) {
   const draft = divisionDrafts.value?.[div]
   return normalizeForDirty(draft || {}) !== emptyCapaSignature
 }
 
-function createCapaEntry() {
-  const options = divisions
-    .map((d, idx) => `${idx + 1}. ${d.label}${isDivisionFilled(d.id) ? ' (sudah ada data)' : ''}`)
-    .join('\n')
-  const pick = window.prompt(`Pilih divisi CAPA:\n${options}\n\nIsi angka 1-3`, '')
-  const n = Number.parseInt(String(pick || ''), 10)
-  const chosen = divisions[n - 1]
-  if (!chosen) return
-  activeDivision.value = chosen.id
-}
-
-function removeDivision(div) {
+async function removeDivision(div) {
   if (!isDivisionFilled(div)) return
-  if (!confirm(`Hapus data CAPA untuk divisi ${div.toUpperCase()}?`)) return
+  const res = await Swal.fire({
+    icon: 'warning',
+    title: `Hapus CAPA ${divisionLabel(div)}?`,
+    text: 'Data CAPA divisi ini akan dikosongkan.',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+  })
+  if (!res.isConfirmed) return
   divisionDrafts.value[div] = ensureShape({})
   if (activeDivision.value === div) {
     local.value = ensureShape({})
   }
+  await Swal.fire({
+    icon: 'success',
+    title: 'Divisi dikosongkan',
+    text: `Data CAPA ${divisionLabel(div)} dihapus dari draft saat ini.`,
+    timer: 1300,
+    showConfirmButton: false,
+  })
 }
 
 function divisionLabel(div) {

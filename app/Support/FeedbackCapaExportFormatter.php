@@ -209,6 +209,9 @@ class FeedbackCapaExportFormatter
             'delivery' => 'Delivery',
             'walk_in' => 'Walk-in',
             'other' => 'Lainnya',
+            'google_review' => 'Google Review',
+            'instagram_comment' => 'Instagram',
+            'guest_comment' => 'Guest Comment',
             default => $ch,
         };
     }
