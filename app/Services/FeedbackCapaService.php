@@ -542,4 +542,100 @@ class FeedbackCapaService
 
         return array_values(array_unique(array_values($out)));
     }
+
+    /**
+     * Siapkan lampiran gambar CAPA untuk disematkan di PDF (data URI, untuk DomPDF).
+     *
+     * @param  array<string, mixed>  $capa  CAPA yang sudah disanitasi / dipresentasikan (berisi evidence).
+     * @return list<array{label: string, src: string|null, note: string|null}>
+     */
+    public function pdfEmbedCapaEvidenceImages(array $capa): array
+    {
+        $evidence = isset($capa['evidence']) && is_array($capa['evidence']) ? $capa['evidence'] : [];
+        if ($evidence === []) {
+            return [];
+        }
+
+        $maxBytes = 5 * 1024 * 1024;
+        $allowedMimes = [
+            'image/jpeg' => true,
+            'image/png' => true,
+            'image/gif' => true,
+            'image/webp' => true,
+        ];
+
+        $out = [];
+        foreach ($evidence as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $path = isset($item['path']) ? trim((string) $item['path']) : '';
+            $original = (string) ($item['original_name'] ?? 'file');
+            if ($path === '' || ! preg_match('#^feedback_case_capa/\d+/[^/]+$#', $path)) {
+                continue;
+            }
+
+            $mime = strtolower(trim((string) ($item['mime'] ?? '')));
+            if ($mime === 'image/jpg') {
+                $mime = 'image/jpeg';
+            }
+            if ($mime === '') {
+                $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+                $mime = match ($ext) {
+                    'jpg', 'jpeg' => 'image/jpeg',
+                    'png' => 'image/png',
+                    'gif' => 'image/gif',
+                    'webp' => 'image/webp',
+                    default => '',
+                };
+            }
+
+            if ($mime === '' || ! isset($allowedMimes[$mime])) {
+                continue;
+            }
+
+            if (! Storage::disk('public')->exists($path)) {
+                $out[] = ['label' => $original, 'src' => null, 'note' => 'Berkas tidak ditemukan di server.'];
+
+                continue;
+            }
+
+            try {
+                $size = (int) Storage::disk('public')->size($path);
+            } catch (\Throwable) {
+                $out[] = ['label' => $original, 'src' => null, 'note' => 'Tidak dapat membaca berkas.'];
+
+                continue;
+            }
+
+            if ($size > $maxBytes) {
+                $out[] = [
+                    'label' => $original,
+                    'src' => null,
+                    'note' => 'Gambar terlalu besar untuk disematkan di PDF (maks. 5 MB). Buka lampiran di aplikasi.',
+                ];
+
+                continue;
+            }
+
+            try {
+                $binary = Storage::disk('public')->get($path);
+            } catch (\Throwable) {
+                $binary = false;
+            }
+            if ($binary === false || $binary === '') {
+                $out[] = ['label' => $original, 'src' => null, 'note' => 'Tidak dapat membaca berkas.'];
+
+                continue;
+            }
+
+            $out[] = [
+                'label' => $original,
+                'src' => 'data:'.$mime.';base64,'.base64_encode($binary),
+                'note' => null,
+            ];
+        }
+
+        return $out;
+    }
 }

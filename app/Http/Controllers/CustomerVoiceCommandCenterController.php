@@ -685,12 +685,16 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         $presented = $payload['presented'];
+        $capaEvidencePdfImages = $this->capaService->pdfEmbedCapaEvidenceImages(
+            is_array($presented['capa'] ?? null) ? $presented['capa'] : []
+        );
 
         $pdf = \PDF::loadView('exports.feedback_capa_pdf', [
             'caseId' => $presented['id'],
             'outlet' => (string) ($presented['nama_outlet'] ?? ''),
             'generatedAt' => $payload['generated_at'],
             'capaGroupedSections' => $payload['capa_grouped_sections'],
+            'capaEvidencePdfImages' => $capaEvidencePdfImages,
         ])->setPaper('a4', 'portrait');
 
         return $pdf->download($this->capaExportBasename($id, 'pdf'));

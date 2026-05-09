@@ -12,6 +12,12 @@
         td.nilai { white-space: pre-wrap; font-size: 8px; line-height: 1.35; max-width: 65%; }
         .bagian { font-weight: bold; background: #f8fafc; width: 18%; vertical-align: middle; text-align: left; }
         .field { width: 22%; }
+        .lampiran-gambar { margin-top: 16px; page-break-inside: avoid; }
+        .lampiran-gambar h3 { font-size: 11px; margin: 0 0 8px 0; color: #1e293b; }
+        .lampiran-item { margin-bottom: 12px; page-break-inside: avoid; }
+        .lampiran-item .cap { font-size: 8px; color: #64748b; margin-bottom: 4px; }
+        .lampiran-item img { max-width: 100%; height: auto; display: block; border: 1px solid #e2e8f0; }
+        .lampiran-skip { font-size: 8px; color: #64748b; margin: 0 0 6px 0; }
     </style>
 </head>
 <body>
@@ -45,5 +51,26 @@
             @endforeach
         </tbody>
     </table>
+
+    @if (!empty($capaEvidencePdfImages))
+        <div class="lampiran-gambar">
+            <h3>Lampiran gambar (CAPA)</h3>
+            @foreach ($capaEvidencePdfImages as $evImg)
+                <div class="lampiran-item">
+                    @if (!empty($evImg['src']))
+                        <div class="cap">{{ $evImg['label'] ?? '—' }}</div>
+                        <img src="{{ $evImg['src'] }}" alt="" />
+                    @else
+                        <p class="lampiran-skip">
+                            <strong>{{ $evImg['label'] ?? '—' }}</strong>
+                            @if (!empty($evImg['note']))
+                                — {{ $evImg['note'] }}
+                            @endif
+                        </p>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+    @endif
 </body>
 </html>

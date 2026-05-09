@@ -27,34 +27,41 @@
         </div>
 
         <div v-else class="space-y-2">
-          <button
+          <div
             v-for="item in items.slice(0, 3)"
             :key="'capa-ver-' + item.id"
-            type="button"
-            class="w-full rounded-lg p-3 text-left transition-all duration-200 hover:scale-[1.01]"
+            class="flex w-full items-start gap-2 rounded-lg p-3 text-left transition-all duration-200 hover:scale-[1.01]"
             :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-violet-50 hover:bg-violet-100'"
-            @click="openCase(item.id)"
           >
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">
-                  Case #{{ item.id }}
-                  <span v-if="item.nama_outlet" class="font-normal text-slate-500">— {{ item.nama_outlet }}</span>
-                </div>
-                <div class="mt-1 line-clamp-2 text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                  {{ item.summary_id || '—' }}
-                </div>
-                <div class="mt-1 flex flex-wrap gap-2 text-[11px]" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                  <span class="rounded bg-white/10 px-1.5 py-0.5">{{ item.status || '—' }}</span>
-                  <span class="rounded bg-white/10 px-1.5 py-0.5">{{ item.severity || '—' }}</span>
-                  <span>{{ formatDt(item.event_at) }}</span>
-                </div>
+            <div
+              class="min-w-0 flex-1 cursor-pointer"
+              role="button"
+              tabindex="0"
+              @click="openCase(item.id)"
+              @keydown.enter.prevent="openCase(item.id)"
+            >
+              <div class="truncate text-sm font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                Case #{{ item.id }}
+                <span v-if="item.nama_outlet" class="font-normal text-slate-500">— {{ item.nama_outlet }}</span>
               </div>
-              <span class="shrink-0 text-xs font-medium text-violet-600 dark:text-violet-300">
-                <i class="fa fa-arrow-right" />
-              </span>
+              <div class="mt-1 line-clamp-2 text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                {{ item.summary_id || '—' }}
+              </div>
+              <div class="mt-1 flex flex-wrap gap-2 text-[11px]" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                <span class="rounded bg-white/10 px-1.5 py-0.5">{{ item.status || '—' }}</span>
+                <span class="rounded bg-white/10 px-1.5 py-0.5">{{ item.severity || '—' }}</span>
+                <span>{{ formatDt(item.event_at) }}</span>
+              </div>
             </div>
-          </button>
+            <button
+              type="button"
+              class="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 dark:focus:ring-offset-slate-800"
+              @click="openCase(item.id)"
+            >
+              <i class="fa fa-clipboard-check mr-1" aria-hidden="true" />
+              Verifikasi
+            </button>
+          </div>
 
           <div v-if="items.length > 3" class="pt-2 text-center">
             <button
