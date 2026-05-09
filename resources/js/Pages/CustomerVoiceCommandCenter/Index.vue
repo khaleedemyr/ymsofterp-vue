@@ -248,7 +248,6 @@
                 v-model="dateFrom"
                 type="date"
                 class="h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                @change="applyFilters"
               />
             </label>
             <label class="flex flex-col gap-1 text-xs font-semibold text-slate-500">
@@ -257,8 +256,17 @@
                 v-model="dateTo"
                 type="date"
                 class="h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                @change="applyFilters"
               />
+            </label>
+            <label class="flex flex-col justify-end text-xs font-semibold text-slate-500">
+              <span class="invisible">Load</span>
+              <button
+                type="button"
+                class="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-700"
+                @click="applyFilters"
+              >
+                Load
+              </button>
             </label>
           </div>
           <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
@@ -390,7 +398,7 @@
                       class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
                       title="Belum ada isian CAPA yang disimpan"
                     >
-                      <i class="fa fa-times" aria-hidden="true" />
+                      <i class="fa fa-minus" aria-hidden="true" />
                     </span>
                   </td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">
@@ -640,6 +648,7 @@
             @reset="resetCapaDraft"
             @delete-capa="deleteStoredCapa"
             @focused-section="capaDetailFocusSection = null"
+            @verify-clicked="showVerifyInfo"
           />
 
           <div class="rounded-xl border border-slate-200 p-3">
@@ -1459,6 +1468,10 @@ function submitCapa(capa) {
         title: 'CAPA tersimpan',
         text: 'Form CAPA berhasil disimpan.',
       })
+      router.reload({
+        only: ['cases', 'summary', 'kpis', 'activities', 'note_counts'],
+        preserveScroll: true,
+      })
     },
     onError: (errors) => {
       Swal.close()
@@ -1471,6 +1484,14 @@ function submitCapa(capa) {
     onFinish: () => {
       capaSaving.value = false
     },
+  })
+}
+
+function showVerifyInfo() {
+  Swal.fire({
+    icon: 'info',
+    title: 'Mode verifikasi',
+    text: 'Isi bagian G (hasil verifikasi), lalu klik Simpan form CAPA.',
   })
 }
 
@@ -1605,7 +1626,7 @@ function capaVerificationDisplay(row) {
   const v = row?.capa_verification
   if (!v || v.state === 'none') {
     return {
-      iconClass: 'fa fa-times',
+      iconClass: 'fa fa-minus',
       badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
       title: 'Belum ada verifikator / belum proses verifikasi',
     }

@@ -24,7 +24,7 @@
         <button
           type="button"
           class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-700 active:bg-violet-800"
-          @click="scrollToCapaG"
+          @click="handleVerifyClick"
         >
           Verifikasi
         </button>
@@ -422,7 +422,7 @@
           type="button"
           class="rounded-xl border border-violet-300 bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="saving || deleting"
-          @click="scrollToCapaG"
+          @click="handleVerifyClick"
         >
           Verifikasi
         </button>
@@ -466,7 +466,7 @@ const props = defineProps({
   focusSectionId: { type: String, default: null },
 })
 
-const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section'])
+const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'verify-clicked'])
 
 function askDeleteStoredCapa() {
   if (
@@ -547,6 +547,11 @@ function scrollToSectionById(sectionId, emitAfter) {
 
 function scrollToCapaG() {
   scrollToSectionById('capa-g', false)
+}
+
+function handleVerifyClick() {
+  scrollToCapaG()
+  emit('verify-clicked')
 }
 
 watch(
