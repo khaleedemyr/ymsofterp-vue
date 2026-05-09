@@ -300,7 +300,6 @@
                 >
                   Regional
                 </th>
-                <th class="px-3 py-3 text-left font-semibold">Source</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[140px]">Tamu</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[260px]">FU / Severity / Jenis komplain</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[340px]">Ringkasan</th>
