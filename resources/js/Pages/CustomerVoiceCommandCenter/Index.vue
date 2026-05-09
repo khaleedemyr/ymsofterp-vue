@@ -394,18 +394,13 @@
                     </span>
                   </td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">
-                    <div class="flex flex-col gap-0.5">
-                      <span
-                        class="inline-flex w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold"
-                        :class="capaVerificationDisplay(row).badgeClass"
-                        :title="capaVerificationDisplay(row).title"
-                      >
-                        {{ capaVerificationDisplay(row).text }}
-                      </span>
-                      <span v-if="capaVerificationDisplay(row).sub" class="text-[10px] text-slate-500">
-                        {{ capaVerificationDisplay(row).sub }}
-                      </span>
-                    </div>
+                    <span
+                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px]"
+                      :class="capaVerificationDisplay(row).badgeClass"
+                      :title="capaVerificationDisplay(row).title"
+                    >
+                      <i :class="capaVerificationDisplay(row).iconClass" aria-hidden="true" />
+                    </span>
                   </td>
                   <td class="px-3 py-3 min-w-[190px]">
                     <div class="text-xs font-semibold" :class="slaClass(row)">{{ slaLabel(row) }}</div>
@@ -1610,25 +1605,24 @@ function capaVerificationDisplay(row) {
   const v = row?.capa_verification
   if (!v || v.state === 'none') {
     return {
-      text: '—',
-      sub: '',
+      iconClass: 'fa fa-minus',
       badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
       title: 'Belum ada verifikator atau belum menunggu hasil verifikasi',
     }
   }
   if (v.state === 'pending') {
     return {
-      text: 'Menunggu',
-      sub: '',
+      iconClass: 'fa fa-hourglass-half',
       badgeClass: 'border-amber-200 bg-amber-50 text-amber-900',
       title: 'Verifikator ditunjuk — hasil (efektif / tidak efektif) belum diisi',
     }
   }
   const sub = v.result === 'effective' ? 'Efektif' : 'Tidak efektif'
   return {
-    text: 'Sudah',
-    sub,
-    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    iconClass: v.result === 'effective' ? 'fa fa-check' : 'fa fa-times',
+    badgeClass: v.result === 'effective'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : 'border-rose-200 bg-rose-50 text-rose-800',
     title: `Verifikasi selesai — ${sub}`,
   }
 }
