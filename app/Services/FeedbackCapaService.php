@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * CAPA (Corrective & Preventive Action) untuk Customer Voice — struktur disimpan di feedback_cases.meta["capa"].
@@ -23,7 +25,6 @@ class FeedbackCapaService
                 'guest_name' => null,
                 'channel' => null,
                 'channel_other' => null,
-                'pic_receiver_name' => null,
             ],
             'b' => [
                 'types' => [],
@@ -34,10 +35,9 @@ class FeedbackCapaService
                 'actions' => [],
                 'actions_other' => null,
                 'response_time_note' => null,
-                'pic' => null,
+                'pic_user_id' => null,
             ],
             'd' => [
-                'use_fishbone' => false,
                 'problem_statement' => null,
                 'man' => null,
                 'method' => null,
@@ -49,20 +49,20 @@ class FeedbackCapaService
             ],
             'e' => [
                 'action' => null,
-                'pic' => null,
+                'pic_user_id' => null,
                 'deadline' => null,
                 'status' => 'open',
             ],
             'f' => [
                 'action' => null,
                 'improvement_areas' => [],
-                'pic' => null,
+                'pic_user_id' => null,
                 'timeline' => null,
                 'kpi' => null,
             ],
             'g' => [
                 'follow_up_date' => null,
-                'verified_by' => null,
+                'verified_by_user_id' => null,
                 'result' => null,
                 'notes' => null,
             ],
@@ -74,7 +74,70 @@ class FeedbackCapaService
                 'documented_severity' => null,
                 'documented_impact' => [],
             ],
+            'evidence' => [],
         ];
+    }
+
+    /**
+     * Lampiran file (path relatif disk public). Item: id, path, original_name, mime, size, uploaded_at.
+     *
+     * @param  array<int, mixed>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    public function sanitizeEvidenceList(array $items): array
+    {
+        $max = 20;
+        $out = [];
+        foreach (array_slice($items, 0, $max) as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $id = isset($item['id']) ? trim((string) $item['id']) : '';
+            $path = isset($item['path']) ? trim((string) $item['path']) : '';
+            if ($id === '' || strlen($id) > 80 || $path === '') {
+                continue;
+            }
+            if (! preg_match('#^feedback_case_capa/\d+/[^/]+$#', $path)) {
+                continue;
+            }
+            $out[] = [
+                'id' => $id,
+                'path' => $path,
+                'original_name' => ($this->limitStr($item['original_name'] ?? null, 255)) ?: 'file',
+                'mime' => $this->limitStr($item['mime'] ?? null, 120),
+                'size' => isset($item['size']) ? max(0, (int) $item['size']) : null,
+                'uploaded_at' => $this->limitStr($item['uploaded_at'] ?? null, 40),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Tambahkan URL publik untuk preview/download (tidak disimpan di DB).
+     *
+     * @param  array<string, mixed>  $capa
+     * @return array<string, mixed>
+     */
+    public function decorateEvidenceUrls(array $capa): array
+    {
+        if (empty($capa['evidence']) || ! is_array($capa['evidence'])) {
+            $capa['evidence'] = [];
+
+            return $capa;
+        }
+        foreach ($capa['evidence'] as &$item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $path = isset($item['path']) ? (string) $item['path'] : '';
+            $item['url'] = ($path !== '' && Storage::disk('public')->exists($path))
+                ? Storage::disk('public')->url($path)
+                : null;
+        }
+        unset($item);
+
+        return $capa;
     }
 
     /**
@@ -137,29 +200,27 @@ class FeedbackCapaService
 
         $merged['a']['guest_name'] = $this->limitStr($merged['a']['guest_name'] ?? null, 500);
         $merged['a']['channel_other'] = $this->limitStr($merged['a']['channel_other'] ?? null, 500);
-        $merged['a']['pic_receiver_name'] = $this->limitStr($merged['a']['pic_receiver_name'] ?? null, 500);
         $merged['b']['types_other'] = $this->limitStr($merged['b']['types_other'] ?? null, 500);
         $merged['b']['description'] = $this->limitStr($merged['b']['description'] ?? null, 12000);
-        $merged['d']['use_fishbone'] = filter_var($merged['d']['use_fishbone'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $merged['d']['problem_statement'] = $this->limitStr($merged['d']['problem_statement'] ?? null, 4000);
         foreach (['man', 'method', 'machine', 'material', 'measurement', 'environment', 'root_cause_summary'] as $fk) {
             $merged['d'][$fk] = $this->limitStr($merged['d'][$fk] ?? null, 8000);
         }
         $merged['c']['actions_other'] = $this->limitStr($merged['c']['actions_other'] ?? null, 500);
         $merged['c']['response_time_note'] = $this->limitStr($merged['c']['response_time_note'] ?? null, 500);
-        $merged['c']['pic'] = $this->limitStr($merged['c']['pic'] ?? null, 500);
+        $merged['c']['pic_user_id'] = $this->sanitizeOptionalUserId($merged['c']['pic_user_id'] ?? null);
 
         $merged['e']['action'] = $this->limitStr($merged['e']['action'] ?? null, 4000);
-        $merged['e']['pic'] = $this->limitStr($merged['e']['pic'] ?? null, 500);
+        $merged['e']['pic_user_id'] = $this->sanitizeOptionalUserId($merged['e']['pic_user_id'] ?? null);
         $merged['e']['deadline'] = $this->limitStr($merged['e']['deadline'] ?? null, 40);
 
         $merged['f']['action'] = $this->limitStr($merged['f']['action'] ?? null, 4000);
-        $merged['f']['pic'] = $this->limitStr($merged['f']['pic'] ?? null, 500);
+        $merged['f']['pic_user_id'] = $this->sanitizeOptionalUserId($merged['f']['pic_user_id'] ?? null);
         $merged['f']['timeline'] = $this->limitStr($merged['f']['timeline'] ?? null, 500);
         $merged['f']['kpi'] = $this->limitStr($merged['f']['kpi'] ?? null, 4000);
 
         $merged['g']['follow_up_date'] = $this->limitStr($merged['g']['follow_up_date'] ?? null, 40);
-        $merged['g']['verified_by'] = $this->limitStr($merged['g']['verified_by'] ?? null, 500);
+        $merged['g']['verified_by_user_id'] = $this->sanitizeOptionalUserId($merged['g']['verified_by_user_id'] ?? null);
         $merged['g']['notes'] = $this->limitStr($merged['g']['notes'] ?? null, 4000);
 
         $merged['h']['recovery_feedback'] = $this->limitStr($merged['h']['recovery_feedback'] ?? null, 8000);
@@ -176,7 +237,31 @@ class FeedbackCapaService
         $ds = strtolower((string) ($merged['h']['documented_severity'] ?? ''));
         $merged['h']['documented_severity'] = in_array($ds, ['minor', 'major', 'critical'], true) ? $ds : null;
 
+        $merged['evidence'] = $this->sanitizeEvidenceList($merged['evidence'] ?? []);
+
+        unset(
+            $merged['a']['pic_receiver_name'],
+            $merged['c']['pic'],
+            $merged['e']['pic'],
+            $merged['f']['pic'],
+            $merged['g']['verified_by'],
+            $merged['d']['use_fishbone'],
+        );
+
         return $merged;
+    }
+
+    private function sanitizeOptionalUserId(mixed $raw): ?int
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $id = (int) $raw;
+        if ($id <= 0) {
+            return null;
+        }
+
+        return DB::table('users')->where('id', $id)->exists() ? $id : null;
     }
 
     /**
@@ -201,6 +286,11 @@ class FeedbackCapaService
     private function deepMerge(array $base, array $over): array
     {
         foreach ($over as $k => $v) {
+            if ($k === 'evidence') {
+                $base[$k] = is_array($v) ? $v : [];
+
+                continue;
+            }
             if (is_array($v) && isset($base[$k]) && is_array($base[$k])) {
                 $base[$k] = $this->deepMerge($base[$k], $v);
             } else {

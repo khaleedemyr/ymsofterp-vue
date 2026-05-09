@@ -224,6 +224,22 @@
             Overdue saja
           </label>
         </div>
+        <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3">
+          <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+            <input v-model="showAll" type="checkbox" class="rounded border-slate-300" @change="applyFilters" />
+            Tampilkan semua kasus
+          </label>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+            @click="openArchiveModal"
+          >
+            Arsip: resolved &amp; positif
+          </button>
+          <p v-if="!showAll" class="text-xs text-slate-500">
+            Antrian kerja: hanya <span class="font-semibold text-slate-600">open</span> (new / in progress) dan severity selain <span class="font-semibold">positif</span> &amp; <span class="font-semibold">netral</span>.
+          </p>
+        </div>
         <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:flex-wrap md:items-end">
           <div class="flex flex-wrap gap-3">
             <label class="flex flex-col gap-1 text-xs font-semibold text-slate-500">
@@ -265,7 +281,7 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1320px] text-sm">
+          <table class="w-full min-w-[1480px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
@@ -274,6 +290,7 @@
                 <th class="px-3 py-3 text-left font-semibold min-w-[140px]">Tamu</th>
                 <th class="px-3 py-3 text-left font-semibold">FU target</th>
                 <th class="px-3 py-3 text-left font-semibold">Severity</th>
+                <th class="px-3 py-3 text-left font-semibold max-w-[220px]">Jenis komplain</th>
                 <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
@@ -284,7 +301,7 @@
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="12" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="13" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -320,6 +337,20 @@
                       {{ row.severity || 'neutral' }}
                     </span>
                   </td>
+                  <td class="px-3 py-3 align-top max-w-[220px]">
+                    <div v-if="complaintTypeLabelsFor(row).length" class="flex flex-wrap gap-1">
+                      <span
+                        v-for="(lbl, idx) in complaintTypeLabelsFor(row)"
+                        :key="`${row.id}-ct-${idx}`"
+                        class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
+                      >
+                        {{ lbl }}
+                      </span>
+                    </div>
+                    <span v-else class="text-[11px] text-slate-400" title="Terisi dari klasifikasi AI (topics) setelah sync">
+                      —
+                    </span>
+                  </td>
                   <td class="px-3 py-3">
                     <div class="font-semibold text-slate-800">{{ row.summary_id || '-' }}</div>
                     <div class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ row.raw_text || '' }}</div>
@@ -351,7 +382,7 @@
                       <option value="ignored">ignored</option>
                     </select>
                   </td>
-                  <td class="px-3 py-3 min-w-[260px]">
+                  <td class="px-3 py-3 min-w-[320px]">
                     <div class="flex flex-wrap gap-1.5">
                       <button
                         type="button"
@@ -388,6 +419,20 @@
                       >
                         Timeline
                       </button>
+                      <a
+                        :href="capaExportPdfUrl(row.id)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                      >
+                        CAPA PDF
+                      </a>
+                      <a
+                        :href="capaExportExcelUrl(row.id)"
+                        class="inline-flex rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100"
+                      >
+                        CAPA XLS
+                      </a>
                     </div>
                   </td>
                 </tr>
@@ -396,7 +441,7 @@
                   class="border-t"
                   :class="statusRowClasses(caseForms[row.id]?.status || row.status).timeline"
                 >
-                  <td class="px-3 py-3" colspan="12">
+                  <td class="px-3 py-3" colspan="13">
                     <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Aktivitas terbaru</div>
                     <div v-if="!activitiesFor(row.id).length" class="text-xs text-slate-400">Belum ada aktivitas.</div>
                     <div v-else class="space-y-2">
@@ -440,22 +485,22 @@
     </div>
 
     <div v-if="selectedCase" class="fixed inset-0 z-50 flex justify-end bg-slate-900/40" @click.self="closeDetail">
-      <div class="h-full w-full max-w-4xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl xl:max-w-5xl">
-        <div class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
-          <div>
-            <h3 class="text-base font-bold text-slate-900">Case Detail #{{ selectedCase.id }}</h3>
-            <p class="text-xs text-slate-500">{{ sourceLabel(selectedCase.source_type) }} · {{ formatDate(selectedCase.event_at) }}</p>
+      <div class="h-full w-full max-w-full overflow-y-auto scroll-smooth border-l border-slate-200 bg-white shadow-2xl sm:max-w-4xl xl:max-w-5xl">
+        <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-4">
+          <div class="min-w-0 flex-1">
+            <h3 class="truncate text-base font-bold text-slate-900">Case Detail #{{ selectedCase.id }}</h3>
+            <p class="truncate text-xs text-slate-500">{{ sourceLabel(selectedCase.source_type) }} · {{ formatDate(selectedCase.event_at) }}</p>
           </div>
           <button
             type="button"
-            class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            class="min-h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200"
             @click="closeDetail"
           >
             Tutup
           </button>
         </div>
 
-        <div class="space-y-5 px-5 py-4">
+        <div class="space-y-5 px-4 py-4 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-5">
           <div class="grid gap-3 sm:grid-cols-2">
             <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div class="text-[11px] uppercase tracking-wide text-slate-400">Outlet</div>
@@ -535,8 +580,14 @@
 
           <CapaFormPanel
             :key="`${selectedCase.id}-${capaResetKey}`"
+            :case-id="selectedCase.id"
             :initial-capa="selectedCase.capa"
             :outlet-name="selectedCase.nama_outlet || ''"
+            :assignees="assignees"
+            :auth-user="capa_auth_user"
+            :assigned-to-id="selectedCase.assigned_to != null ? Number(selectedCase.assigned_to) : null"
+            :assigned-to-name="selectedCase.assigned_to_name || ''"
+            :assigned-to-jabatan="selectedCase.assigned_to_jabatan || ''"
             :saving="capaSaving"
             @save="submitCapa"
             @reset="resetCapaDraft"
@@ -561,6 +612,115 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="archiveModalOpen"
+      class="fixed inset-0 z-[45] flex items-center justify-center bg-slate-900/50 px-3 py-6"
+      @click.self="closeArchiveModal"
+    >
+      <div class="flex max-h-[min(88vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Arsip: resolved &amp; ulasan positif</h3>
+            <p class="mt-0.5 text-xs text-slate-500">
+              Kasus dengan status <span class="font-semibold">resolved</span> atau severity <span class="font-semibold">positive</span>. Filter pencarian / tanggal / outlet di atas ikut diterapkan.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            @click="closeArchiveModal"
+          >
+            Tutup
+          </button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-auto px-3 pb-3 sm:px-5">
+          <div v-if="archiveLoading" class="py-12 text-center text-sm text-slate-500">Memuat…</div>
+          <template v-else>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[880px] text-sm">
+                <thead class="sticky top-0 bg-white text-xs uppercase tracking-wide text-slate-500">
+                  <tr class="border-b border-slate-100">
+                    <th class="px-2 py-2 text-left font-semibold">Waktu</th>
+                    <th class="px-2 py-2 text-left font-semibold">Outlet</th>
+                    <th class="px-2 py-2 text-left font-semibold">Severity</th>
+                    <th class="px-2 py-2 text-left font-semibold">Jenis komplain</th>
+                    <th class="px-2 py-2 text-left font-semibold">Status</th>
+                    <th class="px-2 py-2 text-left font-semibold">Ringkasan</th>
+                    <th class="px-2 py-2 text-left font-semibold">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!archiveCases.length">
+                    <td colspan="7" class="px-2 py-10 text-center text-slate-400">Tidak ada data di arsip untuk filter ini.</td>
+                  </tr>
+                  <tr v-for="row in archiveCases" :key="row.id" class="border-b border-slate-50 align-top">
+                    <td class="px-2 py-2 whitespace-nowrap text-xs text-slate-600">{{ formatDate(row.event_at) }}</td>
+                    <td class="px-2 py-2 text-slate-700">{{ row.nama_outlet || '-' }}</td>
+                    <td class="px-2 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="severityClass(row.severity)">
+                        {{ row.severity || '-' }}
+                      </span>
+                    </td>
+                    <td class="px-2 py-2 max-w-[180px]">
+                      <div v-if="complaintTypeLabelsFor(row).length" class="flex flex-wrap gap-1">
+                        <span
+                          v-for="(lbl, idx) in complaintTypeLabelsFor(row)"
+                          :key="`arch-${row.id}-ct-${idx}`"
+                          class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-900"
+                        >
+                          {{ lbl }}
+                        </span>
+                      </div>
+                      <span v-else class="text-[11px] text-slate-400">—</span>
+                    </td>
+                    <td class="px-2 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClass(row.status)">
+                        {{ row.status || '-' }}
+                      </span>
+                    </td>
+                    <td class="px-2 py-2">
+                      <div class="line-clamp-2 max-w-xs text-xs text-slate-600">{{ row.summary_id || row.raw_text || '—' }}</div>
+                    </td>
+                    <td class="px-2 py-2 whitespace-nowrap">
+                      <button
+                        type="button"
+                        class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                        @click="openDetailFromArchive(row)"
+                      >
+                        Detail
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="archiveMeta && archiveMeta.last_page > 1" class="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                :disabled="archiveMeta.current_page <= 1"
+                @click="fetchArchivePage(archiveMeta.current_page - 1)"
+              >
+                Sebelumnya
+              </button>
+              <span class="text-xs text-slate-600">
+                Halaman {{ archiveMeta.current_page }} / {{ archiveMeta.last_page }}
+                <span class="text-slate-400">({{ archiveMeta.total }} total)</span>
+              </span>
+              <button
+                type="button"
+                class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                :disabled="archiveMeta.current_page >= archiveMeta.last_page"
+                @click="fetchArchivePage(archiveMeta.current_page + 1)"
+              >
+                Berikutnya
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -618,6 +778,7 @@ const props = defineProps({
   cases: { type: Object, default: () => ({ data: [] }) },
   outlets: { type: Array, default: () => [] },
   assignees: { type: Array, default: () => [] },
+  capa_auth_user: { type: Object, default: null },
   activities: { type: Object, default: () => ({}) },
   note_counts: { type: Object, default: () => ({}) },
   filters: { type: Object, default: () => ({}) },
@@ -643,6 +804,14 @@ const idOutlet = ref(props.filters?.id_outlet ? String(props.filters.id_outlet) 
 const overdueOnly = ref(Boolean(props.filters?.overdue_only))
 const dateFrom = ref(props.filters?.date_from || '')
 const dateTo = ref(props.filters?.date_to || '')
+const showAll = ref(Boolean(props.filters?.show_all))
+
+const archiveModalOpen = ref(false)
+const archiveLoading = ref(false)
+const archiveCases = ref([])
+const archiveMeta = ref(null)
+
+const detailOverrides = ref({})
 
 const showNoteModal = ref(false)
 const savingNote = ref(false)
@@ -675,6 +844,13 @@ watch(
   },
 )
 
+watch(
+  () => props.filters?.show_all,
+  (v) => {
+    showAll.value = Boolean(v)
+  },
+)
+
 function voiceIndexPostExtras() {
   let pageNum
   try {
@@ -696,10 +872,21 @@ function voiceIndexPostExtras() {
   if (pageNum) {
     payload.page = pageNum
   }
+  if (showAll.value) {
+    payload.show_all = 1
+  }
   return payload
 }
 
 const canExportPdf = computed(() => Boolean(dateFrom.value && dateTo.value))
+
+function capaExportPdfUrl(id) {
+  return route('customer-voice-command-center.cases.capa.export-pdf', id)
+}
+
+function capaExportExcelUrl(id) {
+  return route('customer-voice-command-center.cases.capa.export-excel', id)
+}
 
 const exportPdfHref = computed(() => {
   if (!dateFrom.value || !dateTo.value) {
@@ -715,12 +902,56 @@ const exportPdfHref = computed(() => {
   if (sourceType.value) params.source_type = sourceType.value
   if (idOutlet.value) params.id_outlet = idOutlet.value
   if (overdueOnly.value) params.overdue_only = 1
+  if (showAll.value) params.show_all = 1
   return route('customer-voice-command-center.export-pdf', params)
 })
 
+async function fetchArchivePage(page) {
+  archiveLoading.value = true
+  try {
+    const params = new URLSearchParams()
+    params.set('page', String(page))
+    params.set('per_page', '20')
+    if (q.value) params.set('q', q.value)
+    if (dateFrom.value) params.set('date_from', dateFrom.value)
+    if (dateTo.value) params.set('date_to', dateTo.value)
+    if (idOutlet.value) params.set('id_outlet', idOutlet.value)
+    const url = `${route('customer-voice-command-center.archive-cases')}?${params.toString()}`
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+    const data = await res.json()
+    if (data.success) {
+      archiveCases.value = data.cases || []
+      archiveMeta.value = data.meta || null
+    } else {
+      archiveCases.value = []
+      archiveMeta.value = null
+    }
+  } catch {
+    archiveCases.value = []
+    archiveMeta.value = null
+  } finally {
+    archiveLoading.value = false
+  }
+}
+
+function openArchiveModal() {
+  archiveModalOpen.value = true
+  fetchArchivePage(1)
+}
+
+function closeArchiveModal() {
+  archiveModalOpen.value = false
+}
+
 function syncNow() {
   syncing.value = true
-  router.post('/customer-voice-command-center/sync', {}, {
+  router.post('/customer-voice-command-center/sync', voiceIndexPostExtras(), {
     preserveScroll: true,
     onFinish: () => {
       syncing.value = false
@@ -780,10 +1011,24 @@ function toggleActivities(caseId) {
 }
 
 function openDetail(caseId) {
+  const next = { ...detailOverrides.value }
+  delete next[caseId]
+  detailOverrides.value = next
   detailCaseId.value = caseId
 }
 
+function openDetailFromArchive(row) {
+  detailOverrides.value = { ...detailOverrides.value, [row.id]: row }
+  detailCaseId.value = row.id
+  archiveModalOpen.value = false
+}
+
 function closeDetail() {
+  if (detailCaseId.value) {
+    const next = { ...detailOverrides.value }
+    delete next[detailCaseId.value]
+    detailOverrides.value = next
+  }
   detailCaseId.value = null
 }
 
@@ -814,6 +1059,12 @@ function noteCountFor(caseId) {
   const raw = m[caseId] ?? m[String(caseId)]
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+/** Jenis komplain dari backend (`complaint_type_labels`), turunan klasifikasi AI pada kolom topics. */
+function complaintTypeLabelsFor(row) {
+  const labels = row?.complaint_type_labels
+  return Array.isArray(labels) && labels.length > 0 ? labels : []
 }
 
 function statusRowClasses(status) {
@@ -852,6 +1103,7 @@ function applyFilters() {
     overdue_only: overdueOnly.value ? 1 : 0,
     date_from: dateFrom.value || undefined,
     date_to: dateTo.value || undefined,
+    show_all: showAll.value ? 1 : undefined,
   }, {
     preserveState: true,
     replace: true,
@@ -868,7 +1120,8 @@ const caseMap = computed(() => {
 
 const selectedCase = computed(() => {
   if (!detailCaseId.value) return null
-  return caseMap.value[detailCaseId.value] || null
+  const id = detailCaseId.value
+  return detailOverrides.value[id] || caseMap.value[id] || null
 })
 
 function formatDate(value) {

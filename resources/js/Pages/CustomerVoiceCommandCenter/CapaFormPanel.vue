@@ -1,5 +1,5 @@
 <template>
-  <div class="capa-form space-y-4">
+  <div class="capa-form touch-manipulation space-y-4 pb-2 selection:bg-indigo-100">
     <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-4 py-4 shadow-sm">
       <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Form standar</p>
       <h2 class="mt-1 text-base font-bold leading-snug text-slate-900">
@@ -11,8 +11,74 @@
       </p>
     </div>
 
+    <nav
+      class="sticky top-0 z-[6] -mx-0.5 mb-1 flex gap-0.5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 py-1.5 px-1 text-[11px] font-semibold shadow-sm backdrop-blur sm:hidden"
+      aria-label="Loncat ke bagian form"
+    >
+      <a v-for="l in sectionLinks" :key="l.id" :href="'#' + l.id" class="shrink-0 rounded-lg px-2.5 py-2 text-indigo-700 active:bg-indigo-50">{{ l.short }}</a>
+    </nav>
+
+    <section id="capa-evidence" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">Lampiran bukti &amp; dokumen</h3>
+      <p class="mt-1 text-[11px] leading-relaxed text-slate-600">
+        Foto struk, SS chat, PDF SOP, dll. Maks. 20 file, per file ±15 MB. Tersimpan aman di server; tidak hilang saat menyimpan form CAPA.
+      </p>
+      <p v-if="evidenceError" class="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{{ evidenceError }}</p>
+      <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 active:bg-slate-50 disabled:opacity-50"
+          :disabled="uploadingEvidence || evidenceFull"
+          @click="triggerCameraInput"
+        >
+          Ambil foto
+        </button>
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-900 active:bg-indigo-100 disabled:opacity-50"
+          :disabled="uploadingEvidence || evidenceFull"
+          @click="triggerFilePicker"
+        >
+          Pilih file / galeri
+        </button>
+      </div>
+      <input ref="cameraInputRef" type="file" class="hidden" accept="image/*" capture="environment" @change="onEvidenceFiles" />
+      <input
+        ref="pickerInputRef"
+        type="file"
+        class="hidden"
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf"
+        @change="onEvidenceFiles"
+      />
+      <p v-if="uploadingEvidence" class="mt-2 text-xs font-medium text-indigo-600">Mengunggah…</p>
+      <ul v-if="(local.evidence || []).length" class="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
+        <li v-for="ev in local.evidence" :key="ev.id" class="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">
+          <div class="min-w-0 flex-1">
+            <a
+              v-if="ev.url"
+              :href="ev.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="break-all text-sm font-medium text-indigo-700 underline decoration-indigo-200 underline-offset-2"
+            >{{ ev.original_name || 'Lampiran' }}</a>
+            <span v-else class="break-all text-sm text-slate-700">{{ ev.original_name || 'Lampiran' }}</span>
+            <p class="text-[10px] text-slate-400">{{ formatBytes(ev.size) }} · {{ formatUploaded(ev.uploaded_at) }}</p>
+          </div>
+          <button
+            type="button"
+            class="min-h-10 shrink-0 rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 active:bg-rose-50 disabled:opacity-50"
+            :disabled="uploadingEvidence"
+            @click="removeEvidence(ev.id)"
+          >
+            Hapus
+          </button>
+        </li>
+      </ul>
+      <p v-else class="mt-3 text-xs text-slate-400">Belum ada lampiran.</p>
+    </section>
+
     <!-- A -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-a" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">A. Informasi umum</h3>
       <p class="mt-1 text-[11px] text-slate-500">General information — tanggal, waktu, lokasi, tamu, channel, PIC penerima.</p>
       <div class="mt-4 grid gap-3 sm:grid-cols-2">
@@ -49,15 +115,23 @@
           Jelaskan channel lainnya
           <input v-model="local.a.channel_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
         </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          PIC penerima complaint
-          <input v-model="local.a.pic_receiver_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Nama PIC yang menerima keluhan" />
-        </label>
+        <div class="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 sm:col-span-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-900">PIC penerima complaint</div>
+          <p class="mt-1 text-[10px] leading-snug text-indigo-900/80">
+            Mengikuti PIC pada kolom tabel (baris kasus). Ubah di daftar utama lalu klik <strong>Simpan</strong>.
+          </p>
+          <template v-if="assignedToId != null">
+            <div class="mt-2 text-sm font-semibold text-slate-900">{{ assignedToName || '—' }}</div>
+            <div v-if="assignedToJabatan" class="text-xs text-slate-600">{{ assignedToJabatan }}</div>
+            <div v-else class="text-xs text-slate-500">Jabatan belum ada di data master.</div>
+          </template>
+          <div v-else class="mt-2 text-sm font-medium text-amber-900">Belum ada PIC — pilih PIC di kolom tabel lalu Simpan.</div>
+        </div>
       </div>
     </section>
 
     <!-- B -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-b" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">B. Detail complaint</h3>
       <p class="mt-1 text-[11px] font-semibold text-slate-600">Jenis complaint</p>
       <p class="text-[10px] text-slate-500">Centang semua yang sesuai.</p>
@@ -79,7 +153,7 @@
     </section>
 
     <!-- C -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-c" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">C. Immediate action <span class="font-normal text-slate-500">(Tindakan langsung)</span></h3>
       <p class="mt-2 text-[11px] font-semibold text-slate-700">Tindakan yang dilakukan saat itu</p>
       <div class="mt-2 flex flex-wrap gap-2">
@@ -97,21 +171,19 @@
           Waktu respon
           <input v-model="local.c.response_time_note" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: kurang dari 5 menit setelah keluhan" />
         </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           PIC
-          <input v-model="local.c.pic" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="PIC tindakan langsung" />
-        </label>
+          <CapaUserPicker v-model="local.c.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
+        </div>
       </div>
     </section>
 
     <!-- D -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-d" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">D. Root cause analysis <span class="font-normal text-slate-500">(Analisa akar masalah)</span></h3>
-      <p class="mt-2 text-[11px] text-slate-600">Gunakan metode:</p>
-      <label class="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-indigo-50/40 px-3 py-2 text-sm font-medium text-slate-800">
-        <input v-model="local.d.use_fishbone" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-        Fishbone diagram
-      </label>
+      <p class="mt-2 text-[11px] leading-relaxed text-slate-600">
+        Kerangka fishbone (6M): Man, Method, Machine, Material, Measurement, Environment — isi kolom di bawah sesuai fakta.
+      </p>
 
       <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Masalah
@@ -135,7 +207,7 @@
     </section>
 
     <!-- E -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-e" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">E. Corrective action <span class="font-normal text-slate-500">(Perbaikan jangka pendek)</span></h3>
       <p class="mt-1 text-[11px] text-slate-600">Tindakan untuk memperbaiki masalah yang sudah terjadi.</p>
       <div class="mt-3 grid gap-3">
@@ -144,10 +216,10 @@
           <textarea v-model="local.e.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Perbaikan konkret untuk insiden ini" />
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             PIC
-            <input v-model="local.e.pic" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-          </label>
+            <CapaUserPicker v-model="local.e.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
+          </div>
           <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Deadline
             <input v-model="local.e.deadline" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
@@ -165,7 +237,7 @@
     </section>
 
     <!-- F -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-f" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">F. Preventive action <span class="font-normal text-slate-500">(Pencegahan jangka panjang)</span></h3>
       <p class="mt-1 text-[11px] text-slate-600">Tindakan agar masalah tidak berulang.</p>
       <p class="mt-3 text-[11px] font-semibold text-slate-700">Improvement area</p>
@@ -181,10 +253,10 @@
           <textarea v-model="local.f.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             PIC
-            <input v-model="local.f.pic" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-          </label>
+            <CapaUserPicker v-model="local.f.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
+          </div>
           <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Timeline
             <input v-model="local.f.timeline" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Periode atau milestone" />
@@ -199,17 +271,24 @@
     </section>
 
     <!-- G -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-g" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">G. Follow up &amp; verification</h3>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Tanggal follow up
           <input v-model="local.g.follow_up_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
           Verifikasi oleh <span class="font-normal normal-case text-slate-400">(Manager / QA / Ops)</span>
-          <input v-model="local.g.verified_by" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
+          <CapaUserPicker
+            v-model="local.g.verified_by_user_id"
+            :assignees="assigneesMerged"
+            placeholder="Cari nama verifikator…"
+            clearable
+            class="mt-1 block"
+          />
+          <p class="mt-1 text-[10px] font-normal normal-case text-slate-400">Tanpa default — pilih dari daftar karyawan aktif.</p>
+        </div>
       </div>
       <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Hasil
@@ -226,7 +305,7 @@
     </section>
 
     <!-- H -->
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section id="capa-h" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">H. Customer recovery <span class="font-normal text-slate-500">(Service recovery)</span></h3>
 
       <div class="mt-3">
@@ -306,7 +385,7 @@
       <strong>Catatan:</strong> Corrective = perbaiki kejadian saat ini. Preventive = mencegah kejadian berulang.
     </div>
 
-    <div class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:justify-end">
+    <div class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:justify-end">
       <button
         type="button"
         class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -328,27 +407,74 @@
 </template>
 
 <script setup>
+import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
 import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
+  caseId: { type: Number, required: true },
   initialCapa: { type: Object, default: () => ({}) },
   outletName: { type: String, default: '' },
   saving: { type: Boolean, default: false },
+  assignees: { type: Array, default: () => [] },
+  authUser: { type: Object, default: null },
+  assignedToId: { type: Number, default: null },
+  assignedToName: { type: String, default: '' },
+  assignedToJabatan: { type: String, default: '' },
 })
 
 const emit = defineEmits(['save', 'reset'])
+
+const sectionLinks = [
+  { id: 'capa-evidence', short: 'File' },
+  { id: 'capa-a', short: 'A' },
+  { id: 'capa-b', short: 'B' },
+  { id: 'capa-c', short: 'C' },
+  { id: 'capa-d', short: 'D' },
+  { id: 'capa-e', short: 'E' },
+  { id: 'capa-f', short: 'F' },
+  { id: 'capa-g', short: 'G' },
+  { id: 'capa-h', short: 'H' },
+]
+
+const cameraInputRef = ref(null)
+const pickerInputRef = ref(null)
+const uploadingEvidence = ref(false)
+const evidenceError = ref('')
 
 const outletDisplay = computed(() => {
   const s = (props.outletName || '').trim()
   return s !== '' ? s : '—'
 })
 
+const assigneesMerged = computed(() => {
+  const base = [...(props.assignees || [])]
+  const au = props.authUser
+  if (au?.id != null && !base.some((x) => x.id === au.id)) {
+    base.unshift({
+      id: au.id,
+      nama_lengkap: au.nama_lengkap || '',
+      nama_jabatan: au.nama_jabatan ?? null,
+    })
+  }
+
+  return base
+})
+
 const local = ref(ensureShape({}))
+
+const evidenceFull = computed(() => (local.value.evidence || []).length >= 20)
 
 watch(
   () => props.initialCapa,
   (c) => {
-    local.value = ensureShape(c && typeof c === 'object' ? JSON.parse(JSON.stringify(c)) : {})
+    const merged = ensureShape(c && typeof c === 'object' ? JSON.parse(JSON.stringify(c)) : {})
+    const uid = props.authUser?.id
+    if (uid != null) {
+      if (merged.c.pic_user_id == null) merged.c.pic_user_id = uid
+      if (merged.e.pic_user_id == null) merged.e.pic_user_id = uid
+      if (merged.f.pic_user_id == null) merged.f.pic_user_id = uid
+    }
+    local.value = merged
   },
   { immediate: true, deep: true },
 )
@@ -403,9 +529,8 @@ function ensureShape(src) {
       pic_receiver_name: null,
     },
     b: { types: [], types_other: null, description: null },
-    c: { actions: [], actions_other: null, response_time_note: null, pic: null },
+    c: { actions: [], actions_other: null, response_time_note: null, pic_user_id: null },
     d: {
-      use_fishbone: false,
       problem_statement: null,
       man: null,
       method: null,
@@ -415,9 +540,9 @@ function ensureShape(src) {
       environment: null,
       root_cause_summary: null,
     },
-    e: { action: null, pic: null, deadline: null, status: 'open' },
-    f: { action: null, improvement_areas: [], pic: null, timeline: null, kpi: null },
-    g: { follow_up_date: null, verified_by: null, result: null, notes: null },
+    e: { action: null, pic_user_id: null, deadline: null, status: 'open' },
+    f: { action: null, improvement_areas: [], pic_user_id: null, timeline: null, kpi: null },
+    g: { follow_up_date: null, verified_by_user_id: null, result: null, notes: null },
     h: {
       contacted: null,
       contact_methods: [],
@@ -426,6 +551,7 @@ function ensureShape(src) {
       documented_severity: null,
       documented_impact: [],
     },
+    evidence: [],
   }
   return deepMerge(base, src || {})
 }
@@ -538,4 +664,120 @@ function toggleImpact(v) {
 function submit() {
   emit('save', JSON.parse(JSON.stringify(local.value)))
 }
+
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+}
+
+function triggerCameraInput() {
+  cameraInputRef.value?.click()
+}
+
+function triggerFilePicker() {
+  pickerInputRef.value?.click()
+}
+
+async function onEvidenceFiles(ev) {
+  const input = ev.target
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !props.caseId) return
+  evidenceError.value = ''
+  uploadingEvidence.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`/customer-voice-command-center/cases/${props.caseId}/capa/evidence`, {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'application/json',
+      },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      evidenceError.value = data.message || `Upload gagal (${res.status}).`
+
+      return
+    }
+    if (!Array.isArray(local.value.evidence)) {
+      local.value.evidence = []
+    }
+    local.value.evidence.push(data.item)
+  } catch {
+    evidenceError.value = 'Upload gagal (periksa jaringan).'
+  } finally {
+    uploadingEvidence.value = false
+  }
+}
+
+async function removeEvidence(evidenceId) {
+  if (!props.caseId || !evidenceId) return
+  evidenceError.value = ''
+  uploadingEvidence.value = true
+  try {
+    const res = await fetch(`/customer-voice-command-center/cases/${props.caseId}/capa/evidence/${encodeURIComponent(evidenceId)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'application/json',
+      },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.success) {
+      evidenceError.value = data.message || `Hapus gagal (${res.status}).`
+
+      return
+    }
+    local.value.evidence = (local.value.evidence || []).filter((x) => x.id !== evidenceId)
+  } catch {
+    evidenceError.value = 'Hapus gagal (periksa jaringan).'
+  } finally {
+    uploadingEvidence.value = false
+  }
+}
+
+function formatBytes(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  const v = Number(n)
+  if (v < 1024) return `${v} B`
+  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`
+
+  return `${(v / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatUploaded(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('id-ID')
+  } catch {
+    return String(iso)
+  }
+}
 </script>
+
+<style scoped>
+/* HP: target sentuh ~44px + font 16px agar tidak zoom otomatis iOS */
+@media (max-width: 639px) {
+  .capa-form :deep(input[type='text']),
+  .capa-form :deep(input[type='date']),
+  .capa-form :deep(input[type='time']),
+  .capa-form :deep(select),
+  .capa-form :deep(textarea) {
+    min-height: 2.75rem;
+    font-size: 16px;
+  }
+  .capa-form :deep(textarea) {
+    min-height: 6rem;
+  }
+  .capa-form :deep(input[type='checkbox']) {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+</style>

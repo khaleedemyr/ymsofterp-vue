@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\FeedbackCapaExcelExport;
 use App\Models\Outlet;
 use App\Models\User;
 use App\Services\FeedbackCapaService;
 use App\Services\FeedbackCaseIngestionService;
+use App\Support\FeedbackCapaExportFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,6 +26,66 @@ class CustomerVoiceCommandCenterController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('CustomerVoiceCommandCenter/Index', $this->buildPayload($request));
+    }
+
+    /**
+     * Kasus selesai (resolved) atau ulasan positif — untuk modal arsip di halaman index.
+     */
+    public function archiveCasesJson(Request $request)
+    {
+        $perPage = min(50, max(10, (int) $request->input('per_page', 20)));
+        $page = max(1, (int) $request->input('page', 1));
+
+        $query = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
+            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'assignee.id_jabatan')
+            ->select([
+                'c.id',
+                'c.source_type',
+                'c.source_ref',
+                'c.id_outlet',
+                'o.nama_outlet',
+                'c.author_name',
+                'c.customer_contact',
+                'c.meta',
+                'c.topics',
+                'c.event_at',
+                'c.severity',
+                'c.summary_id',
+                'c.raw_text',
+                'c.risk_score',
+                'c.status',
+                'c.assigned_to',
+                'assignee.nama_lengkap as assigned_to_name',
+                'aj.nama_jabatan as assigned_to_jabatan',
+                'c.due_at',
+                'c.resolved_at',
+                'c.created_at',
+            ])
+            ->where(function ($q) {
+                $q->where('c.status', 'resolved')
+                    ->orWhere('c.severity', 'positive');
+            });
+
+        $this->applyArchiveListFilters($query, $request);
+
+        $paginator = $query
+            ->orderByDesc('c.event_at')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $rows = collect($paginator->items())->map(fn ($row) => $this->presentVoiceCaseRow($row));
+
+        return response()->json([
+            'success' => true,
+            'cases' => $rows->values()->all(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
     }
 
     public function apiIndex(Request $request)
@@ -41,7 +105,7 @@ class CustomerVoiceCommandCenterController extends Controller
             .'Guest Comment: '.$result['guest_comment']['upserted'].' baris.';
 
         return redirect()
-            ->route('customer-voice-command-center.index')
+            ->route('customer-voice-command-center.index', $this->voiceIndexFiltersFromRequest($request))
             ->with('success', $message);
     }
 
@@ -181,7 +245,18 @@ class CustomerVoiceCommandCenterController extends Controller
             $meta = json_decode((string) $row->meta, true) ?: [];
         }
 
-        $sanitized = $this->capaService->sanitizeCapa($request->input('capa'));
+        $incoming = $request->input('capa');
+        if (! is_array($incoming)) {
+            $incoming = [];
+        }
+        $preservedEvidence = [];
+        if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
+            $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
+        }
+        unset($incoming['evidence']);
+
+        $sanitized = $this->capaService->sanitizeCapa($incoming);
+        $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
 
         $now = now();
@@ -225,7 +300,18 @@ class CustomerVoiceCommandCenterController extends Controller
             $meta = json_decode((string) $row->meta, true) ?: [];
         }
 
-        $sanitized = $this->capaService->sanitizeCapa($request->input('capa'));
+        $incoming = $request->input('capa');
+        if (! is_array($incoming)) {
+            $incoming = [];
+        }
+        $preservedEvidence = [];
+        if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
+            $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
+        }
+        unset($incoming['evidence']);
+
+        $sanitized = $this->capaService->sanitizeCapa($incoming);
+        $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
 
         $now = now();
@@ -251,6 +337,134 @@ class CustomerVoiceCommandCenterController extends Controller
             'success' => true,
             'message' => 'Form CAPA tersimpan.',
         ]);
+    }
+
+    public function uploadCapaEvidence(Request $request, int $id)
+    {
+        $request->validate([
+            'file' => 'required|file|max:15360',
+        ]);
+
+        $row = DB::table('feedback_cases')->where('id', $id)->first();
+        if (! $row) {
+            return response()->json(['success' => false, 'message' => 'Case tidak ditemukan.'], 404);
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        $capa = isset($meta['capa']) && is_array($meta['capa']) ? $meta['capa'] : $this->capaService->emptyTemplate();
+        $existing = $this->capaService->sanitizeEvidenceList($capa['evidence'] ?? []);
+        if (count($existing) >= 20) {
+            return response()->json(['success' => false, 'message' => 'Maksimal 20 lampiran per kasus.'], 422);
+        }
+
+        $file = $request->file('file');
+        $ext = strtolower((string) $file->getClientOriginalExtension());
+        $allowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
+        if (! in_array($ext, $allowedExt, true)) {
+            return response()->json(['success' => false, 'message' => 'Tipe file tidak diperbolehkan.'], 422);
+        }
+
+        $dir = 'feedback_case_capa/'.$id;
+        $path = $file->store($dir, 'public');
+        if (! $path) {
+            return response()->json(['success' => false, 'message' => 'Gagal menyimpan file.'], 500);
+        }
+
+        $item = [
+            'id' => (string) Str::uuid(),
+            'path' => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'mime' => $file->getMimeType(),
+            'size' => $file->getSize(),
+            'uploaded_at' => now()->toIso8601String(),
+        ];
+
+        $existing[] = $item;
+        $capa['evidence'] = $this->capaService->sanitizeEvidenceList($existing);
+        $meta['capa'] = $capa;
+
+        $now = now();
+        DB::table('feedback_cases')->where('id', $id)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => $now,
+        ]);
+
+        $item['url'] = Storage::disk('public')->url($path);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Lampiran berhasil diunggah.',
+            'item' => $item,
+        ]);
+    }
+
+    public function deleteCapaEvidence(Request $request, int $id, string $evidenceId)
+    {
+        $row = DB::table('feedback_cases')->where('id', $id)->first();
+        if (! $row) {
+            return response()->json(['success' => false, 'message' => 'Case tidak ditemukan.'], 404);
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        $capa = isset($meta['capa']) && is_array($meta['capa']) ? $meta['capa'] : [];
+        $evidence = $capa['evidence'] ?? [];
+        $removedPath = null;
+        $next = [];
+        foreach ($evidence as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            if (($item['id'] ?? '') === $evidenceId) {
+                $removedPath = isset($item['path']) ? (string) $item['path'] : '';
+
+                continue;
+            }
+            $next[] = $item;
+        }
+
+        if ($removedPath === null || $removedPath === '') {
+            return response()->json(['success' => false, 'message' => 'Lampiran tidak ditemukan.'], 404);
+        }
+
+        $prefix = 'feedback_case_capa/'.$id.'/';
+        if (! str_starts_with($removedPath, $prefix)) {
+            return response()->json(['success' => false, 'message' => 'Path tidak valid.'], 422);
+        }
+
+        if (Storage::disk('public')->exists($removedPath)) {
+            Storage::disk('public')->delete($removedPath);
+        }
+
+        $capa['evidence'] = $this->capaService->sanitizeEvidenceList($next);
+        $meta['capa'] = $capa;
+
+        DB::table('feedback_cases')->where('id', $id)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Lampiran dihapus.',
+        ]);
+    }
+
+    public function apiUploadCapaEvidence(Request $request, int $id)
+    {
+        return $this->uploadCapaEvidence($request, $id);
+    }
+
+    public function apiDeleteCapaEvidence(Request $request, int $id, string $evidenceId)
+    {
+        return $this->deleteCapaEvidence($request, $id, $evidenceId);
     }
 
     public function exportPdf(Request $request)
@@ -338,6 +552,103 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
+     * Export satu kasus: form CAPA lengkap (PDF).
+     */
+    public function exportCapaPdf(Request $request, int $id)
+    {
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '120');
+
+        $payload = $this->prepareCapaExport($id);
+        if ($payload === null) {
+            abort(404);
+        }
+
+        $presented = $payload['presented'];
+
+        $pdf = \PDF::loadView('exports.feedback_capa_pdf', [
+            'caseId' => $presented['id'],
+            'outlet' => (string) ($presented['nama_outlet'] ?? ''),
+            'generatedAt' => $payload['generated_at'],
+            'flatRows' => $payload['flat_rows']->values()->all(),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download($this->capaExportBasename($id, 'pdf'));
+    }
+
+    /**
+     * Export satu kasus: form CAPA lengkap (Excel).
+     */
+    public function exportCapaExcel(Request $request, int $id)
+    {
+        $payload = $this->prepareCapaExport($id);
+        if ($payload === null) {
+            abort(404);
+        }
+
+        return Excel::download(
+            new FeedbackCapaExcelExport($payload['flat_rows']),
+            $this->capaExportBasename($id, 'xlsx')
+        );
+    }
+
+    /**
+     * @return array{presented: array<string, mixed>, flat_rows: \Illuminate\Support\Collection<int, array{bagian: string, field: string, nilai: string}>, generated_at: string}|null
+     */
+    private function prepareCapaExport(int $id): ?array
+    {
+        $case = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
+            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'assignee.id_jabatan')
+            ->where('c.id', $id)
+            ->select([
+                'c.id',
+                'c.source_type',
+                'c.source_ref',
+                'c.id_outlet',
+                'o.nama_outlet',
+                'c.author_name',
+                'c.customer_contact',
+                'c.meta',
+                'c.topics',
+                'c.event_at',
+                'c.severity',
+                'c.summary_id',
+                'c.raw_text',
+                'c.risk_score',
+                'c.status',
+                'c.assigned_to',
+                'assignee.nama_lengkap as assigned_to_name',
+                'aj.nama_jabatan as assigned_to_jabatan',
+                'c.due_at',
+                'c.resolved_at',
+                'c.created_at',
+            ])
+            ->first();
+
+        if ($case === null) {
+            return null;
+        }
+
+        $presented = $this->presentVoiceCaseRow($case);
+        $capa = $presented['capa'];
+        $formatter = new FeedbackCapaExportFormatter;
+        $flatRows = $formatter->flatten($presented, $capa);
+
+        return [
+            'presented' => $presented,
+            'flat_rows' => $flatRows,
+            'generated_at' => now()->format('Y-m-d H:i'),
+        ];
+    }
+
+    private function capaExportBasename(int $id, string $ext): string
+    {
+        return 'capa-case-'.$id.'-'.now()->format('Y-m-d_His').'.'.$ext;
+    }
+
+    /**
      * @param  array<int, int>  $caseIds
      * @return array<int, list<object>>
      */
@@ -402,11 +713,42 @@ class CustomerVoiceCommandCenterController extends Controller
         return response()->json($response, $response['success'] ? 200 : 404);
     }
 
+    /**
+     * User login untuk default PIC di form CAPA (nama + jabatan).
+     *
+     * @return array{id: int, nama_lengkap: string, nama_jabatan: string|null}|null
+     */
+    private function capaAuthUserPayload(?object $user): ?array
+    {
+        if ($user === null || ! method_exists($user, 'getAuthIdentifier')) {
+            return null;
+        }
+        $id = $user->getAuthIdentifier();
+        if ($id === null) {
+            return null;
+        }
+        $row = DB::table('users as u')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->where('u.id', $id)
+            ->first(['u.id', 'u.nama_lengkap', 'j.nama_jabatan as nama_jabatan']);
+
+        if ($row === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $row->id,
+            'nama_lengkap' => (string) ($row->nama_lengkap ?? ''),
+            'nama_jabatan' => $row->nama_jabatan !== null ? (string) $row->nama_jabatan : null,
+        ];
+    }
+
     private function buildPayload(Request $request): array
     {
         $query = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
             ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
+            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'assignee.id_jabatan')
             ->select([
                 'c.id',
                 'c.source_type',
@@ -425,6 +767,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.status',
                 'c.assigned_to',
                 'assignee.nama_lengkap as assigned_to_name',
+                'aj.nama_jabatan as assigned_to_jabatan',
                 'c.due_at',
                 'c.resolved_at',
                 'c.created_at',
@@ -624,10 +967,16 @@ class CustomerVoiceCommandCenterController extends Controller
             ->get(['id_outlet', 'nama_outlet']);
 
         $assignees = User::active()
-            ->whereIn('division_id', [7, 17])
+            ->with('jabatan:id_jabatan,nama_jabatan')
             ->orderBy('nama_lengkap')
-            ->limit(300)
-            ->get(['id', 'nama_lengkap', 'id_outlet', 'division_id']);
+            ->limit(500)
+            ->get(['id', 'nama_lengkap', 'id_outlet', 'division_id', 'id_jabatan']);
+
+        $assigneesForUi = $assignees->map(fn ($u) => [
+            'id' => (int) $u->id,
+            'nama_lengkap' => (string) ($u->nama_lengkap ?? ''),
+            'nama_jabatan' => $u->jabatan !== null ? (string) ($u->jabatan->nama_jabatan ?? '') : null,
+        ])->values()->all();
 
         return [
             'summary' => $summary,
@@ -638,7 +987,8 @@ class CustomerVoiceCommandCenterController extends Controller
             'perfWindowDays' => $perfWindowDays,
             'cases' => $cases,
             'outlets' => $outlets,
-            'assignees' => $assignees,
+            'assignees' => $assigneesForUi,
+            'capa_auth_user' => $this->capaAuthUserPayload($request->user()),
             'activities' => $activities,
             'note_counts' => $noteCounts,
             'filters' => [
@@ -650,12 +1000,19 @@ class CustomerVoiceCommandCenterController extends Controller
                 'overdue_only' => $request->boolean('overdue_only'),
                 'date_from' => $request->input('date_from'),
                 'date_to' => $request->input('date_to'),
+                'show_all' => $request->boolean('show_all'),
             ],
         ];
     }
 
     private function applyFilters($query, Request $request): void
     {
+        /** Mode antrian default: belum selesai + perlu perhatian (bukan positif/netral). */
+        if (! $request->boolean('show_all')) {
+            $query->whereIn('c.status', ['new', 'in_progress'])
+                ->whereNotIn('c.severity', ['positive', 'neutral']);
+        }
+
         if ($request->filled('status')) {
             $query->where('c.status', $request->input('status'));
         }
@@ -683,6 +1040,33 @@ class CustomerVoiceCommandCenterController extends Controller
             $query->whereIn('c.status', ['new', 'in_progress'])
                 ->whereNotNull('c.due_at')
                 ->where('c.due_at', '<', now());
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('c.event_at', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('c.event_at', '<=', $request->input('date_to'));
+        }
+    }
+
+    /**
+     * Filter opsional untuk daftar arsip (resolved / positif).
+     */
+    private function applyArchiveListFilters($query, Request $request): void
+    {
+        if ($request->filled('id_outlet')) {
+            $query->where('c.id_outlet', (int) $request->input('id_outlet'));
+        }
+        if ($request->filled('q')) {
+            $keyword = '%'.trim((string) $request->input('q')).'%';
+            $query->where(function ($q) use ($keyword) {
+                $q->where('c.author_name', 'like', $keyword)
+                    ->orWhere('c.customer_contact', 'like', $keyword)
+                    ->orWhere('c.summary_id', 'like', $keyword)
+                    ->orWhere('c.raw_text', 'like', $keyword)
+                    ->orWhere('o.nama_outlet', 'like', $keyword)
+                    ->orWhere('c.meta', 'like', $keyword);
+            });
         }
         if ($request->filled('date_from')) {
             $query->whereDate('c.event_at', '>=', $request->input('date_from'));
@@ -723,6 +1107,10 @@ class CustomerVoiceCommandCenterController extends Controller
 
         if ($request->boolean('overdue_only')) {
             $params['overdue_only'] = 1;
+        }
+
+        if ($request->boolean('show_all')) {
+            $params['show_all'] = 1;
         }
 
         return $params;
@@ -837,6 +1225,9 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $storedCapa = isset($meta['capa']) && is_array($meta['capa']) ? $meta['capa'] : null;
         $capa = $this->capaService->buildForPresentation($storedCapa, $case, $topicsArr);
+        $capa = $this->capaService->decorateEvidenceUrls($capa);
+
+        $complaintTypeLabels = $this->voiceComplaintTopicLabels($topicsArr);
 
         if (empty($capa['h']['documented_impact']) && count($impact)) {
             $capa['h']['documented_impact'] = array_values(array_unique($impact));
@@ -862,16 +1253,67 @@ class CustomerVoiceCommandCenterController extends Controller
             'raw_text' => $case->raw_text !== null ? (string) $case->raw_text : null,
             'risk_score' => (int) ($case->risk_score ?? 0),
             'status' => (string) ($case->status ?? ''),
-            'assigned_to' => $case->assigned_to,
+            'assigned_to' => $case->assigned_to !== null ? (int) $case->assigned_to : null,
             'assigned_to_name' => $case->assigned_to_name !== null ? (string) $case->assigned_to_name : null,
+            'assigned_to_jabatan' => isset($case->assigned_to_jabatan) && $case->assigned_to_jabatan !== null && $case->assigned_to_jabatan !== ''
+                ? (string) $case->assigned_to_jabatan
+                : null,
             'due_at' => $case->due_at,
             'resolved_at' => $case->resolved_at,
             'created_at' => $case->created_at,
             'follow_up_target' => $followUp,
             'impact' => $impact,
             'topics' => $topicsArr,
+            'complaint_type_labels' => $complaintTypeLabels,
             'capa' => $capa,
         ];
+    }
+
+    /**
+     * Label bahasa Indonesia untuk jenis komplain (dari kolom topics / klasifikasi AI).
+     *
+     * @param  array<int, string>  $topics
+     * @return array<int, string>
+     */
+    private function voiceComplaintTopicLabels(array $topics): array
+    {
+        $map = [
+            'food_quality' => 'Kualitas makanan',
+            'service' => 'Layanan',
+            'hygiene' => 'Kebersihan',
+            'cleanliness' => 'Kebersihan',
+            'ambiance' => 'Suasana',
+            'price' => 'Harga / nilai',
+            'price_value' => 'Harga / nilai',
+            'billing' => 'Tagihan',
+            'wait_time' => 'Waktu tunggu',
+            'waiting_time' => 'Waktu tunggu',
+            'speed_wait_time' => 'Waktu tunggu',
+            'parking' => 'Parkir',
+            'portion' => 'Porsi',
+            'noise' => 'Kebisingan',
+            'reservation' => 'Reservasi',
+            'beverage' => 'Minuman',
+            'staff_attitude' => 'Sikap staf',
+            'other' => 'Lainnya',
+        ];
+
+        $seenLabel = [];
+        $out = [];
+        foreach ($topics as $t) {
+            $k = strtolower(trim((string) $t));
+            if ($k === '') {
+                continue;
+            }
+            $label = $map[$k] ?? ucfirst(str_replace('_', ' ', $k));
+            if (isset($seenLabel[$label])) {
+                continue;
+            }
+            $seenLabel[$label] = true;
+            $out[] = $label;
+        }
+
+        return $out;
     }
 
     private function handleUpdateCase(Request $request, int $id): array

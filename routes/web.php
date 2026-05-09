@@ -205,8 +205,14 @@ Route::middleware('auth')->group(function () {
     // Customer Voice Command Center (menu terpisah)
     Route::get('/customer-voice-command-center', [CustomerVoiceCommandCenterController::class, 'index'])
         ->name('customer-voice-command-center.index');
+    Route::get('/customer-voice-command-center/archive-cases', [CustomerVoiceCommandCenterController::class, 'archiveCasesJson'])
+        ->name('customer-voice-command-center.archive-cases');
     Route::get('/customer-voice-command-center/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportPdf'])
         ->name('customer-voice-command-center.export-pdf');
+    Route::get('/customer-voice-command-center/cases/{id}/capa/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportCapaPdf'])
+        ->name('customer-voice-command-center.cases.capa.export-pdf');
+    Route::get('/customer-voice-command-center/cases/{id}/capa/export-excel', [CustomerVoiceCommandCenterController::class, 'exportCapaExcel'])
+        ->name('customer-voice-command-center.cases.capa.export-excel');
     Route::post('/customer-voice-command-center/sync', [CustomerVoiceCommandCenterController::class, 'sync'])
         ->name('customer-voice-command-center.sync');
     Route::post('/customer-voice-command-center/cases/{id}/update', [CustomerVoiceCommandCenterController::class, 'updateCase'])
@@ -215,6 +221,10 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.cases.note');
     Route::post('/customer-voice-command-center/cases/{id}/capa', [CustomerVoiceCommandCenterController::class, 'saveCapa'])
         ->name('customer-voice-command-center.cases.capa');
+    Route::post('/customer-voice-command-center/cases/{id}/capa/evidence', [CustomerVoiceCommandCenterController::class, 'uploadCapaEvidence'])
+        ->name('customer-voice-command-center.cases.capa.evidence');
+    Route::delete('/customer-voice-command-center/cases/{id}/capa/evidence/{evidenceId}', [CustomerVoiceCommandCenterController::class, 'deleteCapaEvidence'])
+        ->name('customer-voice-command-center.cases.capa.evidence.destroy');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
