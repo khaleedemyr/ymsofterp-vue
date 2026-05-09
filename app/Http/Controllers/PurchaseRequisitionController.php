@@ -4719,12 +4719,15 @@ class PurchaseRequisitionController extends Controller
                         }
                         
                         // Get budget info for this outlet+category
+                        // Exclude PR ini dari agregat PR (sama seperti validateBudgetLimit saat approve),
+                        // lalu tambahkan currentAmount sekali — hindari double count di modal.
                         $itemBudgetInfoResult = $budgetService->getBudgetInfo(
                             categoryId: $combo['category_id'],
                             outletId: $combo['outlet_id'],
                             dateFrom: $dateFrom,
                             dateTo: $dateTo,
-                            currentAmount: $currentAmount
+                            currentAmount: $currentAmount,
+                            excludePrId: $purchaseRequisition->id
                         );
                         
                         if ($itemBudgetInfoResult && $itemBudgetInfoResult['success']) {

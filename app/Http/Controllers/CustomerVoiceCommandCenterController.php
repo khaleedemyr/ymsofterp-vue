@@ -1087,7 +1087,8 @@ class CustomerVoiceCommandCenterController extends Controller
                 'critical_open' => 0,
                 'overdue_open' => 0,
             ];
-            $kpis = [];
+            // Harus berupa objek JSON `{}`, bukan array `[]`, agar klien mem-parse sebagai Map KPI.
+            $kpis = new \stdClass;
             $trend = [];
             $picPerformance = [];
             $outletPerformance = [];
