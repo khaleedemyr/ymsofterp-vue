@@ -1439,6 +1439,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'notify_follower_user_ids' => $notifyFollowerIds,
             'regional_user_ids' => $regionalUserIds,
             'capa_filled' => $this->capaService->storedCapaHasUserInput($storedCapa),
+            'capa_verification' => $this->capaService->storedCapaVerificationState($storedCapa),
             'capa' => $capa,
         ];
     }

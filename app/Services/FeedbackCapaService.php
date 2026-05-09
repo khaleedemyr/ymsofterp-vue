@@ -165,6 +165,34 @@ class FeedbackCapaService
      *
      * @param  array<string, mixed>|null  $stored  Isi meta["capa"] mentah
      */
+    /**
+     * Status verifikasi bagian G dari meta CAPA tersimpan (bukan merge presentasi).
+     *
+     * @return array{state: 'none'|'pending'|'done', result: 'effective'|'not_effective'|null}
+     */
+    public function storedCapaVerificationState(?array $storedCapa): array
+    {
+        if ($storedCapa === null || ! is_array($storedCapa)) {
+            return ['state' => 'none', 'result' => null];
+        }
+        $g = isset($storedCapa['g']) && is_array($storedCapa['g']) ? $storedCapa['g'] : [];
+        $verifierRaw = $g['verified_by_user_id'] ?? null;
+        $verifierId = ($verifierRaw !== null && $verifierRaw !== '')
+            ? (int) $verifierRaw
+            : 0;
+        $rawResult = isset($g['result']) ? strtolower(trim((string) $g['result'])) : '';
+        $result = in_array($rawResult, ['effective', 'not_effective'], true) ? $rawResult : null;
+
+        if ($result !== null) {
+            return ['state' => 'done', 'result' => $result];
+        }
+        if ($verifierId > 0) {
+            return ['state' => 'pending', 'result' => null];
+        }
+
+        return ['state' => 'none', 'result' => null];
+    }
+
     public function storedCapaHasUserInput(?array $stored): bool
     {
         if ($stored === null || $stored === []) {

@@ -136,7 +136,7 @@ async function load() {
 
 function openCase(id) {
   const base = route('customer-voice-command-center.index')
-  router.visit(`${base}?show_all=1&open_case=${encodeURIComponent(id)}`)
+  router.visit(`${base}?show_all=1&open_case=${encodeURIComponent(id)}&capa_verify=1`)
 }
 
 function openCommandCenter() {

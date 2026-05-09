@@ -11,6 +11,26 @@
       </p>
     </div>
 
+    <div
+      v-if="pendingVerifierSelf"
+      class="rounded-2xl border border-violet-300 bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-3 shadow-sm"
+    >
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-xs font-medium leading-relaxed text-violet-950">
+          <i class="fa fa-clipboard-check mr-1.5 text-violet-600" aria-hidden="true" />
+          Anda ditunjuk sebagai <strong>verifikator</strong>. Lengkapi <strong>bagian G — Hasil</strong>, lalu klik
+          <strong>Simpan form CAPA</strong>.
+        </p>
+        <button
+          type="button"
+          class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-700 active:bg-violet-800"
+          @click="scrollToCapaG"
+        >
+          Verifikasi
+        </button>
+      </div>
+    </div>
+
     <nav
       class="sticky top-0 z-[6] -mx-0.5 mb-1 flex gap-0.5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 py-1.5 px-1 text-[11px] font-semibold shadow-sm backdrop-blur sm:hidden"
       aria-label="Loncat ke bagian form"
@@ -396,7 +416,16 @@
       >
         {{ deleting ? 'Menghapus…' : 'Hapus data CAPA' }}
       </button>
-      <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+      <div class="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
+        <button
+          v-if="pendingVerifierSelf"
+          type="button"
+          class="rounded-xl border border-violet-300 bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="saving || deleting"
+          @click="scrollToCapaG"
+        >
+          Verifikasi
+        </button>
         <button
           type="button"
           class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -420,7 +449,7 @@
 
 <script setup>
 import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
@@ -433,9 +462,11 @@ const props = defineProps({
   assignedToName: { type: String, default: '' },
   assignedToJabatan: { type: String, default: '' },
   deleting: { type: Boolean, default: false },
+  /** Deep link dari Home / kartu verifikasi — scroll ke section CAPA (mis. capa-g). */
+  focusSectionId: { type: String, default: null },
 })
 
-const emit = defineEmits(['save', 'reset', 'delete-capa'])
+const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section'])
 
 function askDeleteStoredCapa() {
   if (
@@ -488,6 +519,45 @@ const assigneesMerged = computed(() => {
 const local = ref(ensureShape({}))
 
 const evidenceFull = computed(() => (local.value.evidence || []).length >= 20)
+
+/** User login = verifikator di G dan hasil belum dipilih (efektif / tidak efektif). */
+const pendingVerifierSelf = computed(() => {
+  const uid = props.authUser?.id != null ? Number(props.authUser.id) : null
+  if (!uid || uid <= 0) return false
+  const vidRaw = local.value?.g?.verified_by_user_id
+  const vid = vidRaw != null && vidRaw !== '' ? Number(vidRaw) : null
+  if (!vid || vid !== uid) return false
+  const r = local.value?.g?.result
+  return r !== 'effective' && r !== 'not_effective'
+})
+
+function scrollToSectionById(sectionId, emitAfter) {
+  if (!sectionId) return
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        if (emitAfter) {
+          emit('focused-section')
+        }
+      }, 120)
+    })
+  })
+}
+
+function scrollToCapaG() {
+  scrollToSectionById('capa-g', false)
+}
+
+watch(
+  () => [props.caseId, props.focusSectionId],
+  ([, sectionId]) => {
+    if (sectionId) {
+      scrollToSectionById(sectionId, true)
+    }
+  },
+  { flush: 'post' },
+)
 
 watch(
   () => props.initialCapa,

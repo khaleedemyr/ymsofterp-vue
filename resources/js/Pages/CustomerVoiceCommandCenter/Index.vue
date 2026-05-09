@@ -281,7 +281,7 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1640px] text-sm">
+          <table class="w-full min-w-[1760px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
@@ -300,6 +300,12 @@
                 <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[100px]" title="Berdasarkan isian tersimpan di meta CAPA">CAPA</th>
+                <th
+                  class="px-3 py-3 text-left font-semibold min-w-[108px]"
+                  title="Bagian G — apakah hasil verifikasi (efektif / tidak efektif) sudah diisi"
+                >
+                  Verif. CAPA
+                </th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
                 <th class="px-3 py-3 text-left font-semibold">CS PIC</th>
                 <th class="px-3 py-3 text-left font-semibold">Status</th>
@@ -308,7 +314,7 @@
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="15" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="16" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -386,6 +392,20 @@
                     >
                       Belum
                     </span>
+                  </td>
+                  <td class="px-3 py-3 align-top whitespace-nowrap">
+                    <div class="flex flex-col gap-0.5">
+                      <span
+                        class="inline-flex w-fit rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                        :class="capaVerificationDisplay(row).badgeClass"
+                        :title="capaVerificationDisplay(row).title"
+                      >
+                        {{ capaVerificationDisplay(row).text }}
+                      </span>
+                      <span v-if="capaVerificationDisplay(row).sub" class="text-[10px] text-slate-500">
+                        {{ capaVerificationDisplay(row).sub }}
+                      </span>
+                    </div>
                   </td>
                   <td class="px-3 py-3 min-w-[190px]">
                     <div class="text-xs font-semibold" :class="slaClass(row)">{{ slaLabel(row) }}</div>
@@ -471,7 +491,7 @@
                   class="border-t"
                   :class="statusRowClasses(caseForms[row.id]?.status || row.status).timeline"
                 >
-                  <td class="px-3 py-3" colspan="15">
+                  <td class="px-3 py-3" colspan="16">
                     <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Aktivitas terbaru</div>
                     <div v-if="!activitiesFor(row.id).length" class="text-xs text-slate-400">Belum ada aktivitas.</div>
                     <div v-else class="space-y-2">
@@ -620,9 +640,11 @@
             :assigned-to-jabatan="selectedCase.assigned_to_jabatan || ''"
             :saving="capaSaving"
             :deleting="capaDeleting"
+            :focus-section-id="capaDetailFocusSection"
             @save="submitCapa"
             @reset="resetCapaDraft"
             @delete-capa="deleteStoredCapa"
+            @focused-section="capaDetailFocusSection = null"
           />
 
           <div class="rounded-xl border border-slate-200 p-3">
@@ -915,6 +937,8 @@ const detailCaseId = ref(null)
 const capaSaving = ref(false)
 const capaDeleting = ref(false)
 const capaResetKey = ref(0)
+/** Deep link ?capa_verify=1 — scroll form ke bagian G sekali setelah panel terbuka */
+const capaDetailFocusSection = ref(null)
 const caseForms = ref({})
 const q = ref(props.filters?.q || '')
 const status = ref(props.filters?.status || '')
@@ -1326,14 +1350,21 @@ function openDetailFromArchive(row) {
 /** Deep link ?open_case= dari Home / kartu verifikasi */
 let openCaseQueryHandled = false
 
-function stripOpenCaseQueryParam() {
+function stripVoiceDeepLinkQueryParams() {
   try {
     const u = new URL(window.location.href)
-    if (!u.searchParams.has('open_case')) {
-      return
+    let changed = false
+    if (u.searchParams.has('open_case')) {
+      u.searchParams.delete('open_case')
+      changed = true
     }
-    u.searchParams.delete('open_case')
-    window.history.replaceState({}, '', u.pathname + (u.search ? u.search : '') + u.hash)
+    if (u.searchParams.has('capa_verify')) {
+      u.searchParams.delete('capa_verify')
+      changed = true
+    }
+    if (changed) {
+      window.history.replaceState({}, '', u.pathname + (u.search ? u.search : '') + u.hash)
+    }
   } catch {
     /* noop */
   }
@@ -1344,8 +1375,12 @@ async function tryOpenCaseFromQuery() {
     return
   }
   let raw = null
+  let wantCapaVerify = false
   try {
-    raw = new URLSearchParams(window.location.search).get('open_case')
+    const params = new URLSearchParams(window.location.search)
+    raw = params.get('open_case')
+    const v = params.get('capa_verify')
+    wantCapaVerify = v === '1' || v === 'true'
   } catch {
     return
   }
@@ -1361,7 +1396,10 @@ async function tryOpenCaseFromQuery() {
 
   if (caseMap.value[id]) {
     openDetail(id)
-    stripOpenCaseQueryParam()
+    if (wantCapaVerify) {
+      capaDetailFocusSection.value = 'capa-g'
+    }
+    stripVoiceDeepLinkQueryParams()
     return
   }
 
@@ -1377,7 +1415,10 @@ async function tryOpenCaseFromQuery() {
     if (data.success && data.case) {
       detailOverrides.value = { ...detailOverrides.value, [id]: data.case }
       detailCaseId.value = id
-      stripOpenCaseQueryParam()
+      if (wantCapaVerify) {
+        capaDetailFocusSection.value = 'capa-g'
+      }
+      stripVoiceDeepLinkQueryParams()
     } else {
       openCaseQueryHandled = false
     }
@@ -1397,6 +1438,7 @@ function closeDetail() {
     detailOverrides.value = next
   }
   detailCaseId.value = null
+  capaDetailFocusSection.value = null
 }
 
 function submitCapa(capa) {
@@ -1561,6 +1603,34 @@ function statusClass(statusValue) {
   if (s === 'follow_up_by_ops' || s === 'in_progress') return 'bg-indigo-100 text-indigo-700'
   if (s === 'courtesy_by_cs') return 'bg-sky-100 text-sky-800'
   return 'bg-amber-100 text-amber-700'
+}
+
+/** Badge kolom Verif. CAPA (meta bagian G tersimpan). */
+function capaVerificationDisplay(row) {
+  const v = row?.capa_verification
+  if (!v || v.state === 'none') {
+    return {
+      text: '—',
+      sub: '',
+      badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
+      title: 'Belum ada verifikator atau belum menunggu hasil verifikasi',
+    }
+  }
+  if (v.state === 'pending') {
+    return {
+      text: 'Menunggu',
+      sub: '',
+      badgeClass: 'border-amber-200 bg-amber-50 text-amber-900',
+      title: 'Verifikator ditunjuk — hasil (efektif / tidak efektif) belum diisi',
+    }
+  }
+  const sub = v.result === 'effective' ? 'Efektif' : 'Tidak efektif'
+  return {
+    text: 'Sudah',
+    sub,
+    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    title: `Verifikasi selesai — ${sub}`,
+  }
 }
 
 function severityClass(sev) {
