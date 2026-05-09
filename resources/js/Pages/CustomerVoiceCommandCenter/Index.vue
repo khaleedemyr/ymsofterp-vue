@@ -382,7 +382,12 @@
                   </td>
                   <td class="px-3 py-3">
                     <div class="font-semibold text-slate-800">{{ row.summary_id || '-' }}</div>
-                    <div class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ row.raw_text || '' }}</div>
+                    <div
+                      class="mt-1 text-[12px] leading-relaxed text-slate-700 whitespace-pre-wrap"
+                      :title="row.raw_text || 'Komentar asli tidak tersedia'"
+                    >
+                      {{ row.raw_text || 'Komentar asli tidak tersedia' }}
+                    </div>
                   </td>
                   <td class="px-3 py-3 text-sm font-semibold text-slate-800">{{ row.risk_score ?? 0 }}</td>
                   <td class="px-3 py-3 align-top">
