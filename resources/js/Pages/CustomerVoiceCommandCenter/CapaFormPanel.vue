@@ -10,20 +10,32 @@
         <strong>Preventive</strong> = cegah kejadian berulang.
       </p>
     </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-2">
+      <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA aktif</div>
+      <div class="mt-1 text-xs font-semibold text-indigo-900">{{ divisionLabel(activeDivision) }}</div>
+    </div>
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">A. Informasi umum (dari source)</h3>
-      <p class="mt-1 text-[11px] text-slate-500">Data ini berasal dari source komentar dan ditampilkan di paling atas sebagai referensi CAPA.</p>
+      <h3 class="text-sm font-bold text-slate-900">Informasi Komplain</h3>
+      <p class="mt-1 text-[11px] text-slate-500">Outlet, tanggal, dan waktu komplain ditampilkan di atas agar cepat terlihat.</p>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Tanggal complaint
+          <input v-model="local.a.complaint_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+        </label>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Waktu complaint
+          <input v-model="local.a.complaint_time" type="time" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+        </label>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Outlet / lokasi</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ outletDisplay }}</div>
+        </div>
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">Channel complaint</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
         </div>
       </div>
     </section>
-    <div class="rounded-xl border border-slate-200 bg-white p-2">
-      <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA aktif</div>
-      <div class="mt-1 text-xs font-semibold text-indigo-900">{{ divisionLabel(activeDivision) }}</div>
-    </div>
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div class="mb-3 flex items-center justify-between gap-2">
         <h3 class="text-sm font-bold text-slate-900">List CAPA</h3>
@@ -147,72 +159,9 @@
       <p v-else class="mt-3 text-xs text-slate-400">Belum ada lampiran.</p>
     </section>
 
-    <!-- A -->
-    <section id="capa-a" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">A. Informasi umum</h3>
-      <p class="mt-1 text-[11px] text-slate-500">General information — tanggal, waktu, lokasi, tamu, channel, PIC penerima.</p>
-      <div class="mt-4 grid gap-3 sm:grid-cols-2">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Tanggal complaint
-          <input v-model="local.a.complaint_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Waktu
-          <input v-model="local.a.complaint_time" type="time" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-        </label>
-        <div class="sm:col-span-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/90 px-3 py-2.5">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outlet / lokasi</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ outletDisplay }}</div>
-          <p class="mt-1 text-[10px] leading-snug text-slate-400">Nilai dari data outlet kasus (sama seperti kartu ringkas di atas). Tidak perlu diketik ulang.</p>
-        </div>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Nama tamu <span class="font-normal text-slate-400">(optional)</span>
-          <input v-model="local.a.guest_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Nama tamu / penulis" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Channel complaint
-          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Otomatis dari source (tidak perlu diubah manual).</span>
-          <input :value="sourceLabel" type="text" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" />
-        </label>
-        <div class="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 sm:col-span-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-indigo-900">PIC penerima complaint</div>
-          <p class="mt-1 text-[10px] leading-snug text-indigo-900/80">
-            Mengikuti PIC pada kolom tabel (baris kasus). Ubah di daftar utama lalu klik <strong>Simpan</strong>.
-          </p>
-          <template v-if="assignedToId != null">
-            <div class="mt-2 text-sm font-semibold text-slate-900">{{ assignedToName || '—' }}</div>
-            <div v-if="assignedToJabatan" class="text-xs text-slate-600">{{ assignedToJabatan }}</div>
-            <div v-else class="text-xs text-slate-500">Jabatan belum ada di data master.</div>
-          </template>
-          <div v-else class="mt-2 text-sm font-medium text-amber-900">Belum ada PIC — pilih PIC di kolom tabel lalu Simpan.</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- B -->
-    <section id="capa-b" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">B. Detail complaint</h3>
-      <p class="mt-1 text-[11px] font-semibold text-slate-600">Jenis complaint (dari source)</p>
-      <p class="text-[10px] text-slate-500">Auto dari source, bukan input manual.</p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <span
-          v-for="opt in sourceComplaintTypeBadges"
-          :key="`src-topic-${opt.key}`"
-          class="inline-flex items-center rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900"
-        >
-          {{ opt.label }}
-        </span>
-      </div>
-      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Deskripsi complaint (source)
-        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Auto dari komentar source.</span>
-        <textarea :value="sourceComplaintDescription || '-'" rows="6" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700" />
-      </label>
-    </section>
-
     <!-- C -->
     <section id="capa-c" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">C. Immediate action <span class="font-normal text-slate-500">(Tindakan langsung)</span></h3>
+      <h3 class="text-sm font-bold text-slate-900">Immediate Action <span class="font-normal text-slate-500">(Tindakan langsung)</span></h3>
       <p class="mt-2 text-[11px] font-semibold text-slate-700">Tindakan yang dilakukan saat itu</p>
       <div class="mt-2 flex flex-wrap gap-2">
         <label v-for="opt in immediateActions" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
@@ -238,7 +187,7 @@
 
     <!-- D -->
     <section id="capa-d" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">D. Root cause analysis <span class="font-normal text-slate-500">(Analisa akar masalah)</span></h3>
+      <h3 class="text-sm font-bold text-slate-900">Root Cause Analysis <span class="font-normal text-slate-500">(Analisa akar masalah)</span></h3>
       <p class="mt-2 text-[11px] leading-relaxed text-slate-600">
         Kerangka fishbone (6M): Man, Method, Machine, Material, Measurement, Environment — isi kolom di bawah sesuai fakta.
       </p>
@@ -266,7 +215,7 @@
 
     <!-- E -->
     <section id="capa-e" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">E. Corrective action <span class="font-normal text-slate-500">(Perbaikan jangka pendek)</span></h3>
+      <h3 class="text-sm font-bold text-slate-900">Corrective Action <span class="font-normal text-slate-500">(Perbaikan jangka pendek)</span></h3>
       <p class="mt-1 text-[11px] text-slate-600">Tindakan untuk memperbaiki masalah yang sudah terjadi.</p>
       <div class="mt-3 grid gap-3">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -288,7 +237,7 @@
 
     <!-- F -->
     <section id="capa-f" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">F. Preventive action <span class="font-normal text-slate-500">(Pencegahan jangka panjang)</span></h3>
+      <h3 class="text-sm font-bold text-slate-900">Preventive Action <span class="font-normal text-slate-500">(Pencegahan jangka panjang)</span></h3>
       <p class="mt-1 text-[11px] text-slate-600">Tindakan agar masalah tidak berulang.</p>
       <p class="mt-3 text-[11px] font-semibold text-slate-700">Improvement area</p>
       <div class="mt-2 flex flex-wrap gap-2">
@@ -322,7 +271,7 @@
 
     <!-- G -->
     <section id="capa-g" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">G. Follow up &amp; verification</h3>
+      <h3 class="text-sm font-bold text-slate-900">Follow Up &amp; Verification</h3>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Tanggal follow up
@@ -356,7 +305,7 @@
 
     <!-- H -->
     <section id="capa-h" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">H. Customer recovery <span class="font-normal text-slate-500">(Service recovery)</span></h3>
+      <h3 class="text-sm font-bold text-slate-900">Customer Recovery <span class="font-normal text-slate-500">(Service recovery)</span></h3>
 
       <div class="mt-3">
         <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Apakah tamu sudah dihubungi kembali?</p>
@@ -584,15 +533,6 @@ const sourceComplaintTypeBadges = computed(() => {
   return out.length ? out : [{ key: 'other', label: 'Others' }]
 })
 const sourceComplaintDescription = computed(() => String(props.sourceComplaintText || '').trim())
-const sourceSeverityLabel = computed(() => {
-  const s = String(props.sourceSeverity || '').toLowerCase().trim()
-  if (s === 'minor') return 'Minor'
-  if (s === 'major') return 'Major'
-  if (s === 'critical') return 'Critical'
-  if (s === 'neutral') return 'Neutral'
-  if (s === 'positive') return 'Positive'
-  return '—'
-})
 const sourceImpactBadges = computed(() => {
   const raw = Array.isArray(props.sourceImpact) ? props.sourceImpact : []
   const out = []
@@ -734,14 +674,6 @@ watch(
 function switchDivision(div) {
   if (!['service', 'kitchen', 'bar'].includes(div)) return
   activeDivision.value = div
-}
-
-function impactLabel(v) {
-  const k = String(v || '').toLowerCase()
-  if (k === 'reputasi') return 'Reputasi'
-  if (k === 'finansial') return 'Finansial'
-  if (k === 'operasional') return 'Operasional'
-  return '—'
 }
 
 function isDivisionFilled(div) {

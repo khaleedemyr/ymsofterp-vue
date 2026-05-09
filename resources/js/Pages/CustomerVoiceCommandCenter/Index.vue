@@ -589,6 +589,14 @@
               <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.customer_email || '—' }}</div>
               <p class="mt-1 text-[10px] text-slate-400">Diisi jika ada kolom email di Guest Comment + sync; bisa juga ditambahkan manual di meta.</p>
             </div>
+            <div class="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+              <div class="text-[11px] uppercase tracking-wide text-indigo-900">PIC penerima complaint</div>
+              <template v-if="selectedCase.assigned_to != null">
+                <div class="mt-1 text-sm font-semibold text-slate-900">{{ selectedCase.assigned_to_name || '—' }}</div>
+                <div v-if="selectedCase.assigned_to_jabatan" class="text-xs text-slate-600">{{ selectedCase.assigned_to_jabatan }}</div>
+              </template>
+              <div v-else class="mt-1 text-sm font-medium text-amber-900">Belum ada PIC.</div>
+            </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
               <div class="text-[11px] uppercase tracking-wide text-slate-400">Follow-up target</div>
               <div class="mt-1 flex flex-wrap items-center gap-2">
