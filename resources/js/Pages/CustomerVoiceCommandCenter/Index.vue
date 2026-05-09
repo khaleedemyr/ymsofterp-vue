@@ -639,6 +639,20 @@
           </div>
 
           <div class="rounded-xl border border-slate-200 p-3">
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Jenis komplain</div>
+            <div v-if="complaintTypeLabelsFor(selectedCase).length" class="mt-2 flex flex-wrap gap-1">
+              <span
+                v-for="(lbl, idx) in complaintTypeLabelsFor(selectedCase)"
+                :key="`detail-ct-${selectedCase.id}-${idx}`"
+                class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
+              >
+                {{ lbl }}
+              </span>
+            </div>
+            <div v-else class="mt-2 text-xs text-slate-400">—</div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 p-3">
             <div class="text-[11px] uppercase tracking-wide text-slate-400">Komentar Asli</div>
             <div class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{{ selectedCase.raw_text || '-' }}</div>
           </div>

@@ -15,30 +15,8 @@
       <p class="mt-1 text-[11px] text-slate-500">Data ini berasal dari source komentar dan ditampilkan di paling atas sebagai referensi CAPA.</p>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">Source</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div class="text-[11px] uppercase tracking-wide text-slate-500">Channel complaint</div>
           <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
-        </div>
-      </div>
-      <div class="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
-        <div class="text-[11px] font-bold uppercase tracking-wide text-slate-600">Kategori severity (source)</div>
-        <div class="mt-2">
-          <span class="inline-flex rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800">
-            {{ sourceSeverityLabel }}
-          </span>
-        </div>
-        <div class="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-600">Impact (source)</div>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <span
-            v-for="imp in sourceImpactBadges"
-            :key="`src-impact-${imp}`"
-            class="inline-flex rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-          >
-            {{ impactLabel(imp) }}
-          </span>
         </div>
       </div>
     </section>
