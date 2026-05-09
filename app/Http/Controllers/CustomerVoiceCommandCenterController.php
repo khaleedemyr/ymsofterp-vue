@@ -9,6 +9,7 @@ use App\Services\FeedbackCapaService;
 use App\Services\FeedbackCaseIngestionService;
 use App\Services\NotificationService;
 use App\Support\FeedbackCapaExportFormatter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -276,7 +277,7 @@ class CustomerVoiceCommandCenterController extends Controller
         return $this->redirectToVoiceIndex($request)->with('success', 'Catatan tersimpan.');
     }
 
-    public function saveCapa(Request $request, int $id): RedirectResponse
+    public function saveCapa(Request $request, int $id): RedirectResponse|JsonResponse
     {
         $request->validate([
             'capa' => 'required|array',
@@ -285,6 +286,13 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
         if (! $row) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Case tidak ditemukan.',
+                ], 404);
+            }
+
             return redirect()->route('customer-voice-command-center.index')
                 ->with('error', 'Case tidak ditemukan.');
         }
@@ -338,6 +346,13 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
         $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Form CAPA tersimpan.',
+            ]);
+        }
 
         return $this->redirectToVoiceIndex($request)->with('success', 'Form CAPA tersimpan.');
     }

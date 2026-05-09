@@ -752,6 +752,10 @@ function getVerifierPendingDivisionsFromCase(caseRow) {
   return result
 }
 
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+}
+
 async function submitVerify() {
   if (!modalItem.value?.id || !modalCase.value) return
   if (!verifyForm.value.result) {
@@ -770,10 +774,21 @@ async function submitVerify() {
 
   savingVerify.value = true
   try {
-    const { data } = await axios.post(route('api.approval-app.customer-voice-command-center.cases.capa', modalItem.value.id), {
-      capa: base,
-      capa_division: division,
-    })
+    const { data } = await axios.post(
+      route('customer-voice-command-center.cases.capa', modalItem.value.id),
+      {
+        capa: base,
+        capa_division: division,
+      },
+      {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-TOKEN': csrfToken(),
+        },
+      },
+    )
     if (!data?.success) throw new Error(data?.message || 'Gagal simpan verifikasi.')
     await Swal.fire({ icon: 'success', title: 'Verifikasi tersimpan', timer: 1300, showConfirmButton: false })
     await load()
