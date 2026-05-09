@@ -1,6 +1,7 @@
 <template>
   <div class="relative">
     <input
+      ref="inputRef"
       v-model="q"
       type="text"
       autocomplete="off"
@@ -12,13 +13,16 @@
       @input="open = true"
       @keydown.escape.prevent="open = false"
     />
-    <p
+    <button
       v-if="selectedLabel"
+      type="button"
       :class="selectedLineClass"
+      @click="openChooser"
     >
       <span class="font-semibold text-slate-800">{{ selectedLabel }}</span>
       <span v-if="selectedJabatan" class="text-slate-500"> · {{ selectedJabatan }}</span>
-    </p>
+      <span class="ml-2 text-[10px] font-semibold uppercase tracking-wide text-indigo-600">Ubah</span>
+    </button>
     <div
       v-show="open && !disabled"
       class="absolute left-0 right-0 z-30 mt-1 max-h-52 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
@@ -48,7 +52,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Number, default: null },
@@ -74,6 +78,7 @@ const selectedLineClass = computed(() =>
 
 const emit = defineEmits(['update:modelValue'])
 
+const inputRef = ref(null)
 const q = ref('')
 const open = ref(false)
 
@@ -125,5 +130,13 @@ function chooseClear() {
   emit('update:modelValue', null)
   open.value = false
   q.value = ''
+}
+
+function openChooser() {
+  if (props.disabled) return
+  open.value = true
+  nextTick(() => {
+    inputRef.value?.focus?.()
+  })
 }
 </script>

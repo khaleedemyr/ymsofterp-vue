@@ -385,36 +385,43 @@
                     <div class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ row.raw_text || '' }}</div>
                   </td>
                   <td class="px-3 py-3 text-sm font-semibold text-slate-800">{{ row.risk_score ?? 0 }}</td>
-                  <td class="px-3 py-3 align-top whitespace-nowrap">
-                    <div class="flex flex-col gap-0.5">
-                      <span
-                        v-if="row.capa_filled"
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[11px] text-emerald-800"
-                        title="Form CAPA sudah ada isian tersimpan"
+                  <td class="px-3 py-3 align-top">
+                    <div class="space-y-1">
+                      <div
+                        v-for="div in capaDivisionDefs"
+                        :key="`capa-${row.id}-${div.id}`"
+                        class="flex items-center gap-1.5 text-[10px] text-slate-600"
                       >
-                        <i class="fa fa-check" aria-hidden="true" />
-                      </span>
-                      <span
-                        v-else
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
-                        title="Belum ada isian CAPA yang disimpan"
-                      >
-                        <i class="fa fa-minus" aria-hidden="true" />
-                      </span>
+                        <span class="w-[44px] shrink-0 font-semibold text-slate-500">{{ div.short }}</span>
+                        <span
+                          class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
+                          :class="divisionCapaFilled(row, div.id) ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600'"
+                          :title="divisionCapaFilled(row, div.id) ? `CAPA ${div.label} sudah terisi` : `CAPA ${div.label} belum diisi`"
+                        >
+                          <i :class="divisionCapaFilled(row, div.id) ? 'fa fa-check' : 'fa fa-minus'" aria-hidden="true" />
+                        </span>
+                      </div>
                       <span v-if="capaAuditInfo(row)" class="text-[10px] text-slate-500">
                         {{ capaAuditInfo(row) }}
                       </span>
                     </div>
                   </td>
-                  <td class="px-3 py-3 align-top whitespace-nowrap">
-                    <div class="flex flex-col gap-0.5">
-                      <span
-                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px]"
-                        :class="capaVerificationDisplay(row).badgeClass"
-                        :title="capaVerificationDisplay(row).title"
+                  <td class="px-3 py-3 align-top">
+                    <div class="space-y-1">
+                      <div
+                        v-for="div in capaDivisionDefs"
+                        :key="`verif-${row.id}-${div.id}`"
+                        class="flex items-center gap-1.5 text-[10px] text-slate-600"
                       >
-                        <i :class="capaVerificationDisplay(row).iconClass" aria-hidden="true" />
-                      </span>
+                        <span class="w-[44px] shrink-0 font-semibold text-slate-500">{{ div.short }}</span>
+                        <span
+                          class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
+                          :class="divisionVerificationDisplay(row, div.id).badgeClass"
+                          :title="divisionVerificationDisplay(row, div.id).title"
+                        >
+                          <i :class="divisionVerificationDisplay(row, div.id).iconClass" aria-hidden="true" />
+                        </span>
+                      </div>
                       <span v-if="verificationAuditInfo(row)" class="text-[10px] text-slate-500">
                         {{ verificationAuditInfo(row) }}
                       </span>
@@ -1692,6 +1699,12 @@ function followUpLabel(v) {
   return ''
 }
 
+const capaDivisionDefs = [
+  { id: 'service', label: 'Service', short: 'Svc' },
+  { id: 'kitchen', label: 'Kitchen', short: 'Kit' },
+  { id: 'bar', label: 'Bar', short: 'Bar' },
+]
+
 function impactLabel(arr) {
   if (!arr?.length) return ''
   const m = { reputasi: 'Reputasi', finansial: 'Finansial', operasional: 'Operasional' }
@@ -1706,30 +1719,62 @@ function statusClass(statusValue) {
   return 'bg-amber-100 text-amber-700'
 }
 
-/** Badge kolom Verif. CAPA (meta bagian G tersimpan). */
-function capaVerificationDisplay(row) {
-  const v = row?.capa_verification
-  if (!v || v.state === 'none') {
+function hasMeaningfulValue(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim() !== ''
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0
+  if (typeof value === 'boolean') return value
+  if (Array.isArray(value)) return value.some((v) => hasMeaningfulValue(v))
+  if (typeof value === 'object') {
+    return Object.values(value).some((v) => hasMeaningfulValue(v))
+  }
+  return false
+}
+
+function rowDivisionCapa(row, divisionId) {
+  const divs = row?.capa_divisions
+  if (divs && typeof divs === 'object' && divs[divisionId] && typeof divs[divisionId] === 'object') {
+    return divs[divisionId]
+  }
+  const activeDiv = String(row?.capa_active_division || 'service').toLowerCase()
+  if (activeDiv === divisionId && row?.capa && typeof row.capa === 'object') {
+    return row.capa
+  }
+  return null
+}
+
+function divisionCapaFilled(row, divisionId) {
+  const capa = rowDivisionCapa(row, divisionId)
+  if (!capa || typeof capa !== 'object') return false
+  if (Array.isArray(capa.evidence) && capa.evidence.length > 0) return true
+  return hasMeaningfulValue(capa.c) || hasMeaningfulValue(capa.d) || hasMeaningfulValue(capa.e) || hasMeaningfulValue(capa.f) || hasMeaningfulValue(capa.g) || hasMeaningfulValue(capa.h)
+}
+
+function divisionVerificationDisplay(row, divisionId) {
+  const capa = rowDivisionCapa(row, divisionId)
+  const g = capa?.g && typeof capa.g === 'object' ? capa.g : {}
+  const verifier = g.verified_by_user_id
+  const result = String(g.result || '').toLowerCase()
+  if (!verifier && !result) {
     return {
       iconClass: 'fa fa-minus',
       badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
-      title: 'Belum ada verifikator / belum proses verifikasi',
+      title: 'Belum ada verifikasi',
     }
   }
-  if (v.state === 'pending') {
+  if (result !== 'effective' && result !== 'not_effective') {
     return {
       iconClass: 'fa fa-hourglass-half',
       badgeClass: 'border-amber-200 bg-amber-50 text-amber-900',
-      title: 'Verifikator ditunjuk — hasil (efektif / tidak efektif) belum diisi',
+      title: 'Verifikator sudah ditunjuk, hasil belum diisi',
     }
   }
-  const sub = v.result === 'effective' ? 'Efektif' : 'Tidak efektif'
   return {
-    iconClass: v.result === 'effective' ? 'fa fa-check' : 'fa fa-times',
-    badgeClass: v.result === 'effective'
+    iconClass: result === 'effective' ? 'fa fa-check' : 'fa fa-times',
+    badgeClass: result === 'effective'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-rose-200 bg-rose-50 text-rose-800',
-    title: `Verifikasi selesai — ${sub}`,
+    title: result === 'effective' ? 'Verifikasi selesai: efektif' : 'Verifikasi selesai: tidak efektif',
   }
 }
 

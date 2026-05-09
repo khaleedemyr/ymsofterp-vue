@@ -101,16 +101,27 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $rows = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
-            ->whereRaw(
-                'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.verified_by_user_id")) AS UNSIGNED) = ?',
-                [$userId]
-            )
             ->where(function ($q) {
                 $q->whereRaw('JSON_EXTRACT(c.meta, "$.capa.g.result") IS NULL')
                     ->orWhereRaw(
                         'LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.result")), ""))) NOT IN (?, ?)',
                         ['effective', 'not_effective']
                     );
+            })
+            ->where(function ($q) use ($userId) {
+                $q->whereRaw(
+                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.verified_by_user_id")) AS UNSIGNED) = ?',
+                    [$userId]
+                )->orWhereRaw(
+                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.service.g.verified_by_user_id")) AS UNSIGNED) = ?',
+                    [$userId]
+                )->orWhereRaw(
+                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.kitchen.g.verified_by_user_id")) AS UNSIGNED) = ?',
+                    [$userId]
+                )->orWhereRaw(
+                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.bar.g.verified_by_user_id")) AS UNSIGNED) = ?',
+                    [$userId]
+                );
             })
             ->orderByDesc('c.updated_at')
             ->limit(30)
@@ -121,9 +132,34 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.status',
                 'c.severity',
                 'o.nama_outlet',
+                'c.meta',
             ]);
 
-        $items = $rows->map(function ($r) {
+        $items = $rows->map(function ($r) use ($userId) {
+            $meta = [];
+            if (! empty($r->meta)) {
+                $meta = json_decode((string) $r->meta, true) ?: [];
+            }
+            $pendingDivisions = [];
+            foreach (['service', 'kitchen', 'bar'] as $division) {
+                $capa = null;
+                if (isset($meta['capa_divisions'][$division]) && is_array($meta['capa_divisions'][$division])) {
+                    $capa = $meta['capa_divisions'][$division];
+                } elseif (($meta['capa_active_division'] ?? 'service') === $division && isset($meta['capa']) && is_array($meta['capa'])) {
+                    $capa = $meta['capa'];
+                }
+                if (! is_array($capa)) {
+                    continue;
+                }
+                $g = isset($capa['g']) && is_array($capa['g']) ? $capa['g'] : [];
+                $verifierId = (int) ($g['verified_by_user_id'] ?? 0);
+                $result = strtolower(trim((string) ($g['result'] ?? '')));
+                $isDone = in_array($result, ['effective', 'not_effective'], true);
+                if ($verifierId === $userId && ! $isDone) {
+                    $pendingDivisions[] = $division;
+                }
+            }
+
             return [
                 'id' => (int) $r->id,
                 'event_at' => $r->event_at,
@@ -131,8 +167,9 @@ class CustomerVoiceCommandCenterController extends Controller
                 'status' => (string) ($r->status ?? ''),
                 'severity' => (string) ($r->severity ?? ''),
                 'nama_outlet' => (string) ($r->nama_outlet ?? ''),
+                'pending_divisions' => $pendingDivisions,
             ];
-        })->values()->all();
+        })->filter(fn ($x) => ! empty($x['pending_divisions']))->values()->all();
 
         return response()->json([
             'success' => true,
