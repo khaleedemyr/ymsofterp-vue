@@ -85,6 +85,7 @@ class GuestCommentFormController extends Controller
             $query->where(function ($q) use ($s) {
                 $q->where('guest_name', 'like', $s)
                     ->orWhere('guest_phone', 'like', $s)
+                    ->orWhere('guest_email', 'like', $s)
                     ->orWhere('comment_text', 'like', $s)
                     ->orWhere('marketing_source', 'like', $s)
                     ->orWhere('status', 'like', $s);
@@ -565,7 +566,7 @@ class GuestCommentFormController extends Controller
         $fieldKeys = [
             'rating_service', 'rating_food', 'rating_beverage', 'rating_cleanliness',
             'rating_staff', 'rating_value', 'comment_text', 'guest_name', 'guest_address',
-            'guest_phone', 'guest_dob', 'visit_date', 'praised_staff_name',
+            'guest_phone', 'guest_email', 'guest_dob', 'visit_date', 'praised_staff_name',
             'praised_staff_outlet', 'marketing_source',
         ];
         foreach ($fieldKeys as $key) {
@@ -721,6 +722,7 @@ class GuestCommentFormController extends Controller
             'guest_name' => 'nullable|string|max:255',
             'guest_address' => 'nullable|string|max:500',
             'guest_phone' => 'nullable|string|max:100',
+            'guest_email' => 'nullable|string|email|max:255',
             'guest_dob' => 'nullable|date',
             'visit_date' => 'nullable|string|max:100',
             'praised_staff_name' => 'nullable|string|max:255',

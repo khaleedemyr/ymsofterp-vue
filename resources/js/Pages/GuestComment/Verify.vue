@@ -40,6 +40,7 @@ const f = useForm({
   guest_name: props.form.guest_name || '',
   guest_address: props.form.guest_address || '',
   guest_phone: props.form.guest_phone || '',
+  guest_email: props.form.guest_email || '',
   guest_dob: props.form.guest_dob ? String(props.form.guest_dob).slice(0, 10) : '',
   visit_date: props.form.visit_date || '',
   praised_staff_name: props.form.praised_staff_name || '',
@@ -199,6 +200,10 @@ function save() {
             <div>
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Telepon</label>
               <input v-model="f.guest_phone" type="text" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+              <input v-model="f.guest_email" type="email" autocomplete="email" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" :disabled="readOnly" placeholder="Opsional — bisa dari OCR atau diisi manual" />
             </div>
             <div class="sm:col-span-2">
               <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Alamat</label>

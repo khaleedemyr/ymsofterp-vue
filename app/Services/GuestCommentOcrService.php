@@ -27,6 +27,7 @@ Balas HANYA dengan objek JSON valid (tanpa markdown), kunci persis:
   "guest_name": string atau null,
   "guest_address": string atau null,
   "guest_phone": string atau null,
+  "guest_email": string atau null (email jika tertulis di form / kotak Email),
   "guest_dob": "YYYY-MM-DD" atau null jika tidak terbaca / tidak ada di form,
   "visit_date": string bebas seperti tertulis (tanggal kunjungan / date of visit / Tanggal berkunjung),
   "praised_staff_name": string atau null,
@@ -53,7 +54,7 @@ Mapping baris rating (nama bisa Inggris atau Indonesia, urutan grid 6 baris):
 - Baris 5 → rating_staff (Staff attentiveness / Perhatian Karyawan)
 - Baris 6 → rating_value (Value for money / Harga sepadan dengan kualitas)
 
-Tulisan tangan di kotak komentar → comment_text. Nomor telepon apa adanya → guest_phone.
+Tulisan tangan di kotak komentar → comment_text. Nomor telepon apa adanya → guest_phone. Alamat email → guest_email (null jika tidak ada).
 TXT;
 
     public function __construct(
@@ -772,6 +773,7 @@ TXT;
             'guest_name' => null,
             'guest_address' => null,
             'guest_phone' => null,
+            'guest_email' => null,
             'guest_dob' => null,
             'visit_date' => null,
             'praised_staff_name' => null,

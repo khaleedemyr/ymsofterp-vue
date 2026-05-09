@@ -155,6 +155,9 @@ class FeedbackCaseIngestionService
             $selectGcf[] = 'issue_follow_up_target';
             $selectGcf[] = 'issue_impact';
         }
+        if (Schema::hasColumn('guest_comment_forms', 'guest_email')) {
+            $selectGcf[] = 'guest_email';
+        }
 
         $rows = DB::table('guest_comment_forms')
             ->select($selectGcf)
@@ -191,6 +194,12 @@ class FeedbackCaseIngestionService
                 }
                 if ($impact !== []) {
                     $meta['impact'] = $impact;
+                }
+            }
+            if (Schema::hasColumn('guest_comment_forms', 'guest_email')) {
+                $em = $this->nullableTrim($row->guest_email ?? null);
+                if ($em !== null) {
+                    $meta['customer_email'] = $em;
                 }
             }
 

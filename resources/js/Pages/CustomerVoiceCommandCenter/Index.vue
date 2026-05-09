@@ -265,12 +265,14 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1180px] text-sm">
+          <table class="w-full min-w-[1320px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
                 <th class="px-3 py-3 text-left font-semibold">Outlet</th>
                 <th class="px-3 py-3 text-left font-semibold">Source</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[140px]">Tamu</th>
+                <th class="px-3 py-3 text-left font-semibold">FU target</th>
                 <th class="px-3 py-3 text-left font-semibold">Severity</th>
                 <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
@@ -282,7 +284,7 @@
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="10" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="12" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -294,6 +296,23 @@
                   <td class="px-3 py-3">
                     <span class="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
                       {{ sourceLabel(row.source_type) }}
+                    </span>
+                  </td>
+                  <td class="px-3 py-3 max-w-[200px]">
+                    <div class="font-semibold text-slate-800">{{ row.author_name || '—' }}</div>
+                    <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_contact || '—' }}</div>
+                    <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_email || '—' }}</div>
+                  </td>
+                  <td class="px-3 py-3 align-top">
+                    <span
+                      v-if="row.follow_up_target"
+                      class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                      :class="row.follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-700'"
+                    >
+                      {{ followUpLabel(row.follow_up_target) }}
+                    </span>
+                    <span v-else class="text-[11px] leading-snug text-slate-400" title="Terisi setelah klasifikasi AI pada sumber data + tombol Sync Data">
+                      —
                     </span>
                   </td>
                   <td class="px-3 py-3">
@@ -377,7 +396,7 @@
                   class="border-t"
                   :class="statusRowClasses(caseForms[row.id]?.status || row.status).timeline"
                 >
-                  <td class="px-3 py-3" colspan="10">
+                  <td class="px-3 py-3" colspan="12">
                     <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Aktivitas terbaru</div>
                     <div v-if="!activitiesFor(row.id).length" class="text-xs text-slate-400">Belum ada aktivitas.</div>
                     <div v-else class="space-y-2">
@@ -421,7 +440,7 @@
     </div>
 
     <div v-if="selectedCase" class="fixed inset-0 z-50 flex justify-end bg-slate-900/40" @click.self="closeDetail">
-      <div class="h-full w-full max-w-2xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+      <div class="h-full w-full max-w-4xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl xl:max-w-5xl">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
           <div>
             <h3 class="text-base font-bold text-slate-900">Case Detail #{{ selectedCase.id }}</h3>
@@ -447,12 +466,36 @@
               <div class="mt-1 text-sm font-semibold text-slate-800 break-all">{{ selectedCase.source_ref || '-' }}</div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div class="text-[11px] uppercase tracking-wide text-slate-400">Author</div>
-              <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.author_name || '-' }}</div>
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">Nama tamu / penulis</div>
+              <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.author_name || '—' }}</div>
             </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div class="text-[11px] uppercase tracking-wide text-slate-400">Kontak</div>
-              <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.customer_contact || '-' }}</div>
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">No. HP</div>
+              <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.customer_contact || '—' }}</div>
+              <p class="mt-1 text-[10px] text-slate-400">Guest comment: dari formulir. Google/IG: biasanya kosong.</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">Email</div>
+              <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.customer_email || '—' }}</div>
+              <p class="mt-1 text-[10px] text-slate-400">Diisi jika ada kolom email di Guest Comment + sync; bisa juga ditambahkan manual di meta.</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">Follow-up target</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <span
+                  v-if="selectedCase.follow_up_target"
+                  class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                  :class="selectedCase.follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-700'"
+                >
+                  {{ followUpLabel(selectedCase.follow_up_target) }}
+                </span>
+                <span v-else class="text-sm text-slate-400">—</span>
+                <span class="text-[10px] text-slate-400">Dari AI + ingestion (Google/Guest). Kosong → jalankan klasifikasi laporan &amp; Sync Data.</span>
+              </div>
+              <div v-if="selectedCase.impact?.length" class="mt-2 text-[11px] text-slate-600">
+                <span class="font-semibold text-slate-500">Dampak:</span>
+                {{ impactLabel(selectedCase.impact) }}
+              </div>
             </div>
           </div>
 
@@ -489,6 +532,14 @@
             <div class="text-[11px] uppercase tracking-wide text-slate-400">Komentar Asli</div>
             <div class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{{ selectedCase.raw_text || '-' }}</div>
           </div>
+
+          <CapaFormPanel
+            :key="`${selectedCase.id}-${capaResetKey}`"
+            :initial-capa="selectedCase.capa"
+            :saving="capaSaving"
+            @save="submitCapa"
+            @reset="resetCapaDraft"
+          />
 
           <div class="rounded-xl border border-slate-200 p-3">
             <div class="text-[11px] uppercase tracking-wide text-slate-400">Timeline Aktivitas</div>
@@ -550,6 +601,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
+import CapaFormPanel from '@/Pages/CustomerVoiceCommandCenter/CapaFormPanel.vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 
@@ -579,6 +631,8 @@ const syncing = ref(false)
 const updatingCaseId = ref(null)
 const openedActivityCaseId = ref(null)
 const detailCaseId = ref(null)
+const capaSaving = ref(false)
+const capaResetKey = ref(0)
 const caseForms = ref({})
 const q = ref(props.filters?.q || '')
 const status = ref(props.filters?.status || '')
@@ -732,6 +786,24 @@ function closeDetail() {
   detailCaseId.value = null
 }
 
+function submitCapa(capa) {
+  if (!detailCaseId.value) return
+  capaSaving.value = true
+  router.post(`/customer-voice-command-center/cases/${detailCaseId.value}/capa`, {
+    ...voiceIndexPostExtras(),
+    capa,
+  }, {
+    preserveScroll: true,
+    onFinish: () => {
+      capaSaving.value = false
+    },
+  })
+}
+
+function resetCapaDraft() {
+  capaResetKey.value += 1
+}
+
 function activitiesFor(caseId) {
   return Array.isArray(props.activities?.[caseId]) ? props.activities[caseId] : []
 }
@@ -809,6 +881,18 @@ function sourceLabel(source) {
   if (s === 'instagram_comment') return 'Instagram'
   if (s === 'guest_comment') return 'Guest Comment'
   return s || '-'
+}
+
+function followUpLabel(v) {
+  if (v === 'customer') return 'Customer'
+  if (v === 'internal') return 'Internal'
+  return ''
+}
+
+function impactLabel(arr) {
+  if (!arr?.length) return ''
+  const m = { reputasi: 'Reputasi', finansial: 'Finansial', operasional: 'Operasional' }
+  return arr.map((k) => m[k] || k).join(', ')
 }
 
 function statusClass(statusValue) {

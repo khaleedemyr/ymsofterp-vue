@@ -1135,7 +1135,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/customer-voice-command-center/sync', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiSync'])->name('api.approval-app.customer-voice-command-center.sync');
         Route::post('/customer-voice-command-center/cases/{id}/update', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiUpdateCase'])->name('api.approval-app.customer-voice-command-center.cases.update');
         Route::post('/customer-voice-command-center/cases/{id}/note', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiAddNote'])->name('api.approval-app.customer-voice-command-center.cases.note');
-        
+        Route::post('/customer-voice-command-center/cases/{id}/capa', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiSaveCapa'])->name('api.approval-app.customer-voice-command-center.cases.capa');
+
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');
         

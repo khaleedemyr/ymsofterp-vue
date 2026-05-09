@@ -24,6 +24,7 @@ class GuestCommentForm extends Model
         'guest_name',
         'guest_address',
         'guest_phone',
+        'guest_email',
         'guest_dob',
         'visit_date',
         'praised_staff_name',

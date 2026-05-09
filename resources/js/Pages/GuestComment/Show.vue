@@ -205,6 +205,7 @@ function r(v) {
           <div><span class="text-gray-500">Nama</span> · {{ form.guest_name || '—' }}</div>
           <div><span class="text-gray-500">Alamat</span> · {{ form.guest_address || '—' }}</div>
           <div><span class="text-gray-500">Telepon</span> · {{ form.guest_phone || '—' }}</div>
+          <div><span class="text-gray-500">Email</span> · {{ form.guest_email || '—' }}</div>
           <div><span class="text-gray-500">Tgl lahir</span> · {{ form.guest_dob || '—' }}</div>
           <div><span class="text-gray-500">Kunjungan</span> · {{ form.visit_date || '—' }}</div>
           <div><span class="text-gray-500">Staff dipuji</span> · {{ form.praised_staff_name || '—' }}</div>
