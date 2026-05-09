@@ -18,7 +18,7 @@ class FeedbackCaseEscalateOverdueCommand extends Command
         $cooldownCutoff = now()->subMinutes($cooldownMinutes);
 
         $rows = DB::table('feedback_cases')
-            ->whereIn('status', ['new', 'in_progress'])
+            ->whereIn('status', ['new', 'courtesy_by_cs', 'follow_up_by_ops', 'in_progress'])
             ->whereNotNull('due_at')
             ->where('due_at', '<', now())
             ->where(function ($q) use ($cooldownCutoff) {

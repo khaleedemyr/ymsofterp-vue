@@ -30,7 +30,7 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * Kasus selesai (resolved) atau ulasan positif — untuk modal arsip di halaman index.
+     * Kasus selesai (Done) atau ulasan positif — untuk modal arsip di halaman index.
      */
     public function archiveCasesJson(Request $request)
     {
@@ -65,7 +65,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.created_at',
             ])
             ->where(function ($q) {
-                $q->where('c.status', 'resolved')
+                $q->whereIn('c.status', $this->voiceCaseCompletedStatuses())
                     ->orWhere('c.severity', 'positive');
             });
 
@@ -914,10 +914,10 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $summary = [
             'total_cases' => (int) DB::table('feedback_cases')->count(),
-            'open_cases' => (int) DB::table('feedback_cases')->whereIn('status', ['new', 'in_progress'])->count(),
-            'critical_open' => (int) DB::table('feedback_cases')->whereIn('status', ['new', 'in_progress'])->whereIn('severity', ['critical', 'severe'])->count(),
+            'open_cases' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->count(),
+            'critical_open' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->whereIn('severity', ['critical', 'severe'])->count(),
             'overdue_open' => (int) DB::table('feedback_cases')
-                ->whereIn('status', ['new', 'in_progress'])
+                ->whereIn('status', $this->voiceCaseOpenStatuses())
                 ->whereNotNull('due_at')
                 ->where('due_at', '<', now())
                 ->count(),
@@ -1025,8 +1025,8 @@ class CustomerVoiceCommandCenterController extends Controller
             ->selectRaw('c.assigned_to')
             ->selectRaw('u.nama_lengkap as assignee_name')
             ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw("SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) as resolved_cases")
-            ->selectRaw("SUM(CASE WHEN c.status IN ('new','in_progress') THEN 1 ELSE 0 END) as open_cases")
+            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
+            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
             ->selectRaw("AVG(CASE WHEN c.first_response_at IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, c.event_at, c.first_response_at) END) as avg_first_response_minutes")
             ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
             ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
@@ -1058,8 +1058,8 @@ class CustomerVoiceCommandCenterController extends Controller
             ->selectRaw('o.nama_outlet as outlet_name')
             ->selectRaw('COUNT(*) as total_cases')
             ->selectRaw("SUM(CASE WHEN c.severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
-            ->selectRaw("SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) as resolved_cases")
-            ->selectRaw("SUM(CASE WHEN c.status IN ('new','in_progress') THEN 1 ELSE 0 END) as open_cases")
+            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
+            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
             ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
             ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
             ->orderByDesc('negative_cases')
@@ -1131,12 +1131,12 @@ class CustomerVoiceCommandCenterController extends Controller
     {
         /** Mode antrian default: belum selesai + perlu perhatian (bukan positif/netral). */
         if (! $request->boolean('show_all')) {
-            $query->whereIn('c.status', ['new', 'in_progress'])
+            $query->whereIn('c.status', $this->voiceCaseOpenStatuses())
                 ->whereNotIn('c.severity', ['positive', 'neutral']);
         }
 
         if ($request->filled('status')) {
-            $query->where('c.status', $request->input('status'));
+            $query->whereIn('c.status', $this->voiceCaseStatusFilterValues((string) $request->input('status')));
         }
         if ($request->filled('severity')) {
             $query->where('c.severity', $request->input('severity'));
@@ -1159,7 +1159,7 @@ class CustomerVoiceCommandCenterController extends Controller
             });
         }
         if ($request->boolean('overdue_only')) {
-            $query->whereIn('c.status', ['new', 'in_progress'])
+            $query->whereIn('c.status', $this->voiceCaseOpenStatuses())
                 ->whereNotNull('c.due_at')
                 ->where('c.due_at', '<', now());
         }
@@ -1172,7 +1172,7 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * Filter opsional untuk daftar arsip (resolved / positif).
+     * Filter opsional untuk daftar arsip (selesai / positif).
      */
     private function applyArchiveListFilters($query, Request $request): void
     {
@@ -1180,7 +1180,7 @@ class CustomerVoiceCommandCenterController extends Controller
             $query->where('c.id_outlet', (int) $request->input('id_outlet'));
         }
         if ($request->filled('status')) {
-            $query->where('c.status', $request->input('status'));
+            $query->whereIn('c.status', $this->voiceCaseStatusFilterValues((string) $request->input('status')));
         }
         if ($request->filled('severity')) {
             $query->where('c.severity', $request->input('severity'));
@@ -1198,7 +1198,7 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         }
         if ($request->boolean('overdue_only')) {
-            $query->whereIn('c.status', ['new', 'in_progress'])
+            $query->whereIn('c.status', $this->voiceCaseOpenStatuses())
                 ->whereNotNull('c.due_at')
                 ->where('c.due_at', '<', now());
         }
@@ -1491,7 +1491,7 @@ class CustomerVoiceCommandCenterController extends Controller
     private function runFeedbackCaseRowUpdate(Request $request, int $id): array
     {
         $payload = $request->validate([
-            'status' => 'required|string|in:new,in_progress,resolved,ignored',
+            'status' => 'required|string|in:new,courtesy_by_cs,follow_up_by_ops,done,in_progress,resolved,ignored',
             'assigned_to' => 'nullable|integer|exists:users,id',
             'notify_follower_user_ids' => 'nullable|array|max:30',
             'notify_follower_user_ids.*' => 'integer|exists:users,id',
@@ -1509,7 +1509,7 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $now = now();
         $fromStatus = (string) ($row->status ?? 'new');
-        $toStatus = (string) $payload['status'];
+        $toStatus = $this->normalizeIncomingVoiceCaseStatus((string) $payload['status']);
         $oldAssignee = $row->assigned_to !== null ? (int) $row->assigned_to : null;
         $newAssignee = isset($payload['assigned_to']) && $payload['assigned_to'] !== null
             ? (int) $payload['assigned_to']
@@ -1520,16 +1520,16 @@ class CustomerVoiceCommandCenterController extends Controller
             'assigned_to' => $newAssignee,
             'updated_at' => $now,
         ];
-        if ($toStatus === 'resolved') {
+        if ($toStatus === 'done') {
             $update['resolved_at'] = $now;
             if ($row->first_response_at === null) {
                 $update['first_response_at'] = $now;
             }
-        } elseif ($toStatus === 'in_progress' && $row->first_response_at === null) {
-            $update['first_response_at'] = $now;
+        } else {
             $update['resolved_at'] = null;
-        } elseif ($toStatus !== 'resolved') {
-            $update['resolved_at'] = null;
+            if ($toStatus !== 'new' && $row->first_response_at === null) {
+                $update['first_response_at'] = $now;
+            }
         }
 
         DB::transaction(function () use ($id, $update, $request, $fromStatus, $toStatus, $oldAssignee, $newAssignee, $now) {
@@ -1768,6 +1768,62 @@ class CustomerVoiceCommandCenterController extends Controller
             'success' => true,
             'message' => 'Catatan tersimpan.',
         ];
+    }
+
+    /**
+     * Status antrian (belum Done). Memuat legacy in_progress sampai migrasi data selesai.
+     *
+     * @return list<string>
+     */
+    private function voiceCaseOpenStatuses(): array
+    {
+        return ['new', 'courtesy_by_cs', 'follow_up_by_ops', 'in_progress'];
+    }
+
+    /**
+     * Status selesai untuk KPI / arsip.
+     *
+     * @return list<string>
+     */
+    private function voiceCaseCompletedStatuses(): array
+    {
+        return ['done', 'resolved', 'ignored'];
+    }
+
+    private function normalizeIncomingVoiceCaseStatus(string $status): string
+    {
+        return match ($status) {
+            'in_progress' => 'follow_up_by_ops',
+            'resolved', 'ignored' => 'done',
+            default => $status,
+        };
+    }
+
+    /**
+     * @param  list<string>  $statuses
+     */
+    private function voiceCaseStatusesSqlList(array $statuses): string
+    {
+        return implode(',', array_map(
+            static fn (string $s): string => "'".str_replace("'", "''", $s)."'",
+            $statuses
+        ));
+    }
+
+    /**
+     * Satu pilihan filter UI dapat mencakup beberapa nilai DB (data lama + baru, tanpa migrasi).
+     *
+     * @return list<string>
+     */
+    private function voiceCaseStatusFilterValues(string $filter): array
+    {
+        $filter = trim($filter);
+
+        return match ($filter) {
+            'follow_up_by_ops' => ['follow_up_by_ops', 'in_progress'],
+            'done' => ['done', 'resolved', 'ignored'],
+            default => [$filter],
+        };
     }
 
     private function medianMinutesBetween(string $startColumn, string $endColumn): ?float

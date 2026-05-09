@@ -194,9 +194,9 @@
           <select v-model="status" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
             <option value="">Semua status</option>
             <option value="new">New</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-            <option value="ignored">Ignored</option>
+            <option value="courtesy_by_cs">Courtesy by CS</option>
+            <option value="follow_up_by_ops">Follow Up by Ops</option>
+            <option value="done">Done</option>
           </select>
           <select v-model="severity" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
             <option value="">Semua severity</option>
@@ -234,10 +234,10 @@
             class="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
             @click="openArchiveModal"
           >
-            Arsip: resolved &amp; positif
+            Arsip: Done &amp; positif
           </button>
           <p v-if="!showAll" class="text-xs text-slate-500">
-            Antrian kerja: hanya <span class="font-semibold text-slate-600">open</span> (new / in progress) dan severity selain <span class="font-semibold">positif</span> &amp; <span class="font-semibold">netral</span>.
+            Antrian kerja: status masih <span class="font-semibold text-slate-600">open</span> (New, Courtesy by CS, Follow Up by Ops, serta <span class="font-semibold">in_progress</span> di DB bila belum diubah) — severity selain positif &amp; netral.
           </p>
         </div>
         <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:flex-wrap md:items-end">
@@ -301,7 +301,7 @@
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[200px]" title="User yang di-notifikasi saat Simpan">Notif ke</th>
-                <th class="px-3 py-3 text-left font-semibold">PIC</th>
+                <th class="px-3 py-3 text-left font-semibold">CS PIC</th>
                 <th class="px-3 py-3 text-left font-semibold">Status</th>
                 <th class="px-3 py-3 text-left font-semibold">Aksi</th>
               </tr>
@@ -383,26 +383,25 @@
                       placeholder="Cari & pilih…"
                     />
                   </td>
-                  <td class="px-3 py-3 min-w-[190px]">
-                    <select
+                  <td class="px-3 py-3 min-w-[200px] align-top">
+                    <CapaUserPicker
                       v-model="caseForms[row.id].assigned_to"
-                      class="h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                    >
-                      <option value="">Unassigned</option>
-                      <option v-for="u in assignees" :key="u.id" :value="String(u.id)">
-                        {{ u.nama_lengkap }}
-                      </option>
-                    </select>
+                      :assignees="assignees"
+                      placeholder="Cari CS PIC…"
+                      clearable
+                      compact
+                      :disabled="updatingCaseId === row.id"
+                    />
                   </td>
                   <td class="px-3 py-3 min-w-[150px]">
                     <select
                       v-model="caseForms[row.id].status"
                       class="h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                     >
-                      <option value="new">new</option>
-                      <option value="in_progress">in_progress</option>
-                      <option value="resolved">resolved</option>
-                      <option value="ignored">ignored</option>
+                      <option value="new">New</option>
+                      <option value="courtesy_by_cs">Courtesy by CS</option>
+                      <option value="follow_up_by_ops">Follow Up by Ops</option>
+                      <option value="done">Done</option>
                     </select>
                   </td>
                   <td class="px-3 py-3 min-w-[320px]">
@@ -478,7 +477,7 @@
                           <span class="ml-1 font-normal text-slate-400">· {{ formatDate(a.created_at) }}</span>
                         </div>
                         <div v-if="a.actor_name" class="text-slate-500">oleh {{ a.actor_name }}</div>
-                        <div v-if="a.from_status || a.to_status" class="text-slate-500">{{ a.from_status || '-' }} -> {{ a.to_status || '-' }}</div>
+                        <div v-if="a.from_status || a.to_status" class="text-slate-500">{{ voiceCaseStatusLabel(a.from_status) }} → {{ voiceCaseStatusLabel(a.to_status) }}</div>
                         <div v-if="a.note" class="mt-1 leading-relaxed">{{ a.note }}</div>
                       </div>
                     </div>
@@ -581,7 +580,7 @@
             <div class="rounded-xl border border-slate-200 p-3">
               <div class="text-[11px] uppercase tracking-wide text-slate-400">Status</div>
               <span class="mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="statusClass(selectedCase.status)">
-                {{ selectedCase.status || 'new' }}
+                {{ voiceCaseStatusLabel(selectedCase.status) }}
               </span>
             </div>
             <div class="rounded-xl border border-slate-200 p-3">
@@ -632,7 +631,7 @@
                   <span class="ml-1 font-normal text-slate-400">· {{ formatDate(a.created_at) }}</span>
                 </div>
                 <div v-if="a.actor_name" class="text-slate-500">oleh {{ a.actor_name }}</div>
-                <div v-if="a.from_status || a.to_status" class="text-slate-500">{{ a.from_status || '-' }} -> {{ a.to_status || '-' }}</div>
+                <div v-if="a.from_status || a.to_status" class="text-slate-500">{{ voiceCaseStatusLabel(a.from_status) }} → {{ voiceCaseStatusLabel(a.to_status) }}</div>
                 <div v-if="a.note" class="mt-1">{{ a.note }}</div>
               </div>
             </div>
@@ -649,9 +648,9 @@
       <div class="flex max-h-[min(92vh,960px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
           <div>
-            <h3 class="text-base font-bold text-slate-900">Arsip: resolved &amp; ulasan positif</h3>
+            <h3 class="text-base font-bold text-slate-900">Arsip: Done &amp; ulasan positif</h3>
             <p class="mt-0.5 text-xs text-slate-500">
-              Kasus dengan status <span class="font-semibold">resolved</span> atau severity <span class="font-semibold">positive</span>. Gunakan filter di bawah (default mengikuti filter halaman saat modal dibuka).
+              Kasus dengan status <span class="font-semibold">Done</span> (termasuk <span class="font-semibold">resolved</span> / <span class="font-semibold">ignored</span> di DB) atau severity <span class="font-semibold">positive</span>.
             </p>
           </div>
           <button
@@ -674,9 +673,9 @@
             <select v-model="archiveFilter.status" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
               <option value="">Semua status</option>
               <option value="new">New</option>
-              <option value="in_progress">In Progress</option>
-              <option value="resolved">Resolved</option>
-              <option value="ignored">Ignored</option>
+              <option value="courtesy_by_cs">Courtesy by CS</option>
+              <option value="follow_up_by_ops">Follow Up by Ops</option>
+              <option value="done">Done</option>
             </select>
             <select v-model="archiveFilter.severity" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
               <option value="">Semua severity</option>
@@ -703,7 +702,7 @@
               <option v-for="opt in archiveTopicOptions" :key="opt.v || 'all'" :value="opt.v">{{ opt.label }}</option>
             </select>
             <select v-model="archiveFilter.assigned_to" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
-              <option value="">Semua PIC</option>
+              <option value="">Semua CS PIC</option>
               <option v-for="u in assignees" :key="u.id" :value="String(u.id)">{{ u.nama_lengkap }}</option>
             </select>
             <label class="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700">
@@ -788,7 +787,7 @@
                     </td>
                     <td class="px-2 py-2">
                       <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClass(row.status)">
-                        {{ row.status || '-' }}
+                        {{ voiceCaseStatusLabel(row.status) }}
                       </span>
                     </td>
                     <td class="px-2 py-2">
@@ -872,6 +871,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CapaFormPanel from '@/Pages/CustomerVoiceCommandCenter/CapaFormPanel.vue'
+import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
 import NotifyUserMultiPicker from '@/Pages/CustomerVoiceCommandCenter/NotifyUserMultiPicker.vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -981,12 +981,36 @@ function normalizeUserIdList(row, key) {
   return out
 }
 
+/** Samakan nilai DB lama ke opsi form (tanpa migrasi data). */
+function canonicalVoiceCaseStatus(raw) {
+  const s = String(raw || 'new').toLowerCase()
+  if (s === 'in_progress') return 'follow_up_by_ops'
+  if (s === 'resolved' || s === 'ignored') return 'done'
+  return s
+}
+
+/** Label tampilan untuk slug DB (lama + baru). */
+function voiceCaseStatusLabel(raw) {
+  const s = String(raw || '').toLowerCase()
+  const map = {
+    new: 'New',
+    courtesy_by_cs: 'Courtesy by CS',
+    follow_up_by_ops: 'Follow Up by Ops',
+    done: 'Done',
+    in_progress: 'Follow Up by Ops',
+    resolved: 'Done',
+    ignored: 'Done',
+  }
+  if (!s) return '—'
+  return map[s] || raw
+}
+
 function initCaseForms() {
   const next = {}
   for (const row of props.cases?.data || []) {
     next[row.id] = {
-      status: String(row.status || 'new'),
-      assigned_to: row.assigned_to != null ? String(row.assigned_to) : '',
+      status: canonicalVoiceCaseStatus(row.status),
+      assigned_to: row.assigned_to != null ? Number(row.assigned_to) : null,
       regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
       notify_follower_user_ids: normalizeUserIdList(row, 'notify_follower_user_ids'),
     }
@@ -1171,7 +1195,7 @@ function updateCase(caseId) {
   router.post(`/customer-voice-command-center/cases/${caseId}/update`, {
     ...voiceIndexPostExtras(),
     status: form.status,
-    assigned_to: form.assigned_to || null,
+    assigned_to: form.assigned_to ?? null,
     notify_follower_user_ids: Array.isArray(form.notify_follower_user_ids) ? form.notify_follower_user_ids : [],
     regional_user_ids: Array.isArray(form.regional_user_ids) ? form.regional_user_ids : [],
   }, {
@@ -1356,22 +1380,22 @@ function complaintTypeLabelsFor(row) {
 
 function statusRowClasses(status) {
   const s = String(status || 'new').toLowerCase()
-  if (s === 'resolved') {
+  if (s === 'done' || s === 'resolved' || s === 'ignored') {
     return {
       main: 'border-t border-emerald-200/90 bg-emerald-50/85 hover:bg-emerald-50',
       timeline: 'border-t border-emerald-200/70 bg-emerald-50/45',
     }
   }
-  if (s === 'in_progress') {
+  if (s === 'follow_up_by_ops' || s === 'in_progress') {
     return {
       main: 'border-t border-indigo-200/90 bg-indigo-50/85 hover:bg-indigo-50',
       timeline: 'border-t border-indigo-200/70 bg-indigo-50/45',
     }
   }
-  if (s === 'ignored') {
+  if (s === 'courtesy_by_cs') {
     return {
-      main: 'border-t border-slate-200 bg-slate-100/75 hover:bg-slate-100',
-      timeline: 'border-t border-slate-200 bg-slate-100/55',
+      main: 'border-t border-sky-200/90 bg-sky-50/85 hover:bg-sky-50',
+      timeline: 'border-t border-sky-200/70 bg-sky-50/45',
     }
   }
   return {
@@ -1438,9 +1462,9 @@ function impactLabel(arr) {
 
 function statusClass(statusValue) {
   const s = String(statusValue || '').toLowerCase()
-  if (s === 'resolved') return 'bg-emerald-100 text-emerald-700'
-  if (s === 'in_progress') return 'bg-indigo-100 text-indigo-700'
-  if (s === 'ignored') return 'bg-slate-200 text-slate-700'
+  if (s === 'done' || s === 'resolved' || s === 'ignored') return 'bg-emerald-100 text-emerald-700'
+  if (s === 'follow_up_by_ops' || s === 'in_progress') return 'bg-indigo-100 text-indigo-700'
+  if (s === 'courtesy_by_cs') return 'bg-sky-100 text-sky-800'
   return 'bg-amber-100 text-amber-700'
 }
 
@@ -1455,7 +1479,7 @@ function severityClass(sev) {
 
 function isOpenStatus(statusValue) {
   const s = String(statusValue || '').toLowerCase()
-  return s === 'new' || s === 'in_progress'
+  return s === 'new' || s === 'courtesy_by_cs' || s === 'follow_up_by_ops' || s === 'in_progress'
 }
 
 function slaLabel(row) {

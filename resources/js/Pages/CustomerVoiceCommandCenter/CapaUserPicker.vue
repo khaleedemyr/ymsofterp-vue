@@ -5,14 +5,17 @@
       type="text"
       autocomplete="off"
       autocorrect="off"
-      class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+      :class="inputFieldClass"
       :placeholder="placeholder"
       :disabled="disabled"
       @focus="open = true"
       @input="open = true"
       @keydown.escape.prevent="open = false"
     />
-    <p v-if="selectedLabel" class="mt-1.5 rounded-lg bg-slate-50 px-2 py-1.5 text-xs leading-snug text-slate-700">
+    <p
+      v-if="selectedLabel"
+      :class="selectedLineClass"
+    >
       <span class="font-semibold text-slate-800">{{ selectedLabel }}</span>
       <span v-if="selectedJabatan" class="text-slate-500"> · {{ selectedJabatan }}</span>
     </p>
@@ -53,7 +56,21 @@ const props = defineProps({
   placeholder: { type: String, default: 'Cari nama…' },
   clearable: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
+  /** Input lebih rapat untuk sel tabel (Command Center, dll.) */
+  compact: { type: Boolean, default: false },
 })
+
+const inputFieldClass = computed(() =>
+  props.compact
+    ? 'mt-0 h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100'
+    : 'mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100',
+)
+
+const selectedLineClass = computed(() =>
+  props.compact
+    ? 'mt-1 rounded-md bg-slate-50 px-1.5 py-1 text-[11px] leading-snug text-slate-700'
+    : 'mt-1.5 rounded-lg bg-slate-50 px-2 py-1.5 text-xs leading-snug text-slate-700',
+)
 
 const emit = defineEmits(['update:modelValue'])
 
