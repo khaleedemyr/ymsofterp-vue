@@ -32,7 +32,7 @@
     </div>
     <div
       v-show="open && !disabled"
-      class="absolute left-0 right-0 z-40 mt-1 max-h-48 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+      class="absolute left-0 right-0 z-40 mt-1 max-h-[min(24rem,70vh)] overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
       role="listbox"
     >
       <button
@@ -100,15 +100,13 @@ const filtered = computed(() => {
   const list = props.assignees || []
   const term = (q.value || '').trim().toLowerCase()
   if (!term) {
-    return list.slice(0, 80)
+    return list
   }
-  return list
-    .filter((u) => {
-      const name = (u.nama_lengkap || '').toLowerCase()
-      const jab = (u.nama_jabatan || '').toLowerCase()
-      return name.includes(term) || jab.includes(term)
-    })
-    .slice(0, 80)
+  return list.filter((u) => {
+    const name = (u.nama_lengkap || '').toLowerCase()
+    const jab = (u.nama_jabatan || '').toLowerCase()
+    return name.includes(term) || jab.includes(term)
+  })
 })
 
 function emitNext(nextIds) {

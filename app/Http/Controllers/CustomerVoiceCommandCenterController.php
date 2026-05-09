@@ -15,9 +15,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Maatwebsite\Excel\Facades\Excel;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class CustomerVoiceCommandCenterController extends Controller
 {
@@ -1080,177 +1080,191 @@ class CustomerVoiceCommandCenterController extends Controller
         $activities = $this->loadActivitiesMap($caseIdsPage);
         $noteCounts = $this->loadNoteCountsMap($caseIdsPage);
 
-        $summary = [
-            'total_cases' => (int) DB::table('feedback_cases')->count(),
-            'open_cases' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->count(),
-            'critical_open' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->whereIn('severity', ['critical', 'severe'])->count(),
-            'overdue_open' => (int) DB::table('feedback_cases')
-                ->whereIn('status', $this->voiceCaseOpenStatuses())
+        if ($request->boolean('cases_only')) {
+            $summary = [
+                'total_cases' => 0,
+                'open_cases' => 0,
+                'critical_open' => 0,
+                'overdue_open' => 0,
+            ];
+            $kpis = [];
+            $trend = [];
+            $picPerformance = [];
+            $outletPerformance = [];
+            $perfWindowDays = 0;
+        } else {
+            $summary = [
+                'total_cases' => (int) DB::table('feedback_cases')->count(),
+                'open_cases' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->count(),
+                'critical_open' => (int) DB::table('feedback_cases')->whereIn('status', $this->voiceCaseOpenStatuses())->whereIn('severity', ['critical', 'severe'])->count(),
+                'overdue_open' => (int) DB::table('feedback_cases')
+                    ->whereIn('status', $this->voiceCaseOpenStatuses())
+                    ->whereNotNull('due_at')
+                    ->where('due_at', '<', now())
+                    ->count(),
+            ];
+
+            $firstResponseAvgMinutes = DB::table('feedback_cases')
+                ->whereNotNull('first_response_at')
+                ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, first_response_at)) AS avg_minutes')
+                ->value('avg_minutes');
+            $firstResponseMedianMinutes = $this->medianMinutesBetween('event_at', 'first_response_at');
+
+            $resolutionAvgMinutes = DB::table('feedback_cases')
+                ->whereNotNull('resolved_at')
+                ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, resolved_at)) AS avg_minutes')
+                ->value('avg_minutes');
+
+            $slaResolvedBase = DB::table('feedback_cases')
                 ->whereNotNull('due_at')
-                ->where('due_at', '<', now())
-                ->count(),
-        ];
+                ->whereNotNull('resolved_at');
+            $slaResolvedTotal = (int) (clone $slaResolvedBase)->count();
+            $slaResolvedOnTime = (int) (clone $slaResolvedBase)
+                ->whereColumn('resolved_at', '<=', 'due_at')
+                ->count();
+            $slaCompliancePct = $slaResolvedTotal > 0
+                ? round(($slaResolvedOnTime / $slaResolvedTotal) * 100, 2)
+                : null;
 
-        $firstResponseAvgMinutes = DB::table('feedback_cases')
-            ->whereNotNull('first_response_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, first_response_at)) AS avg_minutes')
-            ->value('avg_minutes');
-        $firstResponseMedianMinutes = $this->medianMinutesBetween('event_at', 'first_response_at');
+            $repeatBase = DB::table('feedback_cases')
+                ->whereNotNull('summary_id')
+                ->where('summary_id', '!=', '')
+                ->where('event_at', '>=', now()->subDays(30));
+            $repeatTotal = (int) (clone $repeatBase)->count();
+            $repeatGrouped = (clone $repeatBase)
+                ->select('summary_id')
+                ->selectRaw('COUNT(*) AS cnt')
+                ->groupBy('summary_id')
+                ->havingRaw('COUNT(*) > 1')
+                ->get();
+            $repeatCases = (int) $repeatGrouped->sum('cnt');
+            $repeatIssueRatePct = $repeatTotal > 0
+                ? round(($repeatCases / $repeatTotal) * 100, 2)
+                : null;
 
-        $resolutionAvgMinutes = DB::table('feedback_cases')
-            ->whereNotNull('resolved_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, event_at, resolved_at)) AS avg_minutes')
-            ->value('avg_minutes');
+            $negativeByOutlet = DB::table('feedback_cases as c')
+                ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+                ->whereIn('c.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
+                ->where('c.event_at', '>=', now()->subDays(30))
+                ->groupBy('c.id_outlet', 'o.nama_outlet')
+                ->selectRaw('c.id_outlet, o.nama_outlet, COUNT(*) as total')
+                ->orderByDesc('total')
+                ->limit(1)
+                ->first();
 
-        $slaResolvedBase = DB::table('feedback_cases')
-            ->whereNotNull('due_at')
-            ->whereNotNull('resolved_at');
-        $slaResolvedTotal = (int) (clone $slaResolvedBase)->count();
-        $slaResolvedOnTime = (int) (clone $slaResolvedBase)
-            ->whereColumn('resolved_at', '<=', 'due_at')
-            ->count();
-        $slaCompliancePct = $slaResolvedTotal > 0
-            ? round(($slaResolvedOnTime / $slaResolvedTotal) * 100, 2)
-            : null;
-
-        $repeatBase = DB::table('feedback_cases')
-            ->whereNotNull('summary_id')
-            ->where('summary_id', '!=', '')
-            ->where('event_at', '>=', now()->subDays(30));
-        $repeatTotal = (int) (clone $repeatBase)->count();
-        $repeatGrouped = (clone $repeatBase)
-            ->select('summary_id')
-            ->selectRaw('COUNT(*) AS cnt')
-            ->groupBy('summary_id')
-            ->havingRaw('COUNT(*) > 1')
-            ->get();
-        $repeatCases = (int) $repeatGrouped->sum('cnt');
-        $repeatIssueRatePct = $repeatTotal > 0
-            ? round(($repeatCases / $repeatTotal) * 100, 2)
-            : null;
-
-        $negativeByOutlet = DB::table('feedback_cases as c')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
-            ->whereIn('c.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
-            ->where('c.event_at', '>=', now()->subDays(30))
-            ->groupBy('c.id_outlet', 'o.nama_outlet')
-            ->selectRaw('c.id_outlet, o.nama_outlet, COUNT(*) as total')
-            ->orderByDesc('total')
-            ->limit(1)
-            ->first();
-
-        $kpis = [
-            'first_response_median_minutes' => $firstResponseMedianMinutes,
-            'first_response_avg_minutes' => $firstResponseAvgMinutes !== null ? (float) $firstResponseAvgMinutes : null,
-            'resolution_avg_minutes' => $resolutionAvgMinutes !== null ? (float) $resolutionAvgMinutes : null,
-            'sla_compliance_pct' => $slaCompliancePct,
-            'repeat_issue_rate_pct' => $repeatIssueRatePct,
-            'repeat_issue_window_days' => 30,
-            'negative_top_outlet_30d' => $negativeByOutlet ? [
-                'id_outlet' => $negativeByOutlet->id_outlet !== null ? (int) $negativeByOutlet->id_outlet : null,
-                'nama_outlet' => (string) ($negativeByOutlet->nama_outlet ?? '-'),
-                'total' => (int) ($negativeByOutlet->total ?? 0),
-            ] : null,
-        ];
-
-        $trendDays = 14;
-        $trendStart = now()->subDays($trendDays - 1)->startOfDay();
-        $dailyRows = DB::table('feedback_cases')
-            ->selectRaw('DATE(event_at) as d')
-            ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw("SUM(CASE WHEN severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
-            ->where('event_at', '>=', $trendStart)
-            ->groupBy(DB::raw('DATE(event_at)'))
-            ->orderBy('d')
-            ->get();
-
-        $dailyMap = [];
-        foreach ($dailyRows as $row) {
-            $dailyMap[(string) $row->d] = [
-                'total_cases' => (int) ($row->total_cases ?? 0),
-                'negative_cases' => (int) ($row->negative_cases ?? 0),
+            $kpis = [
+                'first_response_median_minutes' => $firstResponseMedianMinutes,
+                'first_response_avg_minutes' => $firstResponseAvgMinutes !== null ? (float) $firstResponseAvgMinutes : null,
+                'resolution_avg_minutes' => $resolutionAvgMinutes !== null ? (float) $resolutionAvgMinutes : null,
+                'sla_compliance_pct' => $slaCompliancePct,
+                'repeat_issue_rate_pct' => $repeatIssueRatePct,
+                'repeat_issue_window_days' => 30,
+                'negative_top_outlet_30d' => $negativeByOutlet ? [
+                    'id_outlet' => $negativeByOutlet->id_outlet !== null ? (int) $negativeByOutlet->id_outlet : null,
+                    'nama_outlet' => (string) ($negativeByOutlet->nama_outlet ?? '-'),
+                    'total' => (int) ($negativeByOutlet->total ?? 0),
+                ] : null,
             ];
+
+            $trendDays = 14;
+            $trendStart = now()->subDays($trendDays - 1)->startOfDay();
+            $dailyRows = DB::table('feedback_cases')
+                ->selectRaw('DATE(event_at) as d')
+                ->selectRaw('COUNT(*) as total_cases')
+                ->selectRaw("SUM(CASE WHEN severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+                ->where('event_at', '>=', $trendStart)
+                ->groupBy(DB::raw('DATE(event_at)'))
+                ->orderBy('d')
+                ->get();
+
+            $dailyMap = [];
+            foreach ($dailyRows as $row) {
+                $dailyMap[(string) $row->d] = [
+                    'total_cases' => (int) ($row->total_cases ?? 0),
+                    'negative_cases' => (int) ($row->negative_cases ?? 0),
+                ];
+            }
+
+            $trend = [];
+            for ($i = $trendDays - 1; $i >= 0; $i--) {
+                $date = now()->subDays($i)->toDateString();
+                $trend[] = [
+                    'date' => $date,
+                    'total_cases' => $dailyMap[$date]['total_cases'] ?? 0,
+                    'negative_cases' => $dailyMap[$date]['negative_cases'] ?? 0,
+                ];
+            }
+
+            $perfWindowDays = 30;
+            $perfSince = now()->subDays($perfWindowDays)->startOfDay();
+
+            $picRows = DB::table('feedback_cases as c')
+                ->leftJoin('users as u', 'u.id', '=', 'c.assigned_to')
+                ->whereNotNull('c.assigned_to')
+                ->where('c.event_at', '>=', $perfSince)
+                ->groupBy('c.assigned_to', 'u.nama_lengkap')
+                ->selectRaw('c.assigned_to')
+                ->selectRaw('u.nama_lengkap as assignee_name')
+                ->selectRaw('COUNT(*) as total_cases')
+                ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
+                ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
+                ->selectRaw('AVG(CASE WHEN c.first_response_at IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, c.event_at, c.first_response_at) END) as avg_first_response_minutes')
+                ->selectRaw('SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total')
+                ->selectRaw('SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time')
+                ->orderByDesc('resolved_cases')
+                ->orderBy('avg_first_response_minutes')
+                ->limit(8)
+                ->get();
+
+            $picPerformance = collect($picRows)->map(function ($row) {
+                $slaTotal = (int) ($row->sla_total ?? 0);
+                $slaOnTime = (int) ($row->sla_on_time ?? 0);
+
+                return [
+                    'assignee_id' => (int) ($row->assigned_to ?? 0),
+                    'assignee_name' => (string) ($row->assignee_name ?? '-'),
+                    'total_cases' => (int) ($row->total_cases ?? 0),
+                    'resolved_cases' => (int) ($row->resolved_cases ?? 0),
+                    'open_cases' => (int) ($row->open_cases ?? 0),
+                    'avg_first_response_minutes' => $row->avg_first_response_minutes !== null ? round((float) $row->avg_first_response_minutes, 2) : null,
+                    'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
+                ];
+            })->values()->all();
+
+            $outletRows = DB::table('feedback_cases as c')
+                ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+                ->where('c.event_at', '>=', $perfSince)
+                ->groupBy('c.id_outlet', 'o.nama_outlet')
+                ->selectRaw('c.id_outlet')
+                ->selectRaw('o.nama_outlet as outlet_name')
+                ->selectRaw('COUNT(*) as total_cases')
+                ->selectRaw("SUM(CASE WHEN c.severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+                ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
+                ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
+                ->selectRaw('SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total')
+                ->selectRaw('SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time')
+                ->orderByDesc('negative_cases')
+                ->limit(8)
+                ->get();
+
+            $outletPerformance = collect($outletRows)->map(function ($row) {
+                $totalCases = (int) ($row->total_cases ?? 0);
+                $negativeCases = (int) ($row->negative_cases ?? 0);
+                $slaTotal = (int) ($row->sla_total ?? 0);
+                $slaOnTime = (int) ($row->sla_on_time ?? 0);
+
+                return [
+                    'id_outlet' => $row->id_outlet !== null ? (int) $row->id_outlet : null,
+                    'outlet_name' => (string) ($row->outlet_name ?? '-'),
+                    'total_cases' => $totalCases,
+                    'negative_cases' => $negativeCases,
+                    'negative_rate_pct' => $totalCases > 0 ? round(($negativeCases / $totalCases) * 100, 2) : null,
+                    'resolved_cases' => (int) ($row->resolved_cases ?? 0),
+                    'open_cases' => (int) ($row->open_cases ?? 0),
+                    'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
+                ];
+            })->values()->all();
         }
-
-        $trend = [];
-        for ($i = $trendDays - 1; $i >= 0; $i--) {
-            $date = now()->subDays($i)->toDateString();
-            $trend[] = [
-                'date' => $date,
-                'total_cases' => $dailyMap[$date]['total_cases'] ?? 0,
-                'negative_cases' => $dailyMap[$date]['negative_cases'] ?? 0,
-            ];
-        }
-
-        $perfWindowDays = 30;
-        $perfSince = now()->subDays($perfWindowDays)->startOfDay();
-
-        $picRows = DB::table('feedback_cases as c')
-            ->leftJoin('users as u', 'u.id', '=', 'c.assigned_to')
-            ->whereNotNull('c.assigned_to')
-            ->where('c.event_at', '>=', $perfSince)
-            ->groupBy('c.assigned_to', 'u.nama_lengkap')
-            ->selectRaw('c.assigned_to')
-            ->selectRaw('u.nama_lengkap as assignee_name')
-            ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
-            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
-            ->selectRaw("AVG(CASE WHEN c.first_response_at IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, c.event_at, c.first_response_at) END) as avg_first_response_minutes")
-            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
-            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
-            ->orderByDesc('resolved_cases')
-            ->orderBy('avg_first_response_minutes')
-            ->limit(8)
-            ->get();
-
-        $picPerformance = collect($picRows)->map(function ($row) {
-            $slaTotal = (int) ($row->sla_total ?? 0);
-            $slaOnTime = (int) ($row->sla_on_time ?? 0);
-
-            return [
-                'assignee_id' => (int) ($row->assigned_to ?? 0),
-                'assignee_name' => (string) ($row->assignee_name ?? '-'),
-                'total_cases' => (int) ($row->total_cases ?? 0),
-                'resolved_cases' => (int) ($row->resolved_cases ?? 0),
-                'open_cases' => (int) ($row->open_cases ?? 0),
-                'avg_first_response_minutes' => $row->avg_first_response_minutes !== null ? round((float) $row->avg_first_response_minutes, 2) : null,
-                'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
-            ];
-        })->values()->all();
-
-        $outletRows = DB::table('feedback_cases as c')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
-            ->where('c.event_at', '>=', $perfSince)
-            ->groupBy('c.id_outlet', 'o.nama_outlet')
-            ->selectRaw('c.id_outlet')
-            ->selectRaw('o.nama_outlet as outlet_name')
-            ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw("SUM(CASE WHEN c.severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
-            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseCompletedStatuses()).') THEN 1 ELSE 0 END) as resolved_cases')
-            ->selectRaw('SUM(CASE WHEN c.status IN ('.$this->voiceCaseStatusesSqlList($this->voiceCaseOpenStatuses()).') THEN 1 ELSE 0 END) as open_cases')
-            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")
-            ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL AND c.resolved_at <= c.due_at THEN 1 ELSE 0 END) as sla_on_time")
-            ->orderByDesc('negative_cases')
-            ->limit(8)
-            ->get();
-
-        $outletPerformance = collect($outletRows)->map(function ($row) {
-            $totalCases = (int) ($row->total_cases ?? 0);
-            $negativeCases = (int) ($row->negative_cases ?? 0);
-            $slaTotal = (int) ($row->sla_total ?? 0);
-            $slaOnTime = (int) ($row->sla_on_time ?? 0);
-
-            return [
-                'id_outlet' => $row->id_outlet !== null ? (int) $row->id_outlet : null,
-                'outlet_name' => (string) ($row->outlet_name ?? '-'),
-                'total_cases' => $totalCases,
-                'negative_cases' => $negativeCases,
-                'negative_rate_pct' => $totalCases > 0 ? round(($negativeCases / $totalCases) * 100, 2) : null,
-                'resolved_cases' => (int) ($row->resolved_cases ?? 0),
-                'open_cases' => (int) ($row->open_cases ?? 0),
-                'sla_compliance_pct' => $slaTotal > 0 ? round(($slaOnTime / $slaTotal) * 100, 2) : null,
-            ];
-        })->values()->all();
 
         $outlets = Outlet::where('status', 'A')
             ->orderBy('nama_outlet')
@@ -1259,7 +1273,6 @@ class CustomerVoiceCommandCenterController extends Controller
         $assignees = User::active()
             ->with('jabatan:id_jabatan,nama_jabatan')
             ->orderBy('nama_lengkap')
-            ->limit(500)
             ->get(['id', 'nama_lengkap', 'id_outlet', 'division_id', 'id_jabatan']);
 
         $assigneesForUi = $assignees->map(fn ($u) => [
