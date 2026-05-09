@@ -598,8 +598,6 @@ class CustomerVoiceCommandCenterController extends Controller
         ]);
 
         $maxRows = 600;
-        $maxActivitiesPerCase = 8;
-
         $query = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
             ->leftJoin('users as assignee', 'assignee.id', '=', 'c.assigned_to')
@@ -611,6 +609,8 @@ class CustomerVoiceCommandCenterController extends Controller
                 'o.nama_outlet',
                 'c.author_name',
                 'c.customer_contact',
+                'c.meta',
+                'c.topics',
                 'c.event_at',
                 'c.severity',
                 'c.summary_id',
@@ -633,22 +633,57 @@ class CustomerVoiceCommandCenterController extends Controller
             ->limit($maxRows)
             ->get();
 
-        $caseIds = $cases->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        $presentedRows = $cases->map(fn ($case) => $this->presentVoiceCaseRow($case))->values();
 
-        $activitiesByCase = $this->loadActivitiesForExportPdf($caseIds, $maxActivitiesPerCase);
+        $regionalUserIds = [];
+        foreach ($presentedRows as $row) {
+            $ids = isset($row['regional_user_ids']) && is_array($row['regional_user_ids'])
+                ? $row['regional_user_ids']
+                : [];
+            foreach ($ids as $id) {
+                $n = (int) $id;
+                if ($n > 0) {
+                    $regionalUserIds[$n] = $n;
+                }
+            }
+        }
+        $regionalUserNames = $regionalUserIds === []
+            ? []
+            : User::query()->whereIn('id', array_values($regionalUserIds))->pluck('nama_lengkap', 'id')->all();
 
-        $casesForPdf = $cases->map(function ($case) {
+        $casesForPdf = $presentedRows->map(function (array $row) use ($regionalUserNames) {
+            $regionalIds = isset($row['regional_user_ids']) && is_array($row['regional_user_ids'])
+                ? $row['regional_user_ids']
+                : [];
+            $regionalLabels = [];
+            foreach ($regionalIds as $id) {
+                $n = (int) $id;
+                if ($n > 0) {
+                    $regionalLabels[] = $regionalUserNames[$n] ?? ('#'.$n);
+                }
+            }
+
             return (object) [
-                'id' => $case->id,
-                'event_at' => $case->event_at,
-                'nama_outlet' => $case->nama_outlet,
-                'source_type' => $case->source_type,
-                'severity' => $case->severity,
-                'summary_short' => Str::limit((string) ($case->summary_id ?? ''), 90),
-                'raw_short' => Str::limit(preg_replace('/\s+/u', ' ', (string) ($case->raw_text ?? '')), 200),
-                'risk_score' => $case->risk_score ?? 0,
-                'status' => $case->status,
-                'assigned_to_name' => $case->assigned_to_name,
+                'id' => (int) ($row['id'] ?? 0),
+                'event_at' => $row['event_at'] ?? null,
+                'nama_outlet' => (string) ($row['nama_outlet'] ?? ''),
+                'regional' => implode(', ', array_values(array_unique($regionalLabels))),
+                'source_type' => (string) ($row['source_type'] ?? ''),
+                'author_name' => (string) ($row['author_name'] ?? ''),
+                'customer_contact' => (string) ($row['customer_contact'] ?? ''),
+                'customer_email' => (string) ($row['customer_email'] ?? ''),
+                'follow_up_target' => $row['follow_up_target'] ?? null,
+                'severity' => (string) ($row['severity'] ?? ''),
+                'complaint_type_labels' => isset($row['complaint_type_labels']) && is_array($row['complaint_type_labels'])
+                    ? $row['complaint_type_labels']
+                    : [],
+                'summary_short' => Str::limit((string) ($row['summary_id'] ?? ''), 90),
+                'risk_score' => $row['risk_score'] ?? 0,
+                'capa_filled' => ! empty($row['capa_filled']),
+                'capa_verification' => is_array($row['capa_verification'] ?? null) ? $row['capa_verification'] : null,
+                'due_at' => $row['due_at'] ?? null,
+                'status' => (string) ($row['status'] ?? ''),
+                'assigned_to_name' => (string) ($row['assigned_to_name'] ?? ''),
             ];
         });
 
@@ -656,14 +691,12 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
             'cases' => $casesForPdf,
-            'activitiesByCase' => $activitiesByCase,
             'dateFrom' => (string) $request->input('date_from'),
             'dateTo' => (string) $request->input('date_to'),
             'generatedAt' => now()->format('Y-m-d H:i'),
             'totalExported' => $casesForPdf->count(),
             'totalMatching' => $totalMatching,
             'maxRows' => $maxRows,
-            'maxActivitiesPerCase' => $maxActivitiesPerCase,
         ])->setPaper('a4', 'landscape');
 
         $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';

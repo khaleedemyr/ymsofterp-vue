@@ -1605,7 +1605,7 @@ function capaVerificationDisplay(row) {
   const v = row?.capa_verification
   if (!v || v.state === 'none') {
     return {
-      iconClass: 'fa fa-minus',
+      iconClass: 'fa fa-question',
       badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
       title: 'Belum ada verifikator atau belum menunggu hasil verifikasi',
     }

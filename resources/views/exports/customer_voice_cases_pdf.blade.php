@@ -9,7 +9,7 @@
         table { width: 100%; border-collapse: collapse; }
         th { background: #1e293b; color: #fff; padding: 5px 3px; font-size: 7px; text-align: left; vertical-align: top; }
         td { border: 1px solid #cbd5e1; padding: 4px 3px; vertical-align: top; word-wrap: break-word; }
-        .activity-line { font-size: 6.5px; line-height: 1.35; margin: 0 0 3px 0; white-space: pre-wrap; }
+        .tiny { font-size: 6.5px; color: #475569; line-height: 1.35; }
     </style>
 </head>
 <body>
@@ -20,21 +20,76 @@
         @if (($totalMatching ?? $totalExported) > $totalExported)
             (dari total {{ $totalMatching }} sesuai filter; sisanya persempit tanggal/filter atau export berulang)
         @endif
-        · Maks. {{ $maxRows ?? 600 }} baris/file · Timeline: {{ $maxActivitiesPerCase ?? 8 }} aktivitas terakhir/case
+        · Maks. {{ $maxRows ?? 600 }} baris/file
     </div>
+    @php
+        $statusLabel = function ($status) {
+            $s = strtolower(trim((string) $status));
+            return match ($s) {
+                'new' => 'New',
+                'courtesy_by_cs' => 'Courtesy by CS',
+                'follow_up_by_ops' => 'Follow Up by Ops',
+                'done' => 'Done',
+                'in_progress' => 'In Progress (legacy)',
+                'resolved' => 'Resolved (legacy)',
+                'ignored' => 'Ignored (legacy)',
+                default => $status ?: '-',
+            };
+        };
+        $followUpLabel = function ($v) {
+            $s = strtolower(trim((string) $v));
+            if ($s === 'customer') return 'Customer';
+            if ($s === 'internal') return 'Internal';
+            return '-';
+        };
+        $verifLabel = function ($verif) {
+            if (!is_array($verif)) return '-';
+            $state = strtolower(trim((string) ($verif['state'] ?? '')));
+            if ($state === 'pending') return 'Menunggu';
+            if ($state === 'done') {
+                $r = strtolower(trim((string) ($verif['result'] ?? '')));
+                return $r === 'not_effective' ? 'Sudah (Tidak efektif)' : 'Sudah (Efektif)';
+            }
+            return '-';
+        };
+        $slaLabel = function ($dueAt, $status) {
+            if (empty($dueAt)) return 'Tanpa SLA';
+            $s = strtolower(trim((string) $status));
+            if (!in_array($s, ['new', 'courtesy_by_cs', 'follow_up_by_ops', 'in_progress'], true)) {
+                return 'Closed';
+            }
+            try {
+                $due = \Carbon\Carbon::parse($dueAt);
+            } catch (\Throwable) {
+                return 'SLA invalid';
+            }
+            $now = now();
+            if ($due->lt($now)) return 'Overdue';
+            $mins = $now->diffInMinutes($due);
+            if ($mins < 60) return $mins.'m tersisa';
+            $h = intdiv($mins, 60);
+            $m = $mins % 60;
+            return $h.'j '.$m.'m tersisa';
+        };
+    @endphp
     <table>
         <thead>
             <tr>
-                <th style="width:9%">Waktu</th>
-                <th style="width:9%">Outlet</th>
-                <th style="width:8%">Source</th>
-                <th style="width:7%">Severity</th>
-                <th style="width:10%">Ringkasan</th>
-                <th style="width:16%">Komentar</th>
-                <th style="width:4%">Risk</th>
-                <th style="width:7%">Status</th>
-                <th style="width:9%">PIC</th>
-                <th style="width:21%">Timeline</th>
+                <th>Waktu</th>
+                <th>Outlet</th>
+                <th>Regional</th>
+                <th>Source</th>
+                <th>Tamu</th>
+                <th>FU target</th>
+                <th>Severity</th>
+                <th>Jenis komplain</th>
+                <th>Ringkasan</th>
+                <th>Risk</th>
+                <th>CAPA</th>
+                <th>Verif. CAPA</th>
+                <th>SLA</th>
+                <th>CS PIC</th>
+                <th>Status</th>
             </tr>
         </thead>
         <tbody>
@@ -42,34 +97,32 @@
                 <tr>
                     <td>{{ $case->event_at }}</td>
                     <td>{{ $case->nama_outlet ?? '-' }}</td>
+                    <td>{{ $case->regional !== '' ? $case->regional : '-' }}</td>
                     <td>{{ $case->source_type }}</td>
+                    <td>
+                        {{ $case->author_name !== '' ? $case->author_name : '—' }}
+                        @if (!empty($case->customer_contact))
+                            <div class="tiny">{{ $case->customer_contact }}</div>
+                        @endif
+                        @if (!empty($case->customer_email))
+                            <div class="tiny">{{ $case->customer_email }}</div>
+                        @endif
+                    </td>
+                    <td>{{ $followUpLabel($case->follow_up_target ?? null) }}</td>
                     <td>{{ $case->severity ?? '-' }}</td>
-                    <td>{{ $case->summary_short ?? '-' }}</td>
-                    <td>{{ $case->raw_short ?? '-' }}</td>
-                    <td>{{ $case->risk_score ?? 0 }}</td>
-                    <td>{{ $case->status }}</td>
-                    <td>{{ $case->assigned_to_name ?? '-' }}</td>
                     <td>
                         @php
-                            $acts = $activitiesByCase[(int) $case->id] ?? [];
+                            $labels = is_array($case->complaint_type_labels ?? null) ? $case->complaint_type_labels : [];
                         @endphp
-                        @forelse ($acts as $a)
-                            <div class="activity-line">
-                                [{{ $a->created_at }}] {{ $a->activity_type }}
-                                @if (!empty($a->actor_name))
-                                    · {{ $a->actor_name }}
-                                @endif
-                                @if ($a->from_status || $a->to_status)
-                                    ({{ $a->from_status ?? '-' }}→{{ $a->to_status ?? '-' }})
-                                @endif
-                                @if (!empty($a->note))
-                                    — {{ $a->note }}
-                                @endif
-                            </div>
-                        @empty
-                            <span style="color:#94a3b8;">—</span>
-                        @endforelse
+                        {{ count($labels) ? implode(', ', $labels) : '-' }}
                     </td>
+                    <td>{{ $case->summary_short ?? '-' }}</td>
+                    <td>{{ $case->risk_score ?? 0 }}</td>
+                    <td>{{ !empty($case->capa_filled) ? 'Sudah' : 'Belum' }}</td>
+                    <td>{{ $verifLabel($case->capa_verification ?? null) }}</td>
+                    <td>{{ $slaLabel($case->due_at ?? null, $case->status ?? '') }}</td>
+                    <td>{{ $case->assigned_to_name !== '' ? $case->assigned_to_name : '-' }}</td>
+                    <td>{{ $statusLabel($case->status ?? '') }}</td>
                 </tr>
             @endforeach
         </tbody>
