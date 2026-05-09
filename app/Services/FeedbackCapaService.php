@@ -160,6 +160,124 @@ class FeedbackCapaService
     }
 
     /**
+     * Apakah meta["capa"] punya isian nyata dari user (bukan hanya struktur kosong / default).
+     * Dipakai badge di daftar Command Center tanpa memuat seluruh form.
+     *
+     * @param  array<string, mixed>|null  $stored  Isi meta["capa"] mentah
+     */
+    public function storedCapaHasUserInput(?array $stored): bool
+    {
+        if ($stored === null || $stored === []) {
+            return false;
+        }
+
+        try {
+            $c = $this->sanitizeCapa($stored);
+        } catch (\Throwable) {
+            return true;
+        }
+
+        if (($c['evidence'] ?? []) !== []) {
+            return true;
+        }
+
+        $a = $c['a'] ?? [];
+        foreach (['complaint_date', 'complaint_time', 'guest_name', 'channel', 'channel_other'] as $k) {
+            $v = $a[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+
+        $b = $c['b'] ?? [];
+        if (count($b['types'] ?? []) > 0) {
+            return true;
+        }
+        foreach (['types_other', 'description'] as $k) {
+            $v = $b[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+
+        $secC = $c['c'] ?? [];
+        if (count($secC['actions'] ?? []) > 0) {
+            return true;
+        }
+        foreach (['actions_other', 'response_time_note'] as $k) {
+            $v = $secC[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+        if (! empty($secC['pic_user_id'])) {
+            return true;
+        }
+
+        $d = $c['d'] ?? [];
+        foreach (['problem_statement', 'man', 'method', 'machine', 'material', 'measurement', 'environment', 'root_cause_summary'] as $k) {
+            $v = $d[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+
+        $e = $c['e'] ?? [];
+        foreach (['action', 'deadline'] as $k) {
+            $v = $e[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+        if (! empty($e['pic_user_id'])) {
+            return true;
+        }
+        $est = strtolower((string) ($e['status'] ?? 'open'));
+        if (in_array($est, ['on_progress', 'closed'], true)) {
+            return true;
+        }
+
+        $f = $c['f'] ?? [];
+        if (count($f['improvement_areas'] ?? []) > 0) {
+            return true;
+        }
+        foreach (['action', 'timeline', 'kpi'] as $k) {
+            $v = $f[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+        if (! empty($f['pic_user_id'])) {
+            return true;
+        }
+
+        $g = $c['g'] ?? [];
+        foreach (['follow_up_date', 'notes'] as $k) {
+            $v = $g[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+        if (! empty($g['verified_by_user_id']) || ! empty($g['result'])) {
+            return true;
+        }
+
+        $h = $c['h'] ?? [];
+        if (! empty($h['contacted']) || count($h['contact_methods'] ?? []) > 0 || ! empty($h['satisfaction'])) {
+            return true;
+        }
+        $rf = $h['recovery_feedback'] ?? null;
+        if ($rf !== null && trim((string) $rf) !== '') {
+            return true;
+        }
+        if (! empty($h['documented_severity']) || count($h['documented_impact'] ?? []) > 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * @param  array<string, mixed>  $input  Request CAPA (parsial diperbolehkan)
      * @return array<string, mixed>
      */

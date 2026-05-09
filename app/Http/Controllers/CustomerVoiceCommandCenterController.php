@@ -1434,6 +1434,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'complaint_type_labels' => $complaintTypeLabels,
             'notify_follower_user_ids' => $notifyFollowerIds,
             'regional_user_ids' => $regionalUserIds,
+            'capa_filled' => $this->capaService->storedCapaHasUserInput($storedCapa),
             'capa' => $capa,
         ];
     }

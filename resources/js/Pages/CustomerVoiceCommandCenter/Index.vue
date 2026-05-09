@@ -281,14 +281,14 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1680px] text-sm">
+          <table class="w-full min-w-[1640px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
                 <th class="px-3 py-3 text-left font-semibold">Outlet</th>
                 <th
                   class="px-3 py-3 text-left font-semibold min-w-[200px]"
-                  title="Cari nama user (semua user aktif). Saat Simpan, kirim notifikasi FU & CAPA ke user terpilih."
+                  title="Pilih satu atau lebih user regional. Saat Simpan, notifikasi FU &amp; CAPA otomatis ke user terpilih (bukan ke akun yang sedang login)."
                 >
                   Regional
                 </th>
@@ -299,8 +299,8 @@
                 <th class="px-3 py-3 text-left font-semibold max-w-[220px]">Jenis komplain</th>
                 <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[100px]" title="Berdasarkan isian tersimpan di meta CAPA">CAPA</th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
-                <th class="px-3 py-3 text-left font-semibold min-w-[200px]" title="User yang di-notifikasi saat Simpan">Notif ke</th>
                 <th class="px-3 py-3 text-left font-semibold">CS PIC</th>
                 <th class="px-3 py-3 text-left font-semibold">Status</th>
                 <th class="px-3 py-3 text-left font-semibold">Aksi</th>
@@ -371,17 +371,25 @@
                     <div class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ row.raw_text || '' }}</div>
                   </td>
                   <td class="px-3 py-3 text-sm font-semibold text-slate-800">{{ row.risk_score ?? 0 }}</td>
+                  <td class="px-3 py-3 align-top whitespace-nowrap">
+                    <span
+                      v-if="row.capa_filled"
+                      class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800"
+                      title="Form CAPA sudah ada isian tersimpan"
+                    >
+                      Sudah
+                    </span>
+                    <span
+                      v-else
+                      class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+                      title="Belum ada isian CAPA yang disimpan"
+                    >
+                      Belum
+                    </span>
+                  </td>
                   <td class="px-3 py-3 min-w-[190px]">
                     <div class="text-xs font-semibold" :class="slaClass(row)">{{ slaLabel(row) }}</div>
                     <div v-if="row.due_at" class="mt-1 text-[11px] text-slate-400">due {{ formatDate(row.due_at) }}</div>
-                  </td>
-                  <td class="px-3 py-3 align-top min-w-[200px]">
-                    <NotifyUserMultiPicker
-                      v-model="caseForms[row.id].notify_follower_user_ids"
-                      :assignees="assignees"
-                      :disabled="updatingCaseId === row.id"
-                      placeholder="Cari & pilih…"
-                    />
                   </td>
                   <td class="px-3 py-3 min-w-[200px] align-top">
                     <CapaUserPicker
@@ -419,7 +427,7 @@
                         :disabled="updatingCaseId === row.id"
                         @click="updateCase(row.id)"
                       >
-                        Simpan
+                        {{ updatingCaseId === row.id ? 'Menyimpan…' : 'Simpan' }}
                       </button>
                       <button
                         type="button"
@@ -875,6 +883,7 @@ import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vu
 import NotifyUserMultiPicker from '@/Pages/CustomerVoiceCommandCenter/NotifyUserMultiPicker.vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { computed, onMounted, ref, watch } from 'vue'
+import Swal from 'sweetalert2'
 
 const page = usePage()
 
@@ -1012,7 +1021,6 @@ function initCaseForms() {
       status: canonicalVoiceCaseStatus(row.status),
       assigned_to: row.assigned_to != null ? Number(row.assigned_to) : null,
       regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
-      notify_follower_user_ids: normalizeUserIdList(row, 'notify_follower_user_ids'),
     }
   }
   caseForms.value = next
@@ -1186,20 +1194,83 @@ function syncNow() {
   })
 }
 
+function currentUserId() {
+  const raw = page.props.auth?.user?.id
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** HTML untuk SweetAlert: hanya regional — tidak mengirim ke akun yang sedang login. */
+function notifyRecipientSkipMessageHtml(form) {
+  const actorId = currentUserId()
+  if (!actorId) {
+    return null
+  }
+  const regionalIds = Array.isArray(form.regional_user_ids)
+    ? [...new Set(form.regional_user_ids.map((x) => Number(x)).filter((n) => n > 0))]
+    : []
+  if (regionalIds.length > 0 && regionalIds.every((id) => id === actorId)) {
+    return '<p class="text-left"><strong>Regional:</strong> tidak ada notifikasi masuk ke akun ini karena hanya berisi Anda sendiri. Pilih user lain untuk menguji notifikasi.</p>'
+  }
+  return null
+}
+
+function firstInertiaErrorMessage(errors) {
+  if (!errors || typeof errors !== 'object') {
+    return 'Terjadi kesalahan.'
+  }
+  const vals = Object.values(errors).flat().filter(Boolean)
+  return vals.length ? String(vals[0]) : 'Terjadi kesalahan.'
+}
+
 function updateCase(caseId) {
   const form = caseForms.value[caseId]
   if (!form) return
   updatingCaseId.value = caseId
-  // voiceIndexPostExtras() menyertakan `status` (filter tabel); harus di-spread dulu
+  Swal.fire({
+    title: 'Menyimpan…',
+    allowOutsideClick: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    },
+  })
+  // voiceIndexPostExtras() menyertakan `list_status` (filter tabel); harus di-spread dulu
   // agar status/assigned_to case tidak tertimpa jadi "new" / filter lain.
   router.post(`/customer-voice-command-center/cases/${caseId}/update`, {
     ...voiceIndexPostExtras(),
     status: form.status,
     assigned_to: form.assigned_to ?? null,
-    notify_follower_user_ids: Array.isArray(form.notify_follower_user_ids) ? form.notify_follower_user_ids : [],
+    /** Hanya Regional di UI; kosongkan daftar follower lama di meta agar tidak double-alur. */
+    notify_follower_user_ids: [],
     regional_user_ids: Array.isArray(form.regional_user_ids) ? form.regional_user_ids : [],
   }, {
     preserveScroll: true,
+    onSuccess: () => {
+      Swal.close()
+      const extraHtml = notifyRecipientSkipMessageHtml(form)
+      if (extraHtml) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Case diperbarui',
+          html: `${extraHtml}<p class="mt-3 text-sm text-slate-600">Perubahan tersimpan.</p>`,
+        })
+      } else {
+        Swal.fire({
+          icon: 'success',
+          title: 'Case diperbarui',
+          text: 'Perubahan berhasil disimpan.',
+        })
+      }
+    },
+    onError: (errors) => {
+      Swal.close()
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menyimpan',
+        text: firstInertiaErrorMessage(errors),
+      })
+    },
     onFinish: () => {
       updatingCaseId.value = null
     },
@@ -1331,11 +1402,35 @@ function closeDetail() {
 function submitCapa(capa) {
   if (!detailCaseId.value) return
   capaSaving.value = true
+  Swal.fire({
+    title: 'Menyimpan CAPA…',
+    allowOutsideClick: false,
+    showConfirmButton: false,
+    didOpen: () => {
+      Swal.showLoading()
+    },
+  })
   router.post(`/customer-voice-command-center/cases/${detailCaseId.value}/capa`, {
     ...voiceIndexPostExtras(),
     capa,
   }, {
     preserveScroll: true,
+    onSuccess: () => {
+      Swal.close()
+      Swal.fire({
+        icon: 'success',
+        title: 'CAPA tersimpan',
+        text: 'Form CAPA berhasil disimpan.',
+      })
+    },
+    onError: (errors) => {
+      Swal.close()
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal menyimpan CAPA',
+        text: firstInertiaErrorMessage(errors),
+      })
+    },
     onFinish: () => {
       capaSaving.value = false
     },
