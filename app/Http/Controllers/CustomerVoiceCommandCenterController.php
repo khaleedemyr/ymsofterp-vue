@@ -243,6 +243,7 @@ class CustomerVoiceCommandCenterController extends Controller
     {
         $request->validate([
             'capa' => 'required|array',
+            'capa_division' => 'nullable|string',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -260,16 +261,18 @@ class CustomerVoiceCommandCenterController extends Controller
         if (! is_array($incoming)) {
             $incoming = [];
         }
+        $division = $this->normalizeCapaDivision($request->input('capa_division'));
         $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
-        if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
-            $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
+        $existingDivisionCapa = $this->getDivisionCapaFromMeta($meta, $division);
+        if (! empty($existingDivisionCapa['evidence']) && is_array($existingDivisionCapa['evidence'])) {
+            $preservedEvidence = $this->capaService->sanitizeEvidenceList($existingDivisionCapa['evidence']);
         }
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
         $sanitized['evidence'] = $preservedEvidence;
-        $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
+        $meta = $this->mergeDivisionCapaIntoMeta($meta, $division, $sanitized);
         $newVerifierId = $this->extractCapaVerifierUserId($meta);
         $meta = $this->stampCapaAuditMeta(
             $meta,
@@ -356,13 +359,28 @@ class CustomerVoiceCommandCenterController extends Controller
             $meta = json_decode((string) $row->meta, true) ?: [];
         }
 
-        if (! isset($meta['capa']) || ! is_array($meta['capa'])) {
+        $hasSingle = isset($meta['capa']) && is_array($meta['capa']);
+        $hasDivisions = isset($meta['capa_divisions']) && is_array($meta['capa_divisions']);
+        if (! $hasSingle && ! $hasDivisions) {
             return 'already_empty';
         }
 
-        $capa = $meta['capa'];
         $prefix = 'feedback_case_capa/'.$id.'/';
-        if (! empty($capa['evidence']) && is_array($capa['evidence'])) {
+        $allCapas = [];
+        if ($hasSingle) {
+            $allCapas[] = $meta['capa'];
+        }
+        if ($hasDivisions) {
+            foreach (['service', 'kitchen', 'bar'] as $d) {
+                if (isset($meta['capa_divisions'][$d]) && is_array($meta['capa_divisions'][$d])) {
+                    $allCapas[] = $meta['capa_divisions'][$d];
+                }
+            }
+        }
+        foreach ($allCapas as $capa) {
+            if (empty($capa['evidence']) || ! is_array($capa['evidence'])) {
+                continue;
+            }
             foreach ($capa['evidence'] as $item) {
                 if (! is_array($item)) {
                     continue;
@@ -378,6 +396,9 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         unset($meta['capa']);
+        unset($meta['capa_divisions']);
+        unset($meta['capa_active_division']);
+        unset($meta['capa_meta']);
 
         $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
@@ -405,6 +426,7 @@ class CustomerVoiceCommandCenterController extends Controller
     {
         $request->validate([
             'capa' => 'required|array',
+            'capa_division' => 'nullable|string',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -424,16 +446,18 @@ class CustomerVoiceCommandCenterController extends Controller
         if (! is_array($incoming)) {
             $incoming = [];
         }
+        $division = $this->normalizeCapaDivision($request->input('capa_division'));
         $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
-        if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
-            $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
+        $existingDivisionCapa = $this->getDivisionCapaFromMeta($meta, $division);
+        if (! empty($existingDivisionCapa['evidence']) && is_array($existingDivisionCapa['evidence'])) {
+            $preservedEvidence = $this->capaService->sanitizeEvidenceList($existingDivisionCapa['evidence']);
         }
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
         $sanitized['evidence'] = $preservedEvidence;
-        $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
+        $meta = $this->mergeDivisionCapaIntoMeta($meta, $division, $sanitized);
         $newVerifierId = $this->extractCapaVerifierUserId($meta);
         $meta = $this->stampCapaAuditMeta(
             $meta,
@@ -729,9 +753,7 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         $presented = $payload['presented'];
-        $capaEvidencePdfImages = $this->capaService->pdfEmbedCapaEvidenceImages(
-            is_array($presented['capa'] ?? null) ? $presented['capa'] : []
-        );
+        $capaEvidencePdfImages = $payload['capa_evidence_pdf_images'] ?? [];
 
         $pdf = \PDF::loadView('exports.feedback_capa_pdf', [
             'caseId' => $presented['id'],
@@ -761,7 +783,7 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * @return array{presented: array<string, mixed>, flat_rows: \Illuminate\Support\Collection<int, array{bagian: string, field: string, nilai: string}>, capa_grouped_sections: array<int, array{bagian: string, items: list<array{field: string, nilai: string}>}>, generated_at: string}|null
+     * @return array{presented: array<string, mixed>, flat_rows: \Illuminate\Support\Collection<int, array{bagian: string, field: string, nilai: string}>, capa_grouped_sections: array<int, array{bagian: string, items: list<array{field: string, nilai: string}>}>, capa_evidence_pdf_images: list<array{label: string, src: string|null, note: string|null}>, generated_at: string}|null
      */
     private function prepareCapaExport(int $id): ?array
     {
@@ -800,17 +822,63 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         $presented = $this->presentVoiceCaseRow($case);
-        $capa = $presented['capa'];
         $formatter = new FeedbackCapaExportFormatter;
-        $flatRows = $formatter->flatten($presented, $capa);
+        $divisionRows = $this->collectCapaByDivisionForExport($presented);
+        $flatRows = collect();
+        $evidenceImages = [];
+        foreach ($divisionRows as $div) {
+            $label = (string) ($div['label'] ?? '');
+            $capa = $div['capa'] ?? null;
+            if (! is_array($capa)) {
+                continue;
+            }
+            $rows = $formatter->flatten($presented, $capa)->map(function (array $row) use ($label) {
+                $row['bagian'] = $label !== ''
+                    ? '['.$label.'] '.(string) ($row['bagian'] ?? '')
+                    : (string) ($row['bagian'] ?? '');
+
+                return $row;
+            });
+            $flatRows = $flatRows->concat($rows);
+
+            foreach ($this->capaService->pdfEmbedCapaEvidenceImages($capa) as $img) {
+                $img['label'] = $label !== '' ? '['.$label.'] '.(string) ($img['label'] ?? '') : (string) ($img['label'] ?? '');
+                $evidenceImages[] = $img;
+            }
+        }
+
         $capaGroupedSections = $formatter->groupConsecutiveBagian($flatRows);
 
         return [
             'presented' => $presented,
             'flat_rows' => $flatRows,
             'capa_grouped_sections' => $capaGroupedSections,
+            'capa_evidence_pdf_images' => $evidenceImages,
             'generated_at' => now()->format('Y-m-d H:i'),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $presented
+     * @return array<int, array{division: string, label: string, capa: array<string,mixed>}>
+     */
+    private function collectCapaByDivisionForExport(array $presented): array
+    {
+        $labels = ['service' => 'Service', 'kitchen' => 'Kitchen', 'bar' => 'Bar'];
+        $out = [];
+        $divs = $presented['capa_divisions'] ?? null;
+        if (is_array($divs)) {
+            foreach (['service', 'kitchen', 'bar'] as $d) {
+                if (isset($divs[$d]) && is_array($divs[$d])) {
+                    $out[] = ['division' => $d, 'label' => $labels[$d], 'capa' => $divs[$d]];
+                }
+            }
+        }
+        if ($out === [] && isset($presented['capa']) && is_array($presented['capa'])) {
+            $out[] = ['division' => 'service', 'label' => $labels['service'], 'capa' => $presented['capa']];
+        }
+
+        return $out;
     }
 
     private function capaExportBasename(int $id, string $ext): string
@@ -1438,7 +1506,9 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         }
 
-        $storedCapa = isset($meta['capa']) && is_array($meta['capa']) ? $meta['capa'] : null;
+        $capaDivisions = $this->normalizeCapaDivisionsFromMeta($meta);
+        $activeDivision = $this->normalizeCapaDivision($meta['capa_active_division'] ?? null);
+        $storedCapa = $capaDivisions[$activeDivision] ?? null;
         $capa = $this->capaService->buildForPresentation($storedCapa, $case, $topicsArr);
         $capa = $this->capaService->decorateEvidenceUrls($capa);
 
@@ -1490,6 +1560,8 @@ class CustomerVoiceCommandCenterController extends Controller
                 'verified_by_user_id' => $this->extractCapaAuditUserId($meta, 'verified_by_user_id'),
                 'verified_at' => $this->extractCapaAuditDateTime($meta, 'verified_at'),
             ],
+            'capa_active_division' => $activeDivision,
+            'capa_divisions' => $capaDivisions,
             'capa' => $capa,
         ];
     }
@@ -1754,7 +1826,8 @@ class CustomerVoiceCommandCenterController extends Controller
 
     private function extractCapaVerifierUserId(array $meta): ?int
     {
-        $capa = $meta['capa'] ?? null;
+        $division = $this->normalizeCapaDivision($meta['capa_active_division'] ?? null);
+        $capa = $this->getDivisionCapaFromMeta($meta, $division);
         if (! is_array($capa)) {
             return null;
         }
@@ -1773,7 +1846,8 @@ class CustomerVoiceCommandCenterController extends Controller
 
     private function extractCapaVerificationResult(array $meta): ?string
     {
-        $capa = $meta['capa'] ?? null;
+        $division = $this->normalizeCapaDivision($meta['capa_active_division'] ?? null);
+        $capa = $this->getDivisionCapaFromMeta($meta, $division);
         if (! is_array($capa)) {
             return null;
         }
@@ -1784,6 +1858,68 @@ class CustomerVoiceCommandCenterController extends Controller
         $raw = strtolower(trim((string) ($g['result'] ?? '')));
 
         return in_array($raw, ['effective', 'not_effective'], true) ? $raw : null;
+    }
+
+    private function normalizeCapaDivision(mixed $raw): string
+    {
+        $v = strtolower(trim((string) ($raw ?? '')));
+        if (! in_array($v, ['service', 'kitchen', 'bar'], true)) {
+            return 'service';
+        }
+
+        return $v;
+    }
+
+    /**
+     * @return array{service: array<string,mixed>|null, kitchen: array<string,mixed>|null, bar: array<string,mixed>|null}
+     */
+    private function normalizeCapaDivisionsFromMeta(array $meta): array
+    {
+        $out = ['service' => null, 'kitchen' => null, 'bar' => null];
+        $divs = $meta['capa_divisions'] ?? null;
+        if (is_array($divs)) {
+            foreach (['service', 'kitchen', 'bar'] as $k) {
+                if (isset($divs[$k]) && is_array($divs[$k])) {
+                    try {
+                        $out[$k] = $this->capaService->sanitizeCapa($divs[$k]);
+                    } catch (\Throwable) {
+                        $out[$k] = null;
+                    }
+                }
+            }
+        }
+        // Backward compatibility: old single CAPA is treated as service.
+        if ($out['service'] === null && isset($meta['capa']) && is_array($meta['capa'])) {
+            try {
+                $out['service'] = $this->capaService->sanitizeCapa($meta['capa']);
+            } catch (\Throwable) {
+                $out['service'] = null;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function getDivisionCapaFromMeta(array $meta, string $division): ?array
+    {
+        $divs = $this->normalizeCapaDivisionsFromMeta($meta);
+
+        return $divs[$division] ?? null;
+    }
+
+    private function mergeDivisionCapaIntoMeta(array $meta, string $division, array $sanitized): array
+    {
+        $divs = $this->normalizeCapaDivisionsFromMeta($meta);
+        $divs[$division] = $sanitized;
+        $meta['capa_divisions'] = $divs;
+        $meta['capa_active_division'] = $division;
+        // Keep old key for compatibility with old readers/exporters.
+        $meta['capa'] = $sanitized;
+
+        return $meta;
     }
 
     private function stampCapaAuditMeta(array $meta, mixed $actorIdRaw, \Carbon\Carbon $now, ?string $verificationResult): array

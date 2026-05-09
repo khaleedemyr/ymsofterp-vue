@@ -10,6 +10,21 @@
         <strong>Preventive</strong> = cegah kejadian berulang.
       </p>
     </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-2">
+      <div class="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA</div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="d in divisions"
+          :key="d.id"
+          type="button"
+          class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
+          :class="activeDivision === d.id ? 'border-indigo-300 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+          @click="switchDivision(d.id)"
+        >
+          {{ d.label }}
+        </button>
+      </div>
+    </div>
 
     <div
       v-if="pendingVerifierSelf"
@@ -454,6 +469,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 const props = defineProps({
   caseId: { type: Number, required: true },
   initialCapa: { type: Object, default: () => ({}) },
+  initialCapaDivisions: { type: Object, default: () => ({}) },
+  activeDivision: { type: String, default: 'service' },
   outletName: { type: String, default: '' },
   saving: { type: Boolean, default: false },
   assignees: { type: Array, default: () => [] },
@@ -467,6 +484,17 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'verify-clicked', 'dirty-changed'])
+const divisions = [
+  { id: 'service', label: 'Service' },
+  { id: 'kitchen', label: 'Kitchen' },
+  { id: 'bar', label: 'Bar' },
+]
+const activeDivision = ref('service')
+const divisionDrafts = ref({
+  service: ensureShape({}),
+  kitchen: ensureShape({}),
+  bar: ensureShape({}),
+})
 
 function askDeleteStoredCapa() {
   if (
@@ -565,9 +593,26 @@ watch(
 )
 
 watch(
-  () => props.initialCapa,
-  (c) => {
-    const merged = ensureShape(c && typeof c === 'object' ? JSON.parse(JSON.stringify(c)) : {})
+  () => [props.initialCapa, props.initialCapaDivisions, props.activeDivision],
+  ([single, byDivision, currentDivision]) => {
+    const next = {
+      service: ensureShape(single && typeof single === 'object' ? JSON.parse(JSON.stringify(single)) : {}),
+      kitchen: ensureShape({}),
+      bar: ensureShape({}),
+    }
+    if (byDivision && typeof byDivision === 'object') {
+      for (const d of ['service', 'kitchen', 'bar']) {
+        const x = byDivision[d]
+        if (x && typeof x === 'object') {
+          next[d] = ensureShape(JSON.parse(JSON.stringify(x)))
+        }
+      }
+    }
+    divisionDrafts.value = next
+    activeDivision.value = ['service', 'kitchen', 'bar'].includes(String(currentDivision || '').toLowerCase())
+      ? String(currentDivision).toLowerCase()
+      : 'service'
+    const merged = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[activeDivision.value] || {})))
     const uid = props.authUser?.id
     if (uid != null) {
       if (merged.c.pic_user_id == null) merged.c.pic_user_id = uid
@@ -577,6 +622,16 @@ watch(
     local.value = merged
   },
   { immediate: true, deep: true },
+)
+
+watch(
+  () => activeDivision.value,
+  (next, prev) => {
+    if (prev && divisionDrafts.value[prev]) {
+      divisionDrafts.value[prev] = ensureShape(JSON.parse(JSON.stringify(local.value)))
+    }
+    local.value = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[next] || {})))
+  },
 )
 
 function normalizeForDirty(value) {
@@ -590,11 +645,16 @@ function normalizeForDirty(value) {
 watch(
   [() => props.initialCapa, local],
   () => {
-    const dirty = normalizeForDirty(local.value) !== normalizeForDirty(props.initialCapa)
+    const source = divisionDrafts.value[activeDivision.value] || props.initialCapa
+    const dirty = normalizeForDirty(local.value) !== normalizeForDirty(source)
     emit('dirty-changed', dirty)
   },
   { immediate: true, deep: true },
 )
+function switchDivision(div) {
+  if (!['service', 'kitchen', 'bar'].includes(div)) return
+  activeDivision.value = div
+}
 
 const fishboneRows = [
   {
@@ -779,7 +839,11 @@ function toggleImpact(v) {
 }
 
 function submit() {
-  emit('save', JSON.parse(JSON.stringify(local.value)))
+  divisionDrafts.value[activeDivision.value] = ensureShape(JSON.parse(JSON.stringify(local.value)))
+  emit('save', {
+    division: activeDivision.value,
+    capa: JSON.parse(JSON.stringify(local.value)),
+  })
 }
 
 function csrfToken() {

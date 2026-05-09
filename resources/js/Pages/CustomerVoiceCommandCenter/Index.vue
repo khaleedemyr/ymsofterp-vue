@@ -647,6 +647,8 @@
             :key="`${selectedCase.id}-${capaResetKey}`"
             :case-id="selectedCase.id"
             :initial-capa="selectedCase.capa"
+            :initial-capa-divisions="selectedCase.capa_divisions || {}"
+            :active-division="selectedCase.capa_active_division || 'service'"
             :outlet-name="selectedCase.nama_outlet || ''"
             :assignees="assignees"
             :auth-user="capa_auth_user"
@@ -1477,8 +1479,10 @@ function closeDetail() {
   capaFormDirty.value = false
 }
 
-function submitCapa(capa) {
+function submitCapa(payload) {
   if (!detailCaseId.value) return
+  const capa = payload && typeof payload === 'object' && payload.capa ? payload.capa : payload
+  const capaDivision = payload && typeof payload === 'object' ? payload.division : null
   capaSaving.value = true
   Swal.fire({
     title: 'Menyimpan CAPA…',
@@ -1490,6 +1494,7 @@ function submitCapa(capa) {
   })
   router.post(`/customer-voice-command-center/cases/${detailCaseId.value}/capa`, {
     ...voiceIndexPostExtras(),
+    capa_division: capaDivision || 'service',
     capa,
   }, {
     preserveScroll: true,
