@@ -381,9 +381,9 @@
                     </span>
                   </td>
                   <td class="px-3 py-3">
-                    <div class="font-semibold text-slate-800">{{ row.summary_id || '-' }}</div>
+                    <div class="text-[11px] text-slate-500">{{ row.summary_id || '-' }}</div>
                     <div
-                      class="mt-1 text-[12px] leading-relaxed text-slate-700 whitespace-pre-wrap"
+                      class="mt-1 max-h-28 overflow-y-auto pr-1 text-[12px] font-semibold leading-relaxed text-slate-800 whitespace-pre-wrap"
                       :title="row.raw_text || 'Komentar asli tidak tersedia'"
                     >
                       {{ row.raw_text || 'Komentar asli tidak tersedia' }}
