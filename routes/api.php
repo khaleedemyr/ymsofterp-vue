@@ -221,6 +221,34 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-supplier-good-receives/{id}', [GoodReceiveOutletSupplierController::class, 'apiShow']);
         Route::post('/outlet-supplier-good-receives', [GoodReceiveOutletSupplierController::class, 'apiStore']);
         Route::delete('/outlet-supplier-good-receives/{id}', [GoodReceiveOutletSupplierController::class, 'destroy']);
+
+        // Food Good Receive serial routes (approval-app token auth)
+        Route::get('/food-good-receive/{id}/serial-summary', [\App\Http\Controllers\FoodGoodReceiveController::class, 'serialSummary']);
+        Route::get('/food-good-receive-items/{id}/serial-units', [\App\Http\Controllers\FoodGoodReceiveController::class, 'serialUnits']);
+        Route::post('/food-good-receive-items/{id}/generate-serials', [\App\Http\Controllers\FoodGoodReceiveController::class, 'generateSerials']);
+        Route::get('/food-good-receive-items/{id}/serials', [\App\Http\Controllers\FoodGoodReceiveController::class, 'serialList']);
+        Route::delete('/food-good-receive-items/{id}/serials', [\App\Http\Controllers\FoodGoodReceiveController::class, 'rollbackSerials']);
+
+        // MK Production serial routes
+        Route::post('/mk-production/{id}/generate-serials', [\App\Http\Controllers\MKProductionController::class, 'generateSerials']);
+        Route::get('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList']);
+        Route::get('/mk-production/{id}/serial-summary', [\App\Http\Controllers\MKProductionController::class, 'serialSummary']);
+        Route::delete('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'rollbackSerials']);
+
+        // Butcher Process API + serial routes
+        Route::get('/butcher-processes', [\App\Http\Controllers\ButcherProcessController::class, 'apiIndex']);
+        Route::get('/butcher-processes/{id}', [\App\Http\Controllers\ButcherProcessController::class, 'apiShow']);
+        Route::get('/butcher-processes/{id}/serial-summary', [\App\Http\Controllers\ButcherProcessController::class, 'serialSummary']);
+        Route::post('/butcher-process-items/{id}/generate-serials', [\App\Http\Controllers\ButcherProcessController::class, 'generateSerials']);
+        Route::get('/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'serialList']);
+        Route::delete('/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'rollbackSerials']);
+
+        // Repack API + serial routes
+        Route::get('/repack', [\App\Http\Controllers\RepackController::class, 'apiIndex']);
+        Route::get('/repack/{id}', [\App\Http\Controllers\RepackController::class, 'apiShow']);
+        Route::get('/repack/{id}/serial-summary', [\App\Http\Controllers\RepackController::class, 'serialSummary']);
+        Route::get('/repack/{id}/serials', [\App\Http\Controllers\RepackController::class, 'serialList']);
+        Route::delete('/repack/{id}/serials', [\App\Http\Controllers\RepackController::class, 'rollbackSerials']);
     });
 });
 

@@ -13,6 +13,48 @@ use Illuminate\Support\Str;
 
 class RepackController extends Controller
 {
+    public function apiIndex(Request $request)
+    {
+        $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
+        if ($request->search) {
+            $query->where('repack_number', 'like', '%' . $request->search . '%');
+        }
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->from) {
+            $query->whereDate('created_at', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('created_at', '<=', $request->to);
+        }
+
+        $perPage = (int) $request->get('per_page', 20);
+        $paginated = $query->orderByDesc('created_at')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'per_page' => $paginated->perPage(),
+            'total' => $paginated->total(),
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $repack = Repack::with(['itemAsal', 'itemHasil', 'creator'])->find($id);
+        if (!$repack) {
+            return response()->json(['success' => false, 'message' => 'Data repack tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'repack' => $repack,
+        ]);
+    }
+
     public function index(Request $request)
     {
         $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);

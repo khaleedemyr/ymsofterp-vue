@@ -25,6 +25,84 @@ use Illuminate\Support\Str;
 
 class ButcherProcessController extends Controller
 {
+    public function apiIndex(Request $request)
+    {
+        $query = ButcherProcess::query()
+            ->with(['warehouse', 'goodReceive', 'createdBy'])
+            ->when($request->search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('number', 'like', "%{$search}%")
+                        ->orWhereHas('goodReceive', function ($q) use ($search) {
+                            $q->where('gr_number', 'like', "%{$search}%");
+                        })
+                        ->orWhereHas('warehouse', function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->when($request->from, fn ($q, $from) => $q->where('process_date', '>=', $from))
+            ->when($request->to, fn ($q, $to) => $q->where('process_date', '<=', $to))
+            ->latest();
+
+        $perPage = (int) $request->get('per_page', 20);
+        $paginated = $query->paginate($perPage);
+
+        $rows = collect($paginated->items())->map(function ($process) {
+            return [
+                'id' => $process->id,
+                'number' => $process->number,
+                'process_date' => $process->process_date,
+                'gr_number' => $process->goodReceive->gr_number ?? '-',
+                'warehouse_name' => $process->warehouse->name ?? '-',
+                'created_by_name' => $process->createdBy->nama_lengkap ?? '-',
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+            'current_page' => $paginated->currentPage(),
+            'last_page' => $paginated->lastPage(),
+            'per_page' => $paginated->perPage(),
+            'total' => $paginated->total(),
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $butcherProcess = ButcherProcess::with([
+            'warehouse',
+            'goodReceive.supplier',
+            'createdBy',
+            'items.wholeItem',
+            'items.pcsItem',
+            'items.unit',
+            'items.details',
+            'certificates'
+        ])->find($id);
+
+        if (!$butcherProcess) {
+            return response()->json(['success' => false, 'message' => 'Data butcher process tidak ditemukan'], 404);
+        }
+
+        $butcherProcess->items->transform(function ($item) {
+            $item->whole_item_name = $item->wholeItem ? $item->wholeItem->name : null;
+            $item->pcs_item_name = $item->pcsItem ? $item->pcsItem->name : null;
+            $item->small_conversion_qty = $item->pcsItem ? $item->pcsItem->small_conversion_qty : null;
+            $item->pcs_item_exp = $item->pcsItem ? $item->pcsItem->exp : null;
+            $item->details = collect($item->details)->take(1)->values();
+            return $item;
+        });
+
+        $butcherProcess->created_by_nama_lengkap = $butcherProcess->createdBy ? $butcherProcess->createdBy->nama_lengkap : null;
+        $butcherProcess->gr_number = $butcherProcess->goodReceive ? $butcherProcess->goodReceive->gr_number : null;
+
+        return response()->json([
+            'success' => true,
+            'butcherProcess' => $butcherProcess,
+        ]);
+    }
+
     public function index(Request $request)
     {
         $query = ButcherProcess::query()
