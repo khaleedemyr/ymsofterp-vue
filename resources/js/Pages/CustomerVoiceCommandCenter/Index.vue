@@ -536,6 +536,7 @@
           <CapaFormPanel
             :key="`${selectedCase.id}-${capaResetKey}`"
             :initial-capa="selectedCase.capa"
+            :outlet-name="selectedCase.nama_outlet || ''"
             :saving="capaSaving"
             @save="submitCapa"
             @reset="resetCapaDraft"

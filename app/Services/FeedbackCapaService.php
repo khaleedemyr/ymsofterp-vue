@@ -38,6 +38,7 @@ class FeedbackCapaService
             ],
             'd' => [
                 'use_fishbone' => false,
+                'problem_statement' => null,
                 'man' => null,
                 'method' => null,
                 'machine' => null,
@@ -140,6 +141,7 @@ class FeedbackCapaService
         $merged['b']['types_other'] = $this->limitStr($merged['b']['types_other'] ?? null, 500);
         $merged['b']['description'] = $this->limitStr($merged['b']['description'] ?? null, 12000);
         $merged['d']['use_fishbone'] = filter_var($merged['d']['use_fishbone'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $merged['d']['problem_statement'] = $this->limitStr($merged['d']['problem_statement'] ?? null, 4000);
         foreach (['man', 'method', 'machine', 'material', 'measurement', 'environment', 'root_cause_summary'] as $fk) {
             $merged['d'][$fk] = $this->limitStr($merged['d'][$fk] ?? null, 8000);
         }
@@ -274,6 +276,11 @@ class FeedbackCapaService
         $raw = isset($case->raw_text) ? trim((string) $case->raw_text) : '';
         if ($raw !== '') {
             $out['b']['description'] = $raw;
+            $lines = preg_split("/\r\n|\r|\n/", $raw);
+            $first = trim((string) ($lines[0] ?? ''));
+            if ($first !== '') {
+                $out['d']['problem_statement'] = mb_substr($first, 0, 500);
+            }
         }
 
         $sev = strtolower(trim((string) ($case->severity ?? '')));

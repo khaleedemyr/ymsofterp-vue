@@ -1,17 +1,21 @@
 <template>
   <div class="capa-form space-y-4">
-    <div class="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/90 to-white px-4 py-3">
-      <p class="text-xs font-bold uppercase tracking-wide text-indigo-800">CAPA</p>
-      <p class="mt-0.5 text-sm font-semibold text-slate-900">Corrective &amp; preventive action plan</p>
-      <p class="mt-1 text-[11px] leading-snug text-slate-600">
-        Diisi untuk dokumentasi penanganan komplain; data disimpan di meta kasus. Kotak centang multi-pilihan; tanggal &amp; teks akan disaring di server.
+    <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-4 py-4 shadow-sm">
+      <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Form standar</p>
+      <h2 class="mt-1 text-base font-bold leading-snug text-slate-900">
+        Customer Complaint Handling — Corrective &amp; Preventive Action Plan
+      </h2>
+      <p class="mt-2 text-xs leading-relaxed text-slate-600">
+        Isi sesuai penanganan komplain di lapangan. Data tersimpan pada kasus (meta). <strong>Corrective</strong> = perbaiki kejadian saat ini;
+        <strong>Preventive</strong> = cegah kejadian berulang.
       </p>
     </div>
 
     <!-- A -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">A. Informasi umum</h4>
-      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <h3 class="text-sm font-bold text-slate-900">A. Informasi umum</h3>
+      <p class="mt-1 text-[11px] text-slate-500">General information — tanggal, waktu, lokasi, tamu, channel, PIC penerima.</p>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Tanggal complaint
           <input v-model="local.a.complaint_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
@@ -20,58 +24,66 @@
           Waktu
           <input v-model="local.a.complaint_time" type="time" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
         </label>
+        <div class="sm:col-span-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/90 px-3 py-2.5">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outlet / lokasi</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ outletDisplay }}</div>
+          <p class="mt-1 text-[10px] leading-snug text-slate-400">Nilai dari data outlet kasus (sama seperti kartu ringkas di atas). Tidak perlu diketik ulang.</p>
+        </div>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Nama tamu (opsional)
-          <input v-model="local.a.guest_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Sesuai tamu / penulis" />
+          Nama tamu <span class="font-normal text-slate-400">(optional)</span>
+          <input v-model="local.a.guest_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Nama tamu / penulis" />
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
           Channel complaint
+          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Dine-in / Online Review / Delivery / Walk-in / dll</span>
           <select v-model="local.a.channel" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
-            <option :value="null">— pilih —</option>
+            <option :value="null">— pilih channel —</option>
             <option value="dine_in">Dine-in</option>
-            <option value="online_review">Online review</option>
+            <option value="online_review">Online Review</option>
             <option value="delivery">Delivery</option>
             <option value="walk_in">Walk-in</option>
-            <option value="other">Lainnya</option>
+            <option value="other">Lainnya (dll)</option>
           </select>
         </label>
         <label v-if="local.a.channel === 'other'" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Channel (lainnya)
+          Jelaskan channel lainnya
           <input v-model="local.a.channel_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
           PIC penerima complaint
-          <input v-model="local.a.pic_receiver_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+          <input v-model="local.a.pic_receiver_name" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Nama PIC yang menerima keluhan" />
         </label>
       </div>
-      <p class="mt-3 text-[11px] text-slate-500">Outlet &amp; tanggal kejadian utama sudah tercermin di kartu ringkas di atas (dari data kasus).</p>
     </section>
 
     <!-- B -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">B. Detail complaint</h4>
-      <p class="mt-1 text-[11px] text-slate-500">Jenis — centang semua yang relevan</p>
+      <h3 class="text-sm font-bold text-slate-900">B. Detail complaint</h3>
+      <p class="mt-1 text-[11px] font-semibold text-slate-600">Jenis complaint</p>
+      <p class="text-[10px] text-slate-500">Centang semua yang sesuai.</p>
       <div class="mt-3 flex flex-wrap gap-2">
-        <label v-for="opt in complaintTypes" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-white">
+        <label v-for="opt in complaintTypes" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
           <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasType(opt.v)" @change="toggleType(opt.v)" />
           {{ opt.label }}
         </label>
       </div>
       <label v-if="local.b.types?.includes('other')" class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Lainnya (jelaskan)
-        <input v-model="local.b.types_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        Others — jelaskan
+        <input v-model="local.b.types_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Isi jika memilih Lainnya" />
       </label>
       <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Deskripsi / kronologi objektif
-        <textarea v-model="local.b.description" rows="5" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-relaxed outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Ringkas fakta, tanpa menyalahkan…" />
+        Deskripsi complaint
+        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Tuliskan kronologi lengkap secara objektif.</span>
+        <textarea v-model="local.b.description" rows="6" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-relaxed outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Ringkas fakta apa yang terjadi, urutan waktu, tanpa menyalahkan pihak tertentu…" />
       </label>
     </section>
 
     <!-- C -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">C. Tindakan langsung</h4>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <label v-for="opt in immediateActions" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-white">
+      <h3 class="text-sm font-bold text-slate-900">C. Immediate action <span class="font-normal text-slate-500">(Tindakan langsung)</span></h3>
+      <p class="mt-2 text-[11px] font-semibold text-slate-700">Tindakan yang dilakukan saat itu</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <label v-for="opt in immediateActions" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
           <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasAction(opt.v)" @change="toggleAction(opt.v)" />
           {{ opt.label }}
         </label>
@@ -82,62 +94,54 @@
       </label>
       <div class="mt-4 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Waktu respon (catatan)
-          <input v-model="local.c.response_time_note" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="mis. di bawah 5 menit" />
+          Waktu respon
+          <input v-model="local.c.response_time_note" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: kurang dari 5 menit setelah keluhan" />
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           PIC
-          <input v-model="local.c.pic" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <input v-model="local.c.pic" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="PIC tindakan langsung" />
         </label>
       </div>
     </section>
 
     <!-- D -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">D. Root cause analysis</h4>
-      <label class="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+      <h3 class="text-sm font-bold text-slate-900">D. Root cause analysis <span class="font-normal text-slate-500">(Analisa akar masalah)</span></h3>
+      <p class="mt-2 text-[11px] text-slate-600">Gunakan metode:</p>
+      <label class="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-indigo-50/40 px-3 py-2 text-sm font-medium text-slate-800">
         <input v-model="local.d.use_fishbone" type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-        Gunakan kerangka fishbone (Man · Method · Machine · Material · Measurement · Environment)
+        Fishbone diagram
       </label>
-      <div class="mt-4 grid gap-3">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Man (SDM)
-          <textarea v-model="local.d.man" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Skill, attitude, staffing…" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Method (SOP)
-          <textarea v-model="local.d.method" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Machine (peralatan)
-          <textarea v-model="local.d.machine" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Material (bahan)
-          <textarea v-model="local.d.material" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Measurement
-          <textarea v-model="local.d.measurement" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Environment
-          <textarea v-model="local.d.environment" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Akar masalah utama (ringkas)
-          <textarea v-model="local.d.root_cause_summary" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
+
+      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Masalah
+        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Ringkas inti keluhan (satu kalimat atau ringkasan singkat).</span>
+        <textarea v-model="local.d.problem_statement" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: Tamu mengeluh waiting time lama" />
+      </label>
+
+      <p class="mt-5 text-[11px] font-semibold text-slate-700">Breakdown fishbone</p>
+      <div class="mt-3 grid gap-4">
+        <div v-for="row in fishboneRows" :key="row.key" class="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+          <label class="block text-[11px] font-bold uppercase tracking-wide text-slate-700">{{ row.title }}</label>
+          <p class="mt-0.5 text-[10px] leading-snug text-slate-500">{{ row.hint }}</p>
+          <textarea v-model="local.d[row.key]" rows="3" class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" :placeholder="row.placeholder" />
+        </div>
       </div>
+      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Akar masalah utama
+        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Contoh: SOP tidak dijalankan, human error, equipment issue, dll.</span>
+        <textarea v-model="local.d.root_cause_summary" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+      </label>
     </section>
 
     <!-- E -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">E. Corrective action (jangka pendek)</h4>
+      <h3 class="text-sm font-bold text-slate-900">E. Corrective action <span class="font-normal text-slate-500">(Perbaikan jangka pendek)</span></h3>
+      <p class="mt-1 text-[11px] text-slate-600">Tindakan untuk memperbaiki masalah yang sudah terjadi.</p>
       <div class="mt-3 grid gap-3">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Action
-          <textarea v-model="local.e.action" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <textarea v-model="local.e.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Perbaikan konkret untuk insiden ini" />
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
           <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -152,9 +156,9 @@
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Status
           <select v-model="local.e.status" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <option value="open">Open</option>
-            <option value="on_progress">On progress</option>
-            <option value="closed">Closed</option>
+            <option value="open">Open — terbuka</option>
+            <option value="on_progress">On progress — berjalan</option>
+            <option value="closed">Closed — selesai</option>
           </select>
         </label>
       </div>
@@ -162,10 +166,11 @@
 
     <!-- F -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">F. Preventive action (jangka panjang)</h4>
-      <label class="mt-1 block text-[11px] text-slate-500">Area improvement</label>
+      <h3 class="text-sm font-bold text-slate-900">F. Preventive action <span class="font-normal text-slate-500">(Pencegahan jangka panjang)</span></h3>
+      <p class="mt-1 text-[11px] text-slate-600">Tindakan agar masalah tidak berulang.</p>
+      <p class="mt-3 text-[11px] font-semibold text-slate-700">Improvement area</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        <label v-for="opt in improvementAreas" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-white">
+        <label v-for="opt in improvementAreas" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
           <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasImprovement(opt.v)" @change="toggleImprovement(opt.v)" />
           {{ opt.label }}
         </label>
@@ -173,7 +178,7 @@
       <div class="mt-4 grid gap-3">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Action
-          <textarea v-model="local.f.action" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <textarea v-model="local.f.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
           <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -182,35 +187,36 @@
           </label>
           <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Timeline
-            <input v-model="local.f.timeline" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="mis. Q2 2026" />
+            <input v-model="local.f.timeline" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Periode atau milestone" />
           </label>
         </div>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           KPI terkait
-          <textarea v-model="local.f.kpi" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: complaint rate ≤ 2%, service time ≤ 10 menit" />
+          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Contoh: complaint rate ≤ 2%, service time ≤ 10 menit.</span>
+          <textarea v-model="local.f.kpi" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
       </div>
     </section>
 
     <!-- G -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">G. Follow up &amp; verifikasi</h4>
+      <h3 class="text-sm font-bold text-slate-900">G. Follow up &amp; verification</h3>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Tanggal follow up
           <input v-model="local.g.follow_up_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Verifikasi oleh
-          <input v-model="local.g.verified_by" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Manager / QA / Ops" />
+          Verifikasi oleh <span class="font-normal normal-case text-slate-400">(Manager / QA / Ops)</span>
+          <input v-model="local.g.verified_by" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
         </label>
       </div>
       <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Hasil
         <select v-model="local.g.result" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-          <option :value="null">—</option>
-          <option value="effective">Effective</option>
-          <option value="not_effective">Not effective</option>
+          <option :value="null">— pilih —</option>
+          <option value="effective">Effective — efektif</option>
+          <option value="not_effective">Not effective — tidak efektif</option>
         </select>
       </label>
       <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -221,27 +227,49 @@
 
     <!-- H -->
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 class="text-sm font-bold text-slate-900">H. Customer recovery</h4>
-      <div class="mt-3 grid gap-3 sm:grid-cols-2">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Tamu dihubungi kembali?
-          <select v-model="local.h.contacted" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <option :value="null">—</option>
-            <option value="yes">Ya</option>
-            <option value="no">Tidak</option>
-          </select>
-        </label>
-        <div class="sm:col-span-2">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Metode kontak</p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <label v-for="opt in contactMethods" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-white">
-              <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasContact(opt.v)" @change="toggleContact(opt.v)" />
-              {{ opt.label }}
-            </label>
-          </div>
+      <h3 class="text-sm font-bold text-slate-900">H. Customer recovery <span class="font-normal text-slate-500">(Service recovery)</span></h3>
+
+      <div class="mt-3">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Apakah tamu sudah dihubungi kembali?</p>
+        <div class="mt-2 inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+          <button
+            type="button"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+            :class="local.h.contacted === null || local.h.contacted === undefined ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/80'"
+            @click="local.h.contacted = null"
+          >
+            —
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+            :class="local.h.contacted === 'yes' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/80'"
+            @click="local.h.contacted = 'yes'"
+          >
+            Ya
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
+            :class="local.h.contacted === 'no' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:bg-white/80'"
+            @click="local.h.contacted = 'no'"
+          >
+            Tidak
+          </button>
         </div>
       </div>
-      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+
+      <div class="mt-5">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Metode</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <label v-for="opt in contactMethods" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
+            <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasContact(opt.v)" @change="toggleContact(opt.v)" />
+            {{ opt.label }}
+          </label>
+        </div>
+      </div>
+
+      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Feedback tamu setelah recovery
         <textarea v-model="local.h.recovery_feedback" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
       </label>
@@ -249,37 +277,34 @@
         Status kepuasan
         <select v-model="local.h.satisfaction" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
           <option :value="null">—</option>
-          <option value="satisfied">Satisfied</option>
-          <option value="neutral">Neutral</option>
-          <option value="unsatisfied">Unsatisfied</option>
+          <option value="satisfied">Satisfied — puas</option>
+          <option value="neutral">Neutral — netral</option>
+          <option value="unsatisfied">Unsatisfied — tidak puas</option>
         </select>
       </label>
 
-      <div class="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
-        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-600">Dokumentasi severity &amp; dampak (CAPA)</p>
-        <p class="mt-1 text-[11px] text-slate-500">Boleh selaras dengan klasifikasi AI di atas; disimpan terpisah untuk cetak / audit.</p>
-        <div class="mt-3 flex flex-wrap gap-3">
-          <label class="text-xs font-medium text-slate-700">
-            Severity
-            <select v-model="local.h.documented_severity" class="mt-1 block rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm">
-              <option :value="null">—</option>
-              <option value="minor">Minor</option>
-              <option value="major">Major</option>
-              <option value="critical">Critical</option>
-            </select>
+      <div class="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-600">Kategori severity</p>
+        <div class="mt-2 inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
+          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === null ? 'bg-slate-100 text-slate-900' : 'text-slate-500'" @click="local.h.documented_severity = null">—</button>
+          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'minor' ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300' : 'text-slate-600'" @click="local.h.documented_severity = 'minor'">Minor</button>
+          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'major' ? 'bg-orange-100 text-orange-900 ring-1 ring-orange-300' : 'text-slate-600'" @click="local.h.documented_severity = 'major'">Major</button>
+          <button type="button" class="rounded-lg px-2.5 py-1.5 text-xs font-semibold" :class="local.h.documented_severity === 'critical' ? 'bg-rose-100 text-rose-900 ring-1 ring-rose-300' : 'text-slate-600'" @click="local.h.documented_severity = 'critical'">Critical</button>
+        </div>
+        <p class="mt-3 text-[11px] font-bold uppercase tracking-wide text-slate-600">Impact</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <label v-for="opt in impactOpts" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white bg-white px-3 py-2 text-xs font-medium text-slate-800 shadow-sm">
+            <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasImpact(opt.v)" @change="toggleImpact(opt.v)" />
+            {{ opt.label }}
           </label>
         </div>
-        <div class="mt-3">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Impact</p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <label v-for="opt in impactOpts" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-              <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasImpact(opt.v)" @change="toggleImpact(opt.v)" />
-              {{ opt.label }}
-            </label>
-          </div>
-        </div>
+        <p class="mt-3 text-[10px] leading-snug text-slate-500">Angka severity/dampak di atas untuk dokumentasi CAPA; klasifikasi AI pada kartu ringkas tetap ditampilkan terpisah.</p>
       </div>
     </section>
+
+    <div class="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-[11px] leading-relaxed text-amber-950">
+      <strong>Catatan:</strong> Corrective = perbaiki kejadian saat ini. Preventive = mencegah kejadian berulang.
+    </div>
 
     <div class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:justify-end">
       <button
@@ -303,14 +328,20 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   initialCapa: { type: Object, default: () => ({}) },
+  outletName: { type: String, default: '' },
   saving: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['save', 'reset'])
+
+const outletDisplay = computed(() => {
+  const s = (props.outletName || '').trim()
+  return s !== '' ? s : '—'
+})
 
 const local = ref(ensureShape({}))
 
@@ -321,6 +352,45 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+const fishboneRows = [
+  {
+    key: 'man',
+    title: 'Man (SDM)',
+    hint: 'skill, attitude, staffing',
+    placeholder: 'Contoh: understaff saat peak hour…',
+  },
+  {
+    key: 'method',
+    title: 'Method (SOP)',
+    hint: 'prosedur, workflow',
+    placeholder: 'Contoh: SOP service flow tidak konsisten…',
+  },
+  {
+    key: 'machine',
+    title: 'Machine (equipment)',
+    hint: 'alat rusak / tidak ada',
+    placeholder: 'Contoh: POS lambat, equipment bottleneck…',
+  },
+  {
+    key: 'material',
+    title: 'Material (bahan)',
+    hint: 'kualitas bahan',
+    placeholder: 'Contoh: bahan belum siap (prep kurang)…',
+  },
+  {
+    key: 'measurement',
+    title: 'Measurement',
+    hint: 'KPI, kontrol, monitoring',
+    placeholder: 'Contoh: tidak ada target service time…',
+  },
+  {
+    key: 'environment',
+    title: 'Environment',
+    hint: 'kondisi outlet, rush hour',
+    placeholder: 'Contoh: over capacity, layout kurang efisien…',
+  },
+]
 
 function ensureShape(src) {
   const base = {
@@ -336,6 +406,7 @@ function ensureShape(src) {
     c: { actions: [], actions_other: null, response_time_note: null, pic: null },
     d: {
       use_fishbone: false,
+      problem_statement: null,
       man: null,
       method: null,
       machine: null,
@@ -373,19 +444,19 @@ function deepMerge(target, src) {
 }
 
 const complaintTypes = [
-  { v: 'food_quality', label: 'Food quality' },
+  { v: 'food_quality', label: 'Food Quality' },
   { v: 'service', label: 'Service' },
   { v: 'cleanliness', label: 'Cleanliness' },
-  { v: 'waiting_time', label: 'Waiting time' },
+  { v: 'waiting_time', label: 'Waiting Time' },
   { v: 'billing', label: 'Billing' },
   { v: 'other', label: 'Others' },
 ]
 
 const immediateActions = [
-  { v: 'apology', label: 'Apology' },
+  { v: 'apology', label: 'Apology diberikan' },
   { v: 'replace_product', label: 'Replace product' },
-  { v: 'refund_discount', label: 'Refund / diskon' },
-  { v: 'escalate', label: 'Eskalasi supervisor/manager' },
+  { v: 'refund_discount', label: 'Refund / Discount' },
+  { v: 'escalate', label: 'Escalate ke Supervisor / Manager' },
   { v: 'other', label: 'Lainnya' },
 ]
 
