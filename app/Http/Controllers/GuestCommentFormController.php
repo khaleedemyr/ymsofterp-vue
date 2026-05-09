@@ -609,6 +609,8 @@ class GuestCommentFormController extends Controller
                 'issue_topics' => null,
                 'issue_summary_id' => null,
                 'issue_classified_at' => null,
+                'issue_follow_up_target' => null,
+                'issue_impact' => null,
             ];
         }
 
@@ -625,11 +627,16 @@ class GuestCommentFormController extends Controller
                 $topics = ['other'];
             }
 
+            $impact = $aiClass['impact'] ?? [];
+            $impact = is_array($impact) ? array_values(array_filter(array_map('strval', $impact))) : [];
+
             return [
                 'issue_severity' => (string) ($aiClass['severity'] ?? 'neutral'),
                 'issue_topics' => array_values(array_filter(array_map('strval', $topics))),
                 'issue_summary_id' => mb_substr((string) ($aiClass['summary_id'] ?? ''), 0, 255),
                 'issue_classified_at' => now(),
+                'issue_follow_up_target' => isset($aiClass['follow_up_target']) ? mb_substr((string) $aiClass['follow_up_target'], 0, 16) : null,
+                'issue_impact' => $impact,
             ];
         } catch (\Throwable $e) {
             \Log::warning('Guest comment issue classify failed on OCR store', [
@@ -641,6 +648,8 @@ class GuestCommentFormController extends Controller
                 'issue_topics' => ['other'],
                 'issue_summary_id' => 'Klasifikasi AI gagal, fallback.',
                 'issue_classified_at' => now(),
+                'issue_follow_up_target' => 'internal',
+                'issue_impact' => [],
             ];
         }
     }

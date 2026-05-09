@@ -7,9 +7,9 @@
             <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Customer Voice Command Center</h1>
             <p class="mt-1 text-sm text-slate-500">Monitoring sentimen customer lintas channel dengan aksi follow-up cepat.</p>
             <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
-              <span class="rounded-full bg-rose-100 px-2 py-1 font-semibold text-rose-700">SLA severe: 30m</span>
-              <span class="rounded-full bg-orange-100 px-2 py-1 font-semibold text-orange-700">SLA negative: 2j</span>
-              <span class="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">SLA mild_negative: 24j</span>
+              <span class="rounded-full bg-rose-100 px-2 py-1 font-semibold text-rose-700">SLA critical: 30m</span>
+              <span class="rounded-full bg-orange-100 px-2 py-1 font-semibold text-orange-700">SLA major: 2j</span>
+              <span class="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">SLA minor: 24j</span>
               <span class="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">Neutral/Positive: tanpa SLA</span>
             </div>
           </div>
@@ -41,8 +41,8 @@
           <p class="mt-2 text-2xl font-bold text-slate-900">{{ summary.open_cases || 0 }}</p>
         </div>
         <div class="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-rose-400">Severe Open</p>
-          <p class="mt-2 text-2xl font-bold text-rose-600">{{ summary.severe_open || 0 }}</p>
+          <p class="text-xs font-semibold uppercase tracking-wide text-rose-400">Critical Open</p>
+          <p class="mt-2 text-2xl font-bold text-rose-600">{{ summary.critical_open ?? summary.severe_open ?? 0 }}</p>
         </div>
         <div class="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
           <p class="text-xs font-semibold uppercase tracking-wide text-amber-500">Overdue Open</p>
@@ -200,9 +200,12 @@
           </select>
           <select v-model="severity" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
             <option value="">Semua severity</option>
-            <option value="severe">Severe</option>
-            <option value="negative">Negative</option>
-            <option value="mild_negative">Mild Negative</option>
+            <option value="critical">Critical</option>
+            <option value="major">Major</option>
+            <option value="minor">Minor</option>
+            <option value="severe">Critical (arsip)</option>
+            <option value="negative">Major (arsip)</option>
+            <option value="mild_negative">Minor (arsip)</option>
             <option value="neutral">Neutral</option>
             <option value="positive">Positive</option>
           </select>
@@ -818,9 +821,9 @@ function statusClass(statusValue) {
 
 function severityClass(sev) {
   const s = String(sev || '').toLowerCase()
-  if (s === 'severe') return 'bg-rose-100 text-rose-700'
-  if (s === 'negative') return 'bg-orange-100 text-orange-700'
-  if (s === 'mild_negative') return 'bg-amber-100 text-amber-700'
+  if (s === 'critical' || s === 'severe') return 'bg-rose-100 text-rose-700'
+  if (s === 'major' || s === 'negative') return 'bg-orange-100 text-orange-700'
+  if (s === 'minor' || s === 'mild_negative') return 'bg-amber-100 text-amber-700'
   if (s === 'positive') return 'bg-emerald-100 text-emerald-700'
   return 'bg-slate-100 text-slate-700'
 }

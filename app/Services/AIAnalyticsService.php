@@ -2128,27 +2128,41 @@ class AIAnalyticsService
 
         $payload = json_encode($lines, JSON_UNESCAPED_UNICODE);
         $prompt = <<<PROMPT
-Anda menganalisis review Google Maps untuk restoran / outlet F&B (teks bisa Bahasa Indonesia atau campuran).
-Data review (JSON array). Setiap item punya field "rating" (biasanya 1–5 bintang) dan "text" (isi ulasan).
+Anda menganalisis review Google Maps / komentar tamu untuk restoran / outlet F&B (teks bisa Bahasa Indonesia atau campuran).
+Data review (JSON array). Setiap item punya field "rating" (biasanya 1–5 bintang; bisa kosong untuk komentar kartu) dan "text" (isi ulasan).
 JSON input: {$payload}
 
-PRINSIP UTAMA (ikuti ketat):
-1) Gunakan field "rating" sebagai petunjuk kuat untuk NADA KESELURUHAN. Orang yang memberi 4–5 bintang hampir selalu puas secara keseluruhan.
-2) "neutral" HANYA jika: teks hanya fakta dingin tanpa apresiasi/keluhan (mis. "parkir basement"), atau ulasan sangat ambigu/tanpa opini. JANGAN pakai "neutral" untuk ulasan yang jelas memuji (walaupun ada satu kalimat saran kecil).
-3) Jika rating 4 atau 5 DAN teks berisi pujian, apresiasi, rekomendasi, atau kata positif (enak, mantap, recommended, puas, bagus, favorit, worth it, dll.) → severity HARUS "positive", kecuali ada keluhan UTAMA yang mengubah narasi (lihat poin 5).
-4) "mild_negative" = ada ketidakpuasan TAPI masih seimbang atau minor (mis. "enak tapi agak lama", "harga agak mahal tapi rasa oke"). Bukan untuk ulasan yang didominasi pujian + rating tinggi.
-5) "negative" / "severe" hanya jika keluhan serius mendominasi atau ada risiko besar:
-   - severe: tuduhan keracunan/penyakit serius, kekerasan, pelecehan, diskriminasi keras, ancaman hukum/boikot massal, bahasa sangat menghina.
-   - negative: makanan/pelayanan buruk sebagai fokus utama, kecewa berat, tidak akan kembali, hygiene buruk, dll.
-6) Ulasan singkat yang positif ("mantap", "enak banget", hanya emoji puas) dengan rating tinggi → "positive", bukan "neutral".
+=== SEVERITY (wajib salah satu, huruf kecil) ===
+- "positive": dominan puasan, rekomendasi, apresiasi; tidak ada keluhan bermakna.
+- "neutral": fakta tanpa opini kuat, sangat singkat/emoji saja tanpa keluhan jelas, atau ambigu.
+- "minor": ketidakpuasan ringan / preferensi / masalah operasional kecil yang tidak mengancam reputasi besar (contoh: porsi kurang sesuai selera, sedikit lama, harga terasa agak mahal, satu detail layanan kecil). Topik seperti PORSI, resep, konsistensi rasa ringan → biasanya "minor" jika tidak ada narasi kekecewaan berat.
+- "major": keluhan sebagai FOKUS utama: layanan buruk, makanan gagal jelas, hygiene menengah, kecewa akan balik, konflik berbayar, komplain berulang dalam satu ulasan, narasi negatif dominan meski rating tidak 1.
+- "critical": risiko besar / safety / legal / reputasi eksplosif: keracunan/sakit serius, hama (lalat/tikus), pelecehan/kekerasan, diskriminasi keras, ancaman hukum, tuduhan kriminal, boikot massal, kerusuhan, atau keluhan yang memicu eskalasi publik serius.
+
+Gunakan "rating" sebagai konteks: 4–5★ dengan pujian dominan → "positive" kecuali keluhan UTAMA mengalahkan (mis. critical hygiene).
+
+=== FOLLOW-UP TARGET (wajib: "customer" atau "internal") ===
+- "internal": perbaikan operasional / dapur / training / porsi / SOP — TIDAK wajib menghubungi tamu secara langsung. Contoh: komentar soal porsi kecil, rasa hambar tanpa tuntutan, saran menu, antrian internal.
+- "customer": layak ditindaklanjuti ke tamu/reviewer — kompensasi, klarifikasi, permintaan maaf personal, sengketa tagihan, perlakuan buruk terhadap orang tertentu, komplain serius yang mengharapkan respon.
+
+Aturan praktis: topik "portion" saja + keluhan ringan → "internal". Tuduhan penyakit, kasar terhadap tamu, salah charge → "customer".
+
+=== IMPACT (array 0–3 string, subset persis dari: "reputasi", "finansial", "operasional") ===
+- reputasi: bisa merusak citra publik / viral / ulasan terlihat buruk.
+- finansial: uang, refund, tagihan, kerugian langsung, penipuan.
+- operasional: proses, antrian, stok, porsi, training, peralatan, non-finansial non-reputasi langsung.
+
+Ulasan positif/murni pujian: impact boleh [].
 
 Untuk SETIAP item (satu entri per idx), tentukan:
-- severity: salah satu string persis: "positive", "neutral", "mild_negative", "negative", "severe"
+- severity: "positive" | "neutral" | "minor" | "major" | "critical"
 - topics: array string pendek (maks 5) dari: food_quality, service, hygiene, ambiance, price, wait_time, parking, portion, noise, reservation, other
 - summary_id: satu kalimat Bahasa Indonesia ringkas tentang inti ulasan (maks ~120 karakter).
+- follow_up_target: "customer" | "internal"
+- impact: array dari 0–3 nilai di antara "reputasi", "finansial", "operasional"
 
 Output HANYA JSON valid tanpa markdown, bentuk persis:
-{"items":[{"idx":0,"severity":"neutral","topics":["other"],"summary_id":"..."}]}
+{"items":[{"idx":0,"severity":"neutral","topics":["other"],"summary_id":"...","follow_up_target":"internal","impact":["operasional"]}]}
 Semua idx dari input harus muncul tepat satu kali, urutan bebas.
 PROMPT;
 
@@ -2166,16 +2180,12 @@ PROMPT;
             $json = ['items' => []];
         }
 
-        $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
         $byIdx = [];
         foreach ($json['items'] as $item) {
             if (!is_array($item) || !array_key_exists('idx', $item)) {
                 continue;
             }
-            $sev = strtolower((string) ($item['severity'] ?? 'neutral'));
-            if (!in_array($sev, $allowed, true)) {
-                $sev = 'neutral';
-            }
+            $sev = $this->normalizeGoogleReviewSeverityToken((string) ($item['severity'] ?? 'neutral'));
             $topics = $item['topics'] ?? [];
             if (!is_array($topics)) {
                 $topics = [];
@@ -2184,6 +2194,8 @@ PROMPT;
                 'severity' => $sev,
                 'topics' => array_values(array_filter(array_map('strval', $topics))),
                 'summary_id' => mb_substr((string) ($item['summary_id'] ?? ''), 0, 200),
+                'follow_up_target' => $this->normalizeFollowUpTarget($item['follow_up_target'] ?? null, $sev),
+                'impact' => $this->normalizeImpactCategories($item['impact'] ?? null),
             ];
         }
 
@@ -2192,9 +2204,21 @@ PROMPT;
             $r = is_array($r) ? $r : (array) $r;
             $textTrim = isset($r['text']) ? trim((string) $r['text']) : '';
             if ($textTrim === '') {
-                $c = ['severity' => 'neutral', 'topics' => ['other'], 'summary_id' => 'Tanpa teks ulasan'];
+                $c = [
+                    'severity' => 'neutral',
+                    'topics' => ['other'],
+                    'summary_id' => 'Tanpa teks ulasan',
+                    'follow_up_target' => null,
+                    'impact' => [],
+                ];
             } else {
-                $c = $byIdx[$i] ?? ['severity' => 'neutral', 'topics' => [], 'summary_id' => ''];
+                $c = $byIdx[$i] ?? [
+                    'severity' => 'neutral',
+                    'topics' => [],
+                    'summary_id' => '',
+                    'follow_up_target' => 'internal',
+                    'impact' => [],
+                ];
             }
             $c = $this->calibrateGoogleReviewClassification($c, $r);
             $out[] = array_merge($r, ['ai_classification' => $c]);
@@ -2223,7 +2247,7 @@ PROMPT;
         }
 
         $sev = (string) ($classification['severity'] ?? 'neutral');
-        if (in_array($sev, ['negative', 'severe'], true) && $stars >= 4) {
+        if (in_array($sev, ['major', 'critical'], true) && $stars >= 4) {
             return $classification;
         }
 
@@ -2234,17 +2258,80 @@ PROMPT;
         if ($stars >= 4) {
             if ($sev === 'neutral') {
                 $classification['severity'] = 'positive';
+                $classification['follow_up_target'] = 'internal';
+                $classification['impact'] = [];
 
                 return $classification;
             }
-            if ($stars === 5 && $sev === 'mild_negative' && ! $this->googleReviewTextHasOperationalComplaint($text)) {
+            if ($stars === 5 && $sev === 'minor' && ! $this->googleReviewTextHasOperationalComplaint($text)) {
                 $classification['severity'] = 'positive';
+                $classification['follow_up_target'] = 'internal';
+                $classification['impact'] = [];
 
                 return $classification;
             }
         }
 
         return $classification;
+    }
+
+    /**
+     * Normalisasi severity dari AI (termasuk label lama).
+     */
+    private function normalizeGoogleReviewSeverityToken(string $raw): string
+    {
+        $s = strtolower(trim($raw));
+        $legacy = [
+            'mild_negative' => 'minor',
+            'negative' => 'major',
+            'severe' => 'critical',
+        ];
+        if (isset($legacy[$s])) {
+            $s = $legacy[$s];
+        }
+
+        $allowed = ['positive', 'neutral', 'minor', 'major', 'critical'];
+
+        return in_array($s, $allowed, true) ? $s : 'neutral';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeImpactCategories(mixed $raw): array
+    {
+        $labels = ['reputasi', 'finansial', 'operasional'];
+        if ($raw === null) {
+            return [];
+        }
+        if (! is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $v) {
+            $x = strtolower(trim((string) $v));
+            if (in_array($x, $labels, true)) {
+                $out[$x] = $x;
+            }
+        }
+
+        return array_values($out);
+    }
+
+    private function normalizeFollowUpTarget(mixed $raw, string $severity): ?string
+    {
+        $t = strtolower(trim((string) ($raw ?? '')));
+        if ($t === 'customer' || $t === 'internal') {
+            return $t;
+        }
+        if (in_array($severity, ['positive', 'neutral'], true)) {
+            return 'internal';
+        }
+
+        return match ($severity) {
+            'critical', 'major' => 'customer',
+            default => 'internal',
+        };
     }
 
     private function parseGoogleReviewStarRating(mixed $rating): ?int
@@ -2287,7 +2374,7 @@ PROMPT;
     }
 
     /**
-     * Keluhan operasional yang layak tetap mild_negative/negative meski rating tinggi (kontradiksi / fokus komplain).
+     * Keluhan operasional yang layak tetap minor/major meski rating tinggi (kontradiksi / fokus komplain).
      */
     private function googleReviewTextHasOperationalComplaint(string $text): bool
     {

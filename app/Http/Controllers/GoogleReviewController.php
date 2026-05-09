@@ -399,8 +399,8 @@ class GoogleReviewController extends Controller
             'ai_items_total' => 0,
         ];
         $sentiment = [
-            'google' => ['positive' => 0, 'neutral' => 0, 'mild_negative' => 0, 'negative' => 0, 'severe' => 0],
-            'instagram' => ['positive' => 0, 'neutral' => 0, 'mild_negative' => 0, 'negative' => 0, 'severe' => 0],
+            'google' => ['positive' => 0, 'neutral' => 0, 'minor' => 0, 'major' => 0, 'critical' => 0],
+            'instagram' => ['positive' => 0, 'neutral' => 0, 'minor' => 0, 'major' => 0, 'critical' => 0],
         ];
         $daily = [];
         $topProfiles = [];
@@ -435,9 +435,9 @@ class GoogleReviewController extends Controller
                 ->get();
             foreach ($rows as $r) {
                 $bucket = $r->source === 'instagram_comments_db' ? 'instagram' : 'google';
-                $sev = (string) $r->severity;
+                $sev = $this->normalizeAiSeverityBucket((string) $r->severity);
                 if (isset($sentiment[$bucket][$sev])) {
-                    $sentiment[$bucket][$sev] = (int) $r->total;
+                    $sentiment[$bucket][$sev] += (int) $r->total;
                 }
             }
         } catch (\Throwable) {
@@ -449,7 +449,7 @@ class GoogleReviewController extends Controller
                 ->select('r.source', 'i.severity', 'i.topics')
                 ->where('r.status', 'completed')
                 ->whereIn('r.source', ['apify_dataset', 'places_api', 'scraper_inline', 'manual_db', 'instagram_comments_db'])
-                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->whereIn('i.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
                 ->where('r.created_at', '>=', $since30)
                 ->limit(4000)
                 ->get();
@@ -537,7 +537,7 @@ class GoogleReviewController extends Controller
                 ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
                 ->select(
                     'i.source_account',
-                    DB::raw("SUM(CASE WHEN i.severity IN ('negative','severe') THEN 1 ELSE 0 END) as neg_count"),
+                    DB::raw("SUM(CASE WHEN i.severity IN ('negative','severe','major','critical') THEN 1 ELSE 0 END) as neg_count"),
                     DB::raw('COUNT(*) as total_count')
                 )
                 ->where('r.status', 'completed')
@@ -582,14 +582,14 @@ class GoogleReviewController extends Controller
                 ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
                 ->where('r.source', 'instagram_comments_db')
                 ->where('r.status', 'completed')
-                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->whereIn('i.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
                 ->where('i.created_at', '>=', $current7)
                 ->count();
             $negPrev = (int) DB::table('google_review_ai_items as i')
                 ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
                 ->where('r.source', 'instagram_comments_db')
                 ->where('r.status', 'completed')
-                ->whereIn('i.severity', ['mild_negative', 'negative', 'severe'])
+                ->whereIn('i.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
                 ->whereBetween('i.created_at', [$prev7Start, $prev7End])
                 ->count();
 
@@ -615,8 +615,8 @@ class GoogleReviewController extends Controller
 
         $googleTotal = array_sum($sentiment['google']);
         $instagramTotal = array_sum($sentiment['instagram']);
-        $googleNeg = (int) (($sentiment['google']['mild_negative'] ?? 0) + ($sentiment['google']['negative'] ?? 0) + ($sentiment['google']['severe'] ?? 0));
-        $igNeg = (int) (($sentiment['instagram']['mild_negative'] ?? 0) + ($sentiment['instagram']['negative'] ?? 0) + ($sentiment['instagram']['severe'] ?? 0));
+        $googleNeg = (int) (($sentiment['google']['minor'] ?? 0) + ($sentiment['google']['major'] ?? 0) + ($sentiment['google']['critical'] ?? 0));
+        $igNeg = (int) (($sentiment['instagram']['minor'] ?? 0) + ($sentiment['instagram']['major'] ?? 0) + ($sentiment['instagram']['critical'] ?? 0));
         $googleNegRate = $googleTotal > 0 ? round(($googleNeg / $googleTotal) * 100, 1) : 0.0;
         $igNegRate = $instagramTotal > 0 ? round(($igNeg / $instagramTotal) * 100, 1) : 0.0;
         $topGoogleTopic = $topNegativeTopics['google'][0]['topic'] ?? 'other';
@@ -832,7 +832,7 @@ class GoogleReviewController extends Controller
             ->where('r.created_at', '>=', $since);
 
         if ($metric === 'sentiment') {
-            $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
+            $allowed = ['positive', 'neutral', 'minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'];
             if (! in_array($key, $allowed, true)) {
                 return null;
             }
@@ -1396,6 +1396,17 @@ class GoogleReviewController extends Controller
             if (is_string($topics)) {
                 $topics = json_decode($topics, true) ?? [];
             }
+            $impactRaw = property_exists($row, 'impact') ? $row->impact : null;
+            if ($impactRaw === null || $impactRaw === '') {
+                $impact = [];
+            } elseif (is_string($impactRaw)) {
+                $impact = json_decode($impactRaw, true) ?: [];
+            } else {
+                $impact = is_array($impactRaw) ? $impactRaw : [];
+            }
+            if (! is_array($impact)) {
+                $impact = [];
+            }
 
             return [
                 'id' => $row->id,
@@ -1408,6 +1419,8 @@ class GoogleReviewController extends Controller
                 'severity' => $row->severity,
                 'topics' => is_array($topics) ? $topics : [],
                 'summary_id' => $row->summary_id,
+                'follow_up_target' => property_exists($row, 'follow_up_target') ? ($row->follow_up_target !== null ? (string) $row->follow_up_target : null) : null,
+                'impact' => array_values(array_filter(array_map('strval', $impact))),
                 'source_item_id' => property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : null,
                 'source_account' => property_exists($row, 'source_account') ? $row->source_account : null,
                 'source_post_url' => property_exists($row, 'source_post_url') ? $row->source_post_url : null,
@@ -1628,6 +1641,17 @@ class GoogleReviewController extends Controller
                 if (is_string($topics)) {
                     $topics = json_decode($topics, true) ?? [];
                 }
+                $impactRaw = property_exists($row, 'impact') ? $row->impact : null;
+                if ($impactRaw === null || $impactRaw === '') {
+                    $impact = [];
+                } elseif (is_string($impactRaw)) {
+                    $impact = json_decode($impactRaw, true) ?: [];
+                } else {
+                    $impact = is_array($impactRaw) ? $impactRaw : [];
+                }
+                if (! is_array($impact)) {
+                    $impact = [];
+                }
 
                 return [
                     'id' => (int) $row->id,
@@ -1640,6 +1664,8 @@ class GoogleReviewController extends Controller
                     'severity' => (string) ($row->severity ?? ''),
                     'topics' => is_array($topics) ? $topics : [],
                     'summary_id' => (string) ($row->summary_id ?? ''),
+                    'follow_up_target' => property_exists($row, 'follow_up_target') ? ($row->follow_up_target !== null ? (string) $row->follow_up_target : null) : null,
+                    'impact' => array_values(array_filter(array_map('strval', $impact))),
                     'source_item_id' => property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : null,
                     'source_account' => property_exists($row, 'source_account') ? (string) ($row->source_account ?? '') : '',
                     'source_post_url' => property_exists($row, 'source_post_url') ? (string) ($row->source_post_url ?? '') : '',
@@ -1653,6 +1679,9 @@ class GoogleReviewController extends Controller
             ->where('report_id', $id)
             ->groupBy('severity')
             ->pluck('total', 'severity');
+        $sc = function (string $k) use ($severityCounts): int {
+            return (int) ($severityCounts[$k] ?? 0);
+        };
 
         $initialLog = [];
         if (! empty($report->progress_log)) {
@@ -1683,11 +1712,11 @@ class GoogleReviewController extends Controller
                 'progress_log' => $initialLog,
             ],
             'severity_counts' => [
-                'positive' => (int) ($severityCounts['positive'] ?? 0),
-                'neutral' => (int) ($severityCounts['neutral'] ?? 0),
-                'mild_negative' => (int) ($severityCounts['mild_negative'] ?? 0),
-                'negative' => (int) ($severityCounts['negative'] ?? 0),
-                'severe' => (int) ($severityCounts['severe'] ?? 0),
+                'positive' => $sc('positive'),
+                'neutral' => $sc('neutral'),
+                'minor' => $sc('minor') + $sc('mild_negative'),
+                'major' => $sc('major') + $sc('negative'),
+                'critical' => $sc('critical') + $sc('severe'),
             ],
             'items' => $items,
             'filters' => [
@@ -1780,5 +1809,20 @@ class GoogleReviewController extends Controller
         $filename = 'google-review-ai-' . $id . '-' . date('Ymd-His') . '.xlsx';
 
         return Excel::download(new GoogleReviewAiReportExport($rows, $report->nama_outlet), $filename);
+    }
+
+    /**
+     * Gabungkan label severity lama (mild_negative, …) ke bucket dashboard baru.
+     */
+    protected function normalizeAiSeverityBucket(string $s): string
+    {
+        $x = strtolower(trim($s));
+
+        return match ($x) {
+            'mild_negative' => 'minor',
+            'negative' => 'major',
+            'severe' => 'critical',
+            default => $x,
+        };
     }
 } 

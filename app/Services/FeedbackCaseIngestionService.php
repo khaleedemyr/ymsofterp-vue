@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class FeedbackCaseIngestionService
 {
@@ -21,23 +22,29 @@ class FeedbackCaseIngestionService
 
     public function ingestGoogleAndInstagramAiItems(int $limit = 2000): array
     {
+        $selectGi = [
+            'i.id',
+            'i.report_id',
+            'i.author',
+            'i.review_date',
+            'i.text',
+            'i.severity',
+            'i.topics',
+            'i.summary_id',
+            'i.source_account',
+            'i.source_post_url',
+            'r.source',
+            'r.id_outlet',
+            'i.created_at',
+        ];
+        if (Schema::hasColumn('google_review_ai_items', 'follow_up_target')) {
+            $selectGi[] = 'i.follow_up_target';
+            $selectGi[] = 'i.impact';
+        }
+
         $rows = DB::table('google_review_ai_items as i')
             ->join('google_review_ai_reports as r', 'r.id', '=', 'i.report_id')
-            ->select([
-                'i.id',
-                'i.report_id',
-                'i.author',
-                'i.review_date',
-                'i.text',
-                'i.severity',
-                'i.topics',
-                'i.summary_id',
-                'i.source_account',
-                'i.source_post_url',
-                'r.source',
-                'r.id_outlet',
-                'i.created_at',
-            ])
+            ->select($selectGi)
             ->where('r.status', 'completed')
             ->orderByDesc('i.id')
             ->limit(max(1, min(10000, $limit)))
@@ -63,6 +70,16 @@ class FeedbackCaseIngestionService
                 'source_post_url' => (string) ($row->source_post_url ?? ''),
                 'origin' => 'google_review_ai_items',
             ];
+            if (Schema::hasColumn('google_review_ai_items', 'follow_up_target')) {
+                $fu = $this->nullableTrim($row->follow_up_target ?? null);
+                $impact = $this->normalizeImpactJson($row->impact ?? null);
+                if ($fu !== null) {
+                    $meta['follow_up_target'] = $fu;
+                }
+                if ($impact !== []) {
+                    $meta['impact'] = $impact;
+                }
+            }
 
             $payload[] = [
                 'source_type' => $sourceType,
@@ -120,21 +137,27 @@ class FeedbackCaseIngestionService
 
     public function ingestGuestCommentForms(int $limit = 2000): array
     {
+        $selectGcf = [
+            'id',
+            'id_outlet',
+            'guest_name',
+            'guest_phone',
+            'comment_text',
+            'issue_severity',
+            'issue_topics',
+            'issue_summary_id',
+            'marketing_source',
+            'visit_date',
+            'verified_at',
+            'created_at',
+        ];
+        if (Schema::hasColumn('guest_comment_forms', 'issue_follow_up_target')) {
+            $selectGcf[] = 'issue_follow_up_target';
+            $selectGcf[] = 'issue_impact';
+        }
+
         $rows = DB::table('guest_comment_forms')
-            ->select([
-                'id',
-                'id_outlet',
-                'guest_name',
-                'guest_phone',
-                'comment_text',
-                'issue_severity',
-                'issue_topics',
-                'issue_summary_id',
-                'marketing_source',
-                'visit_date',
-                'verified_at',
-                'created_at',
-            ])
+            ->select($selectGcf)
             ->where('status', 'verified')
             ->whereNotNull('comment_text')
             ->where('comment_text', '!=', '')
@@ -160,6 +183,16 @@ class FeedbackCaseIngestionService
                 'marketing_source' => $this->nullableTrim($row->marketing_source ?? null),
                 'visit_date' => $this->nullableTrim($row->visit_date ?? null),
             ];
+            if (Schema::hasColumn('guest_comment_forms', 'issue_follow_up_target')) {
+                $fu = $this->nullableTrim($row->issue_follow_up_target ?? null);
+                $impact = $this->normalizeImpactJson($row->issue_impact ?? null);
+                if ($fu !== null) {
+                    $meta['follow_up_target'] = $fu;
+                }
+                if ($impact !== []) {
+                    $meta['impact'] = $impact;
+                }
+            }
 
             $payload[] = [
                 'source_type' => 'guest_comment',
@@ -233,9 +266,46 @@ class FeedbackCaseIngestionService
     private function normalizeSeverity(mixed $severity): string
     {
         $s = strtolower(trim((string) ($severity ?? '')));
-        $allowed = ['positive', 'neutral', 'mild_negative', 'negative', 'severe'];
+        $legacy = [
+            'mild_negative' => 'minor',
+            'negative' => 'major',
+            'severe' => 'critical',
+        ];
+        if (isset($legacy[$s])) {
+            $s = $legacy[$s];
+        }
+
+        $allowed = ['positive', 'neutral', 'minor', 'major', 'critical'];
 
         return in_array($s, $allowed, true) ? $s : 'neutral';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeImpactJson(mixed $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+
+            return $this->normalizeImpactJson($decoded);
+        }
+        if (! is_array($raw)) {
+            return [];
+        }
+        $labels = ['reputasi', 'finansial', 'operasional'];
+        $out = [];
+        foreach ($raw as $v) {
+            $x = strtolower(trim((string) $v));
+            if (in_array($x, $labels, true)) {
+                $out[$x] = $x;
+            }
+        }
+
+        return array_values($out);
     }
 
     private function normalizeTopics(mixed $topics): array
@@ -261,9 +331,9 @@ class FeedbackCaseIngestionService
     private function riskScoreFromSeverity(string $severity): int
     {
         return match ($severity) {
-            'severe' => 95,
-            'negative' => 75,
-            'mild_negative' => 50,
+            'critical' => 95,
+            'major' => 75,
+            'minor' => 50,
             'neutral' => 20,
             default => 10,
         };
@@ -272,9 +342,9 @@ class FeedbackCaseIngestionService
     private function slaMinutesFromSeverity(string $severity): ?int
     {
         return match ($severity) {
-            'severe' => 30,
-            'negative' => 120,
-            'mild_negative' => 1440,
+            'critical' => 30,
+            'major' => 120,
+            'minor' => 1440,
             default => null,
         };
     }

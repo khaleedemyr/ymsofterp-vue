@@ -173,12 +173,13 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             $this->pushLog('Menyimpan hasil ke database…');
 
             DB::table('google_review_ai_items')->where('report_id', $this->reportId)->delete();
+            $hasFuImpact = Schema::hasColumn('google_review_ai_items', 'follow_up_target');
             $batch = [];
             $now = now();
             foreach ($classified as $idx => $row) {
                 $row = is_array($row) ? $row : (array) $row;
                 $ac = $row['ai_classification'] ?? [];
-                $batch[] = [
+                $insert = [
                     'report_id' => $this->reportId,
                     'sort_order' => $idx,
                     'author' => mb_substr((string) ($row['author'] ?? ''), 0, 255),
@@ -192,18 +193,25 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
+                if ($hasFuImpact) {
+                    $fu = trim((string) ($ac['follow_up_target'] ?? ''));
+                    $insert['follow_up_target'] = $fu === '' ? null : mb_substr($fu, 0, 16);
+                    $imp = $ac['impact'] ?? [];
+                    $insert['impact'] = json_encode(is_array($imp) ? $imp : [], JSON_UNESCAPED_UNICODE);
+                }
                 if ($hasSourceItemId) {
-                    $batch[count($batch) - 1]['source_item_id'] = (int) ($row['_source_item_id'] ?? 0);
+                    $insert['source_item_id'] = (int) ($row['_source_item_id'] ?? 0);
                 }
                 if ($hasSourceAccount) {
-                    $batch[count($batch) - 1]['source_account'] = mb_substr((string) ($row['_source_account'] ?? ''), 0, 64);
+                    $insert['source_account'] = mb_substr((string) ($row['_source_account'] ?? ''), 0, 64);
                 }
                 if ($hasSourcePostUrl) {
-                    $batch[count($batch) - 1]['source_post_url'] = mb_substr((string) ($row['_source_post_url'] ?? ''), 0, 512);
+                    $insert['source_post_url'] = mb_substr((string) ($row['_source_post_url'] ?? ''), 0, 512);
                 }
                 if ($hasSourcePostShortcode) {
-                    $batch[count($batch) - 1]['source_post_shortcode'] = mb_substr((string) ($row['_source_post_shortcode'] ?? ''), 0, 32);
+                    $insert['source_post_shortcode'] = mb_substr((string) ($row['_source_post_shortcode'] ?? ''), 0, 32);
                 }
+                $batch[] = $insert;
                 if (count($batch) >= 150) {
                     DB::table('google_review_ai_items')->insert($batch);
                     $batch = [];

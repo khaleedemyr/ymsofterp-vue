@@ -350,7 +350,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $summary = [
             'total_cases' => (int) DB::table('feedback_cases')->count(),
             'open_cases' => (int) DB::table('feedback_cases')->whereIn('status', ['new', 'in_progress'])->count(),
-            'severe_open' => (int) DB::table('feedback_cases')->whereIn('status', ['new', 'in_progress'])->where('severity', 'severe')->count(),
+            'critical_open' => (int) DB::table('feedback_cases')->whereIn('status', ['new', 'in_progress'])->whereIn('severity', ['critical', 'severe'])->count(),
             'overdue_open' => (int) DB::table('feedback_cases')
                 ->whereIn('status', ['new', 'in_progress'])
                 ->whereNotNull('due_at')
@@ -398,7 +398,7 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $negativeByOutlet = DB::table('feedback_cases as c')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
-            ->whereIn('c.severity', ['mild_negative', 'negative', 'severe'])
+            ->whereIn('c.severity', ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'])
             ->where('c.event_at', '>=', now()->subDays(30))
             ->groupBy('c.id_outlet', 'o.nama_outlet')
             ->selectRaw('c.id_outlet, o.nama_outlet, COUNT(*) as total')
@@ -425,7 +425,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $dailyRows = DB::table('feedback_cases')
             ->selectRaw('DATE(event_at) as d')
             ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw("SUM(CASE WHEN severity IN ('mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+            ->selectRaw("SUM(CASE WHEN severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
             ->where('event_at', '>=', $trendStart)
             ->groupBy(DB::raw('DATE(event_at)'))
             ->orderBy('d')
@@ -492,7 +492,7 @@ class CustomerVoiceCommandCenterController extends Controller
             ->selectRaw('c.id_outlet')
             ->selectRaw('o.nama_outlet as outlet_name')
             ->selectRaw('COUNT(*) as total_cases')
-            ->selectRaw("SUM(CASE WHEN c.severity IN ('mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
+            ->selectRaw("SUM(CASE WHEN c.severity IN ('minor','major','critical','mild_negative','negative','severe') THEN 1 ELSE 0 END) as negative_cases")
             ->selectRaw("SUM(CASE WHEN c.status = 'resolved' THEN 1 ELSE 0 END) as resolved_cases")
             ->selectRaw("SUM(CASE WHEN c.status IN ('new','in_progress') THEN 1 ELSE 0 END) as open_cases")
             ->selectRaw("SUM(CASE WHEN c.due_at IS NOT NULL AND c.resolved_at IS NOT NULL THEN 1 ELSE 0 END) as sla_total")

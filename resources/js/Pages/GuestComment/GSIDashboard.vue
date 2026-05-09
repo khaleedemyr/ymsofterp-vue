@@ -123,18 +123,19 @@ function normalizeSeverity(value) {
 }
 
 function isNegativeSeverity(value) {
-  return ['mild_negative', 'negative', 'severe'].includes(normalizeSeverity(value));
+  const s = normalizeSeverity(value);
+  return ['minor', 'major', 'critical', 'mild_negative', 'negative', 'severe'].includes(s);
 }
 
 function severityBadgeClass(value) {
   const severity = normalizeSeverity(value);
-  if (severity === 'severe') {
+  if (severity === 'critical' || severity === 'severe') {
     return 'bg-red-100 text-red-700';
   }
-  if (severity === 'negative') {
+  if (severity === 'major' || severity === 'negative') {
     return 'bg-amber-100 text-amber-700';
   }
-  if (severity === 'mild_negative') {
+  if (severity === 'minor' || severity === 'mild_negative') {
     return 'bg-orange-100 text-orange-700';
   }
   if (severity === 'positive') {
@@ -145,13 +146,13 @@ function severityBadgeClass(value) {
 
 function commentCardClass(value) {
   const severity = normalizeSeverity(value);
-  if (severity === 'severe') {
+  if (severity === 'critical' || severity === 'severe') {
     return 'bg-red-50 border-red-200 ring-1 ring-red-100';
   }
-  if (severity === 'negative') {
+  if (severity === 'major' || severity === 'negative') {
     return 'bg-amber-50 border-amber-200 ring-1 ring-amber-100';
   }
-  if (severity === 'mild_negative') {
+  if (severity === 'minor' || severity === 'mild_negative') {
     return 'bg-orange-50 border-orange-200 ring-1 ring-orange-100';
   }
   return 'bg-slate-50 border-slate-200';

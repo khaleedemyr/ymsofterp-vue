@@ -32,6 +32,8 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
             'Severity',
             'Topik',
             'Ringkasan AI',
+            'FU ke',
+            'Dampak',
         ];
     }
 
@@ -55,6 +57,19 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
             $outletName = '-';
         }
 
+        $impactRaw = $row->impact ?? null;
+        if (is_string($impactRaw)) {
+            $impactDec = json_decode($impactRaw, true);
+            $impactStr = is_array($impactDec) ? implode(', ', $impactDec) : $impactRaw;
+        } elseif (is_array($impactRaw)) {
+            $impactStr = implode(', ', $impactRaw);
+        } else {
+            $impactStr = '';
+        }
+        $fu = property_exists($row, 'follow_up_target') && $row->follow_up_target !== null
+            ? (string) $row->follow_up_target
+            : '';
+
         return [
             (int) $row->sort_order + 1,
             $outletName,
@@ -65,6 +80,8 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
             $this->severityLabel($row->severity ?? null),
             $topicsStr,
             $row->summary_id,
+            $fu === 'customer' ? 'Customer' : ($fu === 'internal' ? 'Internal' : $fu),
+            $impactStr,
         ];
     }
 
@@ -73,9 +90,9 @@ class GoogleReviewAiReportExport implements FromCollection, WithHeadings, WithMa
         return match ($s) {
             'positive' => 'Positif',
             'neutral' => 'Netral',
-            'mild_negative' => 'Negatif ringan',
-            'negative' => 'Negatif',
-            'severe' => 'Sangat parah',
+            'minor', 'mild_negative' => 'Minor',
+            'major', 'negative' => 'Major',
+            'critical', 'severe' => 'Critical',
             default => $s ?? '',
         };
     }

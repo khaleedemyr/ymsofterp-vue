@@ -547,8 +547,8 @@ const instagramProfiles = page.props.instagramProfiles || []
 const dash = page.props.dashboardData || {
   cards: { instagram_posts: 0, instagram_comments: 0, ai_reports_completed: 0, ai_items_total: 0 },
   sentiment: {
-    google: { positive: 0, neutral: 0, mild_negative: 0, negative: 0, severe: 0 },
-    instagram: { positive: 0, neutral: 0, mild_negative: 0, negative: 0, severe: 0 },
+    google: { positive: 0, neutral: 0, minor: 0, major: 0, critical: 0 },
+    instagram: { positive: 0, neutral: 0, minor: 0, major: 0, critical: 0 },
   },
   daily: [],
   topProfiles: [],
@@ -680,9 +680,12 @@ function sevLabel(k) {
   const m = {
     positive: 'Positif',
     neutral: 'Netral',
-    mild_negative: 'Negatif ringan',
-    negative: 'Negatif',
-    severe: 'Sangat parah',
+    minor: 'Minor',
+    major: 'Major',
+    critical: 'Critical',
+    mild_negative: 'Minor (arsip)',
+    negative: 'Major (arsip)',
+    severe: 'Critical (arsip)',
   }
   return m[k] || k
 }

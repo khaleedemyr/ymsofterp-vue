@@ -79,9 +79,12 @@
               <option value="">Semua</option>
               <option value="positive">Positif</option>
               <option value="neutral">Netral</option>
-              <option value="mild_negative">Negatif ringan</option>
-              <option value="negative">Negatif</option>
-              <option value="severe">Sangat parah</option>
+              <option value="minor">Minor</option>
+              <option value="major">Major</option>
+              <option value="critical">Critical</option>
+              <option value="mild_negative">Negatif ringan (arsip)</option>
+              <option value="negative">Negatif (arsip)</option>
+              <option value="severe">Sangat parah (arsip)</option>
             </select>
           </div>
 
@@ -98,6 +101,8 @@
                   <th>Rating</th>
                   <th>Tanggal</th>
                   <th>Severity</th>
+                  <th>FU ke</th>
+                  <th>Dampak</th>
                   <th>Topik</th>
                   <th>Ringkasan AI</th>
                   <th>Teks</th>
@@ -118,7 +123,9 @@
                   <td v-if="report.source === 'instagram_comments_db'" class="small sum">{{ it.source_post_caption || '—' }}</td>
                   <td>{{ it.rating || '—' }}</td>
                   <td class="muted small">{{ it.review_date }}</td>
-                  <td><span class="sev" :class="'s-' + it.severity">{{ sevLabel(it.severity) }}</span></td>
+                  <td><span class="sev" :class="'s-' + sevClassKey(it.severity)">{{ sevLabel(it.severity) }}</span></td>
+                  <td class="small">{{ fuLabel(it.follow_up_target) }}</td>
+                  <td class="small">{{ impactLabel(it.impact) }}</td>
                   <td class="small">{{ (it.topics || []).join(', ') }}</td>
                   <td class="small sum">{{ it.summary_id }}</td>
                   <td class="txt">{{ it.text || '—' }}</td>
@@ -226,15 +233,38 @@ function phaseLabel(phase) {
   return m[phase] || (phase ? String(phase) : 'Menunggu / memproses')
 }
 
+function sevClassKey(s) {
+  const x = String(s || '')
+  if (x === 'mild_negative') return 'minor'
+  if (x === 'negative') return 'major'
+  if (x === 'severe') return 'critical'
+  return x || 'neutral'
+}
+
 function sevLabel(s) {
   const m = {
     positive: 'Positif',
     neutral: 'Netral',
-    mild_negative: 'Negatif ringan',
-    negative: 'Negatif',
-    severe: 'Sangat parah',
+    minor: 'Minor',
+    major: 'Major',
+    critical: 'Critical',
+    mild_negative: 'Minor (arsip)',
+    negative: 'Major (arsip)',
+    severe: 'Critical (arsip)',
   }
   return m[s] || s || '—'
+}
+
+function fuLabel(v) {
+  if (v === 'customer') return 'Customer'
+  if (v === 'internal') return 'Internal'
+  return '—'
+}
+
+function impactLabel(arr) {
+  if (!arr || !arr.length) return '—'
+  const labels = { reputasi: 'Reputasi', finansial: 'Finansial', operasional: 'Operasional' }
+  return arr.map((k) => labels[k] || k).join(', ')
 }
 
 function applyFilter() {
@@ -547,14 +577,17 @@ onUnmounted(() => {
   background: #e5e7eb;
   color: #374151;
 }
+.s-minor,
 .s-mild_negative {
   background: #fef3c7;
   color: #92400e;
 }
+.s-major,
 .s-negative {
   background: #fed7aa;
   color: #9a3412;
 }
+.s-critical,
 .s-severe {
   background: #fecaca;
   color: #7f1d1d;
