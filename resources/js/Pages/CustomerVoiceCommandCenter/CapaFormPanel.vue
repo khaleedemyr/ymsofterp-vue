@@ -11,20 +11,51 @@
       </p>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white p-2">
-      <div class="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA</div>
-      <div class="flex flex-wrap gap-2">
+      <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA aktif</div>
+      <div class="mt-1 text-xs font-semibold text-indigo-900">{{ divisionLabel(activeDivision) }}</div>
+    </div>
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <h3 class="text-sm font-bold text-slate-900">List CAPA</h3>
         <button
-          v-for="d in divisions"
-          :key="d.id"
           type="button"
-          class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
-          :class="activeDivision === d.id ? 'border-indigo-300 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-          @click="switchDivision(d.id)"
+          class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+          @click="createCapaEntry"
         >
-          {{ d.label }}
+          + Create
         </button>
       </div>
-    </div>
+      <div class="space-y-2">
+        <div
+          v-for="row in capaRows"
+          :key="row.id"
+          class="flex items-center justify-between rounded-xl border px-3 py-2"
+          :class="row.id === activeDivision ? 'border-indigo-300 bg-indigo-50/60' : 'border-slate-200 bg-white'"
+        >
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-slate-800">{{ row.label }}</div>
+            <div class="text-[11px] text-slate-500">{{ row.filled ? 'Sudah ada data CAPA' : 'Belum ada data CAPA' }}</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              class="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              @click="switchDivision(row.id)"
+            >
+              {{ row.id === activeDivision ? 'Editing' : 'Show/Edit' }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+              :disabled="!row.filled"
+              @click="removeDivision(row.id)"
+            >
+              Hapus
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <div
       v-if="pendingVerifierSelf"
@@ -545,6 +576,12 @@ const assigneesMerged = computed(() => {
 })
 
 const local = ref(ensureShape({}))
+const emptyCapaSignature = normalizeForDirty(ensureShape({}))
+const capaRows = computed(() => divisions.map((d) => ({
+  id: d.id,
+  label: d.label,
+  filled: isDivisionFilled(d.id),
+})))
 
 const evidenceFull = computed(() => (local.value.evidence || []).length >= 20)
 
@@ -654,6 +691,36 @@ watch(
 function switchDivision(div) {
   if (!['service', 'kitchen', 'bar'].includes(div)) return
   activeDivision.value = div
+}
+
+function isDivisionFilled(div) {
+  const draft = divisionDrafts.value?.[div]
+  return normalizeForDirty(draft || {}) !== emptyCapaSignature
+}
+
+function createCapaEntry() {
+  const options = divisions
+    .map((d, idx) => `${idx + 1}. ${d.label}${isDivisionFilled(d.id) ? ' (sudah ada data)' : ''}`)
+    .join('\n')
+  const pick = window.prompt(`Pilih divisi CAPA:\n${options}\n\nIsi angka 1-3`, '')
+  const n = Number.parseInt(String(pick || ''), 10)
+  const chosen = divisions[n - 1]
+  if (!chosen) return
+  activeDivision.value = chosen.id
+}
+
+function removeDivision(div) {
+  if (!isDivisionFilled(div)) return
+  if (!confirm(`Hapus data CAPA untuk divisi ${div.toUpperCase()}?`)) return
+  divisionDrafts.value[div] = ensureShape({})
+  if (activeDivision.value === div) {
+    local.value = ensureShape({})
+  }
+}
+
+function divisionLabel(div) {
+  const item = divisions.find((d) => d.id === div)
+  return item ? item.label : String(div || '-')
 }
 
 const fishboneRows = [
