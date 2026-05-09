@@ -1546,16 +1546,34 @@ class CustomerVoiceCommandCenterController extends Controller
         $capaDivisions = $this->normalizeCapaDivisionsFromMeta($meta);
         $activeDivision = $this->normalizeCapaDivision($meta['capa_active_division'] ?? null);
         $storedCapa = $capaDivisions[$activeDivision] ?? null;
-        $capa = $this->capaService->buildForPresentation($storedCapa, $case, $topicsArr);
-        $capa = $this->capaService->decorateEvidenceUrls($capa);
 
         $complaintTypeLabels = $this->voiceComplaintTopicLabels($topicsArr);
 
+        $sevDb = strtolower(trim((string) ($case->severity ?? '')));
+
+        /** @var array{service: array<string, mixed>|null, kitchen: array<string, mixed>|null, bar: array<string, mixed>|null} $capaDivisionsPresented */
+        $capaDivisionsPresented = ['service' => null, 'kitchen' => null, 'bar' => null];
+        foreach (['service', 'kitchen', 'bar'] as $divKey) {
+            $storedDiv = $capaDivisions[$divKey] ?? null;
+            if ($storedDiv === null || ! is_array($storedDiv)) {
+                continue;
+            }
+            $presentedDiv = $this->capaService->buildForPresentation($storedDiv, $case, $topicsArr);
+            $presentedDiv = $this->capaService->decorateEvidenceUrls($presentedDiv);
+            if (empty($presentedDiv['h']['documented_impact']) && count($impact)) {
+                $presentedDiv['h']['documented_impact'] = array_values(array_unique($impact));
+            }
+            if (($presentedDiv['h']['documented_severity'] ?? null) === null && in_array($sevDb, ['minor', 'major', 'critical'], true)) {
+                $presentedDiv['h']['documented_severity'] = $sevDb;
+            }
+            $capaDivisionsPresented[$divKey] = $presentedDiv;
+        }
+
+        $capa = $capaDivisionsPresented[$activeDivision] ?? $this->capaService->buildForPresentation($storedCapa, $case, $topicsArr);
+        $capa = $this->capaService->decorateEvidenceUrls($capa);
         if (empty($capa['h']['documented_impact']) && count($impact)) {
             $capa['h']['documented_impact'] = array_values(array_unique($impact));
         }
-
-        $sevDb = strtolower(trim((string) ($case->severity ?? '')));
         if (($capa['h']['documented_severity'] ?? null) === null && in_array($sevDb, ['minor', 'major', 'critical'], true)) {
             $capa['h']['documented_severity'] = $sevDb;
         }
@@ -1598,7 +1616,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'verified_at' => $this->extractCapaAuditDateTime($meta, 'verified_at'),
             ],
             'capa_active_division' => $activeDivision,
-            'capa_divisions' => $capaDivisions,
+            'capa_divisions' => $capaDivisionsPresented,
             'capa' => $capa,
         ];
     }
