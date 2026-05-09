@@ -466,7 +466,7 @@ const props = defineProps({
   focusSectionId: { type: String, default: null },
 })
 
-const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'verify-clicked'])
+const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'verify-clicked', 'dirty-changed'])
 
 function askDeleteStoredCapa() {
   if (
@@ -575,6 +575,23 @@ watch(
       if (merged.f.pic_user_id == null) merged.f.pic_user_id = uid
     }
     local.value = merged
+  },
+  { immediate: true, deep: true },
+)
+
+function normalizeForDirty(value) {
+  try {
+    return JSON.stringify(ensureShape(JSON.parse(JSON.stringify(value && typeof value === 'object' ? value : {}))))
+  } catch {
+    return ''
+  }
+}
+
+watch(
+  [() => props.initialCapa, local],
+  () => {
+    const dirty = normalizeForDirty(local.value) !== normalizeForDirty(props.initialCapa)
+    emit('dirty-changed', dirty)
   },
   { immediate: true, deep: true },
 )

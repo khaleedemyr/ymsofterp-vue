@@ -271,8 +271,13 @@ class CustomerVoiceCommandCenterController extends Controller
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
         $newVerifierId = $this->extractCapaVerifierUserId($meta);
+        $meta = $this->stampCapaAuditMeta(
+            $meta,
+            $request->user()->id ?? null,
+            $now = now(),
+            $this->extractCapaVerificationResult($meta)
+        );
 
-        $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
             DB::table('feedback_cases')->where('id', $id)->update([
                 'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
@@ -430,8 +435,13 @@ class CustomerVoiceCommandCenterController extends Controller
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
         $newVerifierId = $this->extractCapaVerifierUserId($meta);
+        $meta = $this->stampCapaAuditMeta(
+            $meta,
+            $request->user()->id ?? null,
+            $now = now(),
+            $this->extractCapaVerificationResult($meta)
+        );
 
-        $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
             DB::table('feedback_cases')->where('id', $id)->update([
                 'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
@@ -1474,6 +1484,12 @@ class CustomerVoiceCommandCenterController extends Controller
             'regional_user_ids' => $regionalUserIds,
             'capa_filled' => $this->capaService->storedCapaHasUserInput($storedCapa),
             'capa_verification' => $this->capaService->storedCapaVerificationState($storedCapa),
+            'capa_audit' => [
+                'updated_by_user_id' => $this->extractCapaAuditUserId($meta, 'updated_by_user_id'),
+                'updated_at' => $this->extractCapaAuditDateTime($meta, 'updated_at'),
+                'verified_by_user_id' => $this->extractCapaAuditUserId($meta, 'verified_by_user_id'),
+                'verified_at' => $this->extractCapaAuditDateTime($meta, 'verified_at'),
+            ],
             'capa' => $capa,
         ];
     }
@@ -1753,6 +1769,71 @@ class CustomerVoiceCommandCenterController extends Controller
         $n = (int) $v;
 
         return $n > 0 ? $n : null;
+    }
+
+    private function extractCapaVerificationResult(array $meta): ?string
+    {
+        $capa = $meta['capa'] ?? null;
+        if (! is_array($capa)) {
+            return null;
+        }
+        $g = $capa['g'] ?? null;
+        if (! is_array($g)) {
+            return null;
+        }
+        $raw = strtolower(trim((string) ($g['result'] ?? '')));
+
+        return in_array($raw, ['effective', 'not_effective'], true) ? $raw : null;
+    }
+
+    private function stampCapaAuditMeta(array $meta, mixed $actorIdRaw, \Carbon\Carbon $now, ?string $verificationResult): array
+    {
+        $actorId = (int) $actorIdRaw;
+        $capaMeta = isset($meta['capa_meta']) && is_array($meta['capa_meta']) ? $meta['capa_meta'] : [];
+        $capaMeta['updated_at'] = $now->format('Y-m-d H:i:s');
+        $capaMeta['updated_by_user_id'] = $actorId > 0 ? $actorId : null;
+
+        if ($verificationResult !== null) {
+            $verifiedBy = $this->extractCapaVerifierUserId($meta);
+            if ($verifiedBy === null || $verifiedBy <= 0) {
+                $verifiedBy = $actorId > 0 ? $actorId : null;
+            }
+            $capaMeta['verified_at'] = $now->format('Y-m-d H:i:s');
+            $capaMeta['verified_by_user_id'] = $verifiedBy;
+        } else {
+            $capaMeta['verified_at'] = null;
+            $capaMeta['verified_by_user_id'] = null;
+        }
+
+        $meta['capa_meta'] = $capaMeta;
+
+        return $meta;
+    }
+
+    private function extractCapaAuditUserId(array $meta, string $key): ?int
+    {
+        $capaMeta = $meta['capa_meta'] ?? null;
+        if (! is_array($capaMeta)) {
+            return null;
+        }
+        $v = $capaMeta[$key] ?? null;
+        if ($v === null || $v === '') {
+            return null;
+        }
+        $n = (int) $v;
+
+        return $n > 0 ? $n : null;
+    }
+
+    private function extractCapaAuditDateTime(array $meta, string $key): ?string
+    {
+        $capaMeta = $meta['capa_meta'] ?? null;
+        if (! is_array($capaMeta)) {
+            return null;
+        }
+        $v = trim((string) ($capaMeta[$key] ?? ''));
+
+        return $v !== '' ? $v : null;
     }
 
     private function notifyCapaVerifierIfNew(Request $request, int $caseId, ?int $oldVerifierId, ?int $newVerifierId, mixed $summaryId): void

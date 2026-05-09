@@ -386,29 +386,39 @@
                   </td>
                   <td class="px-3 py-3 text-sm font-semibold text-slate-800">{{ row.risk_score ?? 0 }}</td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">
-                    <span
-                      v-if="row.capa_filled"
-                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[11px] text-emerald-800"
-                      title="Form CAPA sudah ada isian tersimpan"
-                    >
-                      <i class="fa fa-check" aria-hidden="true" />
-                    </span>
-                    <span
-                      v-else
-                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
-                      title="Belum ada isian CAPA yang disimpan"
-                    >
-                      <i class="fa fa-minus" aria-hidden="true" />
-                    </span>
+                    <div class="flex flex-col gap-0.5">
+                      <span
+                        v-if="row.capa_filled"
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[11px] text-emerald-800"
+                        title="Form CAPA sudah ada isian tersimpan"
+                      >
+                        <i class="fa fa-check" aria-hidden="true" />
+                      </span>
+                      <span
+                        v-else
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
+                        title="Belum ada isian CAPA yang disimpan"
+                      >
+                        <i class="fa fa-minus" aria-hidden="true" />
+                      </span>
+                      <span v-if="capaAuditInfo(row)" class="text-[10px] text-slate-500">
+                        {{ capaAuditInfo(row) }}
+                      </span>
+                    </div>
                   </td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">
-                    <span
-                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px]"
-                      :class="capaVerificationDisplay(row).badgeClass"
-                      :title="capaVerificationDisplay(row).title"
-                    >
-                      <i :class="capaVerificationDisplay(row).iconClass" aria-hidden="true" />
-                    </span>
+                    <div class="flex flex-col gap-0.5">
+                      <span
+                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px]"
+                        :class="capaVerificationDisplay(row).badgeClass"
+                        :title="capaVerificationDisplay(row).title"
+                      >
+                        <i :class="capaVerificationDisplay(row).iconClass" aria-hidden="true" />
+                      </span>
+                      <span v-if="verificationAuditInfo(row)" class="text-[10px] text-slate-500">
+                        {{ verificationAuditInfo(row) }}
+                      </span>
+                    </div>
                   </td>
                   <td class="px-3 py-3 min-w-[190px]">
                     <div class="text-xs font-semibold" :class="slaClass(row)">{{ slaLabel(row) }}</div>
@@ -477,12 +487,14 @@
                         target="_blank"
                         rel="noopener noreferrer"
                         class="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                        @click="(e) => onCapaExportClick(e, row.id)"
                       >
                         CAPA PDF
                       </a>
                       <a
                         :href="capaExportExcelUrl(row.id)"
                         class="inline-flex rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[11px] font-semibold text-sky-800 transition hover:bg-sky-100"
+                        @click="(e) => onCapaExportClick(e, row.id)"
                       >
                         CAPA XLS
                       </a>
@@ -649,6 +661,7 @@
             @delete-capa="deleteStoredCapa"
             @focused-section="capaDetailFocusSection = null"
             @verify-clicked="showVerifyInfo"
+            @dirty-changed="capaFormDirty = $event"
           />
 
           <div class="rounded-xl border border-slate-200 p-3">
@@ -933,6 +946,23 @@ const kpis = computed(() => props.kpis || {})
 const trend = computed(() => props.trend || [])
 const picPerformance = computed(() => props.picPerformance || [])
 const outletPerformance = computed(() => props.outletPerformance || [])
+const assigneeNameMap = computed(() => {
+  const map = {}
+  for (const u of props.assignees || []) {
+    const id = Number(u?.id)
+    if (Number.isFinite(id) && id > 0) {
+      map[id] = String(u?.nama_lengkap || '')
+    }
+  }
+  const me = props.capa_auth_user
+  if (me?.id != null) {
+    const id = Number(me.id)
+    if (Number.isFinite(id) && id > 0 && !map[id]) {
+      map[id] = String(me?.nama_lengkap || '')
+    }
+  }
+  return map
+})
 
 const syncing = ref(false)
 const updatingCaseId = ref(null)
@@ -943,6 +973,7 @@ const capaDeleting = ref(false)
 const capaResetKey = ref(0)
 /** Deep link ?capa_verify=1 — scroll form ke bagian G sekali setelah panel terbuka */
 const capaDetailFocusSection = ref(null)
+const capaFormDirty = ref(false)
 const caseForms = ref({})
 const q = ref(props.filters?.q || '')
 const status = ref(props.filters?.status || '')
@@ -1443,6 +1474,7 @@ function closeDetail() {
   }
   detailCaseId.value = null
   capaDetailFocusSection.value = null
+  capaFormDirty.value = false
 }
 
 function submitCapa(capa) {
@@ -1493,6 +1525,17 @@ function showVerifyInfo() {
     title: 'Mode verifikasi',
     text: 'Isi bagian G (hasil verifikasi), lalu klik Simpan form CAPA.',
   })
+}
+
+function onCapaExportClick(e, caseId) {
+  if (detailCaseId.value === caseId && capaFormDirty.value) {
+    e.preventDefault()
+    Swal.fire({
+      icon: 'warning',
+      title: 'Simpan CAPA dulu',
+      text: 'Data di detail belum tersimpan. Klik "Simpan form CAPA" dulu, lalu export PDF/XLS.',
+    })
+  }
 }
 
 function resetCapaDraft() {
@@ -1646,6 +1689,39 @@ function capaVerificationDisplay(row) {
       : 'border-rose-200 bg-rose-50 text-rose-800',
     title: `Verifikasi selesai — ${sub}`,
   }
+}
+
+function formatShortDateTime(v) {
+  if (!v) return ''
+  try {
+    return new Date(v).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return String(v)
+  }
+}
+
+function userNameById(id) {
+  const n = Number(id)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return assigneeNameMap.value[n] || `#${n}`
+}
+
+function capaAuditInfo(row) {
+  const a = row?.capa_audit
+  if (!a) return ''
+  const by = userNameById(a.updated_by_user_id)
+  const at = formatShortDateTime(a.updated_at)
+  if (!by && !at) return ''
+  return `${by || '-'} · ${at || '-'}`
+}
+
+function verificationAuditInfo(row) {
+  const a = row?.capa_audit
+  if (!a) return ''
+  const by = userNameById(a.verified_by_user_id)
+  const at = formatShortDateTime(a.verified_at)
+  if (!by && !at) return ''
+  return `${by || '-'} · ${at || '-'}`
 }
 
 function severityClass(sev) {
