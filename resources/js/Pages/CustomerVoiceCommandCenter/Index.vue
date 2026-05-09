@@ -1744,6 +1744,10 @@ function rowDivisionCapa(row, divisionId) {
 }
 
 function divisionCapaFilled(row, divisionId) {
+  const flags = row?.capa_division_filled
+  if (flags && typeof flags === 'object' && Object.prototype.hasOwnProperty.call(flags, divisionId)) {
+    return !!flags[divisionId]
+  }
   const capa = rowDivisionCapa(row, divisionId)
   if (!capa || typeof capa !== 'object') return false
   if (Array.isArray(capa.evidence) && capa.evidence.length > 0) return true
@@ -1751,6 +1755,32 @@ function divisionCapaFilled(row, divisionId) {
 }
 
 function divisionVerificationDisplay(row, divisionId) {
+  const perDiv = row?.capa_division_verification?.[divisionId]
+  if (perDiv && typeof perDiv === 'object') {
+    const v = perDiv
+    if (!v.state || v.state === 'none') {
+      return {
+        iconClass: 'fa fa-minus',
+        badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
+        title: 'Belum ada verifikator / belum proses verifikasi',
+      }
+    }
+    if (v.state === 'pending') {
+      return {
+        iconClass: 'fa fa-hourglass-half',
+        badgeClass: 'border-amber-200 bg-amber-50 text-amber-900',
+        title: 'Verifikator ditunjuk — hasil (efektif / tidak efektif) belum diisi',
+      }
+    }
+    const sub = v.result === 'effective' ? 'Efektif' : 'Tidak efektif'
+    return {
+      iconClass: v.result === 'effective' ? 'fa fa-check' : 'fa fa-times',
+      badgeClass: v.result === 'effective'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        : 'border-rose-200 bg-rose-50 text-rose-800',
+      title: `Verifikasi selesai — ${sub}`,
+    }
+  }
   const capa = rowDivisionCapa(row, divisionId)
   const g = capa?.g && typeof capa.g === 'object' ? capa.g : {}
   const verifier = g.verified_by_user_id

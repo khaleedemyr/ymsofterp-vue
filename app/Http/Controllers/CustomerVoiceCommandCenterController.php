@@ -1593,6 +1593,18 @@ class CustomerVoiceCommandCenterController extends Controller
             $capa['h']['documented_severity'] = $sevDb;
         }
 
+        /** Icon kolom per-divisi harus mengikuti data tersimpan di meta, bukan merge presentasi (H bisa terisi dari source). */
+        $capaDivisionFilled = [
+            'service' => $this->capaService->storedCapaHasUserInput($capaDivisions['service'] ?? null),
+            'kitchen' => $this->capaService->storedCapaHasUserInput($capaDivisions['kitchen'] ?? null),
+            'bar' => $this->capaService->storedCapaHasUserInput($capaDivisions['bar'] ?? null),
+        ];
+        $capaDivisionVerification = [
+            'service' => $this->capaService->storedCapaVerificationState($capaDivisions['service'] ?? null),
+            'kitchen' => $this->capaService->storedCapaVerificationState($capaDivisions['kitchen'] ?? null),
+            'bar' => $this->capaService->storedCapaVerificationState($capaDivisions['bar'] ?? null),
+        ];
+
         return [
             'id' => (int) $case->id,
             'source_type' => (string) ($case->source_type ?? ''),
@@ -1632,6 +1644,8 @@ class CustomerVoiceCommandCenterController extends Controller
             ],
             'capa_active_division' => $activeDivision,
             'capa_divisions' => $capaDivisionsPresented,
+            'capa_division_filled' => $capaDivisionFilled,
+            'capa_division_verification' => $capaDivisionVerification,
             'capa' => $capa,
         ];
     }
