@@ -52,17 +52,17 @@
             return '-';
         };
         $verifLabel = function ($verif) {
-            if (!is_array($verif)) return '?';
+            if (!is_array($verif)) return '✖';
             $state = strtolower(trim((string) ($verif['state'] ?? '')));
             if ($state === 'pending') return '⏳';
             if ($state === 'done') {
                 $r = strtolower(trim((string) ($verif['result'] ?? '')));
                 return $r === 'not_effective' ? '✖' : '✔';
             }
-            return '?';
+            return '✖';
         };
         $capaIcon = function ($filled) {
-            return $filled ? '✔' : '−';
+            return $filled ? '✔' : '✖';
         };
         $slaLabel = function ($dueAt, $status) {
             if (empty($dueAt)) return 'Tanpa SLA';

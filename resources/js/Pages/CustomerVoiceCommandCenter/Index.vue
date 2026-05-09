@@ -390,7 +390,7 @@
                       class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
                       title="Belum ada isian CAPA yang disimpan"
                     >
-                      <i class="fa fa-minus" aria-hidden="true" />
+                      <i class="fa fa-times" aria-hidden="true" />
                     </span>
                   </td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">
@@ -1605,9 +1605,9 @@ function capaVerificationDisplay(row) {
   const v = row?.capa_verification
   if (!v || v.state === 'none') {
     return {
-      iconClass: 'fa fa-question',
-      badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
-      title: 'Belum ada verifikator atau belum menunggu hasil verifikasi',
+      iconClass: 'fa fa-times',
+      badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
+      title: 'Belum ada verifikator / belum proses verifikasi',
     }
   }
   if (v.state === 'pending') {
