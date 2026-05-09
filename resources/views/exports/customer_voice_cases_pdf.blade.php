@@ -36,6 +36,15 @@
                 default => $status ?: '-',
             };
         };
+        $sourceLabel = function ($source) {
+            $s = strtolower(trim((string) $source));
+            return match ($s) {
+                'google_review' => 'Google',
+                'instagram_comment' => 'Instagram',
+                'guest_comment' => 'Guest Comment',
+                default => $source ?: '-',
+            };
+        };
         $followUpLabel = function ($v) {
             $s = strtolower(trim((string) $v));
             if ($s === 'customer') return 'Customer';
@@ -43,14 +52,17 @@
             return '-';
         };
         $verifLabel = function ($verif) {
-            if (!is_array($verif)) return '-';
+            if (!is_array($verif)) return '?';
             $state = strtolower(trim((string) ($verif['state'] ?? '')));
-            if ($state === 'pending') return 'Menunggu';
+            if ($state === 'pending') return '⏳';
             if ($state === 'done') {
                 $r = strtolower(trim((string) ($verif['result'] ?? '')));
-                return $r === 'not_effective' ? 'Sudah (Tidak efektif)' : 'Sudah (Efektif)';
+                return $r === 'not_effective' ? '✖' : '✔';
             }
-            return '-';
+            return '?';
+        };
+        $capaIcon = function ($filled) {
+            return $filled ? '✔' : '−';
         };
         $slaLabel = function ($dueAt, $status) {
             if (empty($dueAt)) return 'Tanpa SLA';
@@ -98,7 +110,7 @@
                     <td>{{ $case->event_at }}</td>
                     <td>{{ $case->nama_outlet ?? '-' }}</td>
                     <td>{{ $case->regional !== '' ? $case->regional : '-' }}</td>
-                    <td>{{ $case->source_type }}</td>
+                    <td>{{ $sourceLabel($case->source_type ?? null) }}</td>
                     <td>
                         {{ $case->author_name !== '' ? $case->author_name : '—' }}
                         @if (!empty($case->customer_contact))
@@ -116,9 +128,14 @@
                         @endphp
                         {{ count($labels) ? implode(', ', $labels) : '-' }}
                     </td>
-                    <td>{{ $case->summary_short ?? '-' }}</td>
+                    <td>
+                        {{ $case->summary_short ?? '-' }}
+                        @if (!empty($case->raw_short))
+                            <div class="tiny">{{ $case->raw_short }}</div>
+                        @endif
+                    </td>
                     <td>{{ $case->risk_score ?? 0 }}</td>
-                    <td>{{ !empty($case->capa_filled) ? 'Sudah' : 'Belum' }}</td>
+                    <td>{{ $capaIcon(!empty($case->capa_filled)) }}</td>
                     <td>{{ $verifLabel($case->capa_verification ?? null) }}</td>
                     <td>{{ $slaLabel($case->due_at ?? null, $case->status ?? '') }}</td>
                     <td>{{ $case->assigned_to_name !== '' ? $case->assigned_to_name : '-' }}</td>

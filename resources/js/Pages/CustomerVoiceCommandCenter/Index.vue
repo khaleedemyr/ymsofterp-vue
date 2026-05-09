@@ -380,17 +380,17 @@
                   <td class="px-3 py-3 align-top whitespace-nowrap">
                     <span
                       v-if="row.capa_filled"
-                      class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800"
+                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-[11px] text-emerald-800"
                       title="Form CAPA sudah ada isian tersimpan"
                     >
-                      Sudah
+                      <i class="fa fa-check" aria-hidden="true" />
                     </span>
                     <span
                       v-else
-                      class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+                      class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
                       title="Belum ada isian CAPA yang disimpan"
                     >
-                      Belum
+                      <i class="fa fa-minus" aria-hidden="true" />
                     </span>
                   </td>
                   <td class="px-3 py-3 align-top whitespace-nowrap">

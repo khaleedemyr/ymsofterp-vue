@@ -678,6 +678,7 @@ class CustomerVoiceCommandCenterController extends Controller
                     ? $row['complaint_type_labels']
                     : [],
                 'summary_short' => Str::limit((string) ($row['summary_id'] ?? ''), 90),
+                'raw_short' => Str::limit(preg_replace('/\s+/u', ' ', (string) ($row['raw_text'] ?? '')), 220),
                 'risk_score' => $row['risk_score'] ?? 0,
                 'capa_filled' => ! empty($row['capa_filled']),
                 'capa_verification' => is_array($row['capa_verification'] ?? null) ? $row['capa_verification'] : null,
