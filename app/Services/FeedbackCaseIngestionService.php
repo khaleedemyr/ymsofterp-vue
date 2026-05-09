@@ -50,6 +50,17 @@ class FeedbackCaseIngestionService
             ->limit(max(1, min(10000, $limit)))
             ->get();
 
+        $sourceRefs = $rows
+            ->map(fn ($row) => 'gri:'.$row->id)
+            ->values()
+            ->all();
+        $existingMetaByRef = $sourceRefs === []
+            ? []
+            : DB::table('feedback_cases')
+                ->whereIn('source_ref', $sourceRefs)
+                ->pluck('meta', 'source_ref')
+                ->all();
+
         $payload = [];
         foreach ($rows as $row) {
             $source = (string) ($row->source ?? '');
@@ -81,9 +92,10 @@ class FeedbackCaseIngestionService
                 }
             }
 
+            $sourceRef = 'gri:'.$row->id;
             $payload[] = [
                 'source_type' => $sourceType,
-                'source_ref' => 'gri:'.$row->id,
+                'source_ref' => $sourceRef,
                 'source_report_id' => (int) $row->report_id,
                 'source_item_id' => (int) $row->id,
                 'id_outlet' => $row->id_outlet !== null ? (int) $row->id_outlet : null,
@@ -98,7 +110,7 @@ class FeedbackCaseIngestionService
                 'risk_score' => $risk,
                 'sla_minutes' => $sla,
                 'due_at' => $dueAt,
-                'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+                'meta' => $this->mergeMetaForIngestion($existingMetaByRef[$sourceRef] ?? null, $meta),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -168,6 +180,17 @@ class FeedbackCaseIngestionService
             ->limit(max(1, min(10000, $limit)))
             ->get();
 
+        $sourceRefs = $rows
+            ->map(fn ($row) => 'gcf:'.$row->id)
+            ->values()
+            ->all();
+        $existingMetaByRef = $sourceRefs === []
+            ? []
+            : DB::table('feedback_cases')
+                ->whereIn('source_ref', $sourceRefs)
+                ->pluck('meta', 'source_ref')
+                ->all();
+
         $payload = [];
         foreach ($rows as $row) {
             $eventAt = $this->normalizeEventAt($row->verified_at ?? null, $row->created_at ?? null);
@@ -203,9 +226,10 @@ class FeedbackCaseIngestionService
                 }
             }
 
+            $sourceRef = 'gcf:'.$row->id;
             $payload[] = [
                 'source_type' => 'guest_comment',
-                'source_ref' => 'gcf:'.$row->id,
+                'source_ref' => $sourceRef,
                 'source_report_id' => null,
                 'source_item_id' => (int) $row->id,
                 'id_outlet' => $row->id_outlet !== null ? (int) $row->id_outlet : null,
@@ -220,7 +244,7 @@ class FeedbackCaseIngestionService
                 'risk_score' => $risk,
                 'sla_minutes' => $sla,
                 'due_at' => $dueAt,
-                'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+                'meta' => $this->mergeMetaForIngestion($existingMetaByRef[$sourceRef] ?? null, $meta),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -376,5 +400,26 @@ class FeedbackCaseIngestionService
         }
 
         return mb_substr($s, 0, $max);
+    }
+
+    /**
+     * Preserve user-managed meta keys (regional/capa/etc) when sync upsert runs.
+     */
+    private function mergeMetaForIngestion(mixed $existingMetaRaw, array $incomingMeta): string
+    {
+        $existing = [];
+        if (is_string($existingMetaRaw) && trim($existingMetaRaw) !== '') {
+            $decoded = json_decode($existingMetaRaw, true);
+            if (is_array($decoded)) {
+                $existing = $decoded;
+            }
+        }
+
+        $merged = $existing;
+        foreach ($incomingMeta as $k => $v) {
+            $merged[$k] = $v;
+        }
+
+        return json_encode($merged, JSON_UNESCAPED_UNICODE);
     }
 }
