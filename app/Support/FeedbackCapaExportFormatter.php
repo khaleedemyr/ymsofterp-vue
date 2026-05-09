@@ -371,4 +371,34 @@ class FeedbackCapaExportFormatter
             default => (string) $v,
         };
     }
+
+    /**
+     * Mengelompokkan baris berturut dengan nama bagian sama — untuk rowspan (PDF) / merge cells (Excel).
+     *
+     * @param  Collection<int, array{bagian: string, field: string, nilai: string}>  $flatRows
+     * @return array<int, array{bagian: string, items: list<array{field: string, nilai: string}>}>
+     */
+    public function groupConsecutiveBagian(Collection $flatRows): array
+    {
+        $groups = [];
+        $current = null;
+        foreach ($flatRows as $row) {
+            $bagian = (string) ($row['bagian'] ?? '');
+            if ($current === null || $current['bagian'] !== $bagian) {
+                if ($current !== null) {
+                    $groups[] = $current;
+                }
+                $current = ['bagian' => $bagian, 'items' => []];
+            }
+            $current['items'][] = [
+                'field' => (string) ($row['field'] ?? ''),
+                'nilai' => (string) ($row['nilai'] ?? ''),
+            ];
+        }
+        if ($current !== null) {
+            $groups[] = $current;
+        }
+
+        return $groups;
+    }
 }

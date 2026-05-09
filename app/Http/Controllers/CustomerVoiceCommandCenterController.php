@@ -7,6 +7,7 @@ use App\Models\Outlet;
 use App\Models\User;
 use App\Services\FeedbackCapaService;
 use App\Services\FeedbackCaseIngestionService;
+use App\Services\NotificationService;
 use App\Support\FeedbackCapaExportFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -88,6 +89,77 @@ class CustomerVoiceCommandCenterController extends Controller
         ]);
     }
 
+    /**
+     * Daftar kasus CAPA yang menunggu verifikasi bagian G oleh user login (dipilih sebagai verifikator).
+     */
+    public function pendingCapaVerificationsJson(Request $request)
+    {
+        $userId = (int) ($request->user()->id ?? 0);
+        if ($userId <= 0) {
+            return response()->json(['success' => true, 'count' => 0, 'items' => []]);
+        }
+
+        $rows = DB::table('feedback_cases as c')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
+            ->whereRaw(
+                'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.verified_by_user_id")) AS UNSIGNED) = ?',
+                [$userId]
+            )
+            ->where(function ($q) {
+                $q->whereRaw('JSON_EXTRACT(c.meta, "$.capa.g.result") IS NULL')
+                    ->orWhereRaw(
+                        'LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.result")), ""))) NOT IN (?, ?)',
+                        ['effective', 'not_effective']
+                    );
+            })
+            ->orderByDesc('c.updated_at')
+            ->limit(30)
+            ->get([
+                'c.id',
+                'c.event_at',
+                'c.summary_id',
+                'c.status',
+                'c.severity',
+                'o.nama_outlet',
+            ]);
+
+        $items = $rows->map(function ($r) {
+            return [
+                'id' => (int) $r->id,
+                'event_at' => $r->event_at,
+                'summary_id' => $r->summary_id,
+                'status' => (string) ($r->status ?? ''),
+                'severity' => (string) ($r->severity ?? ''),
+                'nama_outlet' => (string) ($r->nama_outlet ?? ''),
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'count' => count($items),
+            'items' => $items,
+        ]);
+    }
+
+    /**
+     * Data satu kasus (shape sama seperti baris daftar) untuk deep link / preload panel detail.
+     */
+    public function caseBriefJson(Request $request, int $id)
+    {
+        $payload = $this->prepareCapaExport($id);
+        if ($payload === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Case tidak ditemukan.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'case' => $payload['presented'],
+        ]);
+    }
+
     public function apiIndex(Request $request)
     {
         return response()->json([
@@ -126,78 +198,17 @@ class CustomerVoiceCommandCenterController extends Controller
 
     public function updateCase(Request $request, int $id): RedirectResponse
     {
-        $payload = $request->validate([
-            'status' => 'required|string|in:new,in_progress,resolved,ignored',
-            'assigned_to' => 'nullable|integer|exists:users,id',
-        ]);
-
-        $row = DB::table('feedback_cases')->where('id', $id)->first();
-        if (! $row) {
-            return redirect()->route('customer-voice-command-center.index')
-                ->with('error', 'Case tidak ditemukan.');
+        $result = $this->runFeedbackCaseRowUpdate($request, $id);
+        if (! $result['success']) {
+            return $this->redirectToVoiceIndex($request)->with('error', $result['message'] ?? 'Gagal memperbarui case.');
         }
 
-        $now = now();
-        $fromStatus = (string) ($row->status ?? 'new');
-        $toStatus = (string) $payload['status'];
-        $oldAssignee = $row->assigned_to !== null ? (int) $row->assigned_to : null;
-        $newAssignee = isset($payload['assigned_to']) && $payload['assigned_to'] !== null
-            ? (int) $payload['assigned_to']
-            : null;
-
-        $update = [
-            'status' => $toStatus,
-            'assigned_to' => $newAssignee,
-            'updated_at' => $now,
-        ];
-        if ($toStatus === 'resolved') {
-            $update['resolved_at'] = $now;
-            if ($row->first_response_at === null) {
-                $update['first_response_at'] = $now;
-            }
-        } elseif ($toStatus === 'in_progress' && $row->first_response_at === null) {
-            $update['first_response_at'] = $now;
-            $update['resolved_at'] = null;
-        } elseif ($toStatus !== 'resolved') {
-            $update['resolved_at'] = null;
-        }
-
-        DB::transaction(function () use ($id, $update, $request, $fromStatus, $toStatus, $oldAssignee, $newAssignee, $now) {
-            DB::table('feedback_cases')->where('id', $id)->update($update);
-
-            if ($fromStatus !== $toStatus) {
-                DB::table('feedback_case_activities')->insert([
-                    'case_id' => $id,
-                    'activity_type' => 'status_changed',
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'from_status' => $fromStatus,
-                    'to_status' => $toStatus,
-                    'note' => null,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            }
-
-            if ($oldAssignee !== $newAssignee) {
-                DB::table('feedback_case_activities')->insert([
-                    'case_id' => $id,
-                    'activity_type' => 'assigned',
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'from_status' => null,
-                    'to_status' => null,
-                    'note' => 'Assign PIC: '.($newAssignee ?? 'unassigned'),
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            }
-        });
-
-        return $this->redirectToVoiceIndex($request)->with('success', 'Case diperbarui.');
+        return $this->redirectToVoiceIndex($request)->with('success', $result['message'] ?? 'Case diperbarui.');
     }
 
     public function apiUpdateCase(Request $request, int $id)
     {
-        $response = $this->handleUpdateCase($request, $id);
+        $response = $this->runFeedbackCaseRowUpdate($request, $id);
 
         return response()->json($response, $response['success'] ? 200 : 404);
     }
@@ -249,6 +260,7 @@ class CustomerVoiceCommandCenterController extends Controller
         if (! is_array($incoming)) {
             $incoming = [];
         }
+        $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
         if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
             $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
@@ -258,6 +270,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $sanitized = $this->capaService->sanitizeCapa($incoming);
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
+        $newVerifierId = $this->extractCapaVerifierUserId($meta);
 
         $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
@@ -278,7 +291,109 @@ class CustomerVoiceCommandCenterController extends Controller
             ]);
         });
 
+        $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
+        $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
+
         return $this->redirectToVoiceIndex($request)->with('success', 'Form CAPA tersimpan.');
+    }
+
+    /**
+     * Hapus seluruh data CAPA tersimpan untuk kasus (termasuk lampiran file di storage).
+     */
+    public function destroyCapa(Request $request, int $id): RedirectResponse
+    {
+        $result = $this->clearCapaForCase($request, $id);
+
+        if ($result === 'not_found') {
+            return redirect()->route('customer-voice-command-center.index', $this->voiceIndexFiltersFromRequest($request))
+                ->with('error', 'Case tidak ditemukan.');
+        }
+
+        return $this->redirectToVoiceIndex($request)->with(
+            'success',
+            $result === 'already_empty'
+                ? 'CAPA pada kasus ini sudah kosong.'
+                : 'Data CAPA telah dihapus.'
+        );
+    }
+
+    public function apiDestroyCapa(Request $request, int $id)
+    {
+        $result = $this->clearCapaForCase($request, $id);
+
+        if ($result === 'not_found') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Case tidak ditemukan.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result === 'already_empty'
+                ? 'CAPA pada kasus ini sudah kosong.'
+                : 'Data CAPA telah dihapus.',
+        ]);
+    }
+
+    /**
+     * @return 'cleared'|'already_empty'|'not_found'
+     */
+    private function clearCapaForCase(Request $request, int $id): string
+    {
+        $row = DB::table('feedback_cases')->where('id', $id)->first();
+        if ($row === null) {
+            return 'not_found';
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        if (! isset($meta['capa']) || ! is_array($meta['capa'])) {
+            return 'already_empty';
+        }
+
+        $capa = $meta['capa'];
+        $prefix = 'feedback_case_capa/'.$id.'/';
+        if (! empty($capa['evidence']) && is_array($capa['evidence'])) {
+            foreach ($capa['evidence'] as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $path = isset($item['path']) ? (string) $item['path'] : '';
+                if ($path === '' || ! str_starts_with($path, $prefix)) {
+                    continue;
+                }
+                if (Storage::disk('public')->exists($path)) {
+                    Storage::disk('public')->delete($path);
+                }
+            }
+        }
+
+        unset($meta['capa']);
+
+        $now = now();
+        DB::transaction(function () use ($id, $meta, $request, $now) {
+            DB::table('feedback_cases')->where('id', $id)->update([
+                'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+                'updated_at' => $now,
+            ]);
+
+            DB::table('feedback_case_activities')->insert([
+                'case_id' => $id,
+                'activity_type' => 'capa_cleared',
+                'actor_user_id' => $request->user()->id ?? null,
+                'from_status' => null,
+                'to_status' => null,
+                'note' => 'Form CAPA dihapus (reset).',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        });
+
+        return 'cleared';
     }
 
     public function apiSaveCapa(Request $request, int $id)
@@ -304,6 +419,7 @@ class CustomerVoiceCommandCenterController extends Controller
         if (! is_array($incoming)) {
             $incoming = [];
         }
+        $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
         if (! empty($meta['capa']['evidence']) && is_array($meta['capa']['evidence'])) {
             $preservedEvidence = $this->capaService->sanitizeEvidenceList($meta['capa']['evidence']);
@@ -313,6 +429,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $sanitized = $this->capaService->sanitizeCapa($incoming);
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->capaService->mergeIntoMeta($meta, $sanitized);
+        $newVerifierId = $this->extractCapaVerifierUserId($meta);
 
         $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
@@ -332,6 +449,9 @@ class CustomerVoiceCommandCenterController extends Controller
                 'updated_at' => $now,
             ]);
         });
+
+        $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
+        $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
         return response()->json([
             'success' => true,
@@ -570,7 +690,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'caseId' => $presented['id'],
             'outlet' => (string) ($presented['nama_outlet'] ?? ''),
             'generatedAt' => $payload['generated_at'],
-            'flatRows' => $payload['flat_rows']->values()->all(),
+            'capaGroupedSections' => $payload['capa_grouped_sections'],
         ])->setPaper('a4', 'portrait');
 
         return $pdf->download($this->capaExportBasename($id, 'pdf'));
@@ -593,7 +713,7 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * @return array{presented: array<string, mixed>, flat_rows: \Illuminate\Support\Collection<int, array{bagian: string, field: string, nilai: string}>, generated_at: string}|null
+     * @return array{presented: array<string, mixed>, flat_rows: \Illuminate\Support\Collection<int, array{bagian: string, field: string, nilai: string}>, capa_grouped_sections: array<int, array{bagian: string, items: list<array{field: string, nilai: string}>}>, generated_at: string}|null
      */
     private function prepareCapaExport(int $id): ?array
     {
@@ -635,10 +755,12 @@ class CustomerVoiceCommandCenterController extends Controller
         $capa = $presented['capa'];
         $formatter = new FeedbackCapaExportFormatter;
         $flatRows = $formatter->flatten($presented, $capa);
+        $capaGroupedSections = $formatter->groupConsecutiveBagian($flatRows);
 
         return [
             'presented' => $presented,
             'flat_rows' => $flatRows,
+            'capa_grouped_sections' => $capaGroupedSections,
             'generated_at' => now()->format('Y-m-d H:i'),
         ];
     }
@@ -1057,6 +1179,29 @@ class CustomerVoiceCommandCenterController extends Controller
         if ($request->filled('id_outlet')) {
             $query->where('c.id_outlet', (int) $request->input('id_outlet'));
         }
+        if ($request->filled('status')) {
+            $query->where('c.status', $request->input('status'));
+        }
+        if ($request->filled('severity')) {
+            $query->where('c.severity', $request->input('severity'));
+        }
+        if ($request->filled('source_type')) {
+            $query->where('c.source_type', $request->input('source_type'));
+        }
+        if ($request->filled('assigned_to')) {
+            $query->where('c.assigned_to', (int) $request->input('assigned_to'));
+        }
+        if ($request->filled('topic')) {
+            $topic = strtolower(trim((string) $request->input('topic')));
+            if ($topic !== '' && strlen($topic) <= 64 && preg_match('/^[a-z0-9_]+$/', $topic)) {
+                $query->where('c.topics', 'like', '%'.$topic.'%');
+            }
+        }
+        if ($request->boolean('overdue_only')) {
+            $query->whereIn('c.status', ['new', 'in_progress'])
+                ->whereNotNull('c.due_at')
+                ->where('c.due_at', '<', now());
+        }
         if ($request->filled('q')) {
             $keyword = '%'.trim((string) $request->input('q')).'%';
             $query->where(function ($q) use ($keyword) {
@@ -1212,6 +1357,28 @@ class CustomerVoiceCommandCenterController extends Controller
             $email = $e !== '' ? $e : null;
         }
 
+        $notifyFollowerIds = [];
+        if (isset($meta['notify_follower_user_ids']) && is_array($meta['notify_follower_user_ids'])) {
+            foreach ($meta['notify_follower_user_ids'] as $x) {
+                $n = (int) $x;
+                if ($n > 0) {
+                    $notifyFollowerIds[$n] = $n;
+                }
+            }
+            $notifyFollowerIds = array_values($notifyFollowerIds);
+        }
+
+        $regionalUserIds = [];
+        if (isset($meta['regional_user_ids']) && is_array($meta['regional_user_ids'])) {
+            foreach ($meta['regional_user_ids'] as $x) {
+                $n = (int) $x;
+                if ($n > 0) {
+                    $regionalUserIds[$n] = $n;
+                }
+            }
+            $regionalUserIds = array_values($regionalUserIds);
+        }
+
         $topicsArr = [];
         if (isset($case->topics)) {
             $rawT = $case->topics;
@@ -1265,6 +1432,8 @@ class CustomerVoiceCommandCenterController extends Controller
             'impact' => $impact,
             'topics' => $topicsArr,
             'complaint_type_labels' => $complaintTypeLabels,
+            'notify_follower_user_ids' => $notifyFollowerIds,
+            'regional_user_ids' => $regionalUserIds,
             'capa' => $capa,
         ];
     }
@@ -1316,11 +1485,18 @@ class CustomerVoiceCommandCenterController extends Controller
         return $out;
     }
 
-    private function handleUpdateCase(Request $request, int $id): array
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function runFeedbackCaseRowUpdate(Request $request, int $id): array
     {
         $payload = $request->validate([
             'status' => 'required|string|in:new,in_progress,resolved,ignored',
             'assigned_to' => 'nullable|integer|exists:users,id',
+            'notify_follower_user_ids' => 'nullable|array|max:30',
+            'notify_follower_user_ids.*' => 'integer|exists:users,id',
+            'regional_user_ids' => 'nullable|array|max:30',
+            'regional_user_ids.*' => 'integer|exists:users,id',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -1386,10 +1562,181 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         });
 
+        if (array_key_exists('notify_follower_user_ids', $payload)) {
+            $notifyRaw = $payload['notify_follower_user_ids'];
+            $this->persistNotifyFollowerMetaAndNotify($request, $id, is_array($notifyRaw) ? $notifyRaw : []);
+        }
+
+        if (array_key_exists('regional_user_ids', $payload)) {
+            $regionalRaw = $payload['regional_user_ids'];
+            $this->persistRegionalUsersMetaAndNotify($request, $id, is_array($regionalRaw) ? $regionalRaw : []);
+        }
+
         return [
             'success' => true,
             'message' => 'Case diperbarui.',
         ];
+    }
+
+    private function handleUpdateCase(Request $request, int $id): array
+    {
+        return $this->runFeedbackCaseRowUpdate($request, $id);
+    }
+
+    /**
+     * @param  array<int, mixed>  $rawIds
+     */
+    private function persistNotifyFollowerMetaAndNotify(Request $request, int $caseId, array $rawIds): void
+    {
+        $ids = [];
+        foreach ($rawIds as $x) {
+            $n = (int) $x;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        $ids = array_slice(array_values($ids), 0, 30);
+
+        $fresh = DB::table('feedback_cases')->where('id', $caseId)->first();
+        if ($fresh === null) {
+            return;
+        }
+
+        $meta = [];
+        if (! empty($fresh->meta)) {
+            $meta = json_decode((string) $fresh->meta, true) ?: [];
+        }
+        $meta['notify_follower_user_ids'] = $ids;
+
+        DB::table('feedback_cases')->where('id', $caseId)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
+
+        if ($ids === []) {
+            return;
+        }
+
+        $actorId = (int) ($request->user()->id ?? 0);
+        $summary = Str::limit(trim((string) ($fresh->summary_id ?? '')), 120);
+        $url = url('/customer-voice-command-center?show_all=1&open_case='.$caseId);
+        $lines = [];
+        foreach ($ids as $uid) {
+            if ($uid === $actorId) {
+                continue;
+            }
+            $lines[] = [
+                'user_id' => $uid,
+                'type' => 'customer_voice_case_follower',
+                'title' => 'Customer Voice — pembaruan kasus',
+                'message' => 'Kasus #'.$caseId.' diperbarui'.($summary !== '' ? ': '.$summary : '.'),
+                'url' => $url,
+                'is_read' => 0,
+            ];
+        }
+        if ($lines !== []) {
+            NotificationService::createMany($lines);
+        }
+    }
+
+    /**
+     * @param  array<int, mixed>  $rawIds
+     */
+    private function persistRegionalUsersMetaAndNotify(Request $request, int $caseId, array $rawIds): void
+    {
+        $ids = [];
+        foreach ($rawIds as $x) {
+            $n = (int) $x;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        $ids = array_slice(array_values($ids), 0, 30);
+
+        $fresh = DB::table('feedback_cases')->where('id', $caseId)->first();
+        if ($fresh === null) {
+            return;
+        }
+
+        $meta = [];
+        if (! empty($fresh->meta)) {
+            $meta = json_decode((string) $fresh->meta, true) ?: [];
+        }
+        $meta['regional_user_ids'] = $ids;
+
+        DB::table('feedback_cases')->where('id', $caseId)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
+
+        if ($ids === []) {
+            return;
+        }
+
+        $actorId = (int) ($request->user()->id ?? 0);
+        $summary = Str::limit(trim((string) ($fresh->summary_id ?? '')), 120);
+        $url = url('/customer-voice-command-center?show_all=1&open_case='.$caseId);
+        $lines = [];
+        foreach ($ids as $uid) {
+            if ($uid === $actorId) {
+                continue;
+            }
+            $lines[] = [
+                'user_id' => $uid,
+                'type' => 'customer_voice_regional_fu_capa',
+                'title' => 'Customer Voice — tindak lanjut regional',
+                'message' => 'PIC meminta Anda mendukung follow-up dan pengisian CAPA untuk kasus #'.$caseId
+                    .($summary !== '' ? ': '.$summary : '.'),
+                'url' => $url,
+                'is_read' => 0,
+            ];
+        }
+        if ($lines !== []) {
+            NotificationService::createMany($lines);
+        }
+    }
+
+    private function extractCapaVerifierUserId(array $meta): ?int
+    {
+        $capa = $meta['capa'] ?? null;
+        if (! is_array($capa)) {
+            return null;
+        }
+        $g = $capa['g'] ?? null;
+        if (! is_array($g) || ! isset($g['verified_by_user_id'])) {
+            return null;
+        }
+        $v = $g['verified_by_user_id'];
+        if ($v === null || $v === '') {
+            return null;
+        }
+        $n = (int) $v;
+
+        return $n > 0 ? $n : null;
+    }
+
+    private function notifyCapaVerifierIfNew(Request $request, int $caseId, ?int $oldVerifierId, ?int $newVerifierId, mixed $summaryId): void
+    {
+        if ($newVerifierId === null || $newVerifierId <= 0) {
+            return;
+        }
+        if ($oldVerifierId !== null && $oldVerifierId === $newVerifierId) {
+            return;
+        }
+
+        $actorId = (int) ($request->user()->id ?? 0);
+        if ($newVerifierId === $actorId) {
+            return;
+        }
+
+        $summary = Str::limit(trim((string) ($summaryId ?? '')), 120);
+        NotificationService::create([
+            'user_id' => $newVerifierId,
+            'type' => 'customer_voice_capa_verification_request',
+            'title' => 'CAPA — verifikasi diperlukan',
+            'message' => 'Anda ditunjuk sebagai verifikator untuk kasus #'.$caseId.($summary !== '' ? ': '.$summary : '.'),
+            'url' => url('/customer-voice-command-center?show_all=1&open_case='.$caseId),
+        ]);
     }
 
     private function handleAddNote(Request $request, int $id): array

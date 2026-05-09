@@ -15,6 +15,7 @@ import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
 import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
+import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
@@ -6163,6 +6164,9 @@ watch(locale, () => {
                         </div>
                     </div>
                 </div>
+
+                <!-- CAPA verifikasi (Customer Voice — verifikator bagian G) -->
+                <CapaVerificationCard :is-night="isNight" />
 
                 <!-- Food Payment Approval Section -->
                 <FoodPaymentApprovalCard :is-night="isNight" @approved="handleFoodPaymentApproved" @rejected="handleFoodPaymentRejected" />

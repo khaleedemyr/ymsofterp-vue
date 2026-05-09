@@ -281,11 +281,17 @@
 
       <div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1480px] text-sm">
+          <table class="w-full min-w-[1680px] text-sm">
             <thead class="bg-slate-50">
               <tr class="text-xs uppercase tracking-wide text-slate-500">
                 <th class="px-3 py-3 text-left font-semibold">Waktu</th>
                 <th class="px-3 py-3 text-left font-semibold">Outlet</th>
+                <th
+                  class="px-3 py-3 text-left font-semibold min-w-[200px]"
+                  title="Cari nama user (semua user aktif). Saat Simpan, kirim notifikasi FU & CAPA ke user terpilih."
+                >
+                  Regional
+                </th>
                 <th class="px-3 py-3 text-left font-semibold">Source</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[140px]">Tamu</th>
                 <th class="px-3 py-3 text-left font-semibold">FU target</th>
@@ -294,6 +300,7 @@
                 <th class="px-3 py-3 text-left font-semibold">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold">Risk</th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
+                <th class="px-3 py-3 text-left font-semibold min-w-[200px]" title="User yang di-notifikasi saat Simpan">Notif ke</th>
                 <th class="px-3 py-3 text-left font-semibold">PIC</th>
                 <th class="px-3 py-3 text-left font-semibold">Status</th>
                 <th class="px-3 py-3 text-left font-semibold">Aksi</th>
@@ -301,7 +308,7 @@
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="13" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="15" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -310,6 +317,14 @@
                 >
                   <td class="px-3 py-3 whitespace-nowrap text-xs text-slate-600">{{ formatDate(row.event_at) }}</td>
                   <td class="px-3 py-3 text-slate-700">{{ row.nama_outlet || '-' }}</td>
+                  <td class="px-3 py-3 align-top min-w-[200px]">
+                    <NotifyUserMultiPicker
+                      v-model="caseForms[row.id].regional_user_ids"
+                      :assignees="assignees"
+                      :disabled="updatingCaseId === row.id"
+                      placeholder="Cari nama…"
+                    />
+                  </td>
                   <td class="px-3 py-3">
                     <span class="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
                       {{ sourceLabel(row.source_type) }}
@@ -359,6 +374,14 @@
                   <td class="px-3 py-3 min-w-[190px]">
                     <div class="text-xs font-semibold" :class="slaClass(row)">{{ slaLabel(row) }}</div>
                     <div v-if="row.due_at" class="mt-1 text-[11px] text-slate-400">due {{ formatDate(row.due_at) }}</div>
+                  </td>
+                  <td class="px-3 py-3 align-top min-w-[200px]">
+                    <NotifyUserMultiPicker
+                      v-model="caseForms[row.id].notify_follower_user_ids"
+                      :assignees="assignees"
+                      :disabled="updatingCaseId === row.id"
+                      placeholder="Cari & pilih…"
+                    />
                   </td>
                   <td class="px-3 py-3 min-w-[190px]">
                     <select
@@ -441,7 +464,7 @@
                   class="border-t"
                   :class="statusRowClasses(caseForms[row.id]?.status || row.status).timeline"
                 >
-                  <td class="px-3 py-3" colspan="13">
+                  <td class="px-3 py-3" colspan="15">
                     <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Aktivitas terbaru</div>
                     <div v-if="!activitiesFor(row.id).length" class="text-xs text-slate-400">Belum ada aktivitas.</div>
                     <div v-else class="space-y-2">
@@ -589,8 +612,10 @@
             :assigned-to-name="selectedCase.assigned_to_name || ''"
             :assigned-to-jabatan="selectedCase.assigned_to_jabatan || ''"
             :saving="capaSaving"
+            :deleting="capaDeleting"
             @save="submitCapa"
             @reset="resetCapaDraft"
+            @delete-capa="deleteStoredCapa"
           />
 
           <div class="rounded-xl border border-slate-200 p-3">
@@ -621,12 +646,12 @@
       class="fixed inset-0 z-[45] flex items-center justify-center bg-slate-900/50 px-3 py-6"
       @click.self="closeArchiveModal"
     >
-      <div class="flex max-h-[min(88vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div class="flex max-h-[min(92vh,960px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
           <div>
             <h3 class="text-base font-bold text-slate-900">Arsip: resolved &amp; ulasan positif</h3>
             <p class="mt-0.5 text-xs text-slate-500">
-              Kasus dengan status <span class="font-semibold">resolved</span> atau severity <span class="font-semibold">positive</span>. Filter pencarian / tanggal / outlet di atas ikut diterapkan.
+              Kasus dengan status <span class="font-semibold">resolved</span> atau severity <span class="font-semibold">positive</span>. Gunakan filter di bawah (default mengikuti filter halaman saat modal dibuka).
             </p>
           </div>
           <button
@@ -636,6 +661,90 @@
           >
             Tutup
           </button>
+        </div>
+        <div class="shrink-0 border-b border-slate-100 bg-slate-50/80 px-3 py-3 sm:px-5">
+          <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            <input
+              v-model="archiveFilter.q"
+              type="text"
+              placeholder="Cari tamu / ringkasan / komentar"
+              class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 xl:col-span-2"
+              @keyup.enter="applyArchiveFilters"
+            />
+            <select v-model="archiveFilter.status" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua status</option>
+              <option value="new">New</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="ignored">Ignored</option>
+            </select>
+            <select v-model="archiveFilter.severity" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua severity</option>
+              <option value="critical">Critical</option>
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+              <option value="severe">Critical (arsip)</option>
+              <option value="negative">Major (arsip)</option>
+              <option value="mild_negative">Minor (arsip)</option>
+              <option value="neutral">Neutral</option>
+              <option value="positive">Positive</option>
+            </select>
+            <select v-model="archiveFilter.source_type" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua source</option>
+              <option value="google_review">Google Review</option>
+              <option value="instagram_comment">Instagram Comment</option>
+              <option value="guest_comment">Guest Comment</option>
+            </select>
+            <select v-model="archiveFilter.id_outlet" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua outlet</option>
+              <option v-for="o in outlets" :key="o.id_outlet" :value="String(o.id_outlet)">{{ o.nama_outlet }}</option>
+            </select>
+            <select v-model="archiveFilter.topic" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option v-for="opt in archiveTopicOptions" :key="opt.v || 'all'" :value="opt.v">{{ opt.label }}</option>
+            </select>
+            <select v-model="archiveFilter.assigned_to" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua PIC</option>
+              <option v-for="u in assignees" :key="u.id" :value="String(u.id)">{{ u.nama_lengkap }}</option>
+            </select>
+            <label class="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700">
+              <input v-model="archiveFilter.overdue_only" type="checkbox" class="rounded border-slate-300" />
+              Overdue (open)
+            </label>
+            <label class="flex flex-col gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Event dari
+              <input v-model="archiveFilter.date_from" type="date" class="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-slate-400" />
+            </label>
+            <label class="flex flex-col gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Event sampai
+              <input v-model="archiveFilter.date_to" type="date" class="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-slate-400" />
+            </label>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="inline-flex h-9 items-center rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+              :disabled="archiveLoading"
+              @click="applyArchiveFilters"
+            >
+              Terapkan filter
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              :disabled="archiveLoading"
+              @click="reloadArchiveFromMainFilters"
+            >
+              Samakan dengan halaman
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              :disabled="archiveLoading"
+              @click="clearArchiveFilters"
+            >
+              Reset filter arsip
+            </button>
+          </div>
         </div>
         <div class="min-h-0 flex-1 overflow-auto px-3 pb-3 sm:px-5">
           <div v-if="archiveLoading" class="py-12 text-center text-sm text-slate-500">Memuat…</div>
@@ -763,8 +872,9 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CapaFormPanel from '@/Pages/CustomerVoiceCommandCenter/CapaFormPanel.vue'
+import NotifyUserMultiPicker from '@/Pages/CustomerVoiceCommandCenter/NotifyUserMultiPicker.vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 const page = usePage()
 
@@ -794,6 +904,7 @@ const updatingCaseId = ref(null)
 const openedActivityCaseId = ref(null)
 const detailCaseId = ref(null)
 const capaSaving = ref(false)
+const capaDeleting = ref(false)
 const capaResetKey = ref(0)
 const caseForms = ref({})
 const q = ref(props.filters?.q || '')
@@ -811,6 +922,43 @@ const archiveLoading = ref(false)
 const archiveCases = ref([])
 const archiveMeta = ref(null)
 
+/** Filter khusus modal arsip (terpisah dari filter halaman utama). */
+function emptyArchiveFilter() {
+  return {
+    q: '',
+    status: '',
+    severity: '',
+    source_type: '',
+    id_outlet: '',
+    date_from: '',
+    date_to: '',
+    overdue_only: false,
+    assigned_to: '',
+    topic: '',
+  }
+}
+
+const archiveFilter = ref(emptyArchiveFilter())
+
+const archiveTopicOptions = [
+  { v: '', label: 'Semua jenis komplain' },
+  { v: 'food_quality', label: 'Kualitas makanan' },
+  { v: 'service', label: 'Layanan' },
+  { v: 'hygiene', label: 'Higiene' },
+  { v: 'cleanliness', label: 'Kebersihan' },
+  { v: 'wait_time', label: 'Waktu tunggu' },
+  { v: 'price', label: 'Harga' },
+  { v: 'billing', label: 'Tagihan' },
+  { v: 'ambiance', label: 'Suasana' },
+  { v: 'portion', label: 'Porsi' },
+  { v: 'beverage', label: 'Minuman' },
+  { v: 'noise', label: 'Kebisingan' },
+  { v: 'reservation', label: 'Reservasi' },
+  { v: 'parking', label: 'Parkir' },
+  { v: 'staff_attitude', label: 'Sikap staf' },
+  { v: 'other', label: 'Lainnya' },
+]
+
 const detailOverrides = ref({})
 
 const showNoteModal = ref(false)
@@ -818,12 +966,29 @@ const savingNote = ref(false)
 const noteCaseId = ref(null)
 const noteText = ref('')
 
+function normalizeUserIdList(row, key) {
+  const raw = row?.[key]
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  const out = []
+  for (const x of raw) {
+    const n = typeof x === 'number' ? x : parseInt(String(x), 10)
+    if (Number.isFinite(n) && n > 0) {
+      out.push(n)
+    }
+  }
+  return out
+}
+
 function initCaseForms() {
   const next = {}
   for (const row of props.cases?.data || []) {
     next[row.id] = {
       status: String(row.status || 'new'),
       assigned_to: row.assigned_to != null ? String(row.assigned_to) : '',
+      regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
+      notify_follower_user_ids: normalizeUserIdList(row, 'notify_follower_user_ids'),
     }
   }
   caseForms.value = next
@@ -906,16 +1071,53 @@ const exportPdfHref = computed(() => {
   return route('customer-voice-command-center.export-pdf', params)
 })
 
+function syncArchiveFiltersFromMain() {
+  archiveFilter.value = {
+    q: q.value || '',
+    status: status.value || '',
+    severity: severity.value || '',
+    source_type: sourceType.value || '',
+    id_outlet: idOutlet.value || '',
+    date_from: dateFrom.value || '',
+    date_to: dateTo.value || '',
+    overdue_only: overdueOnly.value,
+    assigned_to: '',
+    topic: '',
+  }
+}
+
+function clearArchiveFilters() {
+  archiveFilter.value = emptyArchiveFilter()
+  fetchArchivePage(1)
+}
+
+function applyArchiveFilters() {
+  fetchArchivePage(1)
+}
+
+/** Salin filter dari toolbar halaman utama lalu muat ulang arsip. */
+function reloadArchiveFromMainFilters() {
+  syncArchiveFiltersFromMain()
+  fetchArchivePage(1)
+}
+
 async function fetchArchivePage(page) {
   archiveLoading.value = true
   try {
+    const af = archiveFilter.value
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('per_page', '20')
-    if (q.value) params.set('q', q.value)
-    if (dateFrom.value) params.set('date_from', dateFrom.value)
-    if (dateTo.value) params.set('date_to', dateTo.value)
-    if (idOutlet.value) params.set('id_outlet', idOutlet.value)
+    if (af.q) params.set('q', af.q)
+    if (af.status) params.set('status', af.status)
+    if (af.severity) params.set('severity', af.severity)
+    if (af.source_type) params.set('source_type', af.source_type)
+    if (af.id_outlet) params.set('id_outlet', af.id_outlet)
+    if (af.date_from) params.set('date_from', af.date_from)
+    if (af.date_to) params.set('date_to', af.date_to)
+    if (af.topic) params.set('topic', af.topic)
+    if (af.assigned_to) params.set('assigned_to', af.assigned_to)
+    if (af.overdue_only) params.set('overdue_only', '1')
     const url = `${route('customer-voice-command-center.archive-cases')}?${params.toString()}`
     const res = await fetch(url, {
       credentials: 'same-origin',
@@ -941,6 +1143,7 @@ async function fetchArchivePage(page) {
 }
 
 function openArchiveModal() {
+  syncArchiveFiltersFromMain()
   archiveModalOpen.value = true
   fetchArchivePage(1)
 }
@@ -969,6 +1172,8 @@ function updateCase(caseId) {
     ...voiceIndexPostExtras(),
     status: form.status,
     assigned_to: form.assigned_to || null,
+    notify_follower_user_ids: Array.isArray(form.notify_follower_user_ids) ? form.notify_follower_user_ids : [],
+    regional_user_ids: Array.isArray(form.regional_user_ids) ? form.regional_user_ids : [],
   }, {
     preserveScroll: true,
     onFinish: () => {
@@ -1023,6 +1228,73 @@ function openDetailFromArchive(row) {
   archiveModalOpen.value = false
 }
 
+/** Deep link ?open_case= dari Home / kartu verifikasi */
+let openCaseQueryHandled = false
+
+function stripOpenCaseQueryParam() {
+  try {
+    const u = new URL(window.location.href)
+    if (!u.searchParams.has('open_case')) {
+      return
+    }
+    u.searchParams.delete('open_case')
+    window.history.replaceState({}, '', u.pathname + (u.search ? u.search : '') + u.hash)
+  } catch {
+    /* noop */
+  }
+}
+
+async function tryOpenCaseFromQuery() {
+  if (openCaseQueryHandled) {
+    return
+  }
+  let raw = null
+  try {
+    raw = new URLSearchParams(window.location.search).get('open_case')
+  } catch {
+    return
+  }
+  if (!raw) {
+    return
+  }
+  const id = parseInt(raw, 10)
+  if (!Number.isFinite(id) || id <= 0) {
+    return
+  }
+
+  openCaseQueryHandled = true
+
+  if (caseMap.value[id]) {
+    openDetail(id)
+    stripOpenCaseQueryParam()
+    return
+  }
+
+  try {
+    const res = await fetch(route('customer-voice-command-center.cases.brief', id), {
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+    const data = await res.json()
+    if (data.success && data.case) {
+      detailOverrides.value = { ...detailOverrides.value, [id]: data.case }
+      detailCaseId.value = id
+      stripOpenCaseQueryParam()
+    } else {
+      openCaseQueryHandled = false
+    }
+  } catch {
+    openCaseQueryHandled = false
+  }
+}
+
+onMounted(() => {
+  tryOpenCaseFromQuery()
+})
+
 function closeDetail() {
   if (detailCaseId.value) {
     const next = { ...detailOverrides.value }
@@ -1048,6 +1320,21 @@ function submitCapa(capa) {
 
 function resetCapaDraft() {
   capaResetKey.value += 1
+}
+
+function deleteStoredCapa() {
+  if (!detailCaseId.value) return
+  capaDeleting.value = true
+  router.delete(route('customer-voice-command-center.cases.capa.destroy', detailCaseId.value), {
+    data: voiceIndexPostExtras(),
+    preserveScroll: true,
+    onFinish: () => {
+      capaDeleting.value = false
+    },
+    onSuccess: () => {
+      capaResetKey.value += 1
+    },
+  })
 }
 
 function activitiesFor(caseId) {

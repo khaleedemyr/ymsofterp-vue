@@ -207,6 +207,10 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.index');
     Route::get('/customer-voice-command-center/archive-cases', [CustomerVoiceCommandCenterController::class, 'archiveCasesJson'])
         ->name('customer-voice-command-center.archive-cases');
+    Route::get('/customer-voice-command-center/pending-capa-verifications', [CustomerVoiceCommandCenterController::class, 'pendingCapaVerificationsJson'])
+        ->name('customer-voice-command-center.pending-capa-verifications');
+    Route::get('/customer-voice-command-center/cases/{id}/brief', [CustomerVoiceCommandCenterController::class, 'caseBriefJson'])
+        ->name('customer-voice-command-center.cases.brief');
     Route::get('/customer-voice-command-center/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportPdf'])
         ->name('customer-voice-command-center.export-pdf');
     Route::get('/customer-voice-command-center/cases/{id}/capa/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportCapaPdf'])
@@ -221,6 +225,8 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.cases.note');
     Route::post('/customer-voice-command-center/cases/{id}/capa', [CustomerVoiceCommandCenterController::class, 'saveCapa'])
         ->name('customer-voice-command-center.cases.capa');
+    Route::delete('/customer-voice-command-center/cases/{id}/capa', [CustomerVoiceCommandCenterController::class, 'destroyCapa'])
+        ->name('customer-voice-command-center.cases.capa.destroy');
     Route::post('/customer-voice-command-center/cases/{id}/capa/evidence', [CustomerVoiceCommandCenterController::class, 'uploadCapaEvidence'])
         ->name('customer-voice-command-center.cases.capa.evidence');
     Route::delete('/customer-voice-command-center/cases/{id}/capa/evidence/{evidenceId}', [CustomerVoiceCommandCenterController::class, 'deleteCapaEvidence'])

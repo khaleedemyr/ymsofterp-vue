@@ -10,7 +10,7 @@
         th { background: #1e293b; color: #fff; padding: 6px 5px; font-size: 8px; text-align: left; vertical-align: top; }
         td { border: 1px solid #cbd5e1; padding: 5px 5px; vertical-align: top; word-wrap: break-word; }
         td.nilai { white-space: pre-wrap; font-size: 8px; line-height: 1.35; max-width: 65%; }
-        .bagian { font-weight: bold; background: #f8fafc; width: 18%; }
+        .bagian { font-weight: bold; background: #f8fafc; width: 18%; vertical-align: middle; text-align: left; }
         .field { width: 22%; }
     </style>
 </head>
@@ -32,12 +32,16 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($flatRows as $row)
-                <tr>
-                    <td class="bagian">{{ $row['bagian'] ?? '' }}</td>
-                    <td class="field">{{ $row['field'] ?? '' }}</td>
-                    <td class="nilai">{{ $row['nilai'] ?? '' }}</td>
-                </tr>
+            @foreach ($capaGroupedSections as $section)
+                @foreach ($section['items'] as $idx => $item)
+                    <tr>
+                        @if ($idx === 0)
+                            <td class="bagian" rowspan="{{ count($section['items']) }}">{{ $section['bagian'] ?? '' }}</td>
+                        @endif
+                        <td class="field">{{ $item['field'] ?? '' }}</td>
+                        <td class="nilai">{{ $item['nilai'] ?? '' }}</td>
+                    </tr>
+                @endforeach
             @endforeach
         </tbody>
     </table>

@@ -385,23 +385,35 @@
       <strong>Catatan:</strong> Corrective = perbaiki kejadian saat ini. Preventive = mencegah kejadian berulang.
     </div>
 
-    <div class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:justify-end">
+    <div
+      class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:items-center sm:justify-between"
+    >
       <button
         type="button"
-        class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        :disabled="saving"
-        @click="$emit('reset')"
+        class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="saving || deleting"
+        @click="askDeleteStoredCapa"
       >
-        Batalkan perubahan lokal
+        {{ deleting ? 'Menghapus…' : 'Hapus data CAPA' }}
       </button>
-      <button
-        type="button"
-        class="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-        :disabled="saving"
-        @click="submit"
-      >
-        {{ saving ? 'Menyimpan…' : 'Simpan form CAPA' }}
-      </button>
+      <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          :disabled="saving || deleting"
+          @click="$emit('reset')"
+        >
+          Batalkan perubahan lokal
+        </button>
+        <button
+          type="button"
+          class="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="saving || deleting"
+          @click="submit"
+        >
+          {{ saving ? 'Menyimpan…' : 'Simpan form CAPA' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -420,9 +432,22 @@ const props = defineProps({
   assignedToId: { type: Number, default: null },
   assignedToName: { type: String, default: '' },
   assignedToJabatan: { type: String, default: '' },
+  deleting: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['save', 'reset'])
+const emit = defineEmits(['save', 'reset', 'delete-capa'])
+
+function askDeleteStoredCapa() {
+  if (
+    !confirm(
+      'Hapus seluruh data CAPA yang sudah tersimpan untuk kasus ini?\n\n' +
+        'Lampiran file akan dihapus dari server. Status kasus dan komentar pelanggan tidak diubah.',
+    )
+  ) {
+    return
+  }
+  emit('delete-capa')
+}
 
 const sectionLinks = [
   { id: 'capa-evidence', short: 'File' },
