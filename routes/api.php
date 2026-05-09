@@ -1132,6 +1132,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Customer Voice Command Center routes
         Route::get('/customer-voice-command-center', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiIndex'])->name('api.approval-app.customer-voice-command-center.index');
+        Route::get('/customer-voice-command-center/archive-cases', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'archiveCasesJson'])->name('api.approval-app.customer-voice-command-center.archive-cases');
         Route::get('/customer-voice-command-center/pending-capa-verifications', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'pendingCapaVerificationsJson'])->name('api.approval-app.customer-voice-command-center.pending-capa-verifications');
         Route::get('/customer-voice-command-center/cases/{id}/brief', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'caseBriefJson'])->name('api.approval-app.customer-voice-command-center.cases.brief');
         Route::post('/customer-voice-command-center/sync', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiSync'])->name('api.approval-app.customer-voice-command-center.sync');
