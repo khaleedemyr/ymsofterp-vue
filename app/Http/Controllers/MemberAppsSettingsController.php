@@ -44,54 +44,25 @@ class MemberAppsSettingsController extends Controller
 
             return Inertia::render('MemberAppsSettings/Index', [
                 'banners' => MemberAppsBanner::orderBy('sort_order')->get(),
-
-                'outlets' => Inertia::defer(fn () =>
-                    DB::table('tbl_data_outlet')
-                        ->where('status', 'A')
-                        ->where('is_outlet', 1)
-                        ->where('is_fc', 0)
-                        ->select('id_outlet as id', 'nama_outlet as name', 'id_brand')
-                        ->orderBy('nama_outlet')
-                        ->get()
-                , 'shared'),
-                'occupations' => Inertia::defer(fn () =>
-                    MemberAppsOccupation::where('is_active', true)->orderBy('sort_order')->get()
-                , 'shared'),
-                'whatsOnCategories' => Inertia::defer(fn () =>
-                    MemberAppsWhatsOnCategory::where('is_active', true)->orderBy('name')->get()
-                , 'shared'),
-
-                'rewards' => Inertia::defer(fn () =>
-                    MemberAppsReward::with(['item', 'outlets'])->get()
-                , 'content'),
-                'challenges' => Inertia::defer(fn () =>
-                    MemberAppsChallenge::orderBy('created_at', 'desc')->get()
-                , 'content'),
-                'whatsOn' => Inertia::defer(fn () =>
-                    MemberAppsWhatsOn::with('category')->orderBy('published_at', 'desc')->get()
-                , 'content'),
-                'brands' => Inertia::defer(fn () =>
-                    MemberAppsBrand::with(['outlet', 'galleries'])->orderBy('sort_order')->get()
-                , 'content'),
-                'brandsTable' => Inertia::defer(fn () =>
-                    DB::table('brands')->orderBy('brand', 'asc')->get()
-                , 'content'),
-
-                'faqs' => Inertia::defer(fn () =>
-                    MemberAppsFaq::orderBy('created_at', 'desc')->get()
-                , 'pages'),
-                'termsConditions' => Inertia::defer(fn () =>
-                    MemberAppsTermCondition::orderBy('created_at', 'desc')->get()
-                , 'pages'),
-                'aboutUs' => Inertia::defer(fn () =>
-                    MemberAppsAboutUs::orderBy('created_at', 'desc')->get()
-                , 'pages'),
-                'benefits' => Inertia::defer(fn () =>
-                    MemberAppsBenefits::orderBy('created_at', 'desc')->get()
-                , 'pages'),
-                'contactUs' => Inertia::defer(fn () =>
-                    MemberAppsContactUs::orderBy('created_at', 'desc')->get()
-                , 'pages'),
+                'rewards' => MemberAppsReward::with(['item', 'outlets'])->get(),
+                'challenges' => MemberAppsChallenge::orderBy('created_at', 'desc')->get(),
+                'whatsOn' => MemberAppsWhatsOn::with('category')->orderBy('published_at', 'desc')->get(),
+                'whatsOnCategories' => MemberAppsWhatsOnCategory::where('is_active', true)->orderBy('name')->get(),
+                'brands' => MemberAppsBrand::with(['outlet', 'galleries'])->orderBy('sort_order')->get(),
+                'brandsTable' => DB::table('brands')->orderBy('brand', 'asc')->get(),
+                'outlets' => DB::table('tbl_data_outlet')
+                    ->where('status', 'A')
+                    ->where('is_outlet', 1)
+                    ->where('is_fc', 0)
+                    ->select('id_outlet as id', 'nama_outlet as name', 'id_brand')
+                    ->orderBy('nama_outlet')
+                    ->get(),
+                'faqs' => MemberAppsFaq::orderBy('created_at', 'desc')->get(),
+                'termsConditions' => MemberAppsTermCondition::orderBy('created_at', 'desc')->get(),
+                'aboutUs' => MemberAppsAboutUs::orderBy('created_at', 'desc')->get(),
+                'benefits' => MemberAppsBenefits::orderBy('created_at', 'desc')->get(),
+                'contactUs' => MemberAppsContactUs::orderBy('created_at', 'desc')->get(),
+                'occupations' => MemberAppsOccupation::where('is_active', true)->orderBy('sort_order')->get(),
 
                 'vouchers' => Inertia::defer(fn () =>
                     MemberAppsVoucher::with(['distributions'])
@@ -105,7 +76,7 @@ class MemberAppsSettingsController extends Controller
 
                 'pushNotifications' => Inertia::defer(fn () =>
                     MemberAppsPushNotification::withCount('recipients')->orderBy('created_at', 'desc')->paginate(20)
-                , 'notifications'),
+                ),
 
                 'feedbacks' => Inertia::defer(function () use ($status, $search, $perPage) {
                     $feedbacksQuery = MemberAppsFeedback::with(['member', 'replies.member'])

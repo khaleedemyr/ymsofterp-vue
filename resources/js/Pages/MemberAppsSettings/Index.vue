@@ -79,7 +79,7 @@
         </div>
 
         <!-- Reward Tab -->
-        <div v-if="activeTab === 'reward' && !isTabLoading('reward')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'reward'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Reward Management</h3>
@@ -143,7 +143,7 @@
         </div>
 
         <!-- Challenge Tab -->
-        <div v-if="activeTab === 'challenge' && !isTabLoading('challenge')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'challenge'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Challenge Management</h3>
@@ -192,7 +192,7 @@
         </div>
 
         <!-- Whats On Tab -->
-        <div v-if="activeTab === 'whats-on' && !isTabLoading('whats-on')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'whats-on'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Whats On Management</h3>
@@ -236,7 +236,7 @@
         </div>
 
         <!-- Outlet Tab (formerly Brand Tab) -->
-        <div v-if="activeTab === 'outlet' && !isTabLoading('outlet')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'outlet'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Outlet Management</h3>
@@ -333,7 +333,7 @@
         </div>
 
         <!-- Brands Tab (for brands table) -->
-        <div v-if="activeTab === 'brands' && !isTabLoading('brands')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'brands'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Brand Management</h3>
@@ -383,7 +383,7 @@
         </div>
 
         <!-- FAQ Tab -->
-        <div v-if="activeTab === 'faq' && !isTabLoading('faq')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'faq'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">FAQ Management</h3>
@@ -427,7 +427,7 @@
         </div>
 
         <!-- Terms & Condition Tab -->
-        <div v-if="activeTab === 'terms-condition' && !isTabLoading('terms-condition')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'terms-condition'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Terms & Condition Management</h3>
@@ -471,7 +471,7 @@
         </div>
 
         <!-- About Us Tab -->
-        <div v-if="activeTab === 'about-us' && !isTabLoading('about-us')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'about-us'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">About Us Management</h3>
@@ -515,7 +515,7 @@
         </div>
 
         <!-- Benefits Tab -->
-        <div v-if="activeTab === 'benefits' && !isTabLoading('benefits')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'benefits'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="p-6">
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-lg font-semibold text-gray-700">Benefits Management</h3>
@@ -554,7 +554,7 @@
         </div>
 
         <!-- Contact Us Tab -->
-        <div v-if="activeTab === 'contact-us' && !isTabLoading('contact-us')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'contact-us'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="p-6">
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-lg font-semibold text-gray-700">Contact Us Management</h3>
@@ -3306,16 +3306,6 @@ const props = defineProps({
 
 const isTabLoading = (tabId) => {
   const tabDataMap = {
-    'reward': [props.rewards],
-    'challenge': [props.challenges],
-    'whats-on': [props.whatsOn],
-    'outlet': [props.brands, props.outlets],
-    'brands': [props.brandsTable],
-    'faq': [props.faqs],
-    'terms-condition': [props.termsConditions],
-    'about-us': [props.aboutUs],
-    'benefits': [props.benefits],
-    'contact-us': [props.contactUs],
     'voucher': [props.vouchers],
     'feedback': [props.feedbacks],
   }
