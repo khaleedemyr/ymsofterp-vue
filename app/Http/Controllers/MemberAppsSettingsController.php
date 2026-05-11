@@ -38,132 +38,115 @@ class MemberAppsSettingsController extends Controller
     public function index(Request $request)
     {
         try {
-            \Log::info('MemberAppsSettings - Loading index page');
-            
-            $banners = MemberAppsBanner::orderBy('sort_order')->get();
-            \Log::info('MemberAppsSettings - Banners loaded:', ['count' => $banners->count()]);
-            
-            $rewards = MemberAppsReward::with(['item', 'outlets'])->get();
-            \Log::info('MemberAppsSettings - Rewards loaded:', ['count' => $rewards->count()]);
-            
-            $challenges = MemberAppsChallenge::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - Challenges loaded:', ['count' => $challenges->count()]);
-            
-            $whatsOn = MemberAppsWhatsOn::with('category')->orderBy('published_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - WhatsOn loaded:', ['count' => $whatsOn->count()]);
-            
-            $whatsOnCategories = MemberAppsWhatsOnCategory::where('is_active', true)->orderBy('name')->get();
-            \Log::info('MemberAppsSettings - WhatsOnCategories loaded:', ['count' => $whatsOnCategories->count()]);
-            
-            $brands = MemberAppsBrand::with(['outlet', 'galleries'])->orderBy('sort_order')->get();
-            \Log::info('MemberAppsSettings - Brands loaded:', ['count' => $brands->count()]);
-            
-            // Get brands from brands table (for brands tab)
-            $brandsTable = DB::table('brands')
-                ->orderBy('brand', 'asc')
-                ->get();
-            \Log::info('MemberAppsSettings - Brands Table loaded:', ['count' => $brandsTable->count()]);
-            
-            // Get active outlets for brand selection (exclude franchise outlets)
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->where('is_outlet', 1)
-                ->where('is_fc', 0)
-                ->select('id_outlet as id', 'nama_outlet as name', 'id_brand')
-                ->orderBy('nama_outlet')
-                ->get();
-            \Log::info('MemberAppsSettings - Outlets loaded:', ['count' => $outlets->count()]);
-            
-            $faqs = MemberAppsFaq::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - FAQs loaded:', ['count' => $faqs->count()]);
-            
-            $termsConditions = MemberAppsTermCondition::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - Terms & Conditions loaded:', ['count' => $termsConditions->count()]);
-            
-            $aboutUs = MemberAppsAboutUs::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - About Us loaded:', ['count' => $aboutUs->count()]);
-            
-            $benefits = MemberAppsBenefits::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - Benefits loaded:', ['count' => $benefits->count()]);
-            
-            $contactUs = MemberAppsContactUs::orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - Contact Us loaded:', ['count' => $contactUs->count()]);
-            
-            $members = MemberAppsMember::with('occupation')->orderBy('created_at', 'desc')->paginate(20);
-            \Log::info('MemberAppsSettings - Members loaded:', ['count' => $members->total()]);
-            
-            $occupations = MemberAppsOccupation::where('is_active', true)->orderBy('sort_order')->get();
-            \Log::info('MemberAppsSettings - Occupations loaded:', ['count' => $occupations->count()]);
-            
-            $vouchers = MemberAppsVoucher::with(['distributions', 'memberVouchers'])->orderBy('created_at', 'desc')->get();
-            \Log::info('MemberAppsSettings - Vouchers loaded:', ['count' => $vouchers->count()]);
-            
-            $pushNotifications = MemberAppsPushNotification::with('recipients')->orderBy('created_at', 'desc')->paginate(20);
-            \Log::info('MemberAppsSettings - Push Notifications loaded:', ['count' => $pushNotifications->total()]);
-            
-            // Get feedbacks with pagination, filter, and search
             $status = $request->input('status', '');
             $search = $request->input('search', '');
             $perPage = $request->input('per_page', 10);
-            
-            $feedbacksQuery = MemberAppsFeedback::with(['member', 'replies.member'])
-                ->whereNull('parent_id'); // Only get main feedbacks
-            
-            // Apply status filter
-            if ($status && in_array($status, ['pending', 'read', 'replied', 'resolved'])) {
-                $feedbacksQuery->where('status', $status);
-            }
-            
-            // Apply search filter
-            if ($search) {
-                $feedbacksQuery->where(function($query) use ($search) {
-                    $query->where('subject', 'like', "%{$search}%")
-                          ->orWhere('message', 'like', "%{$search}%")
-                          ->orWhereHas('member', function($q) use ($search) {
-                              $q->where('nama_lengkap', 'like', "%{$search}%")
-                                ->orWhere('email', 'like', "%{$search}%")
-                                ->orWhere('member_id', 'like', "%{$search}%");
-                          });
-                });
-            }
-            
-            $feedbacks = $feedbacksQuery->orderBy('created_at', 'desc')
-                ->paginate($perPage);
-            
-            // Load outlet names for each feedback
-            $feedbacks->getCollection()->transform(function ($feedback) {
-                if ($feedback->outlet_id) {
-                    $outlet = DB::table('tbl_data_outlet')
-                        ->where('id_outlet', $feedback->outlet_id)
-                        ->first();
-                    $feedback->outlet_name = $outlet ? $outlet->nama_outlet : null;
-                } else {
-                    $feedback->outlet_name = null;
-                }
-                return $feedback;
-            });
-            
-            \Log::info('MemberAppsSettings - Feedbacks loaded:', ['count' => $feedbacks->total()]);
-            
+
             return Inertia::render('MemberAppsSettings/Index', [
-                'banners' => $banners,
-                'rewards' => $rewards,
-                'challenges' => $challenges,
-                'whatsOn' => $whatsOn,
-                'whatsOnCategories' => $whatsOnCategories,
-                'brands' => $brands,
-                'brandsTable' => $brandsTable,
-                'outlets' => $outlets,
-                'faqs' => $faqs,
-                'termsConditions' => $termsConditions,
-                'aboutUs' => $aboutUs,
-                'benefits' => $benefits,
-                'contactUs' => $contactUs,
-                'members' => $members,
-                'occupations' => $occupations,
-                'vouchers' => $vouchers,
-                'pushNotifications' => $pushNotifications,
-                'feedbacks' => $feedbacks
+                'banners' => MemberAppsBanner::orderBy('sort_order')->get(),
+
+                'outlets' => Inertia::defer(fn () =>
+                    DB::table('tbl_data_outlet')
+                        ->where('status', 'A')
+                        ->where('is_outlet', 1)
+                        ->where('is_fc', 0)
+                        ->select('id_outlet as id', 'nama_outlet as name', 'id_brand')
+                        ->orderBy('nama_outlet')
+                        ->get()
+                , 'shared'),
+                'occupations' => Inertia::defer(fn () =>
+                    MemberAppsOccupation::where('is_active', true)->orderBy('sort_order')->get()
+                , 'shared'),
+                'whatsOnCategories' => Inertia::defer(fn () =>
+                    MemberAppsWhatsOnCategory::where('is_active', true)->orderBy('name')->get()
+                , 'shared'),
+
+                'rewards' => Inertia::defer(fn () =>
+                    MemberAppsReward::with(['item', 'outlets'])->get()
+                , 'content'),
+                'challenges' => Inertia::defer(fn () =>
+                    MemberAppsChallenge::orderBy('created_at', 'desc')->get()
+                , 'content'),
+                'whatsOn' => Inertia::defer(fn () =>
+                    MemberAppsWhatsOn::with('category')->orderBy('published_at', 'desc')->get()
+                , 'content'),
+                'brands' => Inertia::defer(fn () =>
+                    MemberAppsBrand::with(['outlet', 'galleries'])->orderBy('sort_order')->get()
+                , 'content'),
+                'brandsTable' => Inertia::defer(fn () =>
+                    DB::table('brands')->orderBy('brand', 'asc')->get()
+                , 'content'),
+
+                'faqs' => Inertia::defer(fn () =>
+                    MemberAppsFaq::orderBy('created_at', 'desc')->get()
+                , 'pages'),
+                'termsConditions' => Inertia::defer(fn () =>
+                    MemberAppsTermCondition::orderBy('created_at', 'desc')->get()
+                , 'pages'),
+                'aboutUs' => Inertia::defer(fn () =>
+                    MemberAppsAboutUs::orderBy('created_at', 'desc')->get()
+                , 'pages'),
+                'benefits' => Inertia::defer(fn () =>
+                    MemberAppsBenefits::orderBy('created_at', 'desc')->get()
+                , 'pages'),
+                'contactUs' => Inertia::defer(fn () =>
+                    MemberAppsContactUs::orderBy('created_at', 'desc')->get()
+                , 'pages'),
+
+                'vouchers' => Inertia::defer(fn () =>
+                    MemberAppsVoucher::with(['distributions'])
+                        ->withCount('memberVouchers')
+                        ->orderBy('created_at', 'desc')
+                        ->get()
+                , 'voucher'),
+                'members' => Inertia::defer(fn () =>
+                    MemberAppsMember::with('occupation')->orderBy('created_at', 'desc')->paginate(20)
+                , 'voucher'),
+
+                'pushNotifications' => Inertia::defer(fn () =>
+                    MemberAppsPushNotification::withCount('recipients')->orderBy('created_at', 'desc')->paginate(20)
+                , 'notifications'),
+
+                'feedbacks' => Inertia::defer(function () use ($status, $search, $perPage) {
+                    $feedbacksQuery = MemberAppsFeedback::with(['member', 'replies.member'])
+                        ->whereNull('parent_id');
+
+                    if ($status && in_array($status, ['pending', 'read', 'replied', 'resolved'])) {
+                        $feedbacksQuery->where('status', $status);
+                    }
+
+                    if ($search) {
+                        $feedbacksQuery->where(function($query) use ($search) {
+                            $query->where('subject', 'like', "%{$search}%")
+                                  ->orWhere('message', 'like', "%{$search}%")
+                                  ->orWhereHas('member', function($q) use ($search) {
+                                      $q->where('nama_lengkap', 'like', "%{$search}%")
+                                        ->orWhere('email', 'like', "%{$search}%")
+                                        ->orWhere('member_id', 'like', "%{$search}%");
+                                  });
+                        });
+                    }
+
+                    $feedbacks = $feedbacksQuery->orderBy('created_at', 'desc')->paginate($perPage);
+
+                    $outletIds = $feedbacks->getCollection()->pluck('outlet_id')->filter()->unique()->values()->all();
+                    $outletMap = [];
+                    if (!empty($outletIds)) {
+                        $outletMap = DB::table('tbl_data_outlet')
+                            ->whereIn('id_outlet', $outletIds)
+                            ->pluck('nama_outlet', 'id_outlet')
+                            ->all();
+                    }
+
+                    $feedbacks->getCollection()->transform(function ($feedback) use ($outletMap) {
+                        $feedback->outlet_name = $feedback->outlet_id
+                            ? ($outletMap[$feedback->outlet_id] ?? null)
+                            : null;
+                        return $feedback;
+                    });
+
+                    return $feedbacks;
+                }, 'feedback'),
             ]);
         } catch (\Exception $e) {
             \Log::error('MemberAppsSettings - Error loading index:', [

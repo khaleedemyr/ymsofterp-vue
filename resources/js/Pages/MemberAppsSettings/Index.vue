@@ -31,6 +31,14 @@
 
       <!-- Tab Content -->
       <div class="space-y-6">
+        <!-- Loading indicator for deferred tab data -->
+        <div v-if="isTabLoading(activeTab)" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div class="p-12 flex flex-col items-center justify-center text-gray-400">
+            <i class="fa-solid fa-spinner fa-spin text-3xl mb-4 text-blue-500"></i>
+            <p class="text-sm font-medium">Memuat data...</p>
+          </div>
+        </div>
+
         <!-- Banner Tab -->
         <div v-if="activeTab === 'banner'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
@@ -71,7 +79,7 @@
         </div>
 
         <!-- Reward Tab -->
-        <div v-if="activeTab === 'reward'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'reward' && !isTabLoading('reward')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Reward Management</h3>
@@ -135,7 +143,7 @@
         </div>
 
         <!-- Challenge Tab -->
-        <div v-if="activeTab === 'challenge'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'challenge' && !isTabLoading('challenge')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Challenge Management</h3>
@@ -184,7 +192,7 @@
         </div>
 
         <!-- Whats On Tab -->
-        <div v-if="activeTab === 'whats-on'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'whats-on' && !isTabLoading('whats-on')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Whats On Management</h3>
@@ -228,7 +236,7 @@
         </div>
 
         <!-- Outlet Tab (formerly Brand Tab) -->
-        <div v-if="activeTab === 'outlet'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'outlet' && !isTabLoading('outlet')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Outlet Management</h3>
@@ -325,7 +333,7 @@
         </div>
 
         <!-- Brands Tab (for brands table) -->
-        <div v-if="activeTab === 'brands'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'brands' && !isTabLoading('brands')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Brand Management</h3>
@@ -375,7 +383,7 @@
         </div>
 
         <!-- FAQ Tab -->
-        <div v-if="activeTab === 'faq'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'faq' && !isTabLoading('faq')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">FAQ Management</h3>
@@ -419,7 +427,7 @@
         </div>
 
         <!-- Terms & Condition Tab -->
-        <div v-if="activeTab === 'terms-condition'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'terms-condition' && !isTabLoading('terms-condition')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Terms & Condition Management</h3>
@@ -463,7 +471,7 @@
         </div>
 
         <!-- About Us Tab -->
-        <div v-if="activeTab === 'about-us'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'about-us' && !isTabLoading('about-us')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">About Us Management</h3>
@@ -507,7 +515,7 @@
         </div>
 
         <!-- Benefits Tab -->
-        <div v-if="activeTab === 'benefits'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'benefits' && !isTabLoading('benefits')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="p-6">
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-lg font-semibold text-gray-700">Benefits Management</h3>
@@ -546,7 +554,7 @@
         </div>
 
         <!-- Contact Us Tab -->
-        <div v-if="activeTab === 'contact-us'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'contact-us' && !isTabLoading('contact-us')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="p-6">
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-lg font-semibold text-gray-700">Contact Us Management</h3>
@@ -589,7 +597,7 @@
         </div>
 
         <!-- Feedback Tab -->
-        <div v-if="activeTab === 'feedback'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'feedback' && !isTabLoading('feedback')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Feedback Management</h3>
@@ -755,7 +763,7 @@
         </div>
 
         <!-- Voucher Tab -->
-        <div v-if="activeTab === 'voucher'" class="bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div v-if="activeTab === 'voucher' && !isTabLoading('voucher')" class="bg-white rounded-2xl shadow-lg overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-200">
             <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-gray-700">Voucher Management</h3>
@@ -809,8 +817,8 @@
                       <div v-if="voucher.applicable_time_start && voucher.applicable_time_end">
                         <strong>Applicable Time:</strong> {{ formatTime(voucher.applicable_time_start) }} - {{ formatTime(voucher.applicable_time_end) }}
                       </div>
-                      <div v-if="voucher.member_vouchers" class="flex items-center gap-2">
-                        <strong>Distributed:</strong> {{ voucher.member_vouchers.length }} vouchers
+                      <div v-if="voucher.member_vouchers_count !== undefined || voucher.member_vouchers" class="flex items-center gap-2">
+                        <strong>Distributed:</strong> {{ voucher.member_vouchers_count ?? (voucher.member_vouchers ? voucher.member_vouchers.length : 0) }} vouchers
                         <button 
                           @click="openVoucherMembersModal(voucher)" 
                           class="ml-2 text-blue-600 hover:text-blue-800 text-sm"
@@ -1207,7 +1215,7 @@
                 <div v-if="!voucherForm.all_outlets">
                   <Multiselect
                     v-model="voucherForm.outlet_ids"
-                    :options="outlets"
+                    :options="outlets || []"
                     :searchable="true"
                     :clear-on-select="false"
                     :close-on-select="false"
@@ -1773,7 +1781,7 @@
                   <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Outlet (kosongkan untuk semua outlet)</label>
                   <Multiselect
                     v-model="rewardForm.outlet_ids"
-                    :options="props.outlets"
+                    :options="props.outlets || []"
                     :searchable="true"
                     :clear-on-select="false"
                     :close-on-select="false"
@@ -1940,7 +1948,7 @@
                         <div v-if="!challengeForm.rules.reward_all_outlets">
                           <Multiselect
                             v-model="challengeForm.rules.reward_outlet_ids"
-                            :options="outlets"
+                            :options="outlets || []"
                             :searchable="true"
                             :clear-on-select="false"
                             :close-on-select="false"
@@ -2018,7 +2026,7 @@
                         <div v-if="!challengeForm.rules.reward_all_outlets">
                           <Multiselect
                             v-model="challengeForm.rules.reward_outlet_ids"
-                            :options="outlets"
+                            :options="outlets || []"
                             :searchable="true"
                             :clear-on-select="false"
                             :close-on-select="false"
@@ -2064,7 +2072,7 @@
                         <label class="block text-sm font-medium text-gray-700 mb-2">Pilih Outlet Challenge</label>
                         <Multiselect
                           v-model="challengeForm.rules.challenge_outlet_ids"
-                          :options="outlets"
+                          :options="outlets || []"
                           :searchable="true"
                           :clear-on-select="false"
                           :close-on-select="false"
@@ -2135,7 +2143,7 @@
                     <div v-if="!challengeForm.rules.all_outlets">
                       <Multiselect
                         v-model="challengeForm.rules.outlet_ids"
-                        :options="outlets"
+                        :options="outlets || []"
                         :searchable="true"
                         :clear-on-select="false"
                         :close-on-select="false"
@@ -2237,7 +2245,7 @@
                       <div v-if="!challengeForm.rules.reward_all_outlets">
                         <Multiselect
                           v-model="challengeForm.rules.reward_outlet_ids"
-                          :options="outlets"
+                          :options="outlets || []"
                           :searchable="true"
                           :clear-on-select="false"
                           :close-on-select="false"
@@ -2315,7 +2323,7 @@
                       <div v-if="!challengeForm.rules.reward_all_outlets">
                         <Multiselect
                           v-model="challengeForm.rules.reward_outlet_ids"
-                          :options="outlets"
+                          :options="outlets || []"
                           :searchable="true"
                           :clear-on-select="false"
                           :close-on-select="false"
@@ -2522,7 +2530,7 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Pilih Outlet</option>
-                <option v-for="outlet in props.outlets" :key="outlet.id" :value="outlet.id">
+                <option v-for="outlet in (props.outlets || [])" :key="outlet.id" :value="outlet.id">
                   {{ outlet.name }}
                 </option>
               </select>
@@ -3292,8 +3300,29 @@ const props = defineProps({
   vouchers: Array,
   members: Object,
   occupations: Array,
+  pushNotifications: Object,
   feedbacks: Object
 })
+
+const isTabLoading = (tabId) => {
+  const tabDataMap = {
+    'reward': [props.rewards],
+    'challenge': [props.challenges],
+    'whats-on': [props.whatsOn],
+    'outlet': [props.brands, props.outlets],
+    'brands': [props.brandsTable],
+    'faq': [props.faqs],
+    'terms-condition': [props.termsConditions],
+    'about-us': [props.aboutUs],
+    'benefits': [props.benefits],
+    'contact-us': [props.contactUs],
+    'voucher': [props.vouchers],
+    'feedback': [props.feedbacks],
+  }
+  const deps = tabDataMap[tabId]
+  if (!deps) return false
+  return deps.some(d => d === undefined)
+}
 
 const activeTab = ref('banner')
 
@@ -3923,7 +3952,7 @@ const editReward = (reward) => {
   if (reward.outlets && reward.outlets.length > 0) {
     // Map outlet objects to match multiselect format
     outletIds = reward.outlets.map(outlet => {
-      const outletObj = props.outlets.find(o => o.id === outlet.id || o.id === outlet.id_outlet)
+      const outletObj = props.outlets?.find(o => o.id === outlet.id || o.id === outlet.id_outlet)
       return outletObj || { id: outlet.id || outlet.id_outlet, name: outlet.name || outlet.nama_outlet }
     })
   } else {
@@ -3975,7 +4004,7 @@ const editChallenge = (challenge) => {
     } else if (rules.outlet_ids) {
       if (Array.isArray(rules.outlet_ids)) {
         rules.outlet_ids = rules.outlet_ids.map(id => {
-          const outlet = props.outlets.find(o => o.id == id)
+          const outlet = props.outlets?.find(o => o.id == id)
           return outlet || { id: id, name: 'Unknown Outlet' }
         }).filter(Boolean)
       }
@@ -3989,7 +4018,7 @@ const editChallenge = (challenge) => {
   if (challenge.outlets && challenge.outlets.length > 0) {
     rules.challenge_all_outlets = false
     rules.challenge_outlet_ids = challenge.outlets.map(outlet => {
-      const outletObj = props.outlets.find(o => o.id == outlet.id_outlet || o.id == outlet.id)
+      const outletObj = props.outlets?.find(o => o.id == outlet.id_outlet || o.id == outlet.id)
       return outletObj || { id: outlet.id_outlet || outlet.id, name: outlet.nama_outlet || outlet.name || 'Unknown Outlet' }
     }).filter(Boolean)
   } else {
@@ -4026,7 +4055,7 @@ const editChallenge = (challenge) => {
     } else if (rules.reward_outlet_ids) {
       if (Array.isArray(rules.reward_outlet_ids)) {
         rules.reward_outlet_ids = rules.reward_outlet_ids.map(id => {
-          const outlet = props.outlets.find(o => o.id == id)
+          const outlet = props.outlets?.find(o => o.id == id)
           return outlet || { id: id, name: 'Unknown Outlet' }
         }).filter(Boolean)
       }
@@ -4038,7 +4067,7 @@ const editChallenge = (challenge) => {
     // For vouchers, convert IDs to array of voucher objects
     if (Array.isArray(rules.reward_value)) {
       rules.reward_value = rules.reward_value.map(id => {
-        const voucher = props.vouchers.find(v => v.id == id)
+        const voucher = props.vouchers?.find(v => v.id == id)
         return voucher || { id: id, name: 'Unknown Voucher' }
       }).filter(Boolean)
     } else {
@@ -4052,7 +4081,7 @@ const editChallenge = (challenge) => {
     } else if (rules.reward_outlet_ids) {
       if (Array.isArray(rules.reward_outlet_ids)) {
         rules.reward_outlet_ids = rules.reward_outlet_ids.map(id => {
-          const outlet = props.outlets.find(o => o.id == id)
+          const outlet = props.outlets?.find(o => o.id == id)
           return outlet || { id: id, name: 'Unknown Outlet' }
         }).filter(Boolean)
       }
@@ -4152,7 +4181,7 @@ const editBrand = (brand) => {
   // Get id_brand from outlet
   let idBrand = ''
   if (brand.outlet_id) {
-    const outlet = props.outlets.find(o => o.id == brand.outlet_id)
+    const outlet = props.outlets?.find(o => o.id == brand.outlet_id)
     if (outlet && outlet.id_brand) {
       idBrand = outlet.id_brand
     }
