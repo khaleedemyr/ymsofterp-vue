@@ -108,22 +108,14 @@ class LostBreakageController extends Controller
         ]);
     }
 
-    public function create()
+    private function getAssetItems()
     {
-        $user = auth()->user();
-
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
-
         $items = DB::table('items')
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->leftJoin('units as su', 'items.small_unit_id', '=', 'su.id')
             ->leftJoin('units as mu', 'items.medium_unit_id', '=', 'mu.id')
             ->leftJoin('units as lu', 'items.large_unit_id', '=', 'lu.id')
-            ->where('categories.is_asset', 1)
+            ->whereRaw('CAST(categories.is_asset AS UNSIGNED) = 1')
             ->where('items.status', 'active')
             ->select(
                 'items.id',
@@ -140,6 +132,38 @@ class LostBreakageController extends Controller
             ->orderBy('items.name')
             ->get();
 
+        $itemIds = $items->pluck('id')->toArray();
+        $images = [];
+        if (!empty($itemIds)) {
+            $rows = DB::table('item_images')
+                ->whereIn('item_id', $itemIds)
+                ->select('item_id', 'path')
+                ->get();
+            foreach ($rows as $r) {
+                if (!isset($images[$r->item_id])) {
+                    $images[$r->item_id] = [];
+                }
+                $images[$r->item_id][] = $r->path;
+            }
+        }
+
+        return $items->map(function ($item) use ($images) {
+            $item->image = $images[$item->id][0] ?? null;
+            return $item;
+        });
+    }
+
+    public function create()
+    {
+        $user = auth()->user();
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $items = $this->getAssetItems();
         $units = DB::table('units')->where('status', 'active')->get();
 
         return inertia('LostBreakage/Create', [
@@ -292,28 +316,7 @@ class LostBreakageController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
-        $items = DB::table('items')
-            ->join('categories', 'items.category_id', '=', 'categories.id')
-            ->leftJoin('units as su', 'items.small_unit_id', '=', 'su.id')
-            ->leftJoin('units as mu', 'items.medium_unit_id', '=', 'mu.id')
-            ->leftJoin('units as lu', 'items.large_unit_id', '=', 'lu.id')
-            ->where('categories.is_asset', 1)
-            ->where('items.status', 'active')
-            ->select(
-                'items.id',
-                'items.name',
-                'items.sku',
-                'categories.name as category_name',
-                'items.small_unit_id',
-                'items.medium_unit_id',
-                'items.large_unit_id',
-                'su.name as small_unit_name',
-                'mu.name as medium_unit_name',
-                'lu.name as large_unit_name'
-            )
-            ->orderBy('items.name')
-            ->get();
-
+        $items = $this->getAssetItems();
         $units = DB::table('units')->where('status', 'active')->get();
 
         $approvalFlows = DB::table('lost_breakage_approval_flows as af')
