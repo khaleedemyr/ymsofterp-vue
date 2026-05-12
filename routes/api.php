@@ -513,6 +513,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/google-review/ai/reports/{id}/export', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportExport'])->where('id', '[0-9]+');
         Route::get('/google-review/ai/reports/{id}', [\App\Http\Controllers\GoogleReviewController::class, 'apiAiReportShow'])->where('id', '[0-9]+');
         Route::get('/google-review/ai/reports/{id}/status', [\App\Http\Controllers\GoogleReviewController::class, 'aiReportStatus'])->where('id', '[0-9]+');
+        Route::put('/google-review/ai/items/{itemId}/severity', [\App\Http\Controllers\GoogleReviewController::class, 'updateItemSeverity'])->where('itemId', '[0-9]+');
 
         // Outlet Transfer (Approval App / Pindah Outlet)
         Route::get('/outlet-transfers', [OutletTransferController::class, 'apiIndex']);

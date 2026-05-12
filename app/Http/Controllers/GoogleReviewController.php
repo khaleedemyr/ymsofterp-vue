@@ -1812,6 +1812,46 @@ class GoogleReviewController extends Controller
     }
 
     /**
+     * Update severity of a single AI review item (manual override).
+     */
+    public function updateItemSeverity(Request $request, int $itemId)
+    {
+        $allowed = ['positive', 'neutral', 'minor', 'major', 'critical'];
+
+        $request->validate([
+            'severity' => 'required|in:' . implode(',', $allowed),
+        ]);
+
+        $item = DB::table('google_review_ai_items')->where('id', $itemId)->first();
+        if (!$item) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'error' => 'Item tidak ditemukan'], 404);
+            }
+            abort(404);
+        }
+
+        if (!$this->userCanAccessReport($item->report_id)) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'error' => 'Tidak diizinkan'], 403);
+            }
+            abort(403);
+        }
+
+        DB::table('google_review_ai_items')
+            ->where('id', $itemId)
+            ->update([
+                'severity' => $request->severity,
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Severity berhasil diubah',
+            'severity' => $request->severity,
+        ]);
+    }
+
+    /**
      * Gabungkan label severity lama (mild_negative, …) ke bucket dashboard baru.
      */
     protected function normalizeAiSeverityBucket(string $s): string

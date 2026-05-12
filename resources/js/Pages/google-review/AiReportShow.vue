@@ -123,7 +123,21 @@
                   <td v-if="report.source === 'instagram_comments_db'" class="small sum">{{ it.source_post_caption || '—' }}</td>
                   <td>{{ it.rating || '—' }}</td>
                   <td class="muted small">{{ it.review_date }}</td>
-                  <td><span class="sev" :class="'s-' + sevClassKey(it.severity)">{{ sevLabel(it.severity) }}</span></td>
+                  <td>
+                    <select
+                      class="sev-select"
+                      :class="'s-' + sevClassKey(it.severity)"
+                      :value="it.severity"
+                      @change="changeSeverity(it, $event.target.value)"
+                      :disabled="savingSevId === it.id"
+                    >
+                      <option value="positive">Positif</option>
+                      <option value="neutral">Netral</option>
+                      <option value="minor">Minor</option>
+                      <option value="major">Major</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </td>
                   <td class="small">{{ fuLabel(it.follow_up_target) }}</td>
                   <td class="small">{{ impactLabel(it.impact) }}</td>
                   <td class="small">{{ (it.topics || []).join(', ') }}</td>
@@ -164,6 +178,7 @@ const props = defineProps({
 
 const severity = ref(props.filters.severity || '')
 const polling = ref(false)
+const savingSevId = ref(null)
 let timer = null
 
 function syncLiveFromReport(r) {
@@ -273,6 +288,33 @@ function applyFilter() {
     { severity: severity.value || undefined },
     { preserveState: true, replace: true, preserveScroll: true }
   )
+}
+
+async function changeSeverity(item, newSeverity) {
+  if (newSeverity === item.severity) return
+  savingSevId.value = item.id
+  try {
+    const res = await fetch(`/google-review/ai/items/${item.id}/severity`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-XSRF-TOKEN': decodeURIComponent(
+          document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] || ''
+        ),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ severity: newSeverity }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      item.severity = newSeverity
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    savingSevId.value = null
+  }
 }
 
 function startPoll() {
@@ -568,6 +610,24 @@ onUnmounted(() => {
   padding: 2px 6px;
   border-radius: 6px;
   white-space: nowrap;
+}
+.sev-select {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+.sev-select:hover {
+  border-color: #9ca3af;
+}
+.sev-select:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 .s-positive {
   background: #d1fae5;
