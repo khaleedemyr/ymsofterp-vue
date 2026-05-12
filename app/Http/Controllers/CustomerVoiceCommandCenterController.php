@@ -1723,6 +1723,10 @@ class CustomerVoiceCommandCenterController extends Controller
             'notify_follower_user_ids.*' => 'integer|exists:users,id',
             'regional_user_ids' => 'nullable|array|max:30',
             'regional_user_ids.*' => 'integer|exists:users,id',
+            'case_severity' => 'nullable|string|in:critical,major,minor,neutral,positive,severe,negative,mild_negative',
+            'follow_up_target' => 'nullable|string|in:customer,internal',
+            'case_topics' => 'nullable|array|max:15',
+            'case_topics.*' => 'string|max:64',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -1758,7 +1762,29 @@ class CustomerVoiceCommandCenterController extends Controller
             }
         }
 
-        DB::transaction(function () use ($id, $update, $request, $fromStatus, $toStatus, $oldAssignee, $newAssignee, $now) {
+        $oldSeverity = strtolower(trim((string) ($row->severity ?? '')));
+        $newSeverity = null;
+        if (array_key_exists('case_severity', $payload) && $payload['case_severity'] !== null) {
+            $newSeverity = $this->normalizeIncomingSeverity((string) $payload['case_severity']);
+            if ($newSeverity !== $oldSeverity) {
+                $update['severity'] = $newSeverity;
+                $slaMinutes = $this->severityToSlaMinutes($newSeverity);
+                $update['sla_minutes'] = $slaMinutes;
+                $update['due_at'] = $slaMinutes !== null && $row->event_at !== null
+                    ? \Carbon\Carbon::parse($row->event_at)->addMinutes($slaMinutes)
+                    : null;
+            }
+        }
+
+        if (array_key_exists('case_topics', $payload)) {
+            $validTopics = array_values(array_filter(
+                array_map(fn ($t) => strtolower(trim((string) $t)), $payload['case_topics'] ?? []),
+                fn ($t) => $t !== ''
+            ));
+            $update['topics'] = ! empty($validTopics) ? json_encode($validTopics, JSON_UNESCAPED_UNICODE) : null;
+        }
+
+        DB::transaction(function () use ($id, $update, $request, $fromStatus, $toStatus, $oldAssignee, $newAssignee, $oldSeverity, $newSeverity, $now) {
             DB::table('feedback_cases')->where('id', $id)->update($update);
 
             if ($fromStatus !== $toStatus) {
@@ -1786,6 +1812,19 @@ class CustomerVoiceCommandCenterController extends Controller
                     'updated_at' => $now,
                 ]);
             }
+
+            if ($newSeverity !== null && $newSeverity !== $oldSeverity) {
+                DB::table('feedback_case_activities')->insert([
+                    'case_id' => $id,
+                    'activity_type' => 'severity_changed',
+                    'actor_user_id' => $request->user()->id ?? null,
+                    'from_status' => null,
+                    'to_status' => null,
+                    'note' => 'Severity: '.$oldSeverity.' → '.$newSeverity,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
         });
 
         if (array_key_exists('notify_follower_user_ids', $payload)) {
@@ -1796,6 +1835,10 @@ class CustomerVoiceCommandCenterController extends Controller
         if (array_key_exists('regional_user_ids', $payload)) {
             $regionalRaw = $payload['regional_user_ids'];
             $this->persistRegionalUsersMetaAndNotify($request, $id, is_array($regionalRaw) ? $regionalRaw : []);
+        }
+
+        if (array_key_exists('follow_up_target', $payload)) {
+            $this->persistFollowUpTargetMeta($id, $payload['follow_up_target']);
         }
 
         return [
@@ -1920,6 +1963,50 @@ class CustomerVoiceCommandCenterController extends Controller
         if ($lines !== []) {
             NotificationService::createMany($lines);
         }
+    }
+
+    private function severityToSlaMinutes(string $severity): ?int
+    {
+        return match ($severity) {
+            'critical', 'severe' => 30,
+            'major', 'negative' => 120,
+            'minor', 'mild_negative' => 1440,
+            default => null,
+        };
+    }
+
+    private function normalizeIncomingSeverity(string $severity): string
+    {
+        return match ($severity) {
+            'severe' => 'critical',
+            'negative' => 'major',
+            'mild_negative' => 'minor',
+            default => $severity,
+        };
+    }
+
+    private function persistFollowUpTargetMeta(int $caseId, ?string $followUpTarget): void
+    {
+        $row = DB::table('feedback_cases')->where('id', $caseId)->first();
+        if ($row === null) {
+            return;
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        if ($followUpTarget !== null && in_array($followUpTarget, ['customer', 'internal'], true)) {
+            $meta['follow_up_target'] = $followUpTarget;
+        } else {
+            unset($meta['follow_up_target']);
+        }
+
+        DB::table('feedback_cases')->where('id', $caseId)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
     }
 
     private function extractCapaVerifierUserId(array $meta): ?int

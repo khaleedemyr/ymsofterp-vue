@@ -348,34 +348,72 @@
                   <td class="px-3 py-3 align-top min-w-[260px]">
                     <div class="space-y-1.5">
                       <div>
-                        <span
-                          v-if="row.follow_up_target"
-                          class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                          :class="row.follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-700'"
+                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">FU Target</label>
+                        <select
+                          v-model="caseForms[row.id].follow_up_target"
+                          class="mt-0.5 block h-7 w-full rounded-lg border border-slate-200 px-2 text-[11px] outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                          :disabled="updatingCaseId === row.id"
                         >
-                          {{ followUpLabel(row.follow_up_target) }}
-                        </span>
-                        <span v-else class="text-[11px] leading-snug text-slate-400" title="Terisi setelah klasifikasi AI pada sumber data + tombol Sync Data">
-                          —
-                        </span>
+                          <option value="">— Belum ditentukan</option>
+                          <option value="customer">Customer</option>
+                          <option value="internal">Internal</option>
+                        </select>
                       </div>
                       <div>
-                        <span class="inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="severityClass(row.severity)">
-                          {{ row.severity || 'neutral' }}
-                        </span>
-                      </div>
-                      <div v-if="complaintTypeLabelsFor(row).length" class="flex flex-wrap gap-1">
-                        <span
-                          v-for="(lbl, idx) in complaintTypeLabelsFor(row)"
-                          :key="`${row.id}-ct-${idx}`"
-                          class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
+                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Severity</label>
+                        <select
+                          v-model="caseForms[row.id].severity"
+                          class="mt-0.5 block h-7 w-full rounded-lg border border-slate-200 px-2 text-[11px] font-semibold outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                          :class="severitySelectClass(caseForms[row.id].severity)"
+                          :disabled="updatingCaseId === row.id"
                         >
-                          {{ lbl }}
-                        </span>
+                          <option value="critical">Critical</option>
+                          <option value="major">Major</option>
+                          <option value="minor">Minor</option>
+                          <option value="neutral">Neutral</option>
+                          <option value="positive">Positive</option>
+                        </select>
                       </div>
-                      <span v-else class="text-[11px] text-slate-400" title="Terisi dari klasifikasi AI (topics) setelah sync">
-                        —
-                      </span>
+                      <div class="relative">
+                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jenis Komplain</label>
+                        <button
+                          type="button"
+                          class="mt-0.5 flex min-h-[1.75rem] w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-left text-[11px] outline-none transition hover:border-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                          :disabled="updatingCaseId === row.id"
+                          @click="toggleTopicPicker(row.id)"
+                        >
+                          <template v-if="caseForms[row.id].topics.length">
+                            <span class="flex flex-wrap gap-0.5">
+                              <span
+                                v-for="t in caseForms[row.id].topics.slice(0, 3)"
+                                :key="`btn-${row.id}-${t}`"
+                                class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-medium text-violet-900"
+                              >{{ topicLabelFor(t) }}</span>
+                              <span v-if="caseForms[row.id].topics.length > 3" class="text-[10px] text-slate-400">+{{ caseForms[row.id].topics.length - 3 }}</span>
+                            </span>
+                          </template>
+                          <span v-else class="text-slate-400">— Pilih jenis</span>
+                        </button>
+                        <div v-if="openTopicPickerCaseId === row.id" class="fixed inset-0 z-20" @click="openTopicPickerCaseId = null"></div>
+                        <div
+                          v-if="openTopicPickerCaseId === row.id"
+                          class="absolute left-0 top-full z-30 mt-1 max-h-52 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
+                        >
+                          <label
+                            v-for="opt in topicEditOptions"
+                            :key="`tp-${row.id}-${opt.v}`"
+                            class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <input
+                              type="checkbox"
+                              :value="opt.v"
+                              v-model="caseForms[row.id].topics"
+                              class="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                            />
+                            {{ opt.label }}
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td class="px-3 py-3 min-w-[340px]">
@@ -1065,6 +1103,25 @@ const archiveTopicOptions = [
   { v: 'other', label: 'Lainnya' },
 ]
 
+const topicEditOptions = [
+  { v: 'food_quality', label: 'Kualitas makanan' },
+  { v: 'service', label: 'Layanan' },
+  { v: 'cleanliness', label: 'Kebersihan' },
+  { v: 'ambiance', label: 'Suasana' },
+  { v: 'wait_time', label: 'Waktu tunggu' },
+  { v: 'price', label: 'Harga' },
+  { v: 'billing', label: 'Tagihan' },
+  { v: 'portion', label: 'Porsi' },
+  { v: 'beverage', label: 'Minuman' },
+  { v: 'noise', label: 'Kebisingan' },
+  { v: 'reservation', label: 'Reservasi' },
+  { v: 'parking', label: 'Parkir' },
+  { v: 'staff_attitude', label: 'Sikap staf' },
+  { v: 'other', label: 'Lainnya' },
+]
+
+const openTopicPickerCaseId = ref(null)
+
 const detailOverrides = ref({})
 
 const showNoteModal = ref(false)
@@ -1111,6 +1168,36 @@ function voiceCaseStatusLabel(raw) {
   return map[s] || raw
 }
 
+function normalizeEditSeverity(sev) {
+  const s = String(sev || 'neutral').toLowerCase()
+  const map = { severe: 'critical', negative: 'major', mild_negative: 'minor' }
+  return map[s] || s
+}
+
+function normalizeTopicSlugs(topics) {
+  if (!Array.isArray(topics)) return []
+  const aliasMap = { hygiene: 'cleanliness', price_value: 'price', waiting_time: 'wait_time', speed_wait_time: 'wait_time' }
+  const seen = new Set()
+  const out = []
+  for (const t of topics) {
+    const k = aliasMap[String(t).toLowerCase()] || String(t).toLowerCase()
+    if (k && !seen.has(k)) {
+      seen.add(k)
+      out.push(k)
+    }
+  }
+  return out
+}
+
+function topicLabelFor(slug) {
+  const found = topicEditOptions.find((o) => o.v === slug)
+  return found ? found.label : slug
+}
+
+function toggleTopicPicker(caseId) {
+  openTopicPickerCaseId.value = openTopicPickerCaseId.value === caseId ? null : caseId
+}
+
 function initCaseForms() {
   const next = {}
   for (const row of props.cases?.data || []) {
@@ -1118,6 +1205,9 @@ function initCaseForms() {
       status: canonicalVoiceCaseStatus(row.status),
       assigned_to: row.assigned_to != null ? Number(row.assigned_to) : null,
       regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
+      follow_up_target: row.follow_up_target || '',
+      severity: normalizeEditSeverity(row.severity),
+      topics: normalizeTopicSlugs(row.topics),
     }
   }
   caseForms.value = next
@@ -1338,9 +1428,11 @@ function updateCase(caseId) {
     ...voiceIndexPostExtras(),
     status: form.status,
     assigned_to: form.assigned_to ?? null,
-    /** Hanya Regional di UI; kosongkan daftar follower lama di meta agar tidak double-alur. */
     notify_follower_user_ids: [],
     regional_user_ids: Array.isArray(form.regional_user_ids) ? form.regional_user_ids : [],
+    case_severity: form.severity || 'neutral',
+    follow_up_target: form.follow_up_target || null,
+    case_topics: Array.isArray(form.topics) ? form.topics : [],
   }, {
     preserveScroll: true,
     onSuccess: () => {
@@ -1850,6 +1942,15 @@ function severityClass(sev) {
   if (s === 'minor' || s === 'mild_negative') return 'bg-amber-100 text-amber-700'
   if (s === 'positive') return 'bg-emerald-100 text-emerald-700'
   return 'bg-slate-100 text-slate-700'
+}
+
+function severitySelectClass(sev) {
+  const s = String(sev || '').toLowerCase()
+  if (s === 'critical') return 'border-rose-300 bg-rose-50 text-rose-700'
+  if (s === 'major') return 'border-orange-300 bg-orange-50 text-orange-700'
+  if (s === 'minor') return 'border-amber-300 bg-amber-50 text-amber-700'
+  if (s === 'positive') return 'border-emerald-300 bg-emerald-50 text-emerald-700'
+  return 'border-slate-200 bg-slate-50 text-slate-600'
 }
 
 function isOpenStatus(statusValue) {
