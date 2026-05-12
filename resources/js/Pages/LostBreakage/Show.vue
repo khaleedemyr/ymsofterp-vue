@@ -33,6 +33,7 @@
               <tr class="bg-gray-100">
                 <th class="px-3 py-2 border text-left">#</th>
                 <th class="px-3 py-2 border text-left">Item</th>
+                <th class="px-3 py-2 border text-center">Tipe</th>
                 <th class="px-3 py-2 border text-right">Qty</th>
                 <th class="px-3 py-2 border text-left">Unit</th>
                 <th class="px-3 py-2 border text-left">Keterangan</th>
@@ -43,6 +44,9 @@
               <tr v-for="(d, i) in details" :key="d.id" class="hover:bg-gray-50">
                 <td class="px-3 py-2 border">{{ i + 1 }}</td>
                 <td class="px-3 py-2 border font-medium">{{ d.item_name }}</td>
+                <td class="px-3 py-2 border text-center">
+                  <span :class="d.type === 'breakage' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'" class="px-2 py-0.5 rounded-full text-xs font-semibold capitalize">{{ d.type || 'lost' }}</span>
+                </td>
                 <td class="px-3 py-2 border text-right">{{ formatNumber(d.qty) }}</td>
                 <td class="px-3 py-2 border">{{ d.unit_name }}</td>
                 <td class="px-3 py-2 border">{{ d.note || '-' }}</td>
@@ -54,7 +58,7 @@
                 </td>
               </tr>
               <tr v-if="!details || details.length === 0">
-                <td colspan="6" class="text-center py-6 text-gray-400">Tidak ada item.</td>
+                <td colspan="7" class="text-center py-6 text-gray-400">Tidak ada item.</td>
               </tr>
             </tbody>
           </table>

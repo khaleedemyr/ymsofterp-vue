@@ -139,9 +139,16 @@
                     </div>
                   </div>
 
-                  <!-- Qty + Unit -->
+                  <!-- Type + Qty + Unit -->
                   <div :class="item.selectedItem && item.selectedItem.image ? 'lg:col-span-5' : 'lg:col-span-4'">
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
+                      <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1.5">Tipe <span class="text-red-400">*</span></label>
+                        <select v-model="item.type" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all">
+                          <option value="lost">Lost</option>
+                          <option value="breakage">Breakage</option>
+                        </select>
+                      </div>
                       <div>
                         <label class="block text-xs font-semibold text-slate-500 mb-1.5">Qty <span class="text-red-400">*</span></label>
                         <input type="number" min="0.01" step="0.01" v-model.number="item.qty" :disabled="!item.item_id" placeholder="0" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all disabled:opacity-40" />
@@ -161,20 +168,23 @@
                     <textarea v-model="item.note" rows="2" placeholder="Alasan lost/breakage..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all resize-none"></textarea>
                   </div>
 
-                  <!-- Photo Bukti (Optional) -->
+                  <!-- Photo Bukti -->
                   <div class="lg:col-span-4">
-                    <label class="block text-xs font-semibold text-slate-500 mb-1.5">Foto Bukti <span class="text-slate-300 font-normal">(opsional)</span></label>
+                    <label class="block text-xs font-semibold text-slate-500 mb-1.5">
+                      Foto Bukti
+                      <span v-if="item.type === 'breakage'" class="text-red-400">*</span>
+                      <span v-else class="text-slate-300 font-normal">(opsional)</span>
+                    </label>
                     <div class="flex items-center gap-2 flex-wrap">
                       <label class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 border-dashed rounded-xl hover:bg-slate-100 cursor-pointer transition-all">
                         <i class="fa fa-folder-open text-slate-400"></i>
                         <span>File</span>
                         <input type="file" accept="image/*" @change="(e) => handlePhoto(e, idx)" class="hidden" />
                       </label>
-                      <label class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 border-dashed rounded-xl hover:bg-blue-100 cursor-pointer transition-all">
+                      <button type="button" @click="openCamera(idx)" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 border-dashed rounded-xl hover:bg-blue-100 transition-all">
                         <i class="fa fa-camera text-blue-400"></i>
                         <span>Kamera</span>
-                        <input type="file" accept="image/*" capture="environment" @change="(e) => handlePhoto(e, idx)" class="hidden" />
-                      </label>
+                      </button>
                       <div v-if="item.photoUploading" class="text-xs text-orange-500"><i class="fa fa-spinner fa-spin"></i></div>
                       <div v-if="item.photoPreview" class="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-200 cursor-pointer group" @click="openLightbox(item.photoPreview)">
                         <img :src="item.photoPreview" class="w-full h-full object-cover" />
@@ -263,6 +273,26 @@
       </div>
     </div>
 
+    <!-- Camera Modal -->
+    <Teleport to="body">
+      <Transition name="lightbox-fade">
+        <div v-if="cameraActive" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm">
+          <div class="relative w-full max-w-lg">
+            <video ref="cameraVideo" autoplay playsinline class="w-full rounded-2xl shadow-2xl"></video>
+            <canvas ref="cameraCanvas" class="hidden"></canvas>
+          </div>
+          <div class="flex items-center gap-4 mt-6">
+            <button type="button" @click="capturePhoto" class="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-xl hover:scale-105 transition-transform">
+              <div class="w-12 h-12 rounded-full border-4 border-slate-300"></div>
+            </button>
+            <button type="button" @click="closeCamera" class="w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/40 transition-all">
+              <i class="fa fa-times text-lg"></i>
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Lightbox -->
     <Teleport to="body">
       <Transition name="lightbox-fade">
@@ -277,7 +307,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
@@ -292,12 +322,17 @@ const outletDisabled = computed(() => userOutletId.value != 1)
 const isEdit = computed(() => props.isEdit || false)
 const assetItems = computed(() => props.items || [])
 const lightboxSrc = ref(null)
+const cameraActive = ref(false)
+const cameraItemIdx = ref(null)
+const cameraVideo = ref(null)
+const cameraCanvas = ref(null)
+let cameraStream = null
 
 function openLightbox(src) { lightboxSrc.value = src }
 
 let uidCounter = 0
 function newItem() {
-  return { _uid: ++uidCounter, item_id: '', selectedItem: null, qty: '', unit_id: '', note: '', photo: '', photoPreview: '', photoUploading: false, availableUnits: [] }
+  return { _uid: ++uidCounter, item_id: '', selectedItem: null, type: 'lost', qty: '', unit_id: '', note: '', photo: '', photoPreview: '', photoUploading: false, availableUnits: [] }
 }
 
 function buildUnitsForItem(d) {
@@ -312,7 +347,7 @@ function initItems() {
   if (props.details?.length > 0) {
     return props.details.map(d => {
       const m = assetItems.value.find(i => i.id == d.item_id)
-      return { _uid: ++uidCounter, item_id: d.item_id, selectedItem: m || { id: d.item_id, name: d.item_name }, qty: Number(d.qty), unit_id: d.unit_id, note: d.note || '', photo: d.photo || '', photoPreview: d.photo ? `/storage/${d.photo}` : '', photoUploading: false, availableUnits: m ? buildUnitsForItem(m) : buildUnitsForItem(d) }
+      return { _uid: ++uidCounter, item_id: d.item_id, selectedItem: m || { id: d.item_id, name: d.item_name }, type: d.type || 'lost', qty: Number(d.qty), unit_id: d.unit_id, note: d.note || '', photo: d.photo || '', photoPreview: d.photo ? `/storage/${d.photo}` : '', photoUploading: false, availableUnits: m ? buildUnitsForItem(m) : buildUnitsForItem(d) }
     })
   }
   return [newItem()]
@@ -357,6 +392,45 @@ async function handlePhoto(e, idx) {
   finally { item.photoUploading = false }
 }
 
+async function openCamera(idx) {
+  cameraItemIdx.value = idx
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+    cameraActive.value = true
+    await nextTick()
+    if (cameraVideo.value) cameraVideo.value.srcObject = cameraStream
+  } catch (err) {
+    Swal.fire({ icon: 'warning', title: 'Kamera tidak tersedia', text: 'Pastikan browser memiliki izin akses kamera, atau gunakan tombol File untuk upload foto.' })
+  }
+}
+
+function closeCamera() {
+  cameraActive.value = false
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null }
+}
+
+async function capturePhoto() {
+  if (!cameraVideo.value || !cameraCanvas.value) return
+  const video = cameraVideo.value
+  const canvas = cameraCanvas.value
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  canvas.getContext('2d').drawImage(video, 0, 0)
+  closeCamera()
+
+  const idx = cameraItemIdx.value
+  const item = form.value.items[idx]
+  item.photoUploading = true
+  try {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+    const fd = new FormData()
+    fd.append('photo', blob, `camera-${Date.now()}.jpg`)
+    const res = await axios.post('/lost-breakage/upload-photo', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    if (res.data.success) { item.photo = res.data.path; item.photoPreview = res.data.url }
+  } catch (err) { Swal.fire({ icon: 'error', title: 'Upload gagal', text: err.response?.data?.message || err.message }) }
+  finally { item.photoUploading = false }
+}
+
 // Approver
 const approverSearch = ref('')
 const approverResults = ref([])
@@ -376,7 +450,7 @@ function removeApprover(i) { form.value.approvers.splice(i, 1) }
 function reorderApprover(from, to) { const l = form.value.approvers; l.splice(to, 0, l.splice(from, 1)[0]) }
 
 function buildPayload() {
-  return { header_id: form.value.header_id, date: form.value.date, outlet_id: form.value.outlet_id, notes: form.value.notes, items: form.value.items.filter(i => i.item_id).map(i => ({ item_id: i.item_id, qty: i.qty, unit_id: i.unit_id, note: i.note, photo: i.photo })) }
+  return { header_id: form.value.header_id, date: form.value.date, outlet_id: form.value.outlet_id, notes: form.value.notes, items: form.value.items.filter(i => i.item_id).map(i => ({ item_id: i.item_id, type: i.type, qty: i.qty, unit_id: i.unit_id, note: i.note, photo: i.photo })) }
 }
 
 async function saveDraft() {
@@ -392,6 +466,8 @@ async function saveDraft() {
 async function submitForm() {
   if (!form.value.date || !form.value.outlet_id) { Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Tanggal dan Outlet wajib diisi.' }); return }
   if (validItemCount.value === 0) { Swal.fire({ icon: 'warning', title: 'Item kosong', text: 'Minimal 1 item harus ditambahkan.' }); return }
+  const breakageNoPhoto = form.value.items.filter(i => i.item_id && i.type === 'breakage' && !i.photo)
+  if (breakageNoPhoto.length > 0) { Swal.fire({ icon: 'warning', title: 'Foto wajib untuk Breakage', text: 'Item bertipe Breakage wajib dilampirkan foto bukti.' }); return }
   if (form.value.approvers.length === 0) { Swal.fire({ icon: 'warning', title: 'Approver kosong', text: 'Wajib menambahkan minimal 1 approver.' }); return }
   submitting.value = true; loading.value = true
   try {

@@ -91,10 +91,17 @@
                   <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" :class="statusBadgeClass(row.status)">{{ statusLabel(row.status) }}</span>
                 </td>
                 <td class="px-3 py-3">
-                  <div v-if="row.approval_flows && row.approval_flows.length > 0" class="flex flex-wrap gap-1 max-w-[200px]">
-                    <span v-for="f in row.approval_flows" :key="f.approval_level" :class="approvalBadgeClass(f.status)" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap" :title="`Level ${f.approval_level}: ${f.approver_name} (${f.status})`">
-                      L{{ f.approval_level }}
-                    </span>
+                  <div v-if="row.approval_flows && row.approval_flows.length > 0" class="space-y-1 max-w-[250px]">
+                    <div v-for="f in row.approval_flows" :key="f.approval_level" class="flex items-start gap-1.5">
+                      <span :class="approvalBadgeClass(f.status)" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap shrink-0 mt-0.5">
+                        L{{ f.approval_level }}
+                      </span>
+                      <div class="min-w-0">
+                        <div class="text-xs font-medium text-gray-800 truncate">{{ f.approver_name }}</div>
+                        <div v-if="f.approved_at" class="text-[10px] text-green-600">{{ formatDateTime(f.approved_at) }}</div>
+                        <div v-else-if="f.rejected_at" class="text-[10px] text-red-600">{{ formatDateTime(f.rejected_at) }}</div>
+                      </div>
+                    </div>
                   </div>
                   <span v-else class="text-xs text-gray-400">-</span>
                 </td>
@@ -108,7 +115,7 @@
                   <div class="flex items-center justify-center gap-1">
                     <button class="inline-flex items-center justify-center w-8 h-8 bg-green-100 text-green-700 hover:bg-green-200 rounded transition" @click="goDetail(row.id)" title="Detail"><i class="fa fa-eye text-sm"></i></button>
                     <button v-if="row.status === 'DRAFT'" class="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition" @click="goEdit(row.id)" title="Edit"><i class="fa fa-edit text-sm"></i></button>
-                    <button v-if="row.status === 'DRAFT' || row.status === 'REJECTED'" class="inline-flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 hover:bg-red-200 rounded transition" @click="onDelete(row.id)" :disabled="loadingId === row.id" title="Hapus">
+                    <button v-if="row.status === 'DRAFT' || row.status === 'REJECTED' || canForceDelete" class="inline-flex items-center justify-center w-8 h-8 bg-red-100 text-red-700 hover:bg-red-200 rounded transition" @click="onDelete(row.id)" :disabled="loadingId === row.id" title="Hapus">
                       <i :class="loadingId === row.id ? 'fa fa-spinner fa-spin' : 'fa fa-trash'" class="text-sm"></i>
                     </button>
                   </div>
@@ -141,6 +148,7 @@ import axios from 'axios'
 const page = usePage()
 const user = computed(() => page.props.auth?.user || {})
 const isAdmin = computed(() => user.value.id_outlet == 1)
+const canForceDelete = computed(() => user.value.division_id == 13 || user.value.id_role === '5af56935b011a')
 
 watch(() => page.props.flash, (flash) => {
   if (flash?.error) Swal.fire({ icon: 'error', title: 'Error', html: flash.error, confirmButtonColor: '#EF4444' })
@@ -181,6 +189,7 @@ function onDelete(id) {
 
 function formatDate(d) { return d ? new Date(d).toLocaleDateString('id-ID') : '-' }
 function formatTime(d) { return d ? new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-' }
+function formatDateTime(d) { if (!d) return '-'; const dt = new Date(d); return dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) }
 
 function statusLabel(s) { return { DRAFT: 'Draft', SUBMITTED: 'Menunggu Approval', APPROVED: 'Disetujui', REJECTED: 'Ditolak' }[s] || s }
 function statusBadgeClass(s) { return { DRAFT: 'bg-gray-100 text-gray-800', SUBMITTED: 'bg-yellow-100 text-yellow-800', APPROVED: 'bg-green-100 text-green-800', REJECTED: 'bg-red-100 text-red-800' }[s] || 'bg-gray-100 text-gray-800' }

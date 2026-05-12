@@ -192,11 +192,20 @@ class LostBreakageController extends Controller
             'notes'              => 'nullable|string',
             'items'              => 'nullable|array',
             'items.*.item_id'    => 'required_with:items|exists:items,id',
+            'items.*.type'       => 'required_with:items|in:lost,breakage',
             'items.*.qty'        => 'required_with:items|numeric|min:0.01',
             'items.*.unit_id'    => 'required_with:items|exists:units,id',
             'items.*.note'       => 'nullable|string',
             'items.*.photo'      => 'nullable|string',
         ]);
+
+        if ($request->has('items')) {
+            foreach ($request->items as $idx => $item) {
+                if (($item['type'] ?? '') === 'breakage' && empty($item['photo'])) {
+                    return redirect()->back()->withErrors(["items.{$idx}.photo" => 'Foto wajib untuk item bertipe Breakage.'])->withInput();
+                }
+            }
+        }
 
         $userId = Auth::id();
         if (!$userId) {
@@ -265,6 +274,7 @@ class LostBreakageController extends Controller
                     DB::table('lost_breakage_details')->insert([
                         'header_id'  => $headerId,
                         'item_id'    => $item['item_id'],
+                        'type'       => $item['type'] ?? 'lost',
                         'qty'        => $item['qty'],
                         'unit_id'    => $item['unit_id'],
                         'note'       => $item['note'] ?? null,
@@ -617,7 +627,10 @@ class LostBreakageController extends Controller
             return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
         }
 
-        if (!in_array($header->status, ['DRAFT', 'REJECTED'])) {
+        $currentUser = auth()->user();
+        $canForceDelete = $currentUser && ($currentUser->division_id == 13 || $currentUser->id_role === '5af56935b011a');
+
+        if (!$canForceDelete && !in_array($header->status, ['DRAFT', 'REJECTED'])) {
             return response()->json(['success' => false, 'message' => 'Hanya data DRAFT atau REJECTED yang bisa dihapus'], 400);
         }
 

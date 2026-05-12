@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS `lost_breakage_approval_flows` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================
+-- Add type column (run once if table already exists)
+-- =============================================================
+ALTER TABLE `lost_breakage_details` ADD COLUMN `type` enum('lost','breakage') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'lost' AFTER `item_id`;
+
+-- =============================================================
 -- Menu registration (run once)
 -- =============================================================
 INSERT IGNORE INTO `erp_menu` (`name`, `code`, `icon`, `route`, `parent_id`, `sort_order`, `created_at`, `updated_at`)
