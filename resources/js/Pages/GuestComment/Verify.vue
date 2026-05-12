@@ -14,6 +14,9 @@ const props = defineProps({
   lockedOutlet: { type: Object, default: null },
   ratingOptions: Array,
   readOnly: Boolean,
+  requiresCapa: { type: Boolean, default: false },
+  issueSeverity: { type: String, default: '' },
+  existingCapa: { type: Object, default: null },
 });
 
 function initialOutletId() {
@@ -48,7 +51,33 @@ const f = useForm({
   marketing_source: props.form.marketing_source || '',
   id_outlet: initialOutletId(),
   mark_verified: false,
+  capa_kronologi: props.existingCapa?.kronologi || '',
+  capa_corrective_action: props.existingCapa?.corrective_action || '',
+  capa_preventive_action: props.existingCapa?.preventive_action || '',
 });
+
+const severityLabel = {
+  critical: 'CRITICAL',
+  severe: 'CRITICAL',
+  major: 'MAJOR',
+  negative: 'MAJOR',
+  minor: 'MINOR',
+  mild_negative: 'MINOR',
+};
+
+const severityColor = {
+  critical: { bg: '#fef2f2', border: '#fca5a5', text: '#991b1b', icon: '#dc2626' },
+  severe: { bg: '#fef2f2', border: '#fca5a5', text: '#991b1b', icon: '#dc2626' },
+  major: { bg: '#fff7ed', border: '#fdba74', text: '#9a3412', icon: '#ea580c' },
+  negative: { bg: '#fff7ed', border: '#fdba74', text: '#9a3412', icon: '#ea580c' },
+  minor: { bg: '#fefce8', border: '#fde047', text: '#854d0e', icon: '#ca8a04' },
+  mild_negative: { bg: '#fefce8', border: '#fde047', text: '#854d0e', icon: '#ca8a04' },
+};
+
+function capaIncomplete() {
+  if (!props.requiresCapa) return false;
+  return !f.capa_kronologi.trim() || !f.capa_corrective_action.trim() || !f.capa_preventive_action.trim();
+}
 
 const avatarLightboxVisible = ref(false);
 const avatarLightboxImages = ref([]);
@@ -62,6 +91,16 @@ function openAvatarLightbox({ src }) {
 }
 
 function save() {
+  if (f.mark_verified && capaIncomplete()) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'CAPA belum lengkap',
+      html: 'Severity <b>' + (severityLabel[props.issueSeverity] || props.issueSeverity.toUpperCase()) + '</b> — Leader wajib mengisi <b>Kronologi</b>, <b>Corrective Action</b>, dan <b>Preventive Action</b> sebelum verifikasi.',
+      confirmButtonColor: '#dc2626',
+    });
+    return;
+  }
+
   Swal.fire({
     title: f.mark_verified ? 'Menyimpan & memverifikasi…' : 'Menyimpan…',
     allowOutsideClick: false,
@@ -247,6 +286,101 @@ function save() {
                   Akun Anda belum memiliki outlet (id_outlet). Hubungi admin.
                 </p>
               </template>
+            </div>
+          </div>
+
+          <!-- CAPA Section -->
+          <div
+            v-if="requiresCapa"
+            class="rounded-xl p-4 space-y-3"
+            :style="{
+              backgroundColor: severityColor[issueSeverity]?.bg || '#fef2f2',
+              border: '2px solid ' + (severityColor[issueSeverity]?.border || '#fca5a5'),
+            }"
+          >
+            <div class="flex items-start gap-3">
+              <div
+                class="shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+                :style="{ backgroundColor: (severityColor[issueSeverity]?.border || '#fca5a5') + '40' }"
+              >
+                <i class="fa-solid fa-triangle-exclamation text-lg" :style="{ color: severityColor[issueSeverity]?.icon || '#dc2626' }"></i>
+              </div>
+              <div>
+                <p class="font-bold text-sm" :style="{ color: severityColor[issueSeverity]?.text || '#991b1b' }">
+                  Severity: {{ severityLabel[issueSeverity] || issueSeverity.toUpperCase() }}
+                </p>
+                <p class="text-xs mt-0.5" :style="{ color: severityColor[issueSeverity]?.text || '#991b1b', opacity: 0.8 }">
+                  Leader wajib mengisi CAPA (Corrective &amp; Preventive Action) sebelum data ini bisa diverifikasi.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase mb-1" :style="{ color: severityColor[issueSeverity]?.text || '#991b1b' }">
+                Kronologi kejadian *
+              </label>
+              <textarea
+                v-model="f.capa_kronologi"
+                rows="3"
+                class="w-full rounded-lg border px-3 py-2 text-sm"
+                :class="{ 'border-red-400 bg-red-50': f.errors.capa_kronologi }"
+                :disabled="readOnly"
+                placeholder="Jelaskan kronologi kejadian yang menyebabkan keluhan tamu…"
+              />
+              <p v-if="f.errors.capa_kronologi" class="text-xs text-red-600 mt-0.5">{{ f.errors.capa_kronologi }}</p>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase mb-1" :style="{ color: severityColor[issueSeverity]?.text || '#991b1b' }">
+                Corrective Action *
+              </label>
+              <textarea
+                v-model="f.capa_corrective_action"
+                rows="3"
+                class="w-full rounded-lg border px-3 py-2 text-sm"
+                :class="{ 'border-red-400 bg-red-50': f.errors.capa_corrective_action }"
+                :disabled="readOnly"
+                placeholder="Tindakan perbaikan segera yang dilakukan…"
+              />
+              <p v-if="f.errors.capa_corrective_action" class="text-xs text-red-600 mt-0.5">{{ f.errors.capa_corrective_action }}</p>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold uppercase mb-1" :style="{ color: severityColor[issueSeverity]?.text || '#991b1b' }">
+                Preventive Action *
+              </label>
+              <textarea
+                v-model="f.capa_preventive_action"
+                rows="3"
+                class="w-full rounded-lg border px-3 py-2 text-sm"
+                :class="{ 'border-red-400 bg-red-50': f.errors.capa_preventive_action }"
+                :disabled="readOnly"
+                placeholder="Langkah pencegahan agar kejadian tidak terulang…"
+              />
+              <p v-if="f.errors.capa_preventive_action" class="text-xs text-red-600 mt-0.5">{{ f.errors.capa_preventive_action }}</p>
+            </div>
+          </div>
+
+          <!-- Read-only CAPA display for verified forms -->
+          <div
+            v-if="readOnly && existingCapa && (existingCapa.kronologi || existingCapa.corrective_action || existingCapa.preventive_action)"
+            class="rounded-xl border-2 border-slate-200 bg-slate-50 p-4 space-y-2"
+          >
+            <p class="font-bold text-sm text-slate-700 flex items-center gap-2">
+              <i class="fa-solid fa-clipboard-check text-emerald-500"></i>
+              CAPA (Telah diisi)
+            </p>
+            <div>
+              <p class="text-xs font-bold text-slate-500 uppercase">Kronologi</p>
+              <p class="text-sm text-slate-800 whitespace-pre-line">{{ existingCapa.kronologi || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-bold text-slate-500 uppercase">Corrective Action</p>
+              <p class="text-sm text-slate-800 whitespace-pre-line">{{ existingCapa.corrective_action || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-bold text-slate-500 uppercase">Preventive Action</p>
+              <p class="text-sm text-slate-800 whitespace-pre-line">{{ existingCapa.preventive_action || '—' }}</p>
             </div>
           </div>
 

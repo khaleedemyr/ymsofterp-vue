@@ -661,9 +661,18 @@ class GuestCommentFormController extends Controller
 
         $guest_comment_form->load(['creator:id,nama_lengkap,avatar', 'verifier:id,nama_lengkap,avatar', 'outlet:id_outlet,nama_outlet']);
 
+        $existingCapa = DB::table('guest_comment_capas')
+            ->where('guest_comment_form_id', $guest_comment_form->id)
+            ->first();
+
         return Inertia::render('GuestComment/Show', [
             'form' => $guest_comment_form,
             'imageUrl' => Storage::disk('public')->url($guest_comment_form->image_path),
+            'existingCapa' => $existingCapa ? [
+                'kronologi' => (string) ($existingCapa->kronologi ?? ''),
+                'corrective_action' => (string) ($existingCapa->corrective_action ?? ''),
+                'preventive_action' => (string) ($existingCapa->preventive_action ?? ''),
+            ] : null,
         ]);
     }
 
@@ -687,6 +696,13 @@ class GuestCommentFormController extends Controller
                 ->first(['id_outlet', 'nama_outlet']);
         }
 
+        $existingCapa = DB::table('guest_comment_capas')
+            ->where('guest_comment_form_id', $guest_comment_form->id)
+            ->first();
+
+        $severity = strtolower(trim((string) ($guest_comment_form->issue_severity ?? '')));
+        $requiresCapa = in_array($severity, ['critical', 'major', 'minor', 'severe', 'negative', 'mild_negative'], true);
+
         return Inertia::render('GuestComment/Verify', [
             'form' => $guest_comment_form,
             'imageUrl' => Storage::disk('public')->url($guest_comment_form->image_path),
@@ -695,6 +711,13 @@ class GuestCommentFormController extends Controller
             'lockedOutlet' => $lockedOutlet,
             'ratingOptions' => self::RATINGS,
             'readOnly' => $guest_comment_form->status === 'verified',
+            'requiresCapa' => $requiresCapa,
+            'issueSeverity' => $severity,
+            'existingCapa' => $existingCapa ? [
+                'kronologi' => (string) ($existingCapa->kronologi ?? ''),
+                'corrective_action' => (string) ($existingCapa->corrective_action ?? ''),
+                'preventive_action' => (string) ($existingCapa->preventive_action ?? ''),
+            ] : null,
         ]);
     }
 
@@ -730,11 +753,17 @@ class GuestCommentFormController extends Controller
             'marketing_source' => 'nullable|string|max:255',
             'id_outlet' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'mark_verified' => 'nullable|boolean',
+            'capa_kronologi' => 'nullable|string|max:5000',
+            'capa_corrective_action' => 'nullable|string|max:5000',
+            'capa_preventive_action' => 'nullable|string|max:5000',
         ];
 
         $data = $request->validate($rules);
         $markVerified = ! empty($data['mark_verified']);
-        unset($data['mark_verified']);
+        $capaKronologi = trim((string) ($data['capa_kronologi'] ?? ''));
+        $capaCorrective = trim((string) ($data['capa_corrective_action'] ?? ''));
+        $capaPreventive = trim((string) ($data['capa_preventive_action'] ?? ''));
+        unset($data['mark_verified'], $data['capa_kronologi'], $data['capa_corrective_action'], $data['capa_preventive_action']);
 
         foreach (['rating_service', 'rating_food', 'rating_beverage', 'rating_cleanliness', 'rating_staff', 'rating_value'] as $rk) {
             if (array_key_exists($rk, $data) && $data[$rk] === '') {
@@ -749,6 +778,22 @@ class GuestCommentFormController extends Controller
 
         $guest_comment_form->fill($data);
 
+        $severity = strtolower(trim((string) ($guest_comment_form->issue_severity ?? '')));
+        $requiresCapa = in_array($severity, ['critical', 'major', 'minor', 'severe', 'negative', 'mild_negative'], true);
+
+        if ($markVerified && $requiresCapa) {
+            if ($capaKronologi === '' || $capaCorrective === '' || $capaPreventive === '') {
+                return redirect()->route('guest-comment-forms.verify', $guest_comment_form)
+                    ->withErrors([
+                        'capa_kronologi' => $capaKronologi === '' ? 'Kronologi wajib diisi untuk severity ini.' : null,
+                        'capa_corrective_action' => $capaCorrective === '' ? 'Corrective Action wajib diisi.' : null,
+                        'capa_preventive_action' => $capaPreventive === '' ? 'Preventive Action wajib diisi.' : null,
+                    ])
+                    ->withInput()
+                    ->with('error', 'Severity '.$severity.' — Leader wajib mengisi CAPA sebelum verifikasi.');
+            }
+        }
+
         if ($markVerified) {
             $guest_comment_form->status = 'verified';
             $guest_comment_form->verified_by = $request->user()->id;
@@ -756,6 +801,37 @@ class GuestCommentFormController extends Controller
         }
 
         $guest_comment_form->save();
+
+        if ($requiresCapa && ($capaKronologi !== '' || $capaCorrective !== '' || $capaPreventive !== '')) {
+            $now = now();
+            $existing = DB::table('guest_comment_capas')
+                ->where('guest_comment_form_id', $guest_comment_form->id)
+                ->first();
+
+            if ($existing) {
+                DB::table('guest_comment_capas')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'kronologi' => $capaKronologi,
+                        'corrective_action' => $capaCorrective,
+                        'preventive_action' => $capaPreventive,
+                        'filled_by' => $request->user()->id,
+                        'filled_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+            } else {
+                DB::table('guest_comment_capas')->insert([
+                    'guest_comment_form_id' => $guest_comment_form->id,
+                    'kronologi' => $capaKronologi,
+                    'corrective_action' => $capaCorrective,
+                    'preventive_action' => $capaPreventive,
+                    'filled_by' => $request->user()->id,
+                    'filled_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        }
 
         if ($markVerified) {
             return redirect()->route('guest-comment-forms.show', $guest_comment_form)

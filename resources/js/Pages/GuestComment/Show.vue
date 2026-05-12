@@ -8,6 +8,7 @@ import GuestCommentUserAvatar from '@/Components/GuestCommentUserAvatar.vue';
 const props = defineProps({
   form: Object,
   imageUrl: String,
+  existingCapa: { type: Object, default: null },
 });
 
 const lightboxOpen = ref(false);
@@ -212,6 +213,29 @@ function r(v) {
           <div><span class="text-gray-500">Outlet (di form)</span> · {{ form.praised_staff_outlet || '—' }}</div>
           <div><span class="text-gray-500">Sumber info (marketing)</span> · {{ form.marketing_source || '—' }}</div>
           <div><span class="text-gray-500">Outlet (master)</span> · {{ form.outlet?.nama_outlet || '—' }}</div>
+
+          <!-- CAPA display -->
+          <template v-if="existingCapa && (existingCapa.kronologi || existingCapa.corrective_action || existingCapa.preventive_action)">
+            <hr class="my-2" />
+            <div class="rounded-xl border-2 border-slate-200 bg-slate-50 p-4 space-y-2">
+              <p class="font-bold text-sm text-slate-700 flex items-center gap-2">
+                <i class="fa-solid fa-clipboard-check text-emerald-500"></i>
+                CAPA (Corrective &amp; Preventive Action)
+              </p>
+              <div>
+                <p class="text-xs font-bold text-slate-500 uppercase">Kronologi</p>
+                <p class="text-gray-900 whitespace-pre-line">{{ existingCapa.kronologi || '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-500 uppercase">Corrective Action</p>
+                <p class="text-gray-900 whitespace-pre-line">{{ existingCapa.corrective_action || '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-500 uppercase">Preventive Action</p>
+                <p class="text-gray-900 whitespace-pre-line">{{ existingCapa.preventive_action || '—' }}</p>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
     </div>
