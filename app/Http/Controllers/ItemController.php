@@ -2041,13 +2041,22 @@ class ItemController extends Controller
                 ->value('outlet_id');
         }
 
+        $assetCategoryIds = \DB::table('categories')
+            ->where('is_asset', '1')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($assetCategoryIds)) {
+            return response()->json([]);
+        }
+
         $items = \DB::table('items')
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
             ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
             ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
             ->where('items.status', 'active')
-            ->where('categories.is_asset', 1)
+            ->whereIn('items.category_id', $assetCategoryIds)
             ->where(function ($query) use ($q) {
                 if ($q) {
                     $query->where('items.name', 'like', "%{$q}%")

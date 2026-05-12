@@ -25,7 +25,7 @@ SET @pr_assets_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'pr_assets
 INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
 (@pr_assets_menu_id, 'view',   'pr_assets_view',   NOW(), NOW()),
 (@pr_assets_menu_id, 'create', 'pr_assets_create', NOW(), NOW()),
-(@pr_assets_menu_id, 'edit',   'pr_assets_edit',   NOW(), NOW()),
+(@pr_assets_menu_id, 'update',   'pr_assets_edit',   NOW(), NOW()),
 (@pr_assets_menu_id, 'delete', 'pr_assets_delete', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
@@ -77,9 +77,36 @@ SET @ait_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_inventory
 INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
 (@ait_menu_id, 'view',    'asset_inventory_transfer_view',    NOW(), NOW()),
 (@ait_menu_id, 'create',  'asset_inventory_transfer_create',  NOW(), NOW()),
-(@ait_menu_id, 'edit',    'asset_inventory_transfer_edit',    NOW(), NOW()),
+(@ait_menu_id, 'update',    'asset_inventory_transfer_edit',    NOW(), NOW()),
 (@ait_menu_id, 'delete',  'asset_inventory_transfer_delete',  NOW(), NOW()),
 (@ait_menu_id, 'approve', 'asset_inventory_transfer_approve', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
+-- 4. Asset Stock Adjustment menu
+INSERT INTO `erp_menu` (
+    `name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`
+) VALUES (
+    'Asset Stock Adjustment',
+    'asset_stock_adjustment',
+    251,
+    '/asset-inventory-adjustments',
+    'fa-solid fa-sliders',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @asa_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_stock_adjustment' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@asa_menu_id, 'view',    'asset_stock_adjustment_view',    NOW(), NOW()),
+(@asa_menu_id, 'create',  'asset_stock_adjustment_create',  NOW(), NOW()),
+(@asa_menu_id, 'update',  'asset_stock_adjustment_edit',    NOW(), NOW()),
+(@asa_menu_id, 'delete',  'asset_stock_adjustment_delete',  NOW(), NOW()),
+(@asa_menu_id, 'approve', 'asset_stock_adjustment_approve', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
 COMMIT;

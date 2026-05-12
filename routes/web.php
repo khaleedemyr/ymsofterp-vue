@@ -648,6 +648,15 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve'])->name('asset-inventory-transfers.approve');
     Route::get('/asset-inventory-transfer/approvers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovers'])->name('asset-inventory-transfers.approvers');
 
+    // Asset Inventory Adjustment
+    Route::get('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'index'])->name('asset-inventory-adjustments.index');
+    Route::get('/asset-inventory-adjustments/create', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'create'])->name('asset-inventory-adjustments.create');
+    Route::post('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'store'])->name('asset-inventory-adjustments.store');
+    Route::get('/asset-inventory-adjustments/{id}', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'show'])->name('asset-inventory-adjustments.show');
+    Route::delete('/asset-inventory-adjustments/{id}', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'destroy'])->name('asset-inventory-adjustments.destroy');
+    Route::post('/asset-inventory-adjustments/{id}/approve', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'approve'])->name('asset-inventory-adjustments.approve');
+    Route::get('/asset-inventory-adjustment/approvers', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getApprovers'])->name('asset-inventory-adjustments.approvers');
+
 });
 
 // Test route outside middleware

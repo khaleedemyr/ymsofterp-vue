@@ -1237,7 +1237,16 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiDestroy']);
         Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit']);
         Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve']);
-        
+
+        // Asset Inventory Adjustment
+        Route::get('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiIndex']);
+        Route::get('/asset-inventory-adjustments/create-data', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiCreateData']);
+        Route::post('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiStore']);
+        Route::get('/asset-inventory-adjustment/approvers', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getApprovers']);
+        Route::get('/asset-inventory-adjustments/{id}', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiShow']);
+        Route::delete('/asset-inventory-adjustments/{id}', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiDestroy']);
+        Route::post('/asset-inventory-adjustments/{id}/approve', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'approve']);
+
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
