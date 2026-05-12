@@ -359,6 +359,7 @@ Route::prefix('approval-app')->group(function () {
         // Internal Warehouse Transfer (Approval App - transfer antar gudang dalam 1 outlet)
         Route::get('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiIndex']);
         Route::get('/internal-warehouse-transfers/create-data', [InternalWarehouseTransferController::class, 'apiCreateData']);
+        Route::post('/internal-warehouse-transfers/validate-serial', [InternalWarehouseTransferController::class, 'validateSerialForIWT']);
         Route::get('/internal-warehouse-transfers/{id}', [InternalWarehouseTransferController::class, 'apiShow']);
         Route::post('/internal-warehouse-transfers', [InternalWarehouseTransferController::class, 'apiStore']);
 
@@ -515,6 +516,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-transfers/create-data', [OutletTransferController::class, 'apiCreateData']);
         Route::get('/outlet-transfers/{id}', [OutletTransferController::class, 'apiShow']);
         Route::post('/outlet-transfers', [OutletTransferController::class, 'apiStore']);
+        Route::post('/outlet-transfers/validate-serial', [OutletTransferController::class, 'validateSerialForTransfer']);
         Route::post('/outlet-transfers/{id}/submit', [OutletTransferController::class, 'submit']);
         Route::post('/outlet-transfers/{id}/approve', [OutletTransferController::class, 'apiApprove']);
         Route::get('/outlet-transfer/approvers', [OutletTransferController::class, 'getApprovers']);

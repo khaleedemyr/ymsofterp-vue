@@ -16,6 +16,7 @@ class InternalWarehouseTransfer extends Model
         'warehouse_outlet_from_id',
         'warehouse_outlet_to_id',
         'notes',
+        'transfer_mode',
         'created_by',
     ];
 

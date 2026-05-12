@@ -1021,6 +1021,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'index'])->name('internal-warehouse-transfer.index');
     Route::get('/internal-warehouse-transfer/create', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'create'])->name('internal-warehouse-transfer.create');
     Route::post('/internal-warehouse-transfer', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'store'])->name('internal-warehouse-transfer.store');
+    Route::post('/internal-warehouse-transfer/validate-serial', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'validateSerialForIWT'])->name('internal-warehouse-transfer.validate-serial');
     Route::get('/internal-warehouse-transfer/{id}', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'show'])->name('internal-warehouse-transfer.show');
     Route::delete('/internal-warehouse-transfer/{id}', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'destroy'])->name('internal-warehouse-transfer.destroy');
     Route::get('/internal-warehouse-transfer/{id}/edit', [\App\Http\Controllers\InternalWarehouseTransferController::class, 'edit'])->name('internal-warehouse-transfer.edit');

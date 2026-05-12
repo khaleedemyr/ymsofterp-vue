@@ -132,6 +132,44 @@
             </div>
           </div>
 
+          <!-- Transfer Mode Badge -->
+          <div v-if="transfer.transfer_mode && transfer.transfer_mode !== 'normal'" class="mb-6">
+            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold"
+              :class="transfer.transfer_mode === 'serial' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'">
+              <i class="fa fa-qrcode"></i>
+              {{ transfer.transfer_mode === 'serial' ? 'Mode Serial' : 'Mode Mixed' }}
+            </span>
+          </div>
+
+          <!-- Serial Items Table -->
+          <div v-if="serialItems && serialItems.length > 0" class="mb-6">
+            <h4 class="text-sm font-medium text-indigo-700 mb-3">Serial Items</h4>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-indigo-200">
+                <thead class="bg-indigo-50">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">Nomor Seri</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">Item</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">SKU</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">Qty</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">Unit</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-indigo-600 uppercase tracking-wider">Cost</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="si in serialItems" :key="si.id" class="hover:bg-indigo-50/50">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono font-semibold text-indigo-600">{{ si.serial_number }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ si.item_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ si.sku }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(si.qty) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ si.unit_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(si.cost_small) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Summary -->
           <div class="bg-gray-50 p-4 rounded-lg">
             <h4 class="text-sm font-medium text-gray-700 mb-3">Summary</h4>
@@ -162,6 +200,7 @@ import { Link } from '@inertiajs/vue3'
 const props = defineProps({
   transfer: Object,
   outlets: Object,
+  serialItems: Array,
 })
 
 // Format functions
