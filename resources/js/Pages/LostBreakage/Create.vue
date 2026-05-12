@@ -164,15 +164,23 @@
                   <!-- Photo Bukti (Optional) -->
                   <div class="lg:col-span-4">
                     <label class="block text-xs font-semibold text-slate-500 mb-1.5">Foto Bukti <span class="text-slate-300 font-normal">(opsional)</span></label>
-                    <div class="flex items-center gap-3">
-                      <label class="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 border-dashed rounded-xl hover:bg-slate-100 cursor-pointer transition-all">
-                        <i class="fa fa-camera text-slate-400"></i>
-                        <span>{{ item.photo ? 'Ganti' : 'Upload' }}</span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <label class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 border-dashed rounded-xl hover:bg-slate-100 cursor-pointer transition-all">
+                        <i class="fa fa-folder-open text-slate-400"></i>
+                        <span>File</span>
                         <input type="file" accept="image/*" @change="(e) => handlePhoto(e, idx)" class="hidden" />
                       </label>
+                      <label class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 border-dashed rounded-xl hover:bg-blue-100 cursor-pointer transition-all">
+                        <i class="fa fa-camera text-blue-400"></i>
+                        <span>Kamera</span>
+                        <input type="file" accept="image/*" capture="environment" @change="(e) => handlePhoto(e, idx)" class="hidden" />
+                      </label>
                       <div v-if="item.photoUploading" class="text-xs text-orange-500"><i class="fa fa-spinner fa-spin"></i></div>
-                      <div v-if="item.photoPreview" class="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-200 cursor-pointer" @click="openLightbox(item.photoPreview)">
+                      <div v-if="item.photoPreview" class="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-200 cursor-pointer group" @click="openLightbox(item.photoPreview)">
                         <img :src="item.photoPreview" class="w-full h-full object-cover" />
+                        <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <i class="fa fa-search-plus text-white text-xs"></i>
+                        </div>
                       </div>
                     </div>
                   </div>
