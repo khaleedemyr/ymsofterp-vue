@@ -37,7 +37,8 @@ class AssetGoodReceiveController extends Controller
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
-            );
+            )
+            ->addSelect(DB::raw('(SELECT COALESCE(SUM(gri.total), 0) FROM asset_good_receive_items gri WHERE gri.asset_good_receive_id = gr.id) as total'));
 
         if ($user->id_outlet != 1) {
             $query->where('gr.outlet_id', $user->id_outlet);
@@ -51,11 +52,11 @@ class AssetGoodReceiveController extends Controller
             });
         }
 
-        if ($request->date_from) {
-            $query->whereDate('gr.receive_date', '>=', $request->date_from);
+        if ($request->from) {
+            $query->whereDate('gr.receive_date', '>=', $request->from);
         }
-        if ($request->date_to) {
-            $query->whereDate('gr.receive_date', '<=', $request->date_to);
+        if ($request->to) {
+            $query->whereDate('gr.receive_date', '<=', $request->to);
         }
         if ($request->status) {
             $query->where('gr.status', $request->status);
@@ -74,7 +75,7 @@ class AssetGoodReceiveController extends Controller
 
         return inertia('AssetGoodReceive/Index', [
             'goodReceives' => $goodReceives,
-            'filters' => $request->only(['search', 'date_from', 'date_to', 'status', 'outlet_id']),
+            'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id']),
             'user' => $user,
             'outlets' => $outlets,
         ]);

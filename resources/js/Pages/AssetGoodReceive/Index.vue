@@ -73,17 +73,17 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
-            <tr v-if="!purchaseOrders.data || !purchaseOrders.data.length">
+            <tr v-if="!goodReceives.data || !goodReceives.data.length">
               <td colspan="8" class="text-center py-12 text-gray-400">
                 <i class="fa-solid fa-inbox text-4xl mb-3 block"></i>
                 No Asset Good Receive data found.
               </td>
             </tr>
-            <tr v-for="gr in purchaseOrders.data" :key="gr.id" class="hover:bg-blue-50 transition">
+            <tr v-for="gr in goodReceives.data" :key="gr.id" class="hover:bg-blue-50 transition">
               <td class="px-5 py-3 font-semibold text-gray-800">{{ gr.gr_number }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.po_number }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.outlet_name }}</td>
-              <td class="px-5 py-3 text-gray-700">{{ gr.warehouse_name || '-' }}</td>
+              <td class="px-5 py-3 text-gray-700">{{ gr.warehouse_outlet_name || '-' }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.receive_date }}</td>
               <td class="px-5 py-3">
                 <span
@@ -126,7 +126,7 @@
       <!-- Pagination -->
       <div class="flex justify-end mt-4 gap-2">
         <button
-          v-for="link in purchaseOrders.links"
+          v-for="link in goodReceives.links"
           :key="link.label"
           :disabled="!link.url"
           @click="goToPage(link.url)"
@@ -151,7 +151,7 @@ import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
-  purchaseOrders: Object,
+  goodReceives: Object,
   filters: Object,
   user: Object,
   outlets: Array,
