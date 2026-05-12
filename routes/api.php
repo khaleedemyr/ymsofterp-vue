@@ -826,6 +826,21 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-internal-use-waste/{id}/approve', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'approve']);
         Route::post('/outlet-internal-use-waste/{id}/reject', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'reject']);
 
+        // Lost & Breakage (approval-app)
+        Route::get('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'index']);
+        Route::get('/lost-breakage/items', [\App\Http\Controllers\LostBreakageController::class, 'apiGetAssetItems']);
+        Route::get('/lost-breakage/approvers', [\App\Http\Controllers\LostBreakageController::class, 'getApprovers']);
+        Route::get('/lost-breakage/item-units/{id}', [\App\Http\Controllers\LostBreakageController::class, 'getItemUnits']);
+        Route::get('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'apiShow']);
+        Route::post('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'store']);
+        Route::post('/lost-breakage/{id}/submit', [\App\Http\Controllers\LostBreakageController::class, 'submit']);
+        Route::post('/lost-breakage/{id}/approve', [\App\Http\Controllers\LostBreakageController::class, 'approve']);
+        Route::post('/lost-breakage/{id}/reject', [\App\Http\Controllers\LostBreakageController::class, 'reject']);
+        Route::post('/lost-breakage/upload-photo', [\App\Http\Controllers\LostBreakageController::class, 'uploadPhoto']);
+        Route::delete('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'destroy']);
+        Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'apiReport']);
+        Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails']);
+
         // Warehouse Internal Use & Waste (approval-app)
         Route::get('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiIndex']);
         Route::get('/internal-use-waste/create-data', [\App\Http\Controllers\InternalUseWasteController::class, 'apiCreateData']);

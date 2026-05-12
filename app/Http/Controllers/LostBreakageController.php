@@ -830,6 +830,101 @@ class LostBreakageController extends Controller
         }
     }
 
+    public function apiGetAssetItems(Request $request)
+    {
+        $items = $this->getAssetItems();
+        $search = $request->input('search');
+        if ($search) {
+            $q = strtolower($search);
+            $items = $items->filter(function ($item) use ($q) {
+                return str_contains(strtolower($item->name), $q) || str_contains(strtolower($item->sku ?? ''), $q);
+            })->values();
+        }
+        return response()->json($items);
+    }
+
+    public function apiShow($id)
+    {
+        $header = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->where('h.id', $id)
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name')
+            ->first();
+
+        if (!$header) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $details = DB::table('lost_breakage_details as d')
+            ->join('items as i', 'd.item_id', '=', 'i.id')
+            ->join('units as u', 'd.unit_id', '=', 'u.id')
+            ->leftJoin('units as su', 'i.small_unit_id', '=', 'su.id')
+            ->leftJoin('units as mu', 'i.medium_unit_id', '=', 'mu.id')
+            ->leftJoin('units as lu', 'i.large_unit_id', '=', 'lu.id')
+            ->where('d.header_id', $id)
+            ->select('d.*', 'i.name as item_name', 'u.name as unit_name', 'su.name as small_unit_name', 'mu.name as medium_unit_name', 'lu.name as large_unit_name', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id')
+            ->get();
+
+        $approvalFlows = DB::table('lost_breakage_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.header_id', $id)
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'u.email as approver_email', 'j.nama_jabatan as approver_jabatan')
+            ->orderBy('af.approval_level')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $header,
+            'details' => $details,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
+    public function apiReport(Request $request)
+    {
+        $user = auth()->user();
+        $query = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name');
+
+        if ($user->id_outlet != 1) {
+            $query->where('h.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.outlet_id', $request->outlet_id);
+        }
+        if ($request->filled('status')) $query->where('h.status', $request->status);
+        if ($request->filled('date_from')) $query->whereDate('h.date', '>=', $request->date_from);
+        if ($request->filled('date_to')) $query->whereDate('h.date', '<=', $request->date_to);
+
+        $data = $query->orderByDesc('h.date')->orderByDesc('h.id')->paginate(20)->withQueryString();
+        $headerIds = collect($data->items())->pluck('id')->toArray();
+        if (!empty($headerIds)) {
+            $detailRows = DB::table('lost_breakage_details')
+                ->whereIn('header_id', $headerIds)
+                ->select('header_id', DB::raw('COUNT(*) as cnt'), DB::raw("SUM(CASE WHEN type='lost' THEN 1 ELSE 0 END) as lost_count"), DB::raw("SUM(CASE WHEN type='breakage' THEN 1 ELSE 0 END) as breakage_count"))
+                ->groupBy('header_id')->get();
+            $countMap = []; $typeMap = [];
+            foreach ($detailRows as $r) { $countMap[$r->header_id] = $r->cnt; $typeMap[$r->header_id] = ['lost' => $r->lost_count, 'breakage' => $r->breakage_count]; }
+            $approvalRows = DB::table('lost_breakage_approval_flows as af')->join('users as u', 'af.approver_id', '=', 'u.id')->whereIn('af.header_id', $headerIds)->orderBy('af.approval_level')->select('af.*', 'u.nama_lengkap as approver_name')->get();
+            $approvalMap = [];
+            foreach ($approvalRows as $af) { $approvalMap[$af->header_id][] = $af; }
+            $data->getCollection()->transform(function ($item) use ($countMap, $typeMap, $approvalMap) {
+                $item->item_count = $countMap[$item->id] ?? 0;
+                $item->type_summary = $typeMap[$item->id] ?? ['lost' => 0, 'breakage' => 0];
+                $item->approval_flows = $approvalMap[$item->id] ?? [];
+                return $item;
+            });
+        }
+        $outlets = [];
+        if ($user->id_outlet == 1) {
+            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        }
+        return response()->json(['data' => $data, 'outlets' => $outlets]);
+    }
+
     public function report(Request $request)
     {
         $user = auth()->user();
