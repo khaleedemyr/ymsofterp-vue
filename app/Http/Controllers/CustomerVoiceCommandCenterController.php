@@ -58,6 +58,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.raw_text',
                 'c.risk_score',
                 'c.status',
+                'c.follow_up_status',
                 'c.assigned_to',
                 'assignee.nama_lengkap as assigned_to_name',
                 'aj.nama_jabatan as assigned_to_jabatan',
@@ -131,6 +132,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.event_at',
                 'c.summary_id',
                 'c.status',
+                'c.follow_up_status',
                 'c.severity',
                 'o.nama_outlet',
                 'c.meta',
@@ -166,6 +168,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'event_at' => $r->event_at,
                 'summary_id' => $r->summary_id,
                 'status' => (string) ($r->status ?? ''),
+                'follow_up_status' => (string) ($r->follow_up_status ?? 'new'),
                 'severity' => (string) ($r->severity ?? ''),
                 'nama_outlet' => (string) ($r->nama_outlet ?? ''),
                 'pending_divisions' => $pendingDivisions,
@@ -347,12 +350,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
         $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
-        $autoDone = $this->autoCompleteIfAllCapaVerified($request, $id);
-
         $message = 'Form CAPA tersimpan.';
-        if ($autoDone) {
-            $message .= ' Status otomatis diubah ke Done karena semua CAPA sudah diverifikasi.';
-        }
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -546,12 +544,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
         $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
-        $autoDone = $this->autoCompleteIfAllCapaVerified($request, $id);
-
         $message = 'Form CAPA tersimpan.';
-        if ($autoDone) {
-            $message .= ' Status otomatis diubah ke Done karena semua CAPA sudah diverifikasi.';
-        }
 
         return response()->json([
             'success' => true,
@@ -717,6 +710,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.raw_text',
                 'c.risk_score',
                 'c.status',
+                'c.follow_up_status',
                 'c.assigned_to',
                 'assignee.nama_lengkap as assigned_to_name',
                 'c.due_at',
@@ -874,6 +868,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.raw_text',
                 'c.risk_score',
                 'c.status',
+                'c.follow_up_status',
                 'c.assigned_to',
                 'assignee.nama_lengkap as assigned_to_name',
                 'aj.nama_jabatan as assigned_to_jabatan',
@@ -1069,6 +1064,7 @@ class CustomerVoiceCommandCenterController extends Controller
                 'c.raw_text',
                 'c.risk_score',
                 'c.status',
+                'c.follow_up_status',
                 'c.assigned_to',
                 'assignee.nama_lengkap as assigned_to_name',
                 'aj.nama_jabatan as assigned_to_jabatan',
@@ -1675,6 +1671,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'raw_text' => $case->raw_text !== null ? (string) $case->raw_text : null,
             'risk_score' => (int) ($case->risk_score ?? 0),
             'status' => (string) ($case->status ?? ''),
+            'follow_up_status' => (string) ($case->follow_up_status ?? 'new'),
             'assigned_to' => $case->assigned_to !== null ? (int) $case->assigned_to : null,
             'assigned_to_name' => $case->assigned_to_name !== null ? (string) $case->assigned_to_name : null,
             'assigned_to_jabatan' => isset($case->assigned_to_jabatan) && $case->assigned_to_jabatan !== null && $case->assigned_to_jabatan !== ''
@@ -1759,7 +1756,8 @@ class CustomerVoiceCommandCenterController extends Controller
     private function runFeedbackCaseRowUpdate(Request $request, int $id): array
     {
         $payload = $request->validate([
-            'status' => 'required|string|in:new,courtesy_by_cs,follow_up_by_ops,done,in_progress,resolved,ignored',
+            'status' => 'required|string|in:new,internal_follow_up,courtesy_done',
+            'follow_up_status' => 'nullable|string|in:new,on_progress,done',
             'assigned_to' => 'nullable|integer|exists:users,id',
             'notify_follower_user_ids' => 'nullable|array|max:30',
             'notify_follower_user_ids.*' => 'integer|exists:users,id',
@@ -1792,7 +1790,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'assigned_to' => $newAssignee,
             'updated_at' => $now,
         ];
-        if ($toStatus === 'done') {
+        if ($toStatus === 'courtesy_done') {
             $update['resolved_at'] = $now;
             if ($row->first_response_at === null) {
                 $update['first_response_at'] = $now;
@@ -1802,6 +1800,10 @@ class CustomerVoiceCommandCenterController extends Controller
             if ($toStatus !== 'new' && $row->first_response_at === null) {
                 $update['first_response_at'] = $now;
             }
+        }
+
+        if (array_key_exists('follow_up_status', $payload)) {
+            $update['follow_up_status'] = $payload['follow_up_status'];
         }
 
         $oldSeverity = strtolower(trim((string) ($row->severity ?? '')));
@@ -2005,78 +2007,6 @@ class CustomerVoiceCommandCenterController extends Controller
         if ($lines !== []) {
             NotificationService::createMany($lines);
         }
-    }
-
-    /**
-     * Jika semua divisi CAPA yang terisi sudah diverifikasi (effective / not_effective),
-     * otomatis ubah status case ke "done".
-     *
-     * @return bool True jika status berubah ke done.
-     */
-    private function autoCompleteIfAllCapaVerified(Request $request, int $id): bool
-    {
-        $row = DB::table('feedback_cases')->where('id', $id)->first();
-        if ($row === null) {
-            return false;
-        }
-
-        if (in_array(strtolower(trim((string) ($row->status ?? ''))), $this->voiceCaseCompletedStatuses(), true)) {
-            return false;
-        }
-
-        $meta = [];
-        if (! empty($row->meta)) {
-            $meta = json_decode((string) $row->meta, true) ?: [];
-        }
-
-        $divisions = $this->normalizeCapaDivisionsFromMeta($meta);
-
-        $filledDivisions = [];
-        foreach (['service', 'kitchen', 'bar'] as $divKey) {
-            if ($this->capaService->storedCapaHasUserInput($divisions[$divKey] ?? null)) {
-                $filledDivisions[] = $divKey;
-            }
-        }
-
-        if ($filledDivisions === []) {
-            return false;
-        }
-
-        foreach ($filledDivisions as $divKey) {
-            $state = $this->capaService->storedCapaVerificationState($divisions[$divKey] ?? null);
-            if (($state['state'] ?? '') !== 'done') {
-                return false;
-            }
-        }
-
-        $fromStatus = (string) ($row->status ?? 'new');
-        $now = now();
-
-        DB::transaction(function () use ($id, $fromStatus, $request, $now, $row) {
-            $update = [
-                'status' => 'done',
-                'resolved_at' => $now,
-                'updated_at' => $now,
-            ];
-            if ($row->first_response_at === null) {
-                $update['first_response_at'] = $now;
-            }
-
-            DB::table('feedback_cases')->where('id', $id)->update($update);
-
-            DB::table('feedback_case_activities')->insert([
-                'case_id' => $id,
-                'activity_type' => 'status_changed',
-                'actor_user_id' => $request->user()->id ?? null,
-                'from_status' => $fromStatus,
-                'to_status' => 'done',
-                'note' => 'Otomatis Done — semua CAPA sudah diverifikasi.',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-        });
-
-        return true;
     }
 
     private function severityToSlaMinutes(string $severity): ?int
@@ -2327,13 +2257,13 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * Status antrian (belum Done). Memuat legacy in_progress sampai migrasi data selesai.
+     * Status antrian (belum selesai). Legacy values ditangani oleh voiceCaseStatusFilterValues().
      *
      * @return list<string>
      */
     private function voiceCaseOpenStatuses(): array
     {
-        return ['new', 'courtesy_by_cs', 'follow_up_by_ops', 'in_progress'];
+        return ['new', 'internal_follow_up'];
     }
 
     /**
@@ -2343,14 +2273,14 @@ class CustomerVoiceCommandCenterController extends Controller
      */
     private function voiceCaseCompletedStatuses(): array
     {
-        return ['done', 'resolved', 'ignored'];
+        return ['courtesy_done'];
     }
 
     private function normalizeIncomingVoiceCaseStatus(string $status): string
     {
         return match ($status) {
-            'in_progress' => 'follow_up_by_ops',
-            'resolved', 'ignored' => 'done',
+            'courtesy_by_cs', 'follow_up_by_ops', 'in_progress' => 'internal_follow_up',
+            'done', 'resolved', 'ignored' => 'courtesy_done',
             default => $status,
         };
     }
@@ -2376,8 +2306,8 @@ class CustomerVoiceCommandCenterController extends Controller
         $filter = trim($filter);
 
         return match ($filter) {
-            'follow_up_by_ops' => ['follow_up_by_ops', 'in_progress'],
-            'done' => ['done', 'resolved', 'ignored'],
+            'internal_follow_up' => ['internal_follow_up', 'courtesy_by_cs', 'follow_up_by_ops', 'in_progress'],
+            'courtesy_done' => ['courtesy_done', 'done', 'resolved', 'ignored'],
             default => [$filter],
         };
     }

@@ -183,7 +183,7 @@
       </div>
 
       <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="grid gap-3 md:grid-cols-7">
+        <div class="grid gap-3 md:grid-cols-8">
           <input
             v-model="q"
             type="text"
@@ -192,10 +192,15 @@
             @keyup.enter="applyFilters"
           />
           <select v-model="status" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
-            <option value="">Semua status</option>
+            <option value="">Semua Courtesy Status</option>
             <option value="new">New</option>
-            <option value="courtesy_by_cs">Courtesy by CS</option>
-            <option value="follow_up_by_ops">Follow Up by Ops</option>
+            <option value="internal_follow_up">Internal Follow Up</option>
+            <option value="courtesy_done">Courtesy Done</option>
+          </select>
+          <select v-model="followUpStatus" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
+            <option value="">Semua Follow Up Status</option>
+            <option value="new">New</option>
+            <option value="on_progress">On Progress</option>
             <option value="done">Done</option>
           </select>
           <select v-model="severity" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
@@ -237,7 +242,7 @@
             Arsip: Done &amp; positif
           </button>
           <p v-if="!showAll" class="text-xs text-slate-500">
-            Antrian kerja: status masih <span class="font-semibold text-slate-600">open</span> (New, Courtesy by CS, Follow Up by Ops, serta <span class="font-semibold">in_progress</span> di DB bila belum diubah) — severity selain positif &amp; netral.
+            Antrian kerja: status masih <span class="font-semibold text-slate-600">open</span> (New, Internal Follow Up) — severity selain positif &amp; netral.
           </p>
         </div>
         <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 md:flex-row md:flex-wrap md:items-end">
@@ -312,13 +317,14 @@
                 </th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
                 <th class="px-3 py-3 text-left font-semibold">CS PIC</th>
-                <th class="px-3 py-3 text-left font-semibold">Status</th>
+                <th class="px-3 py-3 text-left font-semibold">Courtesy Status</th>
+                <th class="px-3 py-3 text-left font-semibold">Follow Up Status</th>
                 <th class="px-3 py-3 text-left font-semibold">Aksi</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!cases.data?.length">
-                <td colspan="12" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
+                <td colspan="13" class="px-4 py-14 text-center text-slate-400">Belum ada case.</td>
               </tr>
               <template v-for="row in cases.data" :key="row.id">
                 <tr
@@ -483,8 +489,17 @@
                       class="h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                     >
                       <option value="new">New</option>
-                      <option value="courtesy_by_cs">Courtesy by CS</option>
-                      <option value="follow_up_by_ops">Follow Up by Ops</option>
+                      <option value="internal_follow_up">Internal Follow Up</option>
+                      <option value="courtesy_done">Courtesy Done</option>
+                    </select>
+                  </td>
+                  <td class="px-3 py-3 min-w-[150px]">
+                    <select
+                      v-model="caseForms[row.id].follow_up_status"
+                      class="h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    >
+                      <option value="new">New</option>
+                      <option value="on_progress">On Progress</option>
                       <option value="done">Done</option>
                     </select>
                   </td>
@@ -660,7 +675,7 @@
             </div>
           </div>
 
-          <div class="grid gap-3 sm:grid-cols-4">
+          <div class="grid gap-3 sm:grid-cols-5">
             <div class="rounded-xl border border-slate-200 p-3">
               <div class="text-[11px] uppercase tracking-wide text-slate-400">Severity</div>
               <span class="mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="severityClass(selectedCase.severity)">
@@ -672,9 +687,15 @@
               <div class="mt-1 text-sm font-semibold text-slate-800">{{ selectedCase.risk_score ?? 0 }}</div>
             </div>
             <div class="rounded-xl border border-slate-200 p-3">
-              <div class="text-[11px] uppercase tracking-wide text-slate-400">Status</div>
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">Courtesy Status</div>
               <span class="mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="statusClass(selectedCase.status)">
                 {{ voiceCaseStatusLabel(selectedCase.status) }}
+              </span>
+            </div>
+            <div class="rounded-xl border border-slate-200 p-3">
+              <div class="text-[11px] uppercase tracking-wide text-slate-400">Follow Up Status</div>
+              <span class="mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold" :class="followUpStatusClass(selectedCase.follow_up_status)">
+                {{ followUpStatusLabel(selectedCase.follow_up_status) }}
               </span>
             </div>
             <div class="rounded-xl border border-slate-200 p-3">
@@ -807,7 +828,7 @@
           <div>
             <h3 class="text-base font-bold text-slate-900">Arsip: Done &amp; ulasan positif</h3>
             <p class="mt-0.5 text-xs text-slate-500">
-              Kasus dengan status <span class="font-semibold">Done</span> (termasuk <span class="font-semibold">resolved</span> / <span class="font-semibold">ignored</span> di DB) atau severity <span class="font-semibold">positive</span>.
+              Kasus dengan courtesy status <span class="font-semibold">Courtesy Done</span> (termasuk <span class="font-semibold">resolved</span> / <span class="font-semibold">ignored</span> di DB) atau severity <span class="font-semibold">positive</span>.
             </p>
           </div>
           <button
@@ -828,10 +849,15 @@
               @keyup.enter="applyArchiveFilters"
             />
             <select v-model="archiveFilter.status" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
-              <option value="">Semua status</option>
+              <option value="">Semua Courtesy Status</option>
               <option value="new">New</option>
-              <option value="courtesy_by_cs">Courtesy by CS</option>
-              <option value="follow_up_by_ops">Follow Up by Ops</option>
+              <option value="internal_follow_up">Internal Follow Up</option>
+              <option value="courtesy_done">Courtesy Done</option>
+            </select>
+            <select v-model="archiveFilter.follow_up_status" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
+              <option value="">Semua Follow Up Status</option>
+              <option value="new">New</option>
+              <option value="on_progress">On Progress</option>
               <option value="done">Done</option>
             </select>
             <select v-model="archiveFilter.severity" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
@@ -913,14 +939,15 @@
                     <th class="px-2 py-2 text-left font-semibold">Outlet</th>
                     <th class="px-2 py-2 text-left font-semibold">Severity</th>
                     <th class="px-2 py-2 text-left font-semibold">Jenis komplain</th>
-                    <th class="px-2 py-2 text-left font-semibold">Status</th>
+                    <th class="px-2 py-2 text-left font-semibold">Courtesy Status</th>
+                    <th class="px-2 py-2 text-left font-semibold">Follow Up Status</th>
                     <th class="px-2 py-2 text-left font-semibold">Ringkasan</th>
                     <th class="px-2 py-2 text-left font-semibold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!archiveCases.length">
-                    <td colspan="7" class="px-2 py-10 text-center text-slate-400">Tidak ada data di arsip untuk filter ini.</td>
+                    <td colspan="8" class="px-2 py-10 text-center text-slate-400">Tidak ada data di arsip untuk filter ini.</td>
                   </tr>
                   <tr v-for="row in archiveCases" :key="row.id" class="border-b border-slate-50 align-top">
                     <td class="px-2 py-2 whitespace-nowrap text-xs text-slate-600">{{ formatDate(row.event_at) }}</td>
@@ -945,6 +972,11 @@
                     <td class="px-2 py-2">
                       <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClass(row.status)">
                         {{ voiceCaseStatusLabel(row.status) }}
+                      </span>
+                    </td>
+                    <td class="px-2 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="followUpStatusClass(row.follow_up_status)">
+                        {{ followUpStatusLabel(row.follow_up_status) }}
                       </span>
                     </td>
                     <td class="px-2 py-2">
@@ -1087,6 +1119,7 @@ const capaFormDirty = ref(false)
 const caseForms = ref({})
 const q = ref(props.filters?.q || '')
 const status = ref(props.filters?.status || '')
+const followUpStatus = ref(props.filters?.follow_up_status || '')
 const severity = ref(props.filters?.severity || '')
 const sourceType = ref(props.filters?.source_type || '')
 const idOutlet = ref(props.filters?.id_outlet ? String(props.filters.id_outlet) : '')
@@ -1105,6 +1138,7 @@ function emptyArchiveFilter() {
   return {
     q: '',
     status: '',
+    follow_up_status: '',
     severity: '',
     source_type: '',
     id_outlet: '',
@@ -1181,8 +1215,8 @@ function normalizeUserIdList(row, key) {
 /** Samakan nilai DB lama ke opsi form (tanpa migrasi data). */
 function canonicalVoiceCaseStatus(raw) {
   const s = String(raw || 'new').toLowerCase()
-  if (s === 'in_progress') return 'follow_up_by_ops'
-  if (s === 'resolved' || s === 'ignored') return 'done'
+  if (s === 'courtesy_by_cs' || s === 'follow_up_by_ops' || s === 'in_progress') return 'internal_follow_up'
+  if (s === 'done' || s === 'resolved' || s === 'ignored') return 'courtesy_done'
   return s
 }
 
@@ -1191,13 +1225,22 @@ function voiceCaseStatusLabel(raw) {
   const s = String(raw || '').toLowerCase()
   const map = {
     new: 'New',
-    courtesy_by_cs: 'Courtesy by CS',
-    follow_up_by_ops: 'Follow Up by Ops',
-    done: 'Done',
-    in_progress: 'Follow Up by Ops',
-    resolved: 'Done',
-    ignored: 'Done',
+    internal_follow_up: 'Internal Follow Up',
+    courtesy_done: 'Courtesy Done',
+    courtesy_by_cs: 'Internal Follow Up',
+    follow_up_by_ops: 'Internal Follow Up',
+    done: 'Courtesy Done',
+    in_progress: 'Internal Follow Up',
+    resolved: 'Courtesy Done',
+    ignored: 'Courtesy Done',
   }
+  if (!s) return '—'
+  return map[s] || raw
+}
+
+function followUpStatusLabel(raw) {
+  const s = String(raw || '').toLowerCase()
+  const map = { new: 'New', on_progress: 'On Progress', done: 'Done' }
   if (!s) return '—'
   return map[s] || raw
 }
@@ -1237,6 +1280,7 @@ function initCaseForms() {
   for (const row of props.cases?.data || []) {
     next[row.id] = {
       status: canonicalVoiceCaseStatus(row.status),
+      follow_up_status: row.follow_up_status || 'new',
       assigned_to: row.assigned_to != null ? Number(row.assigned_to) : null,
       regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
       follow_up_target: row.follow_up_target || '',
@@ -1280,6 +1324,7 @@ function voiceIndexPostExtras() {
   const payload = {
     q: q.value || undefined,
     list_status: status.value ?? '',
+    list_follow_up_status: followUpStatus.value ?? '',
     severity: severity.value || undefined,
     source_type: sourceType.value || undefined,
     id_outlet: idOutlet.value || undefined,
@@ -1316,6 +1361,7 @@ const exportPdfHref = computed(() => {
   }
   if (q.value) params.q = q.value
   if (status.value) params.status = status.value
+  if (followUpStatus.value) params.follow_up_status = followUpStatus.value
   if (severity.value) params.severity = severity.value
   if (sourceType.value) params.source_type = sourceType.value
   if (idOutlet.value) params.id_outlet = idOutlet.value
@@ -1328,6 +1374,7 @@ function syncArchiveFiltersFromMain() {
   archiveFilter.value = {
     q: q.value || '',
     status: status.value || '',
+    follow_up_status: followUpStatus.value || '',
     severity: severity.value || '',
     source_type: sourceType.value || '',
     id_outlet: idOutlet.value || '',
@@ -1363,6 +1410,7 @@ async function fetchArchivePage(page) {
     params.set('per_page', '20')
     if (af.q) params.set('q', af.q)
     if (af.status) params.set('status', af.status)
+    if (af.follow_up_status) params.set('follow_up_status', af.follow_up_status)
     if (af.severity) params.set('severity', af.severity)
     if (af.source_type) params.set('source_type', af.source_type)
     if (af.id_outlet) params.set('id_outlet', af.id_outlet)
@@ -1461,6 +1509,7 @@ function updateCase(caseId) {
   router.post(`/customer-voice-command-center/cases/${caseId}/update`, {
     ...voiceIndexPostExtras(),
     status: form.status,
+    follow_up_status: form.follow_up_status || 'new',
     assigned_to: form.assigned_to ?? null,
     notify_follower_user_ids: [],
     regional_user_ids: Array.isArray(form.regional_user_ids) ? form.regional_user_ids : [],
@@ -1753,13 +1802,13 @@ function complaintTypeLabelsFor(row) {
 
 function statusRowClasses(status) {
   const s = String(status || 'new').toLowerCase()
-  if (s === 'done' || s === 'resolved' || s === 'ignored') {
+  if (s === 'courtesy_done' || s === 'done' || s === 'resolved' || s === 'ignored') {
     return {
       main: 'border-t border-emerald-200/90 bg-emerald-50/85 hover:bg-emerald-50',
       timeline: 'border-t border-emerald-200/70 bg-emerald-50/45',
     }
   }
-  if (s === 'follow_up_by_ops' || s === 'in_progress') {
+  if (s === 'internal_follow_up' || s === 'follow_up_by_ops' || s === 'in_progress') {
     return {
       main: 'border-t border-indigo-200/90 bg-indigo-50/85 hover:bg-indigo-50',
       timeline: 'border-t border-indigo-200/70 bg-indigo-50/45',
@@ -1781,6 +1830,7 @@ function applyFilters() {
   router.get('/customer-voice-command-center', {
     q: q.value,
     status: status.value,
+    follow_up_status: followUpStatus.value,
     severity: severity.value,
     source_type: sourceType.value,
     id_outlet: idOutlet.value,
@@ -1841,9 +1891,15 @@ function impactLabel(arr) {
 
 function statusClass(statusValue) {
   const s = String(statusValue || '').toLowerCase()
-  if (s === 'done' || s === 'resolved' || s === 'ignored') return 'bg-emerald-100 text-emerald-700'
-  if (s === 'follow_up_by_ops' || s === 'in_progress') return 'bg-indigo-100 text-indigo-700'
-  if (s === 'courtesy_by_cs') return 'bg-sky-100 text-sky-800'
+  if (s === 'courtesy_done' || s === 'done' || s === 'resolved' || s === 'ignored') return 'bg-emerald-100 text-emerald-700'
+  if (s === 'internal_follow_up' || s === 'follow_up_by_ops' || s === 'in_progress' || s === 'courtesy_by_cs') return 'bg-indigo-100 text-indigo-700'
+  return 'bg-amber-100 text-amber-700'
+}
+
+function followUpStatusClass(statusValue) {
+  const s = String(statusValue || '').toLowerCase()
+  if (s === 'done') return 'bg-emerald-100 text-emerald-700'
+  if (s === 'on_progress') return 'bg-blue-100 text-blue-700'
   return 'bg-amber-100 text-amber-700'
 }
 
@@ -2016,7 +2072,7 @@ function severityTextColor(sev) {
 
 function isOpenStatus(statusValue) {
   const s = String(statusValue || '').toLowerCase()
-  return s === 'new' || s === 'courtesy_by_cs' || s === 'follow_up_by_ops' || s === 'in_progress'
+  return s === 'new' || s === 'internal_follow_up' || s === 'courtesy_by_cs' || s === 'follow_up_by_ops' || s === 'in_progress'
 }
 
 function slaLabel(row) {
