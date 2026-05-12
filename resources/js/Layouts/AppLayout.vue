@@ -198,6 +198,7 @@ const menuGroups = [
             { name: () => 'POS Design Sync Monitor', icon: 'fa-solid fa-arrows-rotate', route: '/admin/pos-design-sync-monitor', code: 'pos_design_sync_monitor' },
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
             { name: () => 'Outlet Good Receive', icon: 'fa-solid fa-truck-loading', route: '/outlet-food-good-receives', code: 'outlet_food_good_receive' },
+            { name: () => 'GR Nomor Seri', icon: 'fa-solid fa-barcode', route: '/outlet-serial-receive', code: 'outlet_serial_receive' },
             { name: () => 'Good Receive Outlet Supplier', icon: 'fa-solid fa-truck-arrow-right', route: '/good-receive-outlet-supplier', code: 'good_receive_outlet_supplier' },
             { name: () => 'Outlet Stock Adjustment', icon: 'fa-solid fa-boxes-stacked', route: '/outlet-food-inventory-adjustment', code: 'outlet_stock_adjustment' },
             { name: () => 'Laporan Stok Akhir Outlet', icon: 'fa-solid fa-clipboard-list', route: '/outlet-inventory/stock-position', code: 'outlet_inventory_stock_position' },
