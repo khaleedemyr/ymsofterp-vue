@@ -345,12 +345,12 @@
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_contact || '—' }}</div>
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_email || '—' }}</div>
                   </td>
-                  <td class="px-3 py-3 align-top min-w-[220px]">
-                    <div class="space-y-1.5">
+                  <td class="px-3 py-3 align-top" style="min-width: 240px;">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
                       <select
                         v-model="caseForms[row.id].follow_up_target"
-                        class="h-9 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                         :disabled="updatingCaseId === row.id"
+                        style="display: block; width: 100%; height: 36px; border-radius: 8px; border: 1px solid #e2e8f0; padding: 0 8px; font-size: 12px; outline: none;"
                       >
                         <option value="">FU: belum ditentukan</option>
                         <option value="customer">FU: Customer</option>
@@ -358,9 +358,14 @@
                       </select>
                       <select
                         v-model="caseForms[row.id].severity"
-                        class="h-9 w-full rounded-lg border px-2 text-xs font-semibold outline-none transition focus:ring-2 focus:ring-slate-100"
-                        :class="severitySelectClass(caseForms[row.id].severity)"
                         :disabled="updatingCaseId === row.id"
+                        :style="{
+                          display: 'block', width: '100%', height: '36px', borderRadius: '8px',
+                          padding: '0 8px', fontSize: '12px', fontWeight: '600', outline: 'none',
+                          border: '1px solid ' + severityBorderColor(caseForms[row.id].severity),
+                          backgroundColor: severityBgColor(caseForms[row.id].severity),
+                          color: severityTextColor(caseForms[row.id].severity),
+                        }"
                       >
                         <option value="critical">Critical</option>
                         <option value="major">Major</option>
@@ -368,36 +373,38 @@
                         <option value="neutral">Neutral</option>
                         <option value="positive">Positive</option>
                       </select>
-                      <div class="relative">
+                      <div style="position: relative;">
                         <div
-                          class="flex min-h-[2.25rem] w-full cursor-pointer flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 transition hover:border-slate-300"
+                          style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 36px; width: 100%; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; padding: 4px 8px; cursor: pointer;"
                           @click="toggleTopicPicker(row.id)"
                         >
                           <template v-if="caseForms[row.id].topics.length">
                             <span
                               v-for="t in caseForms[row.id].topics"
                               :key="`btn-${row.id}-${t}`"
-                              class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-900"
+                              style="display: inline-flex; border-radius: 9999px; border: 1px solid #ddd6fe; background: #f5f3ff; padding: 2px 8px; font-size: 11px; font-weight: 500; color: #4c1d95;"
                             >{{ topicLabelFor(t) }}</span>
                           </template>
-                          <span class="text-xs text-slate-400">{{ caseForms[row.id].topics.length ? '✎' : '+ Jenis komplain' }}</span>
+                          <span style="font-size: 12px; color: #94a3b8;">{{ caseForms[row.id].topics.length ? '✎' : '+ Jenis komplain' }}</span>
                         </div>
-                        <div v-if="openTopicPickerCaseId === row.id" class="fixed inset-0 z-20" @click="openTopicPickerCaseId = null"></div>
+                        <div v-if="openTopicPickerCaseId === row.id" style="position: fixed; inset: 0; z-index: 20;" @click="openTopicPickerCaseId = null"></div>
                         <div
                           v-if="openTopicPickerCaseId === row.id"
-                          class="absolute left-0 top-full z-30 mt-1 max-h-60 w-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
+                          style="position: absolute; left: 0; top: 100%; z-index: 30; margin-top: 4px; max-height: 240px; width: 240px; overflow-y: auto; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; padding: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,.1);"
                         >
-                          <p class="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jenis Komplain</p>
+                          <p style="margin-bottom: 6px; padding: 0 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8;">Jenis Komplain</p>
                           <label
                             v-for="opt in topicEditOptions"
                             :key="`tp-${row.id}-${opt.v}`"
-                            class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-700 transition hover:bg-violet-50"
+                            style="display: flex; align-items: center; gap: 8px; border-radius: 8px; padding: 6px 8px; font-size: 12px; color: #334155; cursor: pointer;"
+                            @mouseenter="$event.target.style.background='#f5f3ff'"
+                            @mouseleave="$event.target.style.background='transparent'"
                           >
                             <input
                               type="checkbox"
                               :value="opt.v"
                               v-model="caseForms[row.id].topics"
-                              class="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                              style="width: 16px; height: 16px; border-radius: 4px;"
                             />
                             {{ opt.label }}
                           </label>
@@ -1940,6 +1947,33 @@ function severitySelectClass(sev) {
   if (s === 'minor') return 'border-amber-200 bg-amber-100 text-amber-700'
   if (s === 'positive') return 'border-emerald-200 bg-emerald-100 text-emerald-700'
   return 'border-slate-200 bg-slate-100 text-slate-600'
+}
+
+function severityBorderColor(sev) {
+  const s = String(sev || '').toLowerCase()
+  if (s === 'critical') return '#fecdd3'
+  if (s === 'major') return '#fed7aa'
+  if (s === 'minor') return '#fde68a'
+  if (s === 'positive') return '#a7f3d0'
+  return '#e2e8f0'
+}
+
+function severityBgColor(sev) {
+  const s = String(sev || '').toLowerCase()
+  if (s === 'critical') return '#ffe4e6'
+  if (s === 'major') return '#ffedd5'
+  if (s === 'minor') return '#fef3c7'
+  if (s === 'positive') return '#d1fae5'
+  return '#f1f5f9'
+}
+
+function severityTextColor(sev) {
+  const s = String(sev || '').toLowerCase()
+  if (s === 'critical') return '#be123c'
+  if (s === 'major') return '#c2410c'
+  if (s === 'minor') return '#a16207'
+  if (s === 'positive') return '#047857'
+  return '#475569'
 }
 
 function isOpenStatus(statusValue) {
