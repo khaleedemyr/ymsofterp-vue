@@ -641,7 +641,7 @@ class ButcherProcessController extends Controller
         return response()->json($summary);
     }
 
-    public function generateSerials($id)
+    public function generateSerials(Request $request, $id)
     {
         $butcherItem = DB::table('butcher_process_items as bpi')
             ->join('butcher_processes as bp', 'bp.id', '=', 'bpi.butcher_process_id')
@@ -670,11 +670,26 @@ class ButcherProcessController extends Controller
         }
 
         $qtyPcs = (float) ($butcherItem->pcs_qty ?: 0);
-        $serialCount = (int) round($qtyPcs);
-        if ($serialCount <= 0 || abs($qtyPcs - $serialCount) > 0.00001) {
+        $repackUnitId = $request->input('repack_unit_id');
+        $repackQty = (float) $request->input('repack_qty', 0);
+
+        if ($repackUnitId && $repackQty > 0) {
+            $serialCount = (int) ceil($qtyPcs / $repackQty);
+        } else {
+            $repackUnitId = null;
+            $repackQty = null;
+            $serialCount = (int) round($qtyPcs);
+            if ($serialCount <= 0 || abs($qtyPcs - $serialCount) > 0.00001) {
+                return response()->json([
+                    'message' => 'PCS Qty harus bilangan bulat positif agar bisa generate serial.',
+                    'pcs_qty' => round($qtyPcs, 4),
+                ], 422);
+            }
+        }
+
+        if ($serialCount <= 0) {
             return response()->json([
-                'message' => 'PCS Qty harus bilangan bulat positif agar bisa generate serial.',
-                'pcs_qty' => round($qtyPcs, 4),
+                'message' => 'Jumlah serial yang akan digenerate harus lebih dari 0.',
             ], 422);
         }
 
@@ -715,6 +730,8 @@ class ButcherProcessController extends Controller
                     'cost_medium' => $costMedium,
                     'cost_large' => $costLarge,
                     'ref_po_number' => $butcherItem->butcher_number,
+                    'repack_unit_id' => $repackUnitId,
+                    'repack_qty' => $repackQty,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,
@@ -725,10 +742,19 @@ class ButcherProcessController extends Controller
             DB::table('inventory_item_serials')->insert($rows);
             DB::commit();
 
+            $repackUnitName = $repackUnitId
+                ? DB::table('units')->where('id', $repackUnitId)->value('name')
+                : null;
+            $modeLabel = $repackUnitName
+                ? "(1 {$repackUnitName} = {$repackQty} unit asal)"
+                : "(tanpa konversi)";
+
             return response()->json([
                 'success' => true,
-                'message' => "Berhasil generate {$serialCount} serial untuk PCS item.",
+                'message' => "Berhasil generate {$serialCount} serial {$modeLabel}.",
                 'total' => $serialCount,
+                'repack_unit_id' => $repackUnitId,
+                'repack_qty' => $repackQty,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -740,11 +766,15 @@ class ButcherProcessController extends Controller
     {
         $rows = DB::table('inventory_item_serials as s')
             ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
             ->select(
                 's.id',
                 's.serial_number',
                 's.generated_at',
-                'u.name as unit_name'
+                's.repack_unit_id',
+                's.repack_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
             )
             ->where('s.source_type', 'butcher_process')
             ->where('s.source_item_id', $id)
@@ -766,6 +796,19 @@ class ButcherProcessController extends Controller
             'message' => "Rollback serial butcher berhasil. Terhapus: {$deleted}",
             'deleted' => $deleted,
         ]);
+    }
+
+    public function getSerialUnits()
+    {
+        $units = cache()->remember('active_units', 300, function() {
+            return DB::table('units')
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+        });
+
+        return response()->json($units);
     }
 
     private function generateUniqueSerialNumber(): string

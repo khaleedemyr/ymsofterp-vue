@@ -1129,6 +1129,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/butcher-process-items/{id}/generate-serials', [\App\Http\Controllers\ButcherProcessController::class, 'generateSerials'])->name('butcher-processes.generate-serials');
     Route::get('/api/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'serialList'])->name('butcher-processes.serial-list');
     Route::delete('/api/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'rollbackSerials'])->name('butcher-processes.rollback-serials');
+    Route::get('/api/butcher-serial/units', [\App\Http\Controllers\ButcherProcessController::class, 'getSerialUnits'])->name('butcher-serial.units');
 });
 
 // MK Production & Outlet WIP Production
