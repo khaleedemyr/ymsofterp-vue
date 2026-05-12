@@ -110,10 +110,13 @@ class DeliveryOrderController extends Controller
             'pl.created_at',
             'fo.order_number as floor_order_number',
             'fo.tanggal as floor_order_date',
+            'fo.id_outlet as outlet_id',
+            'fo.warehouse_outlet_id',
             'o.nama_outlet',
             'u.nama_lengkap as creator_name',
             'wd.name as division_name',
             'wd.id as warehouse_division_id',
+            'w.id as warehouse_id',
             'w.name as warehouse_name',
             'wo.name as warehouse_outlet_name'
         )
@@ -147,10 +150,13 @@ class DeliveryOrderController extends Controller
                 'gr.receive_date as created_at',
                 'fo.order_number as floor_order_number',
                 'fo.tanggal as floor_order_date',
+                'fo.id_outlet as outlet_id',
+                'fo.warehouse_outlet_id',
                 'o.nama_outlet',
                 'u.nama_lengkap as creator_name',
                 DB::raw("'Perishable' as division_name"),
                 DB::raw("1 as warehouse_division_id"),
+                DB::raw("1 as warehouse_id"),
                 DB::raw("'Warehouse 1' as warehouse_name"),
                 'wo.name as warehouse_outlet_name',
                 DB::raw("'ro_supplier_gr' as source_type"),
@@ -197,13 +203,33 @@ class DeliveryOrderController extends Controller
             ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
             ->select(
                 'doi.id',
+                'doi.item_id',
                 'i.name as item_name',
                 'doi.qty_packing_list',
                 'doi.qty_scan',
-                'doi.unit'
+                'doi.unit',
+                'doi.serial_numbers'
             )
             ->where('doi.delivery_order_id', $id)
             ->get();
+
+        // If serial mode, enrich items with serial detail from inventory_item_serials
+        if (($order->scan_mode ?? 'barcode') === 'serial') {
+            $items = $items->map(function ($item) use ($id) {
+                $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
+                $item->serial_list = [];
+                if (!empty($serialNumbers)) {
+                    $item->serial_list = DB::table('inventory_item_serials')
+                        ->whereIn('serial_number', $serialNumbers)
+                        ->where('item_id', $item->item_id)
+                        ->select('id', 'serial_number', 'out_at')
+                        ->get()
+                        ->toArray();
+                }
+                return $item;
+            });
+        }
+
         return Inertia::render('DeliveryOrder/Show', [
             'order' => $order,
             'items' => $items
@@ -272,11 +298,17 @@ class DeliveryOrderController extends Controller
             }
         }
         
+        $scanMode = $request->input('scan_mode', 'barcode');
+        $outletId = $request->input('outlet_id');
+        $warehouseOutletId = $request->input('warehouse_outlet_id');
+        
         DB::beginTransaction();
         try {
+            $doNumber = $this->generateDONumber();
             $insertData = [
-                'number' => $this->generateDONumber(),
+                'number' => $doNumber,
                 'floor_order_id' => $floorOrderId,
+                'scan_mode' => $scanMode,
                 'created_by' => auth()->id(),
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -296,6 +328,11 @@ class DeliveryOrderController extends Controller
             
             // OPTIMIZED: Batch process items instead of individual loops
             $this->processDeliveryOrderItemsBatch($doId, $request->items, $isROSupplierGR, $grId, $warehouseId);
+            
+            // Process serial numbers if in serial mode
+            if ($scanMode === 'serial' && !empty($request->scanned_serials)) {
+                $this->processSerialScans($doId, $doNumber, $request->scanned_serials, $outletId, $warehouseOutletId);
+            }
             
             // Update status RO menjadi delivered hanya jika semua packing list sudah dibuat DO
                 if ($isROSupplierGR) {
@@ -1446,6 +1483,11 @@ class DeliveryOrderController extends Controller
                     ->where('reference_id', $id)
                     ->delete();
             }
+            // Rollback serial numbers if DO was in serial mode
+            if (($order->scan_mode ?? 'barcode') === 'serial') {
+                $this->rollbackSerialScans($id, $order->number ?? '');
+            }
+            
             // Hapus delivery_order_items
             DB::table('delivery_order_items')->where('delivery_order_id', $id)->delete();
             // Hapus delivery_order
@@ -2203,5 +2245,199 @@ class DeliveryOrderController extends Controller
                 'packing_lists_without_do' => array_diff($packingListIds, $packingListsWithDO)
             ]);
         }
+    }
+
+    /**
+     * Process scanned serial numbers: flag as out, insert movements, store on DO items.
+     */
+    private function processSerialScans($doId, $doNumber, array $scannedSerials, $outletId, $warehouseOutletId)
+    {
+        $now = now();
+        $userId = auth()->id();
+        $movements = [];
+
+        foreach ($scannedSerials as $scan) {
+            $itemId = $scan['item_id'];
+            $serialNumbers = $scan['serial_numbers'] ?? [];
+
+            if (empty($serialNumbers)) continue;
+
+            // Update delivery_order_items with serial_numbers JSON
+            DB::table('delivery_order_items')
+                ->where('delivery_order_id', $doId)
+                ->where('item_id', $itemId)
+                ->update(['serial_numbers' => json_encode($serialNumbers)]);
+
+            // Flag each serial as out and prepare movement records
+            foreach ($serialNumbers as $serialNumber) {
+                $serial = DB::table('inventory_item_serials')
+                    ->where('serial_number', $serialNumber)
+                    ->where('item_id', $itemId)
+                    ->first();
+
+                if (!$serial) continue;
+
+                DB::table('inventory_item_serials')
+                    ->where('id', $serial->id)
+                    ->update([
+                        'is_out' => 1,
+                        'out_at' => $now,
+                        'out_delivery_order_id' => $doId,
+                        'out_outlet_id' => $outletId,
+                        'out_warehouse_outlet_id' => $warehouseOutletId,
+                        'updated_at' => $now,
+                    ]);
+
+                $movements[] = [
+                    'serial_id' => $serial->id,
+                    'serial_number' => $serialNumber,
+                    'movement_type' => 'out',
+                    'delivery_order_id' => $doId,
+                    'delivery_order_number' => $doNumber,
+                    'outlet_id' => $outletId,
+                    'warehouse_outlet_id' => $warehouseOutletId,
+                    'item_id' => $itemId,
+                    'qty' => 1,
+                    'unit_id' => $serial->unit_id,
+                    'moved_by' => $userId,
+                    'moved_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        if (!empty($movements)) {
+            DB::table('inventory_serial_movements')->insert($movements);
+        }
+    }
+
+    /**
+     * Rollback serial scans when a DO is deleted: reset is_out flag and log return movement.
+     */
+    private function rollbackSerialScans($doId, $doNumber)
+    {
+        $now = now();
+        $userId = auth()->id();
+
+        $serials = DB::table('inventory_item_serials')
+            ->where('out_delivery_order_id', $doId)
+            ->where('is_out', 1)
+            ->get();
+
+        if ($serials->isEmpty()) return;
+
+        $movements = [];
+        foreach ($serials as $serial) {
+            DB::table('inventory_item_serials')
+                ->where('id', $serial->id)
+                ->update([
+                    'is_out' => 0,
+                    'out_at' => null,
+                    'out_delivery_order_id' => null,
+                    'out_outlet_id' => null,
+                    'out_warehouse_outlet_id' => null,
+                    'updated_at' => $now,
+                ]);
+
+            $movements[] = [
+                'serial_id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'movement_type' => 'return',
+                'delivery_order_id' => $doId,
+                'delivery_order_number' => $doNumber,
+                'outlet_id' => $serial->out_outlet_id,
+                'warehouse_outlet_id' => $serial->out_warehouse_outlet_id,
+                'item_id' => $serial->item_id,
+                'qty' => 1,
+                'unit_id' => $serial->unit_id,
+                'moved_by' => $userId,
+                'moved_at' => $now,
+                'notes' => 'Rollback: DO deleted',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if (!empty($movements)) {
+            DB::table('inventory_serial_movements')->insert($movements);
+        }
+    }
+
+    /**
+     * Validate a serial number for DO serial scan mode.
+     * Checks: exists, not yet out, item matches packing list, warehouse matches.
+     */
+    public function validateSerial(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string',
+            'packing_list_id' => 'required',
+            'warehouse_id' => 'required|integer',
+            'item_ids' => 'required|array',
+        ]);
+
+        $serialNumber = trim($request->serial_number);
+        $warehouseId = (int) $request->warehouse_id;
+        $itemIds = $request->item_ids;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->leftJoin('items as i', 's.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.warehouse_id',
+                's.unit_id',
+                's.is_out',
+                's.inventory_item_id',
+                'i.name as item_name',
+                'u.name as unit_name'
+            )
+            ->where('s.serial_number', $serialNumber)
+            ->first();
+
+        if (!$serial) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Nomor seri tidak ditemukan.'
+            ], 200);
+        }
+
+        if ($serial->is_out) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Nomor seri sudah keluar (sudah digunakan di DO lain).'
+            ], 200);
+        }
+
+        if ($serial->warehouse_id != $warehouseId) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Nomor seri tidak sesuai warehouse yang dipilih.'
+            ], 200);
+        }
+
+        if (!in_array($serial->item_id, array_map('intval', $itemIds))) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Nomor seri tidak sesuai dengan item di Packing List.'
+            ], 200);
+        }
+
+        return response()->json([
+            'valid' => true,
+            'message' => 'Nomor seri valid.',
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'unit_id' => $serial->unit_id,
+                'unit_name' => $serial->unit_name,
+                'inventory_item_id' => $serial->inventory_item_id,
+            ]
+        ], 200);
     }
 } 

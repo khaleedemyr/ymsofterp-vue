@@ -1189,6 +1189,7 @@ Route::delete('/delivery-order/{id}', [DeliveryOrderController::class, 'destroy'
 // API untuk fetch item packing list
 Route::get('/api/packing-list/{id}/items', [DeliveryOrderController::class, 'getPackingListItems']);
 Route::get('/api/ro-supplier-gr/{id}/items', [DeliveryOrderController::class, 'getROSupplierGRItems']);
+Route::post('/api/delivery-order/validate-serial', [DeliveryOrderController::class, 'validateSerial']);
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/menus', [MenuController::class, 'index'])->name('menus.index');

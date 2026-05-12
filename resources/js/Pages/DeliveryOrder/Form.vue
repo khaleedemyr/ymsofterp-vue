@@ -112,11 +112,46 @@
           </tbody>
         </table>
       </div>
-      <!-- Scan Barcode -->
-      <div v-if="packingListItems.length && !isLoadingItems" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
+      <!-- Mode Toggle -->
+      <div v-if="packingListItems.length && !isLoadingItems" class="mb-6 w-full max-w-xl flex justify-center animate-fade-in">
+        <div class="inline-flex rounded-xl overflow-hidden shadow border border-blue-200">
+          <button @click="scanMode = 'barcode'" :class="scanMode === 'barcode' ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'" class="px-6 py-2 font-bold text-base transition-all">
+            <i class="fa-solid fa-barcode mr-1"></i> Mode Barcode
+          </button>
+          <button @click="scanMode = 'serial'" :class="scanMode === 'serial' ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-50'" class="px-6 py-2 font-bold text-base transition-all">
+            <i class="fa-solid fa-hashtag mr-1"></i> Mode Nomor Seri
+          </button>
+        </div>
+      </div>
+
+      <!-- Scan Barcode (barcode mode) -->
+      <div v-if="packingListItems.length && !isLoadingItems && scanMode === 'barcode'" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
         <label class="font-semibold text-lg mb-2">Scan Barcode</label>
         <input ref="barcodeInput" v-model="barcodeInputVal" @keyup.enter="onScanBarcode" class="border-2 border-blue-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-blue-500 shadow-lg" placeholder="Scan barcode di sini..." autofocus />
         <div v-if="scanFeedback" :class="scanFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ scanFeedback }}</div>
+      </div>
+
+      <!-- Scan Serial (serial mode) -->
+      <div v-if="packingListItems.length && !isLoadingItems && scanMode === 'serial'" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
+        <label class="font-semibold text-lg mb-2 text-purple-700">Scan Nomor Seri</label>
+        <input ref="serialInput" v-model="serialInputVal" @keyup.enter="onScanSerial" class="border-2 border-purple-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-purple-500 shadow-lg" placeholder="Scan nomor seri di sini..." autofocus />
+        <div v-if="serialFeedback" :class="serialFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ serialFeedback }}</div>
+
+        <!-- Scanned serials list per item -->
+        <div v-if="hasScannedSerials" class="mt-6 w-full">
+          <div class="text-sm font-bold text-purple-800 mb-2">Nomor Seri yang sudah di-scan:</div>
+          <div v-for="item in packingListItems" :key="'serial-' + item.id">
+            <div v-if="scannedSerials[item.item_id] && scannedSerials[item.item_id].length" class="mb-3 bg-purple-50 rounded-lg p-3 border border-purple-200">
+              <div class="font-semibold text-purple-800 text-sm mb-1">{{ item.name }} ({{ scannedSerials[item.item_id].length }} seri)</div>
+              <div class="flex flex-wrap gap-1">
+                <span v-for="(sn, idx) in scannedSerials[item.item_id]" :key="sn" class="inline-flex items-center bg-white border border-purple-300 rounded px-2 py-0.5 text-xs font-mono">
+                  {{ sn }}
+                  <button @click="removeSerial(item, idx)" class="ml-1 text-red-500 hover:text-red-700 font-bold">&times;</button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <button v-if="packingListItems.length && !isLoadingItems" @click="confirmSubmit" :disabled="!isReadyToSubmit || loadingSubmit" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-10 py-4 rounded-2xl font-extrabold text-2xl shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
         <i v-if="loadingSubmit" class="fa fa-spinner fa-spin mr-2"></i>
@@ -213,7 +248,16 @@ const doNumber = ref('');
 const error = ref("");
 const isLoading = ref(false);
 
+// Serial mode state
+const scanMode = ref('barcode');
+const serialInputVal = ref('');
+const serialFeedback = ref('');
+const serialFeedbackClass = ref('');
+const serialInput = ref(null);
+const scannedSerials = reactive({});  // { item_id: [serial_number, ...] }
+
 const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
+const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr => arr && arr.length > 0));
 const isROSupplierGR = computed(() => {
   const value = selectedPackingListId.value;
   return value && typeof value === 'string' && value.startsWith('gr_');
@@ -445,6 +489,75 @@ function onScanBarcode() {
   nextTick(() => barcodeInput.value?.focus());
 }
 
+async function onScanSerial() {
+  const input = serialInputVal.value.trim();
+  if (!input) return;
+
+  serialFeedback.value = '';
+  serialFeedbackClass.value = '';
+
+  // Check if already scanned in this session
+  for (const [itemId, serials] of Object.entries(scannedSerials)) {
+    if (serials.includes(input)) {
+      serialFeedback.value = '❌ Nomor seri sudah di-scan sebelumnya!';
+      serialFeedbackClass.value = 'text-red-600';
+      serialInputVal.value = '';
+      nextTick(() => serialInput.value?.focus());
+      return;
+    }
+  }
+
+  // Get warehouse_id from selected packing list
+  const pl = selectedPackingList.value;
+  const warehouseId = pl?.warehouse_id || 1;
+  const itemIds = packingListItems.map(i => i.item_id || i.id);
+
+  try {
+    const res = await axios.post('/api/delivery-order/validate-serial', {
+      serial_number: input,
+      packing_list_id: selectedPackingListId.value,
+      warehouse_id: warehouseId,
+      item_ids: itemIds,
+    });
+
+    if (res.data.valid) {
+      const serial = res.data.serial;
+      const matchedItem = packingListItems.find(i => (i.item_id || i.id) == serial.item_id);
+      if (!matchedItem) {
+        serialFeedback.value = '❌ Item tidak ditemukan di Packing List!';
+        serialFeedbackClass.value = 'text-red-600';
+      } else {
+        // Add serial to tracking
+        if (!scannedSerials[serial.item_id]) {
+          scannedSerials[serial.item_id] = [];
+        }
+        scannedSerials[serial.item_id].push(input);
+        // Increment qty_scan
+        matchedItem.qty_scan = (Number(matchedItem.qty_scan) || 0) + 1;
+        serialFeedback.value = `✅ ${serial.item_name} - ${input}`;
+        serialFeedbackClass.value = 'text-green-600';
+      }
+    } else {
+      serialFeedback.value = `❌ ${res.data.message}`;
+      serialFeedbackClass.value = 'text-red-600';
+    }
+  } catch (e) {
+    serialFeedback.value = '❌ Gagal validasi nomor seri (server error).';
+    serialFeedbackClass.value = 'text-red-600';
+  }
+
+  serialInputVal.value = '';
+  nextTick(() => serialInput.value?.focus());
+}
+
+function removeSerial(item, idx) {
+  const itemId = item.item_id || item.id;
+  if (scannedSerials[itemId] && scannedSerials[itemId].length > idx) {
+    scannedSerials[itemId].splice(idx, 1);
+    item.qty_scan = Math.max(0, (Number(item.qty_scan) || 0) - 1);
+  }
+}
+
 function confirmQtyModal() {
   const item = qtyModalItem.value;
   const maxQty = Number(item.qty);
@@ -667,9 +780,21 @@ async function submitDO() {
     const date = new Date().toISOString().slice(2,10).replace(/-/g,'');
     const random = Math.random().toString(36).substring(2,6).toUpperCase();
     doNumber.value = `DO${date}${random}`;
+    // Build scanned_serials payload for serial mode
+    const scannedSerialsPayload = scanMode.value === 'serial'
+      ? Object.entries(scannedSerials)
+          .filter(([, serials]) => serials && serials.length > 0)
+          .map(([itemId, serialNumbers]) => ({ item_id: parseInt(itemId), serial_numbers: serialNumbers }))
+      : [];
+
     // Buat DO baru
+    const pl = selectedPackingList.value;
     const doRes = await axios.post('/delivery-order', {
       packing_list_id: selectedPackingListId.value,
+      scan_mode: scanMode.value,
+      outlet_id: pl?.outlet_id || null,
+      warehouse_outlet_id: pl?.warehouse_outlet_id || null,
+      scanned_serials: scannedSerialsPayload,
       items: packingListItems.map(item => ({
         id: item.id,
         barcode: Array.isArray(item.barcode) && item.barcode.length > 0 ? item.barcode : (item.barcode ? [item.barcode] : []),
