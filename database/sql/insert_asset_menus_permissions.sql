@@ -161,4 +161,26 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@adp_menu_id, 'approve', 'asset_disposal_approve', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
+-- Asset Inventory Report Menu
+INSERT INTO `erp_menu` (`code`, `name`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`)
+VALUES (
+    'asset_inventory_report',
+    'Asset Inventory Report',
+    251,
+    '/asset-inventory-report/stock-position',
+    'fa-solid fa-chart-line',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @air_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_inventory_report' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@air_menu_id, 'view', 'asset_inventory_report_view', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
 COMMIT;

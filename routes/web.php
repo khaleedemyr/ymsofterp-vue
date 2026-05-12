@@ -678,6 +678,10 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve'])->name('asset-disposals.approve');
     Route::get('/asset-disposal/approvers', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovers'])->name('asset-disposals.approvers');
 
+    // Asset Inventory Report
+    Route::get('/asset-inventory-report/stock-position', [\App\Http\Controllers\AssetInventoryReportController::class, 'stockPosition'])->name('asset-inventory-report.stock-position');
+    Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'stockCardDetail'])->name('asset-inventory-report.stock-card.detail');
+
 });
 
 // Test route outside middleware

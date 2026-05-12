@@ -1274,6 +1274,10 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/asset-service-orders/pending-approvals', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals']);
         Route::get('/asset-disposals/pending-approvals', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals']);
 
+        // Asset Inventory Report
+        Route::get('/asset-inventory-report/stock-position', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockPosition']);
+        Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockCardDetail']);
+
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
