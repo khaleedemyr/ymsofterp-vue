@@ -1,84 +1,106 @@
 <template>
   <Head :title="`GR Serial: ${header.number}`" />
   <AppLayout>
-    <div class="max-w-5xl mx-auto py-8 px-4">
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold text-purple-800 flex items-center gap-2">
-          <i class="fa-solid fa-barcode text-purple-500"></i> Detail GR Serial
-        </h1>
-        <a href="/outlet-serial-receive" class="text-sm text-blue-600 hover:underline">
-          <i class="fa fa-arrow-left"></i> Kembali ke daftar
-        </a>
+    <div class="max-w-6xl mx-auto py-6 px-4 sm:px-6">
+      <!-- Page Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Detail GR Serial</h1>
+          <p class="text-sm text-gray-500 mt-1">{{ header.number }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button v-if="canDelete" @click="onDelete"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition">
+            <i class="fa fa-trash text-xs"></i> Hapus
+          </button>
+          <a href="/outlet-serial-receive"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+            <i class="fa fa-arrow-left text-xs"></i> Kembali
+          </a>
+        </div>
       </div>
 
-      <!-- Header Info -->
-      <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <!-- Header Card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-6">
           <div>
-            <span class="text-xs text-gray-500 block">Nomor GR</span>
-            <span class="font-mono font-bold text-purple-700 text-lg">{{ header.number }}</span>
+            <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Nomor GR</span>
+            <span class="font-mono font-bold text-indigo-700 text-lg">{{ header.number }}</span>
           </div>
           <div>
-            <span class="text-xs text-gray-500 block">Tanggal</span>
-            <span class="font-semibold">{{ formatDate(header.receive_date) }}</span>
+            <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Tanggal</span>
+            <span class="font-medium text-gray-800">{{ formatDate(header.receive_date) }}</span>
           </div>
           <div>
-            <span class="text-xs text-gray-500 block">User</span>
-            <span class="font-semibold">{{ header.created_by_name || '-' }}</span>
+            <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Outlet</span>
+            <span class="font-medium text-gray-800">{{ header.outlet_name || header.outlet_id || '-' }}</span>
           </div>
           <div>
-            <span class="text-xs text-gray-500 block">Jumlah Serial</span>
-            <span class="font-bold text-2xl text-green-700">{{ items.length }}</span>
+            <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Dibuat oleh</span>
+            <span class="font-medium text-gray-800">{{ header.created_by_name || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Jumlah Serial</span>
+            <span class="inline-flex items-center justify-center min-w-[32px] px-2.5 py-1 text-sm font-bold rounded-full bg-emerald-50 text-emerald-700">
+              {{ items.length }}
+            </span>
           </div>
         </div>
-        <div v-if="header.notes" class="mt-4 pt-3 border-t">
-          <span class="text-xs text-gray-500 block">Catatan</span>
-          <span class="text-sm">{{ header.notes }}</span>
+        <div v-if="header.notes" class="mt-5 pt-4 border-t border-gray-100">
+          <span class="text-xs font-medium text-gray-400 uppercase tracking-wider block mb-1">Catatan</span>
+          <span class="text-sm text-gray-700">{{ header.notes }}</span>
         </div>
       </div>
 
       <!-- Items Table -->
-      <div class="bg-white rounded-2xl shadow-xl p-6">
-        <h2 class="text-lg font-bold text-purple-700 mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-list"></i> Daftar Serial
-        </h2>
-        <div v-if="!items.length" class="text-center text-gray-400 py-8">Tidak ada item.</div>
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="text-base font-semibold text-gray-800">Daftar Serial</h2>
+        </div>
+        <div v-if="!items.length" class="text-center py-16">
+          <p class="text-gray-500 text-sm">Tidak ada item.</p>
+        </div>
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm divide-y divide-gray-200">
-            <thead class="bg-purple-50">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">No</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Serial</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Item</th>
-                <th class="px-3 py-2 text-right text-xs font-bold text-purple-700">Qty</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Unit</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">DO</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Outlet</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Warehouse</th>
-                <th class="px-3 py-2 text-right text-xs font-bold text-purple-700">Harga</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Sumber</th>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-100 bg-gray-50/50">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Serial</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Unit</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">DO</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Outlet</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Warehouse</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Harga</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Sumber</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="(row, idx) in items" :key="row.id" class="hover:bg-purple-50 transition">
-                <td class="px-3 py-2">{{ idx + 1 }}</td>
-                <td class="px-3 py-2 font-mono text-xs">{{ row.serial_number }}</td>
-                <td class="px-3 py-2">{{ row.item_name }}</td>
-                <td class="px-3 py-2 text-right">{{ fmtQty(row.qty) }}</td>
-                <td class="px-3 py-2">{{ row.unit_name || '-' }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.delivery_order_number }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.outlet_name || row.outlet_id }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.warehouse_name || '-' }}</td>
-                <td class="px-3 py-2 text-right">{{ formatRupiah(row.cost_small) }}</td>
-                <td class="px-3 py-2 text-xs">{{ formatCostSource(row.cost_source) }}</td>
+            <tbody class="divide-y divide-gray-50">
+              <tr v-for="(row, idx) in items" :key="row.id" class="hover:bg-indigo-50/30 transition-colors duration-150">
+                <td class="px-4 py-3 text-gray-500">{{ idx + 1 }}</td>
+                <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ row.serial_number }}</td>
+                <td class="px-4 py-3 text-gray-800 font-medium">{{ row.item_name }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ fmtQty(row.qty) }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.unit_name || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.delivery_order_number }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.outlet_name || row.outlet_id }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_name || '-' }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.cost_small) }}</td>
+                <td class="px-4 py-3">
+                  <span :class="row.cost_source === 'fgr_modal_12pct' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'"
+                    class="inline-block px-2 py-0.5 text-xs font-medium rounded-md">
+                    {{ formatCostSource(row.cost_source) }}
+                  </span>
+                </td>
               </tr>
             </tbody>
-            <tfoot class="bg-gray-50">
-              <tr>
-                <td colspan="3" class="px-3 py-2 text-right font-bold">Total</td>
-                <td class="px-3 py-2 text-right font-bold">{{ fmtQty(totalQty) }}</td>
+            <tfoot>
+              <tr class="border-t border-gray-200 bg-gray-50/80">
+                <td colspan="3" class="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Total</td>
+                <td class="px-4 py-3 text-right font-bold text-gray-800">{{ fmtQty(totalQty) }}</td>
                 <td colspan="4"></td>
-                <td class="px-3 py-2 text-right font-bold">{{ formatRupiah(totalCost) }}</td>
+                <td class="px-4 py-3 text-right font-bold text-gray-800">{{ formatRupiah(totalCost) }}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -90,13 +112,16 @@
 </template>
 
 <script setup>
-import { Head } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { computed } from 'vue'
+import Swal from 'sweetalert2'
+import axios from 'axios'
 
 const props = defineProps({
   header: Object,
   items: Array,
+  canDelete: Boolean,
 })
 
 const totalQty = computed(() => props.items.reduce((sum, i) => sum + Number(i.qty || 0), 0))
@@ -124,5 +149,29 @@ function formatCostSource(src) {
   if (src === 'fgr_modal_12pct') return 'FGR (Modal+12%)'
   if (src === 'item_prices') return 'Item Price'
   return src
+}
+
+async function onDelete() {
+  const confirm = await Swal.fire({
+    title: 'Hapus GR Serial?',
+    html: `GR <b>${props.header.number}</b> akan dihapus dan inventory akan di-rollback.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#6b7280',
+  })
+
+  if (!confirm.isConfirmed) return
+
+  try {
+    await axios.delete(`/outlet-serial-receive/${props.header.id}`)
+    Swal.fire({ title: 'Berhasil', text: `GR ${props.header.number} berhasil dihapus.`, icon: 'success', timer: 2000, showConfirmButton: false })
+    setTimeout(() => { window.location.href = '/outlet-serial-receive' }, 1500)
+  } catch (e) {
+    const msg = e?.response?.data?.errors?.message || e?.response?.data?.message || 'Gagal menghapus GR.'
+    Swal.fire('Gagal', msg, 'error')
+  }
 }
 </script>

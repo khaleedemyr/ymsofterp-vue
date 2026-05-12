@@ -1,85 +1,108 @@
 <template>
   <Head title="Buat GR Serial" />
   <AppLayout>
-    <div class="max-w-5xl mx-auto py-8 px-4">
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-bold text-purple-800 flex items-center gap-2">
-          <i class="fa-solid fa-barcode text-purple-500"></i> Buat GR Serial
-        </h1>
-        <a href="/outlet-serial-receive" class="text-sm text-blue-600 hover:underline">
-          <i class="fa fa-arrow-left"></i> Kembali ke daftar
+    <div class="max-w-6xl mx-auto py-6 px-4 sm:px-6">
+      <!-- Page Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Buat GR Serial</h1>
+          <p class="text-sm text-gray-500 mt-1">Outlet: <span class="font-medium text-gray-700">{{ userOutlet.name }}</span></p>
+        </div>
+        <a href="/outlet-serial-receive"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+          <i class="fa fa-arrow-left text-xs"></i> Kembali
         </a>
       </div>
 
-      <!-- Scan Input -->
-      <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <label class="font-semibold text-lg text-purple-700 block mb-2">Scan Nomor Seri</label>
-        <input
-          ref="serialInput"
-          v-model="serialInputVal"
-          @keyup.enter="onScan"
-          :disabled="scanning || saving"
-          class="border-2 border-purple-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-purple-500 shadow-lg"
-          placeholder="Scan atau ketik nomor seri di sini..."
-          autofocus
-        />
-        <div v-if="feedback" :class="feedbackClass" class="mt-3 font-bold text-lg min-h-[28px] text-center">
-          {{ feedback }}
+      <!-- Scan Card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div class="max-w-xl mx-auto">
+          <!-- Outlet Badge -->
+          <div class="flex items-center justify-center mb-4">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-full">
+              <i class="fa-solid fa-store text-indigo-500 text-sm"></i>
+              <span class="text-sm font-semibold text-indigo-700">{{ userOutlet.name }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-center text-gray-400 mb-4">Hanya serial untuk outlet ini yang dapat di-scan</p>
+
+          <label class="text-sm font-semibold text-gray-700 block mb-2">Scan Nomor Seri</label>
+          <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <i class="fa-solid fa-barcode text-gray-400"></i>
+            </div>
+            <input
+              ref="serialInput"
+              v-model="serialInputVal"
+              @keyup.enter="onScan"
+              :disabled="scanning || saving"
+              class="w-full pl-11 pr-4 py-3.5 text-lg border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition-all duration-200 placeholder:text-gray-400"
+              placeholder="Scan atau ketik nomor seri..."
+              autofocus
+            />
+            <div v-if="scanning" class="absolute inset-y-0 right-0 pr-4 flex items-center">
+              <i class="fa fa-spinner fa-spin text-indigo-500"></i>
+            </div>
+          </div>
+          <div v-if="feedback" :class="feedbackClass" class="mt-3 text-sm font-medium text-center min-h-[24px]">
+            {{ feedback }}
+          </div>
         </div>
       </div>
 
-      <!-- Stats -->
+      <!-- Stats Row -->
       <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-white rounded-xl shadow p-4 text-center">
-          <div class="text-3xl font-bold text-purple-700">{{ scannedSerials.length }}</div>
-          <div class="text-sm text-gray-500">Total Serial</div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+          <div class="text-3xl font-bold text-indigo-600">{{ scannedSerials.length }}</div>
+          <div class="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">Total Serial</div>
         </div>
-        <div class="bg-white rounded-xl shadow p-4 text-center">
-          <div class="text-3xl font-bold text-blue-700">{{ uniqueDOs }}</div>
-          <div class="text-sm text-gray-500">DO Terlibat</div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+          <div class="text-3xl font-bold text-blue-600">{{ uniqueDOs }}</div>
+          <div class="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">DO Terlibat</div>
         </div>
-        <div class="bg-white rounded-xl shadow p-4 text-center">
-          <div class="text-3xl font-bold text-green-700">{{ uniqueItems }}</div>
-          <div class="text-sm text-gray-500">Item Unik</div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+          <div class="text-3xl font-bold text-emerald-600">{{ uniqueItems }}</div>
+          <div class="text-xs text-gray-500 mt-1 font-medium uppercase tracking-wide">Item Unik</div>
         </div>
       </div>
 
-      <!-- Scanned Serials Table -->
-      <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-        <h2 class="text-lg font-bold text-purple-700 mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-list"></i> Serial yang Di-scan
-        </h2>
-        <div v-if="!scannedSerials.length" class="text-center text-gray-400 py-8">
-          Belum ada serial yang di-scan. Scan nomor seri di atas untuk memulai.
+      <!-- Scanned Table -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-100">
+          <h2 class="text-base font-semibold text-gray-800">Serial yang Di-scan</h2>
+        </div>
+        <div v-if="!scannedSerials.length" class="text-center py-16">
+          <div class="text-gray-300 text-5xl mb-4"><i class="fa-solid fa-barcode"></i></div>
+          <p class="text-gray-500 text-sm">Scan nomor seri di atas untuk memulai.</p>
         </div>
         <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm divide-y divide-gray-200">
-            <thead class="bg-purple-50">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">No</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Serial</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Item</th>
-                <th class="px-3 py-2 text-right text-xs font-bold text-purple-700">Qty</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">DO</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Outlet</th>
-                <th class="px-3 py-2 text-left text-xs font-bold text-purple-700">Warehouse</th>
-                <th class="px-3 py-2 text-right text-xs font-bold text-purple-700">Harga</th>
-                <th class="px-3 py-2 text-center text-xs font-bold text-purple-700">Aksi</th>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-100 bg-gray-50/50">
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">No</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Serial</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">DO</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Outlet</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Warehouse</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Harga</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-16"></th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="(row, idx) in scannedSerials" :key="row.serial_number" class="hover:bg-purple-50 transition">
-                <td class="px-3 py-2">{{ idx + 1 }}</td>
-                <td class="px-3 py-2 font-mono text-xs">{{ row.serial_number }}</td>
-                <td class="px-3 py-2">{{ row.item_name }}</td>
-                <td class="px-3 py-2 text-right">{{ fmtQty(row.qty) }} {{ row.unit_name }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.do_number }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.outlet_name }}</td>
-                <td class="px-3 py-2 text-xs">{{ row.warehouse_name }}</td>
-                <td class="px-3 py-2 text-right">{{ formatRupiah(row.cost_small) }}</td>
-                <td class="px-3 py-2 text-center">
+            <tbody class="divide-y divide-gray-50">
+              <tr v-for="(row, idx) in scannedSerials" :key="row.serial_number" class="hover:bg-red-50/20 transition-colors duration-150 group">
+                <td class="px-4 py-3 text-gray-500">{{ idx + 1 }}</td>
+                <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ row.serial_number }}</td>
+                <td class="px-4 py-3 text-gray-800 font-medium">{{ row.item_name }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ fmtQty(row.qty) }} <span class="text-gray-400 text-xs">{{ row.unit_name }}</span></td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.do_number }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.outlet_name }}</td>
+                <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_name }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.cost_small) }}</td>
+                <td class="px-4 py-3 text-center">
                   <button @click="removeSerial(idx)" :disabled="saving"
-                    class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50">
+                    class="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-7 h-7 text-xs text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-all duration-150 disabled:opacity-30">
                     <i class="fa fa-times"></i>
                   </button>
                 </td>
@@ -89,20 +112,24 @@
         </div>
       </div>
 
-      <!-- Notes & Save -->
-      <div class="bg-white rounded-2xl shadow-xl p-6">
+      <!-- Save Section -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div class="mb-4">
-          <label class="text-sm font-semibold text-gray-600 block mb-1">Catatan (opsional)</label>
-          <textarea v-model="notes" rows="2" class="border rounded-lg px-3 py-2 w-full text-sm" placeholder="Catatan tambahan..."></textarea>
+          <label class="text-sm font-medium text-gray-700 block mb-1.5">Catatan (opsional)</label>
+          <textarea v-model="notes" rows="2"
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition resize-none"
+            placeholder="Catatan tambahan..."></textarea>
         </div>
-        <div class="flex justify-end gap-3">
-          <a href="/outlet-serial-receive" class="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300">
+        <div class="flex items-center justify-between pt-2">
+          <a href="/outlet-serial-receive"
+            class="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">
             Batal
           </a>
           <button @click="onSave" :disabled="!scannedSerials.length || saving"
-            class="px-5 py-2 bg-green-600 text-white rounded-lg font-semibold shadow hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+            class="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-xl shadow-sm hover:bg-emerald-700 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200">
             <i v-if="saving" class="fa fa-spinner fa-spin"></i>
-            <i v-else class="fa fa-check"></i> Simpan
+            <i v-else class="fa fa-check"></i>
+            Simpan ({{ scannedSerials.length }} serial)
           </button>
         </div>
       </div>
@@ -116,6 +143,10 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { ref, computed, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+
+const props = defineProps({
+  userOutlet: Object,
+})
 
 const serialInputVal = ref('')
 const serialInput = ref(null)
@@ -141,13 +172,57 @@ function fmtQty(val) {
   return s
 }
 
+function playBeep(type) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    if (type === 'success') {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'sine'
+      osc.frequency.value = 1200
+      gain.gain.value = 0.3
+      osc.start()
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15)
+      osc.stop(ctx.currentTime + 0.15)
+    } else {
+      const osc1 = ctx.createOscillator()
+      const gain1 = ctx.createGain()
+      osc1.connect(gain1)
+      gain1.connect(ctx.destination)
+      osc1.type = 'square'
+      osc1.frequency.value = 400
+      gain1.gain.value = 0.25
+      osc1.start()
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+      osc1.stop(ctx.currentTime + 0.12)
+
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.connect(gain2)
+        gain2.connect(ctx.destination)
+        osc2.type = 'square'
+        osc2.frequency.value = 300
+        gain2.gain.value = 0.25
+        osc2.start()
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18)
+        osc2.stop(ctx.currentTime + 0.18)
+      }, 150)
+    }
+  } catch (e) {}
+}
+
 async function onScan() {
   const input = serialInputVal.value.trim()
   if (!input) return
 
   if (scannedSerials.value.some(s => s.serial_number === input)) {
     feedback.value = 'Nomor seri ini sudah di-scan.'
-    feedbackClass.value = 'text-orange-600'
+    feedbackClass.value = 'text-amber-600'
+    playBeep('error')
+    Swal.fire({ icon: 'warning', title: 'Duplikat', text: 'Nomor seri ini sudah ada di daftar scan.', timer: 2500, showConfirmButton: false })
     serialInputVal.value = ''
     nextTick(() => serialInput.value?.focus())
     return
@@ -164,16 +239,33 @@ async function onScan() {
 
     if (data.valid) {
       scannedSerials.value.push(data.serial)
-      feedback.value = `✓ ${data.serial.item_name} - ${input}`
-      feedbackClass.value = 'text-green-600'
+      feedback.value = `✓ ${data.serial.item_name} — ${input}`
+      feedbackClass.value = 'text-emerald-600'
+      playBeep('success')
     } else {
       feedback.value = data.message
       feedbackClass.value = 'text-red-600'
+      playBeep('error')
+      Swal.fire({
+        icon: 'error',
+        title: 'Ditolak',
+        text: data.message,
+        timer: 3000,
+        showConfirmButton: false,
+      })
     }
   } catch (e) {
     const msg = e?.response?.data?.message || 'Gagal memvalidasi serial.'
     feedback.value = msg
     feedbackClass.value = 'text-red-600'
+    playBeep('error')
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: msg,
+      timer: 3000,
+      showConfirmButton: false,
+    })
   }
 
   serialInputVal.value = ''
@@ -195,7 +287,8 @@ async function onSave() {
     showCancelButton: true,
     confirmButtonText: 'Ya, Simpan',
     cancelButtonText: 'Batal',
-    confirmButtonColor: '#16a34a',
+    confirmButtonColor: '#059669',
+    cancelButtonColor: '#6b7280',
   })
 
   if (!confirm.isConfirmed) return
@@ -210,7 +303,7 @@ async function onSave() {
       notes: notes.value || null,
     }
 
-    const form = router.post('/outlet-serial-receive', payload, {
+    router.post('/outlet-serial-receive', payload, {
       onSuccess: () => {
         saving.value = false
       },

@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS outlet_serial_receives;
 CREATE TABLE outlet_serial_receive_headers (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     number VARCHAR(50) NOT NULL,
+    outlet_id VARCHAR(20) NULL,
     receive_date DATE NOT NULL,
     status ENUM('completed') NOT NULL DEFAULT 'completed',
     notes TEXT NULL,
@@ -26,6 +27,7 @@ CREATE TABLE outlet_serial_receive_headers (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL,
     INDEX idx_number (number),
+    INDEX idx_outlet_id (outlet_id),
     INDEX idx_receive_date (receive_date),
     INDEX idx_created_by (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

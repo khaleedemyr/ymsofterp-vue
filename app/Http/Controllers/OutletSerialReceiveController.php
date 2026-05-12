@@ -11,20 +11,33 @@ class OutletSerialReceiveController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        $isHQ = $user->id_outlet == '1';
+
         $query = DB::table('outlet_serial_receive_headers as h')
             ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
             ->select(
                 'h.id',
                 'h.number',
+                'h.outlet_id',
                 'h.receive_date',
                 'h.status',
                 'h.notes',
                 'h.created_by',
                 'u.name as created_by_name',
+                'o.nama_outlet as outlet_name',
                 'h.created_at',
                 DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')
             )
             ->whereNull('h.deleted_at');
+
+        if (!$isHQ) {
+            $query->where('h.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.outlet_id', $request->outlet_id);
+        }
 
         if ($request->filled('date_from')) {
             $query->where('h.receive_date', '>=', $request->date_from);
@@ -38,15 +51,39 @@ class OutletSerialReceiveController extends Controller
 
         $data = $query->orderByDesc('h.id')->paginate(20)->withQueryString();
 
+        $outlets = [];
+        if ($isHQ) {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet as id', 'nama_outlet as name')
+                ->orderBy('nama_outlet')
+                ->get();
+        }
+
         return Inertia::render('OutletSerialReceive/Index', [
             'grList' => $data,
-            'filters' => $request->only(['date_from', 'date_to', 'search']),
+            'filters' => $request->only(['date_from', 'date_to', 'search', 'outlet_id']),
+            'outlets' => $outlets,
+            'canDelete' => $canDelete,
+            'isHQ' => $isHQ,
+            'userOutlet' => [
+                'id' => $user->id_outlet,
+                'name' => $this->getOutletName($user->id_outlet),
+            ],
         ]);
     }
 
     public function create()
     {
-        return Inertia::render('OutletSerialReceive/Create');
+        $user = auth()->user();
+        $outletName = $this->getOutletName($user->id_outlet);
+
+        return Inertia::render('OutletSerialReceive/Create', [
+            'userOutlet' => [
+                'id' => $user->id_outlet,
+                'name' => $outletName,
+            ],
+        ]);
     }
 
     public function validateSerial(Request $request)
@@ -173,6 +210,12 @@ class OutletSerialReceiveController extends Controller
                     }
                 }
 
+                $outletId = $user->id_outlet;
+                $firstSerial = $serials->first();
+                if ($firstSerial && $firstSerial->out_outlet_id) {
+                    $outletId = $firstSerial->out_outlet_id;
+                }
+
                 $dateStr = now()->format('Ymd');
                 $lockName = "gr_serial_number_{$dateStr}";
                 DB::select("SELECT GET_LOCK(?, 5)", [$lockName]);
@@ -191,6 +234,7 @@ class OutletSerialReceiveController extends Controller
 
                 $headerId = DB::table('outlet_serial_receive_headers')->insertGetId([
                     'number' => $grNumber,
+                    'outlet_id' => $outletId,
                     'receive_date' => now()->toDateString(),
                     'status' => 'completed',
                     'notes' => $request->notes,
@@ -204,8 +248,6 @@ class OutletSerialReceiveController extends Controller
                 $itemMasterIds = $serials->pluck('item_id')->unique()->toArray();
                 $itemMasters = DB::table('items')->whereIn('id', $itemMasterIds)->get()->keyBy('id');
 
-                $processedGroups = [];
-
                 foreach ($request->serials as $input) {
                     $serial = $serials[$input['serial_id']] ?? null;
                     if (!$serial) continue;
@@ -213,7 +255,7 @@ class OutletSerialReceiveController extends Controller
                     $itemMaster = $itemMasters[$serial->item_id] ?? null;
                     if (!$itemMaster) continue;
 
-                    $outletId = $serial->out_outlet_id;
+                    $serialOutletId = $serial->out_outlet_id;
                     $warehouseOutletId = $serial->out_warehouse_outlet_id;
                     $doId = $serial->out_delivery_order_id;
                     $doNumber = DB::table('delivery_orders')->where('id', $doId)->value('number') ?? '';
@@ -234,7 +276,7 @@ class OutletSerialReceiveController extends Controller
                         'item_id' => $serial->item_id,
                         'unit_id' => $unitId,
                         'qty' => $effectiveQty,
-                        'outlet_id' => $outletId,
+                        'outlet_id' => $serialOutletId,
                         'warehouse_outlet_id' => $warehouseOutletId,
                         'cost_small' => $costSmall,
                         'cost_source' => $serial->source_type === 'good_receive' ? 'fgr_modal_12pct' : 'item_prices',
@@ -242,7 +284,7 @@ class OutletSerialReceiveController extends Controller
                         'updated_at' => now(),
                     ]);
 
-                    $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $outletId, $warehouseOutletId, $headerId);
+                    $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
 
                     DB::table('inventory_item_serials')
                         ->where('id', $serial->id)
@@ -264,9 +306,13 @@ class OutletSerialReceiveController extends Controller
 
     public function show($id)
     {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
         $header = DB::table('outlet_serial_receive_headers as h')
             ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
-            ->select('h.*', 'u.name as created_by_name')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
+            ->select('h.*', 'u.name as created_by_name', 'o.nama_outlet as outlet_name')
             ->where('h.id', $id)
             ->whereNull('h.deleted_at')
             ->first();
@@ -295,11 +341,19 @@ class OutletSerialReceiveController extends Controller
         return Inertia::render('OutletSerialReceive/Show', [
             'header' => $header,
             'items' => $items,
+            'canDelete' => $canDelete,
         ]);
     }
 
     public function destroy($id)
     {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        if (!$canDelete) {
+            return back()->withErrors(['message' => 'Anda tidak memiliki akses untuk menghapus.']);
+        }
+
         $header = DB::table('outlet_serial_receive_headers')
             ->where('id', $id)
             ->whereNull('deleted_at')
@@ -315,11 +369,10 @@ class OutletSerialReceiveController extends Controller
 
                 $serialIds = $items->pluck('serial_id')->toArray();
                 if (!empty($serialIds)) {
-                    $serials = DB::table('inventory_item_serials')
+                    DB::table('inventory_item_serials')
                         ->whereIn('id', $serialIds)
                         ->lockForUpdate()
-                        ->get()
-                        ->keyBy('id');
+                        ->get();
                 }
 
                 $itemMasterIds = $items->pluck('item_id')->unique()->toArray();
@@ -353,6 +406,13 @@ class OutletSerialReceiveController extends Controller
         } catch (\Throwable $e) {
             return back()->withErrors(['message' => 'Gagal menghapus: ' . $e->getMessage()]);
         }
+    }
+
+    private function getOutletName($outletId): string
+    {
+        if (!$outletId || $outletId == '1') return 'Pusat';
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
+        return $outlet ?: $outletId;
     }
 
     private function determineCost($serial): float
