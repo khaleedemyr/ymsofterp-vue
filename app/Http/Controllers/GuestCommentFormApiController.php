@@ -675,9 +675,23 @@ class GuestCommentFormApiController extends Controller
     {
         $this->authorizeGuestCommentFormAccess($request, $guest_comment_form);
 
+        $existingCapa = DB::table('guest_comment_capas')
+            ->where('guest_comment_form_id', $guest_comment_form->id)
+            ->first();
+
+        $severity = strtolower(trim((string) ($guest_comment_form->issue_severity ?? '')));
+        $requiresCapa = in_array($severity, ['critical', 'major', 'minor', 'severe', 'negative', 'mild_negative'], true);
+
         return response()->json([
             'success' => true,
             'form' => $this->serializeForm($guest_comment_form),
+            'requires_capa' => $requiresCapa,
+            'issue_severity' => $severity,
+            'existing_capa' => $existingCapa ? [
+                'kronologi' => (string) ($existingCapa->kronologi ?? ''),
+                'corrective_action' => (string) ($existingCapa->corrective_action ?? ''),
+                'preventive_action' => (string) ($existingCapa->preventive_action ?? ''),
+            ] : null,
         ]);
     }
 
@@ -715,11 +729,17 @@ class GuestCommentFormApiController extends Controller
             'marketing_source' => 'nullable|string|max:255',
             'id_outlet' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'mark_verified' => 'nullable|boolean',
+            'capa_kronologi' => 'nullable|string|max:5000',
+            'capa_corrective_action' => 'nullable|string|max:5000',
+            'capa_preventive_action' => 'nullable|string|max:5000',
         ];
 
         $data = $request->validate($rules);
         $markVerified = (bool) ($data['mark_verified'] ?? false);
-        unset($data['mark_verified']);
+        $capaKronologi = trim((string) ($data['capa_kronologi'] ?? ''));
+        $capaCorrective = trim((string) ($data['capa_corrective_action'] ?? ''));
+        $capaPreventive = trim((string) ($data['capa_preventive_action'] ?? ''));
+        unset($data['mark_verified'], $data['capa_kronologi'], $data['capa_corrective_action'], $data['capa_preventive_action']);
 
         foreach (['rating_service', 'rating_food', 'rating_beverage', 'rating_cleanliness', 'rating_staff', 'rating_value'] as $rk) {
             if (array_key_exists($rk, $data) && $data[$rk] === '') {
@@ -734,6 +754,18 @@ class GuestCommentFormApiController extends Controller
 
         $guest_comment_form->fill($data);
 
+        $severity = strtolower(trim((string) ($guest_comment_form->issue_severity ?? '')));
+        $requiresCapa = in_array($severity, ['critical', 'major', 'minor', 'severe', 'negative', 'mild_negative'], true);
+
+        if ($markVerified && $requiresCapa) {
+            if ($capaKronologi === '' || $capaCorrective === '' || $capaPreventive === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Severity '.$severity.' — Leader wajib mengisi CAPA (Kronologi, Corrective Action, Preventive Action) sebelum verifikasi.',
+                ], 422);
+            }
+        }
+
         if ($markVerified) {
             $guest_comment_form->status = 'verified';
             $guest_comment_form->verified_by = $request->user()->id;
@@ -741,6 +773,38 @@ class GuestCommentFormApiController extends Controller
         }
 
         $guest_comment_form->save();
+
+        if ($requiresCapa && ($capaKronologi !== '' || $capaCorrective !== '' || $capaPreventive !== '')) {
+            $now = now();
+            $existing = DB::table('guest_comment_capas')
+                ->where('guest_comment_form_id', $guest_comment_form->id)
+                ->first();
+
+            if ($existing) {
+                DB::table('guest_comment_capas')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'kronologi' => $capaKronologi,
+                        'corrective_action' => $capaCorrective,
+                        'preventive_action' => $capaPreventive,
+                        'filled_by' => $request->user()->id,
+                        'filled_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+            } else {
+                DB::table('guest_comment_capas')->insert([
+                    'guest_comment_form_id' => $guest_comment_form->id,
+                    'kronologi' => $capaKronologi,
+                    'corrective_action' => $capaCorrective,
+                    'preventive_action' => $capaPreventive,
+                    'filled_by' => $request->user()->id,
+                    'filled_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        }
+
         $guest_comment_form->refresh();
         $guest_comment_form->load(['creator:id,nama_lengkap,avatar', 'verifier:id,nama_lengkap,avatar', 'outlet:id_outlet,nama_outlet']);
 
