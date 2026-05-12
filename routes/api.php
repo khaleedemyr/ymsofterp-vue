@@ -58,6 +58,9 @@ use App\Http\Middleware\ApprovalAppAuth;
 // Test route for approvers
 Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers']);
 
+// Asset Good Receive
+Route::get('/asset-good-receives/fetch-po', [\App\Http\Controllers\AssetGoodReceiveController::class, 'fetchPO']);
+
 // Endpoint API untuk Kanban Maintenance Order
 Route::get('/maintenance-outlet', [MaintenanceOrderController::class, 'getOutlets']);
 Route::get('/ruko', [MaintenanceOrderController::class, 'getRukos']);

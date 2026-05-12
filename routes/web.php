@@ -629,6 +629,15 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/po-ops/{id}/submit-approval', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'submitForApproval'])->name('po-ops.submit-approval');
     Route::post('/po-ops/{id}/approve', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'approve'])->name('po-ops.approve');
 
+    // Asset Good Receive
+    Route::get('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'index'])->name('asset-good-receives.index')->middleware('auth');
+    Route::get('/asset-good-receives/create', [\App\Http\Controllers\AssetGoodReceiveController::class, 'create'])->name('asset-good-receives.create')->middleware('auth');
+    Route::post('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'store'])->name('asset-good-receives.store')->middleware('auth');
+    Route::get('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'show'])->name('asset-good-receives.show')->middleware('auth');
+    Route::get('/asset-good-receives/{id}/edit', [\App\Http\Controllers\AssetGoodReceiveController::class, 'edit'])->name('asset-good-receives.edit')->middleware('auth');
+    Route::put('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'update'])->name('asset-good-receives.update')->middleware('auth');
+    Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'destroy'])->name('asset-good-receives.destroy')->middleware('auth');
+
 });
 
 // Test route outside middleware

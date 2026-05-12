@@ -82,6 +82,7 @@ const menuGroups = [
             { name: () => 'Depreciations', icon: 'fa-solid fa-chart-line', route: '/asset-management/depreciations', code: 'asset_management_depreciations' },
             { name: () => 'Reports', icon: 'fa-solid fa-chart-bar', route: '/asset-management/reports', code: 'asset_management_reports' },
             { name: () => 'Lost & Breakage', icon: 'fa-solid fa-box-open', route: '/lost-breakage', code: 'lost_breakage' },
+            { name: () => 'Asset Good Receive', icon: 'fa-solid fa-truck-ramp-box', route: '/asset-good-receives', code: 'asset_good_receive' },
         ],
     },
     {
