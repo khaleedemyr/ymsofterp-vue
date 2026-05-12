@@ -18,8 +18,8 @@
               <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">PURCHASE ORDER OPS</h2>
             </div>
 
-            <div class="mb-4 text-sm">
-              <div class="grid grid-cols-2 gap-4">
+            <div class="flex justify-between items-start mb-4 text-sm">
+              <div class="grid grid-cols-2 gap-4 flex-1">
                 <div>
                   <p><strong>No. PO:</strong> {{ po.number }}</p>
                   <p><strong>Tanggal:</strong> {{ new Date(po.date).toLocaleDateString('id-ID') }}</p>
@@ -35,6 +35,10 @@
                   <p><strong>PPN Amount:</strong> Rp {{ new Intl.NumberFormat('id-ID').format(po.ppn_amount || 0) }}</p>
                   <p><strong>Grand Total:</strong> Rp {{ new Intl.NumberFormat('id-ID').format(po.grand_total) }}</p>
                 </div>
+              </div>
+              <div class="flex-shrink-0 ml-4 text-center">
+                <QrcodeVue :value="po.number || ''" :size="90" level="M" />
+                <div class="text-[9px] text-gray-500 mt-1">{{ po.number }}</div>
               </div>
             </div>
 
@@ -112,6 +116,7 @@
 
 <script setup>
 import { defineProps, defineEmits } from 'vue';
+import QrcodeVue from 'qrcode.vue';
 
 const props = defineProps({
   show: {

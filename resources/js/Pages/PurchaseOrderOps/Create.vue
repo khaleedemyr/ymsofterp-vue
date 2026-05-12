@@ -36,7 +36,7 @@ const fetchPRList = async () => {
             const status = (pr.status || '').toString().toUpperCase();
             // Include PRs with status APPROVED, PROCESSED, COMPLETED, or PAID (as long as they have items not yet in PO)
             const allowedStatuses = ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID'];
-            return mode === 'pr_ops' && allowedStatuses.includes(status);
+            return ['pr_ops', 'pr_assets'].includes(mode) && allowedStatuses.includes(status);
         });
         prList.value = filtered.map(pr => {
             // Ensure is_held and hold_reason are properly set
@@ -654,6 +654,12 @@ onMounted(() => {
                   <div class="flex-1">
                     <div class="flex items-center gap-2 mb-1">
                       <h3 class="text-lg font-semibold text-gray-900">{{ pr.number }}</h3>
+                      <span v-if="pr.mode === 'pr_assets'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        PR Assets
+                      </span>
+                      <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        PR Ops
+                      </span>
                       <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                         <i class="fas fa-lock mr-1"></i>
                         ON HOLD

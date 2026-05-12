@@ -133,7 +133,7 @@ class PurchaseOrderOpsController extends Controller
             ->join('purchase_requisition_items as items', 'pr.id', '=', 'items.purchase_requisition_id')
             ->leftJoin('purchase_order_ops_items as po_items', 'items.id', '=', 'po_items.pr_ops_item_id')
             ->whereIn('pr.status', ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']) // Include all active statuses
-            ->where('pr.mode', 'pr_ops') // Only PR Ops mode
+            ->whereIn('pr.mode', ['pr_ops', 'pr_assets']) // PR Ops and PR Assets mode
             ->groupBy('pr.id')
             ->havingRaw('COUNT(items.id) = COUNT(po_items.id)')
             ->pluck('pr.id')
@@ -151,7 +151,7 @@ class PurchaseOrderOpsController extends Controller
             ->leftJoin('purchase_requisition_categories as c', 'items.category_id', '=', 'c.id')
             ->leftJoin('purchase_requisition_categories as pr_c', 'pr.category_id', '=', 'pr_c.id') // PR category for fallback
             ->whereIn('pr.status', ['APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']) // Include PRs that are approved or already processed/paid but still have items not in PO
-            ->where('pr.mode', 'pr_ops') // Only PR Ops mode
+            ->whereIn('pr.mode', ['pr_ops', 'pr_assets']) // PR Ops and PR Assets mode
             ->whereNotIn('pr.id', $fullyProcessedPRs) // Exclude fully processed PRs (all items already in PO)
             // Don't exclude items here - we'll filter them in the mapping to show PR even if some items are already in PO
             ->select(
@@ -536,8 +536,8 @@ class PurchaseOrderOpsController extends Controller
                     continue;
                 }
 
-                // Only process PR Ops mode (PO only for purchase requisition, not for payment/travel/kasbon)
-                if ($pr->mode !== 'pr_ops') {
+                // Only process PR Ops and PR Assets mode (not for payment/travel/kasbon)
+                if (!in_array($pr->mode, ['pr_ops', 'pr_assets'])) {
                     continue;
                 }
 
@@ -1051,7 +1051,7 @@ class PurchaseOrderOpsController extends Controller
             // Update related Purchase Requisition Ops status based on remaining items in PO
             if ($po->source_type === 'purchase_requisition_ops' && $po->source_id) {
                 $pr = PurchaseRequisition::find($po->source_id);
-                if ($pr && $pr->mode === 'pr_ops') {
+                if ($pr && in_array($pr->mode, ['pr_ops', 'pr_assets'])) {
                     // Get all items for this PR
                     $allPrItems = PurchaseRequisitionItem::where('purchase_requisition_id', $pr->id)->get();
                     

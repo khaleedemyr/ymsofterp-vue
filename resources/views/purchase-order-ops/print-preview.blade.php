@@ -166,6 +166,29 @@
             background-color: #fff3cd;
             color: #856404;
         }
+        .po-header-wrapper {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+        .po-header-wrapper .po-header {
+            flex: 1;
+        }
+        .qr-code-container {
+            flex-shrink: 0;
+            margin-left: 15px;
+            text-align: center;
+        }
+        .qr-code-container canvas,
+        .qr-code-container img {
+            width: 90px !important;
+            height: 90px !important;
+        }
+        .qr-code-label {
+            font-size: 9px;
+            color: #666;
+            margin-top: 3px;
+        }
         @media print {
             body {
                 background-color: white;
@@ -235,9 +258,15 @@
             @endif
 
             <div class="po-section">
-                <div class="po-header">
-                    <div class="po-number">{{ $po->number }}</div>
-                    <div class="po-title">{{ $po->supplier->name ?? 'N/A' }}</div>
+                <div class="po-header-wrapper">
+                    <div class="po-header">
+                        <div class="po-number">{{ $po->number }}</div>
+                        <div class="po-title">{{ $po->supplier->name ?? 'N/A' }}</div>
+                    </div>
+                    <div class="qr-code-container">
+                        <div id="qrcode-{{ $po->id }}"></div>
+                        <div class="qr-code-label">{{ $po->number }}</div>
+                    </div>
                 </div>
 
                 <div class="info-grid">
@@ -435,12 +464,23 @@
         @endforeach
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
-        // Auto print when page loads
         window.onload = function() {
+            @foreach($purchaseOrders as $po)
+                new QRCode(document.getElementById("qrcode-{{ $po->id }}"), {
+                    text: "{{ $po->number }}",
+                    width: 90,
+                    height: 90,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            @endforeach
+
             setTimeout(function() {
                 window.print();
-            }, 1000);
+            }, 1200);
         };
     </script>
 </body>
