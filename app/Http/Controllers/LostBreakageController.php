@@ -22,7 +22,8 @@ class LostBreakageController extends Controller
             ->select(
                 'h.*',
                 'o.nama_outlet as outlet_name',
-                'u.nama_lengkap as creator_name'
+                'u.nama_lengkap as creator_name',
+                'u.avatar as creator_avatar'
             );
 
         if ($user->id_outlet != 1) {
@@ -365,7 +366,7 @@ class LostBreakageController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->where('h.id', $id)
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name')
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar')
             ->first();
 
         if (!$header) {
@@ -849,7 +850,7 @@ class LostBreakageController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->where('h.id', $id)
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name')
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar')
             ->first();
 
         if (!$header) {
@@ -888,7 +889,7 @@ class LostBreakageController extends Controller
         $query = DB::table('lost_breakage_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name');
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar');
 
         if ($user->id_outlet != 1) {
             $query->where('h.outlet_id', $user->id_outlet);
@@ -932,7 +933,7 @@ class LostBreakageController extends Controller
         $query = DB::table('lost_breakage_headers as h')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name');
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar');
 
         if ($user->id_outlet != 1) {
             $query->where('h.outlet_id', $user->id_outlet);
