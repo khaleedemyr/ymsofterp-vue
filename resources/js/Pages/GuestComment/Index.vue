@@ -108,6 +108,21 @@ function ratingBlockForTable(row) {
   return { rows, average, nFilled: filled.length };
 }
 
+function severityBadge(severity) {
+  const s = (severity || '').toLowerCase().trim();
+  const map = {
+    critical: { label: 'Critical', bg: '#fef2f2', border: '#fca5a5', color: '#991b1b' },
+    severe: { label: 'Critical', bg: '#fef2f2', border: '#fca5a5', color: '#991b1b' },
+    major: { label: 'Major', bg: '#fff7ed', border: '#fdba74', color: '#9a3412' },
+    negative: { label: 'Major', bg: '#fff7ed', border: '#fdba74', color: '#9a3412' },
+    minor: { label: 'Minor', bg: '#fefce8', border: '#fde047', color: '#854d0e' },
+    mild_negative: { label: 'Minor', bg: '#fefce8', border: '#fde047', color: '#854d0e' },
+    neutral: { label: 'Neutral', bg: '#f0fdf4', border: '#86efac', color: '#166534' },
+    positive: { label: 'Positive', bg: '#eff6ff', border: '#93c5fd', color: '#1e40af' },
+  };
+  return map[s] || { label: s || '—', bg: '#f8fafc', border: '#e2e8f0', color: '#64748b' };
+}
+
 async function confirmDelete(row) {
   const result = await Swal.fire({
     title: 'Hapus guest comment?',
@@ -232,6 +247,7 @@ async function confirmDelete(row) {
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[180px]">Komentar</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px] max-w-[160px]">Sumber marketing</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[100px]">Severity</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Pencatat</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Verifikasi</th>
@@ -240,7 +256,7 @@ async function confirmDelete(row) {
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="11" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="12" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
@@ -315,6 +331,20 @@ async function confirmDelete(row) {
                 <span v-else class="text-gray-400">—</span>
               </td>
               <td class="px-3 py-3 text-sm break-words min-w-0">{{ row.outlet?.nama_outlet || '—' }}</td>
+              <td class="px-3 py-3">
+                <span
+                  v-if="row.issue_severity"
+                  class="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap"
+                  :style="{
+                    backgroundColor: severityBadge(row.issue_severity).bg,
+                    border: '1px solid ' + severityBadge(row.issue_severity).border,
+                    color: severityBadge(row.issue_severity).color,
+                  }"
+                >
+                  {{ severityBadge(row.issue_severity).label }}
+                </span>
+                <span v-else class="text-xs text-gray-400">—</span>
+              </td>
               <td class="px-3 py-3">
                 <span
                   class="inline-block px-2 py-1 rounded-full text-xs font-semibold"
