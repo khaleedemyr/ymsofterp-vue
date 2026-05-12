@@ -55,4 +55,31 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@agr_menu_id, 'delete', 'asset_good_receive_delete', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
+-- 3. Asset Inventory Transfer menu
+INSERT INTO `erp_menu` (
+    `name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`
+) VALUES (
+    'Asset Inventory Transfer',
+    'asset_inventory_transfer',
+    251,
+    '/asset-inventory-transfers',
+    'fa-solid fa-right-left',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @ait_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_inventory_transfer' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@ait_menu_id, 'view',    'asset_inventory_transfer_view',    NOW(), NOW()),
+(@ait_menu_id, 'create',  'asset_inventory_transfer_create',  NOW(), NOW()),
+(@ait_menu_id, 'edit',    'asset_inventory_transfer_edit',    NOW(), NOW()),
+(@ait_menu_id, 'delete',  'asset_inventory_transfer_delete',  NOW(), NOW()),
+(@ait_menu_id, 'approve', 'asset_inventory_transfer_approve', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
 COMMIT;

@@ -261,6 +261,7 @@ Route::get('items/last-price', [\App\Http\Controllers\PurchaseOrderFoodsControll
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
+Route::get('/items/search-for-asset-transfer', [ItemController::class, 'searchForAssetTransfer']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 Route::get('/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::get('/items/search-for-outlet-stock-adjustment', [ItemController::class, 'searchForOutletStockAdjustment']);
@@ -1225,6 +1226,17 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiStore']);
         Route::get('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiShow']);
         Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiDestroy']);
+
+        // Asset Inventory Transfer routes
+        Route::get('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiIndex']);
+        Route::get('/asset-inventory-transfers/create-data', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiCreateData']);
+        Route::post('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiStore']);
+        Route::get('/asset-inventory-transfers/stock', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getStock']);
+        Route::get('/asset-inventory-transfer/approvers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovers']);
+        Route::get('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiShow']);
+        Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiDestroy']);
+        Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit']);
+        Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve']);
         
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);

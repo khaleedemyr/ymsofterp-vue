@@ -2029,6 +2029,76 @@ class ItemController extends Controller
         return response()->json($items);
     }
 
+    public function searchForAssetTransfer(Request $request)
+    {
+        $q = $request->q;
+        $warehouseOutletId = $request->warehouse_outlet_id;
+
+        $outletId = null;
+        if ($warehouseOutletId) {
+            $outletId = \DB::table('warehouse_outlets')
+                ->where('id', $warehouseOutletId)
+                ->value('outlet_id');
+        }
+
+        $items = \DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
+            ->where('items.status', 'active')
+            ->where('categories.is_asset', 1)
+            ->where(function ($query) use ($q) {
+                if ($q) {
+                    $query->where('items.name', 'like', "%{$q}%")
+                        ->orWhere('items.sku', 'like', "%{$q}%")
+                        ->orWhere('categories.name', 'like', "%{$q}%");
+                }
+            })
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id',
+                'items.medium_conversion_qty',
+                'items.small_conversion_qty',
+                'categories.name as category_name',
+                'u_small.name as unit_small',
+                'u_medium.name as unit_medium',
+                'u_large.name as unit_large'
+            )
+            ->orderBy('items.name')
+            ->limit(20)
+            ->get();
+
+        if ($warehouseOutletId && $outletId) {
+            foreach ($items as $item) {
+                $inventoryItem = \DB::table('asset_inventory_items')
+                    ->where('item_id', $item->id)->first();
+
+                if ($inventoryItem) {
+                    $stock = \DB::table('asset_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryItem->id)
+                        ->where('outlet_id', $outletId)
+                        ->where('warehouse_outlet_id', $warehouseOutletId)
+                        ->first();
+
+                    $item->stock_small = $stock->qty_small ?? 0;
+                    $item->stock_medium = $stock->qty_medium ?? 0;
+                    $item->stock_large = $stock->qty_large ?? 0;
+                } else {
+                    $item->stock_small = 0;
+                    $item->stock_medium = 0;
+                    $item->stock_large = 0;
+                }
+            }
+        }
+
+        return response()->json($items);
+    }
+
     public function searchForInternalWarehouseTransfer(Request $request)
     {
         $q = $request->q;

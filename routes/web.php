@@ -638,6 +638,16 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::put('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'update'])->name('asset-good-receives.update')->middleware('auth');
     Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'destroy'])->name('asset-good-receives.destroy')->middleware('auth');
 
+    // Asset Inventory Transfer
+    Route::get('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'index'])->name('asset-inventory-transfers.index');
+    Route::get('/asset-inventory-transfers/create', [\App\Http\Controllers\AssetInventoryTransferController::class, 'create'])->name('asset-inventory-transfers.create');
+    Route::post('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'store'])->name('asset-inventory-transfers.store');
+    Route::get('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'show'])->name('asset-inventory-transfers.show');
+    Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'destroy'])->name('asset-inventory-transfers.destroy');
+    Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit'])->name('asset-inventory-transfers.submit');
+    Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve'])->name('asset-inventory-transfers.approve');
+    Route::get('/asset-inventory-transfer/approvers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovers'])->name('asset-inventory-transfers.approvers');
+
 });
 
 // Test route outside middleware
@@ -867,6 +877,7 @@ Route::delete('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
+Route::get('/items/search-for-asset-transfer', [ItemController::class, 'searchForAssetTransfer']);
 Route::get('/items/search-for-outlet-stock-adjustment', [ItemController::class, 'searchForOutletStockAdjustment']);
 Route::get('/items/search-for-internal-warehouse-transfer', [ItemController::class, 'searchForInternalWarehouseTransfer']);
 
