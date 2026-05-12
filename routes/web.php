@@ -1234,11 +1234,13 @@ Route::get('/outlet-food-good-receives/do-detail/{do_id}', [OutletFoodGoodReceiv
 Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/submit', [OutletFoodGoodReceiveController::class, 'submit']);
 Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/process-stock', [OutletFoodGoodReceiveController::class, 'processStock']);
 
-// Outlet Serial Receive (scan serial, auto-detect DO/outlet/warehouse)
+// Outlet Serial Receive (CRUD flow)
 Route::get('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'index'])->name('outlet-serial-receive.index');
-Route::post('/api/outlet-serial-receive/scan', [\App\Http\Controllers\OutletSerialReceiveController::class, 'scan'])->name('outlet-serial-receive.scan');
-Route::get('/api/outlet-serial-receive/history', [\App\Http\Controllers\OutletSerialReceiveController::class, 'history'])->name('outlet-serial-receive.history');
-Route::delete('/api/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'rollback'])->name('outlet-serial-receive.rollback');
+Route::get('/outlet-serial-receive/create', [\App\Http\Controllers\OutletSerialReceiveController::class, 'create'])->name('outlet-serial-receive.create');
+Route::post('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'store'])->name('outlet-serial-receive.store');
+Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'show'])->name('outlet-serial-receive.show');
+Route::delete('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'destroy'])->name('outlet-serial-receive.destroy');
+Route::post('/api/outlet-serial-receive/validate-serial', [\App\Http\Controllers\OutletSerialReceiveController::class, 'validateSerial'])->name('outlet-serial-receive.validate-serial');
 
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');
