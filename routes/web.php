@@ -657,6 +657,16 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-inventory-adjustments/{id}/approve', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'approve'])->name('asset-inventory-adjustments.approve');
     Route::get('/asset-inventory-adjustment/approvers', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getApprovers'])->name('asset-inventory-adjustments.approvers');
 
+    // Asset Service Orders
+    Route::get('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'index'])->name('asset-service-orders.index');
+    Route::get('/asset-service-orders/create', [\App\Http\Controllers\AssetServiceOrderController::class, 'create'])->name('asset-service-orders.create');
+    Route::post('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'store'])->name('asset-service-orders.store');
+    Route::get('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'show'])->name('asset-service-orders.show');
+    Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'destroy'])->name('asset-service-orders.destroy');
+    Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve'])->name('asset-service-orders.approve');
+    Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn'])->name('asset-service-orders.receive-return');
+    Route::get('/asset-service-order/approvers', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovers'])->name('asset-service-orders.approvers');
+
 });
 
 // Test route outside middleware

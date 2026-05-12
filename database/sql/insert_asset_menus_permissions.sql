@@ -109,4 +109,30 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@asa_menu_id, 'approve', 'asset_stock_adjustment_approve', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
+-- 5. Asset Service menu
+INSERT INTO `erp_menu` (
+    `name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`
+) VALUES (
+    'Asset Service',
+    'asset_service_order',
+    251,
+    '/asset-service-orders',
+    'fa-solid fa-screwdriver-wrench',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @asv_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_service_order' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@asv_menu_id, 'view',    'asset_service_order_view',    NOW(), NOW()),
+(@asv_menu_id, 'create',  'asset_service_order_create',  NOW(), NOW()),
+(@asv_menu_id, 'update',  'asset_service_order_edit',    NOW(), NOW()),
+(@asv_menu_id, 'delete',  'asset_service_order_delete',  NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
 COMMIT;

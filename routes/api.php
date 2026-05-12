@@ -1247,6 +1247,16 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/asset-inventory-adjustments/{id}', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiDestroy']);
         Route::post('/asset-inventory-adjustments/{id}/approve', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'approve']);
 
+        // Asset Service Orders
+        Route::get('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiIndex']);
+        Route::get('/asset-service-orders/create-data', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiCreateData']);
+        Route::post('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiStore']);
+        Route::get('/asset-service-order/approvers', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovers']);
+        Route::get('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiShow']);
+        Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiDestroy']);
+        Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve']);
+        Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn']);
+
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
