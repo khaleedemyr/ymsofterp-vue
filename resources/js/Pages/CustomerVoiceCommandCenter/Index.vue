@@ -345,74 +345,73 @@
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_contact || '—' }}</div>
                     <div class="mt-0.5 text-[11px] text-slate-500">{{ row.customer_email || '—' }}</div>
                   </td>
-                  <td class="px-3 py-3 align-top min-w-[260px]">
-                    <div class="space-y-1.5">
-                      <div>
-                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">FU Target</label>
-                        <select
-                          v-model="caseForms[row.id].follow_up_target"
-                          class="mt-0.5 block h-7 w-full rounded-lg border border-slate-200 px-2 text-[11px] outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                          :disabled="updatingCaseId === row.id"
+                  <td class="px-3 py-2 align-top min-w-[240px]">
+                    <div class="flex flex-wrap items-center gap-1">
+                      <select
+                        v-model="caseForms[row.id].follow_up_target"
+                        class="h-6 rounded-full border px-2 text-[11px] font-semibold outline-none transition focus:ring-2 focus:ring-slate-100 appearance-none cursor-pointer"
+                        :class="caseForms[row.id].follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : caseForms[row.id].follow_up_target === 'internal' ? 'border-slate-200 bg-slate-100 text-slate-700' : 'border-dashed border-slate-300 bg-white text-slate-400'"
+                        :disabled="updatingCaseId === row.id"
+                        style="padding-right: 1.2rem; background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right 0.25rem center; background-size: 0.75rem;"
+                      >
+                        <option value="">FU: —</option>
+                        <option value="customer">FU: Customer</option>
+                        <option value="internal">FU: Internal</option>
+                      </select>
+                      <select
+                        v-model="caseForms[row.id].severity"
+                        class="h-6 rounded-full border px-2 text-[11px] font-semibold outline-none transition focus:ring-2 focus:ring-slate-100 appearance-none cursor-pointer"
+                        :class="severitySelectClass(caseForms[row.id].severity)"
+                        :disabled="updatingCaseId === row.id"
+                        style="padding-right: 1.2rem; background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right 0.25rem center; background-size: 0.75rem;"
+                      >
+                        <option value="critical">Critical</option>
+                        <option value="major">Major</option>
+                        <option value="minor">Minor</option>
+                        <option value="neutral">Neutral</option>
+                        <option value="positive">Positive</option>
+                      </select>
+                    </div>
+                    <div class="relative mt-1">
+                      <button
+                        type="button"
+                        class="flex w-full flex-wrap items-center gap-0.5 rounded-lg px-0.5 py-0.5 text-left outline-none transition"
+                        :disabled="updatingCaseId === row.id"
+                        @click="toggleTopicPicker(row.id)"
+                      >
+                        <template v-if="caseForms[row.id].topics.length">
+                          <span
+                            v-for="t in caseForms[row.id].topics"
+                            :key="`btn-${row.id}-${t}`"
+                            class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-medium text-violet-900"
+                          >{{ topicLabelFor(t) }}</span>
+                        </template>
+                        <span
+                          class="inline-flex rounded-full border border-dashed border-slate-300 px-1.5 py-0 text-[10px] text-slate-400 hover:border-slate-400 hover:text-slate-500"
+                          :title="caseForms[row.id].topics.length ? 'Edit jenis komplain' : 'Tambah jenis komplain'"
                         >
-                          <option value="">— Belum ditentukan</option>
-                          <option value="customer">Customer</option>
-                          <option value="internal">Internal</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Severity</label>
-                        <select
-                          v-model="caseForms[row.id].severity"
-                          class="mt-0.5 block h-7 w-full rounded-lg border border-slate-200 px-2 text-[11px] font-semibold outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                          :class="severitySelectClass(caseForms[row.id].severity)"
-                          :disabled="updatingCaseId === row.id"
+                          {{ caseForms[row.id].topics.length ? '✎' : '+ tambah' }}
+                        </span>
+                      </button>
+                      <div v-if="openTopicPickerCaseId === row.id" class="fixed inset-0 z-20" @click="openTopicPickerCaseId = null"></div>
+                      <div
+                        v-if="openTopicPickerCaseId === row.id"
+                        class="absolute left-0 top-full z-30 mt-1 max-h-56 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl"
+                      >
+                        <p class="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jenis Komplain</p>
+                        <label
+                          v-for="opt in topicEditOptions"
+                          :key="`tp-${row.id}-${opt.v}`"
+                          class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-700 transition hover:bg-violet-50"
                         >
-                          <option value="critical">Critical</option>
-                          <option value="major">Major</option>
-                          <option value="minor">Minor</option>
-                          <option value="neutral">Neutral</option>
-                          <option value="positive">Positive</option>
-                        </select>
-                      </div>
-                      <div class="relative">
-                        <label class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Jenis Komplain</label>
-                        <button
-                          type="button"
-                          class="mt-0.5 flex min-h-[1.75rem] w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-left text-[11px] outline-none transition hover:border-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                          :disabled="updatingCaseId === row.id"
-                          @click="toggleTopicPicker(row.id)"
-                        >
-                          <template v-if="caseForms[row.id].topics.length">
-                            <span class="flex flex-wrap gap-0.5">
-                              <span
-                                v-for="t in caseForms[row.id].topics.slice(0, 3)"
-                                :key="`btn-${row.id}-${t}`"
-                                class="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-medium text-violet-900"
-                              >{{ topicLabelFor(t) }}</span>
-                              <span v-if="caseForms[row.id].topics.length > 3" class="text-[10px] text-slate-400">+{{ caseForms[row.id].topics.length - 3 }}</span>
-                            </span>
-                          </template>
-                          <span v-else class="text-slate-400">— Pilih jenis</span>
-                        </button>
-                        <div v-if="openTopicPickerCaseId === row.id" class="fixed inset-0 z-20" @click="openTopicPickerCaseId = null"></div>
-                        <div
-                          v-if="openTopicPickerCaseId === row.id"
-                          class="absolute left-0 top-full z-30 mt-1 max-h-52 w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg"
-                        >
-                          <label
-                            v-for="opt in topicEditOptions"
-                            :key="`tp-${row.id}-${opt.v}`"
-                            class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <input
-                              type="checkbox"
-                              :value="opt.v"
-                              v-model="caseForms[row.id].topics"
-                              class="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                            />
-                            {{ opt.label }}
-                          </label>
-                        </div>
+                          <input
+                            type="checkbox"
+                            :value="opt.v"
+                            v-model="caseForms[row.id].topics"
+                            class="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                          />
+                          {{ opt.label }}
+                        </label>
                       </div>
                     </div>
                   </td>
@@ -1946,11 +1945,11 @@ function severityClass(sev) {
 
 function severitySelectClass(sev) {
   const s = String(sev || '').toLowerCase()
-  if (s === 'critical') return 'border-rose-300 bg-rose-50 text-rose-700'
-  if (s === 'major') return 'border-orange-300 bg-orange-50 text-orange-700'
-  if (s === 'minor') return 'border-amber-300 bg-amber-50 text-amber-700'
-  if (s === 'positive') return 'border-emerald-300 bg-emerald-50 text-emerald-700'
-  return 'border-slate-200 bg-slate-50 text-slate-600'
+  if (s === 'critical') return 'border-rose-200 bg-rose-100 text-rose-700'
+  if (s === 'major') return 'border-orange-200 bg-orange-100 text-orange-700'
+  if (s === 'minor') return 'border-amber-200 bg-amber-100 text-amber-700'
+  if (s === 'positive') return 'border-emerald-200 bg-emerald-100 text-emerald-700'
+  return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
 function isOpenStatus(statusValue) {
