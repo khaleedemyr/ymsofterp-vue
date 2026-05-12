@@ -870,4 +870,339 @@ class AssetGoodReceiveController extends Controller
             ->where('inventory_item_id', $inventoryItem->id)
             ->delete();
     }
+
+    // ============================
+    // API methods for mobile app
+    // ============================
+
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+
+        $query = DB::table('asset_good_receives as gr')
+            ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
+            ->select(
+                'gr.id',
+                'gr.gr_number',
+                'gr.po_id',
+                'gr.outlet_id',
+                'gr.warehouse_outlet_id',
+                'gr.receive_date',
+                'gr.received_by',
+                'gr.status',
+                'gr.notes',
+                'gr.created_at',
+                'gr.updated_at',
+                'po.number as po_number',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as received_by_name',
+                's.name as supplier_name'
+            )
+            ->addSelect(DB::raw('(SELECT COALESCE(SUM(gri.total), 0) FROM asset_good_receive_items gri WHERE gri.asset_good_receive_id = gr.id) as total'));
+
+        if ($user->id_outlet != 1) {
+            $query->where('gr.outlet_id', $user->id_outlet);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('gr.gr_number', 'like', "%{$search}%")
+                  ->orWhere('po.number', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->from) {
+            $query->whereDate('gr.receive_date', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('gr.receive_date', '<=', $request->to);
+        }
+
+        $perPage = $request->per_page ?? 20;
+        $goodReceives = $query->orderByDesc('gr.created_at')->paginate($perPage);
+
+        return response()->json($goodReceives);
+    }
+
+    public function apiShow($id)
+    {
+        $gr = DB::table('asset_good_receives as gr')
+            ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->select(
+                'gr.*',
+                'po.number as po_number',
+                'po.date as po_date',
+                's.name as supplier_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as received_by_name'
+            )
+            ->where('gr.id', $id)
+            ->first();
+
+        if (!$gr) {
+            return response()->json(['message' => 'Asset Good Receive tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('asset_good_receive_items as gri')
+            ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('purchase_order_ops_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            ->select(
+                'gri.*',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'poi.item_name as po_item_name',
+                'poi.quantity as po_quantity',
+                'poi.unit as po_unit'
+            )
+            ->where('gri.asset_good_receive_id', $id)
+            ->get();
+
+        $gr->items = $items;
+
+        return response()->json(['success' => true, 'good_receive' => $gr]);
+    }
+
+    public function apiFetchPO(Request $request)
+    {
+        $number = $request->input('po_number') ?? $request->query('number');
+        if (!$number) {
+            return response()->json(['message' => 'Nomor PO harus diisi'], 422);
+        }
+
+        $po = DB::table('purchase_order_ops')->where('number', $number)->first();
+        if (!$po) {
+            return response()->json(['message' => 'PO tidak ditemukan'], 404);
+        }
+
+        if ($po->source_type !== 'purchase_requisition_ops') {
+            return response()->json(['message' => 'PO ini bukan dari Purchase Requisition Ops'], 422);
+        }
+
+        $pr = DB::table('purchase_requisitions')->where('id', $po->source_id)->first();
+        if (!$pr || $pr->mode !== 'pr_assets') {
+            return response()->json(['message' => 'PO ini bukan untuk asset (PR mode bukan pr_assets)'], 422);
+        }
+
+        $poItems = DB::table('purchase_order_ops_items as poi')
+            ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+            ->where('poi.purchase_order_ops_id', $po->id)
+            ->select(
+                'poi.id',
+                'poi.item_name',
+                'poi.quantity',
+                'poi.unit',
+                'poi.price',
+                'poi.discount_percent',
+                'poi.discount_amount',
+                'poi.total',
+                'poi.pr_ops_item_id',
+                'poi.outlet_id',
+                'pri.id as pr_item_id'
+            )
+            ->get();
+
+        $poItems = $poItems->map(function ($poItem) {
+            $qtyAlreadyReceived = DB::table('asset_good_receive_items')
+                ->where('po_item_id', $poItem->id)
+                ->sum('qty_received');
+
+            $poItem->qty_already_received = (float) $qtyAlreadyReceived;
+            $poItem->qty_remaining = (float) $poItem->quantity - $qtyAlreadyReceived;
+
+            $itemRecord = DB::table('items')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.name', $poItem->item_name)
+                ->where('categories.is_asset', 1)
+                ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 'items.large_unit_id')
+                ->first();
+
+            $poItem->item_id = $itemRecord ? $itemRecord->id : null;
+            $poItem->resolved_item_name = $itemRecord ? $itemRecord->name : $poItem->item_name;
+            $poItem->small_unit_id = $itemRecord ? $itemRecord->small_unit_id : null;
+            $poItem->medium_unit_id = $itemRecord ? $itemRecord->medium_unit_id : null;
+            $poItem->large_unit_id = $itemRecord ? $itemRecord->large_unit_id : null;
+
+            $unitRecord = DB::table('units')->where('name', $poItem->unit)->first();
+            $poItem->unit_id = $unitRecord ? $unitRecord->id : null;
+
+            return $poItem;
+        });
+
+        $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
+
+        $user = auth()->user();
+        $outlets = [];
+        if ($user->id_outlet == 1) {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet', 'nama_outlet')
+                ->orderBy('nama_outlet')
+                ->get();
+        } else {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $user->id_outlet)
+                ->select('id_outlet', 'nama_outlet')
+                ->get();
+        }
+
+        $warehouseOutlets = DB::table('warehouse_outlets')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'po' => $po,
+            'supplier' => $supplier,
+            'pr' => $pr,
+            'items' => $poItems,
+            'outlets' => $outlets,
+            'warehouse_outlets' => $warehouseOutlets,
+            'user' => ['id_outlet' => $user->id_outlet],
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'po_id' => 'required|integer',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'nullable|integer',
+            'receive_date' => 'required|date',
+            'notes' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1',
+            'items.*.po_item_id' => 'required|integer',
+            'items.*.item_id' => 'required|integer',
+            'items.*.unit_id' => 'required|integer',
+            'items.*.qty_ordered' => 'required|numeric|min:0',
+            'items.*.qty_received' => 'required|numeric|min:0.01',
+            'items.*.price' => 'required|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $grNumber = AssetGoodReceive::generateNumber();
+
+            $gr = AssetGoodReceive::create([
+                'gr_number' => $grNumber,
+                'po_id' => $request->po_id,
+                'outlet_id' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                'receive_date' => $request->receive_date,
+                'received_by' => Auth::id(),
+                'status' => 'draft',
+                'notes' => $request->notes,
+            ]);
+
+            foreach ($request->items as $itemData) {
+                $qtyReceived = (float) $itemData['qty_received'];
+                $price = (float) $itemData['price'];
+                $total = $qtyReceived * $price;
+
+                AssetGoodReceiveItem::create([
+                    'asset_good_receive_id' => $gr->id,
+                    'po_item_id' => $itemData['po_item_id'],
+                    'item_id' => $itemData['item_id'],
+                    'unit_id' => $itemData['unit_id'],
+                    'qty_ordered' => $itemData['qty_ordered'],
+                    'qty_received' => $qtyReceived,
+                    'price' => $price,
+                    'total' => $total,
+                    'notes' => $itemData['notes'] ?? null,
+                ]);
+
+                $this->processInventoryIn(
+                    $itemData['item_id'],
+                    $itemData['unit_id'],
+                    $qtyReceived,
+                    $price,
+                    $request->outlet_id,
+                    $request->warehouse_outlet_id,
+                    $request->receive_date,
+                    $gr->id,
+                    $itemData['po_item_id']
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Asset Good Receive berhasil disimpan.',
+                'gr_id' => $gr->id,
+                'gr_number' => $grNumber,
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('API Error creating Asset Good Receive: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        DB::beginTransaction();
+        try {
+            $gr = AssetGoodReceive::findOrFail($id);
+
+            if ($gr->status !== 'draft') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hanya GR dengan status draft yang dapat dihapus.',
+                ], 422);
+            }
+
+            $items = AssetGoodReceiveItem::where('asset_good_receive_id', $id)->get();
+
+            foreach ($items as $item) {
+                $this->rollbackInventory(
+                    $item->item_id,
+                    $item->unit_id,
+                    (float) $item->qty_received,
+                    $gr->outlet_id,
+                    $gr->warehouse_outlet_id,
+                    $gr->id
+                );
+            }
+
+            AssetGoodReceiveItem::where('asset_good_receive_id', $id)->delete();
+            $gr->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Asset Good Receive berhasil dihapus.',
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('API Error deleting Asset Good Receive: ' . $e->getMessage(), [
+                'gr_id' => $id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }

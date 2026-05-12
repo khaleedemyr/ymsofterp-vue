@@ -1219,6 +1219,13 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/food-good-receives/{id}', [\App\Http\Controllers\FoodGoodReceiveController::class, 'destroy']);
         Route::post('/food-good-receives/fetch-po', [\App\Http\Controllers\FoodGoodReceiveController::class, 'fetchPO']);
         
+        // Asset Good Receive routes
+        Route::get('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiIndex']);
+        Route::post('/asset-good-receives/fetch-po', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiFetchPO']);
+        Route::post('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiStore']);
+        Route::get('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiShow']);
+        Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiDestroy']);
+        
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
