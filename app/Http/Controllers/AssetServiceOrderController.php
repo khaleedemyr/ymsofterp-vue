@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\AssetServiceOrder;
 use App\Models\AssetServiceOrderItem;
 use App\Models\AssetServiceOrderApprovalFlow;
+use App\Services\NotificationService;
 
 class AssetServiceOrderController extends Controller
 {
@@ -162,6 +163,8 @@ class AssetServiceOrderController extends Controller
             ]);
 
             DB::commit();
+
+            $this->sendNotificationToNextApprover($order->id);
 
             return redirect()->route('asset-service-orders.show', $order->id)
                 ->with('success', 'Service order berhasil dibuat.');
@@ -325,6 +328,8 @@ class AssetServiceOrderController extends Controller
                         'sent_date' => now()->toDateString(),
                     ]);
                     $this->processStockOut($order->fresh()->load('items'));
+                } else {
+                    $this->sendNotificationToNextApprover($order->id);
                 }
             } else {
                 $nextFlow->reject($validated['comments'] ?? null);
@@ -675,6 +680,9 @@ class AssetServiceOrderController extends Controller
             }
 
             DB::commit();
+
+            $this->sendNotificationToNextApprover($order->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Service order berhasil dibuat.',
@@ -960,6 +968,129 @@ class AssetServiceOrderController extends Controller
             'qty_large' => $qty_large,
         ];
     }
+
+    // ─── PENDING APPROVALS ──────────────────────────────────────────
+
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'headers' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('asset_service_orders as s')
+            ->join('asset_service_order_approval_flows as af', 's.id', '=', 'af.service_order_id')
+            ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
+            ->join('users as creator', 's.created_by', '=', 'creator.id')
+            ->where('af.status', 'PENDING')
+            ->where('s.status', 'waiting_approval');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                's.id', 's.number', 's.date', 's.status', 's.description as notes',
+                'o.nama_outlet as outlet_name',
+                'sp.name as supplier_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->filter(function ($header) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) return true;
+                $lowerPending = DB::table('asset_service_order_approval_flows')
+                    ->where('service_order_id', $header->id)
+                    ->where('approval_level', '<', $header->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'headers' => $pendingHeaders]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $order = DB::table('asset_service_orders as s')
+            ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
+            ->join('users as creator', 's.created_by', '=', 'creator.id')
+            ->where('s.id', $id)
+            ->select('s.*', 'o.nama_outlet as outlet_name', 'wo.name as warehouse_name', 'sp.name as supplier_name', 'creator.nama_lengkap as creator_name')
+            ->first();
+
+        if (!$order) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('asset_service_order_items as si')
+            ->join('items as i', 'si.item_id', '=', 'i.id')
+            ->where('si.service_order_id', $id)
+            ->select('si.*', 'i.name as item_name')
+            ->get();
+
+        $approvalFlows = DB::table('asset_service_order_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.service_order_id', $id)
+            ->orderBy('af.approval_level')
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'j.nama_jabatan as approver_jabatan')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $order,
+            'items' => $items,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
+    private function sendNotificationToNextApprover($orderId)
+    {
+        try {
+            $nextApprover = DB::table('asset_service_order_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->where('af.service_order_id', $orderId)
+                ->where('af.status', 'PENDING')
+                ->orderBy('af.approval_level')
+                ->select('u.id', 'u.nama_lengkap')
+                ->first();
+
+            if (!$nextApprover) return;
+
+            $order = DB::table('asset_service_orders as s')
+                ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
+                ->join('users as creator', 's.created_by', '=', 'creator.id')
+                ->where('s.id', $orderId)
+                ->select('s.*', 'o.nama_outlet', 'sp.name as supplier_name', 'creator.nama_lengkap as creator_name')
+                ->first();
+
+            if (!$order) return;
+
+            NotificationService::insert([
+                'user_id' => $nextApprover->id,
+                'type' => 'asset_service_order_approval',
+                'title' => 'Approval Asset Service',
+                'message' => "Asset Service {$order->number} (Supplier: {$order->supplier_name}) dari outlet {$order->nama_outlet} oleh {$order->creator_name} menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error sending Asset Service notification: ' . $e->getMessage());
+        }
+    }
+
+    // ─── HELPERS ─────────────────────────────────────────────────────
 
     private function assertUserCanView($user, AssetServiceOrder $order): void
     {

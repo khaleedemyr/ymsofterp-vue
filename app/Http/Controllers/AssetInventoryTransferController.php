@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\AssetInventoryTransfer;
 use App\Models\AssetInventoryTransferItem;
 use App\Models\AssetInventoryTransferApprovalFlow;
+use App\Services\NotificationService;
 
 class AssetInventoryTransferController extends Controller
 {
@@ -337,6 +338,9 @@ class AssetInventoryTransferController extends Controller
             ]);
 
             DB::commit();
+
+            $this->sendNotificationToNextApprover($transfer->id);
+
             return response()->json(['success' => true, 'message' => 'Transfer berhasil di-submit.']);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -392,6 +396,8 @@ class AssetInventoryTransferController extends Controller
                         'approval_notes' => $validated['comments'] ?? null,
                     ]);
                     $this->processStockTransfer($transfer->fresh()->load('items'));
+                } else {
+                    $this->sendNotificationToNextApprover($transfer->id);
                 }
             } else {
                 $nextFlow->reject($validated['comments'] ?? null);
@@ -942,6 +948,124 @@ class AssetInventoryTransferController extends Controller
                 'reference_id' => $transfer->id,
                 'created_at' => now(),
             ]);
+        }
+    }
+
+    // ─── PENDING APPROVALS ──────────────────────────────────────────
+
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'headers' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('asset_inventory_transfers as t')
+            ->join('asset_inventory_transfer_approval_flows as af', 't.id', '=', 'af.asset_inventory_transfer_id')
+            ->leftJoin('warehouse_outlets as wf', 't.from_warehouse_outlet_id', '=', 'wf.id')
+            ->leftJoin('warehouse_outlets as wt', 't.to_warehouse_outlet_id', '=', 'wt.id')
+            ->join('users as creator', 't.created_by', '=', 'creator.id')
+            ->where('af.status', 'PENDING')
+            ->where('t.status', 'submitted');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                't.id', 't.transfer_number as number', 't.transfer_date as date', 't.status', 't.notes',
+                'wf.name as from_warehouse', 'wt.name as to_warehouse',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->filter(function ($header) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) return true;
+                $lowerPending = DB::table('asset_inventory_transfer_approval_flows')
+                    ->where('asset_inventory_transfer_id', $header->id)
+                    ->where('approval_level', '<', $header->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'headers' => $pendingHeaders]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $transfer = DB::table('asset_inventory_transfers as t')
+            ->leftJoin('warehouse_outlets as wf', 't.from_warehouse_outlet_id', '=', 'wf.id')
+            ->leftJoin('warehouse_outlets as wt', 't.to_warehouse_outlet_id', '=', 'wt.id')
+            ->join('users as creator', 't.created_by', '=', 'creator.id')
+            ->where('t.id', $id)
+            ->select('t.*', 'wf.name as from_warehouse', 'wt.name as to_warehouse', 'creator.nama_lengkap as creator_name')
+            ->first();
+
+        if (!$transfer) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('asset_inventory_transfer_items as ti')
+            ->join('items as i', 'ti.item_id', '=', 'i.id')
+            ->where('ti.asset_inventory_transfer_id', $id)
+            ->select('ti.*', 'i.name as item_name')
+            ->get();
+
+        $approvalFlows = DB::table('asset_inventory_transfer_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.asset_inventory_transfer_id', $id)
+            ->orderBy('af.approval_level')
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'j.nama_jabatan as approver_jabatan')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $transfer,
+            'items' => $items,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
+    private function sendNotificationToNextApprover($transferId)
+    {
+        try {
+            $nextApprover = DB::table('asset_inventory_transfer_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->where('af.asset_inventory_transfer_id', $transferId)
+                ->where('af.status', 'PENDING')
+                ->orderBy('af.approval_level')
+                ->select('u.id', 'u.nama_lengkap')
+                ->first();
+
+            if (!$nextApprover) return;
+
+            $transfer = DB::table('asset_inventory_transfers as t')
+                ->leftJoin('warehouse_outlets as wf', 't.from_warehouse_outlet_id', '=', 'wf.id')
+                ->join('users as creator', 't.created_by', '=', 'creator.id')
+                ->where('t.id', $transferId)
+                ->select('t.*', 'wf.name as from_warehouse', 'creator.nama_lengkap as creator_name')
+                ->first();
+
+            if (!$transfer) return;
+
+            NotificationService::insert([
+                'user_id' => $nextApprover->id,
+                'type' => 'asset_inventory_transfer_approval',
+                'title' => 'Approval Asset Transfer',
+                'message' => "Asset Transfer {$transfer->transfer_number} dari {$transfer->from_warehouse} oleh {$transfer->creator_name} menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error sending Asset Transfer notification: ' . $e->getMessage());
         }
     }
 

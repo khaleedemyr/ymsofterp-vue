@@ -86,6 +86,7 @@ const menuGroups = [
             { name: () => 'Asset Inventory Transfer', icon: 'fa-solid fa-right-left', route: '/asset-inventory-transfers', code: 'asset_inventory_transfer' },
             { name: () => 'Asset Stock Adjustment', icon: 'fa-solid fa-sliders', route: '/asset-inventory-adjustments', code: 'asset_stock_adjustment' },
             { name: () => 'Asset Service', icon: 'fa-solid fa-screwdriver-wrench', route: '/asset-service-orders', code: 'asset_service_order' },
+            { name: () => 'Asset Disposal', icon: 'fa-solid fa-dumpster', route: '/asset-disposals', code: 'asset_disposal' },
         ],
     },
     {

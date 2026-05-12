@@ -667,6 +667,17 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn'])->name('asset-service-orders.receive-return');
     Route::get('/asset-service-order/approvers', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovers'])->name('asset-service-orders.approvers');
 
+    // Asset Disposals
+    Route::get('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'index'])->name('asset-disposals.index');
+    Route::get('/asset-disposals/create', [\App\Http\Controllers\AssetDisposalController::class, 'create'])->name('asset-disposals.create');
+    Route::post('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'store'])->name('asset-disposals.store');
+    Route::post('/asset-disposals/upload-photo', [\App\Http\Controllers\AssetDisposalController::class, 'uploadPhoto'])->name('asset-disposals.upload-photo');
+    Route::get('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'show'])->name('asset-disposals.show');
+    Route::delete('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'destroy'])->name('asset-disposals.destroy');
+    Route::delete('/asset-disposals/photo/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'deletePhoto'])->name('asset-disposals.delete-photo');
+    Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve'])->name('asset-disposals.approve');
+    Route::get('/asset-disposal/approvers', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovers'])->name('asset-disposals.approvers');
+
 });
 
 // Test route outside middleware
@@ -3301,6 +3312,16 @@ Route::get('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController:
 Route::delete('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'destroy'])->name('lost-breakage.destroy');
 Route::get('/lost-breakage-approvals/pending', [\App\Http\Controllers\LostBreakageController::class, 'getPendingApprovals'])->name('lost-breakage.approvals.pending');
 Route::get('/api/lost-breakage/{id}/approval-details', [\App\Http\Controllers\LostBreakageController::class, 'getApprovalDetails'])->name('lost-breakage.approval-details');
+
+// Asset Transfer, Adjustment, Service pending approvals
+Route::get('/asset-transfer-approvals/pending', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getPendingApprovals'])->name('asset-transfer.approvals.pending');
+Route::get('/api/asset-transfer/{id}/approval-details', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovalDetails'])->name('asset-transfer.approval-details');
+Route::get('/asset-adjustment-approvals/pending', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getPendingApprovals'])->name('asset-adjustment.approvals.pending');
+Route::get('/api/asset-adjustment/{id}/approval-details', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getApprovalDetails'])->name('asset-adjustment.approval-details');
+Route::get('/asset-service-approvals/pending', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals'])->name('asset-service.approvals.pending');
+Route::get('/api/asset-service/{id}/approval-details', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovalDetails'])->name('asset-service.approval-details');
+Route::get('/asset-disposal-approvals/pending', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals'])->name('asset-disposal.approvals.pending');
+Route::get('/api/asset-disposal/{id}/approval-details', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovalDetails'])->name('asset-disposal.approval-details');
 Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'report'])->name('lost-breakage.report');
 Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails'])->name('lost-breakage.report.details');
 Route::get('/lost-breakage-report/export', [\App\Http\Controllers\LostBreakageController::class, 'exportReport'])->name('lost-breakage.report.export');

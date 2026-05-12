@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\AssetInventoryAdjustment;
 use App\Models\AssetInventoryAdjustmentItem;
 use App\Models\AssetInventoryAdjustmentApprovalFlow;
+use App\Services\NotificationService;
 
 class AssetInventoryAdjustmentController extends Controller
 {
@@ -160,6 +161,8 @@ class AssetInventoryAdjustmentController extends Controller
 
             DB::commit();
 
+            $this->sendNotificationToNextApprover($adjustment->id);
+
             return redirect()->route('asset-inventory-adjustments.show', $adjustment->id)
                 ->with('success', 'Adjustment berhasil dibuat.');
         } catch (\Exception $e) {
@@ -307,6 +310,8 @@ class AssetInventoryAdjustmentController extends Controller
                 if (!$hasPending) {
                     $adjustment->update(['status' => 'approved']);
                     $this->processInventory($adjustment->fresh()->load('items'));
+                } else {
+                    $this->sendNotificationToNextApprover($adjustment->id);
                 }
             } else {
                 $nextFlow->reject($validated['comments'] ?? null);
@@ -561,6 +566,9 @@ class AssetInventoryAdjustmentController extends Controller
             }
 
             DB::commit();
+
+            $this->sendNotificationToNextApprover($adjustment->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Adjustment berhasil dibuat.',
@@ -804,6 +812,127 @@ class AssetInventoryAdjustmentController extends Controller
                 'reference_id' => $adjustment->id,
                 'created_at' => now(),
             ]);
+        }
+    }
+
+    // ─── PENDING APPROVALS ──────────────────────────────────────────
+
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'headers' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('asset_inventory_adjustments as a')
+            ->join('asset_inventory_adjustment_approval_flows as af', 'a.id', '=', 'af.adjustment_id')
+            ->leftJoin('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
+            ->join('users as creator', 'a.created_by', '=', 'creator.id')
+            ->where('af.status', 'PENDING')
+            ->where('a.status', 'waiting_approval');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                'a.id', 'a.number', 'a.date', 'a.status', 'a.type', 'a.reason as notes',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->filter(function ($header) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) return true;
+                $lowerPending = DB::table('asset_inventory_adjustment_approval_flows')
+                    ->where('adjustment_id', $header->id)
+                    ->where('approval_level', '<', $header->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'headers' => $pendingHeaders]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $adjustment = DB::table('asset_inventory_adjustments as a')
+            ->leftJoin('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
+            ->join('users as creator', 'a.created_by', '=', 'creator.id')
+            ->where('a.id', $id)
+            ->select('a.*', 'o.nama_outlet as outlet_name', 'wo.name as warehouse_name', 'creator.nama_lengkap as creator_name')
+            ->first();
+
+        if (!$adjustment) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('asset_inventory_adjustment_items as ai')
+            ->join('items as i', 'ai.item_id', '=', 'i.id')
+            ->where('ai.adjustment_id', $id)
+            ->select('ai.*', 'i.name as item_name')
+            ->get();
+
+        $approvalFlows = DB::table('asset_inventory_adjustment_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.adjustment_id', $id)
+            ->orderBy('af.approval_level')
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'j.nama_jabatan as approver_jabatan')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $adjustment,
+            'items' => $items,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
+    private function sendNotificationToNextApprover($adjustmentId)
+    {
+        try {
+            $nextApprover = DB::table('asset_inventory_adjustment_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->where('af.adjustment_id', $adjustmentId)
+                ->where('af.status', 'PENDING')
+                ->orderBy('af.approval_level')
+                ->select('u.id', 'u.nama_lengkap')
+                ->first();
+
+            if (!$nextApprover) return;
+
+            $adjustment = DB::table('asset_inventory_adjustments as a')
+                ->leftJoin('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
+                ->join('users as creator', 'a.created_by', '=', 'creator.id')
+                ->where('a.id', $adjustmentId)
+                ->select('a.*', 'o.nama_outlet', 'creator.nama_lengkap as creator_name')
+                ->first();
+
+            if (!$adjustment) return;
+
+            $typeLabel = $adjustment->type === 'in' ? 'Stock In' : 'Stock Out';
+
+            NotificationService::insert([
+                'user_id' => $nextApprover->id,
+                'type' => 'asset_stock_adjustment_approval',
+                'title' => 'Approval Asset Stock Adjustment',
+                'message' => "Asset Adjustment {$adjustment->number} ({$typeLabel}) dari outlet {$adjustment->nama_outlet} oleh {$adjustment->creator_name} menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error sending Asset Adjustment notification: ' . $e->getMessage());
         }
     }
 

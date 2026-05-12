@@ -3,67 +3,61 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AssetDisposal extends Model
 {
     protected $table = 'asset_disposals';
-    
-    protected $fillable = [
-        'asset_id',
-        'disposal_date',
-        'disposal_method',
-        'disposal_value',
-        'reason',
-        'status',
-        'requested_by',
-        'approved_by',
-        'approved_at',
-        'rejection_reason',
-        'completed_at',
-        'notes',
-    ];
+    protected $guarded = [];
 
     protected $casts = [
-        'disposal_date' => 'date',
-        'disposal_value' => 'decimal:2',
-        'approved_at' => 'datetime',
-        'completed_at' => 'datetime',
-        'asset_id' => 'integer',
-        'requested_by' => 'integer',
-        'approved_by' => 'integer',
+        'date' => 'date',
+        'total_sale_price' => 'decimal:2',
     ];
 
-    /**
-     * Get the asset being disposed
-     */
-    public function asset(): BelongsTo
+    public function items()
     {
-        return $this->belongsTo(Asset::class, 'asset_id');
+        return $this->hasMany(AssetDisposalItem::class, 'disposal_id');
     }
 
-    /**
-     * Get the user who requested the disposal
-     */
-    public function requester(): BelongsTo
+    public function photos()
     {
-        return $this->belongsTo(User::class, 'requested_by');
+        return $this->hasMany(AssetDisposalPhoto::class, 'disposal_id');
     }
 
-    /**
-     * Get the user who approved the disposal
-     */
-    public function approver(): BelongsTo
+    public function outlet()
     {
-        return $this->belongsTo(User::class, 'approved_by');
+        return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
     }
 
-    /**
-     * Check if disposal is completed
-     */
-    public function isCompleted(): bool
+    public function warehouseOutlet()
     {
-        return $this->status === 'Completed';
+        return $this->belongsTo(WarehouseOutlet::class, 'warehouse_outlet_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function approvalFlows()
+    {
+        return $this->hasMany(AssetDisposalApprovalFlow::class, 'disposal_id');
+    }
+
+    public static function generateNumber()
+    {
+        $prefix = 'ADP' . date('Ymd');
+        $last = self::where('number', 'like', $prefix . '%')
+            ->orderByDesc('number')
+            ->first();
+
+        if ($last) {
+            $lastNum = (int) substr($last->number, strlen($prefix));
+            $nextNum = $lastNum + 1;
+        } else {
+            $nextNum = 1;
+        }
+
+        return $prefix . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
     }
 }
-

@@ -375,6 +375,66 @@ class PendingApprovalController extends Controller
                 Log::error('Error loading Lost & Breakage approvals: ' . $e->getMessage());
             }
 
+            // 20. Asset Inventory Transfer
+            try {
+                $aitController = app(\App\Http\Controllers\AssetInventoryTransferController::class);
+                $aitResponse = $aitController->getPendingApprovals($request);
+                if ($aitResponse->getStatusCode() === 200) {
+                    $aitData = json_decode($aitResponse->getContent(), true);
+                    $data['asset_inventory_transfer'] = $aitData['headers'] ?? $aitData['data'] ?? [];
+                    if ($limit > 0 && count($data['asset_inventory_transfer']) > $limit) {
+                        $data['asset_inventory_transfer'] = array_slice($data['asset_inventory_transfer'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Asset Inventory Transfer approvals: ' . $e->getMessage());
+            }
+
+            // 21. Asset Stock Adjustment
+            try {
+                $asaController = app(\App\Http\Controllers\AssetInventoryAdjustmentController::class);
+                $asaResponse = $asaController->getPendingApprovals($request);
+                if ($asaResponse->getStatusCode() === 200) {
+                    $asaData = json_decode($asaResponse->getContent(), true);
+                    $data['asset_stock_adjustment'] = $asaData['headers'] ?? $asaData['data'] ?? [];
+                    if ($limit > 0 && count($data['asset_stock_adjustment']) > $limit) {
+                        $data['asset_stock_adjustment'] = array_slice($data['asset_stock_adjustment'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Asset Stock Adjustment approvals: ' . $e->getMessage());
+            }
+
+            // 22. Asset Service Order
+            try {
+                $asoController = app(\App\Http\Controllers\AssetServiceOrderController::class);
+                $asoResponse = $asoController->getPendingApprovals($request);
+                if ($asoResponse->getStatusCode() === 200) {
+                    $asoData = json_decode($asoResponse->getContent(), true);
+                    $data['asset_service_order'] = $asoData['headers'] ?? $asoData['data'] ?? [];
+                    if ($limit > 0 && count($data['asset_service_order']) > $limit) {
+                        $data['asset_service_order'] = array_slice($data['asset_service_order'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Asset Service Order approvals: ' . $e->getMessage());
+            }
+
+            // 23. Asset Disposal
+            try {
+                $adpController = app(\App\Http\Controllers\AssetDisposalController::class);
+                $adpResponse = $adpController->getPendingApprovals($request);
+                if ($adpResponse->getStatusCode() === 200) {
+                    $adpData = json_decode($adpResponse->getContent(), true);
+                    $data['asset_disposal'] = $adpData['headers'] ?? $adpData['data'] ?? [];
+                    if ($limit > 0 && count($data['asset_disposal']) > $limit) {
+                        $data['asset_disposal'] = array_slice($data['asset_disposal'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Asset Disposal approvals: ' . $e->getMessage());
+            }
+
                 return $data;
             });
             

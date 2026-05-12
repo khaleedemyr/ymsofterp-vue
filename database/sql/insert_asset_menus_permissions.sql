@@ -135,4 +135,30 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@asv_menu_id, 'delete',  'asset_service_order_delete',  NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
+-- Asset Disposal Menu
+INSERT INTO `erp_menu` (`code`, `name`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`)
+VALUES (
+    'asset_disposal',
+    'Asset Disposal',
+    251,
+    '/asset-disposals',
+    'fa-solid fa-dumpster',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @adp_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_disposal' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@adp_menu_id, 'view',    'asset_disposal_view',    NOW(), NOW()),
+(@adp_menu_id, 'create',  'asset_disposal_create',  NOW(), NOW()),
+(@adp_menu_id, 'update',  'asset_disposal_edit',    NOW(), NOW()),
+(@adp_menu_id, 'delete',  'asset_disposal_delete',  NOW(), NOW()),
+(@adp_menu_id, 'approve', 'asset_disposal_approve', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
 COMMIT;

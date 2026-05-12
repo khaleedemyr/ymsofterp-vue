@@ -175,6 +175,22 @@ const loadingLostBreakageApprovals = ref(false);
 const showLostBreakageApprovalModal = ref(false);
 const selectedLostBreakageApproval = ref(null);
 
+// Asset Inventory Transfer approvals
+const pendingAssetTransferApprovals = ref([]);
+const loadingAssetTransferApprovals = ref(false);
+
+// Asset Stock Adjustment approvals
+const pendingAssetAdjustmentApprovals = ref([]);
+const loadingAssetAdjustmentApprovals = ref(false);
+
+// Asset Service Order approvals
+const pendingAssetServiceApprovals = ref([]);
+const loadingAssetServiceApprovals = ref(false);
+
+// Asset Disposal approvals
+const pendingAssetDisposalApprovals = ref([]);
+const loadingAssetDisposalApprovals = ref(false);
+
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
     let result = [...allContraBonApprovals.value];
@@ -974,6 +990,10 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
+            pendingAssetTransferApprovals.value = data.asset_inventory_transfer || [];
+            pendingAssetAdjustmentApprovals.value = data.asset_stock_adjustment || [];
+            pendingAssetServiceApprovals.value = data.asset_service_order || [];
+            pendingAssetDisposalApprovals.value = data.asset_disposal || [];
             
             // Set loading states to false
             loadingPrApprovals.value = false;
@@ -990,6 +1010,9 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
+            loadingAssetTransferApprovals.value = false;
+            loadingAssetAdjustmentApprovals.value = false;
+            loadingAssetServiceApprovals.value = false;
             
             console.log('✅ Loaded all pending approvals from optimized endpoint (cached:', response.data.cached, ')');
             return true;
@@ -2387,6 +2410,78 @@ async function loadPendingLostBreakageApprovals() {
     } finally {
         loadingLostBreakageApprovals.value = false;
     }
+}
+
+async function loadPendingAssetTransferApprovals() {
+    loadingAssetTransferApprovals.value = true;
+    try {
+        const response = await axios.get('/asset-transfer-approvals/pending');
+        if (response.data.success) {
+            pendingAssetTransferApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Asset Transfer approvals:', error);
+    } finally {
+        loadingAssetTransferApprovals.value = false;
+    }
+}
+
+async function loadPendingAssetAdjustmentApprovals() {
+    loadingAssetAdjustmentApprovals.value = true;
+    try {
+        const response = await axios.get('/asset-adjustment-approvals/pending');
+        if (response.data.success) {
+            pendingAssetAdjustmentApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Asset Adjustment approvals:', error);
+    } finally {
+        loadingAssetAdjustmentApprovals.value = false;
+    }
+}
+
+async function loadPendingAssetServiceApprovals() {
+    loadingAssetServiceApprovals.value = true;
+    try {
+        const response = await axios.get('/asset-service-approvals/pending');
+        if (response.data.success) {
+            pendingAssetServiceApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Asset Service approvals:', error);
+    } finally {
+        loadingAssetServiceApprovals.value = false;
+    }
+}
+
+function showAssetTransferApprovalDetails(id) {
+    window.location.href = `/asset-inventory-transfers/${id}`;
+}
+
+function showAssetAdjustmentApprovalDetails(id) {
+    window.location.href = `/asset-inventory-adjustments/${id}`;
+}
+
+function showAssetServiceApprovalDetails(id) {
+    window.location.href = `/asset-service-orders/${id}`;
+}
+
+async function loadPendingAssetDisposalApprovals() {
+    loadingAssetDisposalApprovals.value = true;
+    try {
+        const response = await axios.get('/asset-disposal-approvals/pending');
+        if (response.data.success) {
+            pendingAssetDisposalApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Asset Disposal approvals:', error);
+    } finally {
+        loadingAssetDisposalApprovals.value = false;
+    }
+}
+
+function showAssetDisposalApprovalDetails(id) {
+    window.location.href = `/asset-disposals/${id}`;
 }
 
 async function showLostBreakageApprovalDetails(headerId) {
@@ -5320,6 +5415,9 @@ onMounted(async () => {
         loadCoachingApprovals();
         loadPendingCorrectionApprovals();
         loadPendingLostBreakageApprovals();
+        loadPendingAssetTransferApprovals();
+        loadPendingAssetAdjustmentApprovals();
+        loadPendingAssetServiceApprovals();
     }
     
     // Load yang tidak termasuk di optimized endpoint
@@ -6534,6 +6632,152 @@ watch(locale, () => {
                                     Lihat {{ pendingLostBreakageApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Inventory Transfer Approval Section -->
+                <div v-if="pendingAssetTransferApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-2xl border border-cyan-200/50 dark:border-cyan-700/50 p-4 hover:shadow-cyan-200/20 dark:hover:shadow-cyan-800/20 transition-all duration-300">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="relative">
+                                    <div class="w-2.5 h-2.5 bg-cyan-500 rounded-full animate-pulse"></div>
+                                    <div class="absolute inset-0 w-2.5 h-2.5 bg-cyan-400 rounded-full animate-ping opacity-75"></div>
+                                </div>
+                                <h3 class="text-sm font-bold text-cyan-700 dark:text-cyan-300">Asset Transfer Approval</h3>
+                            </div>
+                            <div class="bg-cyan-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                {{ pendingAssetTransferApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="header in pendingAssetTransferApprovals.slice(0, 3)" :key="header.id"
+                                @click="showAssetTransferApprovalDetails(header.id)"
+                                class="bg-gradient-to-r from-cyan-50 to-transparent dark:from-cyan-900/20 rounded-xl p-3 cursor-pointer hover:from-cyan-100 dark:hover:from-cyan-900/40 transition-all duration-200 border border-cyan-100 dark:border-cyan-800/50">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-cyan-700 dark:text-cyan-300">{{ header.number || 'N/A' }}</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(header.date) }}</span>
+                                </div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-400 mt-1">{{ header.from_warehouse }} → {{ header.to_warehouse }}</div>
+                                <div class="text-[10px] text-gray-400 mt-0.5">{{ header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="pendingAssetTransferApprovals.length > 3" class="text-center mt-2">
+                            <span class="text-[10px] text-cyan-500 cursor-pointer hover:underline" @click="showAssetTransferApprovalDetails(pendingAssetTransferApprovals[0]?.id)">
+                                Lihat {{ pendingAssetTransferApprovals.length - 3 }} lainnya...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Stock Adjustment Approval Section -->
+                <div v-if="pendingAssetAdjustmentApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-2xl border border-amber-200/50 dark:border-amber-700/50 p-4 hover:shadow-amber-200/20 dark:hover:shadow-amber-800/20 transition-all duration-300">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="relative">
+                                    <div class="w-2.5 h-2.5 bg-amber-500 rounded-full animate-pulse"></div>
+                                    <div class="absolute inset-0 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping opacity-75"></div>
+                                </div>
+                                <h3 class="text-sm font-bold text-amber-700 dark:text-amber-300">Asset Adjustment Approval</h3>
+                            </div>
+                            <div class="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                {{ pendingAssetAdjustmentApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="header in pendingAssetAdjustmentApprovals.slice(0, 3)" :key="header.id"
+                                @click="showAssetAdjustmentApprovalDetails(header.id)"
+                                class="bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-900/20 rounded-xl p-3 cursor-pointer hover:from-amber-100 dark:hover:from-amber-900/40 transition-all duration-200 border border-amber-100 dark:border-amber-800/50">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-amber-700 dark:text-amber-300">{{ header.number || 'N/A' }}</span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium" :class="header.type === 'in' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">{{ header.type === 'in' ? 'Stock In' : 'Stock Out' }}</span>
+                                </div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-400 mt-1">{{ header.outlet_name }} • {{ header.warehouse_name }}</div>
+                                <div class="flex items-center justify-between mt-0.5">
+                                    <span class="text-[10px] text-gray-400">{{ header.creator_name }}</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(header.date) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="pendingAssetAdjustmentApprovals.length > 3" class="text-center mt-2">
+                            <span class="text-[10px] text-amber-500 cursor-pointer hover:underline" @click="showAssetAdjustmentApprovalDetails(pendingAssetAdjustmentApprovals[0]?.id)">
+                                Lihat {{ pendingAssetAdjustmentApprovals.length - 3 }} lainnya...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Service Order Approval Section -->
+                <div v-if="pendingAssetServiceApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-2xl border border-purple-200/50 dark:border-purple-700/50 p-4 hover:shadow-purple-200/20 dark:hover:shadow-purple-800/20 transition-all duration-300">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="relative">
+                                    <div class="w-2.5 h-2.5 bg-purple-500 rounded-full animate-pulse"></div>
+                                    <div class="absolute inset-0 w-2.5 h-2.5 bg-purple-400 rounded-full animate-ping opacity-75"></div>
+                                </div>
+                                <h3 class="text-sm font-bold text-purple-700 dark:text-purple-300">Asset Service Approval</h3>
+                            </div>
+                            <div class="bg-purple-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                {{ pendingAssetServiceApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="header in pendingAssetServiceApprovals.slice(0, 3)" :key="header.id"
+                                @click="showAssetServiceApprovalDetails(header.id)"
+                                class="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 rounded-xl p-3 cursor-pointer hover:from-purple-100 dark:hover:from-purple-900/40 transition-all duration-200 border border-purple-100 dark:border-purple-800/50">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-purple-700 dark:text-purple-300">{{ header.number || 'N/A' }}</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(header.date) }}</span>
+                                </div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-400 mt-1">{{ header.supplier_name }} • {{ header.outlet_name }}</div>
+                                <div class="text-[10px] text-gray-400 mt-0.5">{{ header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="pendingAssetServiceApprovals.length > 3" class="text-center mt-2">
+                            <span class="text-[10px] text-purple-500 cursor-pointer hover:underline" @click="showAssetServiceApprovalDetails(pendingAssetServiceApprovals[0]?.id)">
+                                Lihat {{ pendingAssetServiceApprovals.length - 3 }} lainnya...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Disposal Approval Section -->
+                <div v-if="pendingAssetDisposalApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-2xl border border-rose-200/50 dark:border-rose-700/50 p-4 hover:shadow-rose-200/20 dark:hover:shadow-rose-800/20 transition-all duration-300">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="relative">
+                                    <div class="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse"></div>
+                                    <div class="absolute inset-0 w-2.5 h-2.5 bg-rose-400 rounded-full animate-ping opacity-75"></div>
+                                </div>
+                                <h3 class="text-sm font-bold text-rose-700 dark:text-rose-300">Asset Disposal Approval</h3>
+                            </div>
+                            <div class="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                {{ pendingAssetDisposalApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="header in pendingAssetDisposalApprovals.slice(0, 3)" :key="header.id"
+                                @click="showAssetDisposalApprovalDetails(header.id)"
+                                class="bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-900/20 rounded-xl p-3 cursor-pointer hover:from-rose-100 dark:hover:from-rose-900/40 transition-all duration-200 border border-rose-100 dark:border-rose-800/50">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-rose-700 dark:text-rose-300">{{ header.number || 'N/A' }}</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(header.date) }}</span>
+                                </div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
+                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold" :class="header.type === 'sold' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'">{{ header.type === 'sold' ? 'Dijual' : 'Dibuang' }}</span>
+                                    • {{ header.outlet_name }}
+                                </div>
+                                <div class="text-[10px] text-gray-400 mt-0.5">{{ header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="pendingAssetDisposalApprovals.length > 3" class="text-center mt-2">
+                            <span class="text-[10px] text-rose-500 cursor-pointer hover:underline" @click="showAssetDisposalApprovalDetails(pendingAssetDisposalApprovals[0]?.id)">
+                                Lihat {{ pendingAssetDisposalApprovals.length - 3 }} lainnya...
+                            </span>
                         </div>
                     </div>
                 </div>

@@ -1257,6 +1257,23 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve']);
         Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn']);
 
+        // Asset Disposals
+        Route::get('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'apiIndex']);
+        Route::get('/asset-disposals/create-data', [\App\Http\Controllers\AssetDisposalController::class, 'apiCreateData']);
+        Route::post('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'apiStore']);
+        Route::post('/asset-disposals/upload-photo', [\App\Http\Controllers\AssetDisposalController::class, 'uploadPhoto']);
+        Route::get('/asset-disposal/approvers', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovers']);
+        Route::get('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'apiShow']);
+        Route::delete('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'apiDestroy']);
+        Route::delete('/asset-disposals/photo/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'deletePhoto']);
+        Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve']);
+
+        // Asset pending approvals (for mobile fallback)
+        Route::get('/asset-inventory-transfers/pending-approvals', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getPendingApprovals']);
+        Route::get('/asset-inventory-adjustments/pending-approvals', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getPendingApprovals']);
+        Route::get('/asset-service-orders/pending-approvals', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals']);
+        Route::get('/asset-disposals/pending-approvals', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals']);
+
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
         Route::get('/member-history/transactions', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberHistory']);
