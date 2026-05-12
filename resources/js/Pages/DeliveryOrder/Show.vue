@@ -64,6 +64,7 @@
                     <div class="flex flex-wrap gap-1">
                       <span v-for="sn in item.serial_list" :key="sn.id" class="inline-block bg-white border border-purple-200 rounded px-2 py-0.5 text-xs font-mono text-purple-800">
                         {{ sn.serial_number }}
+                        <span v-if="sn.repack_unit_name" class="text-purple-600 font-semibold ml-1">(1 {{ sn.repack_unit_name }} = {{ formatQty(sn.repack_qty) }} {{ sn.unit_name }})</span>
                       </span>
                     </div>
                   </td>
@@ -95,6 +96,11 @@ const props = defineProps({
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function formatQty(val) {
+  if (val == null) return '';
+  return parseFloat(Number(val).toFixed(4)).toString();
 }
 
 // Untuk menampilkan nama item jika belum ada di data items

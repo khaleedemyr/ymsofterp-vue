@@ -797,6 +797,7 @@ Route::get('/api/food-good-receive-items/{id}/serial-units', [FoodGoodReceiveCon
 Route::post('/api/food-good-receive-items/{id}/generate-serials', [FoodGoodReceiveController::class, 'generateSerials'])->name('food-good-receive.generate-serials');
 Route::get('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveController::class, 'serialList'])->name('food-good-receive.serial-list');
 Route::delete('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveController::class, 'rollbackSerials'])->name('food-good-receive.rollback-serials');
+Route::get('/api/fgr-serial/units', [FoodGoodReceiveController::class, 'getSerialUnits'])->name('fgr-serial.units');
 
     // Food Good Receive Report routes
     Route::get('/food-good-receive-report', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'index'])->name('food-good-receive.report');

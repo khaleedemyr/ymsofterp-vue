@@ -745,8 +745,9 @@ class ButcherProcessController extends Controller
             $repackUnitName = $repackUnitId
                 ? DB::table('units')->where('id', $repackUnitId)->value('name')
                 : null;
+            $fmtRepackQty = $repackQty !== null ? rtrim(rtrim(number_format($repackQty, 4, '.', ''), '0'), '.') : '';
             $modeLabel = $repackUnitName
-                ? "(1 {$repackUnitName} = {$repackQty} unit asal)"
+                ? "(1 {$repackUnitName} = {$fmtRepackQty} unit asal)"
                 : "(tanpa konversi)";
 
             return response()->json([
@@ -813,7 +814,7 @@ class ButcherProcessController extends Controller
 
     private function generateUniqueSerialNumber(): string
     {
-        $prefix = now()->format('ymdHi');
+        $prefix = 'B' . now()->format('ymdHi');
 
         for ($i = 0; $i < 10; $i++) {
             $serial = $prefix . strtoupper(Str::random(4));

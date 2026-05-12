@@ -513,9 +513,11 @@ const showSerials = async (item) => {
       return
     }
 
+    const fmtQty = (v) => v != null ? parseFloat(Number(v).toFixed(4)).toString() : ''
+
     const rowsHtml = data.slice(0, 200).map((row, idx) => {
       const convInfo = row.repack_unit_id && row.repack_qty
-        ? `<span style="background:#f3e8ff;color:#7c3aed;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">1 ${row.repack_unit_name || '?'} = ${row.repack_qty} ${row.unit_name || ''}</span>`
+        ? `<span style="background:#f3e8ff;color:#7c3aed;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">1 ${row.repack_unit_name || '?'} = ${fmtQty(row.repack_qty)} ${row.unit_name || ''}</span>`
         : `<span style="background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:4px;font-size:10px;">Tanpa konversi</span>`
       return `
       <tr>
@@ -674,7 +676,8 @@ const downloadSerialPDF = (serials, meta) => {
     if (meta?.repackUnitName && meta?.repackQty) {
       doc.setFontSize(7)
       doc.setFont(undefined, 'bold')
-      doc.text(`1 ${meta.repackUnitName.toUpperCase()} = ${meta.repackQty} ${(meta.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' })
+      const fmtRepackQty = parseFloat(Number(meta.repackQty).toFixed(4)).toString()
+      doc.text(`1 ${meta.repackUnitName.toUpperCase()} = ${fmtRepackQty} ${(meta.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' })
       currentY += 3
     }
 

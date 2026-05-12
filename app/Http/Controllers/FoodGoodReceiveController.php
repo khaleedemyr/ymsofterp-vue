@@ -1032,6 +1032,8 @@ class FoodGoodReceiveController extends Controller
     {
         $validated = $request->validate([
             'unit_id' => 'required|integer|exists:units,id',
+            'repack_unit_id' => 'nullable|integer|exists:units,id',
+            'repack_qty' => 'nullable|numeric|min:0.01',
         ]);
 
         $grItem = DB::table('food_good_receive_items as gri')
@@ -1102,11 +1104,26 @@ class FoodGoodReceiveController extends Controller
             $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
         }
 
-        $serialCount = (int) round($convertedQty);
-        if ($serialCount <= 0 || abs($convertedQty - $serialCount) > 0.00001) {
+        $repackUnitId = $request->input('repack_unit_id');
+        $repackQty = (float) $request->input('repack_qty', 0);
+
+        if ($repackUnitId && $repackQty > 0) {
+            $serialCount = (int) ceil($convertedQty / $repackQty);
+        } else {
+            $repackUnitId = null;
+            $repackQty = null;
+            $serialCount = (int) round($convertedQty);
+            if ($serialCount <= 0 || abs($convertedQty - $serialCount) > 0.00001) {
+                return response()->json([
+                    'message' => 'Qty hasil konversi harus bilangan bulat positif agar bisa generate serial.',
+                    'converted_qty' => round($convertedQty, 4),
+                ], 422);
+            }
+        }
+
+        if ($serialCount <= 0) {
             return response()->json([
-                'message' => 'Qty hasil konversi harus bilangan bulat positif agar bisa generate serial.',
-                'converted_qty' => round($convertedQty, 4),
+                'message' => 'Jumlah serial yang akan digenerate harus lebih dari 0.',
             ], 422);
         }
 
@@ -1166,6 +1183,8 @@ class FoodGoodReceiveController extends Controller
                     'ref_gr_number' => $grItem->gr_number,
                     'ref_po_number' => $grItem->po_number,
                     'ref_pr_number' => $grItem->pr_number,
+                    'repack_unit_id' => $repackUnitId,
+                    'repack_qty' => $repackQty,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,
@@ -1176,11 +1195,21 @@ class FoodGoodReceiveController extends Controller
             DB::table('inventory_item_serials')->insert($rows);
             DB::commit();
 
+            $repackUnitName = $repackUnitId
+                ? DB::table('units')->where('id', $repackUnitId)->value('name')
+                : null;
+            $fmtRepackQty = $repackQty !== null ? rtrim(rtrim(number_format($repackQty, 4, '.', ''), '0'), '.') : '';
+            $modeLabel = $repackUnitName
+                ? "(1 {$repackUnitName} = {$fmtRepackQty} unit asal)"
+                : "(tanpa konversi)";
+
             return response()->json([
                 'success' => true,
-                'message' => "Berhasil generate {$serialCount} nomor seri.",
+                'message' => "Berhasil generate {$serialCount} serial {$modeLabel}.",
                 'total' => $serialCount,
                 'converted_qty' => round($convertedQty, 4),
+                'repack_unit_id' => $repackUnitId,
+                'repack_qty' => $repackQty,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -1215,6 +1244,7 @@ class FoodGoodReceiveController extends Controller
     {
         $rows = DB::table('inventory_item_serials as s')
             ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
             ->select(
                 's.id',
                 's.serial_number',
@@ -1222,7 +1252,10 @@ class FoodGoodReceiveController extends Controller
                 's.ref_po_number as po_number',
                 's.ref_pr_number as pr_number',
                 's.generated_at',
-                'u.name as unit_name'
+                's.repack_unit_id',
+                's.repack_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
             )
             ->where('s.source_type', 'good_receive')
             ->where('s.source_item_id', $goodReceiveItemId)
@@ -1232,9 +1265,22 @@ class FoodGoodReceiveController extends Controller
         return response()->json($rows);
     }
 
+    public function getSerialUnits()
+    {
+        $units = cache()->remember('active_units', 300, function() {
+            return DB::table('units')
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+        });
+
+        return response()->json($units);
+    }
+
     private function generateUniqueSerialNumber(): string
     {
-        $prefix = now()->format('ymdHi');
+        $prefix = 'F' . now()->format('ymdHi');
 
         for ($i = 0; $i < 10; $i++) {
             $serial = $prefix . strtoupper(Str::random(4));

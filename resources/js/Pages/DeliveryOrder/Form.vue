@@ -144,8 +144,9 @@
             <div v-if="scannedSerials[item.item_id] && scannedSerials[item.item_id].length" class="mb-3 bg-purple-50 rounded-lg p-3 border border-purple-200">
               <div class="font-semibold text-purple-800 text-sm mb-1">{{ item.name }} ({{ scannedSerials[item.item_id].length }} seri)</div>
               <div class="flex flex-wrap gap-1">
-                <span v-for="(sn, idx) in scannedSerials[item.item_id]" :key="sn" class="inline-flex items-center bg-white border border-purple-300 rounded px-2 py-0.5 text-xs font-mono">
-                  {{ sn }}
+                <span v-for="(sn, idx) in scannedSerials[item.item_id]" :key="sn.serial_number" class="inline-flex items-center bg-white border border-purple-300 rounded px-2 py-0.5 text-xs font-mono">
+                  {{ sn.serial_number }}
+                  <span v-if="sn.repack_unit_name" class="ml-1 text-purple-600 font-semibold">(+{{ sn.effective_qty }})</span>
                   <button @click="removeSerial(item, idx)" class="ml-1 text-red-500 hover:text-red-700 font-bold">&times;</button>
                 </span>
               </div>
@@ -496,9 +497,8 @@ async function onScanSerial() {
   serialFeedback.value = '';
   serialFeedbackClass.value = '';
 
-  // Check if already scanned in this session
   for (const [itemId, serials] of Object.entries(scannedSerials)) {
-    if (serials.includes(input)) {
+    if (serials.some(s => s.serial_number === input)) {
       serialFeedback.value = '❌ Nomor seri sudah di-scan sebelumnya!';
       serialFeedbackClass.value = 'text-red-600';
       serialInputVal.value = '';
@@ -527,14 +527,22 @@ async function onScanSerial() {
         serialFeedback.value = '❌ Item tidak ditemukan di Packing List!';
         serialFeedbackClass.value = 'text-red-600';
       } else {
-        // Add serial to tracking
+        const effectiveQty = Number(serial.effective_qty) || 1;
         if (!scannedSerials[serial.item_id]) {
           scannedSerials[serial.item_id] = [];
         }
-        scannedSerials[serial.item_id].push(input);
-        // Increment qty_scan
-        matchedItem.qty_scan = (Number(matchedItem.qty_scan) || 0) + 1;
-        serialFeedback.value = `✅ ${serial.item_name} - ${input}`;
+        scannedSerials[serial.item_id].push({
+          serial_number: input,
+          effective_qty: effectiveQty,
+          repack_unit_name: serial.repack_unit_name || null,
+          repack_qty: serial.repack_qty || null,
+          unit_name: serial.unit_name || null,
+        });
+        matchedItem.qty_scan = (Number(matchedItem.qty_scan) || 0) + effectiveQty;
+        const convLabel = serial.repack_unit_name
+          ? ` (1 ${serial.repack_unit_name} = ${parseFloat(Number(serial.repack_qty).toFixed(4))} ${serial.unit_name})`
+          : '';
+        serialFeedback.value = `✅ ${serial.item_name} - ${input}${convLabel} (+${effectiveQty})`;
         serialFeedbackClass.value = 'text-green-600';
       }
     } else {
@@ -553,8 +561,10 @@ async function onScanSerial() {
 function removeSerial(item, idx) {
   const itemId = item.item_id || item.id;
   if (scannedSerials[itemId] && scannedSerials[itemId].length > idx) {
+    const removed = scannedSerials[itemId][idx];
+    const effectiveQty = Number(removed?.effective_qty) || 1;
     scannedSerials[itemId].splice(idx, 1);
-    item.qty_scan = Math.max(0, (Number(item.qty_scan) || 0) - 1);
+    item.qty_scan = Math.max(0, (Number(item.qty_scan) || 0) - effectiveQty);
   }
 }
 
@@ -784,7 +794,7 @@ async function submitDO() {
     const scannedSerialsPayload = scanMode.value === 'serial'
       ? Object.entries(scannedSerials)
           .filter(([, serials]) => serials && serials.length > 0)
-          .map(([itemId, serialNumbers]) => ({ item_id: parseInt(itemId), serial_numbers: serialNumbers }))
+          .map(([itemId, serials]) => ({ item_id: parseInt(itemId), serial_numbers: serials.map(s => s.serial_number) }))
       : [];
 
     // Buat DO baru

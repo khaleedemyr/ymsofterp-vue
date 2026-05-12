@@ -219,10 +219,12 @@ class DeliveryOrderController extends Controller
                 $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
                 $item->serial_list = [];
                 if (!empty($serialNumbers)) {
-                    $item->serial_list = DB::table('inventory_item_serials')
-                        ->whereIn('serial_number', $serialNumbers)
-                        ->where('item_id', $item->item_id)
-                        ->select('id', 'serial_number', 'out_at')
+                    $item->serial_list = DB::table('inventory_item_serials as s')
+                        ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+                        ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+                        ->whereIn('s.serial_number', $serialNumbers)
+                        ->where('s.item_id', $item->item_id)
+                        ->select('s.id', 's.serial_number', 's.out_at', 's.repack_unit_id', 's.repack_qty', 'ru.name as repack_unit_name', 'u.name as unit_name')
                         ->get()
                         ->toArray();
                 }
@@ -2268,7 +2270,6 @@ class DeliveryOrderController extends Controller
                 ->where('item_id', $itemId)
                 ->update(['serial_numbers' => json_encode($serialNumbers)]);
 
-            // Flag each serial as out and prepare movement records
             foreach ($serialNumbers as $serialNumber) {
                 $serial = DB::table('inventory_item_serials')
                     ->where('serial_number', $serialNumber)
@@ -2288,6 +2289,10 @@ class DeliveryOrderController extends Controller
                         'updated_at' => $now,
                     ]);
 
+                $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
+                    ? (float) $serial->repack_qty
+                    : 1;
+
                 $movements[] = [
                     'serial_id' => $serial->id,
                     'serial_number' => $serialNumber,
@@ -2297,7 +2302,7 @@ class DeliveryOrderController extends Controller
                     'outlet_id' => $outletId,
                     'warehouse_outlet_id' => $warehouseOutletId,
                     'item_id' => $itemId,
-                    'qty' => 1,
+                    'qty' => $effectiveQty,
                     'unit_id' => $serial->unit_id,
                     'moved_by' => $userId,
                     'moved_at' => $now,
@@ -2340,6 +2345,10 @@ class DeliveryOrderController extends Controller
                     'updated_at' => $now,
                 ]);
 
+            $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
+                ? (float) $serial->repack_qty
+                : 1;
+
             $movements[] = [
                 'serial_id' => $serial->id,
                 'serial_number' => $serial->serial_number,
@@ -2349,7 +2358,7 @@ class DeliveryOrderController extends Controller
                 'outlet_id' => $serial->out_outlet_id,
                 'warehouse_outlet_id' => $serial->out_warehouse_outlet_id,
                 'item_id' => $serial->item_id,
-                'qty' => 1,
+                'qty' => $effectiveQty,
                 'unit_id' => $serial->unit_id,
                 'moved_by' => $userId,
                 'moved_at' => $now,
@@ -2384,6 +2393,7 @@ class DeliveryOrderController extends Controller
         $serial = DB::table('inventory_item_serials as s')
             ->leftJoin('items as i', 's.item_id', '=', 'i.id')
             ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
             ->select(
                 's.id',
                 's.serial_number',
@@ -2392,8 +2402,12 @@ class DeliveryOrderController extends Controller
                 's.unit_id',
                 's.is_out',
                 's.inventory_item_id',
+                's.source_type',
+                's.repack_unit_id',
+                's.repack_qty',
                 'i.name as item_name',
-                'u.name as unit_name'
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
             )
             ->where('s.serial_number', $serialNumber)
             ->first();
@@ -2426,6 +2440,10 @@ class DeliveryOrderController extends Controller
             ], 200);
         }
 
+        $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
+            ? (float) $serial->repack_qty
+            : 1;
+
         return response()->json([
             'valid' => true,
             'message' => 'Nomor seri valid.',
@@ -2437,6 +2455,11 @@ class DeliveryOrderController extends Controller
                 'unit_id' => $serial->unit_id,
                 'unit_name' => $serial->unit_name,
                 'inventory_item_id' => $serial->inventory_item_id,
+                'source_type' => $serial->source_type,
+                'repack_unit_id' => $serial->repack_unit_id,
+                'repack_qty' => $serial->repack_qty,
+                'repack_unit_name' => $serial->repack_unit_name,
+                'effective_qty' => $effectiveQty,
             ]
         ], 200);
     }
