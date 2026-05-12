@@ -841,6 +841,13 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'apiReport']);
         Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails']);
 
+        // Outlet Serial Receive (approval-app)
+        Route::get('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiIndex']);
+        Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiShow']);
+        Route::post('/outlet-serial-receive/validate-serial', [\App\Http\Controllers\OutletSerialReceiveController::class, 'validateSerial']);
+        Route::post('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiStore']);
+        Route::delete('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiDestroy']);
+
         // Warehouse Internal Use & Waste (approval-app)
         Route::get('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiIndex']);
         Route::get('/internal-use-waste/create-data', [\App\Http\Controllers\InternalUseWasteController::class, 'apiCreateData']);

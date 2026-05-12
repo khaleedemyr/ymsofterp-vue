@@ -408,6 +408,301 @@ class OutletSerialReceiveController extends Controller
         }
     }
 
+    // ==================== API Methods (approval-app / mobile) ====================
+
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $isHQ = $user->id_outlet == '1';
+
+        $query = DB::table('outlet_serial_receive_headers as h')
+            ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
+            ->select(
+                'h.id',
+                'h.number',
+                'h.outlet_id',
+                'h.receive_date',
+                'h.status',
+                'h.notes',
+                'h.created_by',
+                'u.name as created_by_name',
+                'o.nama_outlet as outlet_name',
+                'h.created_at',
+                DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')
+            )
+            ->whereNull('h.deleted_at');
+
+        if (!$isHQ) {
+            $query->where('h.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.outlet_id', $request->outlet_id);
+        }
+
+        if ($request->filled('date_from')) {
+            $query->where('h.receive_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('h.receive_date', '<=', $request->date_to);
+        }
+        if ($request->filled('search')) {
+            $query->where('h.number', 'like', '%' . $request->search . '%');
+        }
+
+        $perPage = $request->input('per_page', 20);
+        $data = $query->orderByDesc('h.id')->paginate($perPage)->withQueryString();
+
+        $outlets = [];
+        if ($isHQ) {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->select('id_outlet as id', 'nama_outlet as name')
+                ->orderBy('nama_outlet')
+                ->get();
+        }
+
+        return response()->json([
+            'data' => $data,
+            'outlets' => $outlets,
+            'is_hq' => $isHQ,
+            'can_delete' => ($user->id_role === '5af56935b011a') || ($user->division_id == 11),
+            'user_outlet' => [
+                'id' => $user->id_outlet,
+                'name' => $this->getOutletName($user->id_outlet),
+            ],
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        $header = DB::table('outlet_serial_receive_headers as h')
+            ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
+            ->select('h.*', 'u.name as created_by_name', 'o.nama_outlet as outlet_name')
+            ->where('h.id', $id)
+            ->whereNull('h.deleted_at')
+            ->first();
+
+        if (!$header) {
+            return response()->json(['message' => 'Data tidak ditemukan.'], 404);
+        }
+
+        $items = DB::table('outlet_serial_receive_items as si')
+            ->leftJoin('items as i', 'i.id', '=', 'si.item_id')
+            ->leftJoin('units as u', 'u.id', '=', 'si.unit_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'si.outlet_id')
+            ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
+            ->select(
+                'si.*',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_name'
+            )
+            ->where('si.header_id', $id)
+            ->orderBy('si.delivery_order_number')
+            ->orderBy('si.id')
+            ->get();
+
+        return response()->json([
+            'header' => $header,
+            'items' => $items,
+            'can_delete' => $canDelete,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $request->validate([
+            'serials' => 'required|array|min:1',
+            'serials.*.serial_id' => 'required|integer',
+            'serials.*.serial_number' => 'required|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $user = Auth::user();
+
+        try {
+            $result = DB::transaction(function () use ($request, $user) {
+                $serialIds = collect($request->serials)->pluck('serial_id')->toArray();
+
+                $serials = DB::table('inventory_item_serials')
+                    ->whereIn('id', $serialIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($serials as $s) {
+                    if (!$s->is_out) {
+                        return ['success' => false, 'message' => "Serial {$s->serial_number} belum di-dispatch."];
+                    }
+                    if ($s->is_received) {
+                        return ['success' => false, 'message' => "Serial {$s->serial_number} sudah diterima."];
+                    }
+                }
+
+                $outletId = $user->id_outlet;
+                $firstSerial = $serials->first();
+                if ($firstSerial && $firstSerial->out_outlet_id) {
+                    $outletId = $firstSerial->out_outlet_id;
+                }
+
+                $dateStr = now()->format('Ymd');
+                $lockName = "gr_serial_number_{$dateStr}";
+                DB::select("SELECT GET_LOCK(?, 5)", [$lockName]);
+
+                $lastNumber = DB::table('outlet_serial_receive_headers')
+                    ->where('number', 'like', "GSR-{$dateStr}-%")
+                    ->orderByDesc('number')
+                    ->value('number');
+
+                $seq = 1;
+                if ($lastNumber) {
+                    $parts = explode('-', $lastNumber);
+                    $seq = ((int) end($parts)) + 1;
+                }
+                $grNumber = "GSR-{$dateStr}-" . str_pad($seq, 4, '0', STR_PAD_LEFT);
+
+                $headerId = DB::table('outlet_serial_receive_headers')->insertGetId([
+                    'number' => $grNumber,
+                    'outlet_id' => $outletId,
+                    'receive_date' => now()->toDateString(),
+                    'status' => 'completed',
+                    'notes' => $request->notes,
+                    'created_by' => $user->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                DB::select("SELECT RELEASE_LOCK(?)", [$lockName]);
+
+                $itemMasterIds = $serials->pluck('item_id')->unique()->toArray();
+                $itemMasters = DB::table('items')->whereIn('id', $itemMasterIds)->get()->keyBy('id');
+
+                foreach ($request->serials as $input) {
+                    $serial = $serials[$input['serial_id']] ?? null;
+                    if (!$serial) continue;
+
+                    $itemMaster = $itemMasters[$serial->item_id] ?? null;
+                    if (!$itemMaster) continue;
+
+                    $serialOutletId = $serial->out_outlet_id;
+                    $warehouseOutletId = $serial->out_warehouse_outlet_id;
+                    $doId = $serial->out_delivery_order_id;
+                    $doNumber = DB::table('delivery_orders')->where('id', $doId)->value('number') ?? '';
+                    $unitId = $serial->unit_id;
+
+                    $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
+                        ? (float) $serial->repack_qty
+                        : 1;
+
+                    $costSmall = $this->determineCost($serial);
+
+                    DB::table('outlet_serial_receive_items')->insert([
+                        'header_id' => $headerId,
+                        'serial_id' => $serial->id,
+                        'serial_number' => $serial->serial_number,
+                        'delivery_order_id' => $doId,
+                        'delivery_order_number' => $doNumber,
+                        'item_id' => $serial->item_id,
+                        'unit_id' => $unitId,
+                        'qty' => $effectiveQty,
+                        'outlet_id' => $serialOutletId,
+                        'warehouse_outlet_id' => $warehouseOutletId,
+                        'cost_small' => $costSmall,
+                        'cost_source' => $serial->source_type === 'good_receive' ? 'fgr_modal_12pct' : 'item_prices',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
+
+                    DB::table('inventory_item_serials')
+                        ->where('id', $serial->id)
+                        ->update([
+                            'is_received' => 1,
+                            'received_at' => now(),
+                            'received_by' => $user->id,
+                            'received_outlet_gr_id' => $headerId,
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                return ['success' => true, 'message' => "GR Serial {$grNumber} berhasil disimpan.", 'id' => $headerId, 'number' => $grNumber];
+            });
+
+            return response()->json($result, $result['success'] ? 200 : 422);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Gagal menyimpan: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $user = auth()->user();
+        $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+
+        if (!$canDelete) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus.'], 403);
+        }
+
+        $header = DB::table('outlet_serial_receive_headers')
+            ->where('id', $id)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (!$header) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
+        }
+
+        try {
+            DB::transaction(function () use ($id) {
+                $items = DB::table('outlet_serial_receive_items')->where('header_id', $id)->get();
+
+                $serialIds = $items->pluck('serial_id')->toArray();
+                if (!empty($serialIds)) {
+                    DB::table('inventory_item_serials')
+                        ->whereIn('id', $serialIds)
+                        ->lockForUpdate()
+                        ->get();
+                }
+
+                $itemMasterIds = $items->pluck('item_id')->unique()->toArray();
+                $itemMasters = DB::table('items')->whereIn('id', $itemMasterIds)->get()->keyBy('id');
+
+                foreach ($items as $item) {
+                    $itemMaster = $itemMasters[$item->item_id] ?? null;
+                    if (!$itemMaster) continue;
+
+                    $this->rollbackInventory($item, $itemMaster);
+
+                    DB::table('inventory_item_serials')
+                        ->where('id', $item->serial_id)
+                        ->update([
+                            'is_received' => 0,
+                            'received_at' => null,
+                            'received_by' => null,
+                            'received_outlet_gr_id' => null,
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                DB::table('outlet_serial_receive_items')->where('header_id', $id)->delete();
+
+                DB::table('outlet_serial_receive_headers')
+                    ->where('id', $id)
+                    ->update(['deleted_at' => now(), 'updated_at' => now()]);
+            });
+
+            return response()->json(['success' => true, 'message' => "GR Serial {$header->number} berhasil dihapus."]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function getOutletName($outletId): string
     {
         if (!$outletId) return '-';

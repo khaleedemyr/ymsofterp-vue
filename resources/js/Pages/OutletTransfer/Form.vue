@@ -36,6 +36,101 @@ const form = useForm({
   ],
 });
 
+// Serial mode
+const serialMode = ref(false);
+const serialInput = ref('');
+const serialScanning = ref(false);
+const serialFeedback = ref('');
+const serialFeedbackSuccess = ref(false);
+const scannedSerials = ref([]);
+const serialInputRef = ref(null);
+
+function playBeep(success) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (success) {
+      osc.frequency.value = 1200;
+      gain.gain.value = 0.3;
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } else {
+      osc.frequency.value = 400;
+      gain.gain.value = 0.4;
+      osc.start();
+      osc.stop(ctx.currentTime + 0.12);
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.frequency.value = 300;
+        gain2.gain.value = 0.4;
+        osc2.start();
+        osc2.stop(ctx.currentTime + 0.12);
+      }, 150);
+    }
+  } catch (e) {}
+}
+
+async function onSerialScan() {
+  const input = serialInput.value.trim();
+  if (!input) return;
+
+  if (scannedSerials.value.some(s => s.serial_number === input)) {
+    serialFeedback.value = 'Nomor seri ini sudah di-scan.';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+    Swal.fire({ icon: 'warning', title: 'Duplikat', text: 'Nomor seri sudah ada di daftar.', timer: 2000, showConfirmButton: false });
+    serialInput.value = '';
+    nextTick(() => serialInputRef.value?.focus());
+    return;
+  }
+
+  if (!form.outlet_from_id || !form.warehouse_outlet_from_id) {
+    Swal.fire({ icon: 'error', title: 'Error', text: 'Pilih outlet dan warehouse asal terlebih dahulu.' });
+    return;
+  }
+
+  serialScanning.value = true;
+  serialFeedback.value = '';
+
+  try {
+    const res = await axios.post(route('outlet-transfer.validate-serial'), {
+      serial_number: input,
+      outlet_from_id: form.outlet_from_id,
+      warehouse_outlet_from_id: form.warehouse_outlet_from_id,
+    });
+
+    if (res.data?.valid) {
+      scannedSerials.value.unshift(res.data.serial);
+      serialFeedback.value = '✓ ' + res.data.serial.item_name;
+      serialFeedbackSuccess.value = true;
+      playBeep(true);
+    } else {
+      serialFeedback.value = res.data?.message || 'Serial tidak valid.';
+      serialFeedbackSuccess.value = false;
+      playBeep(false);
+      Swal.fire({ icon: 'error', title: 'Gagal', text: res.data?.message || 'Serial tidak valid.', timer: 3000, showConfirmButton: false });
+    }
+  } catch (e) {
+    serialFeedback.value = 'Gagal memvalidasi serial.';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+  }
+
+  serialInput.value = '';
+  serialScanning.value = false;
+  nextTick(() => serialInputRef.value?.focus());
+}
+
+function removeSerial(index) {
+  scannedSerials.value.splice(index, 1);
+}
+
 // Approver search (mirip Stock Opname)
 const approverSearch = ref('');
 const approverResults = ref([]);
@@ -185,8 +280,16 @@ function onSubmit() {
     }
   }
 
-  // Log debug qty dan stok
-  for (const [idx, item] of form.items.entries()) {
+  // Validate: at least 1 normal item OR 1 serial
+  const hasNormalItems = form.items.some(i => i.item_id);
+  const hasSerials = scannedSerials.value.length > 0;
+  if (!hasNormalItems && !hasSerials) {
+    Swal.fire({ icon: 'error', title: 'Gagal!', text: 'Minimal harus ada 1 item atau 1 serial.' });
+    return;
+  }
+
+  // Log debug qty dan stok (only for normal items)
+  for (const [idx, item] of form.items.filter(i => i.item_id).entries()) {
     console.log('DEBUG VALIDASI QTY', { item, stock: item.stock, qty: item.qty, unit: item.selected_unit || item.unit });
     const qty = Number(item.qty || 0);
     let stock = 0;
@@ -247,11 +350,23 @@ function onSubmit() {
       }
     });
   } else {
-    // Transform approvers objects -> array of IDs
+    // Transform approvers objects -> array of IDs, include serial items
     const approverIds = (form.approvers || []).filter(a => a && a.id).map(a => a.id);
+    const serialItemsPayload = scannedSerials.value.map(s => ({
+      serial_id: s.id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      qty: s.qty,
+      qty_small: s.qty_small,
+      unit_id: s.unit_id,
+    }));
+    // Filter out empty normal items
+    const normalItems = form.items.filter(i => i.item_id);
     form.transform((data) => ({
       ...data,
+      items: normalItems.length > 0 ? normalItems : undefined,
       approvers: approverIds,
+      serial_items: serialItemsPayload.length > 0 ? serialItemsPayload : undefined,
     }));
 
     form.post('/outlet-transfer', {
@@ -757,6 +872,86 @@ onUnmounted(() => {
           </div>
           <button type="button" @click="addItem" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" :disabled="!canInputItem"><i class="fa fa-plus"></i> Tambah Item</button>
         </div>
+
+        <!-- Serial Number Mode -->
+        <div v-if="!isEdit" class="bg-white rounded-xl border border-gray-200 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <i class="fa-solid fa-barcode text-indigo-500"></i> Mode Nomor Seri
+            </h3>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="serialMode" class="sr-only peer" :disabled="!canInputItem">
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              <span class="ml-2 text-sm font-medium text-gray-700">{{ serialMode ? 'Aktif' : 'Nonaktif' }}</span>
+            </label>
+          </div>
+          <p class="text-sm text-gray-500 mb-3">Aktifkan untuk scan nomor seri barang yang sudah diterima di outlet asal.</p>
+
+          <div v-if="serialMode" class="space-y-4">
+            <div v-if="!canInputItem" class="text-red-600 text-sm">
+              Pilih outlet & warehouse asal dan tujuan terlebih dahulu.
+            </div>
+            <div v-else>
+              <div class="flex gap-2">
+                <input
+                  ref="serialInputRef"
+                  type="text"
+                  v-model="serialInput"
+                  @keydown.enter.prevent="onSerialScan"
+                  :disabled="serialScanning"
+                  placeholder="Scan atau ketik nomor seri..."
+                  class="flex-1 rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-center text-lg font-medium"
+                />
+                <button type="button" @click="onSerialScan" :disabled="serialScanning || !serialInput.trim()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-all">
+                  <i v-if="serialScanning" class="fa fa-spinner fa-spin"></i>
+                  <i v-else class="fa fa-search"></i>
+                </button>
+              </div>
+              <div v-if="serialFeedback" class="mt-2 text-sm font-semibold text-center" :class="serialFeedbackSuccess ? 'text-green-600' : 'text-red-600'">
+                {{ serialFeedback }}
+              </div>
+            </div>
+
+            <!-- Scanned serials table -->
+            <div v-if="scannedSerials.length > 0">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-gray-700">Serial yang di-scan ({{ scannedSerials.length }})</span>
+              </div>
+              <div class="overflow-x-auto max-h-64 overflow-y-auto">
+                <table class="w-full min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gradient-to-r from-indigo-50 to-indigo-100 sticky top-0">
+                    <tr>
+                      <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">#</th>
+                      <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Nomor Seri</th>
+                      <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Item</th>
+                      <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Qty</th>
+                      <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Unit</th>
+                      <th class="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="(s, idx) in scannedSerials" :key="s.id" class="hover:bg-indigo-50 transition-colors">
+                      <td class="px-3 py-2 text-gray-500">{{ idx + 1 }}</td>
+                      <td class="px-3 py-2 font-mono font-semibold text-indigo-700">{{ s.serial_number }}</td>
+                      <td class="px-3 py-2">
+                        <div class="font-medium">{{ s.item_name }}</div>
+                        <div class="text-xs text-gray-400">{{ s.sku }}</div>
+                      </td>
+                      <td class="px-3 py-2">{{ s.qty }}</td>
+                      <td class="px-3 py-2">{{ s.unit_name || '-' }}</td>
+                      <td class="px-3 py-2">
+                        <button type="button" @click="removeSerial(idx)" class="text-red-500 hover:text-red-700">
+                          <i class="fa fa-trash"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="flex justify-end gap-2">
           <button type="button" @click="goBack" class="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold hover:bg-gray-300">Batal</button>
           <button v-if="isEdit" type="button" @click="onDelete" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Hapus</button>

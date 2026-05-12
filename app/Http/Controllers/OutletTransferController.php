@@ -14,6 +14,95 @@ use Illuminate\Support\Facades\Log;
 
 class OutletTransferController extends Controller
 {
+    public function validateSerialForTransfer(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string',
+            'outlet_from_id' => 'required',
+            'warehouse_outlet_from_id' => 'required|integer',
+        ]);
+
+        $serialNumber = trim($request->serial_number);
+        $outletFromId = $request->outlet_from_id;
+        $warehouseOutletFromId = $request->warehouse_outlet_from_id;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->join('items as i', 's.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 's.repack_unit_id', '=', 'u.id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id', 's.serial_number', 's.item_id', 's.qty_per_pack',
+                's.repack_unit_id', 's.repack_qty',
+                's.is_out', 's.is_received', 's.is_transferred',
+                's.out_outlet_id', 's.out_warehouse_outlet_id',
+                'i.name as item_name', 'i.sku',
+                'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id',
+                'i.small_conversion_qty', 'i.medium_conversion_qty',
+                'u.name as repack_unit_name'
+            )
+            ->first();
+
+        if (!$serial) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+
+        if (!$serial->is_out) {
+            return response()->json(['valid' => false, 'message' => 'Serial belum di-dispatch (belum keluar via DO).']);
+        }
+
+        if (!$serial->is_received) {
+            return response()->json(['valid' => false, 'message' => 'Serial belum diterima (belum di-GR).']);
+        }
+
+        if ($serial->is_transferred) {
+            return response()->json(['valid' => false, 'message' => 'Serial sudah di-transfer sebelumnya.']);
+        }
+
+        // Cek apakah serial ada di outlet asal
+        // Serial yang sudah di-received ada di out_outlet_id (outlet tujuan DO = outlet penerima)
+        if ($serial->out_outlet_id != $outletFromId) {
+            $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $serial->out_outlet_id)->value('nama_outlet') ?? $serial->out_outlet_id;
+            return response()->json(['valid' => false, 'message' => "Serial ini milik outlet {$outletName}, bukan outlet asal yang dipilih."]);
+        }
+
+        // Hitung qty
+        $qty = 1;
+        $unitId = $serial->small_unit_id;
+        $unitName = DB::table('units')->where('id', $serial->small_unit_id)->value('name') ?? '';
+        if ($serial->repack_qty && $serial->repack_unit_id) {
+            $qty = $serial->repack_qty;
+            $unitId = $serial->repack_unit_id;
+            $unitName = $serial->repack_unit_name ?? '';
+        }
+
+        // Konversi ke qty_small
+        $smallConv = $serial->small_conversion_qty ?: 1;
+        $mediumConv = $serial->medium_conversion_qty ?: 1;
+        $qty_small = $qty;
+        if ($unitId == $serial->medium_unit_id) {
+            $qty_small = $qty * $smallConv;
+        } elseif ($unitId == $serial->large_unit_id) {
+            $qty_small = $qty * $smallConv * $mediumConv;
+        }
+
+        return response()->json([
+            'valid' => true,
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'sku' => $serial->sku,
+                'qty' => $qty,
+                'qty_small' => $qty_small,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'repack_qty' => $serial->repack_qty,
+                'repack_unit_name' => $serial->repack_unit_name,
+            ],
+        ]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -23,15 +112,28 @@ class OutletTransferController extends Controller
             'outlet_to_id' => 'required|integer',
             'warehouse_outlet_to_id' => 'required|integer|different:warehouse_outlet_from_id',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => 'nullable|array',
             'items.*.item_id' => 'required|integer',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.note' => 'nullable|string',
+            'serial_items' => 'nullable|array',
+            'serial_items.*.serial_id' => 'required|integer',
+            'serial_items.*.serial_number' => 'required|string',
+            'serial_items.*.item_id' => 'required|integer',
+            'serial_items.*.qty' => 'required|numeric',
+            'serial_items.*.qty_small' => 'required|numeric',
+            'serial_items.*.unit_id' => 'nullable|integer',
             // Optional: if provided, create approval flow immediately
             'approvers' => 'nullable|array|min:1',
             'approvers.*' => 'required|integer|exists:users,id',
         ]);
+
+        $hasItems = !empty($validated['items']);
+        $hasSerials = !empty($validated['serial_items']);
+        if (!$hasItems && !$hasSerials) {
+            return redirect()->back()->with('error', 'Minimal harus ada 1 item atau 1 serial.');
+        }
 
         DB::beginTransaction();
         try {
@@ -59,21 +161,57 @@ class OutletTransferController extends Controller
                 throw new \Exception('Warehouse outlet tujuan tidak sesuai dengan outlet tujuan yang dipilih');
             }
 
+            // Determine transfer mode
+            $transferMode = 'normal';
+            if ($hasItems && $hasSerials) {
+                $transferMode = 'mixed';
+            } elseif ($hasSerials) {
+                $transferMode = 'serial';
+            }
+
             // Simpan header transfer dengan status draft
             $transfer = OutletTransfer::create([
                 'transfer_number' => $transferNumber,
                 'transfer_date' => $validated['transfer_date'],
                 'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
                 'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
-                'outlet_id' => $validated['outlet_to_id'], // Gunakan outlet tujuan sebagai outlet_id
+                'outlet_id' => $validated['outlet_to_id'],
                 'notes' => $validated['notes'] ?? null,
-                'status' => 'draft', // Set status draft untuk approval
+                'transfer_mode' => $transferMode,
+                'status' => 'draft',
                 'created_by' => Auth::id(),
             ]);
             Log::info('Header transfer saved', ['transfer' => $transfer]);
 
+            // Simpan serial items (draft mode - tidak proses stock)
+            if ($hasSerials) {
+                foreach ($validated['serial_items'] as $si) {
+                    $itemMaster = DB::table('items')->where('id', $si['item_id'])->first();
+                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                    $qty_small = $si['qty_small'];
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+
+                    DB::table('outlet_transfer_serial_items')->insert([
+                        'outlet_transfer_id' => $transfer->id,
+                        'serial_id' => $si['serial_id'],
+                        'serial_number' => $si['serial_number'],
+                        'item_id' => $si['item_id'],
+                        'unit_id' => $si['unit_id'] ?? null,
+                        'qty' => $si['qty'],
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+                Log::info('Serial items saved', ['count' => count($validated['serial_items'])]);
+            }
+
             // Simpan detail transfer tanpa memproses stock (draft mode)
-            foreach ($validated['items'] as $item) {
+            foreach ($validated['items'] ?? [] as $item) {
                 Log::info('Proses item', $item);
 
                 // Cari inventory_item_id dari outlet_food_inventory_items
@@ -505,6 +643,15 @@ class OutletTransferController extends Controller
         $warehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
         $warehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
 
+        // Process serial items if any
+        $serialItems = DB::table('outlet_transfer_serial_items')
+            ->where('outlet_transfer_id', $transfer->id)
+            ->get();
+
+        if ($serialItems->count() > 0) {
+            $this->processSerialStockTransfer($transfer, $serialItems, $warehouseFrom, $warehouseTo);
+        }
+
         foreach ($transfer->items as $item) {
             $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
             if (!$inventoryItem) continue;
@@ -678,6 +825,224 @@ class OutletTransferController extends Controller
                     'reference_id' => $transfer->id,
                     'created_at' => now(),
                 ]);
+        }
+    }
+
+    private function processSerialStockTransfer($transfer, $serialItems, $warehouseFrom, $warehouseTo)
+    {
+        foreach ($serialItems as $si) {
+            $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $si->item_id)->first();
+            if (!$inventoryItem) continue;
+
+            $inventory_item_id = $inventoryItem->id;
+            $qty_small = $si->qty_small;
+            $qty_medium = $si->qty_medium;
+            $qty_large = $si->qty_large;
+
+            // Get cost from source warehouse
+            $stockFrom = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseFrom->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
+                ->first();
+
+            if (!$stockFrom) {
+                throw new \Exception('Stok serial tidak ditemukan di warehouse outlet asal untuk item_id: ' . $si->item_id);
+            }
+
+            [$costSmall, $costMedium, $costLarge] = OutletInventoryCostResolver::transferInboundCostRates(
+                $stockFrom,
+                (int) $warehouseFrom->outlet_id,
+                (int) $transfer->warehouse_outlet_from_id,
+                $inventory_item_id
+            );
+
+            // Update cost_small on serial item
+            DB::table('outlet_transfer_serial_items')->where('id', $si->id)->update(['cost_small' => $costSmall]);
+
+            // Deduct stock from source
+            DB::table('outlet_food_inventory_stocks')
+                ->where('id', $stockFrom->id)
+                ->update([
+                    'qty_small' => $stockFrom->qty_small - $qty_small,
+                    'qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                    'qty_large' => $stockFrom->qty_large - $qty_large,
+                    'updated_at' => now(),
+                ]);
+
+            // Add stock to destination
+            $stockTo = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->first();
+
+            if (!$stockTo) {
+                DB::table('outlet_food_inventory_stocks')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $warehouseTo->outlet_id,
+                    'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                    'qty_small' => $qty_small,
+                    'qty_medium' => $qty_medium,
+                    'qty_large' => $qty_large,
+                    'value' => $qty_small * $costSmall,
+                    'last_cost_small' => $costSmall,
+                    'last_cost_medium' => $costMedium,
+                    'last_cost_large' => $costLarge,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $stockTo = (object) [
+                    'qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0,
+                    'last_cost_small' => $costSmall, 'last_cost_medium' => $costMedium, 'last_cost_large' => $costLarge,
+                ];
+            } else {
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('id', $stockTo->id)
+                    ->update([
+                        'qty_small' => $stockTo->qty_small + $qty_small,
+                        'qty_medium' => $stockTo->qty_medium + $qty_medium,
+                        'qty_large' => $stockTo->qty_large + $qty_large,
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            // MAC calculation
+            $qty_lama = $stockTo->qty_small;
+            $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+            $total_qty = $qty_lama + $qty_small;
+            $total_nilai = $nilai_lama + ($qty_small * $costSmall);
+            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
+
+            $itemMaster = DB::table('items')->where('id', $si->item_id)->first();
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->update([
+                    'last_cost_small' => $mac,
+                    'last_cost_medium' => $mac * $smallConv,
+                    'last_cost_large' => $mac * $smallConv * $mediumConv,
+                ]);
+
+            // Inventory card OUT (source)
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseFrom->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_from_id,
+                'date' => $transfer->transfer_date,
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'out_qty_small' => $qty_small,
+                'out_qty_medium' => $qty_medium,
+                'out_qty_large' => $qty_large,
+                'cost_per_small' => $costSmall,
+                'cost_per_medium' => $costMedium,
+                'cost_per_large' => $costLarge,
+                'value_out' => $qty_small * $costSmall,
+                'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
+                'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
+                'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
+                'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
+                'description' => 'Stock Out - Outlet Transfer (Serial: ' . $si->serial_number . ')',
+                'created_at' => now(),
+            ]);
+
+            // Inventory card IN (destination)
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseTo->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                'date' => $transfer->transfer_date,
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'in_qty_small' => $qty_small,
+                'in_qty_medium' => $qty_medium,
+                'in_qty_large' => $qty_large,
+                'cost_per_small' => $costSmall,
+                'cost_per_medium' => $costMedium,
+                'cost_per_large' => $costLarge,
+                'value_in' => $qty_small * $costSmall,
+                'saldo_qty_small' => $stockTo->qty_small + $qty_small,
+                'saldo_qty_medium' => $stockTo->qty_medium + $qty_medium,
+                'saldo_qty_large' => $stockTo->qty_large + $qty_large,
+                'saldo_value' => ($stockTo->qty_small + $qty_small) * $mac,
+                'description' => 'Stock In - Outlet Transfer (Serial: ' . $si->serial_number . ')',
+                'created_at' => now(),
+            ]);
+
+            // Cost history
+            $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('id_outlet', $warehouseTo->outlet_id)
+                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                ->orderByDesc('date')
+                ->orderByDesc('created_at')
+                ->first();
+            $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+
+            DB::table('outlet_food_inventory_cost_histories')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'id_outlet' => $warehouseTo->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                'date' => $transfer->transfer_date,
+                'old_cost' => $old_cost,
+                'new_cost' => $costSmall,
+                'mac' => $mac,
+                'type' => 'outlet_transfer',
+                'reference_type' => 'outlet_transfer',
+                'reference_id' => $transfer->id,
+                'created_at' => now(),
+            ]);
+
+            // Update serial tracking
+            DB::table('inventory_item_serials')
+                ->where('id', $si->serial_id)
+                ->update([
+                    'is_transferred' => 1,
+                    'transferred_at' => now(),
+                    'transfer_id' => $transfer->id,
+                    'transfer_from_outlet_id' => $warehouseFrom->outlet_id,
+                    'transfer_to_outlet_id' => $warehouseTo->outlet_id,
+                    'transfer_to_warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                ]);
+
+            // Serial movement logs
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si->serial_id,
+                'serial_number' => $si->serial_number,
+                'movement_type' => 'transfer_out',
+                'outlet_transfer_id' => $transfer->id,
+                'outlet_id' => $warehouseFrom->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_from_id,
+                'item_id' => $si->item_id,
+                'qty' => $si->qty,
+                'unit_id' => $si->unit_id,
+                'moved_by' => Auth::id(),
+                'moved_at' => now(),
+                'notes' => 'Transfer Out - ' . $transfer->transfer_number,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si->serial_id,
+                'serial_number' => $si->serial_number,
+                'movement_type' => 'transfer_in',
+                'outlet_transfer_id' => $transfer->id,
+                'outlet_id' => $warehouseTo->outlet_id,
+                'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
+                'item_id' => $si->item_id,
+                'qty' => $si->qty,
+                'unit_id' => $si->unit_id,
+                'moved_by' => Auth::id(),
+                'moved_at' => now(),
+                'notes' => 'Transfer In - ' . $transfer->transfer_number,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         }
     }
 
@@ -924,6 +1289,14 @@ class OutletTransferController extends Controller
                 ];
             });
         
+        // Load serial items with item & unit names
+        $serialItems = DB::table('outlet_transfer_serial_items as si')
+            ->join('items as i', 'si.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->where('si.outlet_transfer_id', $id)
+            ->select('si.*', 'i.name as item_name', 'i.sku as item_sku', 'u.name as unit_name')
+            ->get();
+
         return inertia('OutletTransfer/Show', [
             'transfer' => $transfer,
             'outlets' => $outlets,
@@ -931,6 +1304,7 @@ class OutletTransferController extends Controller
             'canApprove' => $canApprove,
             'pendingFlow' => $pendingFlow,
             'users' => $users,
+            'serialItems' => $serialItems,
         ]);
     }
 
@@ -1035,7 +1409,66 @@ class OutletTransferController extends Controller
             $warehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
             $warehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
             
-            // Rollback stok dan kartu stok
+            // Rollback serial items
+            $serialItems = DB::table('outlet_transfer_serial_items')
+                ->where('outlet_transfer_id', $transfer->id)
+                ->get();
+
+            foreach ($serialItems as $si) {
+                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $si->item_id)->first();
+                if (!$inventoryItem) continue;
+                $inventory_item_id = $inventoryItem->id;
+
+                // Rollback stock: add back to source
+                $stockFrom = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseFrom->outlet_id)
+                    ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
+                    ->first();
+                if ($stockFrom) {
+                    DB::table('outlet_food_inventory_stocks')->where('id', $stockFrom->id)->update([
+                        'qty_small' => $stockFrom->qty_small + $si->qty_small,
+                        'qty_medium' => $stockFrom->qty_medium + $si->qty_medium,
+                        'qty_large' => $stockFrom->qty_large + $si->qty_large,
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                // Rollback stock: subtract from destination
+                $stockTo = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $warehouseTo->outlet_id)
+                    ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+                    ->first();
+                if ($stockTo) {
+                    DB::table('outlet_food_inventory_stocks')->where('id', $stockTo->id)->update([
+                        'qty_small' => $stockTo->qty_small - $si->qty_small,
+                        'qty_medium' => $stockTo->qty_medium - $si->qty_medium,
+                        'qty_large' => $stockTo->qty_large - $si->qty_large,
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                // Reset serial tracking
+                DB::table('inventory_item_serials')->where('id', $si->serial_id)->update([
+                    'is_transferred' => 0,
+                    'transferred_at' => null,
+                    'transfer_id' => null,
+                    'transfer_from_outlet_id' => null,
+                    'transfer_to_outlet_id' => null,
+                    'transfer_to_warehouse_outlet_id' => null,
+                ]);
+            }
+
+            // Delete serial movements & serial items
+            DB::table('inventory_serial_movements')
+                ->where('outlet_transfer_id', $transfer->id)
+                ->delete();
+            DB::table('outlet_transfer_serial_items')
+                ->where('outlet_transfer_id', $transfer->id)
+                ->delete();
+
+            // Rollback stok dan kartu stok (normal items)
             foreach ($transfer->items as $item) {
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
                 if (!$inventoryItem) continue;
@@ -1044,7 +1477,6 @@ class OutletTransferController extends Controller
                 $qty_medium = $item->qty_medium ?? 0;
                 $qty_large = $item->qty_large ?? 0;
                 
-                // Tambah stok kembali ke warehouse outlet asal
                 $stockFrom = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $warehouseFrom->outlet_id)
@@ -1061,7 +1493,6 @@ class OutletTransferController extends Controller
                         ]);
                 }
                 
-                // Kurangi stok dari warehouse outlet tujuan
                 $stockTo = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventory_item_id)
                     ->where('id_outlet', $warehouseTo->outlet_id)
@@ -1077,19 +1508,17 @@ class OutletTransferController extends Controller
                             'updated_at' => now(),
                         ]);
                 }
-                
-                // Hapus kartu stok terkait
-                DB::table('outlet_food_inventory_cards')
-                    ->where('reference_type', 'outlet_transfer')
-                    ->where('reference_id', $transfer->id)
-                    ->delete();
-                
-                // Hapus cost history terkait
-                DB::table('outlet_food_inventory_cost_histories')
-                    ->where('reference_type', 'outlet_transfer')
-                    ->where('reference_id', $transfer->id)
-                    ->delete();
             }
+
+            // Hapus kartu stok & cost history terkait (both normal + serial)
+            DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'outlet_transfer')
+                ->where('reference_id', $transfer->id)
+                ->delete();
+            DB::table('outlet_food_inventory_cost_histories')
+                ->where('reference_type', 'outlet_transfer')
+                ->where('reference_id', $transfer->id)
+                ->delete();
             
             // Hapus detail transfer
             $transfer->items()->delete();
@@ -1827,11 +2256,19 @@ class OutletTransferController extends Controller
             ? $transfer->warehouseOutletTo->outlet->nama_outlet
             : null);
 
+        $serialItems = DB::table('outlet_transfer_serial_items as si')
+            ->join('items as i', 'si.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->where('si.outlet_transfer_id', $id)
+            ->select('si.*', 'i.name as item_name', 'i.sku as item_sku', 'u.name as unit_name')
+            ->get();
+
         return response()->json([
             'success' => true,
             'transfer' => $transfer,
             'can_approve' => $canApprove,
             'pending_flow' => $pendingFlow,
+            'serial_items' => $serialItems,
         ]);
     }
 
@@ -1847,14 +2284,27 @@ class OutletTransferController extends Controller
             'outlet_to_id' => 'required|integer',
             'warehouse_outlet_to_id' => 'required|integer|different:warehouse_outlet_from_id',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'items' => 'nullable|array',
             'items.*.item_id' => 'required|integer',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.unit' => 'required|string',
             'items.*.note' => 'nullable|string',
+            'serial_items' => 'nullable|array',
+            'serial_items.*.serial_id' => 'required|integer',
+            'serial_items.*.serial_number' => 'required|string',
+            'serial_items.*.item_id' => 'required|integer',
+            'serial_items.*.qty' => 'required|numeric',
+            'serial_items.*.qty_small' => 'required|numeric',
+            'serial_items.*.unit_id' => 'nullable|integer',
             'approvers' => 'nullable|array|min:1',
             'approvers.*' => 'required|integer|exists:users,id',
         ]);
+
+        $hasItems = !empty($validated['items']);
+        $hasSerials = !empty($validated['serial_items']);
+        if (!$hasItems && !$hasSerials) {
+            return response()->json(['success' => false, 'message' => 'Minimal harus ada 1 item atau 1 serial.'], 422);
+        }
 
         DB::beginTransaction();
         try {
@@ -1871,6 +2321,10 @@ class OutletTransferController extends Controller
                 throw new \Exception('Warehouse outlet tujuan tidak valid');
             }
 
+            $transferMode = 'normal';
+            if ($hasItems && $hasSerials) $transferMode = 'mixed';
+            elseif ($hasSerials) $transferMode = 'serial';
+
             $transfer = OutletTransfer::create([
                 'transfer_number' => $transferNumber,
                 'transfer_date' => $validated['transfer_date'],
@@ -1878,11 +2332,38 @@ class OutletTransferController extends Controller
                 'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
                 'outlet_id' => $validated['outlet_to_id'],
                 'notes' => $validated['notes'] ?? null,
+                'transfer_mode' => $transferMode,
                 'status' => 'draft',
                 'created_by' => Auth::id(),
             ]);
 
-            foreach ($validated['items'] as $item) {
+            // Save serial items
+            if ($hasSerials) {
+                foreach ($validated['serial_items'] as $si) {
+                    $itemMaster = DB::table('items')->where('id', $si['item_id'])->first();
+                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
+                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+                    $qty_small = $si['qty_small'];
+                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+
+                    DB::table('outlet_transfer_serial_items')->insert([
+                        'outlet_transfer_id' => $transfer->id,
+                        'serial_id' => $si['serial_id'],
+                        'serial_number' => $si['serial_number'],
+                        'item_id' => $si['item_id'],
+                        'unit_id' => $si['unit_id'] ?? null,
+                        'qty' => $si['qty'],
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            foreach ($validated['items'] ?? [] as $item) {
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
                 if (!$inventoryItem) {
                     throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);

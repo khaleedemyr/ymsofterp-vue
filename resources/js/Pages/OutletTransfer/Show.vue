@@ -64,6 +64,17 @@
                   </span>
                 </div>
               </div>
+              <div v-if="transfer.transfer_mode && transfer.transfer_mode !== 'normal'">
+                <label class="block text-sm font-medium text-gray-600">Mode Transfer</label>
+                <div class="mt-1">
+                  <span v-if="transfer.transfer_mode === 'serial'" class="px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                    <i class="fa-solid fa-barcode mr-1"></i> Serial
+                  </span>
+                  <span v-else-if="transfer.transfer_mode === 'mixed'" class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
+                    <i class="fa-solid fa-layer-group mr-1"></i> Mixed (Item + Serial)
+                  </span>
+                </div>
+              </div>
               <div>
                 <label class="block text-sm font-medium text-gray-600">Dibuat Oleh</label>
                 <div class="mt-1">{{ transfer.creator?.nama_lengkap }}</div>
@@ -150,7 +161,8 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <!-- Normal items -->
+      <div v-if="transfer.items && transfer.items.length > 0" class="bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div class="p-6 border-b">
           <h2 class="text-lg font-semibold text-gray-800">Detail Item</h2>
         </div>
@@ -173,6 +185,43 @@
                 <td class="px-6 py-4">{{ item.quantity }}</td>
                 <td class="px-6 py-4">{{ item.unit?.name || '-' }}</td>
                 <td class="px-6 py-4">{{ item.note || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Serial items -->
+      <div v-if="serialItems && serialItems.length > 0" class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div class="p-6 border-b">
+          <h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-barcode text-indigo-500"></i> Serial Items
+            <span class="text-sm font-normal text-gray-500">({{ serialItems.length }} serial)</span>
+          </h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-full divide-y divide-gray-200">
+            <thead class="bg-gradient-to-r from-indigo-50 to-indigo-100">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">#</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Nomor Seri</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Item</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Qty</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Unit</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Cost</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="(si, idx) in serialItems" :key="si.id" class="hover:bg-indigo-50">
+                <td class="px-6 py-4 text-gray-500">{{ idx + 1 }}</td>
+                <td class="px-6 py-4 font-mono font-semibold text-indigo-700">{{ si.serial_number }}</td>
+                <td class="px-6 py-4">
+                  <div class="font-medium text-gray-900">{{ si.item_name }}</div>
+                  <div class="text-sm text-gray-500">{{ si.item_sku }}</div>
+                </td>
+                <td class="px-6 py-4">{{ si.qty }}</td>
+                <td class="px-6 py-4">{{ si.unit_name || '-' }}</td>
+                <td class="px-6 py-4">{{ si.cost_small ? Number(si.cost_small).toLocaleString('id-ID') : '-' }}</td>
               </tr>
             </tbody>
           </table>
@@ -226,6 +275,7 @@ const props = defineProps({
   canApprove: Boolean,
   pendingFlow: Object,
   users: Array,
+  serialItems: Array,
 });
 
 const showSubmitModal = ref(false);
