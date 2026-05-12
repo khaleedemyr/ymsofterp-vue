@@ -108,6 +108,52 @@ function ratingBlockForTable(row) {
   return { rows, average, nFilled: filled.length };
 }
 
+const TOPIC_LABELS = {
+  food_quality: 'Food Quality',
+  service: 'Service',
+  hygiene: 'Hygiene',
+  ambiance: 'Ambiance',
+  price: 'Price / Value',
+  wait_time: 'Speed / Wait Time',
+  parking: 'Parking',
+  portion: 'Portion',
+  noise: 'Noise',
+  reservation: 'Reservation',
+  other: 'Other',
+  beverage: 'Beverage',
+  cleanliness: 'Cleanliness',
+  staff_attitude: 'Staff Attitude',
+  price_value: 'Price / Value',
+  speed_wait_time: 'Speed / Wait Time',
+};
+
+function topicLabel(slug) {
+  return TOPIC_LABELS[slug] || slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+const TOPIC_COLORS = {
+  food_quality: '#ef4444',
+  service: '#3b82f6',
+  hygiene: '#10b981',
+  ambiance: '#8b5cf6',
+  price: '#f59e0b',
+  price_value: '#f59e0b',
+  wait_time: '#ec4899',
+  speed_wait_time: '#ec4899',
+  beverage: '#06b6d4',
+  cleanliness: '#14b8a6',
+  staff_attitude: '#6366f1',
+  parking: '#78716c',
+  portion: '#ea580c',
+  noise: '#a855f7',
+  reservation: '#0284c7',
+  other: '#64748b',
+};
+
+function topicColor(slug) {
+  return TOPIC_COLORS[slug] || '#64748b';
+}
+
 function severityBadge(severity) {
   const s = (severity || '').toLowerCase().trim();
   const map = {
@@ -248,6 +294,7 @@ async function confirmDelete(row) {
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px] max-w-[160px]">Sumber marketing</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[120px]">Outlet</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[100px]">Severity</th>
+              <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[130px]">Jenis Komplain</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase w-[120px]">Status</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Pencatat</th>
               <th class="px-3 py-3 text-left text-xs font-bold text-blue-700 uppercase min-w-[150px]">Verifikasi</th>
@@ -256,7 +303,7 @@ async function confirmDelete(row) {
           </thead>
           <tbody>
             <tr v-if="!forms.data?.length">
-              <td colspan="12" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
+              <td colspan="13" class="px-4 py-10 text-center text-gray-400">Belum ada data.</td>
             </tr>
             <tr v-for="(row, idx) in forms.data" :key="row.id" class="hover:bg-blue-50/50 align-top">
               <td class="px-2 sm:px-3 py-3 text-sm text-gray-700 font-medium tabular-nums">{{ rowNumber(idx) }}</td>
@@ -343,6 +390,23 @@ async function confirmDelete(row) {
                 >
                   {{ severityBadge(row.issue_severity).label }}
                 </span>
+                <span v-else class="text-xs text-gray-400">—</span>
+              </td>
+              <td class="px-3 py-3">
+                <div v-if="row.issue_topics && row.issue_topics.length" class="flex flex-wrap gap-1">
+                  <span
+                    v-for="t in row.issue_topics"
+                    :key="t"
+                    class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                    :style="{
+                      backgroundColor: topicColor(t) + '18',
+                      border: '1px solid ' + topicColor(t) + '50',
+                      color: topicColor(t),
+                    }"
+                  >
+                    {{ topicLabel(t) }}
+                  </span>
+                </div>
                 <span v-else class="text-xs text-gray-400">—</span>
               </td>
               <td class="px-3 py-3">
