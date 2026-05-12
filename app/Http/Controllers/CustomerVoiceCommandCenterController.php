@@ -1633,10 +1633,37 @@ class CustomerVoiceCommandCenterController extends Controller
             'bar' => $this->capaService->storedCapaVerificationState($capaDivisions['bar'] ?? null),
         ];
 
+        $gcfCapa = null;
+        $sourceRef = (string) ($case->source_ref ?? '');
+        if (str_starts_with($sourceRef, 'gcf:')) {
+            $gcfId = (int) substr($sourceRef, 4);
+            if ($gcfId > 0) {
+                $capaRow = DB::table('guest_comment_capas')
+                    ->where('guest_comment_form_id', $gcfId)
+                    ->first();
+                if ($capaRow) {
+                    $filledByName = null;
+                    if ($capaRow->filled_by) {
+                        $filledByUser = DB::table('users')
+                            ->where('id', $capaRow->filled_by)
+                            ->first(['nama_lengkap']);
+                        $filledByName = $filledByUser->nama_lengkap ?? null;
+                    }
+                    $gcfCapa = [
+                        'kronologi' => (string) ($capaRow->kronologi ?? ''),
+                        'corrective_action' => (string) ($capaRow->corrective_action ?? ''),
+                        'preventive_action' => (string) ($capaRow->preventive_action ?? ''),
+                        'filled_by_name' => $filledByName,
+                        'filled_at' => $capaRow->filled_at,
+                    ];
+                }
+            }
+        }
+
         return [
             'id' => (int) $case->id,
             'source_type' => (string) ($case->source_type ?? ''),
-            'source_ref' => (string) ($case->source_ref ?? ''),
+            'source_ref' => $sourceRef,
             'id_outlet' => $case->id_outlet !== null ? (int) $case->id_outlet : null,
             'nama_outlet' => (string) ($case->nama_outlet ?? ''),
             'author_name' => $case->author_name !== null ? (string) $case->author_name : null,
@@ -1675,6 +1702,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'capa_division_filled' => $capaDivisionFilled,
             'capa_division_verification' => $capaDivisionVerification,
             'capa' => $capa,
+            'gcf_capa' => $gcfCapa,
         ];
     }
 

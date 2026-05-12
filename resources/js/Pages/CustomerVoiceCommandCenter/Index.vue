@@ -708,6 +708,44 @@
             <div class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{{ selectedCase.raw_text || '-' }}</div>
           </div>
 
+          <div
+            v-if="selectedCase.gcf_capa && (selectedCase.gcf_capa.kronologi || selectedCase.gcf_capa.corrective_action || selectedCase.gcf_capa.preventive_action)"
+            class="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-4 space-y-3"
+          >
+            <div class="flex items-center gap-2">
+              <div class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100">
+                <i class="fa-solid fa-clipboard-check text-emerald-600 text-sm"></i>
+              </div>
+              <div>
+                <div class="text-sm font-bold text-emerald-900">CAPA dari Outlet Leader</div>
+                <div class="text-[10px] text-emerald-700">
+                  Diisi saat verifikasi Guest Comment
+                  <template v-if="selectedCase.gcf_capa.filled_by_name">
+                    oleh <span class="font-semibold">{{ selectedCase.gcf_capa.filled_by_name }}</span>
+                  </template>
+                  <template v-if="selectedCase.gcf_capa.filled_at">
+                    · {{ formatDate(selectedCase.gcf_capa.filled_at) }}
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-1">
+              <div class="rounded-lg border border-emerald-200 bg-white p-3">
+                <div class="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Kronologi</div>
+                <div class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{{ selectedCase.gcf_capa.kronologi || '—' }}</div>
+              </div>
+              <div class="rounded-lg border border-emerald-200 bg-white p-3">
+                <div class="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Corrective Action</div>
+                <div class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{{ selectedCase.gcf_capa.corrective_action || '—' }}</div>
+              </div>
+              <div class="rounded-lg border border-emerald-200 bg-white p-3">
+                <div class="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Preventive Action</div>
+                <div class="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{{ selectedCase.gcf_capa.preventive_action || '—' }}</div>
+              </div>
+            </div>
+          </div>
+
           <CapaFormPanel
             :key="`${selectedCase.id}-${capaResetKey}`"
             :case-id="selectedCase.id"
