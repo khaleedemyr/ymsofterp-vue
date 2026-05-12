@@ -190,7 +190,7 @@ class ChartOfAccountController extends Controller
             'menu_id' => 'nullable|array',
             'menu_id.*' => 'exists:erp_menu,id',
             'mode_payment' => 'nullable|array',
-            'mode_payment.*' => 'in:pr_ops,purchase_payment,travel_application,kasbon',
+            'mode_payment.*' => 'in:pr_ops,purchase_payment,pr_assets,travel_application,kasbon',
             'budget_limit' => 'nullable|numeric|min:0',
             'default_counter_account_id' => 'nullable|exists:chart_of_accounts,id',
         ];
@@ -204,7 +204,7 @@ class ChartOfAccountController extends Controller
         // Jika show_in_menu_payment = true, maka mode_payment wajib diisi (minimal 1)
         if ($request->has('show_in_menu_payment') && $request->show_in_menu_payment) {
             $rules['mode_payment'] = 'required|array|min:1';
-            $rules['mode_payment.*'] = 'required|in:pr_ops,purchase_payment,travel_application,kasbon';
+            $rules['mode_payment.*'] = 'required|in:pr_ops,purchase_payment,pr_assets,travel_application,kasbon';
         }
         
         $validated = $request->validate($rules);
@@ -303,7 +303,7 @@ class ChartOfAccountController extends Controller
             'menu_id' => 'nullable|array',
             'menu_id.*' => 'exists:erp_menu,id',
             'mode_payment' => 'nullable|array',
-            'mode_payment.*' => 'in:pr_ops,purchase_payment,travel_application,kasbon',
+            'mode_payment.*' => 'in:pr_ops,purchase_payment,pr_assets,travel_application,kasbon',
             'budget_limit' => 'nullable|numeric|min:0',
             'default_counter_account_id' => 'nullable|exists:chart_of_accounts,id|different:' . $id,
         ];
@@ -317,7 +317,7 @@ class ChartOfAccountController extends Controller
         // Jika show_in_menu_payment = true, maka mode_payment wajib diisi (minimal 1)
         if ($request->has('show_in_menu_payment') && $request->show_in_menu_payment) {
             $rules['mode_payment'] = 'required|array|min:1';
-            $rules['mode_payment.*'] = 'required|in:pr_ops,purchase_payment,travel_application,kasbon';
+            $rules['mode_payment.*'] = 'required|in:pr_ops,purchase_payment,pr_assets,travel_application,kasbon';
         }
         
         $validated = $request->validate($rules);

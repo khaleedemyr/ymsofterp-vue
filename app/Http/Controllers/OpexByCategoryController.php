@@ -273,7 +273,7 @@ class OpexByCategoryController extends Controller
                 $prModel = \App\Models\PurchaseRequisition::find($prId);
                 
                 // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
+                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                     // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
                     $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $prId)
@@ -642,7 +642,7 @@ class OpexByCategoryController extends Controller
                 $prModel = \App\Models\PurchaseRequisition::find($prId);
                 
                 // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment'])) {
+                if ($prModel && in_array($prModel->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                     // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
                     $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $prId)

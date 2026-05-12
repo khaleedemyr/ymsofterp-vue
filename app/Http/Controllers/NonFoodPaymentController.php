@@ -1088,7 +1088,7 @@ class NonFoodPaymentController extends Controller
             
             $itemsByOutlet = [];
             
-            if ($hasNewStructure && in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+            if ($hasNewStructure && in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                 // New structure: Group items by outlet and category
                 $grouped = $items->groupBy(function($item) {
                     $outletId = $item->outlet_id ?? 'no-outlet';

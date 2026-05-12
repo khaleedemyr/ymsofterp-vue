@@ -115,8 +115,8 @@
               </select>
             </div>
 
-            <!-- Category (Hidden for pr_ops and purchase_payment mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment'">
+            <!-- Category (Hidden for pr_ops, purchase_payment, and pr_assets mode) -->
+            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'pr_assets'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
               
               <!-- For travel_application: Show auto-selected transport category (disabled) -->
@@ -338,8 +338,8 @@
               </div>
             </div>
 
-            <!-- Outlet (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Outlet (Hidden for pr_ops, purchase_payment, pr_assets, travel_application, and kasbon mode) -->
+            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'pr_assets' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select
                 v-model="form.outlet_id"
@@ -398,8 +398,8 @@
               </select>
             </div>
 
-            <!-- Currency (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Currency (Hidden for pr_ops, purchase_payment, pr_assets, travel_application, and kasbon mode) -->
+            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'pr_assets' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Currency</label>
               <select
                 v-model="form.currency"
@@ -416,7 +416,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">Items *</label>
             
             <!-- Multi-Outlet Structure for PR Ops and Payment Application Mode -->
-            <div v-if="form.mode === 'pr_ops' || form.mode === 'purchase_payment'" class="space-y-6">
+            <div v-if="form.mode === 'pr_ops' || form.mode === 'purchase_payment' || form.mode === 'pr_assets'" class="space-y-6">
               <!-- Outlet Cards -->
               <div v-for="(outlet, outletIdx) in form.outlets" :key="outletIdx" class="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
                 <!-- Outlet Header -->
@@ -1182,8 +1182,8 @@
             </div>
           </div>
 
-          <!-- Attachments Section (Only for non-pr_ops and non-purchase_payment modes) -->
-          <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment'" class="mb-6">
+          <!-- Attachments Section (Only for non-pr_ops, non-purchase_payment, and non-pr_assets modes) -->
+          <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'pr_assets'" class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
             
             <!-- Simple Attachments for Other Modes -->
@@ -2514,8 +2514,8 @@ const showCategoryDropdown = ref(false)
 const filteredCategories = computed(() => {
   let categories = props.categories
   
-  // Untuk mode pr_ops dan purchase_payment, hilangkan category "Transport & akomodasi" dan "kasbon"
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // Untuk mode pr_ops, purchase_payment, dan pr_assets, hilangkan category "Transport & akomodasi" dan "kasbon"
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
     categories = categories.filter(cat => {
       const categoryName = (cat.name || '').toLowerCase()
       // Hilangkan category yang mengandung "transport", "akomodasi", atau "kasbon"
@@ -2569,8 +2569,8 @@ const budgetInfo = ref(null)
 
 // Check if any budget is exceeded (for all modes)
 const isBudgetExceeded = computed(() => {
-  // For pr_ops and purchase_payment mode, check all category budgets
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // For pr_ops, purchase_payment, and pr_assets mode, check all category budgets
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
     // Check if any category has exceeded budget
     for (const key in categoryBudgetInfo.value) {
       const info = categoryBudgetInfo.value[key]
@@ -2672,8 +2672,8 @@ const totalAmount = computed(() => {
     // For kasbon: use kasbon_amount
     const amount = parseFloat(form.kasbon_amount) || 0
     return isNaN(amount) ? 0 : amount
-  } else if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-    // For pr_ops and purchase_payment: sum from all outlets -> categories -> items
+  } else if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
+    // For pr_ops, purchase_payment, and pr_assets: sum from all outlets -> categories -> items
     return form.outlets.reduce((outletSum, outlet) => {
       const outletTotal = outlet.categories.reduce((categorySum, category) => {
         const categoryTotal = category.items.reduce((itemSum, item) => {
@@ -2758,7 +2758,7 @@ watch(totalAmount, (newTotal) => {
         ? form.travel_outlets[0].outlet_id 
         : null
       loadBudgetInfoForTravel(outletId)
-    } else if (form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'kasbon') {
+    } else if (!['pr_ops', 'purchase_payment', 'pr_assets', 'kasbon'].includes(form.mode)) {
       loadBudgetInfo()
     }
   }
@@ -2768,8 +2768,8 @@ watch(totalAmount, (newTotal) => {
 
 // Watch mode changes to reset structure
 watch(() => form.mode, (newMode) => {
-  if (newMode === 'pr_ops' || newMode === 'purchase_payment') {
-    // Reset to multi-outlet structure for pr_ops and purchase_payment
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(newMode)) {
+    // Reset to multi-outlet structure for pr_ops, purchase_payment, and pr_assets
     form.outlets = [newOutlet()]
     form.items = []
     form.travel_outlets = []
@@ -3089,7 +3089,7 @@ const loadBudgetInfo = async () => {
   }
 }
 
-// Load budget info for specific category in pr_ops/purchase_payment mode
+// Load budget info for specific category in pr_ops/purchase_payment/pr_assets mode
 const loadBudgetInfoForCategory = async (outletIdx, categoryIdx, outletId, categoryId) => {
   if (!categoryId) {
     const key = `${outletIdx}-${categoryIdx}`
@@ -3613,8 +3613,8 @@ const submitForm = async () => {
     }
   }
 
-  // Validate pr_ops and purchase_payment mode structure
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // Validate pr_ops, purchase_payment, and pr_assets mode structure
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
     // Validate outlets
     for (let outletIdx = 0; outletIdx < form.outlets.length; outletIdx++) {
       const outlet = form.outlets[outletIdx]
@@ -3725,8 +3725,8 @@ const submitForm = async () => {
     delete formData.travel_outlets
     delete formData.travel_items
     formData.outlet_id = null
-  } else if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-    // For pr_ops and purchase_payment mode, flatten outlets structure to items array with outlet_id and category_id
+  } else if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
+    // For pr_ops, purchase_payment, and pr_assets mode, flatten outlets structure to items array with outlet_id and category_id
     formData.items = []
     form.outlets.forEach(outlet => {
       outlet.categories.forEach(category => {
@@ -3759,8 +3759,8 @@ const submitForm = async () => {
     uploading.value = true
     
     try {
-      if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-        // Upload attachments per outlet for pr_ops and purchase_payment mode
+      if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
+        // Upload attachments per outlet for pr_ops, purchase_payment, and pr_assets mode
         for (const [outletId, outletAtts] of Object.entries(outletAttachments.value)) {
           if (outletAtts && outletAtts.length > 0) {
             for (const attachment of outletAtts) {
@@ -4149,7 +4149,7 @@ onMounted(async () => {
   
   // Load attachments
   if (pr.attachments && pr.attachments.length > 0) {
-    if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+    if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
       // Group attachments by outlet
       pr.attachments.forEach(attachment => {
         const outletId = attachment.outlet_id || 'no-outlet'
@@ -4165,7 +4165,7 @@ onMounted(async () => {
   
   // Load items based on mode
   if (pr.items && pr.items.length > 0) {
-    if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+    if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode)) {
       // Group items by outlet and category
       const outletMap = {}
       pr.items.forEach(item => {
@@ -4284,7 +4284,7 @@ onMounted(async () => {
         ? form.travel_outlets[0].outlet_id 
         : null
       loadBudgetInfoForTravel(outletId)
-    } else if (form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'kasbon') {
+    } else if (!['pr_ops', 'purchase_payment', 'pr_assets', 'kasbon'].includes(form.mode)) {
       loadBudgetInfo()
     }
   }

@@ -798,7 +798,7 @@ class RetailNonFoodController extends Controller
             
             foreach ($prsForStatus as $pr) {
                 // For PR Ops mode: calculate based on items in this category
-                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                     $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $pr->id)
                         ->where('category_id', $category->id)

@@ -821,6 +821,7 @@ const getModeLabel = (mode) => {
   const labels = {
     'pr_ops': 'PR Ops',
     'purchase_payment': 'Purchase Payment',
+    'pr_assets': 'PR Assets',
     'travel_application': 'Travel Application',
     'kasbon': 'Kasbon',
   };
@@ -831,6 +832,7 @@ const getModeBadgeClass = (mode) => {
   const classes = {
     'pr_ops': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
     'purchase_payment': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    'pr_assets': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
     'travel_application': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
     'kasbon': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
   };
@@ -888,8 +890,8 @@ const getOutletList = (payment) => {
     return [];
   }
   
-  // Untuk mode pr_ops dan purchase_payment: ambil outlet dari items
-  if (payment.mode === 'pr_ops' || payment.mode === 'purchase_payment') {
+  // Untuk mode pr_ops, purchase_payment, dan pr_assets: ambil outlet dari items
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(payment.mode)) {
     const outlets = new Set();
     detail.items.forEach(item => {
       if (item.outlet && item.outlet.nama_outlet) {
@@ -925,8 +927,8 @@ const getCategoriesList = (payment) => {
   const categories = [];
   const categoryMap = new Map();
   
-  // Untuk mode pr_ops dan purchase_payment: ambil semua unique categories dari items
-  if ((payment.mode === 'pr_ops' || payment.mode === 'purchase_payment') && detail.items) {
+  // Untuk mode pr_ops, purchase_payment, dan pr_assets: ambil semua unique categories dari items
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(payment.mode) && detail.items) {
     detail.items.forEach(item => {
       if (item.category && item.category.id) {
         if (!categoryMap.has(item.category.id)) {

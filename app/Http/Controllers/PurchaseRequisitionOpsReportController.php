@@ -105,9 +105,9 @@ class PurchaseRequisitionOpsReportController extends Controller
     private function getSummaryMetrics($filters)
     {
         // Base query without status filter (for counting all statuses)
-        // Include pr_ops and purchase_payment, exclude kasbon and travel_application
+        // Include pr_ops, purchase_payment, and pr_assets, exclude kasbon and travel_application
         $baseQueryWithoutStatus = DB::table('purchase_requisitions as pr')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         // Apply category filter (from items)
@@ -156,7 +156,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         // Get total amount from items
         $totalAmount = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -218,7 +218,7 @@ class PurchaseRequisitionOpsReportController extends Controller
     private function getStatusDistribution($filters)
     {
         $query = DB::table('purchase_requisitions as pr')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['category_id']) {
@@ -252,7 +252,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $statusWithValue = $statusData->map(function($item) use ($filters) {
             $valueQuery = DB::table('purchase_requisition_items as pri')
                 ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                 ->where('pr.status', $item->status)
                 ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
@@ -283,7 +283,7 @@ class PurchaseRequisitionOpsReportController extends Controller
     private function getTrendData($filters)
     {
         $query = DB::table('purchase_requisitions as pr')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -325,7 +325,7 @@ class PurchaseRequisitionOpsReportController extends Controller
             // Get PR value for this date
             $prValueQuery = DB::table('purchase_requisition_items as pri')
                 ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                 ->whereDate('pr.created_at', $item->date);
 
             if ($filters['status'] !== 'all') {
@@ -376,7 +376,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->join('purchase_requisition_categories as cat', 'pri.category_id', '=', 'cat.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -468,7 +468,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->join('tbl_data_outlet as o', 'pri.outlet_id', '=', 'o.id_outlet')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -540,7 +540,7 @@ class PurchaseRequisitionOpsReportController extends Controller
     {
         $query = DB::table('purchase_requisitions as pr')
             ->leftJoin('tbl_data_divisi', 'pr.division_id', '=', 'tbl_data_divisi.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -581,7 +581,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         return $divisions->map(function($item) use ($filters) {
             $valueQuery = DB::table('purchase_requisition_items as pri')
                 ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+                ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                 ->where('pr.division_id', $item->division_id)
                 ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
@@ -611,7 +611,7 @@ class PurchaseRequisitionOpsReportController extends Controller
     private function getPurchaseRequisitions($filters, $perPage = 15)
     {
         $query = PurchaseRequisition::with(['division', 'creator', 'items.category', 'items.outlet'])
-            ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -648,7 +648,7 @@ class PurchaseRequisitionOpsReportController extends Controller
     {
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -709,7 +709,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->join('tbl_data_outlet as o', 'pri.outlet_id', '=', 'o.id_outlet')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -760,7 +760,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->join('purchase_requisition_categories as cat', 'pri.category_id', '=', 'cat.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -847,7 +847,7 @@ class PurchaseRequisitionOpsReportController extends Controller
 
         // Get data
         $query = PurchaseRequisition::with(['division', 'items'])
-            ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereBetween('created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
         if ($filters['status'] !== 'all') {
@@ -937,7 +937,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $prQuery = PurchaseRequisition::with(['division', 'creator', 'approvalFlows.approver', 'items' => function($q) use ($categoryId) {
             $q->where('category_id', $categoryId);
         }])
-            ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereHas('items', function($q) use ($categoryId) {
                 $q->where('category_id', $categoryId);
             })
@@ -1070,7 +1070,7 @@ class PurchaseRequisitionOpsReportController extends Controller
         $allPRsQuery = PurchaseRequisition::with(['items' => function($q) use ($categoryId) {
             $q->where('category_id', $categoryId);
         }])
-            ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->whereHas('items', function($q) use ($categoryId) {
                 $q->where('category_id', $categoryId);
             })
@@ -1137,7 +1137,7 @@ class PurchaseRequisitionOpsReportController extends Controller
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->join('purchase_requisition_categories as cat', 'pri.category_id', '=', 'cat.id')
             ->leftJoin('users as u', 'pr.created_by', '=', 'u.id')
-            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('pr.mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->where('pri.outlet_id', $outletId)
             ->whereBetween('pr.created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59']);
 
@@ -1388,7 +1388,7 @@ class PurchaseRequisitionOpsReportController extends Controller
 
         // Get PR Ops for this division
         $prQuery = PurchaseRequisition::with(['items', 'creator', 'approvalFlows.approver'])
-            ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+            ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
             ->where('division_id', $divisionId)
             ->whereBetween('created_at', [$filters['date_from'] . ' 00:00:00', $filters['date_to'] . ' 23:59:59'])
             ->withoutGlobalScopes();

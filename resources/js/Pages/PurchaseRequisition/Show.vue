@@ -66,11 +66,11 @@
                 <p class="text-gray-900">{{ purchaseRequisition.division?.nama_divisi || '-' }}</p>
               </div>
               <!-- Category and Outlet: Show for legacy data (no mode) or non-multi-outlet modes -->
-              <div v-if="!purchaseRequisition.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(purchaseRequisition.mode)">
+              <div v-if="!purchaseRequisition.mode || !['pr_ops', 'purchase_payment', 'pr_assets', 'travel_application'].includes(purchaseRequisition.mode)">
                 <label class="text-sm font-medium text-gray-600">Category</label>
                 <p class="text-gray-900">{{ purchaseRequisition.category?.name || '-' }}</p>
               </div>
-              <div v-if="!purchaseRequisition.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(purchaseRequisition.mode)">
+              <div v-if="!purchaseRequisition.mode || !['pr_ops', 'purchase_payment', 'pr_assets', 'travel_application'].includes(purchaseRequisition.mode)">
                 <label class="text-sm font-medium text-gray-600">Outlet</label>
                 <p class="text-gray-900">{{ purchaseRequisition.outlet?.nama_outlet || '-' }}</p>
               </div>
@@ -207,7 +207,7 @@
           </div>
 
           <!-- Items - Grouped by Outlet and Category for pr_ops and purchase_payment -->
-          <div v-if="purchaseRequisition.items && purchaseRequisition.items.length > 0 && ['pr_ops', 'purchase_payment'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
+          <div v-if="purchaseRequisition.items && purchaseRequisition.items.length > 0 && ['pr_ops', 'purchase_payment', 'pr_assets'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Items</h2>
             <div class="space-y-6">
               <div v-for="(outletGroup, outletId) in getGroupedItems(purchaseRequisition.items)" :key="outletId" class="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -269,7 +269,7 @@
           </div>
 
           <!-- Items - Simple table for other modes (travel_application) or legacy data -->
-          <div v-if="purchaseRequisition.items && purchaseRequisition.items.length > 0 && !['pr_ops', 'purchase_payment', 'kasbon'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
+          <div v-if="purchaseRequisition.items && purchaseRequisition.items.length > 0 && !['pr_ops', 'purchase_payment', 'pr_assets', 'kasbon'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Items</h2>
             <div class="overflow-x-auto">
               <table class="min-w-full divide-y divide-gray-200">
@@ -482,7 +482,7 @@
           </div>
 
           <!-- Attachments - Grouped by Outlet for pr_ops and purchase_payment -->
-          <div v-if="purchaseRequisition.attachments && purchaseRequisition.attachments.length > 0 && ['pr_ops', 'purchase_payment'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
+          <div v-if="purchaseRequisition.attachments && purchaseRequisition.attachments.length > 0 && ['pr_ops', 'purchase_payment', 'pr_assets'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <i class="fa fa-paperclip mr-2 text-blue-500"></i>
               Attachments
@@ -564,7 +564,7 @@
           </div>
 
           <!-- Attachments - Simple list for other modes -->
-          <div v-if="!['pr_ops', 'purchase_payment'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
+          <div v-if="!['pr_ops', 'purchase_payment', 'pr_assets'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <i class="fa fa-paperclip mr-2 text-blue-500"></i>
               Attachments
@@ -641,7 +641,7 @@
           </div>
 
           <!-- Attachments - Empty state for pr_ops and purchase_payment if no attachments -->
-          <div v-if="['pr_ops', 'purchase_payment'].includes(purchaseRequisition.mode) && (!purchaseRequisition.attachments || purchaseRequisition.attachments.length === 0)" class="bg-white rounded-xl shadow-lg p-6">
+          <div v-if="['pr_ops', 'purchase_payment', 'pr_assets'].includes(purchaseRequisition.mode) && (!purchaseRequisition.attachments || purchaseRequisition.attachments.length === 0)" class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <i class="fa fa-paperclip mr-2 text-blue-500"></i>
               Attachments
@@ -1148,6 +1148,7 @@ function getModeLabel(mode) {
   const labels = {
     'pr_ops': 'Purchase Requisition',
     'purchase_payment': 'Payment Application',
+    'pr_assets': 'PR Assets',
     'travel_application': 'Travel Application',
     'kasbon': 'Kasbon'
   }
@@ -1159,6 +1160,7 @@ function getModeBadgeClass(mode) {
   const classes = {
     'pr_ops': 'bg-blue-100 text-blue-800',
     'purchase_payment': 'bg-green-100 text-green-800',
+    'pr_assets': 'bg-teal-100 text-teal-800',
     'travel_application': 'bg-purple-100 text-purple-800',
     'kasbon': 'bg-orange-100 text-orange-800'
   }

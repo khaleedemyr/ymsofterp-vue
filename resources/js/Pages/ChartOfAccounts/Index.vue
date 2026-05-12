@@ -176,6 +176,7 @@ function getModePaymentLabel(mode) {
   const labels = {
     'pr_ops': 'Purchase Requisition',
     'purchase_payment': 'Payment Application',
+    'pr_assets': 'PR Assets',
     'travel_application': 'Travel Application',
     'kasbon': 'Kasbon'
   };

@@ -36,6 +36,7 @@ const menuGroups = [
             { name: () => 'My Attendance', icon: 'fa-solid fa-user-clock', route: '/attendance', code: 'my_attendance' },
             { name: () => 'Dokumen Bersama', icon: 'fa-solid fa-folder-tree', route: '/shared-documents', code: 'shared_documents' },
             { name: () => 'Payment', icon: 'fa-solid fa-shopping-cart', route: '/purchase-requisitions', code: 'purchase_requisition_ops' },
+            { name: () => 'PR Assets', icon: 'fa-solid fa-boxes-stacked', route: '/purchase-requisitions/create?mode=pr_assets', code: 'pr_assets' },
             { name: () => 'Payment Report', icon: 'fa-solid fa-chart-bar', route: '/pr-ops/report', code: 'pr_ops_report' },
             { name: () => 'Payment Approval Tracker', icon: 'fa-solid fa-chart-line', route: '/purchase-requisitions/payment-tracker', code: 'payment_tracker' },
             { name: () => 'Video Tutorial Gallery', icon: 'fa-solid fa-play-circle', route: '/video-tutorials/gallery' },

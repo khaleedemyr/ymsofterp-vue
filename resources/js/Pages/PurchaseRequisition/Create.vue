@@ -22,6 +22,7 @@
             <select v-model="form.mode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="pr_ops">Purchase Requisition</option>
               <option value="purchase_payment">Payment Application</option>
+              <option value="pr_assets">PR Assets</option>
               <option value="travel_application">Travel Application</option>
               <option value="kasbon">Kasbon</option>
             </select>
@@ -115,8 +116,8 @@
               </select>
             </div>
 
-            <!-- Category (Hidden for pr_ops and purchase_payment mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment'">
+            <!-- Category (Hidden for multi-outlet modes) -->
+            <div v-if="!isMultiOutletMode">
               <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
               
               <!-- For travel_application: Show auto-selected transport category (disabled) -->
@@ -328,8 +329,8 @@
 
             </div>
 
-            <!-- Outlet (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Outlet (Hidden for multi-outlet, travel_application, and kasbon mode) -->
+            <div v-if="!isMultiOutletMode && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
               <select
                 v-model="form.outlet_id"
@@ -388,8 +389,8 @@
               </select>
             </div>
 
-            <!-- Currency (Hidden for pr_ops, purchase_payment, travel_application, and kasbon mode) -->
-            <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <!-- Currency (Hidden for multi-outlet, travel_application, and kasbon mode) -->
+            <div v-if="!isMultiOutletMode && form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Currency</label>
               <select
                 v-model="form.currency"
@@ -405,8 +406,8 @@
           <div v-if="form.mode !== 'kasbon'" class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-2">Items *</label>
             
-            <!-- Multi-Outlet Structure for PR Ops and Payment Application Mode -->
-            <div v-if="form.mode === 'pr_ops' || form.mode === 'purchase_payment'" class="space-y-6">
+            <!-- Multi-Outlet Structure for PR Ops, Payment Application, and PR Assets Mode -->
+            <div v-if="isMultiOutletMode" class="space-y-6">
               <!-- Outlet Cards -->
               <div v-for="(outlet, outletIdx) in form.outlets" :key="outletIdx" class="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
                 <!-- Outlet Header -->
@@ -661,7 +662,108 @@
 
                     <!-- Items per Category -->
                     <div class="ml-4">
-                      <div class="overflow-x-auto">
+
+                      <!-- PR Assets Mode: Autocomplete with Image -->
+                      <div v-if="form.mode === 'pr_assets'" class="space-y-4">
+                        <div v-for="(item, itemIdx) in category.items" :key="itemIdx" class="group relative bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-300 transition-all">
+                          <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                              <span class="inline-flex items-center justify-center w-7 h-7 text-xs font-bold text-blue-700 bg-blue-100 rounded-lg">{{ itemIdx + 1 }}</span>
+                              <span v-if="item.selectedAsset" class="text-sm font-semibold text-gray-700">{{ item.selectedAsset.name }}</span>
+                              <span v-else class="text-sm text-gray-400 italic">Item belum dipilih</span>
+                            </div>
+                            <button type="button" @click="removeItemFromCategory(outletIdx, categoryIdx, itemIdx)" :disabled="category.items.length === 1" class="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:text-white hover:bg-red-500 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-0">
+                              <i class="fa fa-trash text-xs"></i>
+                            </button>
+                          </div>
+
+                          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                            <div class="lg:col-span-12">
+                              <label class="block text-xs font-semibold text-gray-500 mb-1.5">Pilih Item Asset</label>
+                              <multiselect
+                                v-model="item.selectedAsset"
+                                :options="props.assetItems"
+                                :searchable="true"
+                                :close-on-select="true"
+                                :show-labels="false"
+                                placeholder="Cari item asset..."
+                                label="name"
+                                track-by="id"
+                                @select="(sel) => onAssetItemSelect(sel, outletIdx, categoryIdx, itemIdx)"
+                                @remove="() => onAssetItemRemove(outletIdx, categoryIdx, itemIdx)"
+                                class="pra-multiselect"
+                              >
+                                <template #option="{ option }">
+                                  <div class="flex items-center gap-3 py-1">
+                                    <div class="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0">
+                                      <img v-if="option.image" :src="`/storage/${option.image}`" class="w-full h-full object-cover" />
+                                      <div v-else class="w-full h-full flex items-center justify-center"><i class="fa fa-image text-gray-300 text-xs"></i></div>
+                                    </div>
+                                    <div class="min-w-0">
+                                      <div class="text-sm font-semibold text-gray-800 truncate">{{ option.name }}</div>
+                                      <div class="text-xs text-gray-400">{{ option.category_name }} &middot; {{ option.sku || '-' }}</div>
+                                    </div>
+                                  </div>
+                                </template>
+                                <template #singleLabel="{ option }">
+                                  <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 rounded bg-gray-100 overflow-hidden flex-shrink-0">
+                                      <img v-if="option.image" :src="`/storage/${option.image}`" class="w-full h-full object-cover" />
+                                      <div v-else class="w-full h-full flex items-center justify-center"><i class="fa fa-image text-gray-300 text-[8px]"></i></div>
+                                    </div>
+                                    <span class="text-sm font-medium text-gray-800 truncate">{{ option.name }}</span>
+                                  </div>
+                                </template>
+                                <template #noResult>
+                                  <div class="text-center py-4 text-gray-400 text-sm"><i class="fa fa-search mr-2"></i>Tidak ditemukan</div>
+                                </template>
+                                <template #noOptions>
+                                  <div class="text-center py-4 text-gray-400 text-sm">Tidak ada item asset tersedia</div>
+                                </template>
+                              </multiselect>
+                            </div>
+
+                            <div v-if="item.selectedAsset && item.selectedAsset.image" class="lg:col-span-3">
+                              <label class="block text-xs font-semibold text-gray-500 mb-1.5">Gambar Item</label>
+                              <div class="relative w-full aspect-square max-w-[120px] rounded-xl overflow-hidden border border-gray-200 bg-gray-50 cursor-pointer group/img" @click="openLightbox(`/storage/${item.selectedAsset.image}`)">
+                                <img :src="`/storage/${item.selectedAsset.image}`" class="w-full h-full object-cover transition-transform duration-300 group-hover/img:scale-110" />
+                                <div class="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-all flex items-center justify-center">
+                                  <i class="fa fa-expand text-white opacity-0 group-hover/img:opacity-100 transition-all text-lg drop-shadow"></i>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div :class="item.selectedAsset && item.selectedAsset.image ? 'lg:col-span-5' : 'lg:col-span-6'">
+                              <div class="grid grid-cols-3 gap-3">
+                                <div>
+                                  <label class="block text-xs font-semibold text-gray-500 mb-1.5">Qty <span class="text-red-400">*</span></label>
+                                  <input type="number" min="0.01" step="0.01" v-model.number="item.qty" :disabled="!item.item_name" @input="calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx)" placeholder="0" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40" />
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-semibold text-gray-500 mb-1.5">Unit <span class="text-red-400">*</span></label>
+                                  <select v-model="item.unit" :disabled="!item.item_name" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40">
+                                    <option v-for="u in item.availableUnits" :key="u.id" :value="u.name">{{ u.name }} ({{ u.type }})</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label class="block text-xs font-semibold text-gray-500 mb-1.5">Unit Price <span class="text-red-400">*</span></label>
+                                  <input type="number" min="0" step="0.01" v-model.number="item.unit_price" :disabled="!item.item_name" @input="calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx)" placeholder="0" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40" />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div :class="item.selectedAsset && item.selectedAsset.image ? 'lg:col-span-4' : 'lg:col-span-6'">
+                              <label class="block text-xs font-semibold text-gray-500 mb-1.5">Subtotal</label>
+                              <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm font-bold text-blue-800">
+                                {{ formatCurrency(item.subtotal) }}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- PR Ops / Payment Application Mode: Table Input -->
+                      <div v-else class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
                           <thead class="bg-gray-50">
                             <tr>
@@ -1174,8 +1276,8 @@
             </div>
           </div>
 
-          <!-- Attachments Section (Only for non-pr_ops and non-purchase_payment modes) -->
-          <div v-if="form.mode !== 'pr_ops' && form.mode !== 'purchase_payment'" class="mb-6">
+          <!-- Attachments Section (Only for non-multi-outlet modes) -->
+          <div v-if="!isMultiOutletMode" class="mb-6">
             <label class="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
             
             <!-- Simple Attachments for Other Modes -->
@@ -2480,6 +2582,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Lightbox for Asset Image Preview -->
+    <Teleport to="body">
+      <Transition name="lightbox-fade">
+        <div v-if="lightboxSrc" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm" @click.self="lightboxSrc = null">
+          <button @click="lightboxSrc = null" class="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40 transition-all text-lg"><i class="fa fa-times"></i></button>
+          <img :src="lightboxSrc" class="max-w-[90vw] max-h-[85vh] rounded-2xl shadow-2xl object-contain" />
+        </div>
+      </Transition>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -2489,12 +2601,18 @@ import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   categories: Array,
   outlets: Array,
   tickets: Array,
   divisions: Array,
+  assetItems: {
+    type: Array,
+    default: () => [],
+  },
   initialMode: {
     type: String,
     default: null,
@@ -2518,10 +2636,23 @@ const userDivisionId = computed(() => currentUser.value.division_id || null)
 const loading = ref(false)
 const budgetInfo = ref(null)
 
+const isMultiOutletMode = computed(() => ['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode))
+
+const lightboxSrc = ref(null)
+function openLightbox(src) { lightboxSrc.value = src }
+
+function buildUnitsForAssetItem(item) {
+  const u = []
+  if (item.small_unit_id)  u.push({ id: item.small_unit_id, name: item.small_unit_name, type: 'small' })
+  if (item.medium_unit_id) u.push({ id: item.medium_unit_id, name: item.medium_unit_name, type: 'medium' })
+  if (item.large_unit_id)  u.push({ id: item.large_unit_id, name: item.large_unit_name, type: 'large' })
+  return u
+}
+
 // Check if any budget is exceeded (for all modes)
 const isBudgetExceeded = computed(() => {
-  // For pr_ops and purchase_payment mode, check all category budgets
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // For pr_ops, purchase_payment, and pr_assets mode, check all category budgets
+  if (isMultiOutletMode.value) {
     // Check if any category has exceeded budget
     for (const key in categoryBudgetInfo.value) {
       const info = categoryBudgetInfo.value[key]
@@ -2556,7 +2687,9 @@ function newItem() {
     qty: '',
     unit: '',
     unit_price: 0,
-    subtotal: 0
+    subtotal: 0,
+    selectedAsset: null,
+    availableUnits: []
   }
 }
 
@@ -2617,8 +2750,8 @@ const form = reactive({
 const filteredCategories = computed(() => {
   let categories = props.categories
   
-  // Untuk mode pr_ops dan purchase_payment, hilangkan category "Transport & akomodasi" dan "kasbon"
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // Untuk mode pr_ops, purchase_payment, dan pr_assets, hilangkan category "Transport & akomodasi" dan "kasbon"
+  if (isMultiOutletMode.value) {
     categories = categories.filter(cat => {
       const categoryName = (cat.name || '').toLowerCase()
       // Hilangkan category yang mengandung "transport", "akomodasi", atau "kasbon"
@@ -2689,8 +2822,8 @@ const totalAmount = computed(() => {
   if (form.mode === 'kasbon') {
     // For kasbon: use kasbon_amount
     return form.kasbon_amount || 0
-  } else if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-    // For pr_ops and purchase_payment: sum from all outlets -> categories -> items
+  } else if (isMultiOutletMode.value) {
+    // For pr_ops, purchase_payment, and pr_assets: sum from all outlets -> categories -> items
     return form.outlets.reduce((outletSum, outlet) => {
       const outletTotal = outlet.categories.reduce((categorySum, category) => {
         const categoryTotal = category.items.reduce((itemSum, item) => {
@@ -2760,7 +2893,7 @@ watch(totalAmount, (newTotal) => {
         ? form.travel_outlets[0].outlet_id 
         : null
       loadBudgetInfoForTravel(outletId)
-    } else if (form.mode !== 'pr_ops' && form.mode !== 'purchase_payment' && form.mode !== 'kasbon') {
+    } else if (!isMultiOutletMode.value && form.mode !== 'kasbon') {
       loadBudgetInfo()
     }
   }
@@ -2770,8 +2903,8 @@ watch(totalAmount, (newTotal) => {
 
 // Watch mode changes to reset structure
 watch(() => form.mode, (newMode) => {
-  if (newMode === 'pr_ops' || newMode === 'purchase_payment') {
-    // Reset to multi-outlet structure for pr_ops and purchase_payment
+  if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(newMode)) {
+    // Reset to multi-outlet structure for pr_ops, purchase_payment, and pr_assets
     form.outlets = [newOutlet()]
     form.items = []
     form.travel_outlets = []
@@ -2991,6 +3124,23 @@ function calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx) {
   if (outlet.outlet_id && category.category_id) {
     loadBudgetInfoForCategory(outletIdx, categoryIdx, outlet.outlet_id, category.category_id)
   }
+}
+
+function onAssetItemSelect(sel, outletIdx, categoryIdx, itemIdx) {
+  const item = form.outlets[outletIdx].categories[categoryIdx].items[itemIdx]
+  item.item_name = sel.name
+  item.availableUnits = buildUnitsForAssetItem(sel)
+  if (item.availableUnits.length > 0) item.unit = item.availableUnits[0].name
+}
+
+function onAssetItemRemove(outletIdx, categoryIdx, itemIdx) {
+  const item = form.outlets[outletIdx].categories[categoryIdx].items[itemIdx]
+  item.item_name = ''
+  item.unit = ''
+  item.availableUnits = []
+  item.qty = ''
+  item.unit_price = 0
+  item.subtotal = 0
 }
 
 // Get category total for a specific category
@@ -3596,8 +3746,8 @@ const submitForm = async () => {
     }
   }
 
-  // Validate pr_ops and purchase_payment mode structure
-  if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
+  // Validate pr_ops, purchase_payment, and pr_assets mode structure
+  if (isMultiOutletMode.value) {
     // Validate outlets
     for (let outletIdx = 0; outletIdx < form.outlets.length; outletIdx++) {
       const outlet = form.outlets[outletIdx]
@@ -3714,8 +3864,8 @@ const submitForm = async () => {
     delete formData.travel_outlets
     delete formData.travel_items
     formData.outlet_id = null
-  } else if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-    // For pr_ops and purchase_payment mode, flatten outlets structure to items array with outlet_id and category_id
+  } else if (isMultiOutletMode.value) {
+    // For pr_ops, purchase_payment, and pr_assets mode, flatten outlets structure to items array with outlet_id and category_id
     formData.items = []
     ;(form.outlets || [])
       .filter(outlet => outlet && outlet.outlet_id)
@@ -3761,8 +3911,8 @@ const submitForm = async () => {
       uploading.value = true
       
       try {
-        if (form.mode === 'pr_ops' || form.mode === 'purchase_payment') {
-          // Upload attachments per outlet for pr_ops and purchase_payment mode
+        if (isMultiOutletMode.value) {
+          // Upload attachments per outlet for multi-outlet modes
           for (const [outletId, outletAtts] of Object.entries(outletAttachments.value)) {
             if (outletAtts && outletAtts.length > 0) {
               for (const attachment of outletAtts) {
@@ -4063,3 +4213,17 @@ watch(approverSearch, (newSearch) => {
   }
 })
 </script>
+
+<style>
+.pra-multiselect .multiselect__tags { border-radius: 0.75rem; border-color: #e2e8f0; background: #f8fafc; min-height: 44px; padding: 6px 40px 0 8px; }
+.pra-multiselect .multiselect__tags:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.pra-multiselect .multiselect__single { font-size: 0.875rem; padding: 4px 0; }
+.pra-multiselect .multiselect__input { font-size: 0.875rem; }
+.pra-multiselect .multiselect__content-wrapper { border-radius: 0.75rem; border-color: #e2e8f0; box-shadow: 0 20px 60px -15px rgba(0,0,0,0.15); margin-top: 4px; }
+.pra-multiselect .multiselect__option--highlight { background: #eff6ff; color: #1d4ed8; }
+.pra-multiselect .multiselect__option--selected { background: #f1f5f9; color: #334155; font-weight: 600; }
+
+.lightbox-fade-enter-active { transition: all 0.25s ease; }
+.lightbox-fade-leave-active { transition: all 0.2s ease; }
+.lightbox-fade-enter-from, .lightbox-fade-leave-to { opacity: 0; }
+</style>

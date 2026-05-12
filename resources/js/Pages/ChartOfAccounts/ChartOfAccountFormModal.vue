@@ -531,6 +531,15 @@ function submit() {
                   <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
                     <input
                       type="checkbox"
+                      value="pr_assets"
+                      v-model="form.mode_payment"
+                      class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span class="text-sm text-gray-700">PR Assets</span>
+                  </label>
+                  <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                    <input
+                      type="checkbox"
                       value="travel_application"
                       v-model="form.mode_payment"
                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"

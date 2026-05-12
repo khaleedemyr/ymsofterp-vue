@@ -23,6 +23,60 @@ use Inertia\Inertia;
 
 class PurchaseRequisitionController extends Controller
 {
+    private function getAssetItems()
+    {
+        $assetCategoryIds = DB::table('categories')
+            ->where('is_asset', '1')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($assetCategoryIds)) {
+            return collect([]);
+        }
+
+        $items = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->leftJoin('units as su', 'items.small_unit_id', '=', 'su.id')
+            ->leftJoin('units as mu', 'items.medium_unit_id', '=', 'mu.id')
+            ->leftJoin('units as lu', 'items.large_unit_id', '=', 'lu.id')
+            ->whereIn('items.category_id', $assetCategoryIds)
+            ->where('items.status', 'active')
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'categories.name as category_name',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id',
+                'su.name as small_unit_name',
+                'mu.name as medium_unit_name',
+                'lu.name as large_unit_name'
+            )
+            ->orderBy('items.name')
+            ->get();
+
+        $itemIds = $items->pluck('id')->toArray();
+        $images = [];
+        if (!empty($itemIds)) {
+            $rows = DB::table('item_images')
+                ->whereIn('item_id', $itemIds)
+                ->select('item_id', 'path')
+                ->get();
+            foreach ($rows as $r) {
+                if (!isset($images[$r->item_id])) {
+                    $images[$r->item_id] = [];
+                }
+                $images[$r->item_id][] = $r->path;
+            }
+        }
+
+        return $items->map(function ($item) use ($images) {
+            $item->image = $images[$item->id][0] ?? null;
+            return $item;
+        });
+    }
+
     /**
      * Display a listing of purchase requisitions
      */
@@ -87,13 +141,13 @@ class PurchaseRequisitionController extends Controller
                   // Search outlet: untuk pr_ops dan purchase_payment, cari di items.outlet
                   // Untuk mode lain, cari di header outlet
                   ->orWhere(function($subQ) use ($search) {
-                      $subQ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+                      $subQ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                           ->whereHas('items.outlet', function($itemQ) use ($search) {
                               $itemQ->where('nama_outlet', 'like', "%{$search}%");
                           });
                   })
                   ->orWhere(function($subQ) use ($search) {
-                      $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment'])
+                      $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                           ->whereHas('outlet', function($q) use ($search) {
                               $q->where('nama_outlet', 'like', "%{$search}%");
                           });
@@ -101,14 +155,14 @@ class PurchaseRequisitionController extends Controller
                   // Search category: untuk pr_ops dan purchase_payment, cari di items.category
                   // Untuk mode lain, cari di header category
                   ->orWhere(function($subQ) use ($search) {
-                      $subQ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+                      $subQ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                           ->whereHas('items.category', function($itemQ) use ($search) {
                               $itemQ->where('name', 'like', "%{$search}%")
                                     ->orWhere('subcategory', 'like', "%{$search}%");
                           });
                   })
                   ->orWhere(function($subQ) use ($search) {
-                      $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment'])
+                      $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                           ->whereHas('category', function($q) use ($search) {
                               $q->where('name', 'like', "%{$search}%")
                                 ->orWhere('subcategory', 'like', "%{$search}%");
@@ -139,14 +193,14 @@ class PurchaseRequisitionController extends Controller
             $query->where(function($q) use ($category) {
                 // Untuk mode pr_ops dan purchase_payment: filter berdasarkan items
                 $q->where(function($subQ) use ($category) {
-                    $subQ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+                    $subQ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                         ->whereHas('items', function($itemQ) use ($category) {
                             $itemQ->where('category_id', $category);
                         });
                 })
                 // Untuk mode lain: filter berdasarkan category_id di header
                 ->orWhere(function($subQ) use ($category) {
-                    $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment'])
+                    $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                         ->where('category_id', $category);
                 });
             });
@@ -158,14 +212,14 @@ class PurchaseRequisitionController extends Controller
             $query->where(function($q) use ($outlet) {
                 // Untuk mode pr_ops dan purchase_payment: filter berdasarkan items
                 $q->where(function($subQ) use ($outlet) {
-                    $subQ->whereIn('mode', ['pr_ops', 'purchase_payment'])
+                    $subQ->whereIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                         ->whereHas('items', function($itemQ) use ($outlet) {
                             $itemQ->where('outlet_id', $outlet);
                         });
                 })
                 // Untuk mode lain: filter berdasarkan outlet_id di header
                 ->orWhere(function($subQ) use ($outlet) {
-                    $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment'])
+                    $subQ->whereNotIn('mode', ['pr_ops', 'purchase_payment', 'pr_assets'])
                         ->where('outlet_id', $outlet);
                 });
             });
@@ -584,7 +638,7 @@ class PurchaseRequisitionController extends Controller
     public function create(Request $request)
     {
         $initialMode = $request->query('mode');
-        if (!in_array($initialMode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon'])) {
+        if (!in_array($initialMode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon', 'pr_assets'])) {
             $initialMode = null;
         }
 
@@ -630,6 +684,8 @@ class PurchaseRequisitionController extends Controller
 
         $divisions = Divisi::active()->orderBy('nama_divisi')->get();
 
+        $assetItems = $this->getAssetItems();
+
         return Inertia::render('PurchaseRequisition/Create', [
             'categories' => $categories,
             'outlets' => $outlets,
@@ -637,6 +693,7 @@ class PurchaseRequisitionController extends Controller
             'divisions' => $divisions,
             'initialMode' => $initialMode,
             'initialTicketId' => $initialTicketId,
+            'assetItems' => $assetItems,
         ]);
     }
 
@@ -666,7 +723,7 @@ class PurchaseRequisitionController extends Controller
             'travel_notes' => 'nullable|string', // For travel_application mode
             'approvers' => 'nullable|array',
             'approvers.*' => 'required|exists:users,id',
-            'mode' => 'required|in:pr_ops,purchase_payment,travel_application,kasbon',
+            'mode' => 'required|in:pr_ops,purchase_payment,travel_application,kasbon,pr_assets',
         ];
         
         // For kasbon mode, items are not required (will be auto-generated)
@@ -694,8 +751,8 @@ class PurchaseRequisitionController extends Controller
         $validated = $request->validate($rules);
 
         // Check budget limit before saving
-        // For pr_ops and purchase_payment mode, check budget per outlet/category from items
-        if ($validated['mode'] === 'pr_ops' || $validated['mode'] === 'purchase_payment') {
+        // For pr_ops, purchase_payment, and pr_assets mode, check budget per outlet/category from items
+        if (in_array($validated['mode'], ['pr_ops', 'purchase_payment', 'pr_assets'])) {
             // Group items by outlet_id and category_id
             $budgetChecks = [];
             foreach ($validated['items'] as $item) {
@@ -1013,7 +1070,7 @@ class PurchaseRequisitionController extends Controller
             $outletId = $purchaseRequisition->outlet_id;
             
             // For pr_ops mode, if category_id is null at PR level, get from first item
-            if (!$categoryId && in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
+            if (!$categoryId && in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                 $firstItem = $purchaseRequisition->items()->whereNotNull('category_id')->first();
                 if ($firstItem) {
                     $categoryId = $firstItem->category_id;
@@ -1316,7 +1373,7 @@ class PurchaseRequisitionController extends Controller
             'kasbon_reason' => 'nullable|string',
             'approvers' => 'nullable|array',
             'approvers.*' => 'required|exists:users,id',
-            'mode' => 'required|in:pr_ops,purchase_payment,travel_application,kasbon',
+            'mode' => 'required|in:pr_ops,purchase_payment,travel_application,kasbon,pr_assets',
         ]);
 
         // Calculate total amount based on mode
@@ -1331,8 +1388,8 @@ class PurchaseRequisitionController extends Controller
         $validated['amount'] = $totalAmount;
 
         // Check budget limit before updating (exclude current record from calculation)
-        // For pr_ops and purchase_payment mode, check budget per outlet/category from items
-        if ($validated['mode'] === 'pr_ops' || $validated['mode'] === 'purchase_payment') {
+        // For pr_ops, purchase_payment, and pr_assets mode, check budget per outlet/category from items
+        if (in_array($validated['mode'], ['pr_ops', 'purchase_payment', 'pr_assets'])) {
             // Group items by outlet_id and category_id
             $budgetChecks = [];
             foreach ($validated['items'] as $item) {
@@ -1803,7 +1860,7 @@ class PurchaseRequisitionController extends Controller
                 if ($purchaseRequisition->mode !== 'kasbon') {
                     try {
                         // For pr_ops and purchase_payment mode, check budget per outlet/category from items
-                        if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'])) {
+                        if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                             // Group items by outlet_id and category_id
                             $budgetChecks = [];
                             $items = $purchaseRequisition->items;
@@ -3031,7 +3088,7 @@ class PurchaseRequisitionController extends Controller
             if ($purchaseRequisition->mode !== 'kasbon') {
                 // For modes that use new structure (pr_ops, purchase_payment, travel_application)
                 // Try to get category from items first, fallback to PR level for backward compatibility
-                if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment', 'travel_application'])) {
+                if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment', 'travel_application', 'pr_assets'])) {
                     // Try to get category from items (new structure)
                     $firstItemWithCategory = $purchaseRequisition->items->first(function($item) {
                         return $item->category_id !== null;
@@ -3110,7 +3167,7 @@ class PurchaseRequisitionController extends Controller
                         
                         $prsForStatus = PurchaseRequisition::whereIn('id', $prIds)->get();
                         foreach ($prsForStatus as $pr) {
-                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                 $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                                     ->where('purchase_requisition_id', $pr->id)
                                     ->where('category_id', $category->id)
@@ -3246,7 +3303,7 @@ class PurchaseRequisitionController extends Controller
                         
                         $prsForStatus = PurchaseRequisition::whereIn('id', $prIds)->get();
                         foreach ($prsForStatus as $pr) {
-                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                 $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                                     ->where('purchase_requisition_id', $pr->id)
                                     ->where('category_id', $category->id)
@@ -3459,7 +3516,7 @@ class PurchaseRequisitionController extends Controller
                         $prUnpaidAmount = 0;
                         foreach ($allPrs as $pr) {
                             // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                 // Hitung subtotal items di category ini (semua outlets)
                                 $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                                     ->where('purchase_requisition_id', $pr->id)
@@ -3707,7 +3764,7 @@ class PurchaseRequisitionController extends Controller
                         $prsForStatus = PurchaseRequisition::whereIn('id', $prIds)->get();
                         foreach ($prsForStatus as $pr) {
                             // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                 $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                                     ->where('purchase_requisition_id', $pr->id)
                                     ->where('category_id', $category->id)
@@ -3953,7 +4010,7 @@ class PurchaseRequisitionController extends Controller
                             $outletPrUnpaidAmount = 0;
                             foreach ($outletAllPrs as $pr) {
                                 // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
-                                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                     // Hitung subtotal items di outlet ini
                                     $outletItemsSubtotal = DB::table('purchase_requisition_items')
                                         ->where('purchase_requisition_id', $pr->id)
@@ -4152,7 +4209,7 @@ class PurchaseRequisitionController extends Controller
                             $prs = PurchaseRequisition::whereIn('id', $prIds)->get();
                             foreach ($prs as $pr) {
                                 // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
-                                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                     $outletItemsSubtotal = DB::table('purchase_requisition_items')
                                         ->where('purchase_requisition_id', $pr->id)
                                         ->where('outlet_id', $outletIdForBudget)
@@ -4375,7 +4432,7 @@ class PurchaseRequisitionController extends Controller
                         $prUnpaidAmount = 0;
                         foreach ($allPrs as $pr) {
                             // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                            if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                                 // Hitung subtotal items di category ini (semua outlets)
                                 $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                                     ->where('purchase_requisition_id', $pr->id)
@@ -4682,7 +4739,7 @@ class PurchaseRequisitionController extends Controller
 
             // For PR Ops and purchase_payment mode, calculate items_budget_info (per outlet+category)
             $itemsBudgetInfo = [];
-            if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment']) && $budgetInfo) {
+            if (in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment', 'pr_assets']) && $budgetInfo) {
                 // Get unique outlet+category combinations from items
                 $outletCategoryCombos = [];
                 foreach ($purchaseRequisition->items as $item) {
@@ -5132,7 +5189,7 @@ class PurchaseRequisitionController extends Controller
             $prUnpaidAmount = 0;
             foreach ($allPrs as $pr) {
                 // Untuk PR Ops: hitung berdasarkan items di category ini (sum semua outlets)
-                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                     // Hitung subtotal items di category ini (semua outlets) - TIDAK filter outlet untuk global budget
                     $categoryItemsSubtotal = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $pr->id)
@@ -5644,7 +5701,7 @@ class PurchaseRequisitionController extends Controller
             $prUnpaidAmount = 0;
             foreach ($allPrs as $pr) {
                 // Untuk PR Ops: hitung berdasarkan items di outlet tersebut
-                if (in_array($pr->mode, ['pr_ops', 'purchase_payment'])) {
+                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
                     // Hitung subtotal items di outlet ini
                     $outletItemsSubtotal = DB::table('purchase_requisition_items')
                         ->where('purchase_requisition_id', $pr->id)
@@ -6125,7 +6182,7 @@ class PurchaseRequisitionController extends Controller
     public function getNextPrNumber(Request $request)
     {
         $mode = $request->input('mode', 'pr_ops');
-        if (!in_array($mode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon'])) {
+        if (!in_array($mode, ['pr_ops', 'purchase_payment', 'travel_application', 'kasbon', 'pr_assets'])) {
             $mode = 'pr_ops';
         }
         return response()->json([
@@ -6146,6 +6203,7 @@ class PurchaseRequisitionController extends Controller
             'purchase_payment' => 'PA',
             'travel_application' => 'TA',
             'kasbon' => 'KB',
+            'pr_assets' => 'PRA',
             default => 'PR',
         };
 

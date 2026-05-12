@@ -148,7 +148,7 @@ const prSearchQuery = ref('');
 const prStatusFilter = ref(''); // '', 'SUBMITTED', 'APPROVED', etc.
 const prDateFilter = ref(''); // '', 'today', 'week', 'month'
 const prSortBy = ref('newest'); // 'newest', 'oldest', 'number', 'amount'
-const prModeFilter = ref(''); // '', 'pr_ops', 'purchase_payment', 'travel_application', 'kasbon'
+const prModeFilter = ref(''); // '', 'pr_ops', 'purchase_payment', 'pr_assets', 'travel_application', 'kasbon'
 // Multi-select for All PR Modal
 const isSelectingAllPr = ref(false);
 const selectedAllPrApprovals = ref(new Set());
@@ -1802,6 +1802,7 @@ function getPrModeLabel(mode) {
     const labels = {
         'pr_ops': 'Purchase Requisition',
         'purchase_payment': 'Payment Application',
+        'pr_assets': 'PR Assets',
         'travel_application': 'Travel Application',
         'kasbon': 'Kasbon'
     };
@@ -1813,13 +1814,14 @@ function getPrModeBadgeClass(mode) {
     const classes = {
         'pr_ops': 'bg-blue-100 text-blue-800',
         'purchase_payment': 'bg-green-100 text-green-800',
+        'pr_assets': 'bg-teal-100 text-teal-800',
         'travel_application': 'bg-purple-100 text-purple-800',
         'kasbon': 'bg-orange-100 text-orange-800'
     };
     return classes[mode] || 'bg-gray-100 text-gray-800';
 }
 
-// Group items by outlet and category for pr_ops and purchase_payment modes
+// Group items by outlet and category for pr_ops, purchase_payment, and pr_assets modes
 function getGroupedItems(items) {
     if (!items || items.length === 0) return {};
     
@@ -6968,7 +6970,7 @@ watch(locale, () => {
                                 <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.division?.nama_divisi }}</div>
                             </div>
                             <!-- Category and Outlet: Show for legacy data (no mode) or non-multi-outlet modes -->
-                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(selectedPrApproval.mode)">
+                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'pr_assets', 'travel_application'].includes(selectedPrApproval.mode)">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Category</div>
                                 <div class="text-gray-900 dark:text-white">
                                     <span v-if="selectedPrApproval.category">
@@ -6978,7 +6980,7 @@ watch(locale, () => {
                                     <span v-else>-</span>
                                 </div>
                             </div>
-                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'travel_application'].includes(selectedPrApproval.mode)">
+                            <div v-if="!selectedPrApproval.mode || !['pr_ops', 'purchase_payment', 'pr_assets', 'travel_application'].includes(selectedPrApproval.mode)">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
                                 <div class="text-gray-900 dark:text-white">{{ selectedPrApproval.outlet?.nama_outlet || '-' }}</div>
                             </div>
@@ -7317,9 +7319,9 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Items - Grouped by Outlet and Category for pr_ops and purchase_payment -->
+                    <!-- Items - Grouped by Outlet and Category for pr_ops, purchase_payment, and pr_assets -->
                     <!-- Also handle old data: if mode is null/undefined, check if items have outlet_id/category_id to determine display -->
-                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && (['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.items.some(item => item.outlet_id || item.category_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && (['pr_ops', 'purchase_payment', 'pr_assets'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.items.some(item => item.outlet_id || item.category_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
                         <div class="space-y-6">
                             <div v-for="(outletGroup, outletId) in getGroupedItems(selectedPrApproval.items)" :key="outletId" class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
@@ -7373,7 +7375,7 @@ watch(locale, () => {
                     </div>
 
                     <!-- Items - Simple table for other modes (travel_application) or old data without mode -->
-                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && !['pr_ops', 'purchase_payment', 'kasbon'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.items.some(item => item.outlet_id || item.category_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="selectedPrApproval.items && selectedPrApproval.items.length > 0 && !['pr_ops', 'purchase_payment', 'pr_assets', 'kasbon'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.items.some(item => item.outlet_id || item.category_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
@@ -7410,9 +7412,9 @@ watch(locale, () => {
                         </div>
                     </div>
 
-                    <!-- Attachments - Grouped by Outlet for pr_ops and purchase_payment -->
+                    <!-- Attachments - Grouped by Outlet for pr_ops, purchase_payment, and pr_assets -->
                     <!-- Also handle old data: if mode is null/undefined, check if attachments have outlet_id to determine display -->
-                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && (['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.attachments.some(att => att.outlet_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && (['pr_ops', 'purchase_payment', 'pr_assets'].includes(selectedPrApproval.mode) || (!selectedPrApproval.mode && selectedPrApproval.attachments.some(att => att.outlet_id)))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
                             <i class="fa fa-paperclip mr-2 text-blue-500"></i>
                             Attachments
@@ -7468,7 +7470,7 @@ watch(locale, () => {
                     </div>
 
                     <!-- Attachments - Simple list for other modes or old data without outlet_id -->
-                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && !['pr_ops', 'purchase_payment'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.attachments.some(att => att.outlet_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                    <div v-if="selectedPrApproval.attachments && selectedPrApproval.attachments.length > 0 && !['pr_ops', 'purchase_payment', 'pr_assets'].includes(selectedPrApproval.mode) && (!selectedPrApproval.mode || !selectedPrApproval.attachments.some(att => att.outlet_id))" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
                             <i class="fa fa-paperclip mr-2 text-blue-500"></i>
                             Attachments
@@ -9471,6 +9473,7 @@ watch(locale, () => {
                                 <option value="">Semua</option>
                                 <option value="pr_ops">PR Ops</option>
                                 <option value="purchase_payment">Purchase Payment</option>
+                                <option value="pr_assets">PR Assets</option>
                                 <option value="travel_application">Travel Application</option>
                                 <option value="kasbon">Kasbon</option>
                             </select>
