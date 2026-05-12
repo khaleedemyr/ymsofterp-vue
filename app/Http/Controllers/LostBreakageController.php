@@ -110,12 +110,21 @@ class LostBreakageController extends Controller
 
     private function getAssetItems()
     {
+        $assetCategoryIds = DB::table('categories')
+            ->where('is_asset', '1')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($assetCategoryIds)) {
+            return collect([]);
+        }
+
         $items = DB::table('items')
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->leftJoin('units as su', 'items.small_unit_id', '=', 'su.id')
             ->leftJoin('units as mu', 'items.medium_unit_id', '=', 'mu.id')
             ->leftJoin('units as lu', 'items.large_unit_id', '=', 'lu.id')
-            ->whereRaw('CAST(categories.is_asset AS UNSIGNED) = 1')
+            ->whereIn('items.category_id', $assetCategoryIds)
             ->where('items.status', 'active')
             ->select(
                 'items.id',
