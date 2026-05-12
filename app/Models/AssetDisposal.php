@@ -26,7 +26,7 @@ class AssetDisposal extends Model
 
     public function outlet()
     {
-        return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
+        return $this->belongsTo(Outlet::class, 'id_outlet', 'id_outlet');
     }
 
     public function warehouseOutlet()

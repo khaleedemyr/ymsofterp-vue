@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS `asset_disposals` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `number` VARCHAR(50) NOT NULL,
     `date` DATE NOT NULL,
-    `outlet_id` INT UNSIGNED NOT NULL COMMENT 'FK to tbl_data_outlet.id_outlet',
+    `id_outlet` INT UNSIGNED NOT NULL COMMENT 'FK to tbl_data_outlet.id_outlet',
     `warehouse_outlet_id` INT UNSIGNED NOT NULL COMMENT 'FK to warehouse_outlets.id',
     `type` ENUM('discard','sold') NOT NULL DEFAULT 'discard',
     `description` TEXT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS `asset_disposals` (
     UNIQUE KEY `uk_disposal_number` (`number`),
     KEY `idx_status` (`status`),
     KEY `idx_type` (`type`),
-    KEY `idx_outlet` (`outlet_id`),
+    KEY `idx_outlet` (`id_outlet`),
     KEY `idx_warehouse` (`warehouse_outlet_id`),
     KEY `idx_date` (`date`),
     KEY `idx_created_by` (`created_by`)

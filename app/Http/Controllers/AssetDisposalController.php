@@ -22,7 +22,7 @@ class AssetDisposalController extends Controller
         $user = auth()->user();
 
         $query = DB::table('asset_disposals as d')
-            ->leftJoin('tbl_data_outlet as o', 'd.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'd.created_by', '=', 'u.id')
             ->select(
@@ -35,7 +35,7 @@ class AssetDisposalController extends Controller
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('d.outlet_id', $user->id_outlet);
+            $query->where('d.id_outlet', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -59,7 +59,7 @@ class AssetDisposalController extends Controller
             $query->where('d.type', $request->type);
         }
         if ($request->outlet_id) {
-            $query->where('d.outlet_id', $request->outlet_id);
+            $query->where('d.id_outlet', $request->outlet_id);
         }
 
         $disposals = $query->orderByDesc('d.created_at')->paginate(15)->withQueryString();
@@ -136,7 +136,7 @@ class AssetDisposalController extends Controller
             $disposal = AssetDisposal::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'id_outlet' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'description' => $validated['description'],
@@ -458,7 +458,7 @@ class AssetDisposalController extends Controller
         $user = Auth::user();
 
         $query = DB::table('asset_disposals as d')
-            ->leftJoin('tbl_data_outlet as o', 'd.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'd.created_by', '=', 'u.id')
             ->select(
@@ -471,7 +471,7 @@ class AssetDisposalController extends Controller
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('d.outlet_id', $user->id_outlet);
+            $query->where('d.id_outlet', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -645,7 +645,7 @@ class AssetDisposalController extends Controller
             $disposal = AssetDisposal::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'id_outlet' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'description' => $validated['description'],
@@ -861,7 +861,7 @@ class AssetDisposalController extends Controller
 
         $query = DB::table('asset_disposals as d')
             ->join('asset_disposal_approval_flows as af', 'd.id', '=', 'af.disposal_id')
-            ->leftJoin('tbl_data_outlet as o', 'd.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->join('users as creator', 'd.created_by', '=', 'creator.id')
             ->where('af.status', 'PENDING')
             ->where('d.status', 'waiting_approval');
@@ -898,7 +898,7 @@ class AssetDisposalController extends Controller
     public function getApprovalDetails($id)
     {
         $disposal = DB::table('asset_disposals as d')
-            ->leftJoin('tbl_data_outlet as o', 'd.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->join('users as creator', 'd.created_by', '=', 'creator.id')
             ->where('d.id', $id)
@@ -954,7 +954,7 @@ class AssetDisposalController extends Controller
             if (!$nextApprover) return;
 
             $disposal = DB::table('asset_disposals as d')
-                ->leftJoin('tbl_data_outlet as o', 'd.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
                 ->join('users as creator', 'd.created_by', '=', 'creator.id')
                 ->where('d.id', $disposalId)
                 ->select('d.*', 'o.nama_outlet', 'creator.nama_lengkap as creator_name')
@@ -1013,7 +1013,7 @@ class AssetDisposalController extends Controller
         if ((int) ($user->id_outlet ?? 0) === 1) {
             return;
         }
-        if ((int) ($user->id_outlet ?? 0) !== (int) $disposal->outlet_id) {
+        if ((int) ($user->id_outlet ?? 0) !== (int) $disposal->id_outlet) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }
