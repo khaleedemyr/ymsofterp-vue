@@ -205,6 +205,7 @@ const menuGroups = [
             { name: () => 'Laporan Nilai Persediaan Outlet', icon: 'fa-solid fa-coins', route: '/outlet-inventory/inventory-value-report', code: 'outlet_inventory_value_report' },
             { name: () => 'Laporan Rekap Persediaan per Kategori Outlet', icon: 'fa-solid fa-chart-pie', route: '/outlet-inventory/category-recap-report', code: 'outlet_category_recap_report' },
             { name: () => 'Category Cost Outlet', icon: 'fa-solid fa-trash', route: '/outlet-internal-use-waste', code: 'outlet_internal_use_waste' },
+            { name: () => 'Lost & Breakage', icon: 'fa-solid fa-box-open', route: '/lost-breakage', code: 'lost_breakage' },
             { name: () => 'Outlet Transfer', icon: 'fa-solid fa-right-left', route: '/outlet-transfer', code: 'outlet_transfer' },
             { name: () => 'Internal Warehouse Transfer', icon: 'fas fa-exchange-alt', route: '/internal-warehouse-transfer', code: 'internal_warehouse_transfer' },
             { name: () => 'Retail Food', icon: 'fa-solid fa-store', route: '/retail-food', code: 'view-retail-food' },

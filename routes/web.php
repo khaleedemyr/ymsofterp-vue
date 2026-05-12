@@ -3234,4 +3234,18 @@ Route::get('/reset-password', function () {
 // Email verification landing page (public route)
 Route::get('/member/verify-email/{id}/{token}', [\App\Http\Controllers\Mobile\Member\AuthController::class, 'verifyEmail'])->name('member.verify-email');
 
+// Lost & Breakage
+Route::get('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'index'])->name('lost-breakage.index');
+Route::get('/lost-breakage/create', [\App\Http\Controllers\LostBreakageController::class, 'create'])->name('lost-breakage.create');
+Route::get('/lost-breakage/approvers', [\App\Http\Controllers\LostBreakageController::class, 'getApprovers'])->name('lost-breakage.approvers');
+Route::get('/lost-breakage/get-item-units/{id}', [\App\Http\Controllers\LostBreakageController::class, 'getItemUnits'])->name('lost-breakage.get-item-units');
+Route::post('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'store'])->name('lost-breakage.store');
+Route::post('/lost-breakage/upload-photo', [\App\Http\Controllers\LostBreakageController::class, 'uploadPhoto'])->name('lost-breakage.upload-photo');
+Route::get('/lost-breakage/{id}/edit', [\App\Http\Controllers\LostBreakageController::class, 'edit'])->name('lost-breakage.edit');
+Route::post('/lost-breakage/{id}/submit', [\App\Http\Controllers\LostBreakageController::class, 'submit'])->name('lost-breakage.submit');
+Route::post('/lost-breakage/{id}/approve', [\App\Http\Controllers\LostBreakageController::class, 'approve'])->name('lost-breakage.approve');
+Route::post('/lost-breakage/{id}/reject', [\App\Http\Controllers\LostBreakageController::class, 'reject'])->name('lost-breakage.reject');
+Route::get('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'show'])->name('lost-breakage.show');
+Route::delete('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'destroy'])->name('lost-breakage.destroy');
+
 require __DIR__.'/auth.php';
