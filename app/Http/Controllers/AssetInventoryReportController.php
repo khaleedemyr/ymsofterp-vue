@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Exports\AssetStockPositionExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class AssetInventoryReportController extends Controller
 {
@@ -75,6 +77,17 @@ class AssetInventoryReportController extends Controller
             'warehouseOutlets' => $warehouseOutlets,
             'user' => $user,
         ]);
+    }
+
+    public function exportStockPosition(Request $request)
+    {
+        return Excel::download(
+            new AssetStockPositionExport(
+                $request->outlet_id,
+                $request->warehouse_outlet_id
+            ),
+            'asset_stock_position_' . date('Ymd_His') . '.xlsx'
+        );
     }
 
     public function stockCardDetail(Request $request)
@@ -306,6 +319,7 @@ class AssetInventoryReportController extends Controller
             'asset_stock_adjustment' => 'Stock Adjustment',
             'asset_service_order' => 'Service Order',
             'asset_disposal' => 'Disposal',
+            'initial_balance' => 'Saldo Awal',
         ];
 
         $label = $labels[$referenceType] ?? $referenceType;

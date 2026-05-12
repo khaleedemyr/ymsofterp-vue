@@ -3,6 +3,15 @@
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold">Asset Inventory Report - Stok Akhir</h1>
+        <button
+          @click="exportExcel"
+          :disabled="exporting"
+          class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg font-semibold text-sm hover:bg-green-700 disabled:opacity-50"
+        >
+          <i class="fas fa-file-excel mr-2"></i>
+          <span v-if="exporting"><i class="fas fa-spinner fa-spin mr-1"></i> Exporting...</span>
+          <span v-else>Export Excel</span>
+        </button>
       </div>
 
       <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4 flex-wrap">
@@ -187,6 +196,7 @@ const perPage = ref(25);
 const page = ref(1);
 const selectedOutlet = ref('');
 const selectedWarehouse = ref('');
+const exporting = ref(false);
 
 const now = new Date();
 const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -336,6 +346,7 @@ function formatReference(card) {
     'asset_stock_adjustment': 'Stock Adjustment',
     'asset_service_order': 'Service Order',
     'asset_disposal': 'Disposal',
+    'initial_balance': 'Saldo Awal',
   };
   return labels[card.reference_type] || card.reference_type;
 }
@@ -347,8 +358,31 @@ function refBadgeClass(refType) {
     'asset_stock_adjustment': 'bg-yellow-100 text-yellow-800',
     'asset_service_order': 'bg-purple-100 text-purple-800',
     'asset_disposal': 'bg-red-100 text-red-800',
+    'initial_balance': 'bg-teal-100 text-teal-800',
   };
   return map[refType] || 'bg-gray-100 text-gray-800';
+}
+
+async function exportExcel() {
+  exporting.value = true;
+  try {
+    const params = new URLSearchParams();
+    if (selectedOutlet.value) params.append('outlet_id', selectedOutlet.value);
+    if (selectedWarehouse.value) params.append('warehouse_outlet_id', selectedWarehouse.value);
+    const url = '/asset-inventory-report/stock-position/export' + (params.toString() ? '?' + params.toString() : '');
+    const response = await axios.get(url, { responseType: 'blob' });
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = 'asset_stock_position_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    link.click();
+    window.URL.revokeObjectURL(link.href);
+  } catch (e) {
+    console.error('Export failed', e);
+    alert('Gagal export data.');
+  } finally {
+    exporting.value = false;
+  }
 }
 
 function getCurrentMonthFirstDate() {

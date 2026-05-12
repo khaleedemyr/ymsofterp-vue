@@ -88,6 +88,7 @@ const menuGroups = [
             { name: () => 'Asset Service', icon: 'fa-solid fa-screwdriver-wrench', route: '/asset-service-orders', code: 'asset_service_order' },
             { name: () => 'Asset Disposal', icon: 'fa-solid fa-dumpster', route: '/asset-disposals', code: 'asset_disposal' },
             { name: () => 'Asset Inventory Report', icon: 'fa-solid fa-chart-line', route: '/asset-inventory-report/stock-position', code: 'asset_inventory_report' },
+            { name: () => 'Saldo Awal Stock Asset', icon: 'fa-solid fa-scale-balanced', route: '/asset-stock-balances', code: 'asset_stock_balance' },
         ],
     },
     {

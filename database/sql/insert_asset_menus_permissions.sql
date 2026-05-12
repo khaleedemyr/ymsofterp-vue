@@ -183,4 +183,30 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@air_menu_id, 'view', 'asset_inventory_report_view', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
+-- Saldo Awal Stock Asset Menu
+INSERT INTO `erp_menu` (`code`, `name`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`)
+VALUES (
+    'asset_stock_balance',
+    'Saldo Awal Stock Asset',
+    251,
+    '/asset-stock-balances',
+    'fa-solid fa-scale-balanced',
+    NOW(), NOW()
+) ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`),
+    `parent_id` = VALUES(`parent_id`),
+    `route` = VALUES(`route`),
+    `icon` = VALUES(`icon`),
+    `updated_at` = NOW();
+
+SET @asb_menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'asset_stock_balance' LIMIT 1);
+
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@asb_menu_id, 'view',   'asset_stock_balance_view',   NOW(), NOW()),
+(@asb_menu_id, 'create', 'asset_stock_balance_create', NOW(), NOW()),
+(@asb_menu_id, 'edit',   'asset_stock_balance_edit',   NOW(), NOW()),
+(@asb_menu_id, 'delete', 'asset_stock_balance_delete', NOW(), NOW()),
+(@asb_menu_id, 'import', 'asset_stock_balance_import', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();
+
 COMMIT;

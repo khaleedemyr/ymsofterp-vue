@@ -681,6 +681,16 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     // Asset Inventory Report
     Route::get('/asset-inventory-report/stock-position', [\App\Http\Controllers\AssetInventoryReportController::class, 'stockPosition'])->name('asset-inventory-report.stock-position');
     Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'stockCardDetail'])->name('asset-inventory-report.stock-card.detail');
+    Route::get('/asset-inventory-report/stock-position/export', [\App\Http\Controllers\AssetInventoryReportController::class, 'exportStockPosition'])->name('asset-inventory-report.stock-position.export');
+
+    // Saldo Awal Stock Asset
+    Route::get('/asset-stock-balances', [\App\Http\Controllers\AssetStockBalanceController::class, 'index'])->name('asset-stock-balances.index');
+    Route::post('/asset-stock-balances', [\App\Http\Controllers\AssetStockBalanceController::class, 'store'])->name('asset-stock-balances.store');
+    Route::put('/asset-stock-balances/{id}', [\App\Http\Controllers\AssetStockBalanceController::class, 'update'])->name('asset-stock-balances.update');
+    Route::delete('/asset-stock-balances/{id}', [\App\Http\Controllers\AssetStockBalanceController::class, 'destroy'])->name('asset-stock-balances.destroy');
+    Route::post('/asset-stock-balances/import', [\App\Http\Controllers\AssetStockBalanceController::class, 'import'])->name('asset-stock-balances.import');
+    Route::post('/asset-stock-balances/preview-import', [\App\Http\Controllers\AssetStockBalanceController::class, 'previewImport'])->name('asset-stock-balances.preview-import');
+    Route::get('/asset-stock-balances/download-template', [\App\Http\Controllers\AssetStockBalanceController::class, 'downloadTemplate'])->name('asset-stock-balances.download-template');
 
 });
 
