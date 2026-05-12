@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use App\Services\NotificationService;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\LostBreakageExport;
 
 class LostBreakageController extends Controller
 {
@@ -826,5 +828,121 @@ class LostBreakageController extends Controller
         } catch (\Exception $e) {
             \Log::error('Error sending Lost & Breakage notification: ' . $e->getMessage());
         }
+    }
+
+    public function report(Request $request)
+    {
+        $user = auth()->user();
+
+        $query = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name');
+
+        if ($user->id_outlet != 1) {
+            $query->where('h.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.outlet_id', $request->outlet_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('h.status', $request->status);
+        }
+        if ($request->filled('type')) {
+            $query->whereExists(function ($sub) use ($request) {
+                $sub->select(DB::raw(1))
+                    ->from('lost_breakage_details')
+                    ->whereColumn('lost_breakage_details.header_id', 'h.id')
+                    ->where('lost_breakage_details.type', $request->type);
+            });
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('h.date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('h.date', '<=', $request->date_to);
+        }
+
+        $data = $query->orderByDesc('h.date')->orderByDesc('h.id')->paginate(20)->withQueryString();
+
+        $headerIds = collect($data->items())->pluck('id')->toArray();
+        $detailCounts = [];
+        $typeSummaries = [];
+        if (!empty($headerIds)) {
+            $rows = DB::table('lost_breakage_details')
+                ->whereIn('header_id', $headerIds)
+                ->select('header_id', DB::raw('COUNT(*) as cnt'), DB::raw("SUM(CASE WHEN type='lost' THEN 1 ELSE 0 END) as lost_count"), DB::raw("SUM(CASE WHEN type='breakage' THEN 1 ELSE 0 END) as breakage_count"))
+                ->groupBy('header_id')
+                ->get();
+            foreach ($rows as $r) {
+                $detailCounts[$r->header_id] = $r->cnt;
+                $typeSummaries[$r->header_id] = ['lost' => $r->lost_count, 'breakage' => $r->breakage_count];
+            }
+
+            $approvalRows = DB::table('lost_breakage_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->whereIn('af.header_id', $headerIds)
+                ->orderBy('af.approval_level')
+                ->select('af.*', 'u.nama_lengkap as approver_name')
+                ->get();
+            $approvalMap = [];
+            foreach ($approvalRows as $af) {
+                $approvalMap[$af->header_id][] = $af;
+            }
+        }
+
+        $data->getCollection()->transform(function ($item) use ($detailCounts, $typeSummaries, &$approvalMap) {
+            $item->item_count = $detailCounts[$item->id] ?? 0;
+            $item->type_summary = $typeSummaries[$item->id] ?? ['lost' => 0, 'breakage' => 0];
+            $item->approval_flows = $approvalMap[$item->id] ?? [];
+            return $item;
+        });
+
+        $outlets = [];
+        if ($user->id_outlet == 1) {
+            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')
+                ->select('id_outlet as id', 'nama_outlet as name')
+                ->orderBy('nama_outlet')->get();
+        }
+
+        return inertia('LostBreakage/Report', [
+            'data' => $data,
+            'outlets' => $outlets,
+            'filters' => $request->only(['outlet_id', 'status', 'type', 'date_from', 'date_to']),
+        ]);
+    }
+
+    public function reportDetails($id)
+    {
+        $details = DB::table('lost_breakage_details as d')
+            ->join('items as i', 'd.item_id', '=', 'i.id')
+            ->join('units as u', 'd.unit_id', '=', 'u.id')
+            ->where('d.header_id', $id)
+            ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
+            ->get();
+
+        return response()->json(['success' => true, 'details' => $details]);
+    }
+
+    public function exportReport(Request $request)
+    {
+        $user = auth()->user();
+
+        if (!$request->filled('date_from') || !$request->filled('date_to')) {
+            return redirect()->back()->with('error', 'Filter tanggal wajib diisi untuk export.');
+        }
+
+        $outletId = ($user->id_outlet != 1) ? null : $request->input('outlet_id');
+        $export = new LostBreakageExport(
+            $outletId,
+            $request->input('status'),
+            $request->input('type'),
+            $request->date_from,
+            $request->date_to,
+            $user->id_outlet
+        );
+
+        $fileName = 'Lost_Breakage_Report_' . $request->date_from . '_' . $request->date_to . '.xlsx';
+        return Excel::download($export, $fileName);
     }
 }

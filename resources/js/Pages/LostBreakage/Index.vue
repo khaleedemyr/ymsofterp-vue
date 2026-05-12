@@ -5,9 +5,14 @@
         <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <i class="fa-solid fa-box-open text-orange-500"></i> Lost &amp; Breakage
         </h1>
-        <button @click="goCreate" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
-          + Tambah Baru
-        </button>
+        <div class="flex items-center gap-2">
+          <button @click="goReport" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700 transition font-semibold text-sm">
+            <i class="fa fa-chart-bar"></i> Report
+          </button>
+          <button @click="goCreate" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            + Tambah Baru
+          </button>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -170,6 +175,7 @@ const filters = reactive({
 function applyFilters() { router.get('/lost-breakage', filters, { preserveState: true, preserveScroll: true }) }
 function resetFilters() { Object.assign(filters, { search: '', outlet_id: '', status: '', date_from: '', date_to: '', per_page: 10 }); applyFilters() }
 function goCreate() { router.visit('/lost-breakage/create') }
+function goReport() { router.visit('/lost-breakage-report') }
 function goDetail(id) { router.visit(`/lost-breakage/${id}`) }
 function goEdit(id) { router.visit(`/lost-breakage/${id}/edit`) }
 
