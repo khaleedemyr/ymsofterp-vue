@@ -410,7 +410,7 @@ class OutletSerialReceiveController extends Controller
 
     private function getOutletName($outletId): string
     {
-        if (!$outletId || $outletId == '1') return 'Pusat';
+        if (!$outletId) return '-';
         $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
         return $outlet ?: $outletId;
     }
