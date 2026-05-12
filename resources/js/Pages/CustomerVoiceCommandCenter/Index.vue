@@ -349,10 +349,9 @@
                     <div class="flex flex-wrap items-center gap-1">
                       <select
                         v-model="caseForms[row.id].follow_up_target"
-                        class="h-6 rounded-full border px-2 text-[11px] font-semibold outline-none transition focus:ring-2 focus:ring-slate-100 appearance-none cursor-pointer"
+                        class="h-7 rounded-xl border px-2 pr-6 text-[11px] font-semibold outline-none transition cursor-pointer focus:ring-2 focus:ring-slate-100"
                         :class="caseForms[row.id].follow_up_target === 'customer' ? 'border-violet-200 bg-violet-50 text-violet-800' : caseForms[row.id].follow_up_target === 'internal' ? 'border-slate-200 bg-slate-100 text-slate-700' : 'border-dashed border-slate-300 bg-white text-slate-400'"
                         :disabled="updatingCaseId === row.id"
-                        style="padding-right: 1.2rem; background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right 0.25rem center; background-size: 0.75rem;"
                       >
                         <option value="">FU: —</option>
                         <option value="customer">FU: Customer</option>
@@ -360,10 +359,9 @@
                       </select>
                       <select
                         v-model="caseForms[row.id].severity"
-                        class="h-6 rounded-full border px-2 text-[11px] font-semibold outline-none transition focus:ring-2 focus:ring-slate-100 appearance-none cursor-pointer"
+                        class="h-7 rounded-xl border px-2 pr-6 text-[11px] font-semibold outline-none transition cursor-pointer focus:ring-2 focus:ring-slate-100"
                         :class="severitySelectClass(caseForms[row.id].severity)"
                         :disabled="updatingCaseId === row.id"
-                        style="padding-right: 1.2rem; background-image: url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E&quot;); background-repeat: no-repeat; background-position: right 0.25rem center; background-size: 0.75rem;"
                       >
                         <option value="critical">Critical</option>
                         <option value="major">Major</option>
