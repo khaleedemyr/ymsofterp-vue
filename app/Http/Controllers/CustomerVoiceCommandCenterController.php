@@ -347,14 +347,21 @@ class CustomerVoiceCommandCenterController extends Controller
         $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
         $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
+        $autoDone = $this->autoCompleteIfAllCapaVerified($request, $id);
+
+        $message = 'Form CAPA tersimpan.';
+        if ($autoDone) {
+            $message .= ' Status otomatis diubah ke Done karena semua CAPA sudah diverifikasi.';
+        }
+
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Form CAPA tersimpan.',
+                'message' => $message,
             ]);
         }
 
-        return $this->redirectToVoiceIndex($request)->with('success', 'Form CAPA tersimpan.');
+        return $this->redirectToVoiceIndex($request)->with('success', $message);
     }
 
     /**
@@ -539,9 +546,16 @@ class CustomerVoiceCommandCenterController extends Controller
         $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
         $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
+        $autoDone = $this->autoCompleteIfAllCapaVerified($request, $id);
+
+        $message = 'Form CAPA tersimpan.';
+        if ($autoDone) {
+            $message .= ' Status otomatis diubah ke Done karena semua CAPA sudah diverifikasi.';
+        }
+
         return response()->json([
             'success' => true,
-            'message' => 'Form CAPA tersimpan.',
+            'message' => $message,
         ]);
     }
 
@@ -1963,6 +1977,78 @@ class CustomerVoiceCommandCenterController extends Controller
         if ($lines !== []) {
             NotificationService::createMany($lines);
         }
+    }
+
+    /**
+     * Jika semua divisi CAPA yang terisi sudah diverifikasi (effective / not_effective),
+     * otomatis ubah status case ke "done".
+     *
+     * @return bool True jika status berubah ke done.
+     */
+    private function autoCompleteIfAllCapaVerified(Request $request, int $id): bool
+    {
+        $row = DB::table('feedback_cases')->where('id', $id)->first();
+        if ($row === null) {
+            return false;
+        }
+
+        if (in_array(strtolower(trim((string) ($row->status ?? ''))), $this->voiceCaseCompletedStatuses(), true)) {
+            return false;
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        $divisions = $this->normalizeCapaDivisionsFromMeta($meta);
+
+        $filledDivisions = [];
+        foreach (['service', 'kitchen', 'bar'] as $divKey) {
+            if ($this->capaService->storedCapaHasUserInput($divisions[$divKey] ?? null)) {
+                $filledDivisions[] = $divKey;
+            }
+        }
+
+        if ($filledDivisions === []) {
+            return false;
+        }
+
+        foreach ($filledDivisions as $divKey) {
+            $state = $this->capaService->storedCapaVerificationState($divisions[$divKey] ?? null);
+            if (($state['state'] ?? '') !== 'done') {
+                return false;
+            }
+        }
+
+        $fromStatus = (string) ($row->status ?? 'new');
+        $now = now();
+
+        DB::transaction(function () use ($id, $fromStatus, $request, $now, $row) {
+            $update = [
+                'status' => 'done',
+                'resolved_at' => $now,
+                'updated_at' => $now,
+            ];
+            if ($row->first_response_at === null) {
+                $update['first_response_at'] = $now;
+            }
+
+            DB::table('feedback_cases')->where('id', $id)->update($update);
+
+            DB::table('feedback_case_activities')->insert([
+                'case_id' => $id,
+                'activity_type' => 'status_changed',
+                'actor_user_id' => $request->user()->id ?? null,
+                'from_status' => $fromStatus,
+                'to_status' => 'done',
+                'note' => 'Otomatis Done — semua CAPA sudah diverifikasi.',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        });
+
+        return true;
     }
 
     private function severityToSlaMinutes(string $severity): ?int
