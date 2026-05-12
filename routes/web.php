@@ -3247,5 +3247,7 @@ Route::post('/lost-breakage/{id}/approve', [\App\Http\Controllers\LostBreakageCo
 Route::post('/lost-breakage/{id}/reject', [\App\Http\Controllers\LostBreakageController::class, 'reject'])->name('lost-breakage.reject');
 Route::get('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'show'])->name('lost-breakage.show');
 Route::delete('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'destroy'])->name('lost-breakage.destroy');
+Route::get('/lost-breakage-approvals/pending', [\App\Http\Controllers\LostBreakageController::class, 'getPendingApprovals'])->name('lost-breakage.approvals.pending');
+Route::get('/api/lost-breakage/{id}/approval-details', [\App\Http\Controllers\LostBreakageController::class, 'getApprovalDetails'])->name('lost-breakage.approval-details');
 
 require __DIR__.'/auth.php';

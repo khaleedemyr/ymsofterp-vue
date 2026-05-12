@@ -64,6 +64,7 @@ class PendingApprovalController extends Controller
                 'po_food' => [],
                 'ro_khusus' => [],
                 'employee_resignation' => [],
+                'lost_breakage' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -357,6 +358,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Employee Resignation approvals: ' . $e->getMessage());
+            }
+
+            // 19. Lost & Breakage
+            try {
+                $lbController = app(\App\Http\Controllers\LostBreakageController::class);
+                $lbResponse = $lbController->getPendingApprovals($request);
+                if ($lbResponse->getStatusCode() === 200) {
+                    $lbData = json_decode($lbResponse->getContent(), true);
+                    $data['lost_breakage'] = $lbData['headers'] ?? $lbData['data'] ?? [];
+                    if ($limit > 0 && count($data['lost_breakage']) > $limit) {
+                        $data['lost_breakage'] = array_slice($data['lost_breakage'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Lost & Breakage approvals: ' . $e->getMessage());
             }
 
                 return $data;

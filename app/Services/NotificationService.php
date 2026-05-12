@@ -113,6 +113,7 @@ class NotificationService
                 'employee_resignation_approval' => 'Employee Resignation Approval',
                 'floor_order_approval' => 'Floor Order Approval',
                 'outlet_internal_use_waste_approval' => 'Outlet Internal Use Waste Approval',
+                'lost_breakage_approval' => 'Lost & Breakage Approval',
                 'outlet_rejection' => 'Outlet Rejection',
                 'outlet_transfer_approval' => 'Outlet Transfer Approval',
                 'outlet_transfer' => 'Outlet Transfer',

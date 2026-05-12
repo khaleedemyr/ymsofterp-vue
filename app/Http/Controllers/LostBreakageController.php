@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use App\Services\NotificationService;
 
 class LostBreakageController extends Controller
 {
@@ -449,6 +450,15 @@ class LostBreakageController extends Controller
 
             DB::commit();
 
+            try {
+                $this->sendNotificationToNextApprover($id);
+            } catch (\Exception $notifError) {
+                \Log::warning('LostBreakage submit - Notification failed (but data saved):', [
+                    'header_id' => $id,
+                    'error' => $notifError->getMessage()
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Berhasil di-submit untuk approval.']);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -529,6 +539,15 @@ class LostBreakageController extends Controller
             }
 
             DB::commit();
+
+            if ($pendingCount > 0) {
+                try {
+                    $this->sendNotificationToNextApprover($id);
+                } catch (\Exception $e) {
+                    \Log::warning('LostBreakage approve - Notification to next approver failed:', ['error' => $e->getMessage()]);
+                }
+            }
+
             return response()->json(['success' => true, 'message' => $message]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -679,5 +698,120 @@ class LostBreakageController extends Controller
         }
 
         return response()->json(['success' => true, 'units' => $units]);
+    }
+
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized', 'headers' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('lost_breakage_headers as h')
+            ->join('lost_breakage_approval_flows as af', 'h.id', '=', 'af.header_id')
+            ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->join('users as creator', 'h.created_by', '=', 'creator.id')
+            ->where('af.status', 'PENDING')
+            ->where('h.status', 'SUBMITTED');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                'h.id', 'h.number', 'h.date', 'h.status', 'h.notes',
+                'o.nama_outlet as outlet_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->filter(function ($header) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) return true;
+                $lowerPending = DB::table('lost_breakage_approval_flows')
+                    ->where('header_id', $header->id)
+                    ->where('approval_level', '<', $header->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'headers' => $pendingHeaders]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $header = DB::table('lost_breakage_headers as h')
+            ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->join('users as creator', 'h.created_by', '=', 'creator.id')
+            ->where('h.id', $id)
+            ->select('h.*', 'o.nama_outlet as outlet_name', 'creator.nama_lengkap as creator_name')
+            ->first();
+
+        if (!$header) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $details = DB::table('lost_breakage_details as d')
+            ->join('items as i', 'd.item_id', '=', 'i.id')
+            ->join('units as u', 'd.unit_id', '=', 'u.id')
+            ->where('d.header_id', $id)
+            ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
+            ->get();
+
+        $approvalFlows = DB::table('lost_breakage_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.header_id', $id)
+            ->orderBy('af.approval_level')
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'u.email as approver_email', 'j.nama_jabatan as approver_jabatan')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $header,
+            'details' => $details,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
+    private function sendNotificationToNextApprover($headerId)
+    {
+        try {
+            $nextApprover = DB::table('lost_breakage_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->where('af.header_id', $headerId)
+                ->where('af.status', 'PENDING')
+                ->orderBy('af.approval_level')
+                ->select('u.id', 'u.nama_lengkap', 'u.email')
+                ->first();
+
+            if (!$nextApprover) return;
+
+            $header = DB::table('lost_breakage_headers as h')
+                ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+                ->join('users as creator', 'h.created_by', '=', 'creator.id')
+                ->where('h.id', $headerId)
+                ->select('h.*', 'o.nama_outlet', 'creator.nama_lengkap as creator_name')
+                ->first();
+
+            if (!$header) return;
+
+            NotificationService::insert([
+                'user_id' => $nextApprover->id,
+                'type' => 'lost_breakage_approval',
+                'title' => 'Approval Lost & Breakage',
+                'message' => "Lost & Breakage {$header->number} dari outlet {$header->nama_outlet} oleh {$header->creator_name} menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error sending Lost & Breakage notification: ' . $e->getMessage());
+        }
     }
 }

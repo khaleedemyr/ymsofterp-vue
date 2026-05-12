@@ -169,6 +169,12 @@ const loadingWarehouseStockOpnameApprovals = ref(false);
 const selectedWarehouseStockOpnameApprovals = ref(new Set()); // For multi-select
 const isSelectingWarehouseStockOpnameApprovals = ref(false); // Toggle select mode
 
+// Lost & Breakage approvals
+const pendingLostBreakageApprovals = ref([]);
+const loadingLostBreakageApprovals = ref(false);
+const showLostBreakageApprovalModal = ref(false);
+const selectedLostBreakageApproval = ref(null);
+
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
     let result = [...allContraBonApprovals.value];
@@ -939,6 +945,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingStockOpnameApprovals.value = true;
     loadingOutletTransferApprovals.value = true;
     loadingWarehouseStockOpnameApprovals.value = true;
+    loadingLostBreakageApprovals.value = true;
     loadingApprovals.value = true;
     loadingMovementApprovals.value = true;
     loadingCoachingApprovals.value = true;
@@ -966,6 +973,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingMovementApprovals.value = data.employee_movements || [];
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
+            pendingLostBreakageApprovals.value = data.lost_breakage || [];
             
             // Set loading states to false
             loadingPrApprovals.value = false;
@@ -981,6 +989,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingMovementApprovals.value = false;
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
+            loadingLostBreakageApprovals.value = false;
             
             console.log('✅ Loaded all pending approvals from optimized endpoint (cached:', response.data.cached, ')');
             return true;
@@ -999,6 +1008,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingMovementApprovals.value = false;
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
+            loadingLostBreakageApprovals.value = false;
             return false;
         }
     } catch (error) {
@@ -1016,6 +1026,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingMovementApprovals.value = false;
         loadingCoachingApprovals.value = false;
         loadingCorrectionApprovals.value = false;
+        loadingLostBreakageApprovals.value = false;
         return false;
     }
 }
@@ -2359,6 +2370,90 @@ function typeLabelCategoryCost(type) {
     if (type === 'wrong_maker') return 'Wrong Maker';
     if (type === 'training') return 'Training';
     return type;
+}
+
+// Lost & Breakage approval functions
+async function loadPendingLostBreakageApprovals() {
+    loadingLostBreakageApprovals.value = true;
+    try {
+        const response = await axios.get('/lost-breakage-approvals/pending');
+        if (response.data.success) {
+            pendingLostBreakageApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Lost & Breakage approvals:', error);
+    } finally {
+        loadingLostBreakageApprovals.value = false;
+    }
+}
+
+async function showLostBreakageApprovalDetails(headerId) {
+    try {
+        const response = await axios.get(`/api/lost-breakage/${headerId}/approval-details`);
+        if (response.data.success) {
+            selectedLostBreakageApproval.value = response.data;
+            showLostBreakageApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error('Error loading Lost & Breakage approval details:', error);
+        Swal.fire('Error', 'Gagal memuat detail Lost & Breakage', 'error');
+    }
+}
+
+async function approveLostBreakage(headerId) {
+    try {
+        const response = await axios.post(`/lost-breakage/${headerId}/approve`);
+        if (response.data.success) {
+            Swal.fire('Success', response.data.message, 'success');
+            showLostBreakageApprovalModal.value = false;
+            loadPendingLostBreakageApprovals();
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menyetujui Lost & Breakage', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving Lost & Breakage:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Lost & Breakage', 'error');
+    }
+}
+
+async function rejectLostBreakage(headerId, reason) {
+    try {
+        const response = await axios.post(`/lost-breakage/${headerId}/reject`, {
+            rejection_reason: reason
+        });
+        if (response.data.success) {
+            Swal.fire('Success', 'Lost & Breakage berhasil ditolak', 'success');
+            showLostBreakageApprovalModal.value = false;
+            loadPendingLostBreakageApprovals();
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menolak Lost & Breakage', 'error');
+        }
+    } catch (error) {
+        console.error('Error rejecting Lost & Breakage:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Lost & Breakage', 'error');
+    }
+}
+
+function showRejectLostBreakageModal(headerId) {
+    Swal.fire({
+        title: 'Tolak Lost & Breakage',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputAttributes: { 'aria-label': 'Masukkan alasan penolakan' },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) return 'Anda harus mengisi alasan penolakan!';
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            rejectLostBreakage(headerId, result.value);
+        }
+    });
 }
 
 // File operations for attachments
@@ -5222,6 +5317,7 @@ onMounted(async () => {
         loadPendingMovementApprovals();
         loadCoachingApprovals();
         loadPendingCorrectionApprovals();
+        loadPendingLostBreakageApprovals();
     }
     
     // Load yang tidak termasuk di optimized endpoint
@@ -6377,6 +6473,63 @@ watch(locale, () => {
                             <div v-if="pendingCategoryCostApprovals.length > 3" class="text-center pt-2">
                                 <button @click="openAllCategoryCostModal" class="text-sm text-purple-500 hover:text-purple-700 font-medium">
                                     Lihat {{ pendingCategoryCostApprovals.length - 3 }} lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lost & Breakage Approval Section -->
+                <div v-if="pendingLostBreakageApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-rose-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-exclamation-triangle mr-2 text-rose-500"></i>
+                                    Lost & Breakage Approval
+                                </h3>
+                            </div>
+                            <div class="bg-rose-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingLostBreakageApprovals.length }}
+                            </div>
+                        </div>
+                        
+                        <div v-if="loadingLostBreakageApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-rose-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+                        
+                        <div v-else class="space-y-2">
+                            <div v-for="header in pendingLostBreakageApprovals.slice(0, 3)" :key="'lb-approval-' + header.id"
+                                @click="showLostBreakageApprovalDetails(header.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-rose-50 hover:bg-rose-100'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ header.number || 'N/A' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ header.outlet_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ header.creator_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ formatDate(header.date) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-rose-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ header.approver_name || 'Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="pendingLostBreakageApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-rose-500 hover:text-rose-700 font-medium">
+                                    Lihat {{ pendingLostBreakageApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
                         </div>
@@ -7594,6 +7747,140 @@ watch(locale, () => {
                         <i class="fa fa-check mr-2"></i>Approve
                     </button>
                     <button @click="showRejectCategoryCostModal(selectedCategoryCostApproval.header.id)"
+                            class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lost & Breakage Approval Detail Modal -->
+        <div v-if="showLostBreakageApprovalModal && selectedLostBreakageApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showLostBreakageApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa fa-exclamation-triangle mr-2 text-rose-500"></i>
+                        Detail Lost & Breakage
+                    </h3>
+                    <button @click="showLostBreakageApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6" v-if="selectedLostBreakageApproval.header">
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Number</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedLostBreakageApproval.header.number || 'N/A' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal</div>
+                                <div class="text-gray-900 dark:text-white">{{ formatDate(selectedLostBreakageApproval.header.date) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Outlet</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedLostBreakageApproval.header.outlet_name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Dibuat Oleh</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedLostBreakageApproval.header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="selectedLostBreakageApproval.header.notes" class="mt-4">
+                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Catatan</div>
+                            <div class="text-gray-900 dark:text-white mt-1">{{ selectedLostBreakageApproval.header.notes }}</div>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedLostBreakageApproval.details && selectedLostBreakageApproval.details.length > 0" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Items</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+                                <thead class="bg-gray-100 dark:bg-gray-600">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Item</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Qty</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unit</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Keterangan</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Foto</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
+                                    <tr v-for="item in selectedLostBreakageApproval.details" :key="item.id">
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.item_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.qty }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.unit_name }}</td>
+                                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ item.note || '-' }}</td>
+                                        <td class="px-4 py-2 text-sm">
+                                            <a v-if="item.photo" :href="'/storage/' + item.photo" target="_blank" class="text-blue-500 hover:underline">
+                                                <i class="fa fa-image mr-1"></i>Lihat
+                                            </a>
+                                            <span v-else class="text-gray-400">-</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedLostBreakageApproval.approval_flows && selectedLostBreakageApproval.approval_flows.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-users mr-2 text-blue-500"></i>
+                            Approval Flow
+                        </h4>
+                        <div class="space-y-3">
+                            <div v-for="flow in selectedLostBreakageApproval.approval_flows" :key="flow.id"
+                                class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-lg border"
+                                :class="{
+                                    'border-green-500': flow.status === 'APPROVED',
+                                    'border-red-500': flow.status === 'REJECTED',
+                                    'border-yellow-500': flow.status === 'PENDING'
+                                }">
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Level {{ flow.approval_level }}
+                                    </span>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ flow.approver_name }}</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">{{ flow.approver_email }}</div>
+                                        <div v-if="flow.approver_jabatan" class="text-xs text-blue-600 font-medium">{{ flow.approver_jabatan }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-medium" :class="{
+                                        'text-green-600': flow.status === 'APPROVED',
+                                        'text-red-600': flow.status === 'REJECTED',
+                                        'text-yellow-600': flow.status === 'PENDING'
+                                    }">
+                                        {{ flow.status }}
+                                    </div>
+                                    <div v-if="flow.approved_at" class="text-xs text-gray-500">
+                                        {{ new Date(flow.approved_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.rejected_at" class="text-xs text-gray-500">
+                                        {{ new Date(flow.rejected_at).toLocaleDateString('id-ID') }}
+                                    </div>
+                                    <div v-if="flow.comments" class="text-xs text-gray-500 mt-1">
+                                        {{ flow.comments }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button @click="showLostBreakageApprovalModal = false" 
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        Tutup
+                    </button>
+                    <button @click="approveLostBreakage(selectedLostBreakageApproval.header.id)" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button @click="showRejectLostBreakageModal(selectedLostBreakageApproval.header.id)"
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>
