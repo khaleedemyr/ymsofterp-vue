@@ -613,7 +613,7 @@ class RepackController extends Controller
 
     private function generateUniqueSerialNumber(): string
     {
-        $prefix = 'R' . now()->format('ymdHi');
+        $prefix = 'RP' . now()->format('ymdHi');
 
         for ($i = 0; $i < 10; $i++) {
             $serial = $prefix . strtoupper(Str::random(4));
