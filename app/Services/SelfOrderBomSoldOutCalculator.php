@@ -179,6 +179,12 @@ class SelfOrderBomSoldOutCalculator
                 'ib.unit_id'
             );
 
+        if (Schema::hasColumn('item_bom', 'stock_cut')) {
+            $q->where(function ($w) {
+                $w->where('ib.stock_cut', 0)->orWhereNull('ib.stock_cut');
+            });
+        }
+
         $rows = $q->get();
         $grouped = [];
         foreach ($rows as $row) {
@@ -391,6 +397,38 @@ class SelfOrderBomSoldOutCalculator
     }
 
     /**
+     * Baris modifier_bom_json ikut hitung stok hanya jika bukan stock_cut (sama semantik dengan item_bom).
+     *
+     * @param array<string, mixed> $x
+     */
+    private function modifierBomRowCountsForStock(array $x): bool
+    {
+        if (!array_key_exists('stock_cut', $x)) {
+            return true;
+        }
+        $sc = $x['stock_cut'];
+        if ($sc === false || $sc === null || $sc === 0) {
+            return true;
+        }
+        if ($sc === true || $sc === 1) {
+            return false;
+        }
+        if (is_string($sc)) {
+            $t = strtolower(trim($sc));
+            if (in_array($t, ['true', '1', 'yes', 'on'], true)) {
+                return false;
+            }
+            if (in_array($t, ['false', '0', '', 'no', 'off'], true)) {
+                return true;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
      * @return array<int, array{material_item_id: int, qty: float}>
      */
     private function parseModifierBomJson($raw): array
@@ -405,7 +443,7 @@ class SelfOrderBomSoldOutCalculator
             }
             $out = [];
             foreach ($arr as $x) {
-                if (!is_array($x) || !isset($x['item_id'], $x['qty'])) {
+                if (!is_array($x) || !isset($x['item_id'], $x['qty']) || !$this->modifierBomRowCountsForStock($x)) {
                     continue;
                 }
                 $mid = (int) $x['item_id'];
