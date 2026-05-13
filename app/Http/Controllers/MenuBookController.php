@@ -15,6 +15,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use App\Models\ActivityLog;
+use App\Services\SelfOrderBomSoldOutCalculator;
 
 class MenuBookController extends Controller
 {
@@ -767,6 +768,33 @@ class MenuBookController extends Controller
             ], 422);
         }
 
+        $soldOutLists = $this->getMergedSelfOrderSoldOutLists((int) $outlet->id_outlet, $requestItemIds->all());
+        $soldOutItemSet = array_fill_keys($soldOutLists['item_ids'], true);
+        $soldOutModOptSet = array_fill_keys($soldOutLists['modifier_option_ids'], true);
+
+        foreach ($validated['items'] as $itemInput) {
+            $lineItemId = (int) $itemInput['item_id'];
+            if (isset($soldOutItemSet[$lineItemId])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Menu yang dipilih sedang sold out. Muat ulang daftar menu lalu atur ulang pesanan Anda.',
+                ], 422);
+            }
+            $optionIdsFromLine = array_merge(
+                $this->extractModifierOptionIds($itemInput['modifiers'] ?? null),
+                $this->extractModifierOptionIds($itemInput['modifiers_id_map'] ?? null)
+            );
+            foreach ($optionIdsFromLine as $optId) {
+                $optId = (int) $optId;
+                if ($optId > 0 && isset($soldOutModOptSet[$optId])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Salah satu modifier yang dipilih sedang sold out. Muat ulang daftar menu lalu atur ulang pesanan Anda.',
+                    ], 422);
+                }
+            }
+        }
+
         $normalizedItems = [];
         $subtotal = 0;
         $totalQty = 0;
@@ -1100,6 +1128,8 @@ class MenuBookController extends Controller
         $menuBookId = $menuBook ? $menuBook->id : null;
         $menuBookName = $menuBook ? $menuBook->name : 'Self Order';
 
+        $soldOutLists = $this->getMergedSelfOrderSoldOutLists($outletId, $items->pluck('id')->map(fn ($id) => (int) $id)->all());
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -1114,6 +1144,8 @@ class MenuBookController extends Controller
                 ],
                 'categories' => $categories,
                 'items' => $items,
+                'sold_out_item_ids' => $soldOutLists['item_ids'],
+                'sold_out_modifier_option_ids' => $soldOutLists['modifier_option_ids'],
             ],
         ]);
     }
@@ -1257,6 +1289,33 @@ class MenuBookController extends Controller
                 'message' => 'Ada item yang tidak tersedia untuk outlet ini.',
                 'invalid_item_ids' => $missingItemIds,
             ], 422);
+        }
+
+        $soldOutLists = $this->getMergedSelfOrderSoldOutLists((int) $outlet->id_outlet, $requestItemIds->all());
+        $soldOutItemSet = array_fill_keys($soldOutLists['item_ids'], true);
+        $soldOutModOptSet = array_fill_keys($soldOutLists['modifier_option_ids'], true);
+
+        foreach ($validated['items'] as $itemInput) {
+            $lineItemId = (int) $itemInput['item_id'];
+            if (isset($soldOutItemSet[$lineItemId])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Menu yang dipilih sedang sold out. Muat ulang daftar menu lalu atur ulang pesanan Anda.',
+                ], 422);
+            }
+            $optionIdsFromLine = array_merge(
+                $this->extractModifierOptionIds($itemInput['modifiers'] ?? null),
+                $this->extractModifierOptionIds($itemInput['modifiers_id_map'] ?? null)
+            );
+            foreach ($optionIdsFromLine as $optId) {
+                $optId = (int) $optId;
+                if ($optId > 0 && isset($soldOutModOptSet[$optId])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Salah satu modifier yang dipilih sedang sold out. Muat ulang daftar menu lalu atur ulang pesanan Anda.',
+                    ], 422);
+                }
+            }
         }
 
         $normalizedItems = [];
@@ -1603,6 +1662,72 @@ class MenuBookController extends Controller
             ->select('item_id', DB::raw("MIN($column) as image_path"))
             ->groupBy('item_id')
             ->pluck('image_path', 'item_id');
+    }
+
+    /**
+     * Sold out manual per outlet (tabel pos_outlet_sold_out_* — lihat SQL di database/sql).
+     *
+     * @return array{item_ids: array<int>, modifier_option_ids: array<int>}
+     */
+    private function getOutletManualSelfOrderSoldOutLists(int $outletId): array
+    {
+        $itemIds = [];
+        $modifierOptionIds = [];
+
+        if (
+            Schema::hasTable('pos_outlet_sold_out_items')
+            && Schema::hasColumn('pos_outlet_sold_out_items', 'id_outlet')
+            && Schema::hasColumn('pos_outlet_sold_out_items', 'item_id')
+        ) {
+            $itemIds = DB::table('pos_outlet_sold_out_items')
+                ->where('id_outlet', $outletId)
+                ->pluck('item_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        if (
+            Schema::hasTable('pos_outlet_sold_out_modifier_options')
+            && Schema::hasColumn('pos_outlet_sold_out_modifier_options', 'id_outlet')
+            && Schema::hasColumn('pos_outlet_sold_out_modifier_options', 'modifier_option_id')
+        ) {
+            $modifierOptionIds = DB::table('pos_outlet_sold_out_modifier_options')
+                ->where('id_outlet', $outletId)
+                ->pluck('modifier_option_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return [
+            'item_ids' => $itemIds,
+            'modifier_option_ids' => $modifierOptionIds,
+        ];
+    }
+
+    /**
+     * Sold out manual ∪ perkiraan dari BOM + stok outlet (sinkron dengan POS).
+     *
+     * @param  array<int>  $itemIdsForBomContext  Item yang dicek (menu API: semua item tampil; checkout: baris pesanan).
+     * @return array{item_ids: array<int>, modifier_option_ids: array<int>}
+     */
+    private function getMergedSelfOrderSoldOutLists(int $outletId, array $itemIdsForBomContext): array
+    {
+        $manual = $this->getOutletManualSelfOrderSoldOutLists($outletId);
+
+        try {
+            $auto = app(SelfOrderBomSoldOutCalculator::class)->computeAutomatedSoldOut($outletId, $itemIdsForBomContext);
+        } catch (\Throwable) {
+            $auto = ['item_ids' => [], 'modifier_option_ids' => []];
+        }
+
+        return [
+            'item_ids' => array_values(array_unique(array_merge($manual['item_ids'], $auto['item_ids']))),
+            'modifier_option_ids' => array_values(array_unique(array_merge($manual['modifier_option_ids'], $auto['modifier_option_ids']))),
+        ];
     }
 
     private function buildItemModifierMap(array $itemIds)
