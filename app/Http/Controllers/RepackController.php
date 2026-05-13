@@ -55,18 +55,29 @@ class RepackController extends Controller
         ]);
     }
 
-    public function apiCreateData()
+    public function apiCreateData(Request $request)
     {
-        $items = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])
-            ->whereHas('category', function ($query) {
-                $query->where('is_asset', 0);
-            })
-            ->orderBy('name')
-            ->get();
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
             ->orderBy('name')
-            ->get();
+            ->get(['id', 'name']);
+
+        $itemsQuery = Item::with(['smallUnit:id,name', 'mediumUnit:id,name', 'largeUnit:id,name'])
+            ->whereHas('category', function ($query) {
+                $query->where('is_asset', '0');
+            })
+            ->select('id', 'name', 'sku', 'small_unit_id', 'medium_unit_id', 'large_unit_id',
+                     'small_conversion_qty', 'medium_conversion_qty');
+
+        if ($request->search) {
+            $keyword = '%' . $request->search . '%';
+            $itemsQuery->where(function ($q) use ($keyword) {
+                $q->where('name', 'like', $keyword)
+                  ->orWhere('sku', 'like', $keyword);
+            });
+        }
+
+        $items = $itemsQuery->orderBy('name')->limit(200)->get();
 
         return response()->json([
             'success' => true,
