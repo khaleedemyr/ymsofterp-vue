@@ -442,6 +442,7 @@ class PosVoidItemRequestController extends Controller
 
         $rows = DB::table('pos_void_item_requests as r')
             ->join('pos_void_item_request_approvers as a', 'a.pos_void_item_request_id', '=', 'r.id')
+            ->leftJoin('tbl_data_outlet as ou', 'ou.qr_code', '=', 'r.kode_outlet')
             ->where('r.status', 'pending')
             ->where('a.user_id', $currentUser->id)
             ->select(
@@ -454,7 +455,8 @@ class PosVoidItemRequestController extends Controller
                 'r.reason',
                 'r.requester_username',
                 'r.created_at',
-                'r.item_snapshot'
+                'r.item_snapshot',
+                'ou.nama_outlet as outlet_nama'
             )
             ->orderByDesc('r.created_at')
             ->limit(50)
@@ -464,6 +466,9 @@ class PosVoidItemRequestController extends Controller
             $snap = $r->item_snapshot ? json_decode($r->item_snapshot, true) : null;
             $itemName = is_array($snap) ? ($snap['name'] ?? $snap['item_name'] ?? '-') : '-';
 
+            $namaOutlet = isset($r->outlet_nama) ? trim((string) $r->outlet_nama) : '';
+            $displayOutlet = $namaOutlet !== '' ? $namaOutlet : $r->kode_outlet;
+
             return (object) [
                 'id' => $r->id,
                 'number' => $r->order_nomor ?: $r->order_id,
@@ -471,7 +476,8 @@ class PosVoidItemRequestController extends Controller
                 'order_id' => $r->order_id,
                 'order_item_id' => $r->order_item_id,
                 'item_name' => $itemName,
-                'outlet_name' => $r->kode_outlet,
+                'outlet_name' => $displayOutlet,
+                'outlet_code' => $r->kode_outlet,
                 'creator_name' => $r->requester_username ?? '-',
                 'reason' => $r->reason,
                 'date' => $r->created_at,

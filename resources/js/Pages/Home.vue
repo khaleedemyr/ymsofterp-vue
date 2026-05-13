@@ -6708,7 +6708,7 @@ watch(locale, () => {
                                             {{ row.order_nomor || row.number }} · {{ row.item_name || 'Item' }}
                                         </div>
                                         <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ row.outlet_name }} · {{ row.creator_name }}
+                                            {{ row.outlet_name }}<span v-if="row.outlet_code && row.outlet_code !== row.outlet_name"> · {{ row.outlet_code }}</span> · {{ row.creator_name }}
                                         </div>
                                         <div class="text-xs line-clamp-2" :class="isNight ? 'text-slate-400' : 'text-slate-600'">
                                             {{ row.reason }}

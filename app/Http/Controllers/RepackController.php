@@ -58,6 +58,9 @@ class RepackController extends Controller
     public function apiCreateData()
     {
         $items = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])
+            ->whereHas('category', function ($query) {
+                $query->where('is_asset', 0);
+            })
             ->orderBy('name')
             ->get();
         $warehouses = DB::table('warehouses')
