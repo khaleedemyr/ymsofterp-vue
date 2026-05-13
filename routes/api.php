@@ -1284,6 +1284,11 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/asset-service-orders/pending-approvals', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals']);
         Route::get('/asset-disposals/pending-approvals', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals']);
 
+        // POS void item (kasir / HO approvers — sama pola dengan inbox web)
+        Route::get('/pos-void-items/pending-approvals', [\App\Http\Controllers\PosVoidItemRequestController::class, 'getPendingApprovals']);
+        Route::post('/pos-void-items/{id}/approve', [\App\Http\Controllers\PosVoidItemRequestController::class, 'approve']);
+        Route::post('/pos-void-items/{id}/reject', [\App\Http\Controllers\PosVoidItemRequestController::class, 'reject']);
+
         // Asset Inventory Report
         Route::get('/asset-inventory-report/stock-position', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockPosition']);
         Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockCardDetail']);

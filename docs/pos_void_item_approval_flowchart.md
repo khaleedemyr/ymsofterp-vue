@@ -2,6 +2,14 @@
 
 Dokumen ini menjelaskan alur **void item** di Order Screen ketika baris sudah tersimpan di database: multi-approver (OR), polling, dan opsi ganti approver.
 
+## Gambar ringkas (PNG)
+
+Banyak preview Markdown **tidak merender** diagram Mermaid di bawah; kalau yang tampil hanya blok kode, buka file PNG ini (bisa disisipkan di presentasi / WA / Word):
+
+![Alur approval void item](pos_void_item_approval_flowchart.png)
+
+*File: `docs/pos_void_item_approval_flowchart.png` (satu folder dengan file ini).*
+
 ---
 
 ## 1. Alur utama (kasir — Order Screen)

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,51 @@ class PosVoidItemRequestController extends Controller
             ->pluck('user_id')
             ->all();
         $this->forgetPendingCachesForUserIds($ids);
+    }
+
+    /**
+     * Notifikasi in-app + push (NotificationObserver/FCM) ke tiap approver.
+     *
+     * @param  'new'|'reassign'  $context
+     * @param  array<int>  $approverUserIds
+     */
+    private function notifyPosVoidItemApprovers(int $requestPk, array $approverUserIds, string $context = 'new'): void
+    {
+        $approverUserIds = array_values(array_unique(array_filter($approverUserIds)));
+        if (count($approverUserIds) === 0) {
+            return;
+        }
+
+        $req = DB::table('pos_void_item_requests')->where('id', $requestPk)->first();
+        if (! $req) {
+            return;
+        }
+
+        $oleh = $req->requester_username ?? 'Kasir';
+        $nomor = $req->order_nomor ?: $req->order_id;
+        $outlet = $req->kode_outlet;
+
+        foreach ($approverUserIds as $uid) {
+            try {
+                $message = $context === 'reassign'
+                    ? "Void item order {$nomor} ({$outlet}) — daftar approver diperbarui. Pemohon: {$oleh}. Salah satu approver dapat menyetujui atau menolak."
+                    : "Void item order {$nomor} ({$outlet}) menunggu approval Anda. Pemohon: {$oleh}. Salah satu dari daftar approver dapat menyetujui.";
+
+                NotificationService::insert([
+                    'user_id' => $uid,
+                    'type' => 'pos_void_item_approval',
+                    'title' => 'Approval Void Item POS',
+                    'message' => $message,
+                    'is_read' => 0,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('POS void item: gagal kirim notifikasi ke approver', [
+                    'user_id' => $uid,
+                    'request_id' => $requestPk,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
@@ -221,6 +267,8 @@ class PosVoidItemRequestController extends Controller
 
         $this->forgetPendingCachesForUserIds($approverIds);
 
+        $this->notifyPosVoidItemApprovers((int) $id, $approverIds, 'new');
+
         Log::info('POS void item request created', [
             'id' => $id,
             'order_id' => $orderId,
@@ -284,6 +332,12 @@ class PosVoidItemRequestController extends Controller
             }
         }
 
+        $oldApproverIds = DB::table('pos_void_item_request_approvers')
+            ->where('pos_void_item_request_id', $rec->id)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         $this->forgetPendingCachesForRequest((int) $rec->id);
 
         DB::transaction(function () use ($rec, $newApproverIds) {
@@ -305,6 +359,12 @@ class PosVoidItemRequestController extends Controller
         });
 
         $this->forgetPendingCachesForUserIds($newApproverIds);
+
+        // Hanya approver baru (belum ada di daftar lama) yang dapat notifikasi, mengurangi spam.
+        $newlyAddedIds = array_values(array_diff($newApproverIds, $oldApproverIds));
+        if (count($newlyAddedIds) > 0) {
+            $this->notifyPosVoidItemApprovers((int) $rec->id, $newlyAddedIds, 'reassign');
+        }
 
         return response()->json([
             'success' => true,

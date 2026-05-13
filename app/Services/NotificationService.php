@@ -114,6 +114,7 @@ class NotificationService
                 'floor_order_approval' => 'Floor Order Approval',
                 'outlet_internal_use_waste_approval' => 'Outlet Internal Use Waste Approval',
                 'lost_breakage_approval' => 'Lost & Breakage Approval',
+                'pos_void_item_approval' => 'Approval Void Item POS',
                 'outlet_rejection' => 'Outlet Rejection',
                 'outlet_transfer_approval' => 'Outlet Transfer Approval',
                 'outlet_transfer' => 'Outlet Transfer',
