@@ -15,7 +15,7 @@ class RepackController extends Controller
 {
     public function apiIndex(Request $request)
     {
-        $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
+        $query = Repack::with(['itemAsal', 'itemHasil', 'unitHasil', 'creator']);
         if ($request->search) {
             $query->where('repack_number', 'like', '%' . $request->search . '%');
         }
@@ -44,7 +44,7 @@ class RepackController extends Controller
 
     public function apiShow($id)
     {
-        $repack = Repack::with(['itemAsal', 'itemHasil', 'creator'])->find($id);
+        $repack = Repack::with(['itemAsal', 'itemHasil', 'unitHasil', 'creator'])->find($id);
         if (!$repack) {
             return response()->json(['success' => false, 'message' => 'Data repack tidak ditemukan'], 404);
         }
@@ -151,7 +151,7 @@ class RepackController extends Controller
 
     public function index(Request $request)
     {
-        $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
+        $query = Repack::with(['itemAsal', 'itemHasil', 'unitHasil', 'creator']);
         if ($request->search) {
             $query->where('repack_number', 'like', '%' . $request->search . '%');
         }
@@ -324,6 +324,7 @@ class RepackController extends Controller
                     'item_asal_id' => $request->item_asal_id,
                     'qty_asal' => $qtyAsalConv['small'],
                     'item_hasil_id' => $request->item_hasil_id,
+                    'unit_hasil_id' => (int) $request->unit_hasil_id,
                     'qty_hasil' => $request->qty_hasil,
                     'status' => $existingRepack->status ?: 'pending',
                 ]);
@@ -334,6 +335,7 @@ class RepackController extends Controller
                     'item_asal_id' => $request->item_asal_id,
                     'qty_asal' => $qtyAsalConv['small'],
                     'item_hasil_id' => $request->item_hasil_id,
+                    'unit_hasil_id' => (int) $request->unit_hasil_id,
                     'qty_hasil' => $request->qty_hasil,
                     'status' => 'pending',
                     'created_by' => Auth::id(),
@@ -487,7 +489,7 @@ class RepackController extends Controller
 
     public function printBarcodes($repackId)
     {
-        $repack = Repack::with(['itemHasil'])->findOrFail($repackId);
+        $repack = Repack::with(['itemHasil', 'unitHasil'])->findOrFail($repackId);
         $barcodes = DB::table('inventory_item_serials')
             ->where('source_type', 'repack')
             ->where('source_id', $repack->id)
