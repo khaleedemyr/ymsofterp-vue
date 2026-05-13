@@ -72,26 +72,36 @@ class SelfOrderBomSoldOutCalculator
     {
         return Schema::hasTable('item_bom')
             && Schema::hasTable('items')
-            && Schema::hasColumn('items', 'type')
             && Schema::hasTable('warehouse_outlets')
             && Schema::hasTable('outlet_food_inventory_stocks')
             && Schema::hasTable('outlet_food_inventory_items');
     }
 
     /**
+     * Sama intent dengan PosSyncController::syncOutletFoodStock — nama Kitchen/Bar tidak case-sensitive.
+     *
      * @return array{warehouse_kitchen_id: ?int, warehouse_bar_id: ?int}
      */
     private function resolveOutletWarehouseMeta(int $outletId): array
     {
+        $statusOk = function ($q) {
+            $q->where('status', 'active')
+                ->orWhere('status', 'A')
+                ->orWhereNull('status');
+        };
+
         $kitchenWh = DB::table('warehouse_outlets')
             ->where('outlet_id', $outletId)
-            ->where('status', 'active')
-            ->where('name', 'Kitchen')
+            ->where($statusOk)
+            ->whereRaw('LOWER(TRIM(name)) = ?', ['kitchen'])
+            ->orderBy('id')
             ->first();
+
         $barWh = DB::table('warehouse_outlets')
             ->where('outlet_id', $outletId)
-            ->where('status', 'active')
-            ->where('name', 'Bar')
+            ->where($statusOk)
+            ->whereRaw('LOWER(TRIM(name)) = ?', ['bar'])
+            ->orderBy('id')
             ->first();
 
         return [
@@ -191,6 +201,10 @@ class SelfOrderBomSoldOutCalculator
      */
     private function loadItemTypes(array $itemIds): array
     {
+        if (!Schema::hasColumn('items', 'type')) {
+            return [];
+        }
+
         return DB::table('items')
             ->whereIn('id', $itemIds)
             ->pluck('type', 'id')
