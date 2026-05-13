@@ -71,3 +71,5 @@ SET @menu_id = (SELECT `id` FROM `erp_menu` WHERE `code` = 'lost_breakage' LIMIT
 
 INSERT IGNORE INTO `erp_permission` (`menu_id`, `name`, `action`, `code`, `created_at`, `updated_at`)
 VALUES (@menu_id, 'View Lost & Breakage', 'view', 'lost_breakage_view', NOW(), NOW());
+
+-- Replacement tracking (partial replacements): run database/sql/lost_breakage_replacements.sql

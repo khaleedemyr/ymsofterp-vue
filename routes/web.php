@@ -3317,6 +3317,8 @@ Route::get('/lost-breakage', [\App\Http\Controllers\LostBreakageController::clas
 Route::get('/lost-breakage/create', [\App\Http\Controllers\LostBreakageController::class, 'create'])->name('lost-breakage.create');
 Route::get('/lost-breakage/approvers', [\App\Http\Controllers\LostBreakageController::class, 'getApprovers'])->name('lost-breakage.approvers');
 Route::get('/lost-breakage/get-item-units/{id}', [\App\Http\Controllers\LostBreakageController::class, 'getItemUnits'])->name('lost-breakage.get-item-units');
+Route::get('/lost-breakage/asset-items-json', [\App\Http\Controllers\LostBreakageController::class, 'assetItemsJson'])->name('lost-breakage.asset-items-json');
+Route::post('/lost-breakage/{headerId}/details/{detailId}/replacements', [\App\Http\Controllers\LostBreakageController::class, 'storeReplacement'])->name('lost-breakage.replacements.store');
 Route::post('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'store'])->name('lost-breakage.store');
 Route::post('/lost-breakage/upload-photo', [\App\Http\Controllers\LostBreakageController::class, 'uploadPhoto'])->name('lost-breakage.upload-photo');
 Route::get('/lost-breakage/{id}/edit', [\App\Http\Controllers\LostBreakageController::class, 'edit'])->name('lost-breakage.edit');

@@ -73,12 +73,13 @@
                 <th class="px-3 py-3 text-center text-xs font-bold text-white uppercase">Lost</th>
                 <th class="px-3 py-3 text-center text-xs font-bold text-white uppercase">Breakage</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-white uppercase">Status</th>
+                <th class="px-3 py-3 text-center text-xs font-bold text-white uppercase">Penggantian</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-white uppercase">Approval</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.data?.data?.length">
-                <td colspan="10" class="text-center py-10 text-gray-400">Tidak ada data. Silakan atur filter terlebih dahulu.</td>
+                <td colspan="11" class="text-center py-10 text-gray-400">Tidak ada data. Silakan atur filter terlebih dahulu.</td>
               </tr>
               <template v-for="row in props.data.data" :key="row.id">
                 <tr class="hover:bg-orange-50/40 transition cursor-pointer" @click="toggleExpand(row.id)">
@@ -105,6 +106,12 @@
                   <td class="px-3 py-3">
                     <span :class="statusBadgeClass(row.status)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">{{ statusLabel(row.status) }}</span>
                   </td>
+                  <td class="px-3 py-3 text-center">
+                    <template v-if="row.status === 'APPROVED'">
+                      <span :class="repSummaryBadge(row.replacement_summary)" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium">{{ repSummaryLabel(row.replacement_summary) }}</span>
+                    </template>
+                    <span v-else class="text-xs text-gray-300">—</span>
+                  </td>
                   <td class="px-3 py-3">
                     <div v-if="row.approval_flows?.length > 0" class="space-y-0.5">
                       <div v-for="f in row.approval_flows" :key="f.id" class="flex items-center gap-1">
@@ -117,7 +124,7 @@
                 </tr>
                 <!-- Expanded Detail Row -->
                 <tr v-if="expanded[row.id]">
-                  <td colspan="10" class="bg-slate-50 px-6 py-4">
+                  <td colspan="11" class="bg-slate-50 px-6 py-4">
                     <div v-if="loadingDetails[row.id]" class="text-center py-4">
                       <i class="fa fa-spinner fa-spin text-orange-500"></i> Memuat detail...
                     </div>
@@ -131,6 +138,9 @@
                             <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600">Tipe</th>
                             <th class="px-3 py-2 text-right text-xs font-semibold text-gray-600">Qty</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600">Unit</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold text-gray-600">Sudah ganti</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold text-gray-600">Sisa</th>
+                            <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600">Status</th>
                             <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600">Keterangan</th>
                             <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600">Foto</th>
                           </tr>
@@ -144,6 +154,11 @@
                             </td>
                             <td class="px-3 py-2 text-right font-medium">{{ d.qty }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ d.unit_name }}</td>
+                            <td class="px-3 py-2 text-right text-gray-700">{{ d.replaced_qty_total != null ? d.replaced_qty_total : '0' }}</td>
+                            <td class="px-3 py-2 text-right font-medium" :class="Number(d.remaining_qty) > 0 ? 'text-amber-700' : 'text-green-700'">{{ d.remaining_qty != null ? d.remaining_qty : d.qty }}</td>
+                            <td class="px-3 py-2 text-center">
+                              <span class="px-2 py-0.5 rounded text-xs font-semibold" :class="fulfillmentBadge(d.replacement_fulfillment)">{{ fulfillmentLabel(d.replacement_fulfillment) }}</span>
+                            </td>
                             <td class="px-3 py-2 text-gray-600">{{ d.note || '-' }}</td>
                             <td class="px-3 py-2 text-center">
                               <a v-if="d.photo" :href="`/storage/${d.photo}`" target="_blank" class="text-blue-500 hover:underline text-xs"><i class="fa fa-image mr-1"></i>Lihat</a>
@@ -232,4 +247,8 @@ function formatDate(d) { return d ? new Date(d).toLocaleDateString('id-ID') : '-
 function statusLabel(s) { return { DRAFT: 'Draft', SUBMITTED: 'Menunggu Approval', APPROVED: 'Disetujui', REJECTED: 'Ditolak' }[s] || s }
 function statusBadgeClass(s) { return { DRAFT: 'bg-gray-100 text-gray-800', SUBMITTED: 'bg-yellow-100 text-yellow-800', APPROVED: 'bg-green-100 text-green-800', REJECTED: 'bg-red-100 text-red-800' }[s] || 'bg-gray-100 text-gray-800' }
 function approvalBadgeClass(s) { return { APPROVED: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700', PENDING: 'bg-yellow-100 text-yellow-700' }[s] || 'bg-gray-100 text-gray-700' }
+function repSummaryLabel(s) { return { none: 'Belum', partial: 'Sebagian', complete: 'Lengkap' }[s] || '—' }
+function repSummaryBadge(s) { return { none: 'bg-gray-100 text-gray-600', partial: 'bg-amber-100 text-amber-800', complete: 'bg-emerald-100 text-emerald-800' }[s] || 'bg-gray-100 text-gray-500' }
+function fulfillmentLabel(f) { return { none: 'Belum', partial: 'Sebagian', complete: 'Lengkap' }[f] || f }
+function fulfillmentBadge(f) { return { none: 'bg-gray-100 text-gray-600', partial: 'bg-amber-100 text-amber-800', complete: 'bg-green-100 text-green-800' }[f] || 'bg-gray-100 text-gray-600' }
 </script>

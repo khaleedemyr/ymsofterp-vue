@@ -844,6 +844,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/lost-breakage/{id}/approve', [\App\Http\Controllers\LostBreakageController::class, 'approve']);
         Route::post('/lost-breakage/{id}/reject', [\App\Http\Controllers\LostBreakageController::class, 'reject']);
         Route::post('/lost-breakage/upload-photo', [\App\Http\Controllers\LostBreakageController::class, 'uploadPhoto']);
+        Route::post('/lost-breakage/{headerId}/details/{detailId}/replacements', [\App\Http\Controllers\LostBreakageController::class, 'storeReplacement']);
         Route::delete('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'destroy']);
         Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'apiReport']);
         Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails']);

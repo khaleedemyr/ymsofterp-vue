@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use App\Services\NotificationService;
@@ -92,6 +93,13 @@ class LostBreakageController extends Controller
             return $item;
         });
 
+        $headerIds = collect($data->items())->pluck('id')->toArray();
+        $replacementSummary = $this->replacementSummaryByHeaderId($headerIds);
+        $data->getCollection()->transform(function ($item) use ($replacementSummary) {
+            $item->replacement_summary = $replacementSummary[$item->id] ?? 'none';
+            return $item;
+        });
+
         $outlets = [];
         if ($user->id_outlet == 1) {
             $outlets = DB::table('tbl_data_outlet')
@@ -164,6 +172,135 @@ class LostBreakageController extends Controller
             $item->image = $images[$item->id][0] ?? null;
             return $item;
         });
+    }
+
+    private function lostBreakageReplacementsTableExists(): bool
+    {
+        try {
+            return Schema::hasTable('lost_breakage_replacements');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection|\Illuminate\Database\Eloquent\Collection $details
+     */
+    private function hydrateDetailsWithReplacements($details): void
+    {
+        if (!$this->lostBreakageReplacementsTableExists() || $details->isEmpty()) {
+            foreach ($details as $d) {
+                $d->replacements = [];
+                $d->replaced_qty_total = 0;
+                $d->remaining_qty = (float) $d->qty;
+                $d->replacement_fulfillment = 'none';
+            }
+
+            return;
+        }
+
+        $detailIds = $details->pluck('id')->toArray();
+        $rows = DB::table('lost_breakage_replacements as r')
+            ->join('users as u', 'r.replaced_by', '=', 'u.id')
+            ->leftJoin('items as ri', 'r.replacement_item_id', '=', 'ri.id')
+            ->leftJoin('units as ru', 'r.unit_id', '=', 'ru.id')
+            ->whereIn('r.detail_id', $detailIds)
+            ->orderBy('r.id')
+            ->select(
+                'r.*',
+                'u.nama_lengkap as replaced_by_name',
+                'ri.name as replacement_item_name',
+                'ri.sku as replacement_item_sku',
+                'ru.name as replacement_unit_name'
+            )
+            ->get();
+
+        $byDetail = [];
+        foreach ($rows as $r) {
+            $byDetail[$r->detail_id][] = $r;
+        }
+
+        foreach ($details as $d) {
+            $list = $byDetail[$d->id] ?? [];
+            $sum = 0.0;
+            foreach ($list as $x) {
+                $sum += (float) $x->qty_replaced;
+            }
+            $qty = (float) $d->qty;
+            $d->replacements = $list;
+            $d->replaced_qty_total = $sum;
+            $d->remaining_qty = max(0, round($qty - $sum, 4));
+            if ($sum <= 1e-9) {
+                $d->replacement_fulfillment = 'none';
+            } elseif ($sum >= $qty - 1e-6) {
+                $d->replacement_fulfillment = 'complete';
+            } else {
+                $d->replacement_fulfillment = 'partial';
+            }
+        }
+    }
+
+    private function replacementSummaryByHeaderId(array $headerIds): array
+    {
+        $out = [];
+        foreach ($headerIds as $id) {
+            $out[$id] = 'none';
+        }
+        if (empty($headerIds) || !$this->lostBreakageReplacementsTableExists()) {
+            return $out;
+        }
+
+        $details = DB::table('lost_breakage_details as d')
+            ->whereIn('d.header_id', $headerIds)
+            ->leftJoin(DB::raw('(SELECT detail_id, SUM(qty_replaced) AS rep_sum FROM lost_breakage_replacements GROUP BY detail_id) AS rs'), 'd.id', '=', 'rs.detail_id')
+            ->select('d.header_id', 'd.qty', DB::raw('COALESCE(rs.rep_sum, 0) AS rep_sum'))
+            ->get();
+
+        $grouped = [];
+        foreach ($details as $row) {
+            $grouped[$row->header_id][] = $row;
+        }
+
+        foreach ($grouped as $headerId => $rows) {
+            $anyRep = false;
+            $allComplete = true;
+            foreach ($rows as $row) {
+                $rep = (float) $row->rep_sum;
+                $qty = (float) $row->qty;
+                if ($rep > 1e-9) {
+                    $anyRep = true;
+                }
+                if ($rep < $qty - 1e-6) {
+                    $allComplete = false;
+                }
+            }
+            if (!$anyRep) {
+                $out[$headerId] = 'none';
+            } elseif ($allComplete) {
+                $out[$headerId] = 'complete';
+            } else {
+                $out[$headerId] = 'partial';
+            }
+        }
+
+        return $out;
+    }
+
+    private function isAssetItemId(int $itemId): bool
+    {
+        $assetCategoryIds = DB::table('categories')
+            ->where('is_asset', '1')
+            ->pluck('id')
+            ->toArray();
+        if (empty($assetCategoryIds)) {
+            return false;
+        }
+
+        return DB::table('items')
+            ->where('id', $itemId)
+            ->whereIn('category_id', $assetCategoryIds)
+            ->where('status', 'active')
+            ->exists();
     }
 
     public function create()
@@ -373,12 +510,19 @@ class LostBreakageController extends Controller
             return redirect()->route('lost-breakage.index')->with('error', 'Data tidak ditemukan.');
         }
 
+        $user = auth()->user();
+        if ($user && (int) $user->id_outlet !== 1 && (int) $header->outlet_id !== (int) $user->id_outlet) {
+            return redirect()->route('lost-breakage.index')->with('error', 'Tidak punya akses.');
+        }
+
         $details = DB::table('lost_breakage_details as d')
             ->join('items as i', 'd.item_id', '=', 'i.id')
             ->join('units as u', 'd.unit_id', '=', 'u.id')
             ->where('d.header_id', $id)
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->get();
+
+        $this->hydrateDetailsWithReplacements($details);
 
         $approvalFlows = DB::table('lost_breakage_approval_flows as af')
             ->join('users as u', 'af.approver_id', '=', 'u.id')
@@ -404,10 +548,11 @@ class LostBreakageController extends Controller
         }
 
         return inertia('LostBreakage/Show', [
-            'header'          => $header,
-            'details'         => $details,
-            'approvalFlows'   => $approvalFlows,
-            'currentApprover' => $currentApprover,
+            'header'                => $header,
+            'details'               => $details,
+            'approvalFlows'         => $approvalFlows,
+            'currentApprover'       => $currentApprover,
+            'canRecordReplacements' => $header->status === 'APPROVED' && $this->lostBreakageReplacementsTableExists(),
         ]);
     }
 
@@ -781,6 +926,8 @@ class LostBreakageController extends Controller
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->get();
 
+        $this->hydrateDetailsWithReplacements($details);
+
         $approvalFlows = DB::table('lost_breakage_approval_flows as af')
             ->join('users as u', 'af.approver_id', '=', 'u.id')
             ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
@@ -867,6 +1014,8 @@ class LostBreakageController extends Controller
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name', 'su.name as small_unit_name', 'mu.name as medium_unit_name', 'lu.name as large_unit_name', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id')
             ->get();
 
+        $this->hydrateDetailsWithReplacements($details);
+
         $approvalFlows = DB::table('lost_breakage_approval_flows as af')
             ->join('users as u', 'af.approver_id', '=', 'u.id')
             ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
@@ -880,6 +1029,7 @@ class LostBreakageController extends Controller
             'header' => $header,
             'details' => $details,
             'approval_flows' => $approvalFlows,
+            'can_record_replacements' => ($header->status === 'APPROVED' && $this->lostBreakageReplacementsTableExists()),
         ]);
     }
 
@@ -912,10 +1062,12 @@ class LostBreakageController extends Controller
             $approvalRows = DB::table('lost_breakage_approval_flows as af')->join('users as u', 'af.approver_id', '=', 'u.id')->whereIn('af.header_id', $headerIds)->orderBy('af.approval_level')->select('af.*', 'u.nama_lengkap as approver_name')->get();
             $approvalMap = [];
             foreach ($approvalRows as $af) { $approvalMap[$af->header_id][] = $af; }
-            $data->getCollection()->transform(function ($item) use ($countMap, $typeMap, $approvalMap) {
+            $replacementSummary = $this->replacementSummaryByHeaderId($headerIds);
+            $data->getCollection()->transform(function ($item) use ($countMap, $typeMap, $approvalMap, $replacementSummary) {
                 $item->item_count = $countMap[$item->id] ?? 0;
                 $item->type_summary = $typeMap[$item->id] ?? ['lost' => 0, 'breakage' => 0];
                 $item->approval_flows = $approvalMap[$item->id] ?? [];
+                $item->replacement_summary = $replacementSummary[$item->id] ?? 'none';
                 return $item;
             });
         }
@@ -964,6 +1116,8 @@ class LostBreakageController extends Controller
         $headerIds = collect($data->items())->pluck('id')->toArray();
         $detailCounts = [];
         $typeSummaries = [];
+        $approvalMap = [];
+        $replacementSummary = [];
         if (!empty($headerIds)) {
             $rows = DB::table('lost_breakage_details')
                 ->whereIn('header_id', $headerIds)
@@ -981,16 +1135,17 @@ class LostBreakageController extends Controller
                 ->orderBy('af.approval_level')
                 ->select('af.*', 'u.nama_lengkap as approver_name')
                 ->get();
-            $approvalMap = [];
             foreach ($approvalRows as $af) {
                 $approvalMap[$af->header_id][] = $af;
             }
+            $replacementSummary = $this->replacementSummaryByHeaderId($headerIds);
         }
 
-        $data->getCollection()->transform(function ($item) use ($detailCounts, $typeSummaries, &$approvalMap) {
+        $data->getCollection()->transform(function ($item) use ($detailCounts, $typeSummaries, $approvalMap, $replacementSummary) {
             $item->item_count = $detailCounts[$item->id] ?? 0;
             $item->type_summary = $typeSummaries[$item->id] ?? ['lost' => 0, 'breakage' => 0];
             $item->approval_flows = $approvalMap[$item->id] ?? [];
+            $item->replacement_summary = $replacementSummary[$item->id] ?? 'none';
             return $item;
         });
 
@@ -1017,7 +1172,124 @@ class LostBreakageController extends Controller
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->get();
 
+        $this->hydrateDetailsWithReplacements($details);
+
         return response()->json(['success' => true, 'details' => $details]);
+    }
+
+    public function assetItemsJson(Request $request)
+    {
+        $items = $this->getAssetItems();
+        if ($request->filled('search')) {
+            $q = strtolower($request->search);
+            $items = $items->filter(function ($item) use ($q) {
+                return str_contains(strtolower($item->name), $q) || str_contains(strtolower($item->sku ?? ''), $q);
+            })->values();
+        }
+        $limit = min(max((int) $request->input('limit', 80), 1), 200);
+
+        return response()->json(['items' => $items->take($limit)->values()]);
+    }
+
+    public function storeReplacement(Request $request, $headerId, $detailId)
+    {
+        if (!$this->lostBreakageReplacementsTableExists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tabel penggantian belum dibuat. Jalankan database/sql/lost_breakage_replacements.sql',
+            ], 503);
+        }
+
+        $request->validate([
+            'qty_replaced'          => 'required|numeric|min:0.01',
+            'unit_id'               => 'required|exists:units,id',
+            'replacement_item_id'   => 'nullable|integer|exists:items,id',
+            'note'                  => 'nullable|string|max:2000',
+        ]);
+
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+        $user = auth()->user();
+
+        $header = DB::table('lost_breakage_headers')->where('id', $headerId)->first();
+        if (!$header) {
+            return response()->json(['success' => false, 'message' => 'Header tidak ditemukan'], 404);
+        }
+        if ($header->status !== 'APPROVED') {
+            return response()->json(['success' => false, 'message' => 'Penggantian hanya untuk dokumen berstatus Disetujui'], 422);
+        }
+        if ($user && (int) $user->id_outlet !== 1 && (int) $header->outlet_id !== (int) $user->id_outlet) {
+            return response()->json(['success' => false, 'message' => 'Tidak punya akses'], 403);
+        }
+
+        $detail = DB::table('lost_breakage_details')
+            ->where('id', $detailId)
+            ->where('header_id', $headerId)
+            ->first();
+        if (!$detail) {
+            return response()->json(['success' => false, 'message' => 'Baris item tidak ditemukan'], 404);
+        }
+        if ((int) $request->unit_id !== (int) $detail->unit_id) {
+            return response()->json(['success' => false, 'message' => 'Unit harus sama dengan unit pada baris Lost & Breakage'], 422);
+        }
+
+        $rawReplacement = $request->input('replacement_item_id');
+        $replacementItemId = null;
+        if ($rawReplacement !== null && $rawReplacement !== '') {
+            $replacementItemId = (int) $rawReplacement;
+            if ($replacementItemId === (int) $detail->item_id) {
+                $replacementItemId = null;
+            } elseif (!$this->isAssetItemId($replacementItemId)) {
+                return response()->json(['success' => false, 'message' => 'Barang pengganti harus item asset aktif'], 422);
+            }
+        }
+
+        $currentSum = (float) DB::table('lost_breakage_replacements')->where('detail_id', $detailId)->sum('qty_replaced');
+        $qtyLine = (float) $detail->qty;
+        $add = (float) $request->qty_replaced;
+        $remaining = $qtyLine - $currentSum;
+        if ($add > $remaining + 1e-6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jumlah penggantian melebihi sisa (tersisa ' . max(0, round($remaining, 4)) . ').',
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+            DB::table('lost_breakage_replacements')->insert([
+                'detail_id'             => $detailId,
+                'qty_replaced'          => $add,
+                'unit_id'               => (int) $request->unit_id,
+                'replacement_item_id' => $replacementItemId,
+                'note'                  => $request->note,
+                'replaced_by'           => $userId,
+                'created_at'            => now(),
+                'updated_at'            => now(),
+            ]);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        $detailRow = DB::table('lost_breakage_details as d')
+            ->join('items as i', 'd.item_id', '=', 'i.id')
+            ->join('units as u', 'd.unit_id', '=', 'u.id')
+            ->where('d.id', $detailId)
+            ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
+            ->first();
+        $coll = collect([$detailRow]);
+        $this->hydrateDetailsWithReplacements($coll);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Penggantian tercatat.',
+            'detail'  => $coll->first(),
+        ]);
     }
 
     public function exportReport(Request $request)

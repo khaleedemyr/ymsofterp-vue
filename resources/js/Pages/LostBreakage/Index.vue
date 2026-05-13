@@ -74,6 +74,7 @@
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Nomor</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Tanggal</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Status</th>
+                <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Penggantian</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Approval</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Outlet</th>
                 <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Creator</th>
@@ -82,7 +83,7 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!props.data || !props.data.data || props.data.data.length === 0">
-                <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data.</td>
               </tr>
               <tr v-for="row in props.data.data" :key="row.id" class="hover:bg-gray-50 transition">
                 <td class="px-3 py-3 whitespace-nowrap">
@@ -94,6 +95,12 @@
                 </td>
                 <td class="px-3 py-3 whitespace-nowrap">
                   <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" :class="statusBadgeClass(row.status)">{{ statusLabel(row.status) }}</span>
+                </td>
+                <td class="px-3 py-3 text-center whitespace-nowrap">
+                  <template v-if="row.status === 'APPROVED'">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" :class="repSummaryBadge(row.replacement_summary)">{{ repSummaryLabel(row.replacement_summary) }}</span>
+                  </template>
+                  <span v-else class="text-xs text-gray-300">—</span>
                 </td>
                 <td class="px-3 py-3">
                   <div v-if="row.approval_flows && row.approval_flows.length > 0" class="space-y-1 max-w-[250px]">
@@ -199,5 +206,7 @@ function formatDateTime(d) { if (!d) return '-'; const dt = new Date(d); return 
 
 function statusLabel(s) { return { DRAFT: 'Draft', SUBMITTED: 'Menunggu Approval', APPROVED: 'Disetujui', REJECTED: 'Ditolak' }[s] || s }
 function statusBadgeClass(s) { return { DRAFT: 'bg-gray-100 text-gray-800', SUBMITTED: 'bg-yellow-100 text-yellow-800', APPROVED: 'bg-green-100 text-green-800', REJECTED: 'bg-red-100 text-red-800' }[s] || 'bg-gray-100 text-gray-800' }
+function repSummaryLabel(s) { return { none: 'Belum', partial: 'Sebagian', complete: 'Lengkap' }[s] || '—' }
+function repSummaryBadge(s) { return { none: 'bg-gray-100 text-gray-600', partial: 'bg-amber-100 text-amber-800', complete: 'bg-emerald-100 text-emerald-800' }[s] || 'bg-gray-100 text-gray-500' }
 function approvalBadgeClass(s) { return { APPROVED: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700', PENDING: 'bg-yellow-100 text-yellow-700' }[s] || 'bg-gray-100 text-gray-700' }
 </script>
