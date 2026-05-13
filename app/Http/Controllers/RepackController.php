@@ -322,10 +322,8 @@ class RepackController extends Controller
             if ($isUpdate) {
                 $existingRepack->update([
                     'item_asal_id' => $request->item_asal_id,
-                    'unit_asal_id' => $itemAsal->small_unit_id,
                     'qty_asal' => $qtyAsalConv['small'],
                     'item_hasil_id' => $request->item_hasil_id,
-                    'unit_hasil_id' => $request->unit_hasil_id,
                     'qty_hasil' => $request->qty_hasil,
                     'status' => $existingRepack->status ?: 'pending',
                 ]);
@@ -334,10 +332,8 @@ class RepackController extends Controller
                 $repack = Repack::create([
                     'repack_number' => 'RP-' . date('Ymd') . '-' . Str::upper(Str::random(4)),
                     'item_asal_id' => $request->item_asal_id,
-                    'unit_asal_id' => $itemAsal->small_unit_id,
                     'qty_asal' => $qtyAsalConv['small'],
                     'item_hasil_id' => $request->item_hasil_id,
-                    'unit_hasil_id' => $request->unit_hasil_id,
                     'qty_hasil' => $request->qty_hasil,
                     'status' => 'pending',
                     'created_by' => Auth::id(),
