@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\PosVoidBillFromPosExport;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -9,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 class PosVoidItemRequestController extends Controller
 {
@@ -630,5 +632,157 @@ class PosVoidItemRequestController extends Controller
             'success' => true,
             'message' => 'Permintaan void item ditolak.',
         ]);
+    }
+
+    /**
+     * Laporan void dari POS (item / order / bill paid) — pemohon, approver ditunjuk, user HO yang approve.
+     */
+    public function reportPage(Request $request)
+    {
+        $user = auth()->user();
+        if (! $user) {
+            abort(401);
+        }
+
+        if (! $request->filled('date_from')) {
+            $request->merge(['date_from' => now()->subDays(30)->toDateString()]);
+        }
+        if (! $request->filled('date_to')) {
+            $request->merge(['date_to' => now()->toDateString()]);
+        }
+
+        $query = DB::table('pos_void_item_requests as r')
+            ->leftJoin('tbl_data_outlet as ou', 'ou.qr_code', '=', 'r.kode_outlet')
+            ->leftJoin('users as appr_user', 'appr_user.id', '=', 'r.approved_by_user_id')
+            ->leftJoin('users as req_user', 'req_user.id', '=', 'r.requester_user_id')
+            ->select(
+                'r.id',
+                'r.kode_outlet',
+                'r.order_id',
+                'r.order_nomor',
+                'r.order_item_id',
+                'r.void_entire_order',
+                'r.requester_user_id',
+                'r.requester_username',
+                'r.reason',
+                'r.item_snapshot',
+                'r.status',
+                'r.approved_at',
+                'r.approved_by_user_id',
+                'r.rejected_at',
+                'r.rejection_note',
+                'r.created_at',
+                'ou.nama_outlet as outlet_name',
+                'appr_user.nama_lengkap as approved_by_name',
+                'req_user.nama_lengkap as requester_user_nama',
+            );
+
+        $this->applyPosVoidReportFilters($query, $request, $user);
+
+        $data = $query->orderByDesc('r.created_at')->orderByDesc('r.id')->paginate(25)->withQueryString();
+
+        $ids = $data->getCollection()->pluck('id')->all();
+        $approverMap = [];
+        if (count($ids) > 0) {
+            $approverMap = DB::table('pos_void_item_request_approvers as a')
+                ->join('users as u', 'u.id', '=', 'a.user_id')
+                ->whereIn('a.pos_void_item_request_id', $ids)
+                ->select('a.pos_void_item_request_id', DB::raw("GROUP_CONCAT(DISTINCT u.nama_lengkap ORDER BY u.nama_lengkap SEPARATOR '; ') as names"))
+                ->groupBy('a.pos_void_item_request_id')
+                ->pluck('names', 'pos_void_item_request_id')
+                ->all();
+        }
+
+        $data->getCollection()->transform(function ($row) use ($approverMap) {
+            $snap = is_string($row->item_snapshot ?? null) ? json_decode($row->item_snapshot, true) : [];
+            $snap = is_array($snap) ? $snap : [];
+            $row->item_label = $snap['name'] ?? $snap['item_name'] ?? '-';
+            $entire = (int) ($row->void_entire_order ?? 0) === 1;
+            $paidVoid = ! empty($snap['paid_void']);
+            if ($entire && $paidVoid) {
+                $row->void_type_label = 'Void bill paid (POS)';
+            } elseif ($entire) {
+                $row->void_type_label = 'Void order / seluruh unpaid (POS)';
+            } else {
+                $row->void_type_label = 'Void item baris (POS)';
+            }
+            $row->requester_display = trim((string) ($row->requester_user_nama ?? '')) !== ''
+                ? $row->requester_user_nama
+                : ($row->requester_username ?: '-');
+            $row->designated_approvers = $approverMap[$row->id] ?? $approverMap[(string) $row->id] ?? '-';
+
+            return $row;
+        });
+
+        $outlets = [];
+        if ((int) $user->id_outlet === 1) {
+            $outlets = DB::table('tbl_data_outlet')
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->get(['id_outlet', 'nama_outlet', 'qr_code']);
+        }
+
+        return \Inertia\Inertia::render('PosVoid/BillReport', [
+            'data' => $data,
+            'outlets' => $outlets,
+            'filters' => [
+                'kode_outlet' => $request->input('kode_outlet', ''),
+                'status' => $request->input('status', ''),
+                'date_from' => $request->input('date_from'),
+                'date_to' => $request->input('date_to'),
+            ],
+        ]);
+    }
+
+    public function exportReport(Request $request)
+    {
+        $user = auth()->user();
+        if (! $user) {
+            abort(401);
+        }
+
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
+        $kodeOutletFilter = (int) $user->id_outlet === 1 ? ($request->input('kode_outlet') ?: null) : null;
+
+        $export = new PosVoidBillFromPosExport(
+            $kodeOutletFilter ? (string) $kodeOutletFilter : null,
+            $request->input('status') ?: null,
+            $request->date_from,
+            $request->date_to,
+            (int) $user->id_outlet
+        );
+
+        $fileName = 'POS_Void_Bill_'.$request->date_from.'_'.$request->date_to.'.xlsx';
+
+        return Excel::download($export, $fileName);
+    }
+
+    private function applyPosVoidReportFilters(\Illuminate\Database\Query\Builder $query, Request $request, $user): void
+    {
+        if ((int) $user->id_outlet !== 1) {
+            $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $user->id_outlet)->first();
+            if ($outlet && $outlet->qr_code) {
+                $query->where('r.kode_outlet', $outlet->qr_code);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
+        } elseif ($request->filled('kode_outlet')) {
+            $query->where('r.kode_outlet', $request->input('kode_outlet'));
+        }
+
+        if ($request->filled('status')) {
+            $query->where('r.status', $request->input('status'));
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('r.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('r.created_at', '<=', $request->date_to);
+        }
     }
 }

@@ -17,7 +17,27 @@ class RepackController extends Controller
     {
         $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
         if ($request->search) {
-            $query->where('repack_number', 'like', '%' . $request->search . '%');
+            $keyword = trim((string) $request->search);
+            $query->where(function ($q) use ($keyword) {
+                $q->where('repack_number', 'like', '%' . $keyword . '%')
+                    ->orWhere('status', 'like', '%' . $keyword . '%')
+                    ->orWhere('qty_hasil', 'like', '%' . $keyword . '%')
+                    ->orWhereDate('created_at', $keyword)
+                    ->orWhereHas('itemAsal', function ($itemQ) use ($keyword) {
+                        $itemQ->where('name', 'like', '%' . $keyword . '%')
+                            ->orWhere('sku', 'like', '%' . $keyword . '%');
+                    })
+                    ->orWhereHas('itemHasil', function ($itemQ) use ($keyword) {
+                        $itemQ->where('name', 'like', '%' . $keyword . '%')
+                            ->orWhere('sku', 'like', '%' . $keyword . '%');
+                    })
+                    ->orWhereHas('creator', function ($userQ) use ($keyword) {
+                        $userQ->where('name', 'like', '%' . $keyword . '%')
+                            ->orWhere('nama_lengkap', 'like', '%' . $keyword . '%')
+                            ->orWhere('username', 'like', '%' . $keyword . '%')
+                            ->orWhere('email', 'like', '%' . $keyword . '%');
+                    });
+            });
         }
         if ($request->status) {
             $query->where('status', $request->status);
