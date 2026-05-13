@@ -158,7 +158,8 @@ class PosVoidItemRequestController extends Controller
         $validator = Validator::make($request->all(), [
             'kode_outlet' => 'required|string',
             'order_id' => 'required',
-            'order_item_id' => 'required',
+            'void_entire_order' => 'nullable|boolean',
+            'order_item_id' => 'nullable',
             'order_nomor' => 'nullable|string|max:128',
             'reason' => 'required|string|max:2000',
             'approver_user_ids' => 'nullable|array',
@@ -177,6 +178,14 @@ class PosVoidItemRequestController extends Controller
             ], 400);
         }
 
+        $isEntireOrderVoid = filter_var($request->input('void_entire_order'), FILTER_VALIDATE_BOOLEAN);
+        if (! $isEntireOrderVoid && ($request->input('order_item_id') === null || $request->input('order_item_id') === '')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'order_item_id wajib untuk void per item (atau kirim void_entire_order: true untuk void order penuh).',
+            ], 400);
+        }
+
         $ids = $request->input('approver_user_ids');
         if (! is_array($ids) || count($ids) === 0) {
             $single = $request->input('approver_user_id');
@@ -191,28 +200,16 @@ class PosVoidItemRequestController extends Controller
 
         $kodeOutlet = $request->input('kode_outlet');
         $orderId = $request->input('order_id');
-        $orderItemId = $request->input('order_item_id');
+        $orderItemId = $isEntireOrderVoid ? null : $request->input('order_item_id');
 
         $outlet = DB::table('tbl_data_outlet')->where('qr_code', $kodeOutlet)->first();
         if (! $outlet) {
             return response()->json(['success' => false, 'message' => 'Outlet not found'], 404);
         }
 
-        $row = DB::table('order_items as oi')
-            ->join('orders as o', 'o.id', '=', 'oi.order_id')
-            ->where('o.kode_outlet', $kodeOutlet)
-            ->where('oi.order_id', $orderId)
-            ->where('oi.id', $orderItemId)
-            ->select('oi.id', 'oi.order_id', 'o.nomor as order_nomor')
-            ->first();
-
         $orderNomorForInsert = null;
 
-        if ($row) {
-            $orderNomorForInsert = $row->order_nomor;
-        } else {
-            // Order/item belum ada di DB pusat (umum: transaksi belum paid → belum sync).
-            // Tetap boleh ajukan void ke HO selama POS kirim snapshot item yang cukup.
+        if ($isEntireOrderVoid) {
             $snapshot = $request->input('item_snapshot');
             $itemLabel = '';
             if (is_array($snapshot)) {
@@ -221,30 +218,79 @@ class PosVoidItemRequestController extends Controller
             if ($itemLabel === '') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Order item tidak ada di server pusat (mis. order belum dibayar). Kirim item_snapshot dengan nama item, atau tunggu order tersinkron.',
-                ], 404);
+                    'message' => 'Void order penuh: kirim item_snapshot dengan field name (label untuk approver).',
+                ], 400);
             }
-
             $orderNomorForInsert = $request->input('order_nomor');
             if ($orderNomorForInsert === null || trim((string) $orderNomorForInsert) === '') {
                 $orderNomorForInsert = (string) $orderId;
             }
-        }
 
-        $dup = DB::table('pos_void_item_requests')
-            ->where('kode_outlet', $kodeOutlet)
-            ->where('order_id', (string) $orderId)
-            ->where('order_item_id', (int) $orderItemId)
-            ->where('status', 'pending')
-            ->first();
+            $dup = DB::table('pos_void_item_requests')
+                ->where('kode_outlet', $kodeOutlet)
+                ->where('order_id', (string) $orderId)
+                ->where('status', 'pending')
+                ->where('void_entire_order', 1)
+                ->first();
 
-        if ($dup) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Sudah ada permintaan void pending untuk item ini.',
-                'public_token' => $dup->public_token,
-                'id' => $dup->id,
-            ], 409);
+            if ($dup) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sudah ada permintaan void order penuh pending untuk order ini.',
+                    'public_token' => $dup->public_token,
+                    'id' => $dup->id,
+                ], 409);
+            }
+        } else {
+            $row = DB::table('order_items as oi')
+                ->join('orders as o', 'o.id', '=', 'oi.order_id')
+                ->where('o.kode_outlet', $kodeOutlet)
+                ->where('oi.order_id', $orderId)
+                ->where('oi.id', $orderItemId)
+                ->select('oi.id', 'oi.order_id', 'o.nomor as order_nomor')
+                ->first();
+
+            if ($row) {
+                $orderNomorForInsert = $row->order_nomor;
+            } else {
+                // Order/item belum ada di DB pusat (umum: transaksi belum paid → belum sync).
+                // Tetap boleh ajukan void ke HO selama POS kirim snapshot item yang cukup.
+                $snapshot = $request->input('item_snapshot');
+                $itemLabel = '';
+                if (is_array($snapshot)) {
+                    $itemLabel = trim((string) ($snapshot['name'] ?? $snapshot['item_name'] ?? ''));
+                }
+                if ($itemLabel === '') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Order item tidak ada di server pusat (mis. order belum dibayar). Kirim item_snapshot dengan nama item, atau tunggu order tersinkron.',
+                    ], 404);
+                }
+
+                $orderNomorForInsert = $request->input('order_nomor');
+                if ($orderNomorForInsert === null || trim((string) $orderNomorForInsert) === '') {
+                    $orderNomorForInsert = (string) $orderId;
+                }
+            }
+
+            $dup = DB::table('pos_void_item_requests')
+                ->where('kode_outlet', $kodeOutlet)
+                ->where('order_id', (string) $orderId)
+                ->where('order_item_id', (int) $orderItemId)
+                ->where('status', 'pending')
+                ->where(function ($q) {
+                    $q->where('void_entire_order', 0)->orWhereNull('void_entire_order');
+                })
+                ->first();
+
+            if ($dup) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sudah ada permintaan void pending untuk item ini.',
+                    'public_token' => $dup->public_token,
+                    'id' => $dup->id,
+                ], 409);
+            }
         }
 
         $publicToken = (string) Str::uuid();
@@ -257,7 +303,8 @@ class PosVoidItemRequestController extends Controller
                 'kode_outlet' => $kodeOutlet,
                 'order_id' => (string) $orderId,
                 'order_nomor' => $orderNomorForInsert,
-                'order_item_id' => (int) $orderItemId,
+                'order_item_id' => $isEntireOrderVoid ? null : (int) $orderItemId,
+                'void_entire_order' => $isEntireOrderVoid ? 1 : 0,
                 'requester_user_id' => $request->input('requester_user_id'),
                 'requester_username' => $request->input('requester_username'),
                 'reason' => $request->input('reason'),
@@ -294,6 +341,7 @@ class PosVoidItemRequestController extends Controller
             'id' => $id,
             'order_id' => $orderId,
             'order_item_id' => $orderItemId,
+            'void_entire_order' => $isEntireOrderVoid,
             'approver_user_ids' => $approverIds,
         ]);
 
@@ -452,6 +500,7 @@ class PosVoidItemRequestController extends Controller
                 'r.order_id',
                 'r.order_nomor',
                 'r.order_item_id',
+                'r.void_entire_order',
                 'r.reason',
                 'r.requester_username',
                 'r.created_at',
@@ -464,7 +513,14 @@ class PosVoidItemRequestController extends Controller
 
         $headers = $rows->map(function ($r) {
             $snap = $r->item_snapshot ? json_decode($r->item_snapshot, true) : null;
-            $itemName = is_array($snap) ? ($snap['name'] ?? $snap['item_name'] ?? '-') : '-';
+            $entire = (int) ($r->void_entire_order ?? 0) === 1;
+            if ($entire) {
+                $itemName = is_array($snap)
+                    ? ('Void seluruh order · '.($snap['name'] ?? $snap['item_name'] ?? ($r->order_nomor ?: $r->order_id)))
+                    : ('Void seluruh order · '.($r->order_nomor ?: $r->order_id));
+            } else {
+                $itemName = is_array($snap) ? ($snap['name'] ?? $snap['item_name'] ?? '-') : '-';
+            }
 
             $namaOutlet = isset($r->outlet_nama) ? trim((string) $r->outlet_nama) : '';
             $displayOutlet = $namaOutlet !== '' ? $namaOutlet : $r->kode_outlet;
