@@ -515,9 +515,12 @@ class PosVoidItemRequestController extends Controller
             $snap = $r->item_snapshot ? json_decode($r->item_snapshot, true) : null;
             $entire = (int) ($r->void_entire_order ?? 0) === 1;
             if ($entire) {
-                $itemName = is_array($snap)
-                    ? ('Void seluruh order · '.($snap['name'] ?? $snap['item_name'] ?? ($r->order_nomor ?: $r->order_id)))
-                    : ('Void seluruh order · '.($r->order_nomor ?: $r->order_id));
+                $label = is_array($snap)
+                    ? ($snap['name'] ?? $snap['item_name'] ?? ($r->order_nomor ?: $r->order_id))
+                    : ($r->order_nomor ?: $r->order_id);
+                $isPaidVoid = is_array($snap) && ! empty($snap['paid_void']);
+                $prefix = $isPaidVoid ? 'Void bill paid · ' : 'Void seluruh order · ';
+                $itemName = $prefix.$label;
             } else {
                 $itemName = is_array($snap) ? ($snap['name'] ?? $snap['item_name'] ?? '-') : '-';
             }

@@ -387,8 +387,8 @@ class RepackController extends Controller
 
             $barcodes = [];
             $serialRows = [];
-            $serialCount = (int) round($qtyHasil);
-            if ($serialCount > 0 && abs($qtyHasil - $serialCount) < 0.00001) {
+            $serialCount = (int) ceil($qtyHasil);
+            if ($serialCount > 0) {
                 for ($i = 0; $i < $serialCount; $i++) {
                     $barcode = 'BRC-' . ($itemHasil->sku ?: 'ITEM') . '-' . Str::upper(Str::random(6));
                     $serial = $this->generateUniqueSerialNumber();
