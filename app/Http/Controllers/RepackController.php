@@ -64,7 +64,7 @@ class RepackController extends Controller
 
         $itemsQuery = Item::with(['smallUnit:id,name', 'mediumUnit:id,name', 'largeUnit:id,name'])
             ->whereHas('category', function ($query) {
-                $query->where('is_asset', '0');
+                $query->where('is_asset', '0')->where('show_pos', '0');
             })
             ->select('id', 'name', 'sku', 'small_unit_id', 'medium_unit_id', 'large_unit_id',
                      'small_conversion_qty', 'medium_conversion_qty');
