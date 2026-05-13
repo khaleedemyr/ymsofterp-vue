@@ -159,6 +159,7 @@ class PosVoidItemRequestController extends Controller
             'kode_outlet' => 'required|string',
             'order_id' => 'required',
             'order_item_id' => 'required',
+            'order_nomor' => 'nullable|string|max:128',
             'reason' => 'required|string|max:2000',
             'approver_user_ids' => 'nullable|array',
             'approver_user_ids.*' => 'integer',
@@ -205,15 +206,35 @@ class PosVoidItemRequestController extends Controller
             ->select('oi.id', 'oi.order_id', 'o.nomor as order_nomor')
             ->first();
 
-        if (! $row) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Order item tidak ditemukan di server (pastikan order sudah sync ke pusat).',
-            ], 404);
+        $orderNomorForInsert = null;
+
+        if ($row) {
+            $orderNomorForInsert = $row->order_nomor;
+        } else {
+            // Order/item belum ada di DB pusat (umum: transaksi belum paid → belum sync).
+            // Tetap boleh ajukan void ke HO selama POS kirim snapshot item yang cukup.
+            $snapshot = $request->input('item_snapshot');
+            $itemLabel = '';
+            if (is_array($snapshot)) {
+                $itemLabel = trim((string) ($snapshot['name'] ?? $snapshot['item_name'] ?? ''));
+            }
+            if ($itemLabel === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order item tidak ada di server pusat (mis. order belum dibayar). Kirim item_snapshot dengan nama item, atau tunggu order tersinkron.',
+                ], 404);
+            }
+
+            $orderNomorForInsert = $request->input('order_nomor');
+            if ($orderNomorForInsert === null || trim((string) $orderNomorForInsert) === '') {
+                $orderNomorForInsert = (string) $orderId;
+            }
         }
 
         $dup = DB::table('pos_void_item_requests')
-            ->where('order_item_id', $orderItemId)
+            ->where('kode_outlet', $kodeOutlet)
+            ->where('order_id', (string) $orderId)
+            ->where('order_item_id', (int) $orderItemId)
             ->where('status', 'pending')
             ->first();
 
@@ -235,7 +256,7 @@ class PosVoidItemRequestController extends Controller
                 'public_token' => $publicToken,
                 'kode_outlet' => $kodeOutlet,
                 'order_id' => (string) $orderId,
-                'order_nomor' => $row->order_nomor,
+                'order_nomor' => $orderNomorForInsert,
                 'order_item_id' => (int) $orderItemId,
                 'requester_user_id' => $request->input('requester_user_id'),
                 'requester_username' => $request->input('requester_username'),
