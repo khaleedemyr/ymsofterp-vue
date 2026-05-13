@@ -55,6 +55,86 @@ class RepackController extends Controller
         ]);
     }
 
+    public function apiCreateData()
+    {
+        $items = Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])
+            ->orderBy('name')
+            ->get();
+        $warehouses = DB::table('warehouses')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        return $this->store($request);
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $repack = Repack::find($id);
+        if (!$repack) {
+            return response()->json(['success' => false, 'message' => 'Data repack tidak ditemukan'], 404);
+        }
+
+        $serialCount = DB::table('inventory_item_serials')
+            ->where('source_type', 'repack')
+            ->where('source_id', $repack->id)
+            ->count();
+        if ($serialCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repack dengan serial tidak bisa diupdate. Rollback serial terlebih dahulu.',
+            ], 422);
+        }
+
+        return $this->saveRepack($request, $repack, true);
+    }
+
+    public function apiDestroy($id)
+    {
+        $repack = Repack::find($id);
+        if (!$repack) {
+            return response()->json(['success' => false, 'message' => 'Data repack tidak ditemukan'], 404);
+        }
+
+        $serialCount = DB::table('inventory_item_serials')
+            ->where('source_type', 'repack')
+            ->where('source_id', $repack->id)
+            ->count();
+        if ($serialCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Repack dengan serial tidak bisa dihapus. Rollback serial terlebih dahulu.',
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $this->reverseRepackMovements($repack->id);
+            $repack->delete();
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Repack berhasil dihapus.',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus repack: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function index(Request $request)
     {
         $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
@@ -93,6 +173,11 @@ class RepackController extends Controller
 
     public function store(Request $request)
     {
+        return $this->saveRepack($request);
+    }
+
+    private function saveRepack(Request $request, ?Repack $existingRepack = null, bool $reverseFirst = false)
+    {
         $request->validate([
             'warehouse_id' => 'required|exists:warehouses,id',
             'item_asal_id' => 'required|exists:items,id',
@@ -110,11 +195,17 @@ class RepackController extends Controller
         $qtyHasilConv = $this->convertQtyByUnit($itemHasil, (int) $request->unit_hasil_id, $qtyHasil);
         $qtyAsalConv = $this->convertSmallToAll($itemAsal, $qtyHasilConv['small']);
 
+        $isUpdate = (bool) $existingRepack;
+
         DB::beginTransaction();
         try {
+            if ($isUpdate && $reverseFirst) {
+                $this->reverseRepackMovements($existingRepack->id);
+            }
+
             $inventoryAsal = DB::table('food_inventory_items')->where('item_id', $itemAsal->id)->first();
             if (!$inventoryAsal) {
-                return response()->json(['message' => 'Inventory item asal belum tersedia.'], 422);
+                throw new \RuntimeException('Inventory item asal belum tersedia.');
             }
 
             $inventoryHasil = DB::table('food_inventory_items')->where('item_id', $itemHasil->id)->first();
@@ -136,9 +227,7 @@ class RepackController extends Controller
                 ->first();
 
             if (!$stockAsal || (float) $stockAsal->qty_small < $qtyAsalConv['small']) {
-                return response()->json([
-                    'message' => 'Stok item asal tidak cukup untuk repack.'
-                ], 422);
+                throw new \RuntimeException('Stok item asal tidak cukup untuk repack.');
             }
 
             $costSmall = (float) ($stockAsal->last_cost_small ?? 0);
@@ -216,17 +305,30 @@ class RepackController extends Controller
                 ]);
             }
 
-            $repack = Repack::create([
-                'repack_number' => 'RP-' . date('Ymd') . '-' . Str::upper(Str::random(4)),
-                'item_asal_id' => $request->item_asal_id,
-                'unit_asal_id' => $itemAsal->small_unit_id,
-                'qty_asal' => $qtyAsalConv['small'],
-                'item_hasil_id' => $request->item_hasil_id,
-                'unit_hasil_id' => $request->unit_hasil_id,
-                'qty_hasil' => $request->qty_hasil,
-                'status' => 'pending',
-                'created_by' => Auth::id(),
-            ]);
+            if ($isUpdate) {
+                $existingRepack->update([
+                    'item_asal_id' => $request->item_asal_id,
+                    'unit_asal_id' => $itemAsal->small_unit_id,
+                    'qty_asal' => $qtyAsalConv['small'],
+                    'item_hasil_id' => $request->item_hasil_id,
+                    'unit_hasil_id' => $request->unit_hasil_id,
+                    'qty_hasil' => $request->qty_hasil,
+                    'status' => $existingRepack->status ?: 'pending',
+                ]);
+                $repack = $existingRepack->fresh();
+            } else {
+                $repack = Repack::create([
+                    'repack_number' => 'RP-' . date('Ymd') . '-' . Str::upper(Str::random(4)),
+                    'item_asal_id' => $request->item_asal_id,
+                    'unit_asal_id' => $itemAsal->small_unit_id,
+                    'qty_asal' => $qtyAsalConv['small'],
+                    'item_hasil_id' => $request->item_hasil_id,
+                    'unit_hasil_id' => $request->unit_hasil_id,
+                    'qty_hasil' => $request->qty_hasil,
+                    'status' => 'pending',
+                    'created_by' => Auth::id(),
+                ]);
+            }
 
             DB::table('food_inventory_cards')->insert([
                 [
@@ -321,16 +423,19 @@ class RepackController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Repack berhasil disimpan dan stok sudah terintegrasi.',
+                'message' => $isUpdate
+                    ? 'Repack berhasil diupdate dan stok sudah terintegrasi.'
+                    : 'Repack berhasil disimpan dan stok sudah terintegrasi.',
                 'repack' => $repack,
                 'barcodes' => $barcodes,
                 'serial_total' => count($serialRows),
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();
+            $statusCode = str_contains(strtolower($e->getMessage()), 'tidak cukup') || str_contains(strtolower($e->getMessage()), 'belum tersedia') ? 422 : 500;
             return response()->json([
                 'message' => 'Gagal memproses repack: ' . $e->getMessage(),
-            ], 500);
+            ], $statusCode);
         }
     }
 
@@ -428,7 +533,39 @@ class RepackController extends Controller
         ]);
     }
 
-    // CRUD dasar (store, update, destroy, show) bisa ditambahkan sesuai kebutuhan
+    private function reverseRepackMovements(int $repackId): void
+    {
+        $cards = DB::table('food_inventory_cards')
+            ->where('reference_type', 'repack')
+            ->where('reference_id', $repackId)
+            ->get();
+
+        foreach ($cards as $card) {
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $card->inventory_item_id)
+                ->where('warehouse_id', $card->warehouse_id)
+                ->first();
+
+            if (!$stock) {
+                continue;
+            }
+
+            DB::table('food_inventory_stocks')
+                ->where('id', $stock->id)
+                ->update([
+                    'qty_small' => (float) $stock->qty_small + (float) ($card->out_qty_small ?? 0) - (float) ($card->in_qty_small ?? 0),
+                    'qty_medium' => (float) ($stock->qty_medium ?? 0) + (float) ($card->out_qty_medium ?? 0) - (float) ($card->in_qty_medium ?? 0),
+                    'qty_large' => (float) ($stock->qty_large ?? 0) + (float) ($card->out_qty_large ?? 0) - (float) ($card->in_qty_large ?? 0),
+                    'value' => (float) ($stock->value ?? 0) + (float) ($card->value_out ?? 0) - (float) ($card->value_in ?? 0),
+                    'updated_at' => now(),
+                ]);
+        }
+
+        DB::table('food_inventory_cards')
+            ->where('reference_type', 'repack')
+            ->where('reference_id', $repackId)
+            ->delete();
+    }
 
     private function convertQtyByUnit(Item $item, int $unitId, float $qty): array
     {

@@ -331,10 +331,7 @@ function deleteOrder() {
             </div>
 
             <div v-else class="bg-white rounded-xl shadow p-6 mb-6 border border-slate-100">
-                <h2 class="text-lg font-bold text-slate-700 mb-2">Service internal</h2>
-                <p class="text-sm text-gray-600">
-                    Non Food Payment dan upload invoice vendor hanya untuk service <strong>External</strong> (vendor luar). Order ini bersifat internal.
-                </p>
+                <p class="text-sm font-semibold text-slate-800">Internal</p>
             </div>
 
             <!-- Approval Flow -->

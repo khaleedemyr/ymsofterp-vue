@@ -248,6 +248,11 @@ Route::prefix('approval-app')->group(function () {
 
         // Repack API + serial routes
         Route::get('/repack', [\App\Http\Controllers\RepackController::class, 'apiIndex']);
+        Route::get('/repack/create-data', [\App\Http\Controllers\RepackController::class, 'apiCreateData']);
+        Route::get('/repack/item-stocks', [\App\Http\Controllers\RepackController::class, 'itemStocks']);
+        Route::post('/repack', [\App\Http\Controllers\RepackController::class, 'apiStore']);
+        Route::put('/repack/{id}', [\App\Http\Controllers\RepackController::class, 'apiUpdate']);
+        Route::delete('/repack/{id}', [\App\Http\Controllers\RepackController::class, 'apiDestroy']);
         Route::get('/repack/{id}', [\App\Http\Controllers\RepackController::class, 'apiShow']);
         Route::get('/repack/{id}/serial-summary', [\App\Http\Controllers\RepackController::class, 'serialSummary']);
         Route::get('/repack/{id}/serials', [\App\Http\Controllers\RepackController::class, 'serialList']);

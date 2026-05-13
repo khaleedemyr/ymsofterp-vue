@@ -188,7 +188,7 @@ function removeApprover(idx) {
 
 function submit() {
     if (isExternal.value && !form.supplier_id) {
-        Swal.fire('Error', 'Pilih supplier untuk service External (vendor luar).', 'error');
+        Swal.fire('Error', 'Pilih supplier (External).', 'error');
         return;
     }
     if (!form.items.length) { Swal.fire('Error', 'Tambahkan minimal 1 item.', 'error'); return; }
@@ -247,11 +247,11 @@ function submit() {
                     <div class="flex flex-wrap gap-4">
                         <label class="inline-flex items-center gap-2 cursor-pointer">
                             <input v-model="form.service_type" type="radio" value="external" class="text-teal-600 focus:ring-teal-500" />
-                            <span class="text-sm text-gray-800"><span class="font-semibold">External</span> — vendor luar (bisa Non Food Payment + invoice vendor)</span>
+                            <span class="text-sm text-gray-800 font-semibold">External</span>
                         </label>
                         <label class="inline-flex items-center gap-2 cursor-pointer">
                             <input v-model="form.service_type" type="radio" value="internal" class="text-teal-600 focus:ring-teal-500" />
-                            <span class="text-sm text-gray-800"><span class="font-semibold">Internal</span> — tim/divisi sendiri (tanpa supplier &amp; tanpa NFP)</span>
+                            <span class="text-sm text-gray-800 font-semibold">Internal</span>
                         </label>
                     </div>
                 </div>
@@ -276,11 +276,6 @@ function submit() {
                             </button>
                         </div>
                     </div>
-                </div>
-
-                <!-- Internal: no supplier -->
-                <div v-else class="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    Service <strong>internal</strong> tidak memerlukan supplier. Alur pembayaran vendor (Non Food Payment) tidak digunakan.
                 </div>
 
                 <!-- Description & Cost -->
