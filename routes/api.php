@@ -1666,6 +1666,8 @@ Route::prefix('pos/sync')->group(function () {
     Route::get('/investors', [PosSyncController::class, 'syncInvestors'])->name('api.pos.sync.investors');
     Route::get('/officer-checks', [PosSyncController::class, 'syncOfficerChecks'])->name('api.pos.sync.officer-checks');
     Route::get('/retail-food', [PosSyncController::class, 'syncRetailFood'])->name('api.pos.sync.retail-food');
+    Route::get('/item-boms', [PosSyncController::class, 'syncItemBoms'])->name('api.pos.sync.item-boms');
+    Route::get('/outlet-food-stock', [PosSyncController::class, 'syncOutletFoodStock'])->name('api.pos.sync.outlet-food-stock');
 });
 
 // PR Foods routes - moved to web.php for web app usage

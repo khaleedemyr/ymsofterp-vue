@@ -265,6 +265,46 @@ class PosSyncController extends Controller
                 'last_updated' => $retailFoodLastUpdated
             ];
 
+            // POS BOM lines (parent items updated)
+            $itemBomLastUpdated = DB::table('items')
+                ->whereIn('id', function ($q) {
+                    $q->select('item_id')->from('item_bom')->distinct();
+                })
+                ->max('updated_at');
+
+            $changes['item_boms'] = [
+                'has_changes' => !isset($lastSync['item_boms']) ||
+                    ($itemBomLastUpdated && $itemBomLastUpdated > $lastSync['item_boms']),
+                'last_updated' => $itemBomLastUpdated,
+            ];
+
+            // Outlet food inventory snapshot (Kitchen + Bar warehouses for this outlet)
+            $kitchenWh = DB::table('warehouse_outlets')
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'active')
+                ->where('name', 'Kitchen')
+                ->value('id');
+            $barWh = DB::table('warehouse_outlets')
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'active')
+                ->where('name', 'Bar')
+                ->value('id');
+            $whIds = array_values(array_filter([$kitchenWh, $barWh]));
+            $outletFoodStockLastUpdated = null;
+            if (count($whIds) > 0) {
+                $qSt = DB::table('outlet_food_inventory_stocks')->whereIn('warehouse_outlet_id', $whIds);
+                if (Schema::hasColumn('outlet_food_inventory_stocks', 'id_outlet')) {
+                    $qSt->where('id_outlet', $idOutlet);
+                }
+                $outletFoodStockLastUpdated = $qSt->max('updated_at');
+            }
+
+            $changes['outlet_food_stock'] = [
+                'has_changes' => !isset($lastSync['outlet_food_stock']) ||
+                    ($outletFoodStockLastUpdated && $outletFoodStockLastUpdated > $lastSync['outlet_food_stock']),
+                'last_updated' => $outletFoodStockLastUpdated,
+            ];
+
             return response()->json([
                 'success' => true,
                 'data' => $changes
@@ -807,14 +847,23 @@ class PosSyncController extends Controller
         try {
             $modifierOptions = DB::table('modifier_options')->get();
 
-            $formattedModifierOptions = array_map(function($option) {
-                return [
+            $hasModifierBomJson = Schema::hasColumn('modifier_options', 'modifier_bom_json');
+
+            $formattedModifierOptions = array_map(function ($option) use ($hasModifierBomJson) {
+                $row = [
                     'id' => $option->id,
                     'modifier_id' => $option->modifier_id,
                     'name' => $option->name ?? '',
                     'created_at' => $option->created_at,
-                    'updated_at' => $option->updated_at
+                    'updated_at' => $option->updated_at,
                 ];
+                if ($hasModifierBomJson) {
+                    $row['modifier_bom_json'] = $option->modifier_bom_json ?? null;
+                } else {
+                    $row['modifier_bom_json'] = null;
+                }
+
+                return $row;
             }, $modifierOptions->toArray());
 
             return response()->json([
@@ -1859,6 +1908,176 @@ class PosSyncController extends Controller
                 'success' => false,
                 'message' => 'Failed to sync retail_food: ' . $e->getMessage(),
                 'data' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync item BOM lines for POS (menu → raw materials), same basis as stock cut.
+     */
+    public function syncItemBoms(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'kode_outlet' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            $hasStockCutCol = Schema::hasColumn('item_bom', 'stock_cut');
+
+            $rows = DB::table('item_bom as ib')
+                ->join('items as parent', 'parent.id', '=', 'ib.item_id')
+                ->where('parent.status', 'active')
+                ->select(
+                    'ib.item_id',
+                    'ib.material_item_id',
+                    'ib.qty',
+                    'ib.unit_id',
+                    $hasStockCutCol ? DB::raw('COALESCE(ib.stock_cut, 0) as stock_cut') : DB::raw('0 as stock_cut')
+                )
+                ->orderBy('ib.item_id')
+                ->get();
+
+            $formatted = array_map(function ($row) {
+                return [
+                    'item_id' => (int) $row->item_id,
+                    'material_item_id' => (int) $row->material_item_id,
+                    'qty' => (float) $row->qty,
+                    'unit_id' => (int) $row->unit_id,
+                    'stock_cut' => (bool) $row->stock_cut,
+                ];
+            }, $rows->toArray());
+
+            return response()->json([
+                'success' => true,
+                'data' => $formatted,
+                'count' => count($formatted),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('POS Sync: Sync Item BOMs Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync item_boms: ' . $e->getMessage(),
+                'data' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync outlet food inventory qty_small per material × warehouse (Kitchen / Bar).
+     */
+    public function syncOutletFoodStock(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'kode_outlet' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 400);
+            }
+
+            $kodeOutlet = $request->input('kode_outlet');
+            $outlet = DB::table('tbl_data_outlet')->where('qr_code', $kodeOutlet)->first();
+
+            if (!$outlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Outlet not found',
+                    'data' => [],
+                ], 404);
+            }
+
+            $idOutlet = $outlet->id_outlet;
+
+            $kitchenWh = DB::table('warehouse_outlets')
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'active')
+                ->where('name', 'Kitchen')
+                ->first();
+            $barWh = DB::table('warehouse_outlets')
+                ->where('outlet_id', $idOutlet)
+                ->where('status', 'active')
+                ->where('name', 'Bar')
+                ->first();
+
+            $whIds = array_values(array_filter([
+                $kitchenWh ? $kitchenWh->id : null,
+                $barWh ? $barWh->id : null,
+            ]));
+
+            if (count($whIds) === 0) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'id_outlet' => (int) $idOutlet,
+                        'warehouse_kitchen_id' => null,
+                        'warehouse_bar_id' => null,
+                        'stocks' => [],
+                        'synced_at' => Carbon::now()->toIso8601String(),
+                    ],
+                ]);
+            }
+
+            $q = DB::table('outlet_food_inventory_stocks as s')
+                ->join('outlet_food_inventory_items as ii', 'ii.id', '=', 's.inventory_item_id')
+                ->whereIn('s.warehouse_outlet_id', $whIds);
+
+            if (Schema::hasColumn('outlet_food_inventory_stocks', 'id_outlet')) {
+                $q->where('s.id_outlet', $idOutlet);
+            }
+
+            $raw = $q->select(
+                'ii.item_id as material_item_id',
+                's.warehouse_outlet_id',
+                's.qty_small',
+                's.updated_at'
+            )->get();
+
+            $stocks = [];
+            foreach ($raw as $row) {
+                $stocks[] = [
+                    'material_item_id' => (int) $row->material_item_id,
+                    'warehouse_outlet_id' => (int) $row->warehouse_outlet_id,
+                    'qty_small' => (float) ($row->qty_small ?? 0),
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id_outlet' => (int) $idOutlet,
+                    'warehouse_kitchen_id' => $kitchenWh ? (int) $kitchenWh->id : null,
+                    'warehouse_bar_id' => $barWh ? (int) $barWh->id : null,
+                    'stocks' => $stocks,
+                    'synced_at' => Carbon::now()->toIso8601String(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('POS Sync: Sync Outlet Food Stock Error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync outlet_food_stock: ' . $e->getMessage(),
+                'data' => [],
             ], 500);
         }
     }
