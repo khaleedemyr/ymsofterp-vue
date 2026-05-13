@@ -36,7 +36,8 @@ class NonFoodPayment extends Model
         'notes',
         'is_partial_payment',
         'payment_sequence',
-        'coa_id'
+        'coa_id',
+        'asset_service_order_id',
     ];
 
     protected $casts = [
@@ -62,6 +63,11 @@ class NonFoodPayment extends Model
     public function retailNonFood()
     {
         return $this->belongsTo(RetailNonFood::class, 'retail_non_food_id');
+    }
+
+    public function assetServiceOrder()
+    {
+        return $this->belongsTo(AssetServiceOrder::class, 'asset_service_order_id');
     }
 
     public function supplier()

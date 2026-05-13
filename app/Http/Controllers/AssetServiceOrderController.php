@@ -6,6 +6,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use App\Models\AssetServiceOrder;
 use App\Models\AssetServiceOrderItem;
 use App\Models\AssetServiceOrderApprovalFlow;
@@ -24,15 +27,7 @@ class AssetServiceOrderController extends Controller
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
             ->leftJoin('users as u', 's.created_by', '=', 'u.id')
-            ->select(
-                's.id', 's.number', 's.date', 's.description',
-                's.estimated_cost', 's.actual_cost', 's.status',
-                's.sent_date', 's.return_date', 's.created_at',
-                'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name',
-                'sp.name as supplier_name',
-                'u.nama_lengkap as creator_name'
-            );
+            ->select($this->assetServiceOrderListSelect());
 
         if ($user->id_outlet != 1) {
             $query->where('s.outlet_id', $user->id_outlet);
@@ -58,6 +53,9 @@ class AssetServiceOrderController extends Controller
         if ($request->outlet_id) {
             $query->where('s.outlet_id', $request->outlet_id);
         }
+        if (Schema::hasColumn('asset_service_orders', 'service_type') && $request->filled('service_type')) {
+            $query->where('s.service_type', $request->service_type);
+        }
 
         $serviceOrders = $query->orderByDesc('s.created_at')->paginate(15)->withQueryString();
 
@@ -69,7 +67,7 @@ class AssetServiceOrderController extends Controller
 
         return inertia('AssetServiceOrder/Index', [
             'serviceOrders' => $serviceOrders,
-            'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id']),
+            'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id', 'service_type']),
             'user' => $user,
             'outlets' => $outlets,
         ]);
@@ -99,37 +97,30 @@ class AssetServiceOrderController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'date' => 'required|date',
-            'outlet_id' => 'required|integer',
-            'warehouse_outlet_id' => 'required|integer',
-            'supplier_id' => 'required|integer|exists:suppliers,id',
-            'description' => 'required|string',
-            'estimated_cost' => 'nullable|numeric|min:0',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|integer',
-            'items.*.qty_out' => 'required|numeric|min:0.01',
-            'items.*.selected_unit' => 'required|string',
-            'items.*.note' => 'nullable|string',
-            'approvers' => 'required|array|min:1',
-            'approvers.*' => 'required|integer|exists:users,id',
-        ]);
+        $this->mergeDefaultAssetServiceType($request);
+
+        $validated = $request->validate($this->rulesForAssetServiceStore($request));
 
         DB::beginTransaction();
         try {
             $number = AssetServiceOrder::generateNumber();
 
-            $order = AssetServiceOrder::create([
+            $createPayload = [
                 'number' => $number,
                 'date' => $validated['date'],
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
-                'supplier_id' => $validated['supplier_id'],
+                'supplier_id' => !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
                 'description' => $validated['description'],
                 'estimated_cost' => $validated['estimated_cost'] ?? 0,
                 'status' => 'waiting_approval',
                 'created_by' => Auth::id(),
-            ]);
+            ];
+            if (Schema::hasColumn('asset_service_orders', 'service_type')) {
+                $createPayload['service_type'] = $validated['service_type'];
+            }
+
+            $order = AssetServiceOrder::create($createPayload);
 
             foreach ($validated['items'] as $itemData) {
                 AssetServiceOrderItem::create([
@@ -206,13 +197,35 @@ class AssetServiceOrderController extends Controller
 
         $canReceiveReturn = in_array($order->status, ['in_service', 'partially_returned']);
 
+        $vendorInvoicePath = Schema::hasColumn('asset_service_orders', 'vendor_invoice_path')
+            ? $order->vendor_invoice_path
+            : null;
+
+        $linkedNonFoodPayment = null;
+        if (Schema::hasColumn('non_food_payments', 'asset_service_order_id')) {
+            $linkedNonFoodPayment = DB::table('non_food_payments')
+                ->where('asset_service_order_id', $order->id)
+                ->whereNotIn('status', ['cancelled', 'rejected'])
+                ->select('id', 'payment_number', 'status', 'amount')
+                ->first();
+        }
+
+        $canCreateNonFoodPayment = Schema::hasColumn('non_food_payments', 'asset_service_order_id')
+            && in_array($order->status, ['in_service', 'partially_returned', 'returned'], true)
+            && !$linkedNonFoodPayment
+            && (!Schema::hasColumn('asset_service_orders', 'service_type') || ($order->service_type ?? 'external') === 'external');
+
         $orderData = [
             'id' => $order->id,
             'number' => $order->number,
             'date' => $order->date->format('Y-m-d'),
             'description' => $order->description,
+            'service_type' => Schema::hasColumn('asset_service_orders', 'service_type')
+                ? ($order->service_type ?? 'external')
+                : 'external',
             'estimated_cost' => $order->estimated_cost,
             'actual_cost' => $order->actual_cost,
+            'vendor_invoice_path' => $vendorInvoicePath,
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
@@ -252,9 +265,49 @@ class AssetServiceOrderController extends Controller
 
         return inertia('AssetServiceOrder/Show', [
             'serviceOrder' => $orderData,
+            'linkedNonFoodPayment' => $linkedNonFoodPayment,
+            'canCreateNonFoodPayment' => $canCreateNonFoodPayment,
             'canApprove' => $canApprove,
             'canReceiveReturn' => $canReceiveReturn,
             'user' => $user,
+        ]);
+    }
+
+    public function uploadVendorInvoice(Request $request, $id)
+    {
+        $request->validate([
+            'invoice' => 'required|file|mimes:pdf,jpg,jpeg,png|max:15360',
+        ]);
+
+        $order = AssetServiceOrder::findOrFail($id);
+        $this->assertUserCanView(auth()->user(), $order);
+
+        if (!Schema::hasColumn('asset_service_orders', 'vendor_invoice_path')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kolom vendor_invoice_path belum ada. Jalankan database/sql/asset_service_invoice_and_nfp_link.sql',
+            ], 503);
+        }
+
+        if (Schema::hasColumn('asset_service_orders', 'service_type') && ($order->service_type ?? 'external') !== 'external') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Upload invoice vendor hanya untuk service tipe External (vendor luar).',
+            ], 422);
+        }
+
+        $old = $order->vendor_invoice_path;
+        if ($old && Storage::disk('public')->exists($old)) {
+            Storage::disk('public')->delete($old);
+        }
+
+        $path = $request->file('invoice')->store('asset-service-invoices', 'public');
+        $order->update(['vendor_invoice_path' => $path]);
+
+        return response()->json([
+            'success' => true,
+            'path'  => $path,
+            'url'   => asset('storage/' . $path),
         ]);
     }
 
@@ -482,15 +535,7 @@ class AssetServiceOrderController extends Controller
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
             ->leftJoin('users as u', 's.created_by', '=', 'u.id')
-            ->select(
-                's.id', 's.number', 's.date', 's.description',
-                's.estimated_cost', 's.actual_cost', 's.status',
-                's.sent_date', 's.return_date', 's.created_at',
-                'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name',
-                'sp.name as supplier_name',
-                'u.nama_lengkap as creator_name'
-            );
+            ->select($this->assetServiceOrderListSelect());
 
         if ($user->id_outlet != 1) {
             $query->where('s.outlet_id', $user->id_outlet);
@@ -511,6 +556,9 @@ class AssetServiceOrderController extends Controller
         }
         if ($request->status) {
             $query->where('s.status', $request->status);
+        }
+        if (Schema::hasColumn('asset_service_orders', 'service_type') && $request->filled('service_type')) {
+            $query->where('s.service_type', $request->service_type);
         }
 
         $page = $request->get('page', 1);
@@ -583,6 +631,9 @@ class AssetServiceOrderController extends Controller
             'number' => $order->number,
             'date' => $order->date->format('Y-m-d'),
             'description' => $order->description,
+            'service_type' => Schema::hasColumn('asset_service_orders', 'service_type')
+                ? ($order->service_type ?? 'external')
+                : 'external',
             'estimated_cost' => $order->estimated_cost,
             'actual_cost' => $order->actual_cost,
             'status' => $order->status,
@@ -628,37 +679,30 @@ class AssetServiceOrderController extends Controller
 
     public function apiStore(Request $request)
     {
-        $validated = $request->validate([
-            'date' => 'required|date',
-            'outlet_id' => 'required|integer',
-            'warehouse_outlet_id' => 'required|integer',
-            'supplier_id' => 'required|integer|exists:suppliers,id',
-            'description' => 'required|string',
-            'estimated_cost' => 'nullable|numeric|min:0',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|integer',
-            'items.*.qty_out' => 'required|numeric|min:0.01',
-            'items.*.selected_unit' => 'required|string',
-            'items.*.note' => 'nullable|string',
-            'approvers' => 'required|array|min:1',
-            'approvers.*' => 'required|integer|exists:users,id',
-        ]);
+        $this->mergeDefaultAssetServiceType($request);
+
+        $validated = $request->validate($this->rulesForAssetServiceStore($request));
 
         DB::beginTransaction();
         try {
             $number = AssetServiceOrder::generateNumber();
 
-            $order = AssetServiceOrder::create([
+            $createPayload = [
                 'number' => $number,
                 'date' => $validated['date'],
                 'outlet_id' => $validated['outlet_id'],
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
-                'supplier_id' => $validated['supplier_id'],
+                'supplier_id' => !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
                 'description' => $validated['description'],
                 'estimated_cost' => $validated['estimated_cost'] ?? 0,
                 'status' => 'waiting_approval',
                 'created_by' => Auth::id(),
-            ]);
+            ];
+            if (Schema::hasColumn('asset_service_orders', 'service_type')) {
+                $createPayload['service_type'] = $validated['service_type'];
+            }
+
+            $order = AssetServiceOrder::create($createPayload);
 
             foreach ($validated['items'] as $itemData) {
                 AssetServiceOrderItem::create([
@@ -1082,7 +1126,9 @@ class AssetServiceOrderController extends Controller
                 'user_id' => $nextApprover->id,
                 'type' => 'asset_service_order_approval',
                 'title' => 'Approval Asset Service',
-                'message' => "Asset Service {$order->number} (Supplier: {$order->supplier_name}) dari outlet {$order->nama_outlet} oleh {$order->creator_name} menunggu approval Anda.",
+                'message' => "Asset Service {$order->number}"
+                    . (($order->supplier_name ?? null) ? " (Supplier: {$order->supplier_name})" : ' (Internal)')
+                    . " dari outlet {$order->nama_outlet} oleh {$order->creator_name} menunggu approval Anda.",
                 'is_read' => 0,
             ]);
         } catch (\Exception $e) {
@@ -1091,6 +1137,72 @@ class AssetServiceOrderController extends Controller
     }
 
     // ─── HELPERS ─────────────────────────────────────────────────────
+
+    private function assetServiceOrderListSelect(): array
+    {
+        $cols = [
+            's.id', 's.number', 's.date', 's.description',
+            's.estimated_cost', 's.actual_cost', 's.status',
+            's.sent_date', 's.return_date', 's.created_at',
+            'o.nama_outlet as outlet_name',
+            'wo.name as warehouse_outlet_name',
+            'sp.name as supplier_name',
+            'u.nama_lengkap as creator_name',
+        ];
+        if (Schema::hasColumn('asset_service_orders', 'service_type')) {
+            array_splice($cols, 4, 0, ['s.service_type']);
+        }
+
+        return $cols;
+    }
+
+    private function mergeDefaultAssetServiceType(Request $request): void
+    {
+        if (!Schema::hasColumn('asset_service_orders', 'service_type')) {
+            return;
+        }
+        $v = $request->input('service_type');
+        if (!in_array($v, ['internal', 'external'], true)) {
+            $request->merge(['service_type' => 'external']);
+        }
+    }
+
+    private function rulesForAssetServiceStore(Request $request): array
+    {
+        $hasSvcType = Schema::hasColumn('asset_service_orders', 'service_type');
+
+        $rules = [
+            'date' => 'required|date',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
+            'supplier_id' => [
+                Rule::requiredIf(function () use ($request, $hasSvcType) {
+                    if (!$hasSvcType) {
+                        return true;
+                    }
+
+                    return ($request->input('service_type', 'external')) === 'external';
+                }),
+                'nullable',
+                'integer',
+                'exists:suppliers,id',
+            ],
+            'description' => 'required|string',
+            'estimated_cost' => 'nullable|numeric|min:0',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer',
+            'items.*.qty_out' => 'required|numeric|min:0.01',
+            'items.*.selected_unit' => 'required|string',
+            'items.*.note' => 'nullable|string',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ];
+        if ($hasSvcType) {
+            $rules['service_type'] = 'required|in:internal,external';
+        }
+
+        return $rules;
+    }
 
     private function assertUserCanView($user, AssetServiceOrder $order): void
     {

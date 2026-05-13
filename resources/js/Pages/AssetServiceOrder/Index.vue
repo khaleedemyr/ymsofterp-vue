@@ -18,6 +18,7 @@ const filters = ref({
     to: props.filters?.to || '',
     status: props.filters?.status || '',
     outlet_id: props.filters?.outlet_id || '',
+    service_type: props.filters?.service_type || '',
 });
 
 const applyFilters = debounce(() => {
@@ -29,7 +30,19 @@ const applyFilters = debounce(() => {
 watch(filters, applyFilters, { deep: true });
 
 function clearFilters() {
-    filters.value = { search: '', from: '', to: '', status: '', outlet_id: '' };
+    filters.value = { search: '', from: '', to: '', status: '', outlet_id: '', service_type: '' };
+}
+
+function serviceTypeLabel(t) {
+    if (t === 'internal') return 'Internal';
+    if (t === 'external') return 'External';
+    return '—';
+}
+
+function serviceTypeBadge(t) {
+    if (t === 'internal') return 'bg-slate-100 text-slate-800';
+    if (t === 'external') return 'bg-violet-100 text-violet-800';
+    return 'bg-gray-100 text-gray-600';
 }
 
 function statusBadge(status) {
@@ -91,7 +104,7 @@ function deleteOrder(id) {
             </div>
 
             <!-- Filters -->
-            <div class="bg-white rounded-xl shadow p-5 mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="bg-white rounded-xl shadow p-5 mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Cari</label>
                     <input v-model="filters.search" type="text" placeholder="No. / Deskripsi / Supplier..."
@@ -119,6 +132,15 @@ function deleteOrder(id) {
                         <option value="rejected">Rejected</option>
                     </select>
                 </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Tipe</label>
+                    <select v-model="filters.service_type"
+                        class="w-full rounded-lg border-gray-300 text-sm focus:ring-teal-500 focus:border-teal-500">
+                        <option value="">Semua</option>
+                        <option value="external">External</option>
+                        <option value="internal">Internal</option>
+                    </select>
+                </div>
                 <div v-if="user.id_outlet == 1">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Outlet</label>
                     <select v-model="filters.outlet_id"
@@ -134,6 +156,7 @@ function deleteOrder(id) {
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-teal-50">
                         <tr>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tipe</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Nomor</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tanggal</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Outlet</th>
@@ -147,14 +170,19 @@ function deleteOrder(id) {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         <tr v-if="!serviceOrders.data || !serviceOrders.data.length">
-                            <td colspan="9" class="px-5 py-8 text-center text-gray-400">Tidak ada data service order.</td>
+                            <td colspan="10" class="px-5 py-8 text-center text-gray-400">Tidak ada data service order.</td>
                         </tr>
                         <tr v-for="s in serviceOrders.data" :key="s.id" class="hover:bg-teal-50/30 transition">
+                            <td class="px-5 py-3">
+                                <span :class="serviceTypeBadge(s.service_type)" class="px-2 py-1 rounded-full text-xs font-semibold">
+                                    {{ serviceTypeLabel(s.service_type) }}
+                                </span>
+                            </td>
                             <td class="px-5 py-3 font-semibold text-teal-700">{{ s.number }}</td>
                             <td class="px-5 py-3 text-sm text-gray-600">{{ s.date }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ s.outlet_name }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ s.warehouse_outlet_name }}</td>
-                            <td class="px-5 py-3 text-sm text-gray-700">{{ s.supplier_name }}</td>
+                            <td class="px-5 py-3 text-sm text-gray-700">{{ s.supplier_name || '—' }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700 text-right">{{ formatCurrency(s.estimated_cost) }}</td>
                             <td class="px-5 py-3">
                                 <span :class="statusBadge(s.status)"

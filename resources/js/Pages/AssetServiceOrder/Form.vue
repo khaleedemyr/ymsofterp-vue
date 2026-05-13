@@ -18,6 +18,7 @@ const form = useForm({
     date: new Date().toISOString().slice(0, 10),
     outlet_id: isHQ.value ? '' : props.user?.id_outlet,
     warehouse_outlet_id: '',
+    service_type: 'external',
     supplier_id: '',
     description: '',
     estimated_cost: '',
@@ -37,6 +38,14 @@ watch(() => form.outlet_id, () => {
 
 watch(() => form.warehouse_outlet_id, () => {
     form.items = [];
+});
+
+const isExternal = computed(() => form.service_type === 'external');
+
+watch(() => form.service_type, (v) => {
+    if (v === 'internal') {
+        clearSupplier();
+    }
 });
 
 // ── Supplier search ──
@@ -178,7 +187,10 @@ function removeApprover(idx) {
 }
 
 function submit() {
-    if (!form.supplier_id) { Swal.fire('Error', 'Pilih supplier terlebih dahulu.', 'error'); return; }
+    if (isExternal.value && !form.supplier_id) {
+        Swal.fire('Error', 'Pilih supplier untuk service External (vendor luar).', 'error');
+        return;
+    }
     if (!form.items.length) { Swal.fire('Error', 'Tambahkan minimal 1 item.', 'error'); return; }
     if (!form.approvers.length) { Swal.fire('Error', 'Tambahkan minimal 1 approver.', 'error'); return; }
 
@@ -229,8 +241,23 @@ function submit() {
                     </div>
                 </div>
 
-                <!-- Supplier -->
+                <!-- Tipe service -->
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tipe service <span class="text-red-500">*</span></label>
+                    <div class="flex flex-wrap gap-4">
+                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                            <input v-model="form.service_type" type="radio" value="external" class="text-teal-600 focus:ring-teal-500" />
+                            <span class="text-sm text-gray-800"><span class="font-semibold">External</span> — vendor luar (bisa Non Food Payment + invoice vendor)</span>
+                        </label>
+                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                            <input v-model="form.service_type" type="radio" value="internal" class="text-teal-600 focus:ring-teal-500" />
+                            <span class="text-sm text-gray-800"><span class="font-semibold">Internal</span> — tim/divisi sendiri (tanpa supplier &amp; tanpa NFP)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Supplier -->
+                <div v-if="isExternal">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Supplier <span class="text-red-500">*</span></label>
                     <div v-if="selectedSupplier" class="flex items-center gap-2 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
                         <span class="text-sm font-medium text-teal-800">{{ selectedSupplier.name }}</span>
@@ -249,6 +276,11 @@ function submit() {
                             </button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Internal: no supplier -->
+                <div v-else class="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Service <strong>internal</strong> tidak memerlukan supplier. Alur pembayaran vendor (Non Food Payment) tidak digunakan.
                 </div>
 
                 <!-- Description & Cost -->

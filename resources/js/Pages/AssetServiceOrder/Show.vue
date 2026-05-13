@@ -1,18 +1,22 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
     serviceOrder: Object,
+    linkedNonFoodPayment: Object,
+    canCreateNonFoodPayment: Boolean,
     canApprove: Boolean,
     canReceiveReturn: Boolean,
     user: Object,
 });
 
 const so = props.serviceOrder;
+
+const isExternalService = computed(() => (props.serviceOrder?.service_type ?? 'external') === 'external');
 
 function statusBadge(status) {
     const map = {
@@ -166,6 +170,31 @@ async function submitReturn() {
     }
 }
 
+async function uploadVendorInvoice(ev) {
+    const file = ev.target?.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('invoice', file);
+    try {
+        await axios.post(`/asset-service-orders/${so.id}/vendor-invoice`, fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        Swal.fire('Berhasil', 'Invoice vendor berhasil diunggah.', 'success').then(() => router.reload());
+    } catch (err) {
+        Swal.fire('Gagal', err.response?.data?.message || 'Upload gagal.', 'error');
+    }
+    ev.target.value = '';
+}
+
+function goNonFoodPaymentCreate() {
+    router.visit(`/non-food-payments/create-from-asset-service/${so.id}`);
+}
+
+function goNonFoodPaymentShow() {
+    if (!props.linkedNonFoodPayment?.id) return;
+    router.visit(`/non-food-payments/${props.linkedNonFoodPayment.id}`);
+}
+
 function deleteOrder() {
     Swal.fire({
         title: 'Hapus Service Order?',
@@ -206,12 +235,21 @@ function deleteOrder() {
                         <div class="font-medium">{{ so.date }}</div>
                     </div>
                     <div>
+                        <div class="text-gray-400 text-xs mb-1">Tipe</div>
+                        <span
+                            :class="(so.service_type ?? 'external') === 'internal' ? 'bg-slate-100 text-slate-800' : 'bg-violet-100 text-violet-800'"
+                            class="px-2.5 py-1 rounded-full text-xs font-semibold"
+                        >
+                            {{ (so.service_type ?? 'external') === 'internal' ? 'Internal' : 'External' }}
+                        </span>
+                    </div>
+                    <div>
                         <div class="text-gray-400 text-xs mb-1">Status</div>
                         <span :class="statusBadge(so.status)" class="px-2.5 py-1 rounded-full text-xs font-semibold">{{ statusLabel(so.status) }}</span>
                     </div>
                     <div>
                         <div class="text-gray-400 text-xs mb-1">Supplier</div>
-                        <div class="font-medium">{{ so.supplier_name }}</div>
+                        <div class="font-medium">{{ so.supplier_name || '—' }}</div>
                     </div>
                     <div>
                         <div class="text-gray-400 text-xs mb-1">Outlet</div>
@@ -246,6 +284,57 @@ function deleteOrder() {
                         <div>{{ so.return_date }}</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Invoice vendor & Non Food Payment (hanya External) -->
+            <div v-if="isExternalService" class="bg-white rounded-xl shadow p-6 mb-6">
+                <h2 class="text-lg font-bold text-teal-700 mb-4">Invoice &amp; pembayaran vendor</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div class="text-sm font-medium text-gray-700 mb-2">Upload invoice vendor (PDF / JPG / PNG)</div>
+                        <p v-if="so.vendor_invoice_path" class="text-sm mb-2">
+                            <a :href="`/storage/${so.vendor_invoice_path}`" target="_blank" class="text-teal-600 hover:underline font-medium">
+                                <i class="fa fa-file-pdf mr-1"></i> Lihat file terunggah
+                            </a>
+                        </p>
+                        <label class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 text-sm font-medium cursor-pointer hover:bg-teal-100 transition">
+                            <i class="fa fa-upload"></i>
+                            Pilih file
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" @change="uploadVendorInvoice" />
+                        </label>
+                        <p class="text-xs text-gray-500 mt-2">Maks. 15 MB. Ganti file akan menimpa yang lama.</p>
+                    </div>
+                    <div>
+                        <div class="text-sm font-medium text-gray-700 mb-2">Non Food Payment</div>
+                        <p v-if="linkedNonFoodPayment" class="text-sm text-gray-700 mb-2">
+                            Terhubung:
+                            <button type="button" class="text-teal-700 font-semibold hover:underline" @click="goNonFoodPaymentShow">
+                                {{ linkedNonFoodPayment.payment_number }}
+                            </button>
+                            <span class="text-gray-500">({{ linkedNonFoodPayment.status }})</span>
+                        </p>
+                        <p v-else class="text-sm text-gray-600 mb-2">Belum ada pembayaran tercatat untuk service order ini.</p>
+                        <button
+                            v-if="canCreateNonFoodPayment"
+                            type="button"
+                            @click="goNonFoodPaymentCreate"
+                            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow transition"
+                        >
+                            <i class="fa-solid fa-credit-card"></i>
+                            Buat Non Food Payment
+                        </button>
+                        <p v-if="!canCreateNonFoodPayment && !linkedNonFoodPayment && isExternalService" class="text-xs text-amber-700 mt-2">
+                            Tombol aktif setelah approval (in service / return) dan migrasi SQL Non Food Payment terpasang.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else class="bg-white rounded-xl shadow p-6 mb-6 border border-slate-100">
+                <h2 class="text-lg font-bold text-slate-700 mb-2">Service internal</h2>
+                <p class="text-sm text-gray-600">
+                    Non Food Payment dan upload invoice vendor hanya untuk service <strong>External</strong> (vendor luar). Order ini bersifat internal.
+                </p>
             </div>
 
             <!-- Approval Flow -->

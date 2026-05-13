@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AssetServiceOrder;
 use App\Models\NonFoodPayment;
 use App\Models\PurchaseOrderOps;
 use App\Models\PurchaseRequisition;
@@ -484,6 +485,91 @@ class NonFoodPaymentController extends Controller
             'availablePRs' => $availablePRs,
             'banks' => $banks,
             'filters' => $request->only(['supplier_id', 'date_from', 'date_to'])
+        ]);
+    }
+
+    /**
+     * Form singkat: Non Food Payment untuk biaya vendor Asset Service Order.
+     */
+    public function createFromAssetService(Request $request, $assetServiceOrderId)
+    {
+        if (!Schema::hasColumn('non_food_payments', 'asset_service_order_id')) {
+            return redirect()->route('non-food-payments.index')
+                ->with('error', 'Fitur belum siap: jalankan database/sql/asset_service_invoice_and_nfp_link.sql pada database.');
+        }
+
+        $user = Auth::user();
+        $order = AssetServiceOrder::with(['supplier', 'outlet'])->find($assetServiceOrderId);
+        if (!$order) {
+            abort(404);
+        }
+        if ((int) ($user->id_outlet ?? 0) !== 1 && (int) ($user->id_outlet ?? 0) !== (int) $order->outlet_id) {
+            abort(403, 'Anda tidak memiliki akses.');
+        }
+
+        if (!in_array($order->status, ['in_service', 'partially_returned', 'returned'], true)) {
+            return redirect()->route('asset-service-orders.show', $order->id)
+                ->with('error', 'Non Food Payment untuk service dapat dibuat setelah order disetujui (status in service / return).');
+        }
+
+        if (Schema::hasColumn('asset_service_orders', 'service_type') && ($order->service_type ?? 'external') !== 'external') {
+            return redirect()->route('asset-service-orders.show', $order->id)
+                ->with('error', 'Non Food Payment hanya untuk Asset Service tipe External (vendor luar).');
+        }
+        if (empty($order->supplier_id)) {
+            return redirect()->route('asset-service-orders.show', $order->id)
+                ->with('error', 'Service order ini tidak memiliki supplier; tidak dapat membuat Non Food Payment.');
+        }
+
+        $existing = NonFoodPayment::withoutGlobalScopes()
+            ->where('asset_service_order_id', $order->id)
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->first();
+        if ($existing) {
+            return redirect()->route('non-food-payments.show', $existing->id)
+                ->with('info', 'Service order ini sudah terhubung ke Non Food Payment.');
+        }
+
+        $banks = \App\Models\BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->orderBy('bank_name')
+            ->get()
+            ->map(function ($bank) {
+                return [
+                    'id' => $bank->id,
+                    'bank_name' => $bank->bank_name,
+                    'account_number' => $bank->account_number,
+                    'account_name' => $bank->account_name,
+                    'outlet_id' => $bank->outlet_id,
+                    'outlet' => $bank->outlet ? [
+                        'id_outlet' => $bank->outlet->id_outlet,
+                        'nama_outlet' => $bank->outlet->nama_outlet,
+                    ] : null,
+                    'outlet_name' => $bank->outlet ? $bank->outlet->nama_outlet : 'Head Office',
+                ];
+            });
+
+        $suggested = (float) $order->actual_cost > 0
+            ? (float) $order->actual_cost
+            : (float) $order->estimated_cost;
+
+        return Inertia::render('NonFoodPayment/CreateFromAssetService', [
+            'serviceOrder' => [
+                'id' => $order->id,
+                'number' => $order->number,
+                'supplier_id' => $order->supplier_id,
+                'supplier_name' => optional($order->supplier)->name,
+                'service_type' => Schema::hasColumn('asset_service_orders', 'service_type')
+                    ? ($order->service_type ?? 'external')
+                    : 'external',
+                'outlet_name' => optional($order->outlet)->nama_outlet,
+                'description' => $order->description,
+                'estimated_cost' => (float) $order->estimated_cost,
+                'actual_cost' => (float) $order->actual_cost,
+                'suggested_amount' => $suggested,
+                'status' => $order->status,
+            ],
+            'banks' => $banks,
         ]);
     }
 
@@ -1282,7 +1368,11 @@ class NonFoodPaymentController extends Controller
             'outlet_payments.*.bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
             'coa_id' => 'nullable|exists:chart_of_accounts,id',
         ];
-        
+
+        if (Schema::hasColumn('non_food_payments', 'asset_service_order_id')) {
+            $validationRules['asset_service_order_id'] = 'nullable|exists:asset_service_orders,id';
+        }
+
         // Bank_id validation: required at main level only if no outlet_payments
         // If outlet_payments exist, bank_id is handled per outlet
         if (empty($request->outlet_payments) || !is_array($request->outlet_payments) || count($request->outlet_payments) === 0) {
@@ -1309,8 +1399,17 @@ class NonFoodPaymentController extends Controller
         }
 
         // Validate that at least one transaction is selected
-        if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id) && empty($request->retail_non_food_id)) {
-            return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order, Purchase Requisition, atau Retail Non Food).');
+        $hasAssetServiceOrder = Schema::hasColumn('non_food_payments', 'asset_service_order_id')
+            && $request->filled('asset_service_order_id');
+
+        if (empty($request->purchase_order_ops_id) && empty($request->purchase_requisition_id) && empty($request->retail_non_food_id) && !$hasAssetServiceOrder) {
+            return back()->with('error', 'Pilih minimal satu transaksi (Purchase Order, Purchase Requisition, Retail Non Food, atau Asset Service).');
+        }
+
+        if ($hasAssetServiceOrder) {
+            if (!empty($request->purchase_order_ops_id) || !empty($request->purchase_requisition_id) || !empty($request->retail_non_food_id)) {
+                return back()->with('error', 'Asset Service Order tidak boleh digabung dengan PO/PR/Retail pada satu payment.');
+            }
         }
 
         // Validate supplier_id based on payment mode
@@ -1332,6 +1431,33 @@ class NonFoodPaymentController extends Controller
             // For PO, supplier is always required (from PO)
             if (empty($request->supplier_id)) {
                 return back()->with('error', 'Supplier harus dipilih untuk payment.');
+            }
+        } elseif ($hasAssetServiceOrder) {
+            $svcOrder = AssetServiceOrder::find($request->asset_service_order_id);
+            if (!$svcOrder) {
+                return back()->with('error', 'Asset Service Order tidak ditemukan.');
+            }
+            if (Schema::hasColumn('asset_service_orders', 'service_type') && ($svcOrder->service_type ?? 'external') !== 'external') {
+                return back()->with('error', 'Non Food Payment hanya untuk Asset Service tipe External (vendor luar).');
+            }
+            if (empty($svcOrder->supplier_id)) {
+                return back()->with('error', 'Asset Service tidak memiliki supplier; tidak dapat membuat Non Food Payment.');
+            }
+            if (!in_array($svcOrder->status, ['in_service', 'partially_returned', 'returned'], true)) {
+                return back()->with('error', 'Status Asset Service tidak valid untuk pembayaran.');
+            }
+            if (empty($request->supplier_id)) {
+                return back()->with('error', 'Supplier wajib untuk payment ini.');
+            }
+            if ((int) $request->supplier_id !== (int) $svcOrder->supplier_id) {
+                return back()->with('error', 'Supplier harus sama dengan supplier pada Asset Service Order.');
+            }
+            $existingPayment = NonFoodPayment::withoutGlobalScopes()
+                ->where('asset_service_order_id', $request->asset_service_order_id)
+                ->whereNotIn('status', ['cancelled', 'rejected'])
+                ->first();
+            if ($existingPayment) {
+                return back()->with('error', 'Asset Service Order ini sudah memiliki Non Food Payment aktif.');
             }
         }
 
@@ -1460,6 +1586,10 @@ class NonFoodPaymentController extends Controller
                 'created_by' => Auth::id(),
             ];
 
+            if (Schema::hasColumn('non_food_payments', 'asset_service_order_id')) {
+                $paymentData['asset_service_order_id'] = $hasAssetServiceOrder ? (int) $request->asset_service_order_id : null;
+            }
+
             if (Schema::hasColumn('non_food_payments', 'coa_id')) {
                 // Accept multiple possible keys from frontend (coa_id, selected_coa, selectedCoa)
                 $incomingCoa = $request->input('coa_id');
@@ -1562,6 +1692,7 @@ class NonFoodPaymentController extends Controller
             'retailNonFood.outlet',
             'retailNonFood.supplier',
             'retailNonFood.items',
+            'assetServiceOrder.supplier',
             'supplier',
             'creator',
             'approver',
@@ -2697,6 +2828,7 @@ class NonFoodPaymentController extends Controller
                 'supplier',
                 'creator',
                 'approver',
+                'assetServiceOrder.supplier',
                 'purchaseOrderOps.supplier',
                 'purchaseOrderOps.items',
                 'purchaseOrderOps.source_pr',

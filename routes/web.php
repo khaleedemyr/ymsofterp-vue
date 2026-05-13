@@ -666,6 +666,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'destroy'])->name('asset-service-orders.destroy');
     Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve'])->name('asset-service-orders.approve');
     Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn'])->name('asset-service-orders.receive-return');
+    Route::post('/asset-service-orders/{id}/vendor-invoice', [\App\Http\Controllers\AssetServiceOrderController::class, 'uploadVendorInvoice'])->name('asset-service-orders.vendor-invoice');
     Route::get('/asset-service-order/approvers', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovers'])->name('asset-service-orders.approvers');
 
     // Asset Disposals
@@ -1651,6 +1652,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     // Print preview must be before resource routes
     Route::get('non-food-payments/print-preview', [\App\Http\Controllers\NonFoodPaymentController::class, 'printPreview'])->name('non-food-payments.print-preview');
+    Route::get('non-food-payments/create-from-asset-service/{assetServiceOrder}', [\App\Http\Controllers\NonFoodPaymentController::class, 'createFromAssetService'])->name('non-food-payments.create-from-asset-service');
     Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
     Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');
     Route::get('non-food-payments/pr-items/{prId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPRItems'])->name('non-food-payments.pr-items');

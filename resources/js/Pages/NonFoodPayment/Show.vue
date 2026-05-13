@@ -319,6 +319,42 @@
             </div>
           </div>
 
+          <!-- Asset Service Order (pembayaran dari service asset) -->
+          <div v-if="payment.asset_service_order" class="bg-white rounded-2xl shadow-2xl p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Asset Service Order</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Nomor service</label>
+                <p class="mt-1 text-lg font-semibold text-teal-700">{{ payment.asset_service_order.number }}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Supplier</label>
+                <p class="mt-1 text-gray-900">{{ payment.asset_service_order.supplier?.name || '—' }}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Tanggal</label>
+                <p class="mt-1 text-gray-900">{{ formatDate(payment.asset_service_order.date) }}</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Status</label>
+                <p class="mt-1 text-gray-900 capitalize">{{ (payment.asset_service_order.status || '').replace(/_/g, ' ') }}</p>
+              </div>
+            </div>
+            <div v-if="payment.asset_service_order.description" class="mt-4">
+              <label class="block text-sm font-medium text-gray-700">Deskripsi</label>
+              <p class="mt-1 text-gray-900">{{ payment.asset_service_order.description }}</p>
+            </div>
+            <div class="mt-4">
+              <button
+                type="button"
+                class="text-teal-700 font-semibold text-sm hover:underline"
+                @click="router.visit(`/asset-service-orders/${payment.asset_service_order.id}`)"
+              >
+                <i class="fa fa-external-link-alt mr-1"></i>Buka detail Asset Service
+              </button>
+            </div>
+          </div>
+
           <!-- Retail Non Food Information -->
           <div v-if="payment.retail_non_food" class="bg-white rounded-2xl shadow-2xl p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-4">Retail Non Food Information</h2>

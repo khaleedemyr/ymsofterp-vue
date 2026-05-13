@@ -7,8 +7,9 @@ CREATE TABLE IF NOT EXISTS `asset_service_orders` (
     `date` DATE NOT NULL,
     `outlet_id` INT UNSIGNED NOT NULL COMMENT 'FK to tbl_data_outlet.id_outlet',
     `warehouse_outlet_id` INT UNSIGNED NOT NULL COMMENT 'FK to warehouse_outlets.id',
-    `supplier_id` INT UNSIGNED NOT NULL COMMENT 'FK to suppliers.id',
+    `supplier_id` INT UNSIGNED NULL DEFAULT NULL COMMENT 'FK suppliers; wajib untuk external',
     `description` TEXT NOT NULL COMMENT 'Service description/reason',
+    `service_type` ENUM('internal','external') NOT NULL DEFAULT 'external' COMMENT 'internal=tim; external=vendor (NFP)',
     `estimated_cost` DECIMAL(20,2) NOT NULL DEFAULT 0,
     `actual_cost` DECIMAL(20,2) NOT NULL DEFAULT 0,
     `status` ENUM('waiting_approval','in_service','partially_returned','returned','rejected') NOT NULL DEFAULT 'waiting_approval',
@@ -60,3 +61,6 @@ CREATE TABLE IF NOT EXISTS `asset_service_order_approval_flows` (
     KEY `idx_approver` (`approver_id`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Invoice vendor & integrasi Non Food Payment: lihat database/sql/asset_service_invoice_and_nfp_link.sql
+-- Tipe internal / external: lihat database/sql/asset_service_service_type.sql
