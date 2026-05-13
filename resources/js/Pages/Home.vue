@@ -175,6 +175,9 @@ const loadingLostBreakageApprovals = ref(false);
 const showLostBreakageApprovalModal = ref(false);
 const selectedLostBreakageApproval = ref(null);
 
+// POS void item (kasir — hapus item tersimpan)
+const pendingPosVoidItemApprovals = ref([]);
+
 // Asset Inventory Transfer approvals
 const pendingAssetTransferApprovals = ref([]);
 const loadingAssetTransferApprovals = ref(false);
@@ -990,6 +993,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
+            pendingPosVoidItemApprovals.value = data.pos_void_items || [];
             pendingAssetTransferApprovals.value = data.asset_inventory_transfer || [];
             pendingAssetAdjustmentApprovals.value = data.asset_stock_adjustment || [];
             pendingAssetServiceApprovals.value = data.asset_service_order || [];
@@ -2528,6 +2532,48 @@ async function rejectLostBreakage(headerId, reason) {
     } catch (error) {
         console.error('Error rejecting Lost & Breakage:', error);
         Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Lost & Breakage', 'error');
+    }
+}
+
+async function approvePosVoidItemRequest(id) {
+    try {
+        const response = await axios.post(`/pos-void-item-requests/${id}/approve`);
+        if (response.data.success) {
+            Swal.fire('Berhasil', response.data.message || 'Void item disetujui.', 'success');
+            loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menyetujui', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving POS void item:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui', 'error');
+    }
+}
+
+async function rejectPosVoidItemRequest(id) {
+    try {
+        const result = await Swal.fire({
+            title: 'Tolak void item POS',
+            input: 'textarea',
+            inputPlaceholder: 'Alasan penolakan (opsional)',
+            showCancelButton: true,
+            confirmButtonText: 'Tolak',
+            cancelButtonText: 'Batal',
+        });
+        if (!result.isConfirmed) return;
+        const reason = result.value || '';
+        const response = await axios.post(`/pos-void-item-requests/${id}/reject`, {
+            rejection_reason: reason,
+        });
+        if (response.data.success) {
+            Swal.fire('Berhasil', response.data.message || 'Permintaan ditolak.', 'success');
+            loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal menolak', 'error');
+        }
+    } catch (error) {
+        console.error('Error rejecting POS void item:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menolak', 'error');
     }
 }
 
@@ -6631,6 +6677,56 @@ watch(locale, () => {
                                 <button class="text-sm text-rose-500 hover:text-rose-700 font-medium">
                                     Lihat {{ pendingLostBreakageApprovals.length - 3 }} lainnya...
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- POS Void Item (hapus item tersimpan di kasir) -->
+                <div v-if="pendingPosVoidItemApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-indigo-600/50' : 'bg-white/90 border-indigo-200/80'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-cash-register mr-2 text-indigo-500"></i>
+                                    POS — Void Item
+                                </h3>
+                            </div>
+                            <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingPosVoidItemApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="row in pendingPosVoidItemApprovals.slice(0, 5)" :key="'pv-' + row.id"
+                                class="p-3 rounded-lg transition-all duration-200"
+                                :class="isNight ? 'bg-slate-700/50' : 'bg-indigo-50'">
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                    <div class="text-left flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ row.order_nomor || row.number }} · {{ row.item_name || 'Item' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ row.outlet_name }} · {{ row.creator_name }}
+                                        </div>
+                                        <div class="text-xs line-clamp-2" :class="isNight ? 'text-slate-400' : 'text-slate-600'">
+                                            {{ row.reason }}
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2 shrink-0 justify-end">
+                                        <button type="button"
+                                            @click="approvePosVoidItemRequest(row.id)"
+                                            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700">
+                                            Setujui
+                                        </button>
+                                        <button type="button"
+                                            @click="rejectPosVoidItemRequest(row.id)"
+                                            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700">
+                                            Tolak
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

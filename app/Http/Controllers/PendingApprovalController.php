@@ -65,6 +65,7 @@ class PendingApprovalController extends Controller
                 'ro_khusus' => [],
                 'employee_resignation' => [],
                 'lost_breakage' => [],
+                'pos_void_items' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -373,6 +374,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Lost & Breakage approvals: ' . $e->getMessage());
+            }
+
+            // 19b. POS void item (kasir → HO approver)
+            try {
+                $pviController = app(\App\Http\Controllers\PosVoidItemRequestController::class);
+                $pviResponse = $pviController->getPendingApprovals($request);
+                if ($pviResponse->getStatusCode() === 200) {
+                    $pviData = json_decode($pviResponse->getContent(), true);
+                    $data['pos_void_items'] = $pviData['headers'] ?? [];
+                    if ($limit > 0 && count($data['pos_void_items']) > $limit) {
+                        $data['pos_void_items'] = array_slice($data['pos_void_items'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading POS void item approvals: ' . $e->getMessage());
             }
 
             // 20. Asset Inventory Transfer

@@ -3345,4 +3345,9 @@ Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageControlle
 Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails'])->name('lost-breakage.report.details');
 Route::get('/lost-breakage-report/export', [\App\Http\Controllers\LostBreakageController::class, 'exportReport'])->name('lost-breakage.report.export');
 
+// POS void item (approval di Home / session auth — sama pola lost-breakage)
+Route::get('/pos-void-item-approvals/pending', [\App\Http\Controllers\PosVoidItemRequestController::class, 'getPendingApprovals'])->name('pos-void-item.approvals.pending');
+Route::post('/pos-void-item-requests/{id}/approve', [\App\Http\Controllers\PosVoidItemRequestController::class, 'approve'])->name('pos-void-item.approve');
+Route::post('/pos-void-item-requests/{id}/reject', [\App\Http\Controllers\PosVoidItemRequestController::class, 'reject'])->name('pos-void-item.reject');
+
 require __DIR__.'/auth.php';

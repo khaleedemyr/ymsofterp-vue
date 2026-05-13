@@ -1615,6 +1615,10 @@ Route::prefix('pos')->group(function () {
     Route::get('/orders/check-exists', [PosOrderController::class, 'checkOrderExists'])->name('api.pos.orders.check-exists');
     Route::post('/orders/rollback-member', [PosOrderController::class, 'rollbackMemberTransaction'])->name('api.pos.orders.rollback-member');
     Route::post('/orders/void', [PosOrderController::class, 'voidOrder'])->name('api.pos.orders.void');
+    Route::get('/void/item-approvers', [\App\Http\Controllers\PosVoidItemRequestController::class, 'searchApproversForPos'])->name('api.pos.void.item-approvers');
+    Route::post('/void/item-request', [\App\Http\Controllers\PosVoidItemRequestController::class, 'storeFromPos'])->name('api.pos.void.item-request');
+    Route::post('/void/item-request/reassign-approvers', [\App\Http\Controllers\PosVoidItemRequestController::class, 'reassignApproversFromPos'])->name('api.pos.void.item-request.reassign');
+    Route::get('/void/item-request/status', [\App\Http\Controllers\PosVoidItemRequestController::class, 'pollStatusFromPos'])->name('api.pos.void.item-request.status');
 });
 
 // POS Dummy Sync Routes (isolated from main pos order controller)
