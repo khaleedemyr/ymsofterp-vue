@@ -80,15 +80,6 @@ const downloadSerialPDF = (serials) => {
     currentY += 3.2;
     doc.setFontSize(7);
     doc.setFont(undefined, 'normal');
-    const qtyLabel = props.repack?.qty_hasil != null && props.repack?.qty_hasil !== ''
-      ? `${props.repack.qty_hasil} ${props.repack?.unit_hasil?.name || ''}`.trim()
-      : (props.repack?.unit_hasil?.name || '');
-    if (qtyLabel) {
-      doc.text(qtyLabel, x + labelWidth / 2, currentY, { align: 'center' });
-      currentY += 3.2;
-    }
-    doc.setFontSize(7);
-    doc.setFont(undefined, 'normal');
     doc.text(`BATCH: ${props.repack?.repack_number || '-'}`, x + labelWidth / 2, currentY, { align: 'center' });
   });
 
@@ -149,9 +140,6 @@ const rollbackSerial = async () => {
           <h2 class="text-lg font-semibold mb-2">Informasi Repack</h2>
           <p>Nomor Repack: {{ repack.repack_number }}</p>
           <p>Item: {{ repack.item_hasil?.name }}</p>
-          <p v-if="(repack.qty_hasil != null && repack.qty_hasil !== '') || repack.unit_hasil?.name">
-            Qty / Unit: {{ repack.qty_hasil }} {{ repack.unit_hasil?.name || '' }}
-          </p>
           <p>Jumlah Serial: {{ barcodes.length }}</p>
         </div>
 

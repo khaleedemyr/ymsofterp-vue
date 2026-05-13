@@ -29,12 +29,6 @@ class Repack extends Model
     {
         return $this->belongsTo(Item::class, 'item_hasil_id');
     }
-
-    public function unitHasil()
-    {
-        return $this->belongsTo(Unit::class, 'unit_hasil_id');
-    }
-
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -387,7 +387,7 @@ class RepackController extends Controller
 
             $barcodes = [];
             $serialRows = [];
-            $serialCount = (int) ceil($qtyHasil);
+            $serialCount = $qtyHasil > 0 ? 1 : 0;
             if ($serialCount > 0) {
                 for ($i = 0; $i < $serialCount; $i++) {
                     $barcode = 'BRC-' . ($itemHasil->sku ?: 'ITEM') . '-' . Str::upper(Str::random(6));

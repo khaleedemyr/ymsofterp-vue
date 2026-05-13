@@ -115,14 +115,13 @@ const grandTotal = computed(() =>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty Asal</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Item Hasil</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Qty Hasil</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Satuan</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tr-2xl">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="props.repacks.data.length === 0">
-              <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data Repack.</td>
+              <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data Repack.</td>
             </tr>
             <tr v-for="repack in props.repacks.data" :key="repack.id" class="hover:bg-blue-50 transition shadow-sm">
               <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ repack.repack_number }}</td>
@@ -131,7 +130,6 @@ const grandTotal = computed(() =>
               <td class="px-6 py-3">{{ repack.qty_asal }}</td>
               <td class="px-6 py-3">{{ repack.item_hasil?.name ?? '-' }}</td>
               <td class="px-6 py-3">{{ repack.qty_hasil }}</td>
-              <td class="px-6 py-3">{{ repack.unit_hasil?.name ?? '-' }}</td>
               <td class="px-6 py-3">
                 <span :class="{
                   'bg-gray-100 text-gray-700': repack.status === 'draft',
