@@ -827,8 +827,11 @@ Route::prefix('approval-app')->group(function () {
         // Marketing Visit Checklist (approval app — mirror web + multipart foto per baris)
         Route::get('/marketing-visit-checklist/create-data', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiCreateData']);
         Route::get('/marketing-visit-checklist', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiIndex']);
+        Route::post('/marketing-visit-checklist/draft', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiStoreDraft']);
         Route::post('/marketing-visit-checklist', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiStore']);
         Route::get('/marketing-visit-checklist/{id}', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiShow']);
+        Route::post('/marketing-visit-checklist/{id}/autosave', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiAutosave']);
+        Route::post('/marketing-visit-checklist/{id}/finalize', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiFinalize']);
         Route::post('/marketing-visit-checklist/{id}/update', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiUpdate']);
         Route::delete('/marketing-visit-checklist/{id}', [\App\Http\Controllers\MarketingVisitChecklistController::class, 'apiDestroy']);
 

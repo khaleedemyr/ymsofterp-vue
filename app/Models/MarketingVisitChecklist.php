@@ -13,6 +13,7 @@ class MarketingVisitChecklist extends Model
         'outlet_id',
         'visit_date',
         'created_by',
+        'status',
     ];
 
     public function outlet(): BelongsTo
