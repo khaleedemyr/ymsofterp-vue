@@ -374,6 +374,12 @@ const menuGroups = [
                 code: 'cost_report',
             },
             {
+                name: () => 'Cost Report HO',
+                icon: 'fa-solid fa-building-columns',
+                route: '/cost-report-ho',
+                code: 'cost_report_ho',
+            },
+            {
                 name: () => 'Report Pembelanjaan Supplier (Warehouse GR)',
                 icon: 'fa-solid fa-sack-dollar',
                 route: '/food-good-receive-report-supplier-spending',

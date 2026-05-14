@@ -1028,6 +1028,11 @@ Route::get('/cost-report/tab-data', [\App\Http\Controllers\CostReportController:
 Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
 Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportController::class, 'clearCache'])->name('cost-report.clear-cache');
 
+// Cost Report HO (warehouse + division, begin inventory dari food_inventory_*)
+Route::get('/cost-report-ho', [\App\Http\Controllers\CostReportHoController::class, 'index'])->name('cost-report-ho.index');
+Route::get('/cost-report-ho/tab-data', [\App\Http\Controllers\CostReportHoController::class, 'tabData'])->name('cost-report-ho.tab-data');
+Route::post('/cost-report-ho/clear-cache', [\App\Http\Controllers\CostReportHoController::class, 'clearCache'])->name('cost-report-ho.clear-cache');
+
 Route::get('/internal-use-waste-report', [\App\Http\Controllers\InternalUseWasteReportController::class, 'index'])->name('internal-use-waste-report.index');
 Route::get('/internal-use-waste-report/export', [\App\Http\Controllers\InternalUseWasteReportController::class, 'export'])->name('internal-use-waste-report.export');
 Route::get('/internal-use-waste-report/summary', [\App\Http\Controllers\InternalUseWasteReportController::class, 'summary'])->name('internal-use-waste-report.summary');
