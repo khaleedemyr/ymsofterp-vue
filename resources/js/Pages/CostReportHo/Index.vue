@@ -49,7 +49,7 @@
             class="inline-flex items-center text-sm text-slate-700 border border-slate-300 rounded-md px-3 py-2 hover:bg-slate-50"
           >
             <i class="fa-solid fa-magnifying-glass-chart mr-2 text-slate-500"></i>
-            Trace JSON (baris begin terbesar)
+            Trace tabel (begin terbesar)
           </a>
         </div>
       </div>
@@ -171,7 +171,7 @@ const traceBeginUrl = computed(() => {
   if (!b) {
     return '#'
   }
-  return route('cost-report-ho.trace-begin', { bulan: b, limit: 100 })
+  return route('cost-report-ho.trace-begin.view', { bulan: b, limit: 100 })
 })
 
 watch(

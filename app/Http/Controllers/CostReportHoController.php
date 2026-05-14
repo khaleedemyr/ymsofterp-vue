@@ -97,8 +97,8 @@ class CostReportHoController extends Controller
     }
 
     /**
-     * Trace baris begin inventory terbesar (saldo kartu × MAC) untuk audit saldo vs MAC per item.
-     * Query params: bulan (Y-m), warehouse_id (opsional), limit (default 50, max 200).
+     * Trace baris begin inventory terbesar — JSON (saldo kartu × MAC).
+     * Query: bulan (Y-m), warehouse_id (opsional), limit (default 50, max 200).
      */
     public function traceBegin(Request $request)
     {
@@ -108,12 +108,53 @@ class CostReportHoController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
+        $payload = $this->buildHoBeginTracePayload($validated);
+
+        return response()->json(['success' => true] + $payload);
+    }
+
+    /**
+     * Halaman Vue: tabel trace begin (sumber data sama dengan traceBegin JSON).
+     */
+    public function traceBeginView(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'warehouse_id' => ['nullable', 'integer'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+
+        $payload = $this->buildHoBeginTracePayload($validated);
+        $warehouseOptions = DB::table('warehouses')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->select('id', 'name', 'code')
+            ->get();
+
+        return Inertia::render('CostReportHo/TraceBegin', [
+            'trace' => $payload,
+            'warehouseOptions' => $warehouseOptions,
+            'filters' => [
+                'bulan' => $validated['bulan'],
+                'warehouse_id' => $validated['warehouse_id'] ?? null,
+                'limit' => (int) ($validated['limit'] ?? 100),
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array{bulan: string, warehouse_id?: int|null, limit?: int|null}  $validated
+     * @return array{bulan: string, cutoff_date: string, formula: string, lines: array<int, array<string, mixed>>}
+     */
+    private function buildHoBeginTracePayload(array $validated): array
+    {
         $bulan = $validated['bulan'];
         $limit = (int) ($validated['limit'] ?? 50);
         $limit = min(200, max(1, $limit));
 
         $bulanCarbon = Carbon::parse($bulan . '-01');
         $tanggalAkhirBulanSebelumnya = $bulanCarbon->copy()->subMonth()->format('Y-m-t');
+        $formula = 'begin_line = saldo_qty_small (kartu terakhir s/d cutoff) × mac_efektif (histori terakhir s/d cutoff; fallback cost_per_small kartu)';
 
         $warehousesQuery = DB::table('warehouses')->where('status', 'active');
         if (! empty($validated['warehouse_id'])) {
@@ -123,32 +164,22 @@ class CostReportHoController extends Controller
         $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         if (empty($warehouseIds)) {
-            return response()->json([
-                'success' => true,
+            return [
                 'bulan' => $bulan,
                 'cutoff_date' => $tanggalAkhirBulanSebelumnya,
+                'formula' => $formula,
                 'lines' => [],
-            ]);
+            ];
         }
 
         $components = $this->fetchHoBeginInventoryComponents($warehouseIds, $tanggalAkhirBulanSebelumnya);
-        if ($components === null) {
-            return response()->json([
-                'success' => true,
+        if ($components === null || empty($components['line_by_key'])) {
+            return [
                 'bulan' => $bulan,
                 'cutoff_date' => $tanggalAkhirBulanSebelumnya,
+                'formula' => $formula,
                 'lines' => [],
-            ]);
-        }
-
-        if (empty($components['line_by_key'])) {
-            return response()->json([
-                'success' => true,
-                'bulan' => $bulan,
-                'cutoff_date' => $tanggalAkhirBulanSebelumnya,
-                'formula' => 'begin_line = saldo_qty_small (kartu terakhir s/d cutoff) × mac_efektif (histori terakhir s/d cutoff; fallback cost_per_small kartu)',
-                'lines' => [],
-            ]);
+            ];
         }
 
         $whName = $warehouses->keyBy('id')->map(fn ($w) => $w->name)->all();
@@ -206,13 +237,12 @@ class CostReportHoController extends Controller
         usort($lines, fn ($a, $b) => abs($b['begin_line_value']) <=> abs($a['begin_line_value']));
         $lines = array_slice($lines, 0, $limit);
 
-        return response()->json([
-            'success' => true,
+        return [
             'bulan' => $bulan,
             'cutoff_date' => $tanggalAkhirBulanSebelumnya,
-            'formula' => 'begin_line = saldo_qty_small (kartu terakhir s/d cutoff) × mac_efektif (histori terakhir s/d cutoff; fallback cost_per_small kartu)',
+            'formula' => $formula,
             'lines' => $lines,
-        ]);
+        ];
     }
 
     /**
