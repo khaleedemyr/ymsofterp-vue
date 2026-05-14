@@ -148,7 +148,6 @@ class CostReportHoController extends Controller
     {
         $bulanCarbon = Carbon::parse($bulan . '-01');
         $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
-        $tanggalAkhirBulanSebelumnya = $bulanCarbon->copy()->subMonth()->format('Y-m-t');
 
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
@@ -165,8 +164,7 @@ class CostReportHoController extends Controller
         $beginByWhItem = $this->computeHoBeginInventoryMacByWarehouseItem(
             $stockRows,
             $warehouseIds,
-            $tanggal1BulanIni,
-            $tanggalAkhirBulanSebelumnya
+            $tanggal1BulanIni
         );
 
         $beginByWarehouseDivision = [];
@@ -241,30 +239,27 @@ class CostReportHoController extends Controller
             ->whereIn('s.warehouse_id', $warehouseIds)
             ->select(
                 's.warehouse_id',
-                's.inventory_item_id',
+                'fi.id as inventory_item_id',
+                'fi.item_id',
                 's.qty_small',
                 's.last_cost_small',
-                's.value as stock_value',
                 'i.warehouse_division_id'
             )
+            ->distinct()
             ->get();
     }
 
     /**
-     * Begin inventory (nilai) per (warehouse_id, inventory_item_id).
-     *
-     * - Jika ada kartu initial_balance tanggal 1 bulan laporan untuk pasangan gudang+item itu,
-     *   pakai saldo_value kartu terbaru hari itu.
-     * - Jika tidak, pakai saldo_value dari kartu stok terakhir s/d akhir bulan sebelumnya (cutoff).
-     * - Jika tidak ada kartu sampai cutoff, pakai nilai stok (kolom value jika ada, else qty_small * last_cost_small).
+     * Begin inventory (nilai MAC) per (warehouse_id, inventory_item_id).
+     * Logika disamakan dengan CostReportController::computeBeginInventoryTotalMacByWarehouse:
+     * id_outlet + warehouse_outlet_id → warehouse_id; outlet_food_inventory_cards → food_inventory_cards.
      *
      * @return array<string, float> key "warehouse_id|inventory_item_id"
      */
     private function computeHoBeginInventoryMacByWarehouseItem(
         $stockRows,
         array $warehouseIds,
-        string $tanggal1BulanIni,
-        string $tanggalAkhirBulanSebelumnya
+        string $tanggal1BulanIni
     ): array {
         if ($stockRows->isEmpty() || empty($warehouseIds)) {
             return [];
@@ -275,9 +270,28 @@ class CostReportHoController extends Controller
             return [];
         }
 
+        /**
+         * BEGIN INVENTORY (AUTO MODE) — selaras Cost Report outlet:
+         * - Jika gudang punya upload saldo awal (reference_type=initial_balance) pada tanggal 1 bulan laporan,
+         *   maka untuk gudang tsb nilai per item HANYA dari initial_balance day-1 (latest per item+gudang).
+         * - Jika gudang TIDAK punya initial_balance day-1 sama sekali, maka dari stok sistem:
+         *   qty_small * last_cost_small (sama seperti Cost Report).
+         */
         $warehouseIdsSql = implode(',', array_map('intval', $warehouseIds));
         $inventoryIdsSql = implode(',', array_map('intval', $inventoryItemIds));
 
+        $warehousesWithDay1Initial = DB::table('food_inventory_cards as c')
+            ->whereIn('c.warehouse_id', $warehouseIds)
+            ->whereIn('c.inventory_item_id', $inventoryItemIds)
+            ->where('c.reference_type', 'initial_balance')
+            ->whereDate('c.date', $tanggal1BulanIni)
+            ->distinct()
+            ->pluck('c.warehouse_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $warehousesWithDay1InitialSet = array_fill_keys($warehousesWithDay1Initial, true);
+
+        // (A) initial_balance day-1 snapshot (latest per warehouse+item)
         $subInit = "
             SELECT
                 card.warehouse_id,
@@ -316,71 +330,32 @@ class CostReportHoController extends Controller
             $saldoValueInitMap[$k] = (float) ($r->saldo_value ?? 0);
         }
 
-        $subCutoff = "
-            SELECT
-                card.warehouse_id,
-                card.inventory_item_id,
-                MAX(
-                    CONCAT(
-                        DATE(card.date),
-                        ' ',
-                        LPAD(card.id, 20, '0')
-                    )
-                ) AS mx
-            FROM food_inventory_cards card
-            WHERE card.warehouse_id IN ({$warehouseIdsSql})
-              AND card.inventory_item_id IN ({$inventoryIdsSql})
-              AND DATE(card.date) <= '{$tanggalAkhirBulanSebelumnya}'
-            GROUP BY card.warehouse_id, card.inventory_item_id
-        ";
-
-        $saldoRowsCutoff = DB::table('food_inventory_cards as card')
-            ->join(DB::raw("({$subCutoff}) t"), function ($join) {
-                $join->on('t.warehouse_id', '=', 'card.warehouse_id')
-                    ->on('t.inventory_item_id', '=', 'card.inventory_item_id');
-            })
-            ->whereRaw("t.mx = CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))")
-            ->select(
-                'card.warehouse_id',
-                'card.inventory_item_id',
-                'card.saldo_value'
-            )
-            ->get();
-
-        $saldoValueCutoffMap = [];
-        foreach ($saldoRowsCutoff as $r) {
-            $k = (int) $r->warehouse_id . '|' . (int) $r->inventory_item_id;
-            $saldoValueCutoffMap[$k] = (float) ($r->saldo_value ?? 0);
-        }
-
+        // (B) last stock from system (stocks table): qty_small * last_cost_small (per warehouse+item)
         $stockValueMap = [];
-        foreach ($stockRows->unique(fn ($row) => (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id) as $row) {
+        foreach ($stockRows as $row) {
             $k = (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id;
             if (! isset($stockValueMap[$k])) {
                 $qtySmall = (float) ($row->qty_small ?? 0);
                 $macSmall = (float) ($row->last_cost_small ?? 0);
-                $v = $row->stock_value ?? null;
-                $stockValueMap[$k] = ($v !== null && $v !== '')
-                    ? (float) $v
-                    : ($qtySmall * $macSmall);
+                $stockValueMap[$k] = $qtySmall * $macSmall;
             }
         }
 
         $uniqueKeys = [];
-        foreach ($stockRows->unique(fn ($row) => (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id) as $row) {
+        foreach ($stockRows as $row) {
             $k = (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id;
             $uniqueKeys[$k] = true;
         }
 
         $totalsByKey = [];
         foreach (array_keys($uniqueKeys) as $k) {
-            if (isset($saldoValueInitMap[$k])) {
-                $totalsByKey[$k] = (float) $saldoValueInitMap[$k];
-            } elseif (isset($saldoValueCutoffMap[$k])) {
-                $totalsByKey[$k] = (float) $saldoValueCutoffMap[$k];
-            } else {
-                $totalsByKey[$k] = (float) ($stockValueMap[$k] ?? 0);
-            }
+            [$whIdKey] = array_map('intval', explode('|', $k, 2));
+            $useInitOnly = isset($warehousesWithDay1InitialSet[$whIdKey]);
+            $totalsByKey[$k] = (float) (
+                $useInitOnly
+                    ? ($saldoValueInitMap[$k] ?? 0)
+                    : ($stockValueMap[$k] ?? 0)
+            );
         }
 
         return $totalsByKey;
