@@ -148,6 +148,7 @@ class CostReportHoController extends Controller
     {
         $bulanCarbon = Carbon::parse($bulan . '-01');
         $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
+        $tanggalAkhirBulanSebelumnya = $bulanCarbon->copy()->subMonth()->format('Y-m-t');
 
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
@@ -167,18 +168,40 @@ class CostReportHoController extends Controller
             $tanggal1BulanIni
         );
 
+        $grDivisionWeights = $this->loadHoGrDivisionWeightsUpToDate($tanggalAkhirBulanSebelumnya, $warehouseIds);
+
         $beginByWarehouseDivision = [];
         foreach ($stockRows->unique(fn ($row) => (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id) as $row) {
             $wh = (int) $row->warehouse_id;
             $ii = (int) $row->inventory_item_id;
             $k = $wh . '|' . $ii;
             $val = (float) ($beginByWhItem[$k] ?? 0);
-            $divId = $row->warehouse_division_id !== null && $row->warehouse_division_id !== ''
-                ? (int) $row->warehouse_division_id
-                : null;
-            $divKey = $divId !== null ? (string) $divId : 'none';
-            $aggKey = $wh . '|' . $divKey;
-            $beginByWarehouseDivision[$aggKey] = ($beginByWarehouseDivision[$aggKey] ?? 0) + $val;
+
+            $weights = $grDivisionWeights[$k] ?? [];
+            $sumW = array_sum($weights);
+            if ($sumW > 0) {
+                $keys = array_keys($weights);
+                $allocated = 0.0;
+                $lastIdx = count($keys) - 1;
+                foreach ($keys as $idx => $divKey) {
+                    $w = (float) ($weights[$divKey] ?? 0);
+                    if ($idx === $lastIdx) {
+                        $share = round(max(0, $val - $allocated), 2);
+                    } else {
+                        $share = round($val * ($w / $sumW), 2);
+                        $allocated += $share;
+                    }
+                    $aggKey = $wh . '|' . $divKey;
+                    $beginByWarehouseDivision[$aggKey] = ($beginByWarehouseDivision[$aggKey] ?? 0) + $share;
+                }
+            } else {
+                $divId = $row->warehouse_division_id !== null && $row->warehouse_division_id !== ''
+                    ? (int) $row->warehouse_division_id
+                    : null;
+                $divKey = $divId !== null ? (string) $divId : 'none';
+                $aggKey = $wh . '|' . $divKey;
+                $beginByWarehouseDivision[$aggKey] = ($beginByWarehouseDivision[$aggKey] ?? 0) + $val;
+            }
         }
 
         $divisionsByWarehouse = DB::table('warehouse_division')
@@ -247,6 +270,58 @@ class CostReportHoController extends Controller
             )
             ->distinct()
             ->get();
+    }
+
+    /**
+     * Bobot pembagian nilai per divisi gudang dari akumulasi baris GR (qty × harga PO) s/d tanggal cutoff,
+     * per pasangan (warehouse_id, inventory_item_id). Divisi diambil dari PR (pr_foods.warehouse_division_id),
+     * fallback ke items.warehouse_division_id — selaras join laporan Supplier Spending GR.
+     *
+     * @return array<string, array<string, float>> key luar "warehouse_id|inventory_item_id", key dalam id divisi atau "none"
+     */
+    private function loadHoGrDivisionWeightsUpToDate(string $cutoffDate, array $warehouseIds): array
+    {
+        if (empty($warehouseIds)) {
+            return [];
+        }
+
+        $rows = DB::table('food_good_receive_items as gri')
+            ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
+            ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+            ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
+            ->leftJoin('pr_foods as pr', 'pfi.pr_food_id', '=', 'pr.id')
+            ->leftJoin('warehouse_division as wd', 'pr.warehouse_division_id', '=', 'wd.id')
+            ->join('food_inventory_items as fi', 'gri.item_id', '=', 'fi.item_id')
+            ->join('items as i', 'gri.item_id', '=', 'i.id')
+            ->whereDate('gr.receive_date', '<=', $cutoffDate)
+            ->whereNotNull('gri.po_item_id')
+            ->whereRaw(
+                'COALESCE(wd.warehouse_id, pr.warehouse_id) IN (' . implode(',', array_map('intval', $warehouseIds)) . ')'
+            )
+            ->groupBy(
+                DB::raw('COALESCE(wd.warehouse_id, pr.warehouse_id)'),
+                DB::raw('fi.id'),
+                DB::raw('COALESCE(pr.warehouse_division_id, i.warehouse_division_id)')
+            )
+            ->select(
+                DB::raw('COALESCE(wd.warehouse_id, pr.warehouse_id) as stock_warehouse_id'),
+                'fi.id as inventory_item_id',
+                DB::raw('COALESCE(pr.warehouse_division_id, i.warehouse_division_id) as split_division_id'),
+                DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as line_weight')
+            )
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $wh = (int) $r->stock_warehouse_id;
+            $ii = (int) $r->inventory_item_id;
+            $divRaw = $r->split_division_id;
+            $divKey = $divRaw !== null && $divRaw !== '' ? (string) (int) $divRaw : 'none';
+            $wk = $wh . '|' . $ii;
+            $out[$wk][$divKey] = ($out[$wk][$divKey] ?? 0) + (float) ($r->line_weight ?? 0);
+        }
+
+        return $out;
     }
 
     /**
