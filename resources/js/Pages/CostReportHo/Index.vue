@@ -10,8 +10,9 @@
 
       <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
         <p class="text-sm text-gray-600 mb-4">
-          Laporan cost pusat per <strong>gudang (warehouse)</strong>. Begin inventory mengikuti logika Cost Report
-          (saldo awal tanggal 1 bulan atau nilai stok MAC per item di gudang).
+          Laporan cost pusat per <strong>gudang</strong>. Begin inventory bulan terpilih dihitung dari posisi
+          <strong>akhir bulan sebelumnya</strong>: saldo qty kecil pada kartu stok terakhir × MAC pada histori biaya terakhir
+          (masing-masing s/d tanggal cutoff yang sama).
         </p>
         <div class="flex flex-wrap items-end gap-3">
           <div>
