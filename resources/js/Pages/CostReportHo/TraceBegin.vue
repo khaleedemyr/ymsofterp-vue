@@ -91,6 +91,7 @@
                 <th class="px-3 py-3 text-right font-semibold whitespace-nowrap">Begin baris</th>
                 <th class="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Kartu</th>
                 <th class="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Histori</th>
+                <th class="px-3 py-3 text-left font-semibold whitespace-nowrap text-xs">Rantai MAC</th>
                 <th class="px-3 py-3 text-right font-semibold whitespace-nowrap text-xs">Inv. item</th>
               </tr>
             </thead>
@@ -133,11 +134,29 @@
                     mac: {{ row.hist_mac_raw != null ? formatQty(row.hist_mac_raw) : '—' }} /
                     new: {{ row.hist_new_cost_raw != null ? formatQty(row.hist_new_cost_raw) : '—' }}
                   </div>
+                  <div v-if="row.hist_reference_type || row.hist_reference_id" class="text-gray-500 mt-0.5">
+                    ref: {{ row.hist_reference_type || '—' }} #{{ row.hist_reference_id ?? '—' }}
+                    <span v-if="row.hist_type" class="text-gray-400"> · {{ row.hist_type }}</span>
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-xs whitespace-nowrap">
+                  <Link
+                    class="text-blue-600 hover:underline"
+                    :href="
+                      route('cost-report-ho.mac-lineage', {
+                        warehouse_id: row.warehouse_id,
+                        inventory_item_id: row.inventory_item_id,
+                        bulan: filters.bulan
+                      })
+                    "
+                  >
+                    Lihat rantai
+                  </Link>
                 </td>
                 <td class="px-3 py-2 text-right text-xs text-gray-500 tabular-nums">{{ row.inventory_item_id }}</td>
               </tr>
               <tr v-if="!trace.lines.length">
-                <td colspan="11" class="px-4 py-12 text-center text-gray-500">
+                <td colspan="12" class="px-4 py-12 text-center text-gray-500">
                   Tidak ada baris kartu stok untuk filter ini, atau belum ada data s/d cutoff.
                 </td>
               </tr>

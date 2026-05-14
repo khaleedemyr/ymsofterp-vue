@@ -143,6 +143,72 @@ class CostReportHoController extends Controller
     }
 
     /**
+     * Rantai penuh food_inventory_cost_histories untuk satu pasangan gudang + inventory item (audit MAC).
+     */
+    public function macLineage(Request $request)
+    {
+        $validated = $request->validate([
+            'warehouse_id' => ['required', 'integer'],
+            'inventory_item_id' => ['required', 'integer'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
+        ]);
+
+        $wid = (int) $validated['warehouse_id'];
+        $iid = (int) $validated['inventory_item_id'];
+
+        $warehouse = DB::table('warehouses')->where('id', $wid)->select('id', 'name', 'code')->first();
+        $item = DB::table('food_inventory_items as fi')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->where('fi.id', $iid)
+            ->select('fi.id as inventory_item_id', 'fi.item_id', 'i.name as item_name', 'i.sku as item_sku')
+            ->first();
+
+        $stock = DB::table('food_inventory_stocks')
+            ->where('warehouse_id', $wid)
+            ->where('inventory_item_id', $iid)
+            ->select('qty_small', 'value', 'last_cost_small', 'updated_at')
+            ->first();
+
+        $qtyS = $stock ? (float) ($stock->qty_small ?? 0) : 0.0;
+        $valS = $stock ? (float) ($stock->value ?? 0) : 0.0;
+        $impliedMac = $qtyS > 0 ? $valS / $qtyS : null;
+
+        $histories = DB::table('food_inventory_cost_histories as h')
+            ->leftJoin('food_good_receives as gr', function ($join) {
+                $join->on('h.reference_id', '=', 'gr.id')
+                    ->where('h.reference_type', '=', 'good_receive');
+            })
+            ->where('h.warehouse_id', $wid)
+            ->where('h.inventory_item_id', $iid)
+            ->orderByDesc('h.date')
+            ->orderByDesc('h.id')
+            ->limit(400)
+            ->select(
+                'h.id',
+                'h.date',
+                'h.mac',
+                'h.old_cost',
+                'h.new_cost',
+                'h.type',
+                'h.reference_type',
+                'h.reference_id',
+                'h.created_at',
+                'gr.gr_number'
+            )
+            ->get();
+
+        return Inertia::render('CostReportHo/MacLineage', [
+            'warehouse' => $warehouse,
+            'item' => $item,
+            'stock' => $stock,
+            'implied_mac_from_stock' => $impliedMac !== null ? round($impliedMac, 8) : null,
+            'histories' => $histories,
+            'mac_formula_note' => 'Pada Good Receive HO, MAC disimpan = (nilai_lama_stok + nilai_masuk) / (qty_lama + qty_masuk) — lihat FoodGoodReceiveController sekitar baris nilai_lama/nilai_baru/total_qty.',
+            'back_bulan' => $validated['bulan'] ?? date('Y-m'),
+        ]);
+    }
+
+    /**
      * @param  array{bulan: string, warehouse_id?: int|null, limit?: int|null}  $validated
      * @return array{bulan: string, cutoff_date: string, formula: string, lines: array<int, array<string, mixed>>}
      */
@@ -225,6 +291,12 @@ class CostReportHoController extends Controller
                     : null,
                 'hist_id' => $components['hist_id_by_key'][$k] ?? null,
                 'hist_date' => $components['hist_date_by_key'][$k] ?? null,
+                'hist_type' => $components['hist_type_by_key'][$k] ?? null,
+                'hist_reference_type' => $components['hist_ref_type_by_key'][$k] ?? null,
+                'hist_reference_id' => $components['hist_ref_id_by_key'][$k] ?? null,
+                'hist_old_cost' => array_key_exists($k, $components['hist_old_cost_by_key'])
+                    ? round((float) $components['hist_old_cost_by_key'][$k], 6)
+                    : null,
                 'card_cost_per_small' => isset($components['card_cost_by_key'][$k])
                     ? round((float) $components['card_cost_by_key'][$k], 6)
                     : null,
@@ -346,6 +418,10 @@ class CostReportHoController extends Controller
             'hist_new_cost_by_key' => [],
             'hist_id_by_key' => [],
             'hist_date_by_key' => [],
+            'hist_type_by_key' => [],
+            'hist_ref_type_by_key' => [],
+            'hist_ref_id_by_key' => [],
+            'hist_old_cost_by_key' => [],
             'mac_effective_by_key' => [],
             'mac_source_by_key' => [],
             'line_by_key' => [],
@@ -436,7 +512,11 @@ class CostReportHoController extends Controller
                 'h.warehouse_id',
                 'h.inventory_item_id',
                 'h.mac',
-                'h.new_cost'
+                'h.new_cost',
+                'h.old_cost',
+                'h.type as hist_type',
+                'h.reference_type as hist_reference_type',
+                'h.reference_id as hist_reference_id'
             )
             ->get();
 
@@ -444,12 +524,20 @@ class CostReportHoController extends Controller
         $histNewCostByKey = [];
         $histIdByKey = [];
         $histDateByKey = [];
+        $histTypeByKey = [];
+        $histRefTypeByKey = [];
+        $histRefIdByKey = [];
+        $histOldCostByKey = [];
         foreach ($histRows as $r) {
             $k = (int) $r->warehouse_id . '|' . (int) $r->inventory_item_id;
             $histMacByKey[$k] = (float) ($r->mac ?? 0);
             $histNewCostByKey[$k] = (float) ($r->new_cost ?? 0);
             $histIdByKey[$k] = (int) $r->history_id;
             $histDateByKey[$k] = $r->hist_date !== null ? (string) $r->hist_date : null;
+            $histTypeByKey[$k] = $r->hist_type !== null ? (string) $r->hist_type : null;
+            $histRefTypeByKey[$k] = $r->hist_reference_type !== null ? (string) $r->hist_reference_type : null;
+            $histRefIdByKey[$k] = $r->hist_reference_id !== null ? (int) $r->hist_reference_id : null;
+            $histOldCostByKey[$k] = isset($r->old_cost) ? (float) $r->old_cost : null;
         }
 
         $macEffectiveByKey = [];
@@ -486,6 +574,10 @@ class CostReportHoController extends Controller
             'hist_new_cost_by_key' => $histNewCostByKey,
             'hist_id_by_key' => $histIdByKey,
             'hist_date_by_key' => $histDateByKey,
+            'hist_type_by_key' => $histTypeByKey,
+            'hist_ref_type_by_key' => $histRefTypeByKey,
+            'hist_ref_id_by_key' => $histRefIdByKey,
+            'hist_old_cost_by_key' => $histOldCostByKey,
             'mac_effective_by_key' => $macEffectiveByKey,
             'mac_source_by_key' => $macSourceByKey,
             'line_by_key' => $lineByKey,
